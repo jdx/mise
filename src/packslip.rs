@@ -628,8 +628,7 @@ pub(crate) fn sync_skills(
     prune: bool,
 ) -> Result<SyncReport> {
     let mut report = SyncReport::default();
-    let mut state = read_sync_state(dir)?;
-    let before = state.links.clone();
+    let before = read_sync_state(dir)?.links;
     let mut wanted: BTreeMap<&str, &Skill> = BTreeMap::new();
     for skill in skills {
         match wanted.get(skill.name.as_str()) {
@@ -650,11 +649,23 @@ pub(crate) fn sync_skills(
     let points_at =
         |link: &Path, target: &str| std::fs::read_link(link).is_ok_and(|t| t == Path::new(target));
     let ours = |name: &str, link: &Path| {
-        state.links.get(name).is_some_and(|target| {
+        before.get(name).is_some_and(|target| {
             file::is_symlink_or_junction(link)
                 && points_at(link, target)
                 && file::is_symlink_target_within(link, installs).unwrap_or(false)
         })
+    };
+    // The record is written before a link is made and after one is
+    // removed, so a sync cut short never leaves a link mise made that it
+    // would not recognise as its own next time.
+    let mut current = before.clone();
+    let persist = |links: &BTreeMap<String, String>| {
+        write_sync_state(
+            dir,
+            &SyncState {
+                links: links.clone(),
+            },
+        )
     };
     if !wanted.is_empty() {
         file::create_dir_all(dir)?;
@@ -677,6 +688,8 @@ pub(crate) fn sync_skills(
             }
             file::remove_all(&link)?;
         }
+        current.insert(name.to_string(), skill.path.display().to_string());
+        persist(&current)?;
         file::make_symlink(&skill.path, &link)?;
         report.linked.push(name.to_string());
     }
@@ -697,6 +710,8 @@ pub(crate) fn sync_skills(
             };
             if !wanted.contains_key(name) && ours(name, &entry) {
                 file::remove_all(&entry)?;
+                current.remove(name);
+                persist(&current)?;
                 report.pruned.push(name.to_string());
             }
         }
@@ -704,8 +719,7 @@ pub(crate) fn sync_skills(
         // Without pruning, links made earlier stay mise's as long as they
         // still are what mise made.
         made.extend(
-            state
-                .links
+            before
                 .iter()
                 .filter(|(name, target)| {
                     let link = dir.join(name);
@@ -714,9 +728,8 @@ pub(crate) fn sync_skills(
                 .map(|(name, target)| (name.clone(), target.clone())),
         );
     }
-    state.links = made;
-    if state.links != before {
-        write_sync_state(dir, &state)?;
+    if made != current {
+        persist(&made)?;
     }
     Ok(report)
 }
