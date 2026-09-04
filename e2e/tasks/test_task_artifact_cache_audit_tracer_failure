@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+mkdir -p bin
+cat <<'EOF' >bin/strace
+#!/usr/bin/env bash
+set -euo pipefail
+
+daemonize=false
+trace=
+while (($#)); do
+  case $1 in
+  -D)
+    daemonize=true
+    shift
+    ;;
+  -o)
+    trace=$2
+    shift 2
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *) shift ;;
+  esac
+done
+
+# The capability probe has no output file. Requiring -D here also verifies that
+# mise does not enable an incompatible strace and fail later during the task.
+if [[ -z $trace ]]; then
+  $daemonize || exit 1
+  exec "$@"
+fi
+
+cat <<TRACE >"$trace"
+123 openat(AT_FDCWD<$PWD>, "input.txt", O_RDONLY) = 3
+TRACE
+
+if $daemonize; then
+  # Model strace -D: the original process becomes the task while the tracer is
+  # a grandchild whose internal failure cannot replace the task's exit status.
+  (
+    echo 'strace: ptrace(PTRACE_LISTEN,pid:123,sig:0): Input/output error' >&2
+    exit 1
+  ) &
+  exec "$@"
+fi
+
+# Without -D, strace is the process mise waits for and its internal status wins.
+"$@"
+exit 1
+EOF
+chmod +x bin/strace
+
+printf 'input\n' >input.txt
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.success]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, audit = true }
+
+[tasks.failure]
+run = "exit 42"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, audit = true }
+EOF
+
+export PATH="$PWD/bin:$PATH"
+
+# A failure in the advisory tracer must not replace a successful task status.
+output=$(mise run --force success 2>&1)
+assert_contains_text "$output" "ptrace(PTRACE_LISTEN"
+
+# Daemonizing the tracer must not mask a real task failure either.
+assert_fail "mise run --force failure"

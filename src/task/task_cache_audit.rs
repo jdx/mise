@@ -128,6 +128,9 @@ impl TaskCacheAudit {
     #[cfg(target_os = "linux")]
     pub(crate) fn wrap(&self, program: OsString, args: &[String]) -> (OsString, Vec<String>) {
         let mut wrapped = vec![
+            // Keep the task as mise's direct child so a failure in the advisory tracer does not
+            // replace the task's exit status. The tracer runs as the task's grandchild instead.
+            "-D".to_string(),
             "-f".to_string(),
             "-qq".to_string(),
             "-yy".to_string(),
@@ -283,7 +286,7 @@ async fn usable_strace() -> Option<PathBuf> {
                 return None;
             };
             let status = tokio::process::Command::new(&strace)
-                .args(["-qq", "-yy", "-e", "trace=none", "--", "true"])
+                .args(["-D", "-qq", "-yy", "-e", "trace=none", "--", "true"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
