@@ -161,16 +161,19 @@ cat >"$HOME/workdir/mise-vars.toml" <<'TOML'
 STRING = "value"
 INTEGER = 123
 TRUE_BOOL = true
+FALSE_BOOL = false
 VALUE_STRING = { value = "value", redact = true }
 VALUE_INTEGER = { value = 123 }
 VALUE_TRUE = { value = true }
+VALUE_FALSE = { value = false, redact = true, tools = false }
 VALUE_DEFAULT = { default = 123, redact = true }
 REQUIRED_TRUE = { required = true, redact = true }
 REQUIRED_HELP = { required = "set REQUIRED_HELP in mise.local.toml" }
 SECRET_SIMPLE = { age = "AGE-SECRET", redact = false }
 SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", redact = true } }
-_.file = ".env"
+_.file = { path = ".env", redact = true, required = true, expand = true }
 _.source = ["env.sh"]
+_.path = "./bin"
 TOML
 
 cat >"$HOME/workdir/mise-os.toml" <<'TOML'
@@ -229,7 +232,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-vars-mise.toml", "mise-bad-vars-tools.toml", "mise-bad-vars-directive-tools.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -353,15 +356,41 @@ done
 
 cat >"$HOME/workdir/mise-bad-vars.toml" <<'TOML'
 [vars]
-FALSE_BOOL = false
-VALUE_FALSE = { value = false }
 REQUIRED_FALSE = { required = false }
 FLOAT = 1.23
 VALUE_FLOAT = { value = 1.23 }
-TOOLS_FILTERED = { value = "not actually resolved as a var", tools = true }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-vars.toml"
+
+cat >"$HOME/workdir/mise-bad-vars-mise.toml" <<'TOML'
+[vars.mise]
+path = "./bin"
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-vars-mise.toml"
+
+# Vars are always resolved with the non-tools filter, so `tools = true` entries
+# are dropped rather than resolved. Exercise both regular and encrypted shapes.
+for entry in \
+  '{ value = "x", tools = true }' \
+  '{ age = "AGE-SECRET", tools = true }'; do
+  cat >"$HOME/workdir/mise-bad-vars-tools.toml" <<TOML
+[vars]
+TOOLS_FILTERED = $entry
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-vars-tools.toml"
+done
+
+for directive in \
+  '_.file = { path = ".env", tools = true }' \
+  '_.path = { paths = ["./bin"], tools = true }'; do
+  cat >"$HOME/workdir/mise-bad-vars-directive-tools.toml" <<TOML
+[vars]
+$directive
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-vars-directive-tools.toml"
+done
 
 # Verify that extends is rejected on task_templates (not supported at runtime)
 cat >"$HOME/workdir/mise-bad-tmpl.toml" <<'TOML'
