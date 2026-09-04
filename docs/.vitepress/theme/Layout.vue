@@ -1,6 +1,6 @@
 <template>
   <DefaultTheme.Layout>
-    <template #home-hero-info-before>
+    <template #home-hero-info>
       <div class="hero-copy">
         <div class="hero-lockup">
           <img class="chef-logo chef-logo-light" src="/logo-light.svg" alt="" />

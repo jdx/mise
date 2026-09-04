@@ -2,9 +2,7 @@
 layout: home
 title: Home
 
-hero:
-  name: mise-en-place
-  tagline: Dev tools, env vars, and tasks in one CLI
+hero: {}
 ---
 
 <section class="landing-page" aria-label="mise overview">
