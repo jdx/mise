@@ -44,6 +44,7 @@ pub(crate) async fn generate_seatbelt_profile(
         for path in &config.allow_write {
             let path_str = sbpl_escape(&path.to_string_lossy());
             rules.push(format!("(allow file-write* (subpath \"{path_str}\"))"));
+            rules.push(format!("(allow file-write* (literal \"{path_str}\"))"));
         }
     }
 
@@ -62,11 +63,13 @@ pub(crate) async fn generate_seatbelt_profile(
         for path in &config.allow_read {
             let path_str = sbpl_escape(&path.to_string_lossy());
             rules.push(format!("(allow file-read* (subpath \"{path_str}\"))"));
+            rules.push(format!("(allow file-read* (literal \"{path_str}\"))"));
         }
         // allow_write paths are implicitly readable — emit AFTER deny-read
         for path in &config.allow_write {
             let path_str = sbpl_escape(&path.to_string_lossy());
             rules.push(format!("(allow file-read* (subpath \"{path_str}\"))"));
+            rules.push(format!("(allow file-read* (literal \"{path_str}\"))"));
         }
     }
 
@@ -220,7 +223,7 @@ mod tests {
 
         let mut config = SandboxConfig {
             deny_read: true,
-            allow_read: vec![allowed_dir],
+            allow_read: vec![allowed_file.clone()],
             ..Default::default()
         };
         config.resolve_paths();
