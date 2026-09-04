@@ -176,3 +176,9 @@ Lockfiles record the artifact URL and its sha256 from the signed statement.
 Resources may name one exact `artifact` when layouts differ between archive formats or variants. Completions are selected for the command being completed; when a release has several executables, pass its command name to `--tool`. Generated scripts are cached separately for each installed version, executable, and shell.
 
 Exec resources receive the manifest’s environment variables, with `{shell}` expanded for completions. They run in a temporary directory with the installed executables on PATH, no stdin, discarded stderr, and a five-second timeout. Failed or empty output is not cached. The same execution rules apply to skills when `packslip.exec` permits generating them.
+
+### Release-list continuity and minimum age
+
+Once mise has accepted a supplementary signed list, a missing list is an error: a 404 cannot silently restore releases the vendor withdrew. `mise packslip forget <project>` explicitly resets that remembered policy along with the signer pin.
+
+The release API or list timestamp helps select candidates. Before downloading an artifact, mise checks the verified transparency-log timestamp against the effective `minimum_release_age` cutoff. Only a permitted unlogged bundle uses its signed publication timestamp instead.
