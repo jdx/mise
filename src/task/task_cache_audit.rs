@@ -24,6 +24,7 @@ use tempfile::NamedTempFile;
 use tokio::sync::OnceCell;
 
 const MAX_REPORTED_PATHS: usize = 20;
+const TRACE_COMPLETION_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[cfg(target_os = "linux")]
 static STRACE: OnceCell<Option<PathBuf>> = OnceCell::const_new();
@@ -161,17 +162,7 @@ impl TaskCacheAudit {
     }
 
     pub(crate) async fn report(&self, task: &Task) {
-        if tokio::time::timeout(Duration::from_secs(1), async {
-            loop {
-                if fs::metadata(self.trace_complete.path()).is_ok_and(|meta| meta.len() > 0) {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .is_err()
-        {
+        if !wait_for_file(self.trace_complete.path()).await {
             warn!(
                 "task {} cache audit tracer did not finish; skipping its incomplete report",
                 task.name
@@ -310,14 +301,21 @@ async fn usable_strace() -> Option<PathBuf> {
                 warn_once!("task cache audit requires strace; running without filesystem auditing");
                 return None;
             };
+            let trace = NamedTempFile::new().ok()?;
             let status = tokio::process::Command::new(&strace)
-                .args(["-D", "-qq", "-yy", "-e", "trace=none", "--", "true"])
+                .args(["-D", "-qq", "-e", "trace=execve", "-o"])
+                .arg(trace.path())
+                .args(["--", "true"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
                 .await;
-            if !status.is_ok_and(|status| status.success()) {
+            // With -D, the status belongs to `true`, not the detached tracer. Requiring its
+            // execve record catches startup failures such as ptrace being blocked by seccomp.
+            if !status.is_ok_and(|status| status.success())
+                || !wait_for_trace_record(trace.path()).await
+            {
                 warn_once!(
                     "task cache audit could not start strace; running without filesystem auditing"
                 );
@@ -327,6 +325,32 @@ async fn usable_strace() -> Option<PathBuf> {
         })
         .await
         .clone()
+}
+
+async fn wait_for_file(path: &Path) -> bool {
+    tokio::time::timeout(TRACE_COMPLETION_TIMEOUT, async {
+        loop {
+            if fs::metadata(path).is_ok_and(|meta| meta.len() > 0) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .is_ok()
+}
+
+async fn wait_for_trace_record(path: &Path) -> bool {
+    tokio::time::timeout(TRACE_COMPLETION_TIMEOUT, async {
+        loop {
+            if fs::read_to_string(path).is_ok_and(|trace| trace.contains("execve(")) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .is_ok()
 }
 
 fn matches_override(matcher: &Override, path: &Path) -> bool {

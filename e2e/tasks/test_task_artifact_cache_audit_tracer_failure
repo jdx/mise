@@ -40,9 +40,18 @@ if $daemonize; then
   # a grandchild whose internal failure cannot replace the task's exit status.
   (
     sleep 0.05
-    cat <<TRACE | sh -c "${trace#|}"
-123 openat(AT_FDCWD<$PWD>, "secret.txt", O_RDONLY) = 3
-TRACE
+    if [[ ${FAKE_PROBE_FAILURE:-0} == 1 && $trace != \|* ]]; then
+      echo 'strace: ptrace(PTRACE_TRACEME): Operation not permitted' >&2
+      exit 1
+    fi
+    if [[ $trace == \|* ]]; then
+      sink=${trace#|}
+      record="123 openat(AT_FDCWD<$PWD>, \"secret.txt\", O_RDONLY) = 3"
+    else
+      sink="cat > '$trace'"
+      record="123 execve(\"$1\", [\"$1\"], 0x0) = 0"
+    fi
+    printf '%s\n' "$record" | sh -c "$sink"
     echo 'strace: ptrace(PTRACE_LISTEN,pid:123,sig:0): Input/output error' >&2
     exit 1
   ) &
@@ -87,13 +96,21 @@ EOF
 export PATH="$PWD/bin:$PATH"
 
 # A failure in the advisory tracer must not replace a successful task status.
-output=$(mise run --force success 2>&1)
+status=0
+output=$(mise run --force success 2>&1) || status=$?
+assert "test $status -eq 0"
 assert_contains_text "$output" "ptrace(PTRACE_LISTEN"
 assert_contains_text "$output" "cache audit detected undeclared read: secret.txt"
 
 # Daemonizing the tracer must not mask a real task failure either.
-assert_fail "mise run --force failure"
+status=0
+output=$(mise run --force failure 2>&1) || status=$?
+assert "test $status -eq 42"
 
 # An unresponsive tracer remains advisory and its incomplete report is ignored.
 output=$(mise run --force incomplete 2>&1)
 assert_contains_text "$output" "cache audit tracer did not finish; skipping its incomplete report"
+
+# A daemonized capability probe must still detect a tracer startup failure.
+output=$(FAKE_PROBE_FAILURE=1 mise run --force success 2>&1)
+assert_contains_text "$output" "cache audit could not start strace; running without filesystem auditing"
