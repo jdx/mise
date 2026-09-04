@@ -292,12 +292,16 @@ pub(crate) async fn fetch_files(
                     continue;
                 };
                 pr.set_message(format!("generate skill {skill}"));
-                match CmdLineRunner::new(path).args(args).read().await {
-                    Ok(text) => {
-                        file::create_dir_all(&dir)?;
-                        file::write(dir.join("SKILL.md"), text)?;
-                    }
-                    Err(err) => warn!("{}: could not generate skill {skill}: {err}", tv.style()),
+                let generated = match CmdLineRunner::new(path).args(args).read().await {
+                    // Written beside its place and moved whole, like a fetched skill.
+                    Ok(text) => staging_dir(&dir).and_then(|staging| {
+                        let written = file::write(staging.join("SKILL.md"), text);
+                        into_place(&staging, &dir, written)
+                    }),
+                    Err(err) => Err(err),
+                };
+                if let Err(err) = generated {
+                    warn!("{}: could not generate skill {skill}: {err}", tv.style());
                 }
             }
             Some(ResourceSource::Repo) => {
