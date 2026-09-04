@@ -176,7 +176,7 @@ async fn usable_system_ruby() -> Option<PathBuf> {
 }
 
 async fn ruby_is_compatible(ruby: &Path) -> bool {
-    tokio::process::Command::new(&ruby)
+    tokio::process::Command::new(ruby)
         .args(["-e", "exit RUBY_VERSION.split('.').first.to_i >= 3 ? 0 : 1"])
         .output()
         .await
