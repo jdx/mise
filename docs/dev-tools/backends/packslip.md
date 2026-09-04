@@ -170,3 +170,9 @@ The repository may also keep a signed list at `.well-known/packslip.json` (or `.
 For a project on its own domain, the versions are the entries of its signed release list, minus any the vendor has withdrawn. For either kind of list mise refuses one that has expired, and refuses one whose sequence is below the highest it has accepted for the project, which it remembers under its state directory.
 
 Lockfiles record the artifact URL and its sha256 from the signed statement.
+
+### Resource selection and command execution
+
+Resources may name one exact `artifact` when layouts differ between archive formats or variants. Completions are selected for the command being completed; when a release has several executables, pass its command name to `--tool`. Generated scripts are cached separately for each installed version, executable, and shell.
+
+Exec resources receive the manifest’s environment variables, with `{shell}` expanded for completions. They run in a temporary directory with the installed executables on PATH, no stdin, discarded stderr, and a five-second timeout. Failed or empty output is not cached. The same execution rules apply to skills when `packslip.exec` permits generating them.
