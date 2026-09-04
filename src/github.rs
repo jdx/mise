@@ -85,6 +85,11 @@ pub(crate) struct GithubAsset {
     pub digest: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct GithubRepository {
+    full_name: String,
+}
+
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;
 
 static RELEASES_CACHE: Lazy<RwLock<CacheGroup<Vec<GithubRelease>>>> = Lazy::new(Default::default);
@@ -325,6 +330,17 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
 
 pub(crate) async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
     get_release_with_versions_host(repo, tag, true).await
+}
+
+/// Resolve a repository name through GitHub so callers can follow repository
+/// transfers without weakening identity checks to the former owner/name.
+pub(crate) async fn canonical_repo(repo: &str) -> Result<String> {
+    let url = format!("{API_URL}/repos/{repo}");
+    let headers = get_headers(&url)?;
+    let repository: GithubRepository = crate::http::HTTP_FETCH
+        .json_with_headers(url, &headers)
+        .await?;
+    Ok(repository.full_name)
 }
 
 pub(crate) async fn get_release_with_versions_host(
