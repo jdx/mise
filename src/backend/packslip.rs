@@ -18,8 +18,8 @@ use async_trait::async_trait;
 use eyre::{Result, WrapErr, bail, eyre};
 use itertools::Itertools;
 use packslip::model::{
-    Artifact, Host, ReleaseListStatement, Selection, Statement, is_bare_format, repository,
-    repository_subpath, tag_version,
+    Artifact, Host, ReleaseListStatement, ReleaseRef, Selection, Statement, is_bare_format,
+    repository, repository_subpath, tag_version,
 };
 use packslip::sigstore::{Policy, Trust};
 use reqwest::header::HeaderMap;
@@ -450,6 +450,22 @@ fn check_verified_age(
     Ok(())
 }
 
+/// A withdrawal in the vendor's signed list is the end of the matter: no
+/// stamp, mirror, or cached manifest reinstates the version.
+fn refuse_if_withdrawn(project: &str, version: &str, entry: &ReleaseRef) -> Result<()> {
+    if entry.is_yanked() {
+        bail!(
+            "packslip:{project}@{version} was withdrawn by the vendor{}",
+            entry
+                .status_reason
+                .as_deref()
+                .map(|r| format!(": {r}"))
+                .unwrap_or_default()
+        );
+    }
+    Ok(())
+}
+
 fn headers_for(url: &str) -> Result<HeaderMap> {
     if url.starts_with("https://github.com/") || url.starts_with("https://api.github.com/") {
         github::get_headers(url)
@@ -559,58 +575,36 @@ impl PackslipBackend {
         Ok(Some(list))
     }
 
-    async fn locate_bundle(
+    /// What the vendor themselves say about a version, from the release
+    /// list they sign: a withdrawal refuses it outright, and the entry pins
+    /// the manifest's digest. `None` only when no signed list covers the
+    /// version, which a project served from a GitHub repository is allowed
+    /// to do and any other project is not.
+    async fn vendor_entry(
         &self,
         project: &str,
         tv: &ToolVersion,
         pin: &Pin,
         opts: &PackslipOptions<'_>,
-    ) -> Result<Located> {
-        let asset_name = bundle_name(project);
+    ) -> Result<Option<Located>> {
         if let Some(repo) = Self::repo(project) {
-            // A signed list the repository keeps decides first: it can
-            // withdraw a release and it pins the bundle's digest.
-            if let Some(list) = self.github_list(project, &repo, pin, opts).await?
-                && let Some(entry) = list
-                    .predicate
-                    .releases
-                    .iter()
-                    .find(|r| r.version == tv.version)
-            {
-                if entry.is_yanked() {
-                    bail!(
-                        "packslip:{project}@{} was withdrawn by the vendor{}",
-                        tv.version,
-                        entry
-                            .status_reason
-                            .as_deref()
-                            .map(|r| format!(": {r}"))
-                            .unwrap_or_default()
-                    );
-                }
-                return Ok(Located {
-                    headers: headers_for(&entry.packslip)?,
-                    url: entry.packslip.clone(),
-                    digest: list.digest_of(&entry.packslip).map(str::to_string),
-                });
-            }
-            let releases = github::list_releases_including_prereleases(&repo).await?;
-            let found = releases.iter().find_map(|r| {
-                let asset = r.assets.iter().find(|a| a.name == asset_name)?;
-                (tag_version(&r.tag_name, project).as_deref() == Some(tv.version.as_str()))
-                    .then_some(asset)
-            });
-            let Some(asset) = found else {
-                bail!(
-                    "github.com/{repo} has no release {} carrying {asset_name}; mise installs from a packslip and does not guess at release assets",
-                    tv.version
-                );
+            let Some(list) = self.github_list(project, &repo, pin, opts).await? else {
+                return Ok(None);
             };
-            return Ok(Located {
-                headers: github::get_headers(&asset.browser_download_url)?,
-                url: asset.browser_download_url.clone(),
-                digest: None,
-            });
+            let Some(entry) = list
+                .predicate
+                .releases
+                .iter()
+                .find(|r| r.version == tv.version)
+            else {
+                return Ok(None);
+            };
+            refuse_if_withdrawn(project, &tv.version, entry)?;
+            return Ok(Some(Located {
+                headers: headers_for(&entry.packslip)?,
+                url: entry.packslip.clone(),
+                digest: list.digest_of(&entry.packslip).map(str::to_string),
+            }));
         }
         let list = self.release_list(project, pin, opts).await?;
         let Some(entry) = list
@@ -624,21 +618,45 @@ impl PackslipBackend {
                 tv.version
             );
         };
-        if entry.is_yanked() {
-            bail!(
-                "packslip:{project}@{} was withdrawn by the vendor{}",
-                tv.version,
-                entry
-                    .status_reason
-                    .as_deref()
-                    .map(|r| format!(": {r}"))
-                    .unwrap_or_default()
-            );
-        }
-        Ok(Located {
+        refuse_if_withdrawn(project, &tv.version, entry)?;
+        Ok(Some(Located {
             url: entry.packslip.clone(),
             headers: HeaderMap::new(),
             digest: list.digest_of(&entry.packslip).map(str::to_string),
+        }))
+    }
+
+    async fn locate_bundle(
+        &self,
+        project: &str,
+        tv: &ToolVersion,
+        pin: &Pin,
+        opts: &PackslipOptions<'_>,
+    ) -> Result<Located> {
+        if let Some(located) = self.vendor_entry(project, tv, pin, opts).await? {
+            return Ok(located);
+        }
+        // No signed list names the manifest, so the release asset is the
+        // only place left to find it. Only a GitHub project gets here.
+        let asset_name = bundle_name(project);
+        let repo = Self::repo(project)
+            .ok_or_else(|| eyre!("packslip:{project} publishes no signed release list"))?;
+        let releases = github::list_releases_including_prereleases(&repo).await?;
+        let found = releases.iter().find_map(|r| {
+            let asset = r.assets.iter().find(|a| a.name == asset_name)?;
+            (tag_version(&r.tag_name, project).as_deref() == Some(tv.version.as_str()))
+                .then_some(asset)
+        });
+        let Some(asset) = found else {
+            bail!(
+                "github.com/{repo} has no release {} carrying {asset_name}; mise installs from a packslip and does not guess at release assets",
+                tv.version
+            );
+        };
+        Ok(Located {
+            headers: github::get_headers(&asset.browser_download_url)?,
+            url: asset.browser_download_url.clone(),
+            digest: None,
         })
     }
 
@@ -812,10 +830,13 @@ impl Backend for PackslipBackend {
             ),
             None => None,
         };
-        // Vendor discovery is always authoritative for withdrawals and digest
-        // pins, even when a stamper supplies a mirror URL.
-        let vendor = self.locate_bundle(&project, &tv, &pin, &opts).await?;
-        let located = match &stamp {
+        // The vendor stays authoritative for withdrawals and digest pins even
+        // when a stamper supplies a mirror URL. What the vendor's list cannot
+        // speak to is whether the original release asset is still on GitHub,
+        // and a stamp already names the manifest and its digest — so mise asks
+        // the signed list here rather than `locate_bundle`, and a deleted asset
+        // does not veto a release the vendor never withdrew.
+        let (located, vendor_digest) = match &stamp {
             Some(stamp) => {
                 debug!(
                     "{}: stamped by {}, manifest at {}",
@@ -836,17 +857,19 @@ impl Backend for PackslipBackend {
                         stamp.entry.packslip
                     );
                 };
-                Located {
-                    headers: headers_for(&stamp.entry.packslip)?,
-                    url: stamp.entry.packslip.clone(),
-                    digest: Some(digest),
-                }
+                let vendor = self.vendor_entry(&project, &tv, &pin, &opts).await?;
+                (
+                    Located {
+                        headers: headers_for(&stamp.entry.packslip)?,
+                        url: stamp.entry.packslip.clone(),
+                        digest: Some(digest),
+                    },
+                    vendor.and_then(|v| v.digest),
+                )
             }
-            None => Located {
-                url: vendor.url.clone(),
-                headers: vendor.headers.clone(),
-                digest: vendor.digest.clone(),
-            },
+            // Without a stamp the located bundle is the vendor's own, so its
+            // digest is already the one checked below.
+            None => (self.locate_bundle(&project, &tv, &pin, &opts).await?, None),
         };
         let bundle_path = tv.download_path().join(bundle_name(&project));
         file::create_dir_all(tv.download_path())?;
@@ -858,13 +881,16 @@ impl Backend for PackslipBackend {
             Some(ctx.pr.as_ref()),
         )
         .await?;
-        for expected in located.digest.iter().chain(vendor.digest.iter()) {
+        let pinned: Vec<&String> = located.digest.iter().chain(vendor_digest.iter()).collect();
+        if !pinned.is_empty() {
             let (actual, _) = packslip::digest_file(&bundle_path)?;
-            if &actual != expected {
-                bail!(
-                    "the packslip at {} is not the one the signed release list points at (sha256 {actual}, list says {expected})",
-                    located.url
-                );
+            for expected in pinned {
+                if &actual != expected {
+                    bail!(
+                        "the packslip at {} is not the one the signed release list points at (sha256 {actual}, list says {expected})",
+                        located.url
+                    );
+                }
             }
         }
         let bundle = file::read_to_string(&bundle_path)?;
