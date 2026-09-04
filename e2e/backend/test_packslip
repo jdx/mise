@@ -14,6 +14,11 @@ assert_fail_contains "env -u MISE_EXPERIMENTAL mise ls-remote packslip:github.co
 
 assert_contains "mise ls-remote packslip:github.com/jdx/packslip" "0.2.0"
 
+# Latest resolves and verifies the vendor recommendation without installing it.
+latest=$(mise latest packslip:github.com/jdx/packslip) || exit 1
+[[ -n $latest ]] || exit 1
+assert_contains "mise ls-remote packslip:github.com/jdx/packslip" "$latest"
+
 mise use packslip:github.com/jdx/packslip@0.2.0
 assert_contains "$MISE_DATA_DIR/shims/packslip version" "packslip 0.2.0"
 

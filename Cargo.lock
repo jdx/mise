@@ -7046,7 +7046,7 @@ dependencies = [
 [[package]]
 name = "packslip"
 version = "0.2.0"
-source = "git+https://github.com/jdx/packslip?rev=01a4f23#01a4f23759bd1d6bbe85df896c86ade3ef8c214a"
+source = "git+https://github.com/jdx/packslip?rev=89a9487#89a94872302c1addf561d6715d3ab98f4204de01"
 dependencies = [
  "base64 0.22.1",
  "blake2 0.10.6",

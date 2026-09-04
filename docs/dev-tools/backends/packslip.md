@@ -183,6 +183,12 @@ Once mise has accepted a supplementary signed list, a missing list is an error: 
 
 The release API or list timestamp helps select candidates. Before downloading an artifact, mise checks the verified transparency-log timestamp against the effective `minimum_release_age` cutoff. Only a permitted unlogged bundle uses its signed publication timestamp instead.
 
+## Latest
+
+An unconstrained `latest` request uses the vendor’s signed release-list `latest` pointer first. On GitHub, absent a signed pointer, mise consults GitHub’s latest release. Without an eligible recommendation it falls back to highest eligible semver. Prefix and channel requests keep their existing matching rules and never use the default pointer.
+
+Mise verifies each candidate manifest before accepting it, including its identity and digest pins. Minimum release age uses the verified log time (or signed publication time for explicitly allowed unlogged bundles), and stamping and host requirements still apply. A policy exclusion warns and tries the next candidate; a signature, digest, identity, or list freshness failure stops resolution. A signed pointer that is ineligible falls straight back to semver, not to GitHub’s pointer. This resolution needs online discovery and does not use an offline cached policy.
+
 ## Host requirements
 
 After selecting the artifact, mise checks its declared minimum OS/glibc and host libraries before downloading it. Confirmed failures refuse installation; `ignore_requirements = true` overrides this for one tool. Missing or old commands warn, and unknown checks warn instead of refusing. Active mise command paths take precedence over ambient PATH; either way mise picks a path the OS can start, so a Windows `git.exe` or `node.cmd` counts and a shebang-only script does not. Requirements never break an artifact-selection tie or select a different build.
