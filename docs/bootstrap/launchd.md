@@ -51,6 +51,8 @@ launchd calendar keys. For multiple independent calendar schedules, use an
 array of inline tables:
 
 ```toml
+[bootstrap.macos.launchd.agents.my-sync]
+program = "~/.local/bin/my-sync"
 start_calendar_interval = [{ hour = 3 }, { hour = 12, weekday = 1 }]
 ```
 
