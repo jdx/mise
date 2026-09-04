@@ -17,7 +17,7 @@ use crate::toolset::{ResolveOptions, ToolRequest, ToolVersion, ToolVersionOption
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, github, plugins};
 use async_trait::async_trait;
-use eyre::{Context, Result};
+use eyre::{Context, Result, bail};
 use indexmap::IndexMap;
 use xx::regex;
 
@@ -28,6 +28,7 @@ pub(super) struct RustPlugin {
 
 const RUST_NIGHTLY_MANIFEST_URL: &str =
     "https://static.rust-lang.org/dist/channel-rust-nightly.toml";
+const RUST_DEFAULT_PROFILE_COMPONENTS: &[&str] = &["clippy", "rust-docs", "rustfmt"];
 
 fn parse_nightly_manifest(manifest: &str) -> Result<String> {
     let manifest: toml::Value =
@@ -256,6 +257,35 @@ impl RustPlugin {
         ))
     }
 
+    /// Returns the profile rustup applies when an install omits `--profile`.
+    fn rustup_default_profile(&self, tv: &ToolVersion, runtime: &RustRuntime) -> Result<String> {
+        let args = vec!["show".to_string(), "profile".to_string()];
+        let mut cmd = cmd(runtime.bin_dir.join(RUSTUP_BIN), args)
+            .env("PATH", rustup_path_env(runtime)?)
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked();
+        for (key, value) in rustup_env(&runtime.homes, &tv.version) {
+            cmd = cmd.env(key, value);
+        }
+        let output = cmd.run()?;
+        if !output.status.success() {
+            bail!(
+                "rustup show profile failed for {}: {}",
+                tv.style(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        let profile = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if profile.is_empty() {
+            bail!(
+                "rustup show profile returned an empty profile for {}",
+                tv.style()
+            );
+        }
+        Ok(profile)
+    }
+
     fn missing_components(
         &self,
         requested: &[String],
@@ -289,9 +319,9 @@ impl Backend for RustPlugin {
         false
     }
 
-    /// Rust toolchains can be installed while requested components/targets are
-    /// still absent because rustup owns that mutable state outside mise's
-    /// install directory.
+    /// Rust toolchains can be absent or missing requested components/targets
+    /// while mise's install symlink still exists because rustup owns that
+    /// mutable state outside mise's install directory.
     async fn is_install_satisfied(
         &self,
         config: &Arc<Config>,
@@ -312,15 +342,33 @@ impl Backend for RustPlugin {
         }
 
         let raw_opts = tv.request.options();
-        let (_, components, targets) = RustOptions::new(&raw_opts).install_args();
+        let (profile, components, targets) = RustOptions::new(&raw_opts).install_args();
+        let effective_profile = match profile {
+            Some(profile) => profile,
+            None => self.rustup_default_profile(tv, &runtime)?,
+        };
 
-        if let Some(components) = components
-            && !components.is_empty()
-        {
-            let Some(installed) = self.rustup_installed_items(tv, "component", &runtime)? else {
-                return Ok(false);
-            };
-            let missing = self.missing_components(&components, &installed);
+        // Query components even when none were explicitly requested. This
+        // verifies that rustup still has the toolchain represented by mise's
+        // install symlink after restoring only mise's data directory.
+        let Some(installed_components) = self.rustup_installed_items(tv, "component", &runtime)?
+        else {
+            return Ok(false);
+        };
+
+        let mut required_components = components.unwrap_or_default();
+        if effective_profile == "default" {
+            required_components.extend(
+                RUST_DEFAULT_PROFILE_COMPONENTS
+                    .iter()
+                    .map(|component| (*component).to_string()),
+            );
+        }
+        required_components.sort();
+        required_components.dedup();
+
+        if !required_components.is_empty() {
+            let missing = self.missing_components(&required_components, &installed_components);
             if !missing.is_empty() {
                 debug!(
                     "{} missing rustup component(s): {}",
@@ -471,13 +519,27 @@ impl Backend for RustPlugin {
 
         let raw_opts = tv.request.options();
         let (profile, components, targets) = RustOptions::new(&raw_opts).install_args();
+        let effective_profile = match profile.as_deref() {
+            Some(profile) => profile.to_string(),
+            None => self.rustup_default_profile(&tv, &runtime)?,
+        };
+        let mut components = components.unwrap_or_default();
+        if effective_profile == "default" {
+            components.extend(
+                RUST_DEFAULT_PROFILE_COMPONENTS
+                    .iter()
+                    .map(|component| (*component).to_string()),
+            );
+            components.sort();
+            components.dedup();
+        }
 
         let mut cmd = CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
             .with_pr(ctx.pr.as_ref())
             .arg("toolchain")
             .arg("install")
             .arg(&tv.version)
-            .opt_args("--component", components)
+            .opt_args("--component", Some(components))
             .opt_args("--target", targets)
             .prepend_path(vec![runtime.bin_dir.clone()])?
             .env_values(tv.install_env())

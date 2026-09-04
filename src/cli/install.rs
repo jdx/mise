@@ -553,7 +553,7 @@ impl Install {
             if self.force {
                 install_candidates
             } else {
-                trs.missing_tools(&install_config)
+                trs.missing_tools_for_install(&install_config)
                     .await
                     .into_iter()
                     .cloned()

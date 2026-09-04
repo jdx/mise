@@ -172,9 +172,26 @@ impl Toolset {
             .collect()
     }
 
+    /// Lists missing install markers without invoking backend-specific checks.
     pub(crate) async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
         trace!("list_missing_versions");
         measure!("toolset::list_missing_versions", {
+            self.list_current_versions()
+                .into_iter()
+                .filter_map(|(backend, tv)| {
+                    (!backend.is_version_installed(config, &tv, true)).then_some(tv)
+                })
+                .collect()
+        })
+    }
+
+    /// Lists versions whose complete backend-managed install state is unsatisfied.
+    pub(crate) async fn list_missing_versions_for_install(
+        &self,
+        config: &Arc<Config>,
+    ) -> Vec<ToolVersion> {
+        trace!("list_missing_versions_for_install");
+        measure!("toolset::list_missing_versions_for_install", {
             let versions = self.list_current_versions().into_iter().collect::<Vec<_>>();
             let parallel_versions = versions
                 .clone()
