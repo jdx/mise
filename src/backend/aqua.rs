@@ -1581,7 +1581,7 @@ impl AquaBackend {
         // errors may aggregate a workflow mismatch with failures from unrelated
         // attestations, so resolve a confirmed transfer through GitHub and retry
         // with the same workflow policy rebased to the canonical repository.
-        if result.is_err()
+        if attestation_needs_transfer_retry(&result)
             && let Ok(canonical_repo) = github::canonical_repo(&repo).await
             && !canonical_repo.eq_ignore_ascii_case(&repo)
             && let Some((canonical_owner, canonical_name)) = canonical_repo.split_once('/')
@@ -3416,6 +3416,14 @@ fn rebase_github_signer_workflow(workflow: &str, old_repo: &str, canonical_repo:
         )
 }
 
+/// A failed verification may become valid after resolving a repository transfer.
+/// Only a verified attestation can skip the canonical-repository lookup.
+fn attestation_needs_transfer_retry(
+    result: &std::result::Result<bool, crate::github::sigstore::AttestationError>,
+) -> bool {
+    !matches!(result, Ok(true))
+}
+
 fn toml_value_to_string(value: &toml::Value) -> Option<String> {
     match value {
         toml::Value::String(s) => Some(s.clone()),
@@ -4890,6 +4898,17 @@ packages:
             ),
             "aquaproj/aqua-registry/.github/workflows/release.yml"
         );
+    }
+
+    #[test]
+    fn test_attestation_transfer_retry_result_handling() {
+        use crate::github::sigstore::AttestationError;
+
+        assert!(!attestation_needs_transfer_retry(&Ok(true)));
+        assert!(attestation_needs_transfer_retry(&Ok(false)));
+        assert!(attestation_needs_transfer_retry(&Err(
+            AttestationError::NoAttestations
+        )));
     }
 
     #[test]
