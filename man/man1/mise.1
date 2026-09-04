@@ -700,6 +700,21 @@ Remove a shell alias
 \fIAliases: \fRrm, remove, delete, del
 .RE
 .TP
+\fBskills\fR
+Agent skills the active tools ship, from their packslips
+.RS
+\fIAliases: \fRskill
+.RE
+.TP
+\fBskills ls\fR
+List the skills the active tools declare
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
+\fBskills sync\fR
+Link the active tools' skills where an agent looks for them
+.TP
 \fBsponsors\fR
 Show the companies sponsoring mise and the jdx.dev open source tools
 .TP
@@ -4863,6 +4878,66 @@ Print help
 .TP
 \fB<shell_alias>\fR
 The alias to remove
+.SH "MISE SKILLS"
+Agent skills the active tools ship, from their packslips
+
+A tool installed with the `packslip:` backend may declare an agent skill: a
+directory holding `SKILL.md` and whatever it references, in the Agent Skills
+format. mise knows which version of each tool is active here, so it can hand
+an agent the skill for exactly that version.
+.PP
+\fBUsage:\fR mise skills [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE SKILLS LS"
+List the skills the active tools declare
+
+Each line is a skill of a tool that is installed and active in the current
+directory, with the version it belongs to and the directory holding its
+`SKILL.md`.
+.PP
+\fBUsage:\fR mise skills ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE SKILLS SYNC"
+Link the active tools' skills where an agent looks for them
+
+Writes one symlink per skill into DIR, named after the skill and pointing
+at the directory of the version that is active here. DIR defaults to
+`.claude/skills` under the project root: the directory of the nearest mise
+config. Run it again after `mise use` changes a version and the links follow.
+
+Only links mise made, which point into its installs directory, are ever
+replaced or, with \-\-prune, removed. A real directory or a link of your own at
+a skill's name is left alone and reported.
+.PP
+\fBUsage:\fR mise skills sync [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-dir\fR \fI<DIR>\fR
+The directory to link skills into
+.TP
+\fB\-g, \-\-global\fR
+Link into ~/.claude/skills instead of the project's directory
+.TP
+\fB\-\-prune\fR
+Remove links mise made for skills that are no longer active
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE SPONSORS"
 Show the companies sponsoring mise and the jdx.dev open source tools
 .PP
