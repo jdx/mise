@@ -10,23 +10,27 @@ packslip is a work-in-progress proposal and this backend is experimental: enable
 
 ## Why publish one
 
-Every other way mise installs a release rests on somebody else's guess about it: a registry entry, an aqua definition with a history of asset-name overrides, or mise's own matching of file names against the host. The vendor knows what it shipped. A packslip lets it say so, once, signed, and everything downstream follows from that.
+The backends most people use today work from the outside of a release:
+
+- `github:owner/repo` picks an asset by scoring file names against the host (OS, arch, libc, format). That holds until a project renames its assets, ships two builds for one platform, or puts the executable somewhere unexpected; then every user needs `asset_pattern` or `bin` in their config. Nothing ties the file to the project unless the project also publishes checksums or provenance in a form mise recognises.
+- `aqua:owner/repo` reads a registry entry that volunteers maintain for the project, with checksums and, for some packages, cosign or SLSA checks. When a project changes its asset names the entry is wrong until someone sends a fix ([pnpm v11](https://github.com/aquaproj/aqua-registry/pull/52822), [doggo v1.2.0](https://github.com/aquaproj/aqua-registry/pull/55890), [go-jsonnet v0.22.0](https://github.com/aquaproj/aqua-registry/pull/50942), [wrkflw v0.8.0](https://github.com/aquaproj/aqua-registry/pull/59777)), and the snapshot built into mise picks it up a release later.
+- `packslip:owner/repo` reads what the project itself published with the release, signed by the project. Nothing to guess, nobody to wait for.
 
 For a vendor:
 
-- **You define the install, not a registry.** Which file is for which platform, which executables it holds and what they are called on PATH, what the host needs. When a layout or a naming scheme changes, the next packslip says so and no consumer breaks.
-- **You ship more than binaries.** Shell completions, man pages, a [usage](https://usage.jdx.dev) spec of the CLI, an [agent skill](https://packslip.dev/release/v1/#resources), a desktop entry: each declared once, installed by every consumer that reads packslips, in the version the user actually has.
-- **It is one step in the release job.** `uses: jdx/packslip@v1` with the artifact glob attests build provenance, signs the manifest keylessly with the workflow's own identity, and uploads it. There is no key to create, store, or rotate, and no registry pull request to open or keep current.
-- **Consumers verify you, not a mirror of you.** The signer is your repository's workflow. A packslip nobody but you could have produced is what gets installed, on every consumer, without any of them trusting a checksum file over TLS or a third party's copy.
+- **A direct line to your users.** You say which file is for which platform, which executables it holds and what they are called on PATH, and what the host needs. Your users get that with the release itself, not after someone updates a registry, and when you change a layout or a naming scheme the next packslip says so and no install breaks.
+- **You ship more than binaries.** Shell completions, man pages, a [usage](https://usage.jdx.dev) spec of the CLI, and [agent skills](https://packslip.dev/release/v1/#resources), each declared once and installed in the version the user actually has.
+- **On GitHub, one step in the release job.** `uses: jdx/packslip@v1` with the artifact glob signs the manifest keylessly with the workflow's own identity, attests build provenance, and uploads it. There is no key to create, store, or rotate. On another forge, or a plain web server, `packslip create` signs with a key you hold and you publish a signed release list at a well-known URL on your domain; users pin the key in their config.
+- **Nothing between you and the user can swap the bytes.** A mirror, a proxy, or a compromised download host cannot pass off other bytes as your release, because the signer is your workflow or your key.
 
 For a user asking a vendor for one:
 
-- **Every install is verified against a pinned identity**: signature, transparency log entry, the statement, then the digest and size of the artifact, before anything is unpacked. A changed signer, a weaker scheme, or dropped provenance is refused rather than silently accepted.
-- **The right artifact, chosen by what the vendor declared** rather than by file-name heuristics, with musl and gnu, universal binaries, and variants such as FIPS builds handled as the manifest says.
-- **Completions and skills that match the version in use**, from the vendor, with no per-tool plumbing in mise or in your shell config.
-- **Lockfiles that mean something.** The URL, the digest, and the signer of every release are recorded, so a teammate or CI gets exactly the bytes and the signer the project committed to.
+- **The name says who may sign, the way `~/.ssh/known_hosts` says which key a host must present.** `packslip:github.com/owner/repo` accepts only a packslip signed by that repository's release workflow through GitHub's issuer; the signature, its transparency log entry, the statement, and the artifact's digest and size are all checked before anything is unpacked.
+- **The right artifact, with no registry to update first.** musl and gnu, universal binaries, a `fips` or `baseline` variant, the executable's path inside the archive: all from the manifest the vendor wrote when it cut the release, so nobody plays catch-up after a rename.
+- **Completions and skills that match the version in use**, from the vendor, with no per-tool setup in mise or in your shell config.
+- **Upgrades are checked the way first installs are.** A checksum in `mise.lock` proves one download is the same file it was the first time. A packslip proves the next version came from the same signer as well, so an upgrade on a teammate's machine or in CI is checked against the project's identity rather than against a hash nobody could verify when it was first recorded.
 
-The specification is short and the reference tooling is a single binary; [packslip.dev](https://packslip.dev) has both.
+The specification and the `packslip` CLI are at [packslip.dev](https://packslip.dev).
 
 ## Usage
 
