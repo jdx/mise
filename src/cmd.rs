@@ -1622,7 +1622,11 @@ impl<'a> CmdLineRunner<'a> {
             }
             // Match CmdLineRunner::new() defaults for stdio.
             // execute() reads from piped stdout/stderr; execute_raw() overrides to inherit.
-            new_cmd.stdin(Stdio::null());
+            if self.stdin.is_some() {
+                new_cmd.stdin(Stdio::piped());
+            } else {
+                new_cmd.stdin(Stdio::null());
+            }
             new_cmd.stdout(Stdio::piped());
             new_cmd.stderr(Stdio::piped());
             if let Some(dir) = self.cmd.as_std().get_current_dir() {
@@ -2287,6 +2291,21 @@ mod tests {
             env.iter()
                 .any(|(key, value)| *key == OsStr::new("DROP") && value.is_none())
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_macos_sandbox_preserves_piped_stdin() {
+        let mut runner = super::CmdLineRunner::new("/bin/cat")
+            .stdin_string("sandboxed stdin")
+            .with_sandbox(crate::sandbox::SandboxConfig {
+                deny_process: true,
+                ..Default::default()
+            });
+
+        runner.apply_sandbox().await.unwrap();
+
+        assert_eq!(runner.read().await.unwrap(), "sandboxed stdin");
     }
 
     #[test]
