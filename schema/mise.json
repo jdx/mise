@@ -4209,6 +4209,12 @@
                       }
                     ]
                   },
+                  "state": {
+                    "type": "string",
+                    "description": "desired state of the package; \"absent\" removes it and is only supported by pacman, other managers fail when an installed package is declared absent",
+                    "enum": ["present", "absent"],
+                    "default": "present"
+                  },
                   "adopt": {
                     "type": "boolean",
                     "description": "adopt an existing identical brew-cask app artifact instead of replacing it"

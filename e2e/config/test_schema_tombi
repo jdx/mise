@@ -75,6 +75,12 @@ e2e_args = { default = "--headless", redact = true }
 [tool_alias.java.versions]
 "11.0" = "temurin-11"
 
+[bootstrap.packages]
+"brew:coreutils" = "latest"
+"brew-cask:1password" = { os = "macos", adopt = true }
+"pacman:libreoffice-fresh" = { state = "absent" }
+"pacman:vim" = { version = "latest", os = "linux", state = "present" }
+
 [bootstrap.macos.launchd.agents.daily]
 program = "/bin/echo"
 start_calendar_interval = { hour = 2, minute = 0 }
@@ -223,7 +229,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-packages.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -446,6 +452,18 @@ for copy in \
 copy = [$copy]
 TOML
   assert_fail "$TOMBI_LINT mise-bad-oci-copy.toml"
+done
+
+# Verify that bootstrap package tables match runtime validation
+for package in \
+  '{ state = "removed" }' \
+  '{ state = true }' \
+  '{ state = "absent", unknown = true }'; do
+  cat >"$HOME/workdir/mise-bad-packages.toml" <<TOML
+[bootstrap.packages]
+"pacman:libreoffice-fresh" = $package
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-packages.toml"
 done
 
 # Verify that unknown shell activation targets and invalid values are rejected
