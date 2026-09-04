@@ -64,8 +64,6 @@ class MacOSVersion
     version_parts <=> other.version_parts
   end
 
-  protected
-
   def version_parts = @version.split(".").map(&:to_i)
 
   def same_release?(other)
@@ -218,7 +216,7 @@ klass = Formula.instance_variable_get(:@subclass)
 raise "no Formula subclass found" unless klass
 raise "formula has no stable URL" if klass.source_url.to_s.empty?
 raise "formula has no stable sha256" if klass.source_sha256.to_s.empty?
-version = klass.explicit_version || inferred_version(klass.source_url)
+version = (klass.explicit_version || inferred_version(klass.source_url)).to_s
 raise "could not infer formula version; add an explicit version declaration" if version.to_s.empty?
 
 metadata = {

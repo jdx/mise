@@ -62,8 +62,6 @@ class MacOSVersion
     version_parts <=> other.version_parts
   end
 
-  protected
-
   def version_parts = @version.split(".").map(&:to_i)
 
   def same_release?(other)
