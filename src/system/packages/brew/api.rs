@@ -171,8 +171,10 @@ pub(super) async fn formula_with_tap_name(
         .wrap_err_with(|| {
             format!(
                 "failed to fetch Homebrew tap formula '{name}' directly. \
-                 The tap must publish API metadata at api/formula/{formula_name}.json; \
-                 mise will not proxy to the brew CLI"
+                 mise needs API metadata at api/formula/{formula_name}.json on the \
+                 tap's default branch, which most taps do not publish; mise will not \
+                 proxy to the brew CLI. Install it with `brew`, or see \
+                 https://mise.jdx.dev/bootstrap/packages/brew.html#third-party-taps"
             )
         })
 }

@@ -67,7 +67,11 @@ pub(super) async fn fetch_cask_url(
         .wrap_err_with(|| {
             format!(
                 "failed to fetch Homebrew cask '{requested_token}' directly. \
-                 Tapped casks must publish API metadata at api/cask/<token>.json"
+                 mise needs API metadata at api/cask/{requested_token}.json; for a \
+                 third-party tap that means a JSON file on the tap's default branch, \
+                 which most taps do not publish. mise will not proxy to the brew CLI; \
+                 install it with `brew`, or see \
+                 https://mise.jdx.dev/bootstrap/packages/brew.html#third-party-taps"
             )
         })?;
     cask.raw_base = raw_base;
