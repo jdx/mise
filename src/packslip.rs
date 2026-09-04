@@ -111,6 +111,7 @@ pub(crate) fn url_path(rel: &str) -> String {
 
 fn headers_for(url: &str) -> Result<HeaderMap> {
     if url.starts_with("https://github.com/")
+        || url.starts_with("https://api.github.com/")
         || url.starts_with("https://raw.githubusercontent.com/")
     {
         github::get_headers(url)
@@ -481,10 +482,16 @@ pub(crate) fn stub(tool: &str, shell: usage_rs::complete::Shell) -> Result<Strin
 # The vendor's script takes over this function while it completes; the stub
 # is put back afterwards, so the next completion asks mise again.
 local __mise_stub="${{functions[_{tool}]}}"
+local __mise_matches="${{compstate[nmatches]:-0}}"
 eval "$(command mise completion zsh --tool '{tool}' 2>/dev/null)"
 local __mise_fn="${{_comps[{tool}]:-_{tool}}}"
 local __mise_ret=0
-if [[ "$__mise_fn" != _{tool} || "${{functions[_{tool}]}}" != "$__mise_stub" ]]; then
+if [[ "${{compstate[nmatches]:-0}}" != "$__mise_matches" ]]; then
+  # The script completed on its own, as one that checks funcstack does
+  # when it finds itself inside _{tool}; calling it again would double
+  # every candidate.
+  :
+elif [[ "$__mise_fn" != _{tool} || "${{functions[_{tool}]}}" != "$__mise_stub" ]]; then
   "$__mise_fn" "$@"
   __mise_ret=$?
 fi
@@ -760,6 +767,10 @@ mod tests {
         }
         let zsh = stub("rg", Shell::Zsh).unwrap();
         assert!(zsh.starts_with("#compdef rg\n"), "{zsh}");
+        assert!(
+            zsh.contains("compstate[nmatches]"),
+            "a script that completes on its own is not called again: {zsh}"
+        );
         assert!(
             zsh.contains("compdef _rg 'rg'"),
             "put back after completing: {zsh}"

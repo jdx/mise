@@ -126,6 +126,15 @@ impl Completion {
     fn install_tool_stub(&self, tool: &str, shell: usage_rs::complete::Shell) -> Result<()> {
         use usage_rs::install::{self, OnForeign};
 
+        // The stub is filed under the command's name and completes that
+        // name, so it must be the executable as typed, not a tool id such
+        // as github.com/owner/repo.
+        if !crate::file::is_plain_file_name(tool) {
+            eyre::bail!(
+                "--install takes the executable's name, not a tool id; run `mise completion {} --tool {tool}` to see what the id resolves to",
+                shell.as_str()
+            );
+        }
         let stub = crate::packslip::stub(tool, shell)?;
         let on_foreign = if self.force {
             OnForeign::Overwrite
