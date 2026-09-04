@@ -112,6 +112,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "identity_prefix",
         "issuer",
         "allow_unlogged",
+        "ignore_requirements",
         "trust",
     ]
     .iter()
@@ -981,6 +982,17 @@ impl Backend for PackslipBackend {
             opts.variant().as_deref(),
         )?
         .clone();
+        let mut commands = BTreeMap::new();
+        if let Some(req) = &artifact.requires {
+            for bin in &req.bin {
+                if let Some(path) = ctx.ts.which_bin(&ctx.config, &bin.name).await {
+                    commands.insert(bin.name.clone(), path);
+                }
+            }
+        }
+        crate::packslip_requirements::check(&artifact, &commands)
+            .await
+            .enforce(raw_opts.get("ignore_requirements") == Some("true"))?;
         let Some(url) = artifact.url.clone() else {
             bail!("the packslip gives no download URL for {}", artifact.name);
         };

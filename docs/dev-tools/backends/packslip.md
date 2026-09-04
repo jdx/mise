@@ -182,3 +182,11 @@ Exec resources receive the manifest’s environment variables, with `{shell}` ex
 Once mise has accepted a supplementary signed list, a missing list is an error: a 404 cannot silently restore releases the vendor withdrew. `mise packslip forget <project>` explicitly resets that remembered policy along with the signer pin.
 
 The release API or list timestamp helps select candidates. Before downloading an artifact, mise checks the verified transparency-log timestamp against the effective `minimum_release_age` cutoff. Only a permitted unlogged bundle uses its signed publication timestamp instead.
+
+## Host requirements
+
+After selecting the artifact, mise checks its declared minimum OS/glibc and host libraries before downloading it. Confirmed failures refuse installation; `ignore_requirements = true` overrides this for one tool. Missing or old commands warn, and unknown checks warn instead of refusing. Active mise command paths take precedence over ambient PATH. Requirements never break an artifact-selection tie or select a different build.
+
+OS and glibc probes and command version probes have bounded execution and output. Linux library checks use `LD_LIBRARY_PATH`, standard directories, and `ldconfig -p`; Windows uses PATH and the system directory. macOS checks common library directories but reports unknown absence because the dyld shared cache can contain libraries with no filesystem entry.
+
+Resource generators have a five-second deadline including inherited output pipes and a 4 MiB output limit. Their child processes are cleaned up on completion, failure, timeout, and cancellation.

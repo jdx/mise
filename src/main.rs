@@ -74,6 +74,7 @@ mod netrc;
 mod oci;
 mod packslip;
 mod packslip_pins;
+mod packslip_requirements;
 mod packslip_stamps;
 pub(crate) mod parallel;
 mod path;
