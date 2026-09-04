@@ -431,14 +431,24 @@ return $__mise_ret
   eval "$(command mise completion bash --tool '{tool}' 2>/dev/null)"
   local __mise_spec __mise_fn __mise_ret=0
   __mise_spec=$(complete -p '{tool}' 2>/dev/null)
-  __mise_fn=${{__mise_spec##*-F }}
-  __mise_fn=${{__mise_fn%% *}}
-  if [[ -n $__mise_fn && $__mise_fn != {func} ]]; then
-    "$__mise_fn" "$@"
-    __mise_ret=$?
-  fi
+  case " $__mise_spec " in
+    *" -F "*)
+      __mise_fn=${{__mise_spec##*-F }}
+      __mise_fn=${{__mise_fn%% *}}
+      if [[ $__mise_fn != {func} ]]; then
+        "$__mise_fn" "$@"
+        __mise_ret=$?
+      fi
+      complete -F {func} '{tool}'
+      return $__mise_ret
+      ;;
+  esac
+  # The vendor registered something other than a function (complete -C, -W,
+  # ...). Leave it in place and have bash retry the completion with it; the
+  # stub is gone for this session, so a version switch waits for a new shell.
+  [[ -n $__mise_spec && $__mise_spec != *{func}* ]] && return 124
   complete -F {func} '{tool}'
-  return $__mise_ret
+  return 0
 }}
 complete -F {func} '{tool}'
 "#
@@ -613,6 +623,10 @@ mod tests {
         assert!(
             bash.contains("complete -F __mise_complete_cargo_nextest 'cargo-nextest'"),
             "{bash}"
+        );
+        assert!(
+            bash.contains("return 124"),
+            "non-function registrations: {bash}"
         );
         assert!(stub("rg", Shell::Nu).is_err());
     }
