@@ -26,6 +26,7 @@ const escapeXml = (value) =>
 
 const fontOptions = { fontFiles: [fontFile], loadSystemFonts: false };
 const widths = new Map();
+/** Measure visible text bounds using the same font and renderer as the card. */
 export function textWidth(text, size) {
   const key = `${size}:${text}`;
   if (!widths.has(key)) {
@@ -38,7 +39,7 @@ export function textWidth(text, size) {
   return widths.get(key);
 }
 
-// Measure with the same bundled font used to render, including long CLI names.
+/** Wrap measured text within the title column, splitting long CLI names when needed. */
 export function wrapTitle(title, size = 62, width = 720) {
   const words = String(title)
     .trim()
@@ -68,6 +69,7 @@ export function wrapTitle(title, size = 62, width = 720) {
   return lines;
 }
 
+/** Render a title card and address it by the final PNG bytes, including renderer changes. */
 export function socialCard(title) {
   let size = 62;
   let lines = wrapTitle(title, size);
@@ -100,16 +102,13 @@ export function socialCard(title) {
     </g>
     <image x="855" y="145" width="280" height="280" xlink:href="data:image/svg+xml;base64,${Buffer.from(logo).toString("base64")}"/>
   </svg>`;
-  const hash = createHash("sha256")
-    .update(svg)
-    .update(readFileSync(fontFile))
-    .digest("hex")
-    .slice(0, 16);
-  return { svg, path: `social/${hash}.png` };
+  const png = new Resvg(svg, { font: fontOptions }).render().asPng();
+  const hash = createHash("sha256").update(png).digest("hex").slice(0, 16);
+  return { svg, png, path: `social/${hash}.png` };
 }
 
+/** Write the already rendered card to the VitePress output directory. */
 export function writeSocialCard(outDir, card) {
-  const image = new Resvg(card.svg, { font: fontOptions }).render().asPng();
   mkdirSync(resolve(outDir, "social"), { recursive: true });
-  writeFileSync(resolve(outDir, card.path), image);
+  writeFileSync(resolve(outDir, card.path), card.png);
 }
