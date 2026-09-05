@@ -32,10 +32,13 @@ pass to Homebrew:
 mise first looks for published Homebrew API metadata at
 `api/formula/<name>.json` or `api/cask/<token>.json`. When a tap does not
 publish it, mise fetches the Ruby definition at a pinned tap commit and
-evaluates its metadata with mise's own Formula or Cask DSL shim. Formulae
-resolved this way are built from source. mise does not invoke or install
-Homebrew. The shims support the commonly used DSL and report an error when a
-definition cannot be evaluated or installed safely.
+evaluates its metadata with mise's own Formula or Cask DSL shim. Formula
+definitions are discovered with Homebrew's directory-wide precedence:
+`Formula/`, then `HomebrewFormula/`, then the repository root. Nested formulae
+are supported in the first two directories; root-level discovery is top-level
+only. Formulae resolved this way are built from source. mise does not invoke or
+install Homebrew. The shims support the commonly used DSL and report an error
+when a definition cannot be evaluated or installed safely.
 
 For taps whose GitHub URL cannot be inferred, add a tap source. This mirrors
 `[plugins]`: the key is the tap name and the value is the GitHub git URL.

@@ -174,8 +174,7 @@ pub(super) async fn formula_with_tap_name(
                 .wrap_err_with(|| {
                     format!(
                         "failed to resolve Homebrew tap formula '{name}'; published API metadata \
-                     was unavailable ({api_err}) and mise could not evaluate \
-                     Formula/{formula_name}.rb"
+                     was unavailable ({api_err}) and mise could not evaluate its tap definition"
                     )
                 })
         }

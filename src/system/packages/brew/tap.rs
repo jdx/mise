@@ -34,8 +34,24 @@ struct GithubRepository {
     default_branch: String,
 }
 
+#[derive(Deserialize)]
+struct GithubTree {
+    tree: Vec<GithubTreeEntry>,
+    #[serde(default)]
+    truncated: bool,
+}
+
+#[derive(Deserialize)]
+struct GithubTreeEntry {
+    path: String,
+    sha: String,
+    #[serde(rename = "type")]
+    kind: String,
+}
+
 struct TapSource {
     raw_base: String,
+    api_base: String,
     commit: String,
 }
 
@@ -48,7 +64,7 @@ pub(super) async fn formula_from_ruby(
 ) -> Result<Formula> {
     validate_name(name)?;
     let tap_source = resolve_tap_source(owner, tap, tap_url).await?;
-    let (source, source_path) = fetch_ruby_source(&tap_source.raw_base, "Formula", name).await?;
+    let (source, source_path) = fetch_formula_source(&tap_source, name).await?;
     let checksum = crate::hash::hash_sha256_to_str(&source);
     let ruby = ruby_for_metadata(name, provision_ruby).await?;
     let mut runner = CmdLineRunner::new(&ruby)
@@ -59,7 +75,7 @@ pub(super) async fn formula_from_ruby(
         .envs([
             ("MISE_BREW_NAME", name.to_string()),
             ("MISE_BREW_TAP", format!("{owner}/{tap}")),
-            ("MISE_BREW_SOURCE_PATH", source_path),
+            ("MISE_BREW_SOURCE_PATH", source_path.clone()),
             ("MISE_BREW_SOURCE_CHECKSUM", checksum),
             ("MISE_BREW_TAP_COMMIT", tap_source.commit),
             ("MISE_BREW_MACOS_VERSION", macos_version()),
@@ -72,10 +88,10 @@ pub(super) async fn formula_from_ruby(
     let output = runner
         .read_bounded(METADATA_MAX_OUTPUT_BYTES)
         .await
-        .wrap_err_with(|| format!("failed to evaluate Formula/{name}.rb"))?;
+        .wrap_err_with(|| format!("failed to evaluate {source_path}"))?;
 
     let formula: Formula = serde_json::from_str(&output)
-        .wrap_err_with(|| format!("invalid metadata extracted from Formula/{name}.rb"))?;
+        .wrap_err_with(|| format!("invalid metadata extracted from {source_path}"))?;
     if formula.name != name {
         bail!(
             "tap formula name mismatch: requested '{name}', extracted '{}'",
@@ -158,19 +174,21 @@ async fn resolve_tap_source(owner: &str, tap: &str, tap_url: Option<&str>) -> Re
     let raw_base = api::tap_raw_base(owner, tap, tap_url)
         .ok_or_else(|| eyre::eyre!("only GitHub tap URLs can be fetched directly"))?;
     let (repo_owner, repo) = github_repository(owner, tap, tap_url)?;
+    let api_base = format!("https://api.github.com/repos/{repo_owner}/{repo}");
     let repository: GithubRepository = HTTP_FETCH
-        .json_cached(format!("https://api.github.com/repos/{repo_owner}/{repo}"))
+        .json_cached(api_base.clone())
         .await
         .wrap_err("failed to resolve tap repository")?;
     let commit: GithubCommit = HTTP_FETCH
         .json_cached(format!(
-            "https://api.github.com/repos/{repo_owner}/{repo}/commits/{}",
+            "{api_base}/commits/{}",
             urlencoding::encode(&repository.default_branch)
         ))
         .await
         .wrap_err("failed to resolve tap default branch")?;
     Ok(TapSource {
         raw_base: raw_base.trim_end_matches("/HEAD").to_string() + "/" + &commit.sha,
+        api_base,
         commit: commit.sha,
     })
 }
@@ -229,6 +247,78 @@ fn github_repository<'a>(
         }
         _ => bail!("invalid GitHub tap URL '{url}'"),
     }
+}
+
+async fn fetch_formula_source(tap_source: &TapSource, name: &str) -> Result<(String, String)> {
+    let root_tree: GithubTree = HTTP_FETCH
+        .json_cached(format!(
+            "{}/git/trees/{}",
+            tap_source.api_base, tap_source.commit
+        ))
+        .await
+        .wrap_err("failed to inspect tap formula directories")?;
+    if root_tree.truncated {
+        bail!("tap repository tree was truncated");
+    }
+
+    let (directory, formula_tree) =
+        if let Some((directory, sha)) = active_formula_directory(&root_tree) {
+            let tree: GithubTree = HTTP_FETCH
+                .json_cached(format!(
+                    "{}/git/trees/{sha}?recursive=1",
+                    tap_source.api_base
+                ))
+                .await
+                .wrap_err_with(|| format!("failed to inspect tap {directory} directory"))?;
+            if tree.truncated {
+                bail!("tap {directory} directory tree was truncated");
+            }
+            (directory, tree)
+        } else {
+            ("", root_tree)
+        };
+
+    let source_path = formula_source_path(directory, &formula_tree, name).ok_or_else(|| {
+        let location = if directory.is_empty() {
+            "repository root"
+        } else {
+            directory
+        };
+        eyre::eyre!("tap has no formula named '{name}' in {location}")
+    })?;
+    let source = HTTP_FETCH
+        .get_text(format!("{}/{source_path}", tap_source.raw_base))
+        .await
+        .wrap_err_with(|| format!("failed to fetch tap formula {source_path}"))?;
+    Ok((source, source_path))
+}
+
+fn active_formula_directory(tree: &GithubTree) -> Option<(&'static str, String)> {
+    ["Formula", "HomebrewFormula"]
+        .into_iter()
+        .find_map(|directory| {
+            tree.tree
+                .iter()
+                .find(|entry| entry.kind == "tree" && entry.path == directory)
+                .map(|entry| (directory, entry.sha.clone()))
+        })
+}
+
+fn formula_source_path(directory: &str, tree: &GithubTree, name: &str) -> Option<String> {
+    let filename = format!("{name}.rb");
+    tree.tree
+        .iter()
+        .filter(|entry| entry.kind == "blob")
+        .filter(|entry| !directory.is_empty() || !entry.path.contains('/'))
+        .filter(|entry| entry.path.rsplit('/').next() == Some(filename.as_str()))
+        .max_by_key(|entry| entry.path.len())
+        .map(|entry| {
+            if directory.is_empty() {
+                entry.path.clone()
+            } else {
+                format!("{directory}/{}", entry.path)
+            }
+        })
 }
 
 async fn fetch_ruby_source(
@@ -296,6 +386,87 @@ mod tests {
             ("example", "custom".to_string())
         );
         Ok(())
+    }
+
+    fn github_tree(entries: &[(&str, &str)]) -> GithubTree {
+        GithubTree {
+            tree: entries
+                .iter()
+                .map(|(path, kind)| GithubTreeEntry {
+                    path: (*path).to_string(),
+                    sha: format!("{path}-sha"),
+                    kind: (*kind).to_string(),
+                })
+                .collect(),
+            truncated: false,
+        }
+    }
+
+    #[test]
+    fn discovers_supported_formula_layouts() {
+        for (directory, path, expected) in [
+            ("Formula", "foo.rb", "Formula/foo.rb"),
+            ("Formula", "f/foo.rb", "Formula/f/foo.rb"),
+            ("HomebrewFormula", "foo.rb", "HomebrewFormula/foo.rb"),
+            (
+                "HomebrewFormula",
+                "nested/foo.rb",
+                "HomebrewFormula/nested/foo.rb",
+            ),
+            ("", "foo.rb", "foo.rb"),
+        ] {
+            let tree = github_tree(&[(path, "blob")]);
+            assert_eq!(
+                formula_source_path(directory, &tree, "foo").as_deref(),
+                Some(expected)
+            );
+        }
+
+        let root = github_tree(&[("nested/foo.rb", "blob")]);
+        assert_eq!(formula_source_path("", &root, "foo"), None);
+    }
+
+    #[test]
+    fn selects_formula_directory_in_homebrew_order() {
+        let root = github_tree(&[
+            ("HomebrewFormula", "tree"),
+            ("Formula", "tree"),
+            ("foo.rb", "blob"),
+        ]);
+        assert_eq!(
+            active_formula_directory(&root),
+            Some(("Formula", "Formula-sha".to_string()))
+        );
+
+        let root = github_tree(&[("HomebrewFormula", "tree"), ("foo.rb", "blob")]);
+        assert_eq!(
+            active_formula_directory(&root),
+            Some(("HomebrewFormula", "HomebrewFormula-sha".to_string()))
+        );
+
+        let root = github_tree(&[("foo.rb", "blob")]);
+        assert_eq!(active_formula_directory(&root), None);
+    }
+
+    #[test]
+    fn does_not_fall_through_from_selected_formula_directory() {
+        let root = github_tree(&[("Formula", "tree"), ("foo.rb", "blob")]);
+        assert_eq!(
+            active_formula_directory(&root),
+            Some(("Formula", "Formula-sha".to_string()))
+        );
+
+        let formula_tree = github_tree(&[("bar.rb", "blob")]);
+        assert_eq!(formula_source_path("Formula", &formula_tree, "foo"), None);
+    }
+
+    #[test]
+    fn prefers_more_specific_nested_formula_path() {
+        let tree = github_tree(&[("foo.rb", "blob"), ("nested/foo.rb", "blob")]);
+        assert_eq!(
+            formula_source_path("Formula", &tree, "foo").as_deref(),
+            Some("Formula/nested/foo.rb")
+        );
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
