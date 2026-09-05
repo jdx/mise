@@ -599,37 +599,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
         run: gh release upload "$GITHUB_REF_NAME" mise.usage.kdl --clobber
-      # Two things the file names cannot say. A bare executable named for a
-      # dotted version has no extension to read a format from. And the man
-      # page is inside the Unix archives only -- the Windows zip carries none,
-      # and a bare executable is not an archive to look inside -- so each
-      # entry names the artifact it is really in.
-      - name: Describe what the file names cannot
-        run: |
-          {
-            for f in "release-assets/mise-$GITHUB_REF_NAME"-*; do
-              case "${f##*/}" in
-                *.tar.gz | *.tar.xz | *.tar.zst | *.zip | *.exe) continue ;;
-              esac
-              printf '[[artifact]]\npath = "%s"\nformat = "raw"\n\n' "$f"
-            done
-            for f in "release-assets/mise-$GITHUB_REF_NAME"-*.tar.*; do
-              name="${f##*/}"
-              case "$name" in *windows*) continue ;; esac
-              printf '[[resource]]\nkind = "man"\nartifact = "%s"\narchive = "mise/man/man1/mise.1"\n\n' "$name"
-            done
-          } > packslip.toml
-          cat packslip.toml
       # `out: .` keeps the bundle beside mise.usage.kdl. The action defaults to
       # writing it under packslip/, and an artifact holding files at two
       # depths keeps the directory, which the flat `sha256sum ./*` below
       # would then choke on.
-      - uses: jdx/packslip@433c0c0f033e64c22f12433471768c255ef2bd93 # v0.3.0
+      - uses: jdx/packslip@0121abf6972fe6ca13633233402439a715f4cc0e # v1.0.0
         with:
           artifacts: release-assets/mise-*
-          manifest: packslip.toml
           bin: mise
-          resources: cli-spec/usage=asset:mise.usage.kdl
+          # A bare executable named for a dotted version (mise-v2026.9.1-linux-x64)
+          # now infers format = "raw" on its own, and the platform scope below picks
+          # the man page out of the Unix archives only -- the Windows zip carries
+          # none -- so neither needs a manifest to say what the file name can't.
+          resources: |
+            man@linux=archive:mise/man/man1/mise.1
+            man@darwin=archive:mise/man/man1/mise.1
+            cli-spec/usage=asset:mise.usage.kdl
           attest: "false"
           out: "."
           token: ${{ secrets.MISE_GH_TOKEN }}
