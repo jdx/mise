@@ -43,7 +43,7 @@ assert_contains "mise bootstrap plan" "user-service:later"
 assert "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"agent\") | .restart'" "always"
 assert "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"later\") | .requires_tools'" "true"
 assert "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .builtin'" "history-watch"
-assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .command'" "history watch"
+assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .command'" "bootstrap dotfiles watch"
 if [[ "$(uname -s)" == "Linux" ]]; then
   assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"agent\") | .definition'" "Restart=always"
   assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"agent\") | .definition'" 'Environment="RUST_LOG=info"'

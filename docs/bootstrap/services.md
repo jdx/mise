@@ -37,7 +37,7 @@ One declaration is rendered for the platform's user service manager:
 - `command`: the command line to run. `~` and `~/` are expanded. Required
   unless `builtin` is set.
 - `builtin`: a definition mise supplies. `"history-watch"` runs
-  `mise history watch` through a durable mise executable with
+  `mise bootstrap dotfiles watch` through a durable mise executable with
   `restart = "on-failure"` and a low priority. A builtin implies
   `scope = "user"`; `command` cannot be combined with it.
 - `description`: shown by the service manager.

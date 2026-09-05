@@ -34,8 +34,8 @@ const BUILTIN_NAMES: &[&str] = &["history-watch"];
 fn builtin(name: &str) -> Option<Builtin> {
     match name {
         "history-watch" => Some(Builtin {
-            args: &["history", "watch"],
-            description: "mise history: save tracked files as they change",
+            args: &["bootstrap", "dotfiles", "watch"],
+            description: "mise dotfiles history: save tracked files as they change",
             restart: ServiceRestart::OnFailure,
             nice: Some(10),
         }),
@@ -707,7 +707,7 @@ mod tests {
         });
         assert_eq!(
             request.command.as_deref(),
-            Some("/usr/bin/mise history watch")
+            Some("/usr/bin/mise bootstrap dotfiles watch")
         );
         assert_eq!(request.restart, ServiceRestart::OnFailure);
         assert_eq!(request.nice, Some(10));
