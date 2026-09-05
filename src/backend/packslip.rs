@@ -825,10 +825,23 @@ impl Backend for PackslipBackend {
                     stamp.host,
                     stamp.entry.packslip
                 );
+                // A stamp says a host reviewed this manifest, and the digest is
+                // the whole of what ties the claim to a file. Without one the
+                // stamp admits a URL, and any later manifest the vendor signs
+                // for this version can stand at it in place of the reviewed
+                // one — so refuse rather than call that a review.
+                let Some(digest) = stamp.digest.clone() else {
+                    bail!(
+                        "the stamp for packslip:{project}@{} from {} records no sha256 for {}, so nothing says the manifest is the one that host reviewed",
+                        tv.version,
+                        stamp.host,
+                        stamp.entry.packslip
+                    );
+                };
                 Located {
                     headers: headers_for(&stamp.entry.packslip)?,
                     url: stamp.entry.packslip.clone(),
-                    digest: stamp.digest.clone(),
+                    digest: Some(digest),
                 }
             }
             None => self.locate_bundle(&project, &tv, &pin, &opts).await?,
