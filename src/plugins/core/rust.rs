@@ -28,6 +28,7 @@ pub(super) struct RustPlugin {
 
 const RUST_NIGHTLY_MANIFEST_URL: &str =
     "https://static.rust-lang.org/dist/channel-rust-nightly.toml";
+const RUST_MINIMAL_PROFILE_COMPONENTS: &[&str] = &["cargo", "rust-std", "rustc"];
 const RUST_DEFAULT_PROFILE_COMPONENTS: &[&str] = &["clippy", "rust-docs", "rustfmt"];
 
 fn parse_nightly_manifest(manifest: &str) -> Result<String> {
@@ -286,14 +287,53 @@ impl RustPlugin {
         Ok(profile)
     }
 
+    fn rustup_active_toolchain(
+        &self,
+        tv: &ToolVersion,
+        runtime: &RustRuntime,
+    ) -> Result<Option<String>> {
+        let args = vec!["show".to_string(), "active-toolchain".to_string()];
+        let mut cmd = cmd(runtime.bin_dir.join(RUSTUP_BIN), args)
+            .env("PATH", rustup_path_env(runtime)?)
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked();
+        for (key, value) in rustup_env(&runtime.homes, &tv.version) {
+            cmd = cmd.env(key, value);
+        }
+        let output = match cmd.run() {
+            Ok(output) if output.status.success() => output,
+            Ok(output) => {
+                debug!(
+                    "rustup show active-toolchain failed for {}: {}",
+                    tv.style(),
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
+                return Ok(None);
+            }
+            Err(err) => {
+                debug!(
+                    "rustup show active-toolchain failed for {}: {err:#}",
+                    tv.style()
+                );
+                return Ok(None);
+            }
+        };
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .split_whitespace()
+            .next()
+            .map(String::from))
+    }
+
     fn missing_components(
         &self,
         requested: &[String],
         installed: &BTreeSet<String>,
+        host: Option<&str>,
     ) -> Vec<String> {
         requested
             .iter()
-            .filter(|component| !rustup_component_installed(installed, component))
+            .filter(|component| !rustup_component_installed(installed, component, host))
             .cloned()
             .collect()
     }
@@ -358,18 +398,15 @@ impl Backend for RustPlugin {
         };
 
         let mut required_components = components.unwrap_or_default();
-        if effective_profile == "default" {
-            required_components.extend(
-                RUST_DEFAULT_PROFILE_COMPONENTS
-                    .iter()
-                    .map(|component| (*component).to_string()),
-            );
-        }
+        required_components.extend(fallback_rustup_profile_components(effective_profile));
         required_components.sort();
         required_components.dedup();
 
         if !required_components.is_empty() {
-            let missing = self.missing_components(&required_components, &installed_components);
+            let active_toolchain = self.rustup_active_toolchain(tv, &runtime)?;
+            let host = active_toolchain.as_deref().and_then(rustup_toolchain_host);
+            let missing =
+                self.missing_components(&required_components, &installed_components, host);
             if !missing.is_empty() {
                 debug!(
                     "{} missing rustup component(s): {}",
@@ -526,15 +563,9 @@ impl Backend for RustPlugin {
         };
         let effective_profile = normalize_rustup_profile(&effective_profile)?;
         let mut components = components.unwrap_or_default();
-        if effective_profile == "default" {
-            components.extend(
-                RUST_DEFAULT_PROFILE_COMPONENTS
-                    .iter()
-                    .map(|component| (*component).to_string()),
-            );
-            components.sort();
-            components.dedup();
-        }
+        components.extend(fallback_rustup_profile_components(effective_profile));
+        components.sort();
+        components.dedup();
 
         let mut cmd = CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
             .with_pr(ctx.pr.as_ref())
@@ -1101,13 +1132,47 @@ fn normalize_rustup_profile(profile: &str) -> Result<&'static str> {
     }
 }
 
-fn rustup_component_installed(installed: &BTreeSet<String>, component: &str) -> bool {
+fn fallback_rustup_profile_components(profile: &str) -> Vec<String> {
+    let mut components = match profile {
+        "minimal" | "default" => RUST_MINIMAL_PROFILE_COMPONENTS
+            .iter()
+            .map(|component| (*component).to_string())
+            .collect::<Vec<_>>(),
+        "complete" => Vec::new(),
+        _ => unreachable!("profile was normalized"),
+    };
+    if profile == "default" {
+        components.extend(
+            RUST_DEFAULT_PROFILE_COMPONENTS
+                .iter()
+                .map(|component| (*component).to_string()),
+        );
+    }
+    components
+}
+
+fn rustup_toolchain_host(toolchain: &str) -> Option<&str> {
+    if rustup_component_suffix_is_host_triple(toolchain) {
+        return Some(toolchain);
+    }
+    toolchain.match_indices('-').find_map(|(index, _)| {
+        let suffix = &toolchain[index + 1..];
+        rustup_component_suffix_is_host_triple(suffix).then_some(suffix)
+    })
+}
+
+fn rustup_component_installed(
+    installed: &BTreeSet<String>,
+    component: &str,
+    host: Option<&str>,
+) -> bool {
     installed.iter().any(|item| {
         item == component
-            || item
-                .strip_prefix(component)
-                .and_then(|suffix| suffix.strip_prefix('-'))
-                .is_some_and(rustup_component_suffix_is_host_triple)
+            || host.is_some_and(|host| {
+                item.strip_prefix(component)
+                    .and_then(|suffix| suffix.strip_prefix('-'))
+                    == Some(host)
+            })
     })
 }
 
@@ -1289,17 +1354,41 @@ mod tests {
     }
 
     #[test]
-    fn rustup_component_matching_allows_host_suffixes() {
-        let installed = BTreeSet::from([
+    fn rustup_component_matching_requires_the_selected_host() {
+        let mut installed = BTreeSet::from([
             "rust-src".to_string(),
             "llvm-tools-x86_64-unknown-linux-gnu".to_string(),
+            "rust-std-wasm32-unknown-unknown".to_string(),
         ]);
+        let host = rustup_toolchain_host("1.81.0-x86_64-unknown-linux-gnu");
 
-        assert!(rustup_component_installed(&installed, "rust-src"));
-        assert!(rustup_component_installed(&installed, "llvm-tools"));
-        assert!(!rustup_component_installed(&installed, "rustfmt"));
-        assert!(!rustup_component_installed(&installed, "rust"));
-        assert!(!rustup_component_installed(&installed, "llvm"));
+        assert_eq!(host, Some("x86_64-unknown-linux-gnu"));
+        assert!(rustup_component_installed(&installed, "rust-src", host));
+        assert!(rustup_component_installed(&installed, "llvm-tools", host));
+        assert!(!rustup_component_installed(&installed, "rust-std", host));
+        assert!(!rustup_component_installed(&installed, "rustfmt", host));
+        installed.insert("rust-std-x86_64-unknown-linux-gnu".to_string());
+        assert!(rustup_component_installed(&installed, "rust-std", host));
+    }
+
+    #[test]
+    fn required_profile_components_match_rustup() {
+        assert_eq!(
+            fallback_rustup_profile_components("minimal"),
+            ["cargo", "rust-std", "rustc"]
+        );
+        assert_eq!(
+            fallback_rustup_profile_components("default"),
+            [
+                "cargo",
+                "rust-std",
+                "rustc",
+                "clippy",
+                "rust-docs",
+                "rustfmt"
+            ]
+        );
+        assert!(fallback_rustup_profile_components("complete").is_empty());
     }
 
     #[test]

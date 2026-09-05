@@ -140,6 +140,9 @@ If not set, it defaults to the profile configured in `rustup`. You can check you
 "rust" = { version = "1.83.0", profile = "minimal" }
 ```
 
+If the Rust toolchain is already installed, `mise install` restores missing components implied by
+the `minimal` or `default` profile.
+
 ### `targets`
 
 The `targets` option specifies platforms to install for cross-compilation. Multiple targets can
