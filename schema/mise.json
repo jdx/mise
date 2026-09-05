@@ -2331,6 +2331,83 @@
         }
       ]
     },
+    "vars_tools": {
+      "const": false,
+      "description": "`tools = true` is not supported in `[vars]`: vars are always resolved before tools, so the entry would be dropped instead of resolved. Use `[env]` for values that need tools."
+    },
+    "vars_directive": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/env_directive"
+        }
+      ],
+      "properties": {
+        "tools": {
+          "$ref": "#/$defs/vars_tools"
+        }
+      }
+    },
+    "vars_directive_no_expand": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/vars_directive"
+        }
+      ],
+      "properties": {
+        "expand": {
+          "const": false,
+          "description": "`expand` is only read for `_.file`; it does nothing on `_.path` or `_.source`"
+        }
+      }
+    },
+    "vars_file_directive": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/vars_directive"
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/vars_directive"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "vars_path_directive": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/vars_directive_no_expand"
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/vars_directive_no_expand"
+              }
+            ]
+          }
+        }
+      ]
+    },
     "vars": {
       "description": "variables to set",
       "type": "object",
@@ -2340,73 +2417,42 @@
           "additionalProperties": true,
           "properties": {
             "file": {
-              "oneOf": [
-                {
-                  "description": "environment file to load (dotenv, json, yaml, or toml)",
-                  "type": "string"
-                },
-                {
-                  "description": "environment files to load (dotenv, json, yaml, or toml)",
-                  "items": {
-                    "description": "environment file to load (dotenv, json, yaml, or toml)",
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ]
+              "$ref": "#/$defs/vars_file_directive"
+            },
+            "path": {
+              "$ref": "#/$defs/vars_path_directive"
             },
             "source": {
-              "oneOf": [
-                {
-                  "description": "bash script to load",
-                  "type": "string"
-                },
-                {
-                  "description": "bash scripts to load",
-                  "items": {
-                    "description": "bash script to load",
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ]
+              "$ref": "#/$defs/vars_path_directive"
             }
           },
           "type": "object"
+        },
+        "mise": {
+          "allOf": [false],
+          "description": "`vars.mise` is not supported; use `vars._` instead"
         }
       },
       "additionalProperties": {
         "oneOf": [
           {
-            "description": "value of variable",
-            "type": "string"
-          },
-          {
-            "description": "value of variable",
-            "type": "integer"
-          },
-          {
-            "description": "value of variable",
-            "const": true
+            "$ref": "#/$defs/env_value"
           },
           {
             "type": "object",
             "properties": {
               "value": {
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "const": true
-                  }
-                ]
+                "$ref": "#/$defs/env_value"
               },
               "redact": {
                 "$ref": "#/$defs/env_redact"
+              },
+              "tools": {
+                "$ref": "#/$defs/vars_tools"
+              },
+              "required": {
+                "const": false,
+                "description": "cannot be required when a value is provided; only `required = false` is accepted"
               }
             },
             "required": ["value"],
@@ -2420,6 +2466,9 @@
               },
               "redact": {
                 "$ref": "#/$defs/env_redact"
+              },
+              "tools": {
+                "$ref": "#/$defs/vars_tools"
               }
             },
             "required": ["default"],
@@ -2430,6 +2479,9 @@
             "properties": {
               "redact": {
                 "$ref": "#/$defs/env_redact"
+              },
+              "tools": {
+                "$ref": "#/$defs/vars_tools"
               },
               "required": {
                 "oneOf": [
@@ -2453,6 +2505,12 @@
               },
               "redact": {
                 "$ref": "#/$defs/env_redact"
+              },
+              "tools": {
+                "$ref": "#/$defs/vars_tools"
+              },
+              "required": {
+                "$ref": "#/$defs/env_required"
               }
             },
             "required": ["age"],
@@ -2473,6 +2531,12 @@
                   },
                   "redact": {
                     "$ref": "#/$defs/env_redact"
+                  },
+                  "tools": {
+                    "$ref": "#/$defs/vars_tools"
+                  },
+                  "required": {
+                    "$ref": "#/$defs/env_required"
                   }
                 },
                 "required": ["value"],
