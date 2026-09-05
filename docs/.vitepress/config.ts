@@ -21,6 +21,24 @@ if (!versionMatch) {
   console.warn("Unable to find package version in Cargo.toml");
 }
 const latestVersion = versionMatch?.[1] ?? "0.0.0";
+const siteUrl = "https://mise.jdx.dev";
+// Keep in sync with --vp-c-brand-1 in theme/custom.css and theme_color in
+// public/site.webmanifest so browser chrome matches the installed-app chrome.
+const brandColor = "#8B2252";
+const siteDescription =
+  "mise manages developer tools, environment variables, tasks, packages, and dotfiles in one project configuration for macOS, Linux, and Windows.";
+
+// `foo/index.md` publishes as `foo/`, everything else as `foo/bar.html`. Anchor
+// the index match on the leading slash so `guide/myindex.md` keeps its name.
+const pageUrl = (relativePath: string) =>
+  `${siteUrl}/${relativePath}`
+    .replace(/\/index\.md$/, "/")
+    .replace(/\.md$/, ".html");
+
+// VitePress writes an `application/ld+json` body through as raw HTML, so a page
+// whose title or description contains `</script>` would otherwise break out of
+// the tag. JSON allows `\u003c` anywhere `<` is legal.
+const ldJson = (data: unknown) => JSON.stringify(data).replace(/</g, "\\u003c");
 const publicSchemas = [
   "mise.json",
   "mise.plugin.json",
@@ -77,7 +95,7 @@ function assertNoEmptyDocPages(outDir: string) {
 export default withMermaid(
   defineConfig({
     title: "mise-en-place",
-    description: "mise-en-place documentation",
+    description: siteDescription,
     lang: "en-US",
     lastUpdated: true,
     appearance: true,
@@ -203,6 +221,8 @@ export default withMermaid(
         },
       ],
       ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
+      ["link", { rel: "manifest", href: "/site.webmanifest" }],
+      ["meta", { name: "theme-color", content: brandColor }],
       // Pre-paint setup to avoid first-load pop-in (see custom.css "preboot"
       // rules; Layout.vue removes the preboot classes right after hydration):
       // - `preboot` disables navbar transitions so hydration state
@@ -310,22 +330,65 @@ export default withMermaid(
       // Open Graph
       ["meta", { property: "og:site_name", content: "mise-en-place" }],
       ["meta", { property: "og:type", content: "website" }],
+      ["meta", { property: "og:locale", content: "en_US" }],
       [
         "meta",
         { property: "og:image", content: "https://mise.jdx.dev/og.png" },
       ],
       ["meta", { property: "og:image:width", content: "1200" }],
       ["meta", { property: "og:image:height", content: "630" }],
+      [
+        "meta",
+        {
+          property: "og:image:alt",
+          content:
+            "mise — developer tools, environment variables, and tasks in one configuration",
+        },
+      ],
       ["meta", { name: "twitter:card", content: "summary_large_image" }],
+      ["meta", { name: "twitter:site", content: "@jdxcode" }],
       [
         "meta",
         { name: "twitter:image", content: "https://mise.jdx.dev/og.png" },
       ],
+      [
+        "meta",
+        {
+          name: "twitter:image:alt",
+          content:
+            "mise — developer tools, environment variables, and tasks in one configuration",
+        },
+      ],
     ],
+    transformHead({ pageData, title, description }) {
+      const url = pageUrl(pageData.relativePath);
+
+      return [
+        ["meta", { property: "og:url", content: url }],
+        ["meta", { property: "og:title", content: title }],
+        ["meta", { property: "og:description", content: description }],
+        ["meta", { name: "twitter:title", content: title }],
+        ["meta", { name: "twitter:description", content: description }],
+        [
+          "script",
+          { type: "application/ld+json" },
+          ldJson({
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            name: title,
+            description,
+            url,
+            isPartOf: {
+              "@type": "WebSite",
+              name: "mise-en-place",
+              url: siteUrl,
+            },
+          }),
+        ],
+      ];
+    },
     transformPageData(pageData) {
-      const canonicalUrl = `https://mise.jdx.dev/${pageData.relativePath}`
-        .replace(/index\.md$/, "")
-        .replace(/\.md$/, ".html");
+      const canonicalUrl = pageUrl(pageData.relativePath);
 
       pageData.frontmatter.head ??= [];
       pageData.frontmatter.head.push([

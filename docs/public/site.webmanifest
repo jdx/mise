@@ -1,7 +1,7 @@
 {
   "name": "mise-en-place",
   "short_name": "mise",
-  "description": "Dev tools, env vars, and tasks in one CLI",
+  "description": "mise manages developer tools, environment variables, tasks, packages, and dotfiles in one project configuration for macOS, Linux, and Windows.",
   "icons": [
     {
       "src": "/logo.svg",
