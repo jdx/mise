@@ -1,0 +1,11 @@
+address feedback and failing pr checks until it settles
+
+---
+
+could we have another flag and setting to view the http requests the relay is sending?
+
+do you have ideas for other settings or flags?
+
+---
+
+ok add these
