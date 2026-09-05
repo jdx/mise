@@ -579,15 +579,18 @@ jobs:
           path: release-assets
       # From this a consumer generates completions, a man page, and
       # documentation with its own copy of usage, so nothing of mise's has to
-      # run on the machine it is being installed on.
-      - name: Publish the CLI specification
-        env:
-          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+      # run on the machine it is being installed on. Generating it and
+      # uploading it are separate steps so that the release token is not in
+      # the environment of the binary that was just built.
+      - name: Generate the CLI specification
         run: |
           mkdir -p bin
           tar -xzf "release-assets/mise-$GITHUB_REF_NAME-linux-x64.tar.gz" -C bin
           bin/mise/bin/mise usage > mise.usage.kdl
-          gh release upload "$GITHUB_REF_NAME" mise.usage.kdl --clobber
+      - name: Publish the CLI specification
+        env:
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" mise.usage.kdl --clobber
       # Two things the file names cannot say. A bare executable named for a
       # dotted version has no extension to read a format from. And the man
       # page is inside the Unix archives only -- the Windows zip carries none,
@@ -609,6 +612,10 @@ jobs:
             done
           } > packslip.toml
           cat packslip.toml
+      # `out: .` keeps the bundle beside mise.usage.kdl. The action defaults to
+      # writing it under packslip/, and an artifact holding files at two
+      # depths keeps the directory, which the flat `sha256sum ./*` below
+      # would then choke on.
       - uses: jdx/packslip@433c0c0f033e64c22f12433471768c255ef2bd93 # v0.3.0
         with:
           artifacts: release-assets/mise-*
@@ -616,6 +623,7 @@ jobs:
           bin: mise
           resources: cli-spec/usage=asset:mise.usage.kdl
           attest: "false"
+          out: "."
           token: ${{ secrets.MISE_GH_TOKEN }}
       # publish-release compares the draft's assets against what this workflow
       # built, so the two files added here have to reach it or the diff fails.
@@ -625,7 +633,7 @@ jobs:
           name: release-extras
           path: |
             mise.usage.kdl
-            packslip/packslip.sigstore.json
+            packslip.sigstore.json
           if-no-files-found: error
           retention-days: 1
 
