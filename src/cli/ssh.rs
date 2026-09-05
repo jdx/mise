@@ -103,11 +103,15 @@ impl Ssh {
             }
             #[cfg(unix)]
             {
+                crate::ui::ctrlc::exit_on_ctrl_c(false);
                 let mut command = self.command;
                 if let Some(first) = self.destination {
                     command.insert(0, first);
                 }
-                return crate::github_relay::unix::session(&socket, command).await;
+                return crate::system::remote::interruptible(crate::github_relay::unix::session(
+                    &socket, command,
+                ))
+                .await;
             }
             #[cfg(not(unix))]
             bail!("GitHub relay requires a POSIX target: {}", socket.display());
@@ -149,10 +153,18 @@ impl Ssh {
         if !self.command.is_empty() {
             command.arg(shell_words::join(&self.command));
         }
-        #[cfg(unix)]
-        let status = crate::github_relay::unix::wait_command(&mut command, None).await?;
-        #[cfg(not(unix))]
-        let status = command.status().await?;
+        crate::ui::ctrlc::exit_on_ctrl_c(false);
+        let status = crate::system::remote::interruptible(async {
+            #[cfg(unix)]
+            {
+                crate::github_relay::unix::wait_command(&mut command, None).await
+            }
+            #[cfg(not(unix))]
+            {
+                Ok(command.status().await?)
+            }
+        })
+        .await?;
         Err(crate::request_exit(status.code().unwrap_or(255)))
     }
 }

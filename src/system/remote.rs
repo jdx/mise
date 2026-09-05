@@ -547,7 +547,7 @@ async fn run_staged(
         .status_async(&["mkdir", "-p", &project], false)
         .await?;
     if repository.is_none() {
-        upload_source(session, tar, &project)?;
+        upload_source(session, tar, &project).await?;
     }
     let mise = provision_mise(session, staging, &project, options.dry_run, artifacts).await?;
     #[cfg(unix)]
@@ -730,7 +730,7 @@ pub(crate) async fn ssh(
     result
 }
 
-fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<()> {
+async fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<()> {
     let temporary = tempfile::tempdir()?;
     let archive = temporary.path().join("source.tar.gz");
     let archive_source = if session.host.copy_links || session.host.copy_link.is_empty() {
@@ -744,7 +744,8 @@ fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<
         }
         source
     };
-    let mut command = Command::new(tar);
+    let mut command = tokio::process::Command::new(tar);
+    command.kill_on_drop(true);
     command.args(["-czf"]);
     command.arg(&archive);
     if session.host.copy_links {
@@ -753,11 +754,18 @@ fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<
     for exclude in &session.host.exclude {
         command.arg(format!("--exclude={exclude}"));
     }
-    let status = command.args(["-C"]).arg(archive_source).arg(".").status()?;
+    let status = command
+        .args(["-C"])
+        .arg(archive_source)
+        .arg(".")
+        .status()
+        .await?;
     if !status.success() {
         bail!("failed to archive remote source with {status}");
     }
-    session.status_with_stdin(&["tar", "-xzf", "-", "-C", project], File::open(archive)?)
+    session
+        .status_with_stdin_async(&["tar", "-xzf", "-", "-C", project], File::open(archive)?)
+        .await
 }
 
 fn validate_copy_link(source: &Path, link: &Path) -> Result<()> {
@@ -875,47 +883,50 @@ async fn provision_mise(
 ) -> Result<String> {
     if let Some(remote_mise) = &session.host.remote_mise {
         let remote_mise = resolve_configured_remote_mise(session, remote_mise, project)
+            .await
             .wrap_err_with(|| {
                 format!(
                     "remote host '{}' has an invalid remote_mise value",
                     session.host.name
                 )
             })?;
-        session.status(&[&remote_mise, "version"], false)?;
+        session
+            .status_async(&[&remote_mise, "version"], false)
+            .await?;
         return Ok(remote_mise);
     }
     if let Some(command) = &session.host.bootstrap_command {
         if dry_run {
-            let mise = resolve_remote_mise(session).wrap_err_with(|| {
+            let mise = resolve_remote_mise(session).await.wrap_err_with(|| {
                 format!(
                     "remote host '{}' has no existing mise executable; --dry-run does not execute bootstrap_command, so install mise first or set remote_mise or mise_bin",
                     session.host.name
                 )
             })?;
-            session.status(&[&mise, "version"], false)?;
+            session.status_async(&[&mise, "version"], false).await?;
             return Ok(mise);
         }
-        let before = discover_remote_mise_candidates(session)?;
-        let before_identities = remote_mise_candidate_identities(session, &before);
+        let before = discover_remote_mise_candidates(session).await?;
+        let before_identities = remote_mise_candidate_identities(session, &before).await;
         let candidates_file = format!("{staging}/mise-candidates");
         let lookup = remote_mise_candidate_union_script();
         let script = format!(
             "set -e\n{command}\n{lookup} > {}",
             shell_quote(&candidates_file),
         );
-        session.status(&["sh", "-lc", &script], true)?;
-        let candidates = session.output(&["cat", &candidates_file])?;
+        session.status_async(&["sh", "-lc", &script], true).await?;
+        let candidates = session.output_async(&["cat", &candidates_file]).await?;
         let candidates = parse_remote_mise_candidates(&candidates)?;
-        let after_identities = remote_mise_candidate_identities(session, &candidates);
+        let after_identities = remote_mise_candidate_identities(session, &candidates).await;
         let mise =
             select_bootstrapped_mise(&before, &before_identities, &candidates, &after_identities)?;
-        session.status(&[&mise, "version"], false)?;
+        session.status_async(&[&mise, "version"], false).await?;
         return Ok(mise);
     }
     let binary = if let Some(binary) = &session.host.mise_bin {
         binary.clone()
     } else {
-        let platform = detect_remote_platform(session)?;
+        let platform = detect_remote_platform(session).await?;
         let local_os = normalize_os(std::env::consts::OS);
         let local_arch = normalize_arch(std::env::consts::ARCH);
         let local = std::env::current_exe()?;
@@ -926,6 +937,7 @@ async fn provision_mise(
             ))
         } else {
             validate_default_binary_compatibility(session, &local, &platform.os)
+                .await
                 .err()
                 .map(|error| format!("{error:#}"))
         };
@@ -949,43 +961,42 @@ async fn provision_mise(
     let remote = match &session.host.install_mise {
         // A dry run stays inside the staging directory it already cleans up.
         Some(install_mise) if dry_run => {
-            info!(
-                "would install mise to {} on {}",
-                resolve_remote_install_path(session, install_mise)?,
-                session.host.name
-            );
-            stage_mise(session, &binary, staging)?
+            let target = resolve_remote_install_path(session, install_mise).await?;
+            info!("would install mise to {} on {}", target, session.host.name);
+            stage_mise(session, &binary, staging).await?
         }
         Some(install_mise) => {
-            let target = resolve_remote_install_path(session, install_mise)?;
-            install_remote_mise(session, &binary, &target)?;
+            let target = resolve_remote_install_path(session, install_mise).await?;
+            install_remote_mise(session, &binary, &target).await?;
             target
         }
-        None => stage_mise(session, &binary, staging)?,
+        None => stage_mise(session, &binary, staging).await?,
     };
-    session.status(&[&remote, "version"], false).wrap_err_with(|| {
+    session.status_async(&[&remote, "version"], false).await.wrap_err_with(|| {
         format!(
             "provisioned mise cannot run on remote host '{}'; set mise_bin, remote_mise, or bootstrap_command",
             session.host.name
         )
     })?;
     if session.host.install_mise.is_some() && !dry_run {
-        warn_when_installed_mise_is_off_login_path(session, &remote);
+        warn_when_installed_mise_is_off_login_path(session, &remote).await;
     }
     Ok(remote)
 }
 
-fn stage_mise(session: &SshSession<'_>, binary: &Path, staging: &str) -> Result<String> {
+async fn stage_mise(session: &SshSession<'_>, binary: &Path, staging: &str) -> Result<String> {
     let remote = format!("{staging}/mise");
-    session.upload_executable(binary, &remote)?;
+    session.upload_executable(binary, &remote).await?;
     Ok(remote)
 }
 
-fn resolve_remote_install_path(session: &SshSession<'_>, path: &str) -> Result<String> {
+async fn resolve_remote_install_path(session: &SshSession<'_>, path: &str) -> Result<String> {
     let Some(suffix) = path.strip_prefix("~/") else {
         return Ok(path.to_string());
     };
-    let output = session.output(&["sh", "-lc", "printf '%s\\n' \"$HOME\""])?;
+    let output = session
+        .output_async(&["sh", "-lc", "printf '%s\\n' \"$HOME\""])
+        .await?;
     let home = validated_absolute_remote_path_output(&output, "remote login home")?;
     let target = format!("{}/{suffix}", home.trim_end_matches('/'));
     validate_install_mise_path(&target)?;
@@ -994,9 +1005,12 @@ fn resolve_remote_install_path(session: &SshSession<'_>, path: &str) -> Result<S
 
 /// Installs the provisioned executable at a persistent remote path so the host
 /// keeps a usable mise once the staging directory is removed.
-fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) -> Result<()> {
+async fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) -> Result<()> {
     let expected = crate::hash::file_hash_sha256(binary, None)?;
-    if remote_executable_sha256(session, target)?.is_some_and(|installed| installed == expected) {
+    if remote_executable_sha256(session, target)
+        .await?
+        .is_some_and(|installed| installed == expected)
+    {
         info!(
             "mise is already installed at {target} on {}",
             session.host.name
@@ -1005,10 +1019,12 @@ fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) ->
     }
     let file = File::open(binary)
         .wrap_err_with(|| format!("failed to open mise binary {}", binary.display()))?;
-    session.status_with_stdin(&["sh", "-c", &install_mise_script(target)], file)?;
+    session
+        .status_with_stdin_async(&["sh", "-c", &install_mise_script(target)], file)
+        .await?;
     // An install path can be writable by more than the SSH account, so confirm
     // the executable about to run is the one that was just written.
-    match remote_executable_sha256(session, target)? {
+    match remote_executable_sha256(session, target).await? {
         Some(installed) if installed != expected => bail!(
             "{target} on '{}' changed after it was installed; another writer owns that path",
             session.host.name
@@ -1066,7 +1082,10 @@ fn remote_parent_directory(target: &str) -> &str {
 
 /// `None` when the path is missing or the host cannot compute SHA-256, which
 /// only costs an upload that would otherwise have been skipped.
-fn remote_executable_sha256(session: &SshSession<'_>, target: &str) -> Result<Option<String>> {
+async fn remote_executable_sha256(
+    session: &SshSession<'_>,
+    target: &str,
+) -> Result<Option<String>> {
     let script = format!(
         r#"target={}
 if [ ! -f "$target" ]; then
@@ -1079,7 +1098,11 @@ elif command -v shasum >/dev/null 2>&1; then
 fi"#,
         shell_quote(target)
     );
-    let digest = session.output(&["sh", "-c", &script])?.trim().to_string();
+    let digest = session
+        .output_async(&["sh", "-c", &script])
+        .await?
+        .trim()
+        .to_string();
     if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Ok(None);
     }
@@ -1088,7 +1111,7 @@ fi"#,
 
 /// An installed executable is only reachable later when its directory is on the
 /// login PATH, so report that once instead of leaving a silent surprise.
-fn warn_when_installed_mise_is_off_login_path(session: &SshSession<'_>, target: &str) {
+async fn warn_when_installed_mise_is_off_login_path(session: &SshSession<'_>, target: &str) {
     let script = format!(
         r#"case ":$PATH:" in
   *:{}:*) printf 'yes\n' ;;
@@ -1096,7 +1119,7 @@ fn warn_when_installed_mise_is_off_login_path(session: &SshSession<'_>, target: 
 esac"#,
         shell_quote(remote_parent_directory(target))
     );
-    match session.output(&["sh", "-lc", &script]) {
+    match session.output_async(&["sh", "-lc", &script]).await {
         Ok(output) if output.trim() == "no" => warn!(
             "{target} is not on {}'s login PATH; add its directory to PATH or declare [bootstrap.mise_shell_activate] in the bootstrap project",
             session.host.name
@@ -1109,23 +1132,25 @@ esac"#,
     }
 }
 
-fn resolve_remote_mise(session: &SshSession<'_>) -> Result<String> {
+async fn resolve_remote_mise(session: &SshSession<'_>) -> Result<String> {
     let script = remote_mise_output_script();
-    let mise = session.output(&["sh", "-lc", &script])?;
+    let mise = session.output_async(&["sh", "-lc", &script]).await?;
     validated_remote_command_output(&mise)
 }
 
-fn resolve_configured_remote_mise(
+async fn resolve_configured_remote_mise(
     session: &SshSession<'_>,
     command: &str,
     project: &str,
 ) -> Result<String> {
     validate_remote_executable(command)?;
     if !command.contains('/') {
-        return resolve_login_path_executable(session, command);
+        return resolve_login_path_executable(session, command).await;
     }
     let remote_home = if command.starts_with("~/") {
-        let output = session.output(&["sh", "-lc", "printf '%s\\n' \"$HOME\""])?;
+        let output = session
+            .output_async(&["sh", "-lc", "printf '%s\\n' \"$HOME\""])
+            .await?;
         Some(validated_absolute_remote_path_output(
             &output,
             "remote login home",
@@ -1136,7 +1161,7 @@ fn resolve_configured_remote_mise(
     resolve_remote_mise_path(command, project, remote_home.as_deref())
 }
 
-fn resolve_login_path_executable(session: &SshSession<'_>, command: &str) -> Result<String> {
+async fn resolve_login_path_executable(session: &SshSession<'_>, command: &str) -> Result<String> {
     let script = format!(
         r#"command_path=$(command -v {} 2>/dev/null || true)
 case "$command_path" in
@@ -1146,7 +1171,7 @@ esac"#,
         shell_quote(command),
         shell_quote(command),
     );
-    let output = session.output(&["sh", "-lc", &script])?;
+    let output = session.output_async(&["sh", "-lc", &script]).await?;
     validated_absolute_remote_path_output(&output, "remote login executable")
 }
 
@@ -1204,9 +1229,9 @@ fn remote_mise_output_script() -> String {
     )
 }
 
-fn discover_remote_mise_candidates(session: &SshSession<'_>) -> Result<Vec<String>> {
+async fn discover_remote_mise_candidates(session: &SshSession<'_>) -> Result<Vec<String>> {
     let script = remote_mise_candidate_union_script();
-    let output = session.output(&["sh", "-lc", &script])?;
+    let output = session.output_async(&["sh", "-lc", &script]).await?;
     parse_remote_mise_candidates(&output)
 }
 
@@ -1253,35 +1278,36 @@ struct RemoteMiseIdentity {
     fingerprint: String,
 }
 
-fn remote_mise_candidate_identities(
+async fn remote_mise_candidate_identities(
     session: &SshSession<'_>,
     candidates: &[String],
 ) -> IndexMap<String, Option<RemoteMiseIdentity>> {
-    candidates
-        .iter()
-        .map(|candidate| {
-            let identity = session
-                .output(&[candidate, "version"])
-                .and_then(|version| {
-                    remote_mise_fingerprint(session, candidate).map(|fingerprint| {
-                        RemoteMiseIdentity {
-                            version: version.trim().to_string(),
-                            fingerprint,
-                        }
-                    })
-                })
-                .ok();
-            (candidate.clone(), identity)
-        })
-        .collect()
+    let mut identities = IndexMap::new();
+    for candidate in candidates {
+        let identity: Result<RemoteMiseIdentity> = async {
+            let version = session.output_async(&[candidate, "version"]).await?;
+            let fingerprint = remote_mise_fingerprint(session, candidate).await?;
+            Ok(RemoteMiseIdentity {
+                version: version.trim().to_string(),
+                fingerprint,
+            })
+        }
+        .await;
+        identities.insert(candidate.clone(), identity.ok());
+    }
+    identities
 }
 
-fn remote_mise_fingerprint(session: &SshSession<'_>, candidate: &str) -> Result<String> {
+async fn remote_mise_fingerprint(session: &SshSession<'_>, candidate: &str) -> Result<String> {
     let candidate = shell_quote(candidate);
     let script = format!(
         "if command -v sha256sum >/dev/null 2>&1; then sha256sum {candidate}; elif command -v shasum >/dev/null 2>&1; then shasum -a 256 {candidate}; else cksum {candidate}; fi"
     );
-    Ok(session.output(&["sh", "-c", &script])?.trim().to_string())
+    Ok(session
+        .output_async(&["sh", "-c", &script])
+        .await?
+        .trim()
+        .to_string())
 }
 
 fn select_bootstrapped_mise(
@@ -1579,8 +1605,10 @@ fn official_release_assets(os: &str, arch: &str) -> Result<Vec<String>> {
     }
 }
 
-fn detect_remote_platform(session: &SshSession<'_>) -> Result<RemotePlatform> {
-    let output = session.output(&["sh", "-c", remote_platform_script()])?;
+async fn detect_remote_platform(session: &SshSession<'_>) -> Result<RemotePlatform> {
+    let output = session
+        .output_async(&["sh", "-c", remote_platform_script()])
+        .await?;
     parse_remote_platform(&output).wrap_err_with(|| {
         format!(
             "could not detect the platform for remote host '{}'; set mise_bin, remote_mise, or bootstrap_command",
@@ -1651,7 +1679,7 @@ impl fmt::Display for AbiVersion {
     }
 }
 
-fn validate_default_binary_compatibility(
+async fn validate_default_binary_compatibility(
     session: &SshSession<'_>,
     binary: &Path,
     remote_os: &str,
@@ -1674,7 +1702,7 @@ fn validate_default_binary_compatibility(
         "if test -x {loader}; then {loader} --version 2>&1 || true; else printf '%s\\n' MISE_LOADER_MISSING; fi",
         loader = shell_quote(&interpreter),
     );
-    let remote_output = session.output(&["sh", "-c", &check])?;
+    let remote_output = session.output_async(&["sh", "-c", &check]).await?;
     if remote_output
         .lines()
         .any(|line| line == "MISE_LOADER_MISSING")
@@ -1968,13 +1996,6 @@ impl SshSession<'_> {
         args
     }
 
-    fn output(&self, remote_argv: &[&str]) -> Result<String> {
-        let args = self.args(false, remote_argv);
-        info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
-        let output = Command::new(&self.ssh).args(&args).output()?;
-        checked_output(output, &self.host.name)
-    }
-
     async fn output_async(&self, remote_argv: &[&str]) -> Result<String> {
         let args = self.args(false, remote_argv);
         info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
@@ -1984,32 +2005,6 @@ impl SshSession<'_> {
             .output()
             .await?;
         checked_output(output, &self.host.name)
-    }
-
-    fn status(&self, remote_argv: &[&str], tty: bool) -> Result<()> {
-        let args = self.args(tty, remote_argv);
-        info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
-        let status = Command::new(&self.ssh).args(args).status()?;
-        if !status.success() {
-            bail!(
-                "remote command on '{}' failed with {status}",
-                self.host.name
-            );
-        }
-        Ok(())
-    }
-
-    fn status_with_stdin(&self, remote_argv: &[&str], input: File) -> Result<()> {
-        let args = self.args(false, remote_argv);
-        info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
-        let status = Command::new(&self.ssh)
-            .args(args)
-            .stdin(Stdio::from(input))
-            .status()?;
-        if !status.success() {
-            bail!("remote upload to '{}' failed with {status}", self.host.name);
-        }
-        Ok(())
     }
 
     async fn status_with_stdin_async(&self, remote_argv: &[&str], input: File) -> Result<()> {
@@ -2027,10 +2022,10 @@ impl SshSession<'_> {
         Ok(())
     }
 
-    fn upload_executable(&self, local: &Path, remote: &str) -> Result<()> {
+    async fn upload_executable(&self, local: &Path, remote: &str) -> Result<()> {
         let file = File::open(local)
             .wrap_err_with(|| format!("failed to open mise binary {}", local.display()))?;
-        self.status_with_stdin(
+        self.status_with_stdin_async(
             &[
                 "sh",
                 "-c",
@@ -2042,6 +2037,7 @@ impl SshSession<'_> {
             ],
             file,
         )
+        .await
     }
 
     async fn cleanup(&self, path: &str) -> Result<()> {

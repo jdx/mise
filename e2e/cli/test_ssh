@@ -19,6 +19,10 @@ mkdir -p fakebin
 cat >fakebin/ssh <<'EOF'
 #!/bin/sh
 printf '%s\n' "$@" >"$SSH_LOG"
+if test "${BLOCK_SSH:-}" = 1; then
+  echo $$ >"$SSH_CHILD_PID"
+  exec sleep 60
+fi
 exit 23
 EOF
 chmod +x fakebin/ssh
@@ -34,6 +38,16 @@ ServerAliveInterval=10
 --
 alias
 printf '%s' 'a b'"
+
+# A PID-directed Ctrl-C preserves exit 130 and reaps plain SSH too.
+BLOCK_SSH=1 SSH_CHILD_PID="$PWD/plain-child.pid" mise ssh alias &
+ssh_pid=$!
+wait_for_file plain-child.pid 'plain SSH child' 10 "$ssh_pid"
+kill -INT "$ssh_pid"
+ssh_status=0
+wait "$ssh_pid" || ssh_status=$?
+test "$ssh_status" -eq 130
+assert_fail "kill -0 '$(cat plain-child.pid)' 2>/dev/null"
 
 # Exercise real Git clone/fetch through the session's Unix-to-HTTP adapter.
 mkdir -p upstream/owner seed
@@ -77,6 +91,15 @@ for _ in {1..50}; do
   sleep 0.1
 done
 assert_fail "kill -0 '$child_pid' 2>/dev/null"
+
+mise ssh --relay-session "$relay_socket" -- sh -c 'echo $$ > interrupt-child.pid; exec sleep 60' &
+adapter_pid=$!
+wait_for_file interrupt-child.pid 'interruptible relay child' 10 "$adapter_pid"
+kill -INT "$adapter_pid"
+adapter_status=0
+wait "$adapter_pid" || adapter_status=$?
+test "$adapter_status" -eq 130
+assert_fail "kill -0 '$(cat interrupt-child.pid)' 2>/dev/null"
 
 assert_fail "mise ssh --relay-session '$relay_socket' -- git -C clone push origin HEAD:write-test"
 assert_fail "mise ssh --relay-session '$relay_socket' -- git clone https://github.com/other/private.git denied"

@@ -28,6 +28,12 @@ while test "$#" -gt 0; do
       destination=$1
       shift
       case "$1" in
+        'tar -xzf '*|*' version')
+          if test "${BLOCK_PROVISION_STEP:-}" = 1; then
+            echo $$ >"$FAKE_REMOTE_BASE/$destination.pid"
+            exec sleep 60
+          fi
+          ;;
         'rm -rf -- /tmp/mise-bootstrap.'*)
           if test "${FAIL_CLEANUP_ONCE:-}" = 1; then
             echo attempt >>"$FAKE_REMOTE_BASE/cleanup-attempts"
@@ -90,6 +96,24 @@ assert_fail "mise bootstrap remote --host one --from-git '$source_repo' --remote
 assert_fail "MISE_GITHUB_TOKEN=fake-local-relay-token mise bootstrap remote --host two --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --github-relay-read-only --github-relay-repo owner/repo" 'forwarding failed'
 assert_contains "cat '$SSH_LOG'" '-O exit'
 assert_not_contains "cat '$SSH_LOG'" 'fake-local-relay-token'
+
+# Both archive upload and executable provisioning must yield to cancellation.
+for step in archive provision; do
+  if test "$step" = archive; then
+    source_args=(--source "$source_repo")
+  else
+    source_args=(--from-git "$source_repo")
+  fi
+  BLOCK_PROVISION_STEP=1 mise bootstrap remote --host "$step" "${source_args[@]}" --remote-mise "$binary" --only dotfiles --yes &
+  bootstrap_pid=$!
+  wait_for_file "$FAKE_REMOTE_BASE/$step.pid" "blocked $step" 10 "$bootstrap_pid"
+  step_pid=$(cat "$FAKE_REMOTE_BASE/$step.pid")
+  kill -INT "$bootstrap_pid"
+  step_status=0
+  wait "$bootstrap_pid" || step_status=$?
+  test "$step_status" -eq 130
+  assert_fail "kill -0 '$step_pid' 2>/dev/null"
+done
 
 # A stalled bundle transfer must not block cancellation or leave its SSH child alive.
 BLOCK_BUNDLE_UPLOAD=1 mise bootstrap remote --host stalled --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes &

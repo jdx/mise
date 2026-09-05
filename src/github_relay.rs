@@ -786,7 +786,8 @@ pub(crate) mod unix {
                             req = req.header(name, value);
                         }
                     }
-                    let response = req.body(body).send().await?;
+                    let response =
+                        send_adapter_request(req.body(body), Duration::from_secs(300)).await?;
                     let mut builder = Response::builder().status(response.status());
                     for name in ["content-type", "content-length"] {
                         if let Some(value) = response.headers().get(name) {
@@ -930,7 +931,14 @@ pub(crate) mod unix {
         };
         let mut child = command.kill_on_drop(true).spawn()?;
         let code = tokio::select! {
-            status = child.wait() => return Ok(status?),
+            status = child.wait() => {
+                let status = status?;
+                use std::os::unix::process::ExitStatusExt;
+                if let Some(signal) = status.signal() {
+                    return Err(crate::request_exit(128 + signal));
+                }
+                return Ok(status);
+            },
             _ = terminate.recv() => 143,
             _ = hangup.recv() => 129,
             _ = disconnected => 255,
@@ -951,10 +959,11 @@ pub(crate) mod unix {
             return Err(crate::request_exit(130));
         }
         tokio::select! {
-            result = operation => result,
+            biased;
             _ = interrupt.recv() => Err(crate::request_exit(130)),
             _ = terminate.recv() => Err(crate::request_exit(143)),
             _ = hangup.recv() => Err(crate::request_exit(129)),
+            result = operation => result,
         }
     }
 
@@ -992,14 +1001,55 @@ pub(crate) mod unix {
                 req = req.header(name, value);
             }
         }
-        req.send().await.map_err(|error| {
-            eyre::Report::new(error.without_url())
-                .wrap_err("GitHub relay disconnected or unavailable")
-        })
+        send_adapter_request(req, Duration::from_secs(300)).await
+    }
+
+    // Bound connecting and writing as well as waiting for response headers.
+    // The client's read timeout separately protects the streamed response.
+    async fn send_adapter_request(
+        req: reqwest::RequestBuilder,
+        timeout: Duration,
+    ) -> Result<reqwest::Response> {
+        tokio::time::timeout(timeout, req.send())
+            .await
+            .map_err(|_| eyre::eyre!("GitHub relay request setup timed out"))?
+            .map_err(|error| {
+                eyre::Report::new(error.without_url())
+                    .wrap_err("GitHub relay disconnected or unavailable")
+            })
     }
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[tokio::test]
+        async fn adapter_setup_timeout_bounds_stalled_socket_writes() {
+            let directory = tempfile::Builder::new()
+                .prefix("relay-timeout-")
+                .tempdir_in("/tmp")
+                .unwrap();
+            let socket = directory.path().join("relay.sock");
+            let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+            let client = Client::builder()
+                .unix_socket(socket.as_path())
+                .no_proxy()
+                .build()
+                .unwrap();
+            let request = client
+                .post("http://localhost/git/owner/repo/git-upload-pack")
+                .body(vec![0_u8; 8 * 1024 * 1024]);
+            let operation = async {
+                let (stream, _) = listener.accept().await.unwrap();
+                // Keep the socket open without reading the oversized request.
+                std::future::pending::<()>().await;
+                drop(stream);
+            };
+            let result = tokio::select! {
+                result = send_adapter_request(request, Duration::from_millis(50)) => result,
+                _ = operation => panic!("stalled peer unexpectedly completed"),
+            };
+            assert!(result.unwrap_err().to_string().contains("setup timed out"));
+        }
         #[test]
         fn audit_redacts_dynamic_paths_queries_and_denied_requests() {
             let audit = Audit::new(
