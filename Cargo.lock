@@ -1475,7 +1475,7 @@ dependencies = [
  "bitflags 2.13.1",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -7045,8 +7045,9 @@ dependencies = [
 
 [[package]]
 name = "packslip"
-version = "0.2.0"
-source = "git+https://github.com/jdx/packslip?rev=bc8e5cb37690729fb14290fbe19393742db71b98#bc8e5cb37690729fb14290fbe19393742db71b98"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfb7abfe0385e168259bb0d6ea7b88ebe3ee4d8f3e60e61d8b528f14845c1c01"
 dependencies = [
  "base64 0.22.1",
  "blake2 0.10.6",
@@ -9632,7 +9633,7 @@ version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
- "errno 0.3.14",
+ "errno 0.2.8",
  "libc",
 ]
 
