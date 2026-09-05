@@ -4,8 +4,9 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    get_filename_from_url, install_artifact, lookup_platform_key, lookup_with_fallback,
-    template_string, try_with_v_prefix, try_with_v_prefix_and_repo, verify_artifact,
+    ArchiveLayout, get_filename_from_url, install_artifact, lookup_platform_key,
+    lookup_with_fallback, template_string, try_with_v_prefix, try_with_v_prefix_and_repo,
+    verify_artifact,
 };
 use crate::backend::{
     MISE_BINS_DIR, SecurityFeature, backend_arg_matches_registry_backend,
@@ -1505,7 +1506,13 @@ impl UnifiedGitBackend {
         }
 
         ctx.pr.next_operation();
-        install_artifact(tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
+        install_artifact(
+            tv,
+            &file_path,
+            opts.raw(),
+            ArchiveLayout::Guessed,
+            Some(ctx.pr.as_ref()),
+        )?;
 
         if let Some(bins) = opts.filter_bins() {
             self.create_symlink_bin_dir(tv, bins)?;

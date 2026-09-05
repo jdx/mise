@@ -26,7 +26,7 @@ use reqwest::header::HeaderMap;
 
 use crate::backend::options::VersionOrder;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::install_artifact;
+use crate::backend::static_helpers::{ArchiveLayout, install_artifact};
 use crate::backend::{
     Backend, BackendType, MISE_BINS_DIR, SecurityFeature, VersionInfo,
     runtime_path_for_install_path,
@@ -866,7 +866,16 @@ impl Backend for PackslipBackend {
                 .insert_option("bin".into(), toml::Value::String(bin.path.clone()))
                 .map_err(|e| eyre!(e))?;
         }
-        install_artifact(&tv, &file_path, &install_opts, Some(ctx.pr.as_ref()))?;
+        // The statement names every executable by path, so nothing here may
+        // rename one: a tidied platform suffix would put the file somewhere the
+        // statement does not point, and `link_bins` would not find it.
+        install_artifact(
+            &tv,
+            &file_path,
+            &install_opts,
+            ArchiveLayout::Declared,
+            Some(ctx.pr.as_ref()),
+        )?;
         Self::link_bins(&tv, &artifact)?;
         file::write(
             tv.install_path().join(STATEMENT_FILE),

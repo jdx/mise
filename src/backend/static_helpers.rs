@@ -613,10 +613,23 @@ pub(crate) fn get_filename_from_url(url_str: &str) -> String {
         .unwrap_or(filename)
 }
 
+/// Whether anything describes what is inside the archive.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArchiveLayout {
+    /// A signed manifest names each executable by path, so a file has to keep
+    /// the name it was given: renaming it would put it somewhere the manifest
+    /// does not point.
+    Declared,
+    /// Nothing describes the release, so mise reads the layout off the archive
+    /// and may tidy an obvious platform suffix off a lone binary.
+    Guessed,
+}
+
 pub(crate) fn install_artifact(
     tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &ToolVersionOptions,
+    layout: ArchiveLayout,
     pr: Option<&dyn SingleReport>,
 ) -> eyre::Result<()> {
     let install_path = tv.install_path();
@@ -763,9 +776,7 @@ pub(crate) fn install_artifact(
         // binary whose filename carries an OS/arch platform suffix (e.g. a linux
         // archive shipping `tool-macos-aarch64`), mirroring the behavior for
         // single-file (non-archive) downloads. See discussion #6532.
-        if lookup_with_fallback(opts, "bin").is_none()
-            && lookup_value_with_fallback(opts, "rename_exe").is_none()
-        {
+        if may_clean_archive_binary(layout, opts) {
             let search_dir = archive_bin_search_dir(&install_path, explicit_bin_path.as_deref());
             auto_clean_single_archive_binary(&search_dir, tool_name)?;
         }
@@ -797,6 +808,16 @@ fn archive_bin_search_dir(install_path: &Path, explicit_bin_path: Option<&Path>)
 /// files, LICENSE/README, and docs) and cleaning actually changes its name, so
 /// multi-file archives and files without a platform suffix are left untouched.
 /// See discussion #6532.
+/// Whether mise may rename the archive's lone binary to the tool's name.
+/// Only when nothing else has said what the file should be called: not when
+/// the caller was handed a manifest, and not when `bin=` or `rename_exe=`
+/// already names it.
+fn may_clean_archive_binary(layout: ArchiveLayout, opts: &ToolVersionOptions) -> bool {
+    layout == ArchiveLayout::Guessed
+        && lookup_with_fallback(opts, "bin").is_none()
+        && lookup_value_with_fallback(opts, "rename_exe").is_none()
+}
+
 fn auto_clean_single_archive_binary(dir: &Path, tool_name: &str) -> eyre::Result<()> {
     // Only act on an unambiguously single-binary archive: exactly one file after
     // dropping obvious non-binaries (hidden files, LICENSE/README, and known doc
@@ -2625,6 +2646,30 @@ bin = "tool.exe"
             0o600,
             "the external target's permissions must not change"
         );
+    }
+
+    #[test]
+    fn a_declared_layout_keeps_the_name_the_manifest_gave() {
+        let bare = ToolVersionOptions::default();
+        assert!(
+            may_clean_archive_binary(ArchiveLayout::Guessed, &bare),
+            "with nothing describing the archive, a lone suffixed binary is tidied"
+        );
+        assert!(
+            !may_clean_archive_binary(ArchiveLayout::Declared, &bare),
+            "a signed manifest names each executable by path, and renaming one \
+             would move it out from under that path"
+        );
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "bin".to_string(),
+            toml::Value::String("tool-linux-x86_64".to_string()),
+        );
+        let named = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+        assert!(!may_clean_archive_binary(ArchiveLayout::Guessed, &named));
     }
 
     #[test]
