@@ -3,6 +3,7 @@ use eyre::Result;
 use super::driver::{self, Action, DriverOpts};
 use crate::config::Config;
 use crate::system;
+use crate::system::generations::GenerationScope;
 
 /// Upgrade installed bootstrap packages from `[bootstrap.packages]`
 ///
@@ -50,6 +51,16 @@ pub(crate) struct SystemUpgrade {
 
 impl SystemUpgrade {
     pub(crate) async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap packages upgrade",
+            "packages",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let mgrs = if self.packages.is_empty() {
             let config = Config::get().await?;
             system::packages_from_config(&config)

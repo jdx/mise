@@ -53,6 +53,7 @@ pub(crate) mod firewall;
 #[cfg(not(target_os = "linux"))]
 #[path = "firewall_non_linux.rs"]
 pub(crate) mod firewall;
+pub(crate) mod generations;
 pub(crate) mod hooks;
 pub(crate) mod launchd;
 pub(crate) mod login_shell;

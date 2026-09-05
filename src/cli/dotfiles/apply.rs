@@ -2,6 +2,7 @@ use eyre::Result;
 
 use crate::config::{Config, Settings};
 use crate::system;
+use crate::system::generations::GenerationScope;
 
 /// Apply dotfiles from `[dotfiles]`
 ///
@@ -53,6 +54,16 @@ impl DotfilesApply {
     }
 
     pub(crate) async fn run(self) -> Result<bool> {
+        GenerationScope::wrap(
+            "bootstrap dotfiles apply",
+            "dotfiles",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<bool> {
         let config = Config::get().await?;
         let (files, edits) = self.requests(&config)?;
         if files.is_empty() && edits.is_empty() {

@@ -12,6 +12,7 @@ use crate::file;
 use crate::path::PathExt;
 use crate::system;
 use crate::system::files::{FileManifest, FileMode, FileRequest};
+use crate::system::generations::GenerationScope;
 use crate::ui::prompt;
 
 /// Add or update dotfiles in `[dotfiles]`
@@ -82,7 +83,17 @@ pub(crate) struct DotfilesAdd {
 
 impl DotfilesAdd {
     /// Validate and capture the requested targets as one transactional update.
-    pub(crate) async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap dotfiles add",
+            "dotfiles",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(mut self) -> Result<()> {
         if self.changed && !self.targets.is_empty() {
             bail!("--changed does not accept target arguments");
         }
