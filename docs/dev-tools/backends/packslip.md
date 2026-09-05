@@ -33,15 +33,6 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
 
 ### Project names and discovery
 
-New packslip releases identify their project as `packslip.dev`. The explicit
-issuer and workflow prefixes above trust `release.yml` for release bundles and
-`packslip-releases.yml` for the signed release list. The trailing `@` pins the
-whole workflow filename while allowing its Git refs to vary. A repository-wide
-prefix would also trust non-release workflows such as `ci.yml`. Historical
-releases such as
-`packslip:github.com/jdx/packslip@0.2.0` retain their original GitHub identity;
-the two project names are not interchangeable.
-
 A project name is a host followed by an optional path, without `https://`.
 `packslip:owner/repo` is shorthand for `packslip:github.com/owner/repo`.
 
