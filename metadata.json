@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1S4A9VD1828PC0TFMBNWPQ1",
+  "strategy": "manual-commit",
+  "branch": "codex/github-read-only-relay",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "docs/bootstrap.md",
+    "docs/bootstrap/remote.md",
+    "e2e/cli/test_bootstrap_remote_git",
+    "e2e/cli/test_ssh",
+    "e2e/fixtures/github_relay.py",
+    "src/cli/bootstrap.rs",
+    "src/cli/command_effects.rs",
+    "src/cli/mod.rs",
+    "src/cli/ssh.rs",
+    "src/git.rs",
+    "src/github_relay.rs",
+    "src/http.rs",
+    "src/main.rs",
+    "src/system/mod.rs",
+    "src/system/remote.rs",
+    "src/system/remote_repository.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 405068,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 10580992,
+    "output_tokens": 55963,
+    "api_call_count": 86
+  }
+}
