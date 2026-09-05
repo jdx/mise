@@ -100,16 +100,20 @@ pub(crate) struct Observed<'a> {
 /// The signer a pin records for a key id. For a workflow identity that is
 /// the path without its ref, as the specification says: a new tag of the
 /// same workflow is the same signer. A key is its id.
+///
+/// Only a workflow identity has a ref to drop, and it is a URL whose ref
+/// comes after the last `@`. Every other keyless identity — an email, a
+/// SPIFFE URI — can carry `@` as part of itself, and cutting there would
+/// file `alice@example.com` and `alice@example.invalid` under one signer,
+/// so the second would pass as a signer already accepted.
 pub(crate) fn signer_of(scheme: &str, key_id: &str) -> String {
-    if scheme == "sigstore-oidc" {
-        key_id
-            .split_once('@')
-            .map(|(path, _)| path)
-            .unwrap_or(key_id)
-            .to_string()
-    } else {
-        key_id.to_string()
+    if scheme == "sigstore-oidc"
+        && key_id.starts_with("https://")
+        && let Some((path, _ref)) = key_id.rsplit_once('@')
+    {
+        return path.to_string();
     }
+    key_id.to_string()
 }
 
 /// Compare what a release showed with the project's pin, refusing what
@@ -263,6 +267,16 @@ mod tests {
     fn a_new_tag_of_the_same_workflow_is_the_same_signer() {
         assert_eq!(signer_of("sigstore-oidc", &oidc("v1")), WORKFLOW);
         assert_eq!(signer_of("sigstore-key", "5A0A"), "5A0A");
+        // Only a workflow identity has a ref to drop. An identity that is
+        // itself an email or a URI keeps every character of itself, or two
+        // signers sharing a local part would share one pin.
+        for identity in [
+            "alice@example.com",
+            "alice@example.invalid",
+            "spiffe://example.com/ns/ci/sa/build@v2",
+        ] {
+            assert_eq!(signer_of("sigstore-oidc", identity), identity);
+        }
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pins.toml");
         let v1 = oidc("v1");
