@@ -86,6 +86,32 @@ For a project on its own domain signed keylessly, or to override the identity a 
 
 Accept a key-signed bundle that carries no transparency log entry, which a vendor produces for an air-gapped release. Off by default; turn it on only for a vendor you have agreed to accept that from.
 
+### `trust`
+
+`trust = "vendor"` takes the vendor's own manifest under the vendor's pin, with no stamp from the hosts [`packslip.stampers`](/configuration/settings#packslip-stampers) names. See Stamps below. The choice is recorded in the lockfile, so an install from the lock does not quietly relax it later.
+
+```toml
+[tools]
+"packslip:github.com/jdx/mise" = { version = "latest", trust = "vendor" }
+```
+
+## Stamps
+
+A vendor's packslip proves what the vendor shipped. It does not say whether anyone else looked at it. A stamping host, a registry, a mirror, or a scanning service, publishes its own signed release list per vendor project at `https://<host>/.well-known/packslip/<project>.json`, naming the versions it checked, pinning the digest of each packslip it looked at, and saying what it checked. The [`packslip.stampers`](/configuration/settings#packslip-stampers) setting names the hosts you trust, each with its pin:
+
+```toml
+[settings.packslip]
+stampers = ["registry.mise.jdx.dev=RWQ..."]
+```
+
+With hosts named, mise offers and installs a packslip tool only at versions one of them lists. A version no trusted host stamped is not shown by `mise ls-remote` and is refused by `mise install`, however valid the vendor's own manifest is; a version a host withdrew is refused with the host's reason. Any one host's stamp suffices. The stamp points at the manifest it admitted, so mise fetches that exact file, checks it against the digest the host recorded, and then verifies it against the vendor's pin as always: the stamp never stands in for the vendor's signature. A stamp that records no digest is refused — the digest is what ties the host's review to a file, and without one the entry admits a URL rather than a manifest.
+
+Each host's list carries an expiry and a sequence number. mise refuses a list that has expired, and remembers the highest sequence it accepted per host and project so a replayed older list is refused as a rollback.
+
+A mirror is a stamping host whose entries point at manifests it signed itself, carrying the vendor's digests with the mirror's own download URLs. Name it as the only stamper and you get its curated versions and its bytes.
+
+Unset, no stamps are required and every version the vendor published is offered. mise's own registry host will become the default once it publishes stamps.
+
 ## Completions
 
 A packslip may list what the release ships besides its executables: shell completions, a spec of the CLI, an agent skill. mise reads those `resources` for tools it installed this way.

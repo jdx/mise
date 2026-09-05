@@ -96,6 +96,12 @@ impl<'a> PackslipOptions<'a> {
     fn allow_unlogged(&self) -> bool {
         matches!(self.raw.get("allow_unlogged"), Some("true"))
     }
+
+    /// `vendor` takes the vendor's own manifest with no stamp from the
+    /// hosts `packslip.stampers` names.
+    fn trust(&self) -> Option<String> {
+        self.raw.get_string("trust")
+    }
 }
 
 pub(crate) fn install_time_option_keys() -> Vec<String> {
@@ -106,6 +112,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "identity_prefix",
         "issuer",
         "allow_unlogged",
+        "trust",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -335,7 +342,7 @@ fn locate_entry(install_path: &Path, rel: &str, wanted: fn(&Path) -> bool) -> Op
 
 /// What the consumer pinned: the forge identity a name implies, or the key
 /// or identity given in the tool options.
-enum Pin {
+pub(crate) enum Pin {
     Identity(Policy),
     Key(packslip::minisign::PublicKey),
 }
@@ -394,7 +401,11 @@ fn verify_bundle(
     })
 }
 
-fn verify_release_list(bundle: &str, pin: &Pin, require_log: bool) -> Result<ReleaseListStatement> {
+pub(crate) fn verify_release_list(
+    bundle: &str,
+    pin: &Pin,
+    require_log: bool,
+) -> Result<ReleaseListStatement> {
     file::run_blocking(|| {
         let root = packslip::sigstore::trusted_root(None).map_err(|e| eyre!("{e}"))?;
         let options = packslip::Options {
@@ -668,40 +679,9 @@ impl PackslipBackend {
         }
         Ok(())
     }
-}
 
-#[async_trait]
-impl Backend for PackslipBackend {
-    fn get_type(&self) -> BackendType {
-        BackendType::Packslip
-    }
-
-    fn ba(&self) -> &Arc<BackendArg> {
-        &self.ba
-    }
-
-    async fn security_info(&self) -> Vec<SecurityFeature> {
-        vec![SecurityFeature::Packslip]
-    }
-
-    /// A packslip version is semver, and the specification ranks releases
-    /// by semver precedence, never by the order a release list gives.
-    fn version_order(&self, _opts: &ToolVersionOptions) -> Result<VersionOrder> {
-        Ok(VersionOrder::Semver)
-    }
-
-    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
-        &[
-            "pubkey",
-            "identity",
-            "identity_prefix",
-            "issuer",
-            "allow_unlogged",
-        ]
-    }
-
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        self.ensure_experimental()?;
+    /// Every version the vendor published, before stamps are applied.
+    async fn vendor_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let project = self.project()?;
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = PackslipOptions::new(&raw_opts);
@@ -758,6 +738,56 @@ impl Backend for PackslipBackend {
         versions.reverse();
         Ok(versions)
     }
+}
+
+#[async_trait]
+impl Backend for PackslipBackend {
+    fn get_type(&self) -> BackendType {
+        BackendType::Packslip
+    }
+
+    fn ba(&self) -> &Arc<BackendArg> {
+        &self.ba
+    }
+
+    async fn security_info(&self) -> Vec<SecurityFeature> {
+        vec![SecurityFeature::Packslip]
+    }
+
+    /// A packslip version is semver, and the specification ranks releases
+    /// by semver precedence, never by the order a release list gives.
+    fn version_order(&self, _opts: &ToolVersionOptions) -> Result<VersionOrder> {
+        Ok(VersionOrder::Semver)
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &[
+            "pubkey",
+            "identity",
+            "identity_prefix",
+            "issuer",
+            "allow_unlogged",
+            "trust",
+        ]
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        self.ensure_experimental()?;
+        let mut versions = self.vendor_versions(config).await?;
+        // Only what a trusted stamper lists is released, as far as mise is
+        // concerned; the rest is not offered.
+        let project = self.project()?;
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        if let Some(stamps) = crate::packslip_stamps::fetch(&project, &raw_opts).await? {
+            let before = versions.len();
+            versions.retain(|v| stamps.allows(&v.version));
+            debug!(
+                "packslip:{project}: {} of {before} version(s) carry a stamp",
+                versions.len()
+            );
+        }
+        Ok(versions)
+    }
 
     async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         4
@@ -775,8 +805,47 @@ impl Backend for PackslipBackend {
         let pin = pin(&project, &opts)?;
         let require_log = !opts.allow_unlogged();
 
-        // The manifest first: nothing else is downloaded until it verifies.
-        let located = self.locate_bundle(&project, &tv, &pin, &opts).await?;
+        // A stamp first, when the settings ask for one: it says this exact
+        // manifest is admitted, and points at it. Then the manifest: nothing
+        // else is downloaded until it verifies.
+        let stamp = match crate::packslip_stamps::fetch(&project, &raw_opts).await? {
+            Some(stamps) => Some(
+                stamps
+                    .stamp(&tv.version)
+                    .ok_or_else(|| stamps.refusal(&project, &tv.version))?
+                    .clone(),
+            ),
+            None => None,
+        };
+        let located = match &stamp {
+            Some(stamp) => {
+                debug!(
+                    "{}: stamped by {}, manifest at {}",
+                    tv.style(),
+                    stamp.host,
+                    stamp.entry.packslip
+                );
+                // A stamp says a host reviewed this manifest, and the digest is
+                // the whole of what ties the claim to a file. Without one the
+                // stamp admits a URL, and any later manifest the vendor signs
+                // for this version can stand at it in place of the reviewed
+                // one — so refuse rather than call that a review.
+                let Some(digest) = stamp.digest.clone() else {
+                    bail!(
+                        "the stamp for packslip:{project}@{} from {} records no sha256 for {}, so nothing says the manifest is the one that host reviewed",
+                        tv.version,
+                        stamp.host,
+                        stamp.entry.packslip
+                    );
+                };
+                Located {
+                    headers: headers_for(&stamp.entry.packslip)?,
+                    url: stamp.entry.packslip.clone(),
+                    digest: Some(digest),
+                }
+            }
+            None => self.locate_bundle(&project, &tv, &pin, &opts).await?,
+        };
         let bundle_path = tv.download_path().join(bundle_name(&project));
         file::create_dir_all(tv.download_path())?;
         ctx.pr.set_message("download packslip".into());
@@ -909,16 +978,21 @@ impl Backend for PackslipBackend {
     }
 
     /// `variant` decides which artifact is downloaded, so a lock entry for a
-    /// variant build is not the entry for the plain one.
+    /// variant build is not the entry for the plain one. `trust` is kept so
+    /// an install from the lock does not quietly relax to the vendor alone.
     fn resolve_lockfile_options(
         &self,
         request: &ToolRequest,
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
         let raw_opts = request.options();
+        let opts = PackslipOptions::new(&raw_opts);
         let mut options = BTreeMap::new();
-        if let Some(variant) = PackslipOptions::new(&raw_opts).variant() {
+        if let Some(variant) = opts.variant() {
             options.insert("variant".to_string(), variant);
+        }
+        if let Some(trust) = opts.trust() {
+            options.insert("trust".to_string(), trust);
         }
         Ok(options)
     }
