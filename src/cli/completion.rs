@@ -297,12 +297,13 @@ mod shell_name_tests {
     #[test]
     fn usage_spec_completes_from_a_native_path() {
         let dir = tempfile::tempdir().unwrap();
-        #[cfg(unix)]
+        // APFS rejects non-UTF-8 filenames; Linux filesystems permit them.
+        #[cfg(all(unix, not(target_os = "macos")))]
         let name = {
             use std::os::unix::ffi::OsStringExt;
             OsString::from_vec(b"spec with spaces-\xff.kdl".to_vec())
         };
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         let name = OsString::from("spec with spaces-\u{03bb}.kdl");
         let path = dir.path().join(name);
         std::fs::write(&path, "name \"probe\"\nflag \"--from-spec\"\n").unwrap();

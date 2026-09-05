@@ -210,6 +210,14 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(unix)]
+    fn specification_paths_preserve_non_utf8_bytes() {
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::path::Path::new(std::ffi::OsStr::from_bytes(b"/tmp/spec-\xff.kdl"));
+        assert_eq!(decode_spec_path(&encode_spec_path(path)).unwrap(), path);
+    }
+
+    #[test]
     fn different_commands_have_distinct_loader_names() {
         assert_ne!(
             super::super::completion_ident("my-tool"),
