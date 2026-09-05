@@ -8,10 +8,7 @@ provider boundary rather than adding provider-specific credentials to mise.
 ```toml
 [bootstrap.secrets]
 cache_token = "MISE_CACHE_TOKEN"
-database_password = {
-  env = "PRODUCTION_DATABASE_PASSWORD",
-  description = "Production database password",
-}
+database_password = { env = "PRODUCTION_DATABASE_PASSWORD", description = "Production database password" }
 
 [bootstrap.files."/etc/example/service.env"]
 content = '''
