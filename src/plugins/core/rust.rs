@@ -1312,7 +1312,7 @@ fn normalize_rustup_profile(profile: &str) -> Result<&'static str> {
 }
 
 fn rustup_dist_var(tv: &ToolVersion, key: &str) -> Option<String> {
-    match tv.install_env().shift_remove(key) {
+    match tv.install_env().get(key).cloned() {
         Some(value) => value.into_string(),
         None => env::var(key).ok(),
     }
