@@ -2183,7 +2183,28 @@
           "description": "Map of URL patterns to replacement URLs applied to all requests.",
           "type": "object",
           "additionalProperties": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Replacement URL."
+              },
+              {
+                "type": "object",
+                "required": ["url"],
+                "additionalProperties": false,
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "Replacement URL."
+                  },
+                  "forward_auth": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Set to false to drop any Authorization header the caller supplied when this replacement points the request at a different origin."
+                  }
+                }
+              }
+            ]
           }
         },
         "use_file_shell_for_executable_tasks": {

@@ -191,7 +191,24 @@ fn parse_indexmap_by_json(value: &str) -> Result<toml_edit::Value> {
     Ok(toml_edit::Value::InlineTable({
         let mut table = toml_edit::InlineTable::new();
         for (k, v) in index_map {
-            table.insert(&k, toml_edit::Value::String(toml_edit::Formatted::new(v)));
+            // A replacement that carries no options is written back as the plain
+            // string it came in as, so `mise settings set` does not rewrite every
+            // existing entry into a table it did not ask for.
+            let value = if v.forward_auth {
+                toml_edit::Value::String(toml_edit::Formatted::new(v.url))
+            } else {
+                let mut inline = toml_edit::InlineTable::new();
+                inline.insert(
+                    "url",
+                    toml_edit::Value::String(toml_edit::Formatted::new(v.url)),
+                );
+                inline.insert(
+                    "forward_auth",
+                    toml_edit::Value::Boolean(toml_edit::Formatted::new(false)),
+                );
+                toml_edit::Value::InlineTable(inline)
+            };
+            table.insert(&k, value);
         }
         table
     }))
