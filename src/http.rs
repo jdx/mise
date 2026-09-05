@@ -440,7 +440,11 @@ fn download_request_hash(url: &Url, headers: &HeaderMap) -> String {
     if let Some(replacements) = &Settings::get().url_replacements {
         for (pattern, replacement) in replacements {
             update_download_hash(&mut hasher, pattern.as_bytes());
-            update_download_hash(&mut hasher, replacement.as_bytes());
+            update_download_hash(&mut hasher, replacement.as_str().as_bytes());
+            // The policy is part of what a replacement *is*, so flipping it has
+            // to change the key: the same URL fetched with and without the
+            // caller's auth can come back as different bytes.
+            update_download_hash(&mut hasher, &[u8::from(replacement.forward_auth)]);
         }
     }
     hasher.finalize().to_hex().to_string()
@@ -1276,7 +1280,7 @@ impl Client {
         options: SendOnceOptions,
     ) -> Result<Response> {
         let original_url = url.clone();
-        apply_url_replacements(&mut url);
+        let replacement = replace_url(&mut url);
         let host_key = http_host_key(&url);
         if Settings::get().prefer_offline()
             && let Some(host) = &host_key
@@ -1303,6 +1307,23 @@ impl Client {
         // (replace a public URL with a private mirror authenticated via
         // netrc) without clobbering forge tokens on un-redirected requests.
         let mut final_headers = headers.clone();
+        // Applied *before* netrc, so an entry for the new origin can still supply
+        // the credentials that origin actually wants. Dropping afterwards would
+        // strip those too.
+        final_headers = drop_auth_across_replacement(
+            final_headers,
+            &original_url,
+            &url,
+            replacement.unwrap_or_default().forward_auth,
+        );
+        // netrc is *not* gated on the scheme downgrade that drops the header
+        // above. The two credentials have different owners: the caller's header
+        // was built for the original host, so carrying it to a plaintext wire
+        // hands a secret to a party it was never meant for, while a netrc entry
+        // is written by the user against the destination host itself. mise
+        // already applies netrc to a plain `http://` URL that no replacement
+        // touched, so refusing it only here would be inconsistent without
+        // closing anything.
         if options.use_netrc {
             final_headers =
                 apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
@@ -1710,6 +1731,71 @@ fn netrc_should_apply(host_changed: bool, has_existing_auth: bool) -> bool {
     host_changed || !has_existing_auth
 }
 
+/// Whether a replacement moved the request from HTTPS to something that is not.
+///
+/// The caller's `Authorization` is dropped across such a step even when the rule
+/// says `forward_auth = true`: that header was built for the original host, and
+/// a downgrade would put it on a plaintext wire to a server it was never
+/// intended for. That exposure is created by the replacement, which is why the
+/// replacement is where it is refused.
+///
+/// This does not gate netrc. A netrc entry is scoped by the user to the host
+/// being contacted, and mise applies it to an ordinary `http://` URL with no
+/// replacement involved, so suppressing it here would be inconsistent rather
+/// than protective.
+fn scheme_downgraded(original_url: &Url, url: &Url) -> bool {
+    original_url.scheme() == "https" && url.scheme() != "https"
+}
+
+/// Whether the caller's `Authorization` header may follow a `url_replacements`
+/// rewrite to the server the request now points at.
+///
+/// Keeping it is the default and is deliberate: the documented use for
+/// replacements is an internal proxy that relays to the upstream forge, and it
+/// needs the forge token. But a replacement can also point at a server that
+/// never asked for it — a mirror allowing anonymous reads, say — and a config
+/// may contain both, so the answer belongs to the rule that matched rather than
+/// to a global switch. `forward_auth = false` on that rule is how a user says so.
+///
+/// Note what this cannot do: the header's provenance is not knowable here. It is
+/// whatever the caller passed in, so `forward_auth = false` drops *any*
+/// `Authorization` on that request, not merely one built for the original URL.
+///
+/// A rewrite within the same origin always keeps the header — the credential is
+/// still valid there, and dropping it would break ordinary path-only
+/// replacements. Origin, not host: a port change is a different trust boundary
+/// even under the same hostname, which is the comparison #12167 settled on for
+/// forge tokens.
+///
+/// A **scheme downgrade overrides `forward_auth` entirely**. Whether a proxy
+/// wants the upstream token is a question about that proxy; putting the token on
+/// a plaintext wire is not something a config should be able to opt into. The
+/// same rule stops netrc supplying a credential there, so no secret crosses that
+/// step from any source.
+fn auth_survives_replacement(origin_changed: bool, forward_auth: bool, downgraded: bool) -> bool {
+    !downgraded && (!origin_changed || forward_auth)
+}
+
+/// Drop an `Authorization` header the replacement target was never meant to
+/// see, per [`auth_survives_replacement`]. `original_url` is the URL before the
+/// rewrite and `url` is the one actually being requested.
+fn drop_auth_across_replacement(
+    mut headers: HeaderMap,
+    original_url: &Url,
+    url: &Url,
+    forward_auth: bool,
+) -> HeaderMap {
+    let origin_changed = url.origin() != original_url.origin();
+    if !auth_survives_replacement(
+        origin_changed,
+        forward_auth,
+        scheme_downgraded(original_url, url),
+    ) {
+        headers.remove(AUTHORIZATION);
+    }
+    headers
+}
+
 /// Merge `netrc` credentials into `final_headers`, honoring the fallback
 /// policy in [`netrc_should_apply`]. `original_url` is the URL before any
 /// `apply_url_replacements` rewrite and `url` is the (possibly rewritten)
@@ -1774,7 +1860,33 @@ pub(crate) fn resolve_pagination_url(current: &str, next: &str) -> Result<String
 
 /// Apply URL replacements based on settings configuration
 /// Supports both simple string replacement and regex patterns (prefixed with "regex:")
+/// What the rule that rewrote a URL says about carrying the caller's
+/// `Authorization` header to where the request now points.
+///
+/// Returned by [`replace_url`] so the decision travels with the rewrite instead
+/// of being looked up again afterwards — a config can hold both a proxy that
+/// needs the upstream token and a mirror that must not receive it, so "which
+/// rule matched" is the only thing that can answer it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ReplacementPolicy {
+    pub forward_auth: bool,
+}
+
+impl Default for ReplacementPolicy {
+    fn default() -> Self {
+        Self { forward_auth: true }
+    }
+}
+
+/// [`replace_url`] for callers that only want the rewrite, such as the vfox
+/// plugin's URL rewriter, which is handed this as a function pointer.
 pub(crate) fn apply_url_replacements(url: &mut Url) {
+    replace_url(url);
+}
+
+/// Rewrite `url` in place with the first matching replacement, returning that
+/// rule's policy. `None` means nothing matched and the URL is untouched.
+pub(crate) fn replace_url(url: &mut Url) -> Option<ReplacementPolicy> {
     let settings = Settings::get();
     if let Some(replacements) = &settings.url_replacements {
         let url_string = url.to_string();
@@ -1795,7 +1907,10 @@ pub(crate) fn apply_url_replacements(url: &mut Url) {
                             url_string,
                             url.as_str()
                         );
-                        return; // Apply only the first matching replacement
+                        // Apply only the first matching replacement
+                        return Some(ReplacementPolicy {
+                            forward_auth: replacement.forward_auth,
+                        });
                     }
                 } else {
                     warn!(
@@ -1806,7 +1921,7 @@ pub(crate) fn apply_url_replacements(url: &mut Url) {
             } else {
                 // Simple string replacement
                 if url_string.contains(pattern) {
-                    let new_url_string = url_string.replace(pattern, replacement);
+                    let new_url_string = url_string.replace(pattern, replacement.as_str());
                     // Only proceed if the URL actually changed
                     if new_url_string != url_string
                         && let Ok(new_url) = new_url_string.parse()
@@ -1818,12 +1933,16 @@ pub(crate) fn apply_url_replacements(url: &mut Url) {
                             url_string,
                             url.as_str()
                         );
-                        return; // Apply only the first matching replacement
+                        // Apply only the first matching replacement
+                        return Some(ReplacementPolicy {
+                            forward_auth: replacement.forward_auth,
+                        });
                     }
                 }
             }
         }
     }
+    None
 }
 
 fn display_github_rate_limit(resp: &Response) {
@@ -2020,6 +2139,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::settings::UrlReplacement;
     use confique::Layer;
     use indexmap::IndexMap;
     use reqwest::dns::{Name, Resolve, Resolving};
@@ -2080,10 +2200,25 @@ mod tests {
     }
 
     // Helper to create test settings with specific URL replacements
+    /// Takes the plain string form so the existing call sites read unchanged;
+    /// they are testing the rewrite, not the policy. Cases that care about
+    /// `forward_auth` build the map themselves.
     fn with_test_settings<F, R>(replacements: IndexMap<String, String>, test_fn: F) -> R
     where
         F: FnOnce() -> R,
     {
+        let replacements: IndexMap<String, UrlReplacement> = replacements
+            .into_iter()
+            .map(|(pattern, url)| {
+                (
+                    pattern,
+                    UrlReplacement {
+                        url,
+                        forward_auth: true,
+                    },
+                )
+            })
+            .collect();
         // `SettingsGuard` holds the lock and calls `Settings::reset(None)` in `Drop`, which runs
         // while unwinding. Resetting after `test_fn` instead would leave the replacements behind
         // for the next test whenever this one panics -- previously the lock's poison flag hid
@@ -3008,6 +3143,133 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         );
 
         let out = apply_netrc_credentials(headers, &original, &rewritten, basic_netrc_headers());
+        assert_eq!(auth_value(&out), vec!["Bearer forge-token".to_string()]);
+    }
+
+    fn forge_token_headers() -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer forge-token"),
+        );
+        h
+    }
+
+    #[test]
+    fn test_auth_survives_replacement_defaults_to_forwarding() {
+        // Keeping the header is the documented behaviour: a replacement usually
+        // points at an internal proxy that relays to the upstream forge and
+        // needs the token. Only an explicit opt-out changes that, and only when
+        // the origin changes.
+        assert!(auth_survives_replacement(false, true, false));
+        assert!(auth_survives_replacement(true, true, false));
+        assert!(auth_survives_replacement(false, false, false));
+        assert!(!auth_survives_replacement(true, false, false));
+
+        // ...and a downgrade overrides all of it. `forward_auth` is a question
+        // about which server may see the credential, not about whether it may
+        // travel in the clear.
+        assert!(!auth_survives_replacement(false, true, true));
+        assert!(!auth_survives_replacement(true, true, true));
+        assert!(!auth_survives_replacement(false, false, true));
+        assert!(!auth_survives_replacement(true, false, true));
+    }
+
+    #[test]
+    fn test_auth_is_dropped_on_a_downgrade_even_when_forwarding_is_allowed() {
+        // The default is `forward_auth = true`, and it must not be enough to put
+        // the caller's token on a plaintext wire.
+        let original: Url = "https://mirror.internal/f.tar.gz".parse().unwrap();
+        let downgraded: Url = "http://mirror.internal/f.tar.gz".parse().unwrap();
+
+        let out = drop_auth_across_replacement(forge_token_headers(), &original, &downgraded, true);
+
+        assert!(
+            auth_value(&out).is_empty(),
+            "the caller's credential followed a replacement onto plaintext"
+        );
+    }
+
+    #[test]
+    fn test_auth_is_forwarded_to_a_new_host_by_default() {
+        // #9781: this is the behaviour being complained about, and it stays the
+        // default -- the docs call it by design. This is the regression guard.
+        let original: Url = "https://api.github.com/repos/o/r".parse().unwrap();
+        let replaced: Url = "https://artifactory.example.com/repos/o/r".parse().unwrap();
+
+        let out = drop_auth_across_replacement(forge_token_headers(), &original, &replaced, true);
+
+        assert_eq!(auth_value(&out), vec!["Bearer forge-token".to_string()]);
+    }
+
+    #[test]
+    fn test_auth_is_dropped_when_a_replacement_changes_host_and_the_user_opted_out() {
+        // The reporter's case: a forge token built for api.github.com reaching an
+        // Artifactory that allows anonymous reads and rejects the token it never
+        // asked for.
+        let original: Url = "https://api.github.com/repos/o/r".parse().unwrap();
+        let replaced: Url = "https://artifactory.example.com/repos/o/r".parse().unwrap();
+
+        let out = drop_auth_across_replacement(forge_token_headers(), &original, &replaced, false);
+
+        assert!(
+            auth_value(&out).is_empty(),
+            "the header built for the original host followed the request to another one"
+        );
+    }
+
+    #[test]
+    fn test_auth_is_dropped_on_an_https_to_http_downgrade() {
+        // Same hostname, different origin. Comparing hosts alone would have let
+        // the credential follow a request onto plaintext, which is the boundary
+        // #12167 settled on for forge tokens.
+        let original: Url = "https://mirror.internal/f.tar.gz".parse().unwrap();
+        let downgraded: Url = "http://mirror.internal/f.tar.gz".parse().unwrap();
+
+        let out =
+            drop_auth_across_replacement(forge_token_headers(), &original, &downgraded, false);
+
+        assert!(auth_value(&out).is_empty());
+    }
+
+    #[test]
+    fn test_a_scheme_downgrade_is_recognised() {
+        let https: Url = "https://mirror.internal/f".parse().unwrap();
+        let http: Url = "http://mirror.internal/f".parse().unwrap();
+
+        // The case that matters: the caller's header must not follow this step.
+        assert!(scheme_downgraded(&https, &http));
+
+        // Everything else keeps the header, subject to `forward_auth`.
+        assert!(!scheme_downgraded(&https, &https));
+        assert!(!scheme_downgraded(&http, &http));
+        assert!(!scheme_downgraded(&http, &https));
+    }
+
+    #[test]
+    fn test_auth_is_dropped_when_only_the_port_changes() {
+        let original: Url = "https://mirror.internal/f.tar.gz".parse().unwrap();
+        let other_port: Url = "https://mirror.internal:8443/f.tar.gz".parse().unwrap();
+
+        let out =
+            drop_auth_across_replacement(forge_token_headers(), &original, &other_port, false);
+
+        assert!(auth_value(&out).is_empty());
+    }
+
+    #[test]
+    fn test_auth_is_kept_on_a_same_origin_rewrite_even_when_opted_out() {
+        // A path-only replacement is still talking to the origin the credential
+        // was issued for. Dropping it there would break ordinary use.
+        let original: Url = "https://github.com/o/r/releases/download/v1/f.tar.gz"
+            .parse()
+            .unwrap();
+        let rewritten: Url = "https://github.com/o/r/releases/download/v1/f-linux.tar.gz"
+            .parse()
+            .unwrap();
+
+        let out = drop_auth_across_replacement(forge_token_headers(), &original, &rewritten, false);
+
         assert_eq!(auth_value(&out), vec!["Bearer forge-token".to_string()]);
     }
 

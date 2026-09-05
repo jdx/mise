@@ -3598,12 +3598,38 @@ docs = '''
 Map of URL patterns to replacement URLs. This feature supports both simple hostname replacements
 and advanced regex-based URL transformations for download mirroring and custom registries.
 
-See [URL Replacements](/url-replacements.html) for more information.
+A value is either the replacement URL, or a table carrying options alongside it:
+
+```toml
+[settings.url_replacements]
+"https://public.example.com" = "https://mirror.internal"
+'regex:^https://api\.github\.com/repos/acme' = { url = "https://artifactory.example.com/acme", forward_auth = false }
+```
+
+`forward_auth = false` drops any `Authorization` header the caller supplied when the
+replacement sends the request to a different origin. A downgrade from HTTPS to HTTP
+drops it regardless, since that credential was issued for the original host and would
+otherwise travel unencrypted to a different one. `.netrc` is unaffected: those entries
+name the host being contacted, and mise already uses them for plain `http://` URLs. See
+[URL Replacements](/url-replacements.html) for more information.
 '''
 env = "MISE_URL_REPLACEMENTS"
 optional = true
 parse_env = "parse_url_replacements"
+rust_type = "IndexMap<String, crate::config::settings::UrlReplacement>"
 type = "IndexMap<String, String>"
+
+# Emitted verbatim as the JSON Schema for each value. `type` above still says
+# `IndexMap<String, String>` because that is what drives the Rust codegen's
+# "this is a map" decision; the value shape lives here so the schema generator
+# does not have to know about this setting in particular.
+[url_replacements.value_schema]
+oneOf = [
+  { type = "string", description = "Replacement URL." },
+  { type = "object", required = [
+    "url",
+  ], additionalProperties = false, properties = { url = { type = "string", description = "Replacement URL." }, forward_auth = { type = "boolean", default = true, description = "Set to false to drop any Authorization header the caller supplied when this replacement points the request at a different origin." } } },
+]
 
 [use_file_shell_for_executable_tasks]
 default = false
