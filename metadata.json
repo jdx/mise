@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1QF0SDFJXA1Y1EYTAA6DQMM",
+  "strategy": "manual-commit",
+  "branch": "codex/packslip-docs",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/.vitepress/sidebar.ts",
+    "docs/dev-tools/backends/packslip.md",
+    "docs/dev-tools/packslip-resources.md",
+    "docs/installing-mise.md",
+    "docs/public/llms.txt",
+    "settings.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 353273,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 5981440,
+    "output_tokens": 21752,
+    "api_call_count": 60
+  }
+}
