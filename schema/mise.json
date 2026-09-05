@@ -5101,6 +5101,225 @@
             }
           },
           "additionalProperties": false
+        },
+        "compose": {
+          "type": "object",
+          "description": "Docker Compose projects managed with `mise bootstrap compose apply`, keyed by project name",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["project_dir"],
+            "properties": {
+              "project_dir": {
+                "type": "string",
+                "pattern": "^(/|[A-Za-z]:[\\\\/]|\\\\\\\\)",
+                "description": "Compose project directory; must be an absolute path (POSIX `/…`, Windows `C:\\…`, or a UNC `\\\\server\\share` path); relative `files` and `env_files` entries resolve from it"
+              },
+              "files": {
+                "type": "array",
+                "description": "ordered Compose files passed with `--file`; empty uses Compose's normal project-directory discovery",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env_files": {
+                "type": "array",
+                "description": "ordered interpolation environment files passed with `--env-file`",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "project_name": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                "description": "explicit Compose project name; starts with a lowercase letter or digit and contains only lowercase letters, digits, dashes, and underscores"
+              },
+              "profiles": {
+                "type": "array",
+                "description": "profiles enabled with `--profile`",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^-]"
+                }
+              },
+              "services": {
+                "type": "array",
+                "description": "optional service subset; empty selects every service enabled by the selected files and profiles",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^-]"
+                }
+              },
+              "oneshot": {
+                "type": "array",
+                "description": "selected services that are converged after exiting successfully with code 0; when `services` is non-empty, every `oneshot` entry must also appear in `services`",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^-]"
+                }
+              },
+              "state": {
+                "type": "string",
+                "enum": ["running", "stopped", "absent"],
+                "default": "running",
+                "description": "desired project lifecycle"
+              },
+              "pull": {
+                "type": "string",
+                "enum": ["always", "missing", "never"],
+                "default": "missing",
+                "description": "image pull policy for `up`"
+              },
+              "build": {
+                "type": "string",
+                "enum": ["auto", "always", "never"],
+                "default": "auto",
+                "description": "image build policy for `up`"
+              },
+              "recreate": {
+                "type": "string",
+                "enum": ["auto", "always", "never"],
+                "default": "auto",
+                "description": "container recreate policy for `up`"
+              },
+              "wait": {
+                "type": "boolean",
+                "default": true,
+                "description": "wait for running/healthy services after `up`"
+              },
+              "wait_timeout": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "maximum wait in seconds"
+              },
+              "timeout": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "stop/shutdown timeout in seconds"
+              },
+              "remove_orphans": {
+                "type": "boolean",
+                "default": true,
+                "description": "remove project containers no longer present in the Compose model"
+              },
+              "renew_anonymous_volumes": {
+                "type": "boolean",
+                "default": false,
+                "description": "renew anonymous volumes during `up`"
+              },
+              "down_volumes": {
+                "type": "boolean",
+                "default": false,
+                "description": "remove named and anonymous volumes during `down` (destructive)"
+              },
+              "down_images": {
+                "type": "string",
+                "enum": ["local", "all"],
+                "description": "remove project images during `down` (destructive)"
+              },
+              "sudo": {
+                "type": "boolean",
+                "default": false,
+                "description": "run Compose and engine commands through sudo for the system Docker daemon"
+              },
+              "command": {
+                "type": "array",
+                "description": "Compose frontend argv (e.g. [\"podman\", \"compose\"])",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "engine_command": {
+                "type": "array",
+                "description": "container engine argv used to inspect container config-hash labels and to `rm --force` orphan containers when `state = \"stopped\"` and `remove_orphans` is enabled",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "depends_on": {
+                "type": "array",
+                "description": "additional bootstrap resource IDs that must converge first (e.g. \"package:apt:docker.io\", \"service:docker\")",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(package|file|directory|service|user|group):[\\s\\S]+$"
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "wait": {
+                      "const": false
+                    }
+                  },
+                  "required": ["wait"]
+                },
+                "then": {
+                  "not": {
+                    "required": ["wait_timeout"]
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "absent"
+                    }
+                  },
+                  "required": ["state"]
+                },
+                "then": {
+                  "properties": {
+                    "services": {
+                      "type": "array",
+                      "maxItems": 0
+                    }
+                  }
+                },
+                "else": {
+                  "title": "down_volumes and down_images require state = \"absent\"",
+                  "not": {
+                    "anyOf": [
+                      {
+                        "properties": {
+                          "down_volumes": {
+                            "const": true
+                          }
+                        },
+                        "required": ["down_volumes"]
+                      },
+                      {
+                        "required": ["down_images"]
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "renew_anonymous_volumes": {
+                      "const": true
+                    }
+                  },
+                  "required": ["renew_anonymous_volumes"]
+                },
+                "then": {
+                  "properties": {
+                    "state": {
+                      "const": "running"
+                    }
+                  }
+                }
+              }
+            ]
+          }
         }
       }
     },
