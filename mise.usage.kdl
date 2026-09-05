@@ -958,6 +958,23 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
         }
     }
     cmd remote help="Bootstrap one or more machines over OpenSSH" effect=destructive {
+        flag --from-git help="Install a Git repository as persistent global configuration on each target" {
+            conflicts "--source" "--copy-link" "--copy-links" "--exclude"
+            arg "<GIT_URL|OWNER/REPO>"
+        }
+        flag --github-relay-read-only help="Borrow read-only GitHub access for this invocation"
+        flag --github-relay-repo help="Approved GitHub repository; repeat for multiple repositories" var=#true {
+            arg "<OWNER/REPO>"
+        }
+        flag --github-relay-all-repos help="Explicitly authorize all repositories accessible locally"
+        flag --github-relay-log-requests help="Log sanitized relay requests on local stderr" conflicts=--github-relay-no-log-requests
+        flag --github-relay-no-log-requests help="Disable request logging, overriding the saved preference"
+        flag --github-relay-log-format help="Relay log and summary format: text or jsonl" {
+            arg <FORMAT>
+        }
+        flag --github-relay-max-duration help="Expire borrowed access after a duration such as 1h (0s: session lifetime)" {
+            arg <DURATION>
+        }
         flag --all help="Select every configured inventory host"
         flag --bootstrap-command help="Explicit remote shell command that installs mise and places it on PATH" {
             conflicts "--mise-bin" "--remote-mise" "--install-mise"
@@ -3531,6 +3548,48 @@ Defaults to the `jobs` setting
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`" overrides=--jobs
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL@VERSION>… help="Tool(s) to use" var=#true
+}
+cmd ssh help="Open an SSH session, optionally borrowing read-only GitHub access" {
+    flag "-i --identity-file" help="SSH identity file" {
+        arg <IDENTITY_FILE>
+    }
+    flag "-p --port" help="SSH port" {
+        arg <PORT>
+    }
+    flag "-o --ssh-option" help="OpenSSH option; repeat for multiple options" var=#true {
+        arg <SSH_OPTION>
+    }
+    flag --github-relay-read-only help="Borrow read-only GitHub access for this session only"
+    flag --github-relay-repo help="Approved GitHub repository; repeat to authorize more repositories" var=#true {
+        arg "<OWNER/REPO>"
+    }
+    flag --github-relay-all-repos help="Explicitly authorize reads of all repositories accessible locally"
+    flag --github-relay-log-requests help="Log sanitized relay requests on local stderr" conflicts=--github-relay-no-log-requests
+    flag --github-relay-no-log-requests help="Disable request logging, overriding the saved preference"
+    flag --github-relay-log-format help="Relay log and summary format: text or jsonl" {
+        arg <FORMAT>
+    }
+    flag --github-relay-max-duration help="Expire borrowed access after a duration such as 1h (0s: session lifetime)" {
+        arg <DURATION>
+    }
+    flag --relay-session help="Internal session adapter" hide=#true {
+        arg <RELAY_SESSION>
+    }
+    flag --repository-bundle hide=#true {
+        arg <REPOSITORY_BUNDLE>
+    }
+    flag --repository-origin hide=#true {
+        arg <REPOSITORY_ORIGIN>
+    }
+    flag --repository-revision hide=#true {
+        arg <REPOSITORY_REVISION>
+    }
+    flag --repository-update hide=#true
+    flag --repository-yes hide=#true
+    flag --global-config-directory hide=#true
+    flag "-h --help" help="Print help" action=help builtin=#true
+    arg "[DESTINATION]" help="OpenSSH destination or SSH-config alias" required=#false
+    arg "[COMMAND]…" help="Command to execute after --; omit for an interactive shell" required=#false double_dash=automatic var=#true
 }
 cmd shell-alias help="Manage shell aliases" effect=read {
     flag --no-header help="Don't show table header"

@@ -973,6 +973,37 @@
           "description": "Enable GitHub Artifact Attestations verification for supported tools.",
           "type": "boolean"
         },
+        "github_relay": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "concurrency": {
+              "default": 8,
+              "description": "Maximum simultaneous GitHub relay requests (1-32); excess requests fail closed.",
+              "type": "integer"
+            },
+            "log_format": {
+              "default": "text",
+              "description": "GitHub relay request and summary output format: text or jsonl.",
+              "type": "string"
+            },
+            "log_requests": {
+              "default": false,
+              "description": "Log sanitized GitHub relay requests on the initiating machine's stderr.",
+              "type": "boolean"
+            },
+            "max_duration": {
+              "default": "0s",
+              "description": "Maximum borrowed GitHub access duration; 0s means until the session ends.",
+              "type": "string"
+            },
+            "request_timeout": {
+              "default": "5m",
+              "description": "Total time limit for a relayed request, including response streaming.",
+              "type": "string"
+            }
+          }
+        },
         "gitlab": {
           "type": "object",
           "unevaluatedProperties": false,

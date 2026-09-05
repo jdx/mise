@@ -1033,6 +1033,41 @@ using GitHub's artifact attestation system for tools that support it (e.g., Ruby
 env = "MISE_GITHUB_ATTESTATIONS"
 type = "Bool"
 
+[github_relay.concurrency]
+default = 8
+description = "Maximum simultaneous GitHub relay requests (1-32); excess requests fail closed."
+env = "MISE_GITHUB_RELAY_CONCURRENCY"
+global_only = true
+type = "Integer"
+
+[github_relay.log_format]
+default = "text"
+description = "GitHub relay request and summary output format: text or jsonl."
+env = "MISE_GITHUB_RELAY_LOG_FORMAT"
+global_only = true
+type = "String"
+
+[github_relay.log_requests]
+default = false
+description = "Log sanitized GitHub relay requests on the initiating machine's stderr."
+env = "MISE_GITHUB_RELAY_LOG_REQUESTS"
+global_only = true
+type = "Bool"
+
+[github_relay.max_duration]
+default = "0s"
+description = "Maximum borrowed GitHub access duration; 0s means until the session ends."
+env = "MISE_GITHUB_RELAY_MAX_DURATION"
+global_only = true
+type = "Duration"
+
+[github_relay.request_timeout]
+default = "5m"
+description = "Total time limit for a relayed request, including response streaming."
+env = "MISE_GITHUB_RELAY_REQUEST_TIMEOUT"
+global_only = true
+type = "Duration"
+
 [gitlab.credential_command]
 default = ""
 description = "Shell command to run to obtain a GitLab token for mise."

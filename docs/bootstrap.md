@@ -31,7 +31,7 @@ If the repository is the global mise configuration itself, use `--from-git`
 instead:
 
 ```sh
-mise -E work bootstrap --from-git git@github.com:example/mise-config.git --yes
+mise -E work bootstrap --from-git example/mise-config --yes
 ```
 
 This clones the repository into `$MISE_CONFIG_DIR` (normally

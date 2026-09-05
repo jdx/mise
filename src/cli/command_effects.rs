@@ -311,6 +311,7 @@ pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
     ("mcp", "serves tools that run tasks on request"),
     ("oci run", "runs an arbitrary command in a container"),
     ("run", "runs project tasks"),
+    ("ssh", "runs an arbitrary command on a remote host"),
     ("tasks run", "runs project tasks"),
     ("test-tool", "installs and executes a tool"),
     ("tool-stub", "executes the tool a stub points at"),
