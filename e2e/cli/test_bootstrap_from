@@ -111,6 +111,12 @@ relative_checkout="bootstrap-relative-checkout"
 assert_succeed "mise -E work bootstrap --from '$source_repo' --from-dir '$relative_checkout' --yes --only dotfiles"
 assert "git -C '$relative_checkout' remote get-url origin" "$source_repo"
 
+# A reused checkout without --update changes nothing and records no
+# "bootstrap --from" generation of its own; a clone or pull does.
+before="$(mise bootstrap generations --json | jq '[.[] | select(.command | startswith("bootstrap --from"))] | length')"
+assert_succeed "mise -E work bootstrap --from '$source_repo' --from-dir '$checkout' --yes --only dotfiles"
+assert "mise bootstrap generations --json | jq '[.[] | select(.command | startswith(\"bootstrap --from\"))] | length'" "$before"
+
 # Existing checkouts are reused, while --update fast-forwards before bootstrap.
 echo work-v2 >"$source_repo/profile"
 perl -pi -e 's/work-v1/work-v2/' "$source_repo/mise.work.toml"
@@ -119,6 +125,7 @@ git -C "$source_repo" commit -qm update
 assert_succeed "mise -E work bootstrap --from '$source_repo' --from-dir '$checkout' --update --yes --only dotfiles,task"
 assert "cat ~/.bootstrap-from-profile" "work-v2"
 assert "cat ~/bootstrap-from-task" "work-v2"
+assert "mise bootstrap generations --json | jq '[.[] | select(.command | startswith(\"bootstrap --from\"))] | length'" "$((before + 1))"
 
 # --dry-run also leaves an existing checkout untouched when --update is set.
 echo work-v3 >"$source_repo/profile"

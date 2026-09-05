@@ -1749,12 +1749,18 @@ impl Bootstrap {
             )
         };
 
-        // The clone or pull changes the config checkout before the child
-        // process records the bootstrap itself, so it is a generation of its own.
-        let generation = GenerationScope::begin("bootstrap --from", self.dry_run);
         let checkout_is_empty = checkout.is_dir() && checkout.read_dir()?.next().is_none();
-        if checkout.exists() && !checkout_is_empty {
+        let reuse_checkout = checkout.exists() && !checkout_is_empty;
+        if reuse_checkout {
             validate_bootstrap_checkout(&checkout, url)?;
+        }
+        // The clone or pull changes the config checkout before the child
+        // process records the bootstrap itself, so it is a generation of its
+        // own. A checkout reused as-is changes nothing and records nothing.
+        let mutates_checkout = !reuse_checkout || self.update;
+        let generation =
+            mutates_checkout.then(|| GenerationScope::begin("bootstrap --from", self.dry_run));
+        if reuse_checkout {
             if self.update {
                 if self.dry_run {
                     miseprintln!(
@@ -1763,6 +1769,10 @@ impl Bootstrap {
                     );
                 } else {
                     run_bootstrap_git(&checkout, ["pull", "--ff-only"])?;
+                    journal::note(format!(
+                        "updated the checkout of {url} in {}",
+                        checkout.display_user()
+                    ));
                 }
             }
         } else if self.dry_run {
@@ -1782,20 +1792,17 @@ impl Bootstrap {
             if !status.success() {
                 bail!("git clone failed with {status}");
             }
+            journal::note(format!("cloned {url} into {}", checkout.display_user()));
         }
-        if !self.dry_run {
-            journal::note(format!(
-                "checked out {url} into {}",
-                checkout.display_user()
-            ));
+        if let Some(generation) = generation {
+            generation.finish(
+                None,
+                Some(Summary {
+                    parts: vec!["config-checkout".into()],
+                    message: Some(format!("checkout of {url}")),
+                }),
+            );
         }
-        generation.finish(
-            None,
-            Some(Summary {
-                parts: vec!["config-checkout".into()],
-                message: Some(format!("checkout of {url}")),
-            }),
-        );
 
         let checkout = dunce::canonicalize(&checkout)?;
         let mut command = Command::new(std::env::current_exe()?);
