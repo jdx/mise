@@ -551,10 +551,105 @@ jobs:
         with:
           subject-checksums: release-assets/SHASUMS256.txt
 
+  # The packslip is this release's signed inventory: every artifact's digest,
+  # the executable inside it, the man page beside that, the shared objects it
+  # needs from the host, and the workflow identity that signed for all of it.
+  # SHASUMS and the minisign and GPG signatures say the bytes did not change;
+  # this says which platform each file is for and what is in it, so an
+  # installer can pick and check one against the identity github.com/jdx/mise.
+  # See https://packslip.dev.
+  #
+  # attest: false -- attest-release above already attests every artifact
+  # through SHASUMS256.txt, and attesting again here would only add a second
+  # statement about the same digests.
+  packslip:
+    needs:
+      - release
+      - attest-release
+    if: needs.release.outputs.created == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+    # The workflow-level env puts the publishing token in every step. This job
+    # runs the binary it just built, so it takes the token back out and hands
+    # it only to the two steps that publish with it.
+    env:
+      GH_TOKEN: ""
+      GITHUB_TOKEN: ""
+      GITHUB_API_TOKEN: ""
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-assets
+          path: release-assets
+      # From this a consumer generates completions, a man page, and
+      # documentation with its own copy of usage, so nothing of mise's has to
+      # run on the machine it is being installed on. Generating it and
+      # uploading it are separate steps so that the release token is only in
+      # the environment of the step that publishes, not of the binary that was
+      # just built.
+      - name: Generate the CLI specification
+        run: |
+          mkdir -p bin
+          tar -xzf "release-assets/mise-$GITHUB_REF_NAME-linux-x64.tar.gz" -C bin
+          bin/mise/bin/mise usage > mise.usage.kdl
+      - name: Publish the CLI specification
+        env:
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" mise.usage.kdl --clobber
+      # Two things the file names cannot say. A bare executable named for a
+      # dotted version has no extension to read a format from. And the man
+      # page is inside the Unix archives only -- the Windows zip carries none,
+      # and a bare executable is not an archive to look inside -- so each
+      # entry names the artifact it is really in.
+      - name: Describe what the file names cannot
+        run: |
+          {
+            for f in "release-assets/mise-$GITHUB_REF_NAME"-*; do
+              case "${f##*/}" in
+                *.tar.gz | *.tar.xz | *.tar.zst | *.zip | *.exe) continue ;;
+              esac
+              printf '[[artifact]]\npath = "%s"\nformat = "raw"\n\n' "$f"
+            done
+            for f in "release-assets/mise-$GITHUB_REF_NAME"-*.tar.*; do
+              name="${f##*/}"
+              case "$name" in *windows*) continue ;; esac
+              printf '[[resource]]\nkind = "man"\nartifact = "%s"\narchive = "mise/man/man1/mise.1"\n\n' "$name"
+            done
+          } > packslip.toml
+          cat packslip.toml
+      # `out: .` keeps the bundle beside mise.usage.kdl. The action defaults to
+      # writing it under packslip/, and an artifact holding files at two
+      # depths keeps the directory, which the flat `sha256sum ./*` below
+      # would then choke on.
+      - uses: jdx/packslip@433c0c0f033e64c22f12433471768c255ef2bd93 # v0.3.0
+        with:
+          artifacts: release-assets/mise-*
+          manifest: packslip.toml
+          bin: mise
+          resources: cli-spec/usage=asset:mise.usage.kdl
+          attest: "false"
+          out: "."
+          token: ${{ secrets.MISE_GH_TOKEN }}
+      # publish-release compares the draft's assets against what this workflow
+      # built, so the two files added here have to reach it or the diff fails.
+      - name: Stage the packslip for the asset check
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-extras
+          path: |
+            mise.usage.kdl
+            packslip.sigstore.json
+          if-no-files-found: error
+          retention-days: 1
+
   publish-release:
     needs:
       - release
       - attest-release
+      - packslip
     if: needs.release.outputs.created == 'true'
     runs-on: ubuntu-24.04
     permissions:
@@ -564,6 +659,11 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: release-assets
+          path: release-assets
+      - name: Download the packslip
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-extras
           path: release-assets
       - name: Verify and publish GitHub Release
         run: |
