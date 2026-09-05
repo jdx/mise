@@ -138,7 +138,7 @@
     "env_file_expand": {
       "type": "boolean",
       "default": false,
-      "description": "enable shell-style variable expansion for values loaded by env._.file"
+      "description": "enable shell-style variable expansion for values loaded by `_.file`"
     },
     "env_redact": {
       "type": "boolean",
@@ -192,6 +192,16 @@
         "paths": {
           "$ref": "#/$defs/env_paths"
         },
+        "value": {
+          "$ref": "#/$defs/env_path",
+          "deprecated": true,
+          "description": "deprecated alias for `path`"
+        },
+        "values": {
+          "$ref": "#/$defs/env_paths",
+          "deprecated": true,
+          "description": "deprecated alias for `paths`"
+        },
         "tools": {
           "$ref": "#/$defs/env_tools"
         },
@@ -207,24 +217,32 @@
       },
       "oneOf": [
         {
-          "type": "object",
-          "properties": {
-            "path": {
-              "$ref": "#/$defs/env_path"
-            }
-          },
           "required": ["path"]
         },
         {
-          "type": "object",
-          "properties": {
-            "paths": {
-              "$ref": "#/$defs/env_paths"
-            }
-          },
           "required": ["paths"]
+        },
+        {
+          "required": ["value"]
+        },
+        {
+          "required": ["values"]
         }
       ]
+    },
+    "env_directive_no_expand": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/env_directive"
+        }
+      ],
+      "properties": {
+        "expand": {
+          "const": false,
+          "description": "`expand` is only read for `_.file`; it does nothing on `_.path` or `_.source`"
+        }
+      }
     },
     "env": {
       "additionalProperties": {
@@ -371,38 +389,7 @@
             "path": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "$ref": "#/$defs/env_path"
-                    },
-                    "paths": {
-                      "$ref": "#/$defs/env_paths"
-                    },
-                    "tools": {
-                      "$ref": "#/$defs/env_tools"
-                    }
-                  },
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "path": {
-                          "$ref": "#/$defs/env_path"
-                        }
-                      },
-                      "required": ["path"]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "paths": {
-                          "$ref": "#/$defs/env_paths"
-                        }
-                      },
-                      "required": ["paths"]
-                    }
-                  ]
+                  "$ref": "#/$defs/env_directive_no_expand"
                 },
                 {
                   "description": "PATH entry to add",
@@ -418,15 +405,7 @@
                         "type": "string"
                       },
                       {
-                        "type": "object",
-                        "properties": {
-                          "path": {
-                            "$ref": "#/$defs/env_path"
-                          },
-                          "tools": {
-                            "$ref": "#/$defs/env_tools"
-                          }
-                        }
+                        "$ref": "#/$defs/env_directive_no_expand"
                       }
                     ]
                   }
@@ -435,6 +414,7 @@
             },
             "python": {
               "description": "python environment",
+              "additionalProperties": false,
               "properties": {
                 "venv": {
                   "oneOf": [
@@ -444,6 +424,7 @@
                     },
                     {
                       "description": "virtualenv options",
+                      "additionalProperties": false,
                       "properties": {
                         "create": {
                           "default": false,
@@ -484,7 +465,7 @@
             "source": {
               "oneOf": [
                 {
-                  "$ref": "#/$defs/env_directive"
+                  "$ref": "#/$defs/env_directive_no_expand"
                 },
                 {
                   "description": "bash script to load",
@@ -500,7 +481,7 @@
                         "type": "string"
                       },
                       {
-                        "$ref": "#/$defs/env_directive"
+                        "$ref": "#/$defs/env_directive_no_expand"
                       }
                     ]
                   }
@@ -509,6 +490,11 @@
             }
           },
           "type": "object"
+        },
+        "mise": {
+          "$ref": "#/$defs/env/properties/_",
+          "deprecated": true,
+          "description": "deprecated alias for `_`; use `env._` instead"
         }
       },
       "type": "object"
