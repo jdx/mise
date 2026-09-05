@@ -32,13 +32,11 @@ pub(crate) fn usage_spec_request(argv: &[OsString]) -> Option<Result<String>> {
         return None;
     }
     Some((|| {
-        use base64::Engine;
         let path = argv
             .get(1)
             .and_then(|arg| arg.to_str())
             .ok_or_else(|| eyre::eyre!("missing completion specification"))?;
-        let path = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(path)?;
-        let path = String::from_utf8(path)?;
+        let path = crate::packslip::completions::decode_spec_path(path)?;
         let spec = crate::file::read_to_string(path)?
             .parse::<usage::Spec>()
             .map_err(|err| eyre::eyre!("invalid usage specification: {err}"))?;
@@ -295,6 +293,34 @@ impl From<Shell> for usage_rs::complete::Shell {
 mod shell_name_tests {
     use super::*;
     use usage_rs::spec::ValueEnum;
+
+    #[test]
+    fn usage_spec_completes_from_a_native_path() {
+        let dir = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        let name = {
+            use std::os::unix::ffi::OsStringExt;
+            OsString::from_vec(b"spec with spaces-\xff.kdl".to_vec())
+        };
+        #[cfg(windows)]
+        let name = OsString::from("spec with spaces-\u{03bb}.kdl");
+        let path = dir.path().join(name);
+        std::fs::write(&path, "name \"probe\"\nflag \"--from-spec\"\n").unwrap();
+        let encoded = crate::packslip::completions::encode_spec_path(&path);
+        let argv: Vec<OsString> = [
+            "__usage_complete_word",
+            &encoded,
+            "--shell",
+            "bash",
+            "--line",
+            "probe --from",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let answer = usage_spec_request(&argv).unwrap().unwrap();
+        assert!(answer.contains("--from-spec"), "{answer}");
+    }
 
     #[test]
     fn pwsh_is_accepted_as_powershell() {

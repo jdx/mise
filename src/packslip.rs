@@ -1098,8 +1098,6 @@ fn derive_from_spec(format: &str, bin: &str, spec: &Path, shell: &str) -> Result
     if format != "usage" {
         bail!("mise cannot derive completions from a {format} spec");
     }
-    use base64::Engine;
-
     // Validate before returning a loader, so an invalid preferred spec still
     // falls through to another resource source.
     file::read_to_string(spec)?
@@ -1107,8 +1105,7 @@ fn derive_from_spec(format: &str, bin: &str, spec: &Path, shell: &str) -> Result
         .map_err(|err| eyre!("invalid usage specification: {err}"))?;
     let shell = usage_rs::complete::Shell::from_name(shell)
         .ok_or_else(|| eyre!("unsupported completion shell: {shell}"))?;
-    let path =
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(spec.to_string_lossy().as_bytes());
+    let path = completions::encode_spec_path(spec);
     let script = usage_rs::script::script_for("mise", bin, shell);
     Ok(script.replace(
         " __complete_word__ ",

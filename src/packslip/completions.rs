@@ -9,6 +9,48 @@ use usage_rs::complete::Shell;
 use crate::config::Config;
 use crate::toolset::Toolset;
 
+/// Keep native paths intact while passing them through shell source as ASCII.
+pub(crate) fn encode_spec_path(path: &std::path::Path) -> String {
+    use base64::Engine;
+    #[cfg(unix)]
+    let bytes = {
+        use std::os::unix::ffi::OsStrExt;
+        path.as_os_str().as_bytes().to_vec()
+    };
+    #[cfg(windows)]
+    let bytes: Vec<_> = {
+        use std::os::windows::ffi::OsStrExt;
+        path.as_os_str()
+            .encode_wide()
+            .flat_map(u16::to_le_bytes)
+            .collect()
+    };
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+pub(crate) fn decode_spec_path(encoded: &str) -> eyre::Result<std::path::PathBuf> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(encoded)?;
+    #[cfg(unix)]
+    let path = {
+        use std::os::unix::ffi::OsStringExt;
+        std::ffi::OsString::from_vec(bytes)
+    };
+    #[cfg(windows)]
+    let path = {
+        use std::os::windows::ffi::OsStringExt;
+        if !bytes.len().is_multiple_of(2) {
+            eyre::bail!("invalid completion specification path");
+        }
+        let wide: Vec<_> = bytes
+            .chunks_exact(2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        std::ffi::OsString::from_wide(&wide)
+    };
+    Ok(path.into())
+}
+
 pub(crate) fn clear(shell: &str) -> &'static str {
     match shell {
         "bash" | "zsh" => {
@@ -139,7 +181,7 @@ if ($__mise_completion_table_ready) {
                 output.push_str(&format!(
                     "set -g {saved} (complete -c '{command}')\ncomplete -e -c '{command}'\n{stub}"
                 ));
-                cleanup.push_str(&format!("complete -e -c '{command}'\nif set -q {saved}[1]; eval ${saved}; end\nset -e {saved}\n"));
+                cleanup.push_str(&format!("complete -e -c '{command}'\nfor rule in ${saved}; eval $rule; end\nset -e {saved}\n"));
             }
             Shell::PowerShell => {
                 output.push_str(&format!("$global:{saved} = if ($null -ne $__mise_completion_table) {{ $__mise_completion_table['{command}'] }} else {{ $null }}\n{stub}"));

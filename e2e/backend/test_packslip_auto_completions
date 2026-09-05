@@ -127,6 +127,7 @@ if command -v fish >/dev/null; then
   fish --no-config <<'FISH' >fish.out
 cd "$FIXTURE_ROOT/project-1.0.0"
 complete -c probe -f -a original
+complete -c probe -f -a second-rule
 mise activate fish | source
 mise hook-env -s fish --force | source
 complete -C 'probe '
@@ -148,8 +149,34 @@ FISH
   assert_contains 'cat fish.out' 'version2.0.0'
   assert_contains 'cat fish.out' '--from-spec'
   assert 'grep -c original fish.out' '2'
+  assert 'grep -c second-rule fish.out' '2'
 fi
 if command -v pwsh >/dev/null; then
+  cat >clean.ps1 <<'PWSH'
+$ErrorActionPreference = 'Stop'
+$mise = (Get-Command mise -CommandType Application | Select-Object -First 1).Source
+$context = $ExecutionContext.GetType().GetField('_context', [Reflection.BindingFlags]'Instance,NonPublic').GetValue($ExecutionContext)
+function Has-ProbeCompleter {
+  $table = $context.GetType().GetProperty('NativeArgumentCompleters', [Reflection.BindingFlags]'Instance,NonPublic').GetValue($context)
+  return $null -ne $table -and $null -ne $table['probe']
+}
+foreach ($cleanup in @('leave', 'deactivate')) {
+  Set-Location "$env:FIXTURE_ROOT/project-1.0.0"
+  & $mise activate pwsh | Out-String | Invoke-Expression
+  & $mise hook-env -s pwsh --force | Out-String | Invoke-Expression
+  if (-not (Has-ProbeCompleter)) { throw 'missing completion registration' }
+  (TabExpansion2 -inputScript 'probe ' -cursorColumn 6).CompletionMatches.CompletionText
+  if ($cleanup -eq 'leave') {
+    Set-Location ../empty
+    & $mise hook-env -s pwsh --force | Out-String | Invoke-Expression
+  } else {
+    & $mise deactivate | Out-String | Invoke-Expression
+  }
+  if (Has-ProbeCompleter) { throw 'completion registration survived cleanup' }
+}
+PWSH
+  pwsh -NoProfile -File clean.ps1 >pwsh-clean.out
+  assert 'grep -c version1.0.0 pwsh-clean.out' '2'
   cat >check.ps1 <<'PWSH'
 $ErrorActionPreference = 'Stop'
 $mise = (Get-Command mise -CommandType Application | Select-Object -First 1).Source
