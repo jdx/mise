@@ -28,6 +28,7 @@ pub(super) struct RustPlugin {
 
 const RUST_NIGHTLY_MANIFEST_URL: &str =
     "https://static.rust-lang.org/dist/channel-rust-nightly.toml";
+const RUST_DIST_ROOT: &str = "https://static.rust-lang.org/dist";
 const RUST_MINIMAL_PROFILE_COMPONENTS: &[&str] = &["cargo", "rust-std", "rustc"];
 const RUST_DEFAULT_PROFILE_COMPONENTS: &[&str] = &["clippy", "rust-docs", "rustfmt"];
 
@@ -424,7 +425,7 @@ impl RustPlugin {
         }))
     }
 
-    fn rustup_complete_profile_components(
+    async fn rustup_complete_profile_components(
         &self,
         tv: &ToolVersion,
         runtime: &RustRuntime,
@@ -450,10 +451,25 @@ impl RustPlugin {
                 ),
             }
         }
-        bail!(
-            "cannot reconcile the rustup complete profile for {} because its installed manifest is unusable",
-            tv.style()
-        )
+        let url = rustup_channel_manifest_url(
+            &tv.version,
+            rustup_dist_var(tv, "RUSTUP_DIST_SERVER"),
+            rustup_dist_var(tv, "RUSTUP_DIST_ROOT"),
+        );
+        let manifest = read_rustup_channel_manifest(&url).await.wrap_err_with(|| {
+            format!(
+                "cannot reconcile the rustup complete profile for {} because its installed manifest is unusable and {url} could not be fetched",
+                tv.style()
+            )
+        })?;
+        parse_rustup_profile_components(&manifest, &installed.toolchain, "complete")
+            .map(Some)
+            .wrap_err_with(|| {
+                format!(
+                    "cannot reconcile the rustup complete profile for {} from {url}",
+                    tv.style()
+                )
+            })
     }
 
     fn missing_components(
@@ -536,7 +552,9 @@ impl Backend for RustPlugin {
 
         let mut required_components = components.unwrap_or_default();
         let manifest_host = if effective_profile == "complete" {
-            let Some(profile_components) = self.rustup_complete_profile_components(tv, &runtime)?
+            let Some(profile_components) = self
+                .rustup_complete_profile_components(tv, &runtime)
+                .await?
             else {
                 return Ok(false);
             };
@@ -716,8 +734,9 @@ impl Backend for RustPlugin {
         let host = active_toolchain.as_deref().and_then(rustup_toolchain_host);
         let mut components = components.unwrap_or_default();
         if effective_profile == "complete" {
-            if let Some(profile_components) =
-                self.rustup_complete_profile_components(&tv, &runtime)?
+            if let Some(profile_components) = self
+                .rustup_complete_profile_components(&tv, &runtime)
+                .await?
             {
                 components.extend(profile_components.components);
             }
@@ -1292,6 +1311,52 @@ fn normalize_rustup_profile(profile: &str) -> Result<&'static str> {
     }
 }
 
+fn rustup_dist_var(tv: &ToolVersion, key: &str) -> Option<String> {
+    match tv.install_env().shift_remove(key) {
+        Some(value) => value.into_string(),
+        None => env::var(key).ok(),
+    }
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+}
+
+fn rustup_channel_manifest_url(
+    version: &str,
+    dist_server: Option<String>,
+    legacy_dist_root: Option<String>,
+) -> String {
+    let dist_root = if let Some(server) = dist_server {
+        format!("{}/dist", server.trim_end_matches('/'))
+    } else if let Some(root) = legacy_dist_root {
+        let root = root.trim_end_matches('/');
+        format!("{}/dist", root.strip_suffix("/dist").unwrap_or(root))
+    } else {
+        RUST_DIST_ROOT.to_string()
+    };
+    if let Some(date) = version
+        .strip_prefix("nightly-")
+        .filter(|date| date.parse::<jiff::civil::Date>().is_ok())
+    {
+        format!("{dist_root}/{date}/channel-rust-nightly.toml")
+    } else {
+        format!("{dist_root}/channel-rust-{version}.toml")
+    }
+}
+
+async fn read_rustup_channel_manifest(url: &str) -> Result<String> {
+    if let Ok(url) = url::Url::parse(url)
+        && url.scheme() == "file"
+    {
+        let path = url
+            .to_file_path()
+            .map_err(|_| eyre::eyre!("invalid rustup file URL: {url}"))?;
+        return file::read_to_string(&path).wrap_err_with(|| {
+            format!("failed to read Rust channel manifest at {}", path.display())
+        });
+    }
+    HTTP_FETCH.get_text_cached(url).await
+}
+
 fn fallback_rustup_profile_components(profile: &str, host: Option<&str>) -> Vec<String> {
     let mut components = match profile {
         "minimal" | "default" => RUST_MINIMAL_PROFILE_COMPONENTS
@@ -1746,6 +1811,47 @@ target = "x86_64-unknown-linux-gnu"
             .unwrap()
             .components,
             vec!["cargo", "rustc"]
+        );
+    }
+
+    #[test]
+    fn builds_rustup_channel_manifest_urls() {
+        assert_eq!(
+            rustup_channel_manifest_url("1.81.0", None, None),
+            "https://static.rust-lang.org/dist/channel-rust-1.81.0.toml"
+        );
+        assert_eq!(
+            rustup_channel_manifest_url("nightly-2026-08-12", None, None),
+            "https://static.rust-lang.org/dist/2026-08-12/channel-rust-nightly.toml"
+        );
+        assert_eq!(
+            rustup_channel_manifest_url(
+                "1.81.0",
+                Some("https://mirror.example.com/".to_string()),
+                Some("https://ignored.example.com/dist".to_string())
+            ),
+            "https://mirror.example.com/dist/channel-rust-1.81.0.toml"
+        );
+        assert_eq!(
+            rustup_channel_manifest_url(
+                "1.81.0",
+                None,
+                Some("https://legacy.example.com/dist".to_string())
+            ),
+            "https://legacy.example.com/dist/channel-rust-1.81.0.toml"
+        );
+    }
+
+    #[tokio::test]
+    async fn reads_rustup_channel_manifest_from_file_server() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("channel-rust-1.81.0.toml");
+        std::fs::write(&path, "manifest-version = '2'").unwrap();
+        let url = url::Url::from_file_path(path).unwrap();
+
+        assert_eq!(
+            read_rustup_channel_manifest(url.as_str()).await.unwrap(),
+            "manifest-version = '2'"
         );
     }
 

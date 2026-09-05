@@ -252,11 +252,19 @@ assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "7"
 assert_contains "cat '$MISE_CARGO_HOME/components'" "miri-x86_64-unknown-linux-gnu"
 
 manifest="$MISE_RUSTUP_HOME/toolchains/1.81.0-x86_64-unknown-linux-gnu/lib/rustlib/multirust-channel-manifest.toml"
-cp "$manifest" "$manifest.valid"
+mkdir -p "$PWD/rust-dist/dist"
+cp "$manifest" "$PWD/rust-dist/dist/channel-rust-1.81.0.toml"
+cat >mise.toml <<EOF
+[tools]
+rust = { version = "1.81.0", profile = "c", install_env = { RUSTUP_DIST_SERVER = "file://$PWD/rust-dist" } }
+EOF
+
 echo 'not valid toml = [' >"$manifest"
+sed -i.bak '/^rust-analyzer-/d' "$MISE_CARGO_HOME/components"
 assert_fail_contains "mise install rust --dry-run-code 2>&1" "would install"
-assert_fail_contains "mise install rust 2>&1" "installed manifest is unusable"
-mv "$manifest.valid" "$manifest"
+mise install
+assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "8"
+assert_contains "cat '$MISE_CARGO_HOME/components'" "rust-analyzer-x86_64-unknown-linux-gnu"
 
 cat >mise.toml <<EOF
 [tools]
@@ -266,11 +274,11 @@ EOF
 assert_fail_contains "mise install rust --dry-run-code 2>&1" "would install"
 
 mise exec -- rustc -V
-assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "8"
+assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "9"
 assert_contains "cat '$MISE_CARGO_HOME/components'" "rustfmt"
 assert_contains "cat '$MISE_CARGO_HOME/components'" "rust-src"
 assert_contains "cat '$MISE_CARGO_HOME/targets'" "wasm32-unknown-unknown"
 
 mise install
-assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "8"
+assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "9"
 assert_contains "mise install rust --dry-run-code 2>&1" "already installed"
