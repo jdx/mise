@@ -181,18 +181,23 @@ fn version_info(
     })
 }
 
-/// Recommendation changes only the first candidate, not semver ordering.
+/// The versions to try for `latest`, newest first. `order` is the backend's
+/// own, never a guess: a packslip version is semver because the
+/// specification says so, and [`version_info`] has already dropped every
+/// tag that is not. A recommendation changes only which candidate is tried
+/// first, not that order.
 fn latest_candidates(
     versions: Vec<VersionInfo>,
     preferred: Option<&str>,
     prereleases: bool,
+    order: VersionOrder,
 ) -> Vec<String> {
     let versions = versions
         .into_iter()
         .filter(|v| prereleases || v.prerelease != Some(true))
         .map(|v| v.version)
         .collect();
-    let mut versions = VersionOrder::Semver.order(versions);
+    let mut versions = order.order(versions);
     versions.reverse();
     if let Some(index) = preferred.and_then(|p| versions.iter().position(|v| v == p)) {
         let preferred = versions.remove(index);
@@ -1006,15 +1011,26 @@ impl Backend for PackslipBackend {
 
     async fn list_remote_versions_with_info_and_options(
         &self,
-        _config: &Arc<Config>,
-        _listing_opts: &ToolVersionOptions,
+        config: &Arc<Config>,
+        listing_opts: &ToolVersionOptions,
         selection_opts: &ToolVersionOptions,
         _refresh: bool,
-        _has_local_version_listing_override: bool,
+        has_local_version_listing_override: bool,
     ) -> Result<Vec<VersionInfo>> {
         // A cached accepted-version set cannot reflect changed stamper trust,
-        // new withdrawals, expired lists, or a list that disappeared.
-        let versions = self.policy_versions(selection_opts).await?;
+        // new withdrawals, expired lists, or a list that disappeared. Offline
+        // it is still all there is: rechecking policy means asking GitHub and
+        // every stamper, which listing may not do, so serve the cache the way
+        // every other backend does. Installing rechecks regardless.
+        let versions = if Settings::get().offline() {
+            let cache = self
+                .remote_version_cache_for(config, listing_opts, has_local_version_listing_override)
+                .await?;
+            let cache = cache.lock().await;
+            crate::backend::cached_remote_versions_offline(&self.ba, &cache)
+        } else {
+            self.policy_versions(selection_opts).await?
+        };
         Ok(versions
             .into_iter()
             .filter(|v| self.include_prereleases(selection_opts) || v.prerelease != Some(true))
@@ -1044,6 +1060,26 @@ impl Backend for PackslipBackend {
                 )
                 .await;
         }
+        if Settings::get().offline() {
+            // Policy lives on the network — the vendor's list, every stamper's,
+            // and the manifest itself — so offline there is nothing to consult
+            // and nothing to recommend. Take the newest the cache knows of;
+            // installing it will recheck policy, or fail for want of a network.
+            let versions = self
+                .list_remote_versions_with_info_with_selection_options(
+                    config,
+                    selection_opts,
+                    refresh,
+                )
+                .await?;
+            let candidates = latest_candidates(
+                versions,
+                None,
+                self.include_prereleases(selection_opts),
+                self.version_order(selection_opts)?,
+            );
+            return Ok(candidates.into_iter().next());
+        }
         // Read policy directly: a cached version list must not hide new yanks,
         // changed stampers, or a missing previously accepted signed list.
         let project = self.project()?;
@@ -1056,6 +1092,7 @@ impl Backend for PackslipBackend {
             versions,
             recommendation.as_deref(),
             self.include_prereleases(selection_opts),
+            self.version_order(selection_opts)?,
         );
         if let Some(preferred) = &recommendation
             && !candidates.iter().any(|v| v == preferred)
@@ -1444,28 +1481,33 @@ mod tests {
                 .collect()
         };
         assert_eq!(
-            latest_candidates(versions(), Some("2.8.4"), false),
+            latest_candidates(versions(), Some("2.8.4"), false, VersionOrder::Semver),
             ["2.8.4", "3.0.0"]
         );
         assert_eq!(
-            latest_candidates(versions(), None, false),
+            latest_candidates(versions(), None, false, VersionOrder::Semver),
             ["3.0.0", "2.8.4"]
         );
         assert_eq!(
-            latest_candidates(versions(), Some("9.0.0"), false),
+            latest_candidates(versions(), Some("9.0.0"), false, VersionOrder::Semver),
             ["3.0.0", "2.8.4"]
         );
         assert_eq!(
-            latest_candidates(versions(), Some("4.0.0-beta.1"), false),
+            latest_candidates(
+                versions(),
+                Some("4.0.0-beta.1"),
+                false,
+                VersionOrder::Semver
+            ),
             ["3.0.0", "2.8.4"]
         );
         assert_eq!(
-            latest_candidates(versions(), Some("2.8.4"), true),
+            latest_candidates(versions(), Some("2.8.4"), true, VersionOrder::Semver),
             ["2.8.4", "4.0.0-beta.1", "3.0.0"]
         );
         {
             let selected = first_eligible(
-                latest_candidates(versions(), Some("2.8.4"), false),
+                latest_candidates(versions(), Some("2.8.4"), false, VersionOrder::Semver),
                 |v| async move { Ok(v != "2.8.4") },
             )
             .await
@@ -1473,7 +1515,7 @@ mod tests {
             assert_eq!(selected.as_deref(), Some("3.0.0"));
         }
         let result = first_eligible(
-            latest_candidates(versions(), Some("2.8.4"), false),
+            latest_candidates(versions(), Some("2.8.4"), false, VersionOrder::Semver),
             |_v| async { bail!("signature failure") },
         )
         .await;
@@ -1484,9 +1526,10 @@ mod tests {
                 .contains("signature failure")
         );
         assert_eq!(
-            first_eligible(latest_candidates(versions(), None, false), |_v| async {
-                Ok(false)
-            })
+            first_eligible(
+                latest_candidates(versions(), None, false, VersionOrder::Semver),
+                |_v| async { Ok(false) }
+            )
             .await
             .unwrap(),
             None
