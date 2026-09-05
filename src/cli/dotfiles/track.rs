@@ -140,10 +140,7 @@ impl DotfilesTrack {
             } else {
                 let _ = std::fs::remove_file(&config_path);
             }
-            return Err(err.wrap_err(format!(
-                "{} was left unchanged",
-                display_path(&config_path)
-            )));
+            return Err(err.wrap_err(format!("{} was left unchanged", display_path(&config_path))));
         }
         crate::cli::history::capture_health::report();
         Ok(())
@@ -193,8 +190,18 @@ impl DotfilesTrack {
             let mut array = Array::new();
             for variant in &variants {
                 let mut item = InlineTable::new();
-                if let Some(os) = variant.os.first() {
-                    item.insert("os", string(os));
+                match variant.os.as_slice() {
+                    [] => {}
+                    [os] => {
+                        item.insert("os", string(os));
+                    }
+                    many => {
+                        let mut list = Array::new();
+                        for os in many {
+                            list.push(string(os));
+                        }
+                        item.insert("os", Value::Array(list));
+                    }
                 }
                 if let Some(profile) = &variant.profile {
                     item.insert("profile", string(profile));

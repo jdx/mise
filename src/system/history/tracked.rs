@@ -821,8 +821,16 @@ mod tests {
     #[test]
     fn tree_paths_round_trip() {
         assert_eq!(tree_path_to_display("home/.zshrc"), "~/.zshrc");
-        assert_eq!(tree_path_to_display("fs/etc/hosts"), "/etc/hosts");
-        assert_eq!(display_to_tree_path("/etc/hosts"), "fs/etc/hosts");
+        // a path that exists is canonicalized first (`/etc` is a link on
+        // macOS), so the round trip uses one that does not
+        assert_eq!(
+            tree_path_to_display("fs/nonexistent-mise-test/hosts"),
+            "/nonexistent-mise-test/hosts"
+        );
+        assert_eq!(
+            display_to_tree_path("/nonexistent-mise-test/hosts"),
+            "fs/nonexistent-mise-test/hosts"
+        );
     }
 
     #[test]

@@ -98,6 +98,8 @@ Describe 'dotfiles' {
         $latest.operation.status | Should -Be 'completed'
         $latest.operation.command | Should -BeLike 'bootstrap dotfiles apply*'
         $latest.trigger | Should -Be 'bootstrap'
+        $status = mise history status --json 2>&1 | Out-String | ConvertFrom-Json
+        $status.unavailable | Should -BeNullOrEmpty
         Test-Path (Join-Path $env:MISE_STATE_DIR 'history\repo.git') | Should -BeTrue
 
         $out = mise bootstrap generations show latest 2>&1 | Out-String

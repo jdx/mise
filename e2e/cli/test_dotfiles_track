@@ -179,3 +179,17 @@ echo n >"$MISE_CONFIG_DIR/scratch/notes.txt"
 assert_succeed "mise bootstrap dotfiles untrack ~/.config/mise/scratch"
 assert_fail "mise history save ~/.config/mise/scratch/notes.txt" "excluded, missing, or omitted"
 assert_fail "mise bootstrap dotfiles untrack ~/.copied" 'managed by a `copy` entry'
+
+# `add --mode track` is not a thing: tracking takes no source
+assert_fail "mise bootstrap dotfiles add --mode track ~/.newrc --dry-run" 'use `mise bootstrap dotfiles track <path>`'
+
+# rewriting a declaration keeps every os of a variant
+mkdir -p "$MISE_CONFIG_DIR/conf.d"
+cat <<'TOML' >"$MISE_CONFIG_DIR/conf.d/multi.toml"
+[dotfiles]
+"~/.multi" = { mode = "track", variants = [{ os = ["macos", "linux"] }, { profile = "work" }] }
+TOML
+echo 'm' >~/.multi
+assert_succeed "mise bootstrap dotfiles track ~/.multi --no-share --local"
+assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" 'os = ["macos", "linux"]'
+assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" 'profile = "work"'
