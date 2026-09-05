@@ -122,8 +122,15 @@ An ineligible signed recommendation falls directly back to semver selection,
 without consulting GitHub's pointer. Signature or digest failures and invalid,
 expired, rolled-back, or unexpectedly missing lists stop resolution.
 
-Version listing and `latest` resolution perform online policy checks and bypass
-mise's remote-version cache so withdrawals and trust changes take effect.
+Resolution reaches for the vendor exactly as installation does: a stamped
+candidate is fetched from the stamp's URL, and the vendor is asked only for a
+withdrawal and a digest, so `latest` accepts every version `install` would.
+
+Version listing and `latest` resolution read policy afresh rather than trusting
+mise's remote-version cache, so withdrawals and trust changes take effect; what
+they read is written back to that cache. Offline there is no policy to consult
+and no network to consult it over, so both serve that cache like every other
+backend, or nothing when it is empty; installing still rechecks.
 
 ## What is verified
 
@@ -172,9 +179,13 @@ downloading it. Requirements do not break a selection tie or select another buil
 | Missing or outdated required command                                      | Warn and continue.                                 |
 | A check cannot be completed                                               | Warn instead of assuming the host is incompatible. |
 
-Command checks prefer active mise tools over ambient PATH. Library detection is
+Command checks prefer active mise tools over ambient PATH, and either way mise
+picks a path the OS can start, so a Windows `git.exe` or `node.cmd` counts and a
+shebang-only script does not. Library detection is
 platform-dependent; for example, an absent macOS library file may still exist
-in the dyld shared cache, so mise reports that absence as unknown.
+in the dyld shared cache, so mise reports that absence as unknown. On Linux the
+OS version is the kernel release from `uname -r`, read up to the distribution's
+suffix: `6.8.0-31-generic` is compared as `6.8.0`.
 
 `ignore_requirements = true` allows a tool to install despite confirmed failures.
 It does not supply the missing libraries or make an incompatible executable run.
@@ -238,11 +249,16 @@ A host publishes one list per project at
 - A vendor withdrawal still excludes the release, regardless of stamps.
 - mise checks the stamped bundle digest and the vendor-list digest, when present,
   then verifies the vendor signature. A stamp never replaces that signature.
+- A stamp that records no digest is refused. The digest is what ties the host's
+  review to a file; without one the entry admits a URL, not a bundle.
 - Expired, rolled-back, invalid, or previously accepted but now missing stamper
   lists cause errors. Silently ignoring one would weaken the configured policy.
 
-A stamper can mirror the exact vendor-signed bundle. Re-signed repackager
-bundles requiring a separate identity policy are not supported here.
+A stamper can mirror the exact vendor-signed bundle. Because the stamp already
+names the bundle, mise asks the vendor only for what the vendor decides — a
+withdrawal, and the digest they pinned — so a release asset deleted from GitHub
+does not veto a mirror of a release that was never withdrawn. Re-signed
+repackager bundles requiring a separate identity policy are not supported here.
 
 No stamps are required when the setting is unset. To exempt one tool from
 configured stampers, set `trust = "vendor"` as described below.
