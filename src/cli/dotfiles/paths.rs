@@ -176,7 +176,7 @@ impl DotfilesPaths {
     }
 }
 
-impl HistoryPaths {
+impl DotfilesPaths {
     fn print_noisy(&self) -> Result<()> {
         use crate::system::history::watch::{noise, runtime};
         let record = noise::read(&runtime::noisy_path_in(

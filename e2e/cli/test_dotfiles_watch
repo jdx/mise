@@ -28,7 +28,7 @@ mkdir -p ~/.config/hypr
 echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
 assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
 assert "$count" "1"
-assert_contains "mise bootstrap dotfiles status" "Automatic capture: not declared"
+assert_contains "mise bootstrap dotfiles status" "automatic capture: not declared"
 
 # a declared but not running watcher is reported with the next command
 cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
@@ -38,7 +38,7 @@ builtin = "history-watch"
 EOF
 assert_contains "mise bootstrap dotfiles status" "declared but not running"
 assert_contains "mise bootstrap dotfiles status" "mise bootstrap services apply"
-assert "mise bootstrap dotfiles status --json | jq -r .watcher" "declared-not-running"
+assert "mise bootstrap dotfiles status --json | jq -r .history.watcher" "declared-not-running"
 
 # --once reconciles and exits: an edit made while nothing watched is saved
 echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
@@ -57,8 +57,8 @@ for _ in $(seq 1 50); do
   sleep 0.2
 done
 assert_contains "cat watch.log" '"event":"started"'
-assert "mise bootstrap dotfiles status --json | jq -r .watcher" "running"
-assert_contains "mise bootstrap dotfiles status" "Automatic capture: running"
+assert "mise bootstrap dotfiles status --json | jq -r .history.watcher" "running"
+assert_contains "mise bootstrap dotfiles status" "automatic capture: running"
 
 # one watcher per store: a second one exits 0 immediately
 assert_contains "mise bootstrap dotfiles watch --json" '"event":"already-running"'

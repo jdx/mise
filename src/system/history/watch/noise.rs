@@ -1,7 +1,7 @@
 //! Notices paths that change constantly. Noise is never dropped from
 //! protection and never excluded automatically: it is reported once per
 //! path per hour with the exclusion the user can choose, and remembered in
-//! `noisy.json` for `mise history paths --noisy`.
+//! `noisy.json` for `mise bootstrap dotfiles paths --noisy`.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -78,7 +78,7 @@ impl NoiseMonitor {
     }
 }
 
-/// What the watcher persists for `mise history paths --noisy`.
+/// What the watcher persists for `mise bootstrap dotfiles paths --noisy`.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct NoisyRecord {
     #[serde(default)]
