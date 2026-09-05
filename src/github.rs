@@ -160,11 +160,16 @@ pub(crate) async fn list_releases_from_url(
     api_url: &str,
     repo: &str,
 ) -> Result<Vec<GithubRelease>> {
-    Ok(list_releases_including_prereleases_from_url(api_url, repo)
-        .await?
-        .into_iter()
-        .filter(|r| !r.prerelease)
-        .collect())
+    // `false`: this variant's callers (ubi, spm, and the github backend's
+    // security-feature probe) keep asset-less releases, so their pagination
+    // must stop where it always did.
+    Ok(
+        list_releases_including_prereleases_from_url(api_url, repo, false)
+            .await?
+            .into_iter()
+            .filter(|r| !r.prerelease)
+            .collect(),
+    )
 }
 
 /// Like [`list_releases`] but includes releases flagged `prerelease: true`.
@@ -176,25 +181,67 @@ pub(crate) async fn list_releases_including_prereleases(repo: &str) -> Result<Ve
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || list_releases_(API_URL, repo).await)
+        .get_or_try_init_async(async || list_releases_(API_URL, repo, false).await)
         .await?
         .to_vec())
 }
 
+/// `require_assets` reaches the fetch loop from the caller's own filter: the
+/// `github:` backend drops releases with nothing uploaded, so for it a stable
+/// release with no assets is not a place to stop paginating. See
+/// `has_stopping_stable_release`. It is part of the cache key because the two
+/// answers are different lists — the `true` list is a superset, and handing the
+/// shorter one to a caller that filters is the bug this argument exists to fix.
 pub(crate) async fn list_releases_including_prereleases_from_url(
     api_url: &str,
     repo: &str,
+    require_assets: bool,
 ) -> Result<Vec<GithubRelease>> {
-    let key = format!("{api_url}-{repo}").to_kebab_case();
+    let key = releases_cache_key(api_url, repo, require_assets);
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || list_releases_(api_url, repo).await)
+        .get_or_try_init_async(async || list_releases_(api_url, repo, require_assets).await)
         .await?
         .to_vec())
 }
 
-async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
+/// Cache key for one release listing.
+///
+/// `require_assets` cannot be a suffix on the readable part. Appending
+/// `-with-assets` makes `("owner/foo", true)` and `("owner/foo-with-assets",
+/// false)` the same string, and this cache is global and persisted, so one
+/// repository would be served the other's releases. The hash of the tuple is
+/// what separates them; the kebab-cased prefix is kept only so the file on disk
+/// is still recognisable.
+fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String {
+    format!(
+        "{}-{}",
+        format!("{api_url}-{repo}").to_kebab_case(),
+        crate::hash::hash_to_str(&(api_url, repo, require_assets))
+    )
+}
+
+/// Whether the bounded prerelease fallback has found what it went looking for:
+/// a stable release the caller will actually keep.
+///
+/// Without `require_assets` this is the original test — any published,
+/// non-prerelease release. With it, a stable release that carries no assets no
+/// longer counts, because the `github:` backend removes those from the version
+/// list; stopping on one would leave an installable stable release sitting on a
+/// page that is never fetched. Callers that keep every release pass `false` and
+/// stop exactly where they always have.
+fn has_stopping_stable_release(releases: &[GithubRelease], require_assets: bool) -> bool {
+    releases
+        .iter()
+        .any(|r| !r.prerelease && !r.draft && (!require_assets || !r.assets.is_empty()))
+}
+
+async fn list_releases_(
+    api_url: &str,
+    repo: &str,
+    require_assets: bool,
+) -> Result<Vec<GithubRelease>> {
     let mut url = format!("{api_url}/repos/{repo}/releases?per_page=100");
     let headers = get_headers(&url)?;
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
@@ -209,7 +256,7 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>>
     let mut pages_fetched = 1;
     while let Some(next) = next_page(&headers) {
         if !*env::MISE_LIST_ALL_VERSIONS
-            && (releases.iter().any(|r| !r.prerelease && !r.draft)
+            && (has_stopping_stable_release(&releases, require_assets)
                 || pages_fetched >= MAX_RELEASE_FALLBACK_PAGES)
         {
             break;
@@ -1320,6 +1367,79 @@ something_else = "value"
         mock.assert_async().await;
     }
 
+    fn asset(name: &str) -> GithubAsset {
+        GithubAsset {
+            name: name.to_string(),
+            browser_download_url: format!("https://example.invalid/{name}"),
+            url: format!("https://example.invalid/api/{name}"),
+            digest: None,
+        }
+    }
+
+    #[test]
+    fn releases_cache_key_separates_the_suffix_collision() {
+        let api = "https://api.github.com";
+
+        // The pair a `-with-assets` suffix would collapse. This cache is global
+        // and persisted, so a collision serves one repository the other's
+        // releases.
+        assert_ne!(
+            releases_cache_key(api, "owner/foo", true),
+            releases_cache_key(api, "owner/foo-with-assets", false)
+        );
+
+        // The flag still separates one repository from itself...
+        assert_ne!(
+            releases_cache_key(api, "owner/foo", true),
+            releases_cache_key(api, "owner/foo", false)
+        );
+        // ...the api_url still separates two hosts...
+        assert_ne!(
+            releases_cache_key(api, "owner/foo", false),
+            releases_cache_key("https://github.example.com/api/v3", "owner/foo", false)
+        );
+        // ...and the same inputs still land on the same entry.
+        assert_eq!(
+            releases_cache_key(api, "owner/foo", true),
+            releases_cache_key(api, "owner/foo", true)
+        );
+    }
+
+    #[test]
+    fn stopping_stable_release_ignores_assets_unless_asked() {
+        let mut assetless = make_release("v1.0.0");
+        let mut nightly = make_release("v2.0.0-nightly");
+        nightly.prerelease = true;
+        let releases = vec![nightly, assetless.clone()];
+
+        // A caller that keeps every release stops here, exactly as before.
+        assert!(has_stopping_stable_release(&releases, false));
+
+        // The `github:` backend does not: it will drop `v1.0.0` from the
+        // listing, so stopping on it would hide an installable stable release
+        // sitting on the next page.
+        assert!(!has_stopping_stable_release(&releases, true));
+
+        assetless.assets = vec![asset("tool-x86_64-unknown-linux-gnu.tar.gz")];
+        assert!(has_stopping_stable_release(&[assetless], true));
+    }
+
+    #[test]
+    fn stopping_stable_release_still_rejects_drafts_and_prereleases() {
+        // Assets do not promote a draft or a prerelease into a stopping point.
+        let mut draft = make_release("v1.0.0");
+        draft.draft = true;
+        draft.assets = vec![asset("tool.tar.gz")];
+
+        let mut prerelease = make_release("v2.0.0");
+        prerelease.prerelease = true;
+        prerelease.assets = vec![asset("tool.tar.gz")];
+
+        let releases = vec![draft, prerelease];
+        assert!(!has_stopping_stable_release(&releases, true));
+        assert!(!has_stopping_stable_release(&releases, false));
+    }
+
     #[test]
     fn release_date_prefers_published_at() {
         let mut release = make_release("v1.0.0");
@@ -1570,7 +1690,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&base, repo).await.unwrap();
+        let releases = list_releases_(&base, repo, false).await.unwrap();
         page1_mock.assert_async().await;
         page2_mock.assert_async().await;
         assert!(
@@ -1578,6 +1698,93 @@ something_else = "value"
                 .iter()
                 .any(|r| r.tag_name == "v1.0.0" && !r.prerelease),
             "stable release from page 2 should be discovered, got {:?}",
+            releases.iter().map(|r| &r.tag_name).collect::<Vec<_>>()
+        );
+    }
+
+    // The listing filter reaching back into the fetch loop: a stable release
+    // with no assets is dropped from the version list, so for a caller that
+    // drops it there is nothing on this page worth stopping for.
+    #[tokio::test]
+    async fn test_list_releases_paginates_past_an_assetless_stable_release() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+
+        // Published, not a draft, not a prerelease -- and nothing attached.
+        let assetless_page = vec![make_release("v2.0.0")];
+        let asset_page = vec![GithubRelease {
+            assets: vec![asset("tool-x86_64-unknown-linux-gnu.tar.gz")],
+            ..make_release("v1.0.0")
+        }];
+
+        let repo = "owner/assetless-stable-first-page";
+        let page1_mock = server
+            .mock("GET", format!("/repos/{repo}/releases").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/page2>; rel=\"next\"").as_str())
+            .with_body(serde_json::to_string(&assetless_page).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let page2_mock = server
+            .mock("GET", "/page2")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&asset_page).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&base, repo, true).await.unwrap();
+        page1_mock.assert_async().await;
+        page2_mock.assert_async().await;
+        assert!(
+            releases.iter().any(|r| r.tag_name == "v1.0.0"),
+            "installable stable release from page 2 should be discovered, got {:?}",
+            releases.iter().map(|r| &r.tag_name).collect::<Vec<_>>()
+        );
+
+        // The same first page still stops the loop for a caller that keeps
+        // asset-less releases. Without this the test above would also pass if
+        // the bound had simply been removed for everyone.
+        let kept_repo = "owner/assetless-stable-kept";
+        let kept_page1_mock = server
+            .mock("GET", format!("/repos/{kept_repo}/releases").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header(
+                "link",
+                format!("<{base}/page2-kept>; rel=\"next\"").as_str(),
+            )
+            .with_body(serde_json::to_string(&assetless_page).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let kept_page2_mock = server
+            .mock("GET", "/page2-kept")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&asset_page).unwrap())
+            .expect(0)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&base, kept_repo, false).await.unwrap();
+        kept_page1_mock.assert_async().await;
+        kept_page2_mock.assert_async().await;
+        assert!(
+            releases.iter().all(|r| r.tag_name != "v1.0.0"),
+            "page 2 should not have been fetched, got {:?}",
             releases.iter().map(|r| &r.tag_name).collect::<Vec<_>>()
         );
     }
@@ -1614,7 +1821,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&base, repo).await.unwrap();
+        let releases = list_releases_(&base, repo, false).await.unwrap();
         page1_mock.assert_async().await;
         page2_mock.assert_async().await;
         assert!(releases.iter().any(|r| r.tag_name == "v1.0.0"));
@@ -1671,7 +1878,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&base, repo).await.unwrap();
+        let releases = list_releases_(&base, repo, false).await.unwrap();
         p1.assert_async().await;
         p2.assert_async().await;
         p3.assert_async().await;
@@ -1736,7 +1943,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&api, repo).await.unwrap();
+        let releases = list_releases_(&api, repo, false).await.unwrap();
         page1.assert_async().await;
         page2.assert_async().await;
         assert_eq!(releases.len(), 2);

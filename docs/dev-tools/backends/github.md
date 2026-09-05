@@ -22,6 +22,37 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 "github:BurntSushi/ripgrep" = "latest"
 ```
 
+## Version Listing
+
+`mise ls-remote` lists a repository's releases. **Releases with no assets attached
+are left out**: mise installs from a release's uploaded assets and never falls
+back to the auto-generated source archive, so such a release has nothing to
+install from and listing it would advertise a version that only fails.
+
+This is emptiness, not platform fit — a release whose assets do not cover your
+platform is still listed, because the version list has to mean the same thing on
+every host for cross-platform lockfiles to work.
+
+Tools that set a **platform-scoped** `url` — `platforms.<os>-<arch>.url`, or the
+flat `platform_<os>_<arch>_url` — are exempt: they fetch from that URL instead of
+selecting a release asset, so their releases are listed whether or not anything
+is attached to them. A bare top-level `url` is not an exemption, because this
+backend only reads the option per platform and would still fall through to asset
+selection.
+
+The exemption is all-or-nothing, for the same reason the filter is: one version
+list serves every platform. A `url` set for only some platforms therefore keeps
+asset-less releases listed everywhere, and installing one on a platform the
+`url` does not cover still fails — exactly as it did before this filtering
+existed. Cover every platform you support, or leave `url` unset and let asset
+selection do the work.
+
+mise fetches one page of releases and reads further only until it finds a stable
+release it can offer. Because an asset-less release is not one, a repository
+whose newest stable releases have nothing attached is now read past rather than
+stopped at, up to a small page limit. Set `MISE_LIST_ALL_VERSIONS=1` to read
+every page.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `github` backend—these

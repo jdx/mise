@@ -70,15 +70,20 @@ async fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<Forg
 /// always filtered out. The cache stores this non-draft superset so callers can
 /// apply the current `prerelease` option at read time without invalidating
 /// cached release metadata.
+///
+/// `require_assets` mirrors the argument of the same name in
+/// `github::list_releases_including_prereleases_from_url`, for the same reason
+/// and with the same effect on the cache key.
 pub(crate) async fn list_releases_including_prereleases_from_url(
     api_url: &str,
     repo: &str,
+    require_assets: bool,
 ) -> Result<Vec<ForgejoRelease>> {
-    let key = format!("{api_url}-{repo}").to_kebab_case();
+    let key = releases_cache_key(api_url, repo, require_assets);
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || list_releases_(api_url, repo).await)
+        .get_or_try_init_async(async || list_releases_(api_url, repo, require_assets).await)
         .await?
         .to_vec())
 }
@@ -88,7 +93,30 @@ pub(crate) async fn list_releases_including_prereleases_from_url(
 /// release without unbounded API calls. (#10343)
 const MAX_RELEASE_FALLBACK_PAGES: usize = 3;
 
-async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<ForgejoRelease>> {
+/// Forgejo counterpart of `github::releases_cache_key`, and unambiguous for the
+/// same reason: `require_assets` as a `-with-assets` suffix would let
+/// `("owner/foo", true)` and `("owner/foo-with-assets", false)` share a
+/// persisted cache entry.
+fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String {
+    format!(
+        "{}-{}",
+        format!("{api_url}-{repo}").to_kebab_case(),
+        crate::hash::hash_to_str(&(api_url, repo, require_assets))
+    )
+}
+
+/// Forgejo counterpart of `github::has_stopping_stable_release`.
+fn has_stopping_stable_release(releases: &[ForgejoRelease], require_assets: bool) -> bool {
+    releases
+        .iter()
+        .any(|r| !r.prerelease && !r.draft && (!require_assets || !r.assets.is_empty()))
+}
+
+async fn list_releases_(
+    api_url: &str,
+    repo: &str,
+    require_assets: bool,
+) -> Result<Vec<ForgejoRelease>> {
     let url = format!("{api_url}/repos/{repo}/releases?limit=100");
     let headers = get_headers(&url, api_url);
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
@@ -102,7 +130,7 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<ForgejoRelease>
     let mut pages_fetched = 1;
     while let Some(next) = next_page(&headers) {
         if !*env::MISE_LIST_ALL_VERSIONS
-            && (releases.iter().any(|r| !r.prerelease && !r.draft)
+            && (has_stopping_stable_release(&releases, require_assets)
                 || pages_fetched >= MAX_RELEASE_FALLBACK_PAGES)
         {
             break;
@@ -393,6 +421,26 @@ mod tests {
     }
 
     #[test]
+    fn releases_cache_key_separates_the_suffix_collision() {
+        let api = "https://codeberg.org/api/v1";
+
+        // The pair a `-with-assets` suffix would collapse onto one persisted
+        // entry, serving one repository the other's releases.
+        assert_ne!(
+            releases_cache_key(api, "owner/foo", true),
+            releases_cache_key(api, "owner/foo-with-assets", false)
+        );
+        assert_ne!(
+            releases_cache_key(api, "owner/foo", true),
+            releases_cache_key(api, "owner/foo", false)
+        );
+        assert_eq!(
+            releases_cache_key(api, "owner/foo", true),
+            releases_cache_key(api, "owner/foo", true)
+        );
+    }
+
+    #[test]
     fn test_is_published_release_keeps_prereleases() {
         assert!(is_published_release(&release("1.0.0", false, false)));
         assert!(is_published_release(&release("1.1.0-rc1", false, true)));
@@ -487,7 +535,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&base, repo).await.unwrap();
+        let releases = list_releases_(&base, repo, false).await.unwrap();
         page1_mock.assert_async().await;
         page2_mock.assert_async().await;
         assert!(
@@ -529,7 +577,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&base, repo).await.unwrap();
+        let releases = list_releases_(&base, repo, false).await.unwrap();
         page1_mock.assert_async().await;
         page2_mock.assert_async().await;
         assert!(releases.iter().any(|r| r.tag_name == "v1.0.0"));
@@ -583,7 +631,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&base, repo).await.unwrap();
+        let releases = list_releases_(&base, repo, false).await.unwrap();
         p1.assert_async().await;
         p2.assert_async().await;
         p3.assert_async().await;
@@ -672,7 +720,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&base, repo).await.unwrap();
+        let releases = list_releases_(&base, repo, false).await.unwrap();
         page1.assert_async().await;
         page2.assert_async().await;
         assert_eq!(releases.len(), 2);
