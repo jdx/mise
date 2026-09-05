@@ -495,6 +495,9 @@ Some installation methods automatically install autocompletion scripts.
 :::
 
 The [`mise completion`](/cli/completion.html) command can generate autocompletion scripts for your shell.
+
+The instructions below complete mise itself. For commands installed through the
+packslip backend, see [tool completions and skills](/dev-tools/packslip-resources.html).
 The generated scripts are self-contained and do not require the separate `usage` CLI.
 
 The simplest way to install the completion script is:
