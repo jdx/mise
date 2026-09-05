@@ -10,8 +10,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::dotfiles::{
-    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesHistory, DotfilesPaths,
-    DotfilesSave, DotfilesStatus, DotfilesTrack, DotfilesUnapply, DotfilesUntrack,
+    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesHistory, DotfilesPaths, DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesTrack, DotfilesUnapply, DotfilesUndo, DotfilesUntrack,
 };
 use super::install::Install;
 use super::plugins::install::install_plugin;
@@ -824,10 +823,12 @@ enum BootstrapDotfilesCommands {
     Edit(DotfilesEdit),
     History(DotfilesHistory),
     Paths(DotfilesPaths),
+    Rollback(DotfilesRollback),
     Save(DotfilesSave),
     Status(BootstrapDotfilesStatus),
     Track(DotfilesTrack),
     Unapply(DotfilesUnapply),
+    Undo(DotfilesUndo),
     Untrack(DotfilesUntrack),
 }
 
@@ -3946,10 +3947,12 @@ impl BootstrapDotfiles {
             BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::History(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Paths(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Rollback(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Save(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Track(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Unapply(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Undo(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Untrack(cmd) => cmd.run().await,
         }
     }

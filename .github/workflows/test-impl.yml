@@ -155,6 +155,7 @@ jobs:
       - run: mise run test:e2e e2e/cli/test_dotfiles_history
       - run: mise run test:e2e e2e/cli/test_dotfiles_track
       - run: mise run test:e2e e2e/cli/test_dotfiles_history_policies
+      - run: mise run test:e2e e2e/cli/test_dotfiles_rollback
 
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}

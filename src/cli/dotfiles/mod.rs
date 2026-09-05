@@ -9,10 +9,12 @@ mod edit;
 pub(crate) mod history;
 mod history_status;
 mod paths;
+mod rollback;
 mod save;
 mod status;
 pub(crate) mod track;
 mod unapply;
+mod undo;
 mod untrack;
 
 pub(crate) use add::DotfilesAdd;
@@ -21,10 +23,12 @@ pub(crate) use diff::DotfilesDiff;
 pub(crate) use edit::DotfilesEdit;
 pub(crate) use history::DotfilesHistory;
 pub(crate) use paths::DotfilesPaths;
+pub(crate) use rollback::DotfilesRollback;
 pub(crate) use save::DotfilesSave;
 pub(crate) use status::DotfilesStatus;
 pub(crate) use track::DotfilesTrack;
 pub(crate) use unapply::DotfilesUnapply;
+pub(crate) use undo::DotfilesUndo;
 pub(crate) use untrack::DotfilesUntrack;
 
 /// Load, validate, and filter whole-file and edit requests with the same

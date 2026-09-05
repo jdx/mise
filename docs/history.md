@@ -87,6 +87,46 @@ checkpoints carry its last saved version forward, and only
 disk. `mise bootstrap dotfiles history diff --path <file>` shows saved against live. Promotions
 are recorded in the repository (`refs/promoted`), never only in an index.
 
+## Rolling back
+
+```sh
+mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua        # its most recent saved version that differs from disk
+mise bootstrap dotfiles rollback ~/.zshrc --to 42                    # that checkpoint's version
+mise bootstrap dotfiles rollback --to latest~3 --all --dry-run       # everything the checkpoint covers
+mise bootstrap dotfiles undo                                         # reverse the newest rollback, undo, or apply
+```
+
+A rollback is planned first: for every selected path, `write` when the
+checkpoint holds a different version, `delete` when the checkpoint knows the
+path was absent, `unchanged`, `skip` when the checkpoint never covered or
+omitted it, or `conflict` when the path changed type (a file became a
+directory or a symlink) — conflicts need `--force`. `--dry-run` stops after
+the plan.
+
+Then the current state of the affected paths is saved in a protective
+checkpoint (`rollback-before`); the plan is verified against the working tree
+again (an editor may have written meanwhile) and every path about to change
+must be captured in that checkpoint as it is now, or the rollback stops
+without touching anything. Files are written one at a time, each journaled,
+and only afterwards do `[history.reload]` commands run — once per matching
+glob, resolved from the system and global configuration before the operation
+began, so nothing a rollback writes can change which commands run:
+
+```toml
+[history.reload]
+"~/.config/hypr/**" = "hyprctl reload"
+```
+
+A rollback is a new forward change: the outcome is a new checkpoint, the
+version you left is still recoverable, and nothing is rewritten. Restoring a
+mise configuration file never runs bootstrap; the outcome says when
+declarations may differ from the applied setup.
+
+`mise bootstrap dotfiles undo` restores exactly the paths an operation touched from the
+protective checkpoint it took, leaving everything else as it is now, so
+unrelated work done since is preserved. It refuses when that checkpoint was
+pruned. Undoing an undo re-applies the operation.
+
 ## What is tracked
 
 `mise bootstrap dotfiles paths` lists every entry with its mode, policies, the file that
