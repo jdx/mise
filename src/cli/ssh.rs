@@ -58,14 +58,7 @@ pub(crate) struct Ssh {
 
 impl Ssh {
     pub(crate) async fn run(self) -> Result<()> {
-        #[cfg(unix)]
-        {
-            crate::github_relay::unix::lifecycle(self.run_inner()).await
-        }
-        #[cfg(not(unix))]
-        {
-            self.run_inner().await
-        }
+        self.run_inner().await
     }
 
     async fn run_inner(self) -> Result<()> {

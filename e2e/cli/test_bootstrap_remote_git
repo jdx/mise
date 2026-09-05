@@ -21,12 +21,26 @@ while test "$#" -gt 0; do
     -tt) shift ;;
     -O)
       if test "$2" = forward; then exit 1; fi
+      if test "${BLOCK_CLEANUP:-}" = 1; then exec sleep 60; fi
       exit 0
       ;;
     *)
       destination=$1
       shift
       case "$1" in
+        'rm -rf -- /tmp/mise-bootstrap.'*)
+          if test "${FAIL_CLEANUP_ONCE:-}" = 1; then
+            echo attempt >>"$FAKE_REMOTE_BASE/cleanup-attempts"
+            if test ! -f "$FAKE_REMOTE_BASE/cleanup-failed"; then
+              touch "$FAKE_REMOTE_BASE/cleanup-failed"
+              exit 1
+            fi
+          fi
+          if test "${BLOCK_CLEANUP:-}" = 1; then
+            echo $$ >>"$FAKE_REMOTE_BASE/cleanup-pids"
+            exec sleep 60
+          fi
+          ;;
         *repository.bundle*)
           if test "${BLOCK_BUNDLE_UPLOAD:-}" = 1; then
             echo $$ >"$FAKE_REMOTE_BASE/upload.pid"
@@ -89,3 +103,50 @@ for _ in {1..50}; do
   sleep 0.1
 done
 assert_fail "kill -0 '$upload_pid' 2>/dev/null"
+
+# Failed cleanup is retried before closing the owned control session.
+FAIL_CLEANUP_ONCE=1 mise bootstrap remote --host retry-cleanup --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes
+assert "cat '$FAKE_REMOTE_BASE/cleanup-attempts'" 'attempt
+attempt'
+
+# Cleanup and control-close commands themselves cannot hang cancellation.
+BLOCK_BUNDLE_UPLOAD=1 BLOCK_CLEANUP=1 mise bootstrap remote --host blocked-cleanup --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes &
+bootstrap_pid=$!
+for _ in {1..100}; do
+  test -f "$FAKE_REMOTE_BASE/upload.pid" && test "$(cat "$FAKE_REMOTE_BASE/upload.pid")" != "$upload_pid" && break
+  sleep 0.1
+done
+kill -TERM "$bootstrap_pid"
+for _ in {1..300}; do
+  kill -0 "$bootstrap_pid" 2>/dev/null || break
+  sleep 0.1
+done
+assert_fail "kill -0 '$bootstrap_pid' 2>/dev/null"
+wait "$bootstrap_pid" && exit 1
+while read -r cleanup_pid; do
+  assert_fail "kill -0 '$cleanup_pid' 2>/dev/null"
+done <"$FAKE_REMOTE_BASE/cleanup-pids"
+
+# Local Git fetching is cancellable too; credentials/helpers need not finish.
+export REAL_GIT
+REAL_GIT=$(command -v git)
+cat >fakebin/git <<'EOF'
+#!/bin/sh
+if test "$1" = clone && test "${BLOCK_FETCH:-}" = 1; then
+  echo $$ >"$FAKE_REMOTE_BASE/fetch.pid"
+  exec sleep 60
+fi
+exec "$REAL_GIT" "$@"
+EOF
+chmod +x fakebin/git
+BLOCK_FETCH=1 mise bootstrap remote --host fetch-cancel --from-git "$source_repo" --remote-mise "$binary" --yes &
+bootstrap_pid=$!
+wait_for_file "$FAKE_REMOTE_BASE/fetch.pid" 'blocked repository fetch' 10 "$bootstrap_pid"
+fetch_pid=$(cat "$FAKE_REMOTE_BASE/fetch.pid")
+kill -INT "$bootstrap_pid"
+wait "$bootstrap_pid" && exit 1
+for _ in {1..50}; do
+  kill -0 "$fetch_pid" 2>/dev/null || break
+  sleep 0.1
+done
+assert_fail "kill -0 '$fetch_pid' 2>/dev/null"

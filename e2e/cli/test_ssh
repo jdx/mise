@@ -55,7 +55,9 @@ done
 mise ssh --relay-session "$relay_socket" -- git clone https://github.com/owner/repo.git clone
 mise ssh --relay-session "$relay_socket" -- git clone git@github.com:owner/repo.git clone-ssh
 mise ssh --relay-session "$relay_socket" -- git clone ssh://git@github.com/owner/repo.git clone-ssh-url
-assert "mise ssh --relay-session '$relay_socket' -- mise ls-remote github:owner/repo" 1.2.3
+# This fixture must exercise GitHub HTTP through the socket, not a public
+# version-list cache. Keep trace diagnostics for platform-specific CI failures.
+assert "MISE_USE_VERSIONS_HOST=0 mise ssh --relay-session '$relay_socket' -- mise --trace ls-remote github:owner/repo" 1.2.3
 assert "cat clone/value" first
 assert "git -C clone config remote.origin.url" https://github.com/owner/repo.git
 # Omitting a command starts the user's login shell and preserves its status.

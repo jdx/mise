@@ -2710,6 +2710,7 @@ impl BootstrapSecrets {
 
 impl BootstrapRemote {
     async fn run(self) -> Result<()> {
+        crate::ui::ctrlc::exit_on_ctrl_c(false);
         let relay = crate::github_relay::Scope::from_flags(
             self.github_relay_read_only,
             &self.github_relay_repo,
@@ -2811,14 +2812,25 @@ impl BootstrapRemote {
                 return Ok(());
             }
         }
-        let repository = repository
-            .map(system::remote_repository::Source::fetch)
-            .transpose()?;
+        let repository = if let Some(origin) = repository {
+            Some(
+                system::remote::interruptible(system::remote_repository::Source::fetch(origin))
+                    .await?,
+            )
+        } else {
+            None
+        };
         let mut artifacts = system::remote::RemoteArtifactResolver::default();
         for host in selected.values() {
             if let Err(error) =
                 system::remote::run(host, &options, &mut artifacts, repository.as_ref()).await
             {
+                if matches!(
+                    crate::exit::requested_exit_code(&error),
+                    Some(129 | 130 | 143)
+                ) {
+                    return Err(error);
+                }
                 error!("remote bootstrap failed on {}: {error:#}", host.name);
                 failures.push(format!("{}: {error:#}", host.name));
                 if self.fail_fast {

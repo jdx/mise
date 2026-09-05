@@ -414,13 +414,23 @@ pub(crate) async fn run(
     artifacts: &mut RemoteArtifactResolver,
     repository: Option<&super::remote_repository::Source>,
 ) -> Result<()> {
+    run_inner(host, options, artifacts, repository).await
+}
+
+/// Observe cancellation inside resource ownership, so cleanup can still be awaited.
+pub(crate) async fn interruptible<T>(
+    operation: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
     #[cfg(unix)]
     {
-        crate::github_relay::unix::lifecycle(run_inner(host, options, artifacts, repository)).await
+        crate::github_relay::unix::lifecycle(operation).await
     }
     #[cfg(not(unix))]
     {
-        run_inner(host, options, artifacts, repository).await
+        tokio::select! {
+            result = operation => result,
+            _ = tokio::signal::ctrl_c() => Err(crate::request_exit(130)),
+        }
     }
 }
 
@@ -451,47 +461,61 @@ async fn run_inner(
             .map(|directory| directory.path().join("control")),
     };
     info!("bootstrap remote {} ({})", host.name, host.destination());
-    let staging = session
-        .output_async(&["sh", "-c", staging_creation_script()])
-        .await?
-        .trim()
-        .to_string();
-    validate_staging_path(&staging)?;
-    let mut staging_guard = StagingGuard {
-        session: &session,
-        path: &staging,
-        retain: options.keep_staging,
-    };
-    let mut result = run_staged(&session, &tar, &staging, options, artifacts, repository).await;
-    if options.keep_staging {
-        warn!("remote staging retained on {}: {staging}", host.name);
-    } else if let Err(cleanup_error) = session.status(&["rm", "-rf", "--", &staging], false) {
-        if result.is_ok() {
-            result = Err(cleanup_error);
-        } else {
-            warn!(
-                "failed to clean remote staging on {}: {cleanup_error:#}",
-                host.name
-            );
-        }
-    }
-    staging_guard.retain = true;
-    result
+    let mut staging = None;
+    let result = interruptible(async {
+        let path = session
+            .output_async(&["sh", "-c", staging_creation_script()])
+            .await?
+            .trim()
+            .to_string();
+        validate_staging_path(&path)?;
+        staging = Some(path);
+        run_staged(
+            &session,
+            &tar,
+            staging.as_deref().unwrap(),
+            options,
+            artifacts,
+            repository,
+        )
+        .await
+    })
+    .await;
+    finish_session(&session, staging.as_deref(), options.keep_staging, result).await
 }
 
-// Unwinding an interrupted async operation must also clean its staging area.
-// The owned control connection is closed after this guard drops.
-struct StagingGuard<'a, 'host> {
-    session: &'a SshSession<'host>,
-    path: &'a str,
+// Cleanup deliberately lives outside the interruptible future. Two bounded
+// attempts handle transient failures without blocking a Tokio worker in Drop.
+async fn finish_session(
+    session: &SshSession<'_>,
+    staging: Option<&str>,
     retain: bool,
-}
-impl Drop for StagingGuard<'_, '_> {
-    fn drop(&mut self) {
-        if !self.retain {
-            let _ = self.session.status(&["rm", "-rf", "--", self.path], false);
+    mut result: Result<()>,
+) -> Result<()> {
+    if let Some(path) = staging {
+        if retain {
+            warn!("remote staging retained on {}: {path}", session.host.name);
+        } else {
+            let mut cleanup = Err(eyre!("remote cleanup not attempted"));
+            for _ in 0..2 {
+                cleanup = session.cleanup(path).await;
+                if cleanup.is_ok() {
+                    break;
+                }
+            }
+            if let Err(error) = cleanup {
+                warn!(
+                    "failed to clean remote staging on {}: {path}: {error:#}",
+                    session.host.name
+                );
+                if result.is_ok() {
+                    result = Err(error);
+                }
+            }
         }
     }
+    session.close().await;
+    result
 }
 
 fn staging_creation_script() -> &'static str {
@@ -652,6 +676,7 @@ pub(crate) async fn ssh(
     scope: crate::github_relay::Scope,
     command: &[String],
 ) -> Result<()> {
+    crate::ui::ctrlc::exit_on_ctrl_c(false);
     let directory = tempfile::Builder::new()
         .prefix("mise-ssh-")
         .tempdir_in("/tmp")?;
@@ -662,31 +687,29 @@ pub(crate) async fn ssh(
         connect_timeout: 10,
         control_path: Some(directory.path().join("control")),
     };
-    let staging = session
-        .output_async(&["sh", "-c", staging_creation_script()])
-        .await?
-        .trim()
-        .to_string();
-    validate_staging_path(&staging)?;
-    let mut staging_guard = StagingGuard {
-        session: &session,
-        path: &staging,
-        retain: false,
-    };
-    let result = async {
+    let mut staging = None;
+    let result = interruptible(async {
+        let path = session
+            .output_async(&["sh", "-c", staging_creation_script()])
+            .await?
+            .trim()
+            .to_string();
+        validate_staging_path(&path)?;
+        staging = Some(path);
+        let staging = staging.as_deref().unwrap();
         let project = format!("{staging}/project");
         session
             .status_async(&["mkdir", "-p", &project], false)
             .await?;
         let mise = provision_mise(
             &session,
-            &staging,
+            staging,
             &project,
             false,
             &mut RemoteArtifactResolver::default(),
         )
         .await?;
-        let _relay = start_relay(&session, &staging, scope).await?;
+        let _relay = start_relay(&session, staging, scope).await?;
         let mut argv = vec![
             mise,
             "ssh".into(),
@@ -698,14 +721,13 @@ pub(crate) async fn ssh(
         session
             .status_async(&argv.iter().map(String::as_str).collect::<Vec<_>>(), true)
             .await
-    }
+    })
     .await;
-    let cleanup = session.status(&["rm", "-rf", "--", &staging], false);
-    staging_guard.retain = true;
+    let result = finish_session(&session, staging.as_deref(), false, result).await;
     info!(
         "borrowed GitHub access has ended; future private updates require remote credentials or another relay-enabled session"
     );
-    result.and(cleanup)
+    result
 }
 
 fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<()> {
@@ -2022,30 +2044,42 @@ impl SshSession<'_> {
         )
     }
 
-    fn close(&self) {
+    async fn cleanup(&self, path: &str) -> Result<()> {
+        validate_staging_path(path)?;
+        let mut command = tokio::process::Command::new(&self.ssh);
+        command
+            .args(self.args(false, &["rm", "-rf", "--", path]))
+            .kill_on_drop(true);
+        let status = tokio::time::timeout(std::time::Duration::from_secs(5), command.status())
+            .await
+            .map_err(|_| eyre!("remote cleanup timed out"))??;
+        if !status.success() {
+            bail!("remote cleanup failed with {status}");
+        }
+        Ok(())
+    }
+
+    async fn close(&self) {
         let Some(control_path) = &self.control_path else {
             return;
         };
-        let status = Command::new(&self.ssh)
+        let mut command = tokio::process::Command::new(&self.ssh);
+        command
+            .kill_on_drop(true)
             .args(["-S"])
             .arg(control_path)
             .args(["-O", "exit"])
             .arg(self.host.destination())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if status.is_ok_and(|status| !status.success()) {
+            .stderr(Stdio::null());
+        let status =
+            tokio::time::timeout(std::time::Duration::from_secs(2), command.status()).await;
+        if !matches!(status, Ok(Ok(status)) if status.success()) {
             debug!(
-                "SSH control connection for {} was already closed",
+                "SSH control connection for {} did not confirm closure (failed or timed out)",
                 self.host.name
             );
         }
-    }
-}
-
-impl Drop for SshSession<'_> {
-    fn drop(&mut self) {
-        self.close();
     }
 }
 

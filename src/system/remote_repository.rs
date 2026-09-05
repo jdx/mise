@@ -25,6 +25,22 @@ fn git(path: &Path, args: &[&str]) -> Result<String> {
         .to_string())
 }
 
+async fn git_async(path: &Path, args: &[&str]) -> Result<String> {
+    let mut command = Command::new("git");
+    crate::git::sanitize_git_command(&mut command);
+    command.arg("-C").arg(path).args(args);
+    let output = tokio::process::Command::from(command)
+        .kill_on_drop(true)
+        .output()
+        .await?;
+    if !output.status.success() {
+        bail!("repository operation failed ({})", output.status);
+    }
+    Ok(String::from_utf8(output.stdout)?
+        .trim_end_matches('\n')
+        .to_string())
+}
+
 pub(crate) fn validate_origin(origin: &str) -> Result<()> {
     if origin.starts_with('-') || origin.chars().any(char::is_control) {
         bail!("invalid repository origin");
@@ -41,25 +57,28 @@ pub(crate) fn validate_origin(origin: &str) -> Result<()> {
 }
 
 impl Source {
-    pub(crate) fn fetch(origin: String) -> Result<Self> {
+    pub(crate) async fn fetch(origin: String) -> Result<Self> {
         validate_origin(&origin)?;
         let directory = tempfile::tempdir()?;
         let repo = directory.path().join("repo");
         let mut command = Command::new("git");
         crate::git::sanitize_git_command(&mut command);
         // No checkout: source templates and hooks are never evaluated locally.
-        let output = command
+        command
             .args(["clone", "--no-checkout", "--no-local", "--"])
             .arg(&origin)
-            .arg(&repo)
-            .output()?;
+            .arg(&repo);
+        let output = tokio::process::Command::from(command)
+            .kill_on_drop(true)
+            .output()
+            .await?;
         if !output.status.success() {
             bail!("could not fetch setup repository using local Git authentication");
         }
-        let revision = git(&repo, &["rev-parse", "HEAD"])?;
-        let branch = git(&repo, &["symbolic-ref", "HEAD"])?;
+        let revision = git_async(&repo, &["rev-parse", "HEAD"]).await?;
+        let branch = git_async(&repo, &["symbolic-ref", "HEAD"]).await?;
         let bundle = directory.path().join("repository.bundle");
-        git(
+        git_async(
             &repo,
             &[
                 "bundle",
@@ -70,7 +89,8 @@ impl Source {
                 "HEAD",
                 &branch,
             ],
-        )?;
+        )
+        .await?;
         Ok(Self {
             _directory: directory,
             bundle,
@@ -269,6 +289,8 @@ mod tests {
         )
         .unwrap();
         git(temp.path(), &["config", "user.name", "Test"]).unwrap();
+        // Keep byte-comparison fixtures independent of Git for Windows' autocrlf.
+        commit(temp.path(), ".gitattributes", "* -text\n");
         commit(temp.path(), "config.toml", "[tools]\n");
         temp
     }
@@ -291,10 +313,12 @@ mod tests {
             dest,
         )
     }
-    #[test]
-    fn pinned_install_and_safe_updates() {
+    #[tokio::test]
+    async fn pinned_install_and_safe_updates() {
         let repo = repository();
-        let source = Source::fetch(repo.path().to_str().unwrap().into()).unwrap();
+        let source = Source::fetch(repo.path().to_str().unwrap().into())
+            .await
+            .unwrap();
         let target = tempfile::tempdir().unwrap();
         let dest = target.path().join("mise");
         install_source(&source, &dest, false).unwrap();
@@ -313,7 +337,7 @@ mod tests {
             "config.toml",
             "[settings]\nexperimental = true\n",
         );
-        let next = Source::fetch(source.origin.clone()).unwrap();
+        let next = Source::fetch(source.origin.clone()).await.unwrap();
         install_source(&next, &dest, false).unwrap();
         assert_eq!(git(&dest, &["rev-parse", "HEAD"]).unwrap(), source.revision);
         install_source(&next, &dest, true).unwrap();
@@ -329,10 +353,12 @@ mod tests {
         std::fs::write(dest.join("config.toml"), "dirty").unwrap();
         assert!(install_source(&next, &dest, true).is_err());
     }
-    #[test]
-    fn adoption_preserves_files_and_rejects_conflicts() {
+    #[tokio::test]
+    async fn adoption_preserves_files_and_rejects_conflicts() {
         let repo = repository();
-        let source = Source::fetch(repo.path().to_str().unwrap().into()).unwrap();
+        let source = Source::fetch(repo.path().to_str().unwrap().into())
+            .await
+            .unwrap();
         let target = tempfile::tempdir().unwrap();
         std::fs::write(target.path().join("config.local.toml"), "private").unwrap();
         std::fs::write(target.path().join("config.toml"), "conflict").unwrap();
@@ -356,11 +382,13 @@ mod tests {
         .unwrap();
         assert!(install_source(&source, target.path(), false).is_err());
     }
-    #[test]
-    fn rejects_source_local_overrides_and_credential_urls() {
+    #[tokio::test]
+    async fn rejects_source_local_overrides_and_credential_urls() {
         let repo = repository();
         commit(repo.path(), "config.local.toml", "secret");
-        let source = Source::fetch(repo.path().to_str().unwrap().into()).unwrap();
+        let source = Source::fetch(repo.path().to_str().unwrap().into())
+            .await
+            .unwrap();
         let target = tempfile::tempdir().unwrap();
         assert!(install_source(&source, &target.path().join("mise"), false).is_err());
         assert!(validate_origin("https://user:secret@github.com/jdx/mise").is_err());
@@ -368,15 +396,17 @@ mod tests {
         assert!(validate_origin("git@github.com:jdx/mise.git").is_ok());
     }
 
-    #[test]
-    fn nested_adoption_preserves_siblings_and_rejects_local_overrides() {
+    #[tokio::test]
+    async fn nested_adoption_preserves_siblings_and_rejects_local_overrides() {
         let repo = repository();
         std::fs::create_dir(repo.path().join("conf.d")).unwrap();
         commit(repo.path(), "conf.d/shared.toml", "[tools]\n");
         let target = tempfile::tempdir().unwrap();
         std::fs::create_dir(target.path().join("conf.d")).unwrap();
         std::fs::write(target.path().join("conf.d/private.local.toml"), "private").unwrap();
-        let source = Source::fetch(repo.path().to_str().unwrap().into()).unwrap();
+        let source = Source::fetch(repo.path().to_str().unwrap().into())
+            .await
+            .unwrap();
         install_source(&source, target.path(), false).unwrap();
         assert_eq!(
             std::fs::read_to_string(target.path().join("conf.d/private.local.toml")).unwrap(),
@@ -384,7 +414,7 @@ mod tests {
         );
         assert!(target.path().join("conf.d/shared.toml").is_file());
         commit(repo.path(), "conf.d/config.local.toml", "secret");
-        let source = Source::fetch(source.origin.clone()).unwrap();
+        let source = Source::fetch(source.origin.clone()).await.unwrap();
         let fresh = tempfile::tempdir().unwrap();
         assert!(install_source(&source, &fresh.path().join("mise"), false).is_err());
         assert!(!fresh.path().join("mise").exists());

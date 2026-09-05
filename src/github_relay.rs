@@ -942,11 +942,17 @@ pub(crate) mod unix {
     pub(crate) async fn lifecycle<T>(
         operation: impl std::future::Future<Output = Result<T>>,
     ) -> Result<T> {
+        let mut interrupt =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
         let mut terminate =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
         let mut hangup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())?;
+        if crate::ui::ctrlc::is_cancelled() {
+            return Err(crate::request_exit(130));
+        }
         tokio::select! {
             result = operation => result,
+            _ = interrupt.recv() => Err(crate::request_exit(130)),
             _ = terminate.recv() => Err(crate::request_exit(143)),
             _ = hangup.recv() => Err(crate::request_exit(129)),
         }
