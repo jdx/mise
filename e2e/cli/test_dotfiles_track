@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # `[dotfiles]` entries with `mode = "track"`: the file stays where it is,
+# shellcheck disable=SC2016
 # history protects it, and every other mode keeps working exactly as before.
 
 require_cmd git
