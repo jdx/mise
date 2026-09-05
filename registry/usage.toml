@@ -1,4 +1,5 @@
 backends = [
+  { full = "packslip:github.com/jdx/usage", min_version = "6.7.1" },
   "aqua:jdx/usage",
   { full = "asdf:mise-plugins/mise-usage", platforms = [
     "linux",
