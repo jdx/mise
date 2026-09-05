@@ -2384,6 +2384,50 @@ fn reinsert_deferred_baselines(
     }
 }
 
+/// Drop prior-version entries that survived the merge only as deferred provenance
+/// baselines once the upgrade they guarded has verified provenance on `platform_key`.
+///
+/// `reinsert_deferred_baselines` keeps the prior provenance-bearing version alive when
+/// an already-installed upgrade skipped its download, so the auto-lock pass can compare
+/// the two. Once that pass records provenance for the new version the baseline has done
+/// its job; leaving it behind ships a lockfile listing two versions of the tool until
+/// some later command rewrites it. Only entries no request still resolves to are
+/// removed, and only when they are exactly the baseline the verified version would have
+/// been checked against. Returns the pruned versions.
+fn prune_verified_provenance_baselines(
+    tools: &mut Vec<LockfileTool>,
+    requested_versions: &BTreeSet<String>,
+    platform_key: &str,
+) -> Vec<String> {
+    let mut pruned = Vec::new();
+    loop {
+        let stale = tools
+            .iter()
+            .filter(|tool| requested_versions.contains(&tool.version))
+            .filter(|tool| {
+                tool.platforms
+                    .get(platform_key)
+                    .is_some_and(|info| info.provenance.is_some())
+            })
+            .filter_map(|tool| {
+                find_provenance_regression_baseline(
+                    Some(tools.as_slice()),
+                    &tool.version,
+                    tool.backend.as_deref().unwrap_or(""),
+                    platform_key,
+                    None,
+                )
+            })
+            .find(|baseline| !requested_versions.contains(&baseline.version))
+            .map(|baseline| (baseline.version.clone(), baseline.options.clone()));
+        let Some((version, options)) = stale else {
+            return pruned;
+        };
+        tools.retain(|tool| tool.version != version || tool.options != options);
+        pruned.push(version);
+    }
+}
+
 /// Check if any github backend tool is losing provenance when upgrading versions.
 ///
 /// Only checks the current platform because new `LockfileTool` entries (from
@@ -2687,6 +2731,26 @@ pub(crate) async fn auto_lock_new_versions(
     let deferred_retry_only = new_versions.is_empty();
     let mut all_provenance_errors: Vec<String> = Vec::new();
 
+    // Versions each lockfile's requests resolve to, mirroring what `update_lockfiles`
+    // writes. Anything else left in a lockfile is either a monorepo sibling's entry or
+    // a deferred provenance baseline; the latter is pruned once its upgrade verifies.
+    let mut requested_versions_by_lockfile: HashMap<PathBuf, HashMap<String, BTreeSet<String>>> =
+        HashMap::new();
+    for (source, tools) in tools_by_source_for_update(ts, new_versions) {
+        let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, &source) else {
+            continue;
+        };
+        let requested = requested_versions_by_lockfile
+            .entry(lockfile_path)
+            .or_default();
+        for (short, versions) in tools {
+            requested
+                .entry(short)
+                .or_default()
+                .extend(versions.into_iter().map(|tv| tv.version));
+        }
+    }
+
     let empty_keys: BTreeSet<String> = BTreeSet::new();
     let mut candidate_versions_by_lockfile: HashMap<PathBuf, Vec<ToolVersion>> = HashMap::new();
     let mut seen_candidates: HashMap<PathBuf, HashSet<(String, String, String, ToolSource)>> =
@@ -2854,6 +2918,33 @@ pub(crate) async fn auto_lock_new_versions(
                 }
                 Err(e) => {
                     debug!("auto-lock task failed: {}", e);
+                }
+            }
+        }
+
+        // Monorepo root lockfiles hold sibling projects' entries that this run cannot
+        // see, so an absent version there is not necessarily a baseline. Fail closed
+        // and leave them alone, as `update_lockfiles` does.
+        let is_monorepo_root_lockfile = config
+            .monorepo_lockfile_root()
+            .is_some_and(|root| lockfile_path.parent() == Some(root.as_path()));
+        if provenance_errors.is_empty() && !is_monorepo_root_lockfile {
+            let current_platform = Platform::current().to_key();
+            let empty = BTreeSet::new();
+            let requested = requested_versions_by_lockfile.get(&lockfile_path);
+            for (short, tools) in lockfile.tools.iter_mut() {
+                let requested_versions = requested
+                    .and_then(|requested| requested.get(short))
+                    .unwrap_or(&empty);
+                for version in prune_verified_provenance_baselines(
+                    tools,
+                    requested_versions,
+                    &current_platform,
+                ) {
+                    debug!(
+                        "auto-lock: pruned {short}@{version} from {}: provenance baseline no longer needed",
+                        display_path(&lockfile_path)
+                    );
                 }
             }
         }
@@ -4878,6 +4969,109 @@ options = { exe = "rg" }
         );
     }
 
+    fn verified_github_tool(version: &str, platform: &str) -> LockfileTool {
+        let mut tool = basic_tool(version, "github:owner/repo");
+        tool.platforms.insert(
+            platform.to_string(),
+            PlatformInfo {
+                url: Some(format!("https://example.com/repo-{version}.tar.gz")),
+                provenance: Some(ProvenanceType::GithubAttestations),
+                ..Default::default()
+            },
+        );
+        tool
+    }
+
+    fn lockfile_tool_versions(tools: &[LockfileTool]) -> Vec<&str> {
+        tools.iter().map(|tool| tool.version.as_str()).collect()
+    }
+
+    #[test]
+    fn test_prune_verified_provenance_baselines_drops_resolved_baseline() {
+        // `mise use repo@0.12.0` with 0.12.0 already installed skips the download, so
+        // update_lockfiles keeps 0.11.0 as a provenance baseline. Once auto-lock has
+        // verified 0.12.0 the baseline is just a stale duplicate and must go.
+        let platform = Platform::current().to_key();
+        let requested: BTreeSet<String> = ["0.12.0".to_string()].into();
+
+        let mut tools = vec![
+            verified_github_tool("0.12.0", &platform),
+            verified_github_tool("0.11.0", &platform),
+        ];
+        let pruned = prune_verified_provenance_baselines(&mut tools, &requested, &platform);
+        assert_eq!(pruned, vec!["0.11.0".to_string()]);
+        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0"]);
+
+        // Repeated unresolved upgrades can stack several baselines; all of them go.
+        let mut tools = vec![
+            verified_github_tool("0.12.0", &platform),
+            verified_github_tool("0.10.0", &platform),
+            verified_github_tool("0.11.0", &platform),
+        ];
+        let pruned = prune_verified_provenance_baselines(&mut tools, &requested, &platform);
+        assert_eq!(pruned, vec!["0.11.0".to_string(), "0.10.0".to_string()]);
+        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0"]);
+    }
+
+    #[test]
+    fn test_prune_verified_provenance_baselines_keeps_entries_still_needed() {
+        let platform = Platform::current().to_key();
+        let requested: BTreeSet<String> = ["0.12.0".to_string()].into();
+
+        // The upgrade is still unverified on this platform: the baseline is what the
+        // deferred regression check compares against, so it must stay.
+        let mut tools = vec![
+            basic_tool("0.12.0", "github:owner/repo"),
+            verified_github_tool("0.11.0", &platform),
+        ];
+        assert!(prune_verified_provenance_baselines(&mut tools, &requested, &platform).is_empty());
+        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.11.0"]);
+
+        // Verified on another platform only: this platform's check is still pending.
+        let mut tools = vec![
+            verified_github_tool("0.12.0", "other-platform"),
+            verified_github_tool("0.11.0", &platform),
+        ];
+        assert!(prune_verified_provenance_baselines(&mut tools, &requested, &platform).is_empty());
+        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.11.0"]);
+
+        // Both versions are requested (multi-version config): neither is a baseline.
+        let both: BTreeSet<String> = ["0.11.0".to_string(), "0.12.0".to_string()].into();
+        let mut tools = vec![
+            verified_github_tool("0.12.0", &platform),
+            verified_github_tool("0.11.0", &platform),
+        ];
+        assert!(prune_verified_provenance_baselines(&mut tools, &both, &platform).is_empty());
+        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.11.0"]);
+
+        // A downgrade never has a baseline: the newer, unrequested entry is not ours to drop.
+        let downgrade: BTreeSet<String> = ["0.11.0".to_string()].into();
+        let mut tools = vec![
+            verified_github_tool("0.12.0", &platform),
+            verified_github_tool("0.11.0", &platform),
+        ];
+        assert!(prune_verified_provenance_baselines(&mut tools, &downgrade, &platform).is_empty());
+        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.11.0"]);
+
+        // A prior version without provenance was never a baseline.
+        let mut tools = vec![
+            verified_github_tool("0.12.0", &platform),
+            basic_tool("0.11.0", "github:owner/repo"),
+        ];
+        assert!(prune_verified_provenance_baselines(&mut tools, &requested, &platform).is_empty());
+        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.11.0"]);
+
+        // Provenance baselines only exist for github backends.
+        let mut tools = vec![
+            verified_github_tool("0.12.0", &platform),
+            verified_github_tool("0.11.0", &platform),
+        ];
+        for tool in &mut tools {
+            tool.backend = Some("aqua:owner/repo".to_string());
+        }
+        assert!(prune_verified_provenance_baselines(&mut tools, &requested, &platform).is_empty());
+        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.11.0"]);
+    }
     #[test]
     fn test_preserve_absent_does_not_resurrect_rekeyed_empty_options_entry() {
         // #10564: after merge_tool_entries rekeys an empty-options entry into a
