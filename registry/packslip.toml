@@ -1,0 +1,9 @@
+backends = [
+  "packslip:github.com/jdx/packslip",
+  "github:jdx/packslip",
+  "cargo:packslip",
+]
+bins = ["packslip"]
+description = "A signed release manifest for vendor binaries"
+test = { cmd = "packslip --version", expected = "packslip {{version}}" }
+version_order = "semver"
