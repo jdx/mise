@@ -96,6 +96,8 @@ pub(crate) struct RemoteHost {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RemoteOverrides {
+    /// Git onboarding does not use the inventory's archive source.
+    pub from_git: bool,
     pub source: Option<PathBuf>,
     pub mise_env: Option<Vec<String>>,
     pub copy_links: bool,
@@ -301,7 +303,7 @@ impl RemoteHost {
         } else if overrides.no_install_mise {
             self.install_mise = None;
         }
-        self.validate()
+        self.validate_with_source(!overrides.from_git)
     }
 
     pub(crate) fn destination(&self) -> String {
@@ -312,6 +314,10 @@ impl RemoteHost {
     }
 
     fn validate(&self) -> Result<()> {
+        self.validate_with_source(true)
+    }
+
+    fn validate_with_source(&self, archive: bool) -> Result<()> {
         validate_ssh_atom("host", &self.host)?;
         if let Some(user) = &self.user {
             validate_ssh_atom("user", user)?;
@@ -319,14 +325,14 @@ impl RemoteHost {
         if self.port == Some(0) {
             bail!("remote host '{}' port must be greater than zero", self.name);
         }
-        if !self.source.is_dir() {
+        if archive && !self.source.is_dir() {
             bail!(
                 "remote host '{}' source is not a directory: {}",
                 self.name,
                 self.source.display()
             );
         }
-        if !self.copy_links {
+        if archive && !self.copy_links {
             for link in &self.copy_link {
                 validate_copy_link(&self.source, link).wrap_err_with(|| {
                     format!("remote host '{}' has invalid copy_link", self.name)
@@ -446,7 +452,8 @@ async fn run_inner(
     };
     info!("bootstrap remote {} ({})", host.name, host.destination());
     let staging = session
-        .output(&["sh", "-c", staging_creation_script()])?
+        .output_async(&["sh", "-c", staging_creation_script()])
+        .await?
         .trim()
         .to_string();
     validate_staging_path(&staging)?;
@@ -512,7 +519,9 @@ async fn run_staged(
     repository: Option<&super::remote_repository::Source>,
 ) -> Result<()> {
     let project = format!("{staging}/project");
-    session.status(&["mkdir", "-p", &project], false)?;
+    session
+        .status_async(&["mkdir", "-p", &project], false)
+        .await?;
     if repository.is_none() {
         upload_source(session, tar, &project)?;
     }
@@ -524,10 +533,12 @@ async fn run_staged(
     };
     let project = if let Some(repository) = repository {
         let bundle = format!("{staging}/repository.bundle");
-        session.status_with_stdin(
-            &["sh", "-c", &format!("cat > {}", shell_quote(&bundle))],
-            File::open(&repository.bundle)?,
-        )?;
+        session
+            .status_with_stdin_async(
+                &["sh", "-c", &format!("cat > {}", shell_quote(&bundle))],
+                File::open(&repository.bundle)?,
+            )
+            .await?;
         let mut install = vec![
             mise.as_str(),
             "ssh",
@@ -547,7 +558,8 @@ async fn run_staged(
         // The helper uses the target's XDG/global-config environment. Only its
         // absolute result, never the staging directory, becomes trusted config.
         let path = session
-            .output(&[&mise, "ssh", "--global-config-directory"])?
+            .output_async(&[&mise, "ssh", "--global-config-directory"])
+            .await?
             .trim()
             .to_string();
         if !path.starts_with('/') || path.contains(['\n', '\r']) {
@@ -616,7 +628,8 @@ async fn start_relay(
         .control_path
         .as_ref()
         .ok_or_else(|| eyre!("relay requires an owned SSH control connection"))?;
-    let status = Command::new(&session.ssh)
+    let status = tokio::process::Command::new(&session.ssh)
+        .kill_on_drop(true)
         .arg("-S")
         .arg(control)
         .args(["-O", "forward", "-o", "ExitOnForwardFailure=yes", "-R"])
@@ -625,7 +638,8 @@ async fn start_relay(
             relay.socket().display()
         ))
         .arg(session.host.destination())
-        .status()?;
+        .status()
+        .await?;
     if !status.success() {
         bail!("GitHub relay socket forwarding failed");
     }
@@ -649,7 +663,8 @@ pub(crate) async fn ssh(
         control_path: Some(directory.path().join("control")),
     };
     let staging = session
-        .output(&["sh", "-c", staging_creation_script()])?
+        .output_async(&["sh", "-c", staging_creation_script()])
+        .await?
         .trim()
         .to_string();
     validate_staging_path(&staging)?;
@@ -660,7 +675,9 @@ pub(crate) async fn ssh(
     };
     let result = async {
         let project = format!("{staging}/project");
-        session.status(&["mkdir", "-p", &project], false)?;
+        session
+            .status_async(&["mkdir", "-p", &project], false)
+            .await?;
         let mise = provision_mise(
             &session,
             &staging,
@@ -1936,6 +1953,17 @@ impl SshSession<'_> {
         checked_output(output, &self.host.name)
     }
 
+    async fn output_async(&self, remote_argv: &[&str]) -> Result<String> {
+        let args = self.args(false, remote_argv);
+        info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
+        let output = tokio::process::Command::new(&self.ssh)
+            .args(args)
+            .kill_on_drop(true)
+            .output()
+            .await?;
+        checked_output(output, &self.host.name)
+    }
+
     fn status(&self, remote_argv: &[&str], tty: bool) -> Result<()> {
         let args = self.args(tty, remote_argv);
         info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
@@ -1956,6 +1984,21 @@ impl SshSession<'_> {
             .args(args)
             .stdin(Stdio::from(input))
             .status()?;
+        if !status.success() {
+            bail!("remote upload to '{}' failed with {status}", self.host.name);
+        }
+        Ok(())
+    }
+
+    async fn status_with_stdin_async(&self, remote_argv: &[&str], input: File) -> Result<()> {
+        let args = self.args(false, remote_argv);
+        info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
+        let status = tokio::process::Command::new(&self.ssh)
+            .args(args)
+            .stdin(Stdio::from(input))
+            .kill_on_drop(true)
+            .status()
+            .await?;
         if !status.success() {
             bail!("remote upload to '{}' failed with {status}", self.host.name);
         }
@@ -2313,6 +2356,22 @@ mod tests {
         assert_eq!(host.host, "example.com");
         assert_eq!(host.destination(), "ubuntu@example.com");
         assert!(ad_hoc_host("-oProxyCommand=bad", std::env::current_dir().unwrap(), &[]).is_err());
+    }
+
+    #[test]
+    fn git_onboarding_ignores_archive_source_but_validates_ssh() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut host = ad_hoc_host("devbox", temp.path().into(), &[]).unwrap();
+        host.source = temp.path().join("absent");
+        host.copy_link.push(PathBuf::from("absent-link"));
+        assert!(host.apply_overrides(&RemoteOverrides::default()).is_err());
+        let overrides = RemoteOverrides {
+            from_git: true,
+            ..Default::default()
+        };
+        host.apply_overrides(&overrides).unwrap();
+        host.port = Some(0);
+        assert!(host.apply_overrides(&overrides).is_err());
     }
 
     #[test]

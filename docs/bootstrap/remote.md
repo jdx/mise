@@ -39,6 +39,10 @@ directory can be adopted after confirmation: existing files and local overrides
 are preserved. `--dry-run` reports the required fetch/adoption work without
 fetching the source or changing the target.
 
+`--from-git` uses the repository instead of the inventory's archive source and
+copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and
+`--exclude` flags cannot be combined with it.
+
 The relay is separate from this initial transfer. Enable it when bootstrap needs
 additional private GitHub content, authorizing each required repository with a
 repeated `--github-relay-repo`. Shorthand never enables or expands relay access.
@@ -85,6 +89,12 @@ target trustworthy. Use narrowly scoped repository allowlists.
 Relay support is initially limited to Linux/macOS clients and POSIX Linux/macOS
 targets running a compatible mise. Windows, GitHub Enterprise, remote `gh`, write
 operations, and unattended/persistent relay access are not supported.
+
+Read-only access includes Git clone/fetch, repository metadata, contents, refs,
+releases, release assets, and tar/zip source archives. Archive and asset redirects
+are restricted to approved GitHub download hosts and never carry your credential.
+Resume requests retain their range headers, and denied downloads fail rather than
+being saved as artifacts.
 
 ```toml
 [bootstrap.remote]

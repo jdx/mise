@@ -85,6 +85,16 @@ struct SendOnceOptions {
 }
 
 impl SendOnceOptions {
+    fn check_response(&self, response: Response) -> Result<Response> {
+        if self.error_for_status
+            && !(self.allow_range_not_satisfiable
+                && response.status() == StatusCode::RANGE_NOT_SATISFIABLE)
+        {
+            response.error_for_status_ref()?;
+        }
+        Ok(response)
+    }
+
     fn new(retry_state: Option<RetryStateHandle>, use_netrc: bool) -> Self {
         Self {
             use_netrc,
@@ -1280,13 +1290,14 @@ impl Client {
         if matches!(url.host_str(), Some("github.com" | "api.github.com"))
             && let Some(socket) = std::env::var_os("MISE_GITHUB_RELAY_SOCKET")
         {
-            return crate::github_relay::unix::request(
+            let response = crate::github_relay::unix::request(
                 std::path::Path::new(&socket),
                 method,
                 &url,
                 headers,
             )
-            .await;
+            .await?;
+            return options.check_response(response);
         }
         apply_url_replacements(&mut url);
         let host_key = http_host_key(&url);
@@ -1473,13 +1484,7 @@ impl Client {
                 &body,
             ));
         }
-        if options.error_for_status
-            && !(options.allow_range_not_satisfiable
-                && resp.status() == StatusCode::RANGE_NOT_SATISFIABLE)
-        {
-            resp.error_for_status_ref()?;
-        }
-        Ok(resp)
+        options.check_response(resp)
     }
 }
 
@@ -2037,6 +2042,36 @@ mod tests {
     use reqwest::dns::{Name, Resolve, Resolving};
     use std::path::PathBuf;
     use url::Url;
+
+    #[test]
+    fn relay_and_direct_responses_share_status_contract() {
+        let response =
+            |status| Response::from(http::Response::builder().status(status).body("").unwrap());
+        let options = SendOnceOptions::new(None, true);
+        assert!(options.check_response(response(403)).is_err());
+        assert!(options.check_response(response(500)).is_err());
+        assert!(options.check_response(response(416)).is_err());
+        assert!(
+            options
+                .clone()
+                .allow_range_not_satisfiable()
+                .check_response(response(416))
+                .is_ok()
+        );
+        assert!(
+            options
+                .clone()
+                .allow_range_not_satisfiable()
+                .check_response(response(403))
+                .is_err()
+        );
+        assert!(
+            options
+                .allow_error_status()
+                .check_response(response(403))
+                .is_ok()
+        );
+    }
 
     #[test]
     fn download_state_placeholder_is_the_length_tempfile_will_produce() {

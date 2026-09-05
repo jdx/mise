@@ -609,6 +609,9 @@ export const commands: { [key: string]: Command } = {
   sponsors: {
     hide: false,
   },
+  ssh: {
+    hide: false,
+  },
   sync: {
     hide: false,
     subcommands: {

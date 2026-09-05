@@ -26,6 +26,14 @@ while test "$#" -gt 0; do
     *)
       destination=$1
       shift
+      case "$1" in
+        *repository.bundle*)
+          if test "${BLOCK_BUNDLE_UPLOAD:-}" = 1; then
+            echo $$ >"$FAKE_REMOTE_BASE/upload.pid"
+            exec sleep 60
+          fi
+          ;;
+      esac
       export HOME="$FAKE_REMOTE_BASE/$destination"
       export MISE_CONFIG_DIR="$HOME/.config/mise"
       export MISE_GLOBAL_CONFIG_FILE="$MISE_CONFIG_DIR/config.toml"
@@ -59,6 +67,7 @@ mise bootstrap remote --host one --from-git "$source_repo" --remote-mise "$binar
 assert "git -C remotes/one/.config/mise rev-parse HEAD" "$first_revision"
 mise bootstrap remote --host one --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes --update
 assert "git -C remotes/one/.config/mise rev-parse HEAD" "$second_revision"
+assert "git -C remotes/one/.config/mise rev-parse '@{upstream}'" "$second_revision"
 assert "cat remotes/one/.config/mise/config.local.toml" '# machine local'
 echo '# dirty' >>remotes/one/.config/mise/config.toml
 assert_fail "mise bootstrap remote --host one --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --update" 'uncommitted changes'
@@ -67,3 +76,16 @@ assert_fail "mise bootstrap remote --host one --from-git '$source_repo' --remote
 assert_fail "MISE_GITHUB_TOKEN=fake-local-relay-token mise bootstrap remote --host two --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --github-relay-read-only --github-relay-repo owner/repo" 'forwarding failed'
 assert_contains "cat '$SSH_LOG'" '-O exit'
 assert_not_contains "cat '$SSH_LOG'" 'fake-local-relay-token'
+
+# A stalled bundle transfer must not block cancellation or leave its SSH child alive.
+BLOCK_BUNDLE_UPLOAD=1 mise bootstrap remote --host stalled --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes &
+bootstrap_pid=$!
+wait_for_file "$FAKE_REMOTE_BASE/upload.pid" 'blocked bundle upload' 10 "$bootstrap_pid"
+upload_pid=$(cat "$FAKE_REMOTE_BASE/upload.pid")
+kill -TERM "$bootstrap_pid"
+wait "$bootstrap_pid" && exit 1
+for _ in {1..50}; do
+  kill -0 "$upload_pid" 2>/dev/null || break
+  sleep 0.1
+done
+assert_fail "kill -0 '$upload_pid' 2>/dev/null"

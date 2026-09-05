@@ -133,7 +133,7 @@ fn install_at(
     if git(&checkout, &["rev-parse", "HEAD"])? != revision {
         bail!("transferred revision mismatch");
     }
-    let entries = git(&checkout, &["ls-tree", "-rz", "--name-only", revision])?;
+    let entries = git(&checkout, &["ls-tree", "-r", "-z", "--name-only", revision])?;
     for entry in entries.split('\0').filter(|s| !s.is_empty()) {
         let path = Path::new(entry);
         if path
@@ -193,6 +193,14 @@ fn install_at(
                     "core.hooksPath=/dev/null",
                     "merge",
                     "--ff-only",
+                    revision,
+                ],
+            )?;
+            git(
+                destination,
+                &[
+                    "update-ref",
+                    &format!("refs/remotes/origin/{branch}"),
                     revision,
                 ],
             )?;
@@ -311,6 +319,10 @@ mod tests {
         install_source(&next, &dest, true).unwrap();
         assert_eq!(git(&dest, &["rev-parse", "HEAD"]).unwrap(), next.revision);
         assert_eq!(
+            git(&dest, &["rev-parse", "@{upstream}"]).unwrap(),
+            next.revision
+        );
+        assert_eq!(
             std::fs::read_to_string(dest.join("config.local.toml")).unwrap(),
             "local"
         );
@@ -354,5 +366,27 @@ mod tests {
         assert!(validate_origin("https://user:secret@github.com/jdx/mise").is_err());
         assert!(validate_origin("https://github.com/jdx/mise?token=secret").is_err());
         assert!(validate_origin("git@github.com:jdx/mise.git").is_ok());
+    }
+
+    #[test]
+    fn nested_adoption_preserves_siblings_and_rejects_local_overrides() {
+        let repo = repository();
+        std::fs::create_dir(repo.path().join("conf.d")).unwrap();
+        commit(repo.path(), "conf.d/shared.toml", "[tools]\n");
+        let target = tempfile::tempdir().unwrap();
+        std::fs::create_dir(target.path().join("conf.d")).unwrap();
+        std::fs::write(target.path().join("conf.d/private.local.toml"), "private").unwrap();
+        let source = Source::fetch(repo.path().to_str().unwrap().into()).unwrap();
+        install_source(&source, target.path(), false).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(target.path().join("conf.d/private.local.toml")).unwrap(),
+            "private"
+        );
+        assert!(target.path().join("conf.d/shared.toml").is_file());
+        commit(repo.path(), "conf.d/config.local.toml", "secret");
+        let source = Source::fetch(source.origin.clone()).unwrap();
+        let fresh = tempfile::tempdir().unwrap();
+        assert!(install_source(&source, &fresh.path().join("mise"), false).is_err());
+        assert!(!fresh.path().join("mise").exists());
     }
 }

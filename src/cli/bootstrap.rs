@@ -608,7 +608,7 @@ struct BootstrapComposeStatus {
 #[usage(verbatim_doc_comment)]
 struct BootstrapRemote {
     /// Install a Git repository as persistent global configuration on each target
-    #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = "source")]
+    #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = ["source", "copy_link", "copy_links", "exclude"])]
     from_git: Option<String>,
     /// Borrow read-only GitHub access for this invocation
     #[usage(long)]
@@ -2734,6 +2734,7 @@ impl BootstrapRemote {
         }
 
         let overrides = system::remote::RemoteOverrides {
+            from_git: self.from_git.is_some(),
             source: self.source,
             mise_env: self.remote_env,
             copy_links: self.copy_links,
@@ -4619,6 +4620,18 @@ mod tests {
         ]
         .map(OsStr::new);
         assert!(Cli::parse_from_argv(&conflict).is_err());
+        for archive_flag in ["--copy-link=link", "--copy-links", "--exclude=pattern"] {
+            let argv = [
+                "mise",
+                "bootstrap",
+                "remote",
+                "--host=devbox",
+                "--from-git=jdx/dotfiles",
+                archive_flag,
+            ]
+            .map(OsStr::new);
+            assert!(Cli::parse_from_argv(&argv).is_err(), "{archive_flag}");
+        }
     }
 
     #[test]

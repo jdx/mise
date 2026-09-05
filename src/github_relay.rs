@@ -1,11 +1,12 @@
 //! Session-only GitHub access. Authorization is checked on the initiating machine;
 //! neither the remote transport nor its callers can request a credential.
 use eyre::{Result, bail};
-use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Scope {
-    repositories: BTreeSet<String>,
+    #[cfg(any(unix, test))]
+    repositories: std::collections::BTreeSet<String>,
+    #[cfg(any(unix, test))]
     all: bool,
 }
 
@@ -24,13 +25,21 @@ impl Scope {
         if all != repositories.is_empty() {
             bail!("choose --github-relay-repo OWNER/REPO or --github-relay-all-repos, not both");
         }
-        let repositories = repositories
+        let repositories: std::collections::BTreeSet<String> = repositories
             .iter()
             .map(|repo| repository(repo))
             .collect::<Result<_>>()?;
-        Ok(Some(Self { repositories, all }))
+        #[cfg(not(any(unix, test)))]
+        let _ = repositories;
+        Ok(Some(Self {
+            #[cfg(any(unix, test))]
+            repositories,
+            #[cfg(any(unix, test))]
+            all,
+        }))
     }
 
+    #[cfg(any(unix, test))]
     fn permits(&self, repo: &str) -> bool {
         self.all || self.repositories.contains(&repo.to_ascii_lowercase())
     }
@@ -69,20 +78,43 @@ pub(crate) fn expand_repository(value: &str) -> Result<String> {
 }
 
 #[derive(Debug, PartialEq)]
+#[cfg(any(unix, test))]
 struct Target {
     url: String,
     git: bool,
+    archive_repo: Option<String>,
 }
 
-fn authorize(scope: &Scope, method: &str, path: &str, query: Option<&str>) -> Result<Target> {
-    // Reject ambiguous encodings before URL parsing can normalize them.
-    if path.contains(['%', '\\'])
-        || path
-            .split('/')
-            .any(|s| s == "." || s == ".." || s.is_empty())
-    {
-        bail!("invalid relay path");
+#[cfg(any(unix, test))]
+fn validate_path(path: &str) -> Result<()> {
+    // Validate decoded segments, retaining the original spelling upstream. Reject
+    // encoded separators and percent signs so a second decoder cannot change scope.
+    for segment in path.split('/') {
+        for (index, byte) in segment.bytes().enumerate() {
+            if byte == b'%'
+                && !segment
+                    .as_bytes()
+                    .get(index + 1..index + 3)
+                    .is_some_and(|digits| digits.iter().all(u8::is_ascii_hexdigit))
+            {
+                bail!("invalid relay path encoding");
+            }
+        }
+        let decoded = urlencoding::decode(segment)?;
+        if decoded.is_empty()
+            || matches!(decoded.as_ref(), "." | "..")
+            || decoded.contains(['/', '\\', '%'])
+            || decoded.chars().any(char::is_control)
+        {
+            bail!("invalid relay path");
+        }
     }
+    Ok(())
+}
+
+#[cfg(any(unix, test))]
+fn authorize(scope: &Scope, method: &str, path: &str, query: Option<&str>) -> Result<Target> {
+    validate_path(path)?;
     let p: Vec<_> = path.split('/').collect();
     let (owner, repo) = match p.as_slice() {
         ["api", "repos", owner, repo, ..] => (*owner, *repo),
@@ -104,10 +136,13 @@ fn authorize(scope: &Scope, method: &str, path: &str, query: Option<&str>) -> Re
             matches!(*kind, "refs" | "matching-refs") && matches!(method, "GET" | "HEAD")
         }
         ["api", "repos", _, _, kind, ..] => {
-            matches!(*kind, "contents" | "releases" | "tags" | "branches")
-                && matches!(method, "GET" | "HEAD")
+            matches!(
+                *kind,
+                "contents" | "releases" | "tags" | "branches" | "tarball" | "zipball"
+            ) && matches!(method, "GET" | "HEAD")
         }
         ["web", _, _, "releases", "download", _, ..] => matches!(method, "GET" | "HEAD"),
+        ["web", _, _, "archive", _, ..] => matches!(method, "GET" | "HEAD"),
         _ => false,
     };
     if !allowed {
@@ -127,11 +162,36 @@ fn authorize(scope: &Scope, method: &str, path: &str, query: Option<&str>) -> Re
     };
     let suffix = path.split_once('/').expect("validated path").1;
     let mut url = format!("https://{host}/{suffix}");
+    let archive_repo = match p.as_slice() {
+        ["api", "repos", _, _, "tarball" | "zipball", ..] => Some(name.clone()),
+        ["web", _, _, "archive", rest @ ..] => {
+            let reference = rest.join("/");
+            let (kind, reference) = if let Some(reference) = reference.strip_suffix(".tar.gz") {
+                ("tarball", reference)
+            } else if let Some(reference) = reference.strip_suffix(".zip") {
+                ("zipball", reference)
+            } else {
+                bail!("unsupported archive format");
+            };
+            if reference.is_empty() {
+                bail!("missing archive reference");
+            }
+            // The API supplies short-lived private archive links; credentials
+            // remain at the API origin and are never attached to that redirect.
+            url = format!("https://api.github.com/repos/{name}/{kind}/{reference}");
+            Some(name)
+        }
+        _ => None,
+    };
     if let Some(query) = query {
         url.push('?');
         url.push_str(query);
     }
-    Ok(Target { url, git })
+    Ok(Target {
+        url,
+        git,
+        archive_repo,
+    })
 }
 
 #[cfg(unix)]
@@ -348,7 +408,13 @@ pub(crate) mod unix {
         } else {
             req = req.bearer_auth(broker.token.as_str());
         }
-        for name in ["accept", "range", "git-protocol", "content-encoding"] {
+        for name in [
+            "accept",
+            "range",
+            "if-range",
+            "git-protocol",
+            "content-encoding",
+        ] {
             if let Some(value) = parts.headers.get(name) {
                 req = req.header(name, value);
             }
@@ -357,7 +423,7 @@ pub(crate) mod unix {
             req = req.header("content-type", "application/x-git-upload-pack-request");
         }
         let mut response = req.body(body).send().await?;
-        // Only asset redirects are followed, without credentials or remote headers.
+        // Only asset redirects are followed. Preserve resume headers, never credentials.
         for _ in 0..3 {
             if !response.status().is_redirection() {
                 break;
@@ -368,14 +434,18 @@ pub(crate) mod unix {
                 .ok_or_else(|| eyre::eyre!("missing redirect"))?
                 .to_str()?;
             let url = Url::parse(location)?;
-            if target.git || !asset_redirect(&url) {
+            if target.git
+                || !(asset_redirect(&url) || archive_redirect(&url, target.archive_repo.as_deref()))
+            {
                 bail!("unsupported redirect");
             }
-            response = broker
-                .client
-                .request(parts.method.clone(), url)
-                .send()
-                .await?;
+            let mut redirected = broker.client.request(parts.method.clone(), url);
+            for name in ["range", "if-range"] {
+                if let Some(value) = parts.headers.get(name) {
+                    redirected = redirected.header(name, value);
+                }
+            }
+            response = redirected.send().await?;
         }
         if response.status().is_redirection() {
             bail!("too many redirects");
@@ -406,12 +476,29 @@ pub(crate) mod unix {
         Ok(builder.body(Body::from_stream(stream))?)
     }
 
-    fn asset_redirect(url: &Url) -> bool {
+    fn archive_redirect(url: &Url, repository: Option<&str>) -> bool {
+        let Some(repository) = repository else {
+            return false;
+        };
+        let parts: Vec<_> = url.path().trim_start_matches('/').split('/').collect();
+        safe_redirect_origin(url)
+            && url.host_str() == Some("codeload.github.com")
+            && parts.len() >= 4
+            && format!("{}/{}", parts[0], parts[1]).eq_ignore_ascii_case(repository)
+            && matches!(parts[2], "tar.gz" | "zip" | "legacy.tar.gz" | "legacy.zip")
+            && validate_path(url.path().trim_start_matches('/')).is_ok()
+    }
+
+    fn safe_redirect_origin(url: &Url) -> bool {
         url.scheme() == "https"
             && url.username().is_empty()
             && url.password().is_none()
             && url.port().is_none()
             && url.fragment().is_none()
+    }
+
+    fn asset_redirect(url: &Url) -> bool {
+        safe_redirect_origin(url)
             && matches!(
                 url.host_str(),
                 Some("release-assets.githubusercontent.com" | "objects.githubusercontent.com")
@@ -588,15 +675,21 @@ pub(crate) mod unix {
                 std::future::pending::<()>().await;
                 return;
             };
+            let mut failures = 0;
             loop {
                 tokio::time::sleep(Duration::from_secs(2)).await;
-                if !client
+                if client
                     .get("http://localhost/_session")
                     .send()
                     .await
                     .is_ok_and(|r| r.status() == 204)
                 {
-                    return;
+                    failures = 0;
+                } else {
+                    failures += 1;
+                    if failures >= 3 {
+                        return;
+                    }
                 }
             }
         };
@@ -653,24 +746,50 @@ pub(crate) mod unix {
             .timeout(Duration::from_secs(300))
             .build()?;
         let mut req = client.request(method, relay_url);
-        for name in ["accept", "range"] {
+        for name in ["accept", "range", "if-range"] {
             if let Some(value) = headers.get(name) {
                 req = req.header(name, value);
             }
         }
-        req.send()
-            .await
-            .map_err(|_| eyre::eyre!("GitHub relay disconnected or unavailable"))
+        req.send().await.map_err(|error| {
+            eyre::Report::new(error.without_url())
+                .wrap_err("GitHub relay disconnected or unavailable")
+        })
     }
     #[cfg(test)]
     mod tests {
         use super::*;
+        #[test]
+        fn archives_only_redirect_to_the_authorized_repository() {
+            for (url, expected) in [
+                (
+                    "https://codeload.github.com/jdx/mise/legacy.tar.gz/main?token=ephemeral",
+                    true,
+                ),
+                ("https://codeload.github.com/other/private/zip/main", false),
+                ("https://codeload.github.com/jdx/mise/other/main", false),
+                ("http://codeload.github.com/jdx/mise/zip/main", false),
+                ("https://127.0.0.1/jdx/mise/zip/main", false),
+                (
+                    "https://codeload.github.com.attacker.invalid/jdx/mise/zip/main",
+                    false,
+                ),
+            ] {
+                assert_eq!(
+                    archive_redirect(&Url::parse(url).unwrap(), Some("jdx/mise")),
+                    expected
+                );
+                assert!(!archive_redirect(&Url::parse(url).unwrap(), None));
+            }
+        }
         #[tokio::test]
         async fn broker_authenticates_locally_and_redacts_failures() {
             let mut upstream = mockito::Server::new_async().await;
             let api = upstream
                 .mock("GET", "/repos/jdx/mise/releases/latest")
                 .match_header("authorization", "Bearer fake-local-token")
+                .match_header("range", "bytes=10-")
+                .match_header("if-range", "etag-1")
                 .with_header("authorization", "must-not-reach-target")
                 .with_body("release")
                 .create_async()
@@ -712,6 +831,8 @@ pub(crate) mod unix {
                     .method(method)
                     .uri(path)
                     .header("authorization", "remote-cannot-select-credentials")
+                    .header("range", "bytes=10-")
+                    .header("if-range", "etag-1")
                     .body(Body::empty())
                     .unwrap();
                 let response = handle(State(broker.clone()), request).await;
@@ -782,6 +903,7 @@ mod tests {
             "api/repos/jdx/mise",
             "api/repos/jdx/mise/releases/latest",
             "api/repos/jdx/mise/contents/Cargo.toml",
+            "api/repos/jdx/mise/releases/tags/v%C3%A9",
         ] {
             assert!(authorize(&scope(), "GET", path, None).is_ok());
             assert!(authorize(&scope(), "POST", path, None).is_err());
@@ -802,6 +924,11 @@ mod tests {
             "api/graphql",
             "api/repos/jdx/mise/../../user",
             "api/repos/jdx/mise/contents/%2e%2e",
+            "api/repos/jdx/mise/contents/%252e%252e",
+            "api/repos/jdx/mise/contents/a%2Fb",
+            "api/repos/jdx/mise/contents/%5c",
+            "api/repos/jdx/mise/contents/%00",
+            "api/repos/jdx/mise/contents/%zz",
             "git/jdx/mise.git/git-receive-pack",
         ] {
             assert!(authorize(&scope(), "GET", path, None).is_err(), "{path}");
@@ -822,5 +949,24 @@ mod tests {
             assert_eq!(expand_repository(value).unwrap(), value);
         }
         assert!(expand_repository("not/a/repository").is_err());
+    }
+
+    #[test]
+    fn web_archives_use_scoped_api_downloads() {
+        let target = authorize(
+            &scope(),
+            "GET",
+            "web/jdx/mise/archive/refs/tags/v1.tar.gz",
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            target.url,
+            "https://api.github.com/repos/jdx/mise/tarball/refs/tags/v1"
+        );
+        assert_eq!(target.archive_repo.as_deref(), Some("jdx/mise"));
+        assert!(authorize(&scope(), "GET", "api/repos/jdx/mise/zipball/main", None).is_ok());
+        assert!(authorize(&scope(), "POST", "api/repos/jdx/mise/tarball/main", None).is_err());
+        assert!(authorize(&scope(), "GET", "web/other/private/archive/main.zip", None).is_err());
     }
 }

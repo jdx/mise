@@ -958,7 +958,8 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
         }
     }
     cmd remote help="Bootstrap one or more machines over OpenSSH" effect=destructive {
-        flag --from-git help="Install a Git repository as persistent global configuration on each target" conflicts=--source {
+        flag --from-git help="Install a Git repository as persistent global configuration on each target" {
+            conflicts "--source" "--copy-link" "--copy-links" "--exclude"
             arg "<GIT_URL|OWNER/REPO>"
         }
         flag --github-relay-read-only help="Borrow read-only GitHub access for this invocation"

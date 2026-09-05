@@ -676,6 +676,9 @@ Set a tool version for the current shell session
 \fIAliases: \fRsh
 .RE
 .TP
+\fBssh\fR
+Open an SSH session, optionally borrowing read\-only GitHub access
+.TP
 \fBshell\-alias\fR
 Manage shell aliases
 .TP
@@ -1992,6 +1995,18 @@ Bootstrap one or more machines over OpenSSH
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-\-from\-git\fR \fI<GIT_URL|OWNER/REPO>\fR
+Install a Git repository as persistent global configuration on each target
+.TP
+\fB\-\-github\-relay\-read\-only\fR
+Borrow read\-only GitHub access for this invocation
+.TP
+\fB\-\-github\-relay\-repo\fR \fI<OWNER/REPO>\fR
+Approved GitHub repository; repeat for multiple repositories
+.TP
+\fB\-\-github\-relay\-all\-repos\fR
+Explicitly authorize all repositories accessible locally
 .TP
 \fB\-\-all\fR
 Select every configured inventory host
@@ -4772,6 +4787,57 @@ Print help
 .TP
 \fB<TOOL@VERSION>\fR
 Tool(s) to use
+.SH "MISE SSH"
+Open an SSH session, optionally borrowing read\-only GitHub access
+.PP
+\fBUsage:\fR mise ssh [OPTIONS] [<DESTINATION>] [<COMMAND>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-i, \-\-identity\-file\fR \fI<IDENTITY_FILE>\fR
+SSH identity file
+.TP
+\fB\-p, \-\-port\fR \fI<PORT>\fR
+SSH port
+.TP
+\fB\-o, \-\-ssh\-option\fR \fI<SSH_OPTION>\fR
+OpenSSH option; repeat for multiple options
+.TP
+\fB\-\-github\-relay\-read\-only\fR
+Borrow read\-only GitHub access for this session only
+.TP
+\fB\-\-github\-relay\-repo\fR \fI<OWNER/REPO>\fR
+Approved GitHub repository; repeat to authorize more repositories
+.TP
+\fB\-\-github\-relay\-all\-repos\fR
+Explicitly authorize reads of all repositories accessible locally
+.TP
+\fB\-\-relay\-session\fR \fI<RELAY_SESSION>\fR
+Internal session adapter
+.TP
+\fB\-\-repository\-bundle\fR \fI<REPOSITORY_BUNDLE>\fR
+.TP
+\fB\-\-repository\-origin\fR \fI<REPOSITORY_ORIGIN>\fR
+.TP
+\fB\-\-repository\-revision\fR \fI<REPOSITORY_REVISION>\fR
+.TP
+\fB\-\-repository\-update\fR
+.TP
+\fB\-\-repository\-yes\fR
+.TP
+\fB\-\-global\-config\-directory\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<DESTINATION>\fR
+OpenSSH destination or SSH\-config alias
+.TP
+\fB<COMMAND>\fR
+Command to execute after \-\-; omit for an interactive shell
 .SH "MISE SHELL-ALIAS"
 Manage shell aliases
 .PP
