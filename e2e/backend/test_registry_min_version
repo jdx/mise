@@ -7,7 +7,7 @@ export MISE_MINIMUM_RELEASE_AGE=0
 export MISE_REGISTRY_FLOATING=0
 
 # Registry CI must exercise the newly published preferred backend immediately.
-mise test-tool hk
+MISE_MINIMUM_RELEASE_AGE=90d mise test-tool hk
 
 assert_contains "mise ls-remote hk@1.57" "1.57.0"
 assert_contains "mise ls-remote hk 1.57" "1.57.0"

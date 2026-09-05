@@ -4089,6 +4089,12 @@ If not specified, validates all tasks
     }
 }
 cmd test-tool help="Test that a tool installs and runs" {
+    long_help #"""
+Test that a tool installs and runs
+
+Includes newly published releases by disabling the global minimum release age
+for this command.
+"""#
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise test-tool ripgrep\u{1b}[22m\n"
     flag "-a --all" help="Test every tool specified in registry/" {
         conflicts TOOLS "--all-config"

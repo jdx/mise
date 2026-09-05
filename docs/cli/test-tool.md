@@ -6,6 +6,9 @@
 
 Test that a tool installs and runs
 
+Includes newly published releases by disabling the global minimum release age
+for this command.
+
 ## Arguments
 - **`[TOOLS]…`** — Tool(s) to test
 

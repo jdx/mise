@@ -1,6 +1,6 @@
 use crate::cli::args::ToolArg;
 use crate::cmd::cmd;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::registry::{REGISTRY, RegistryTool};
 use crate::tera::{contains_template_syntax, get_tera, render_str};
@@ -14,6 +14,9 @@ use std::{collections::BTreeSet, sync::Arc};
 use tokio::task::JoinSet;
 
 /// Test that a tool installs and runs
+///
+/// Includes newly published releases by disabling the global minimum release age
+/// for this command.
 #[derive(Debug, Clone, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct TestTool {
@@ -42,6 +45,9 @@ pub(crate) struct TestTool {
 
 impl TestTool {
     pub(crate) async fn run(self) -> Result<()> {
+        // Registry validation must exercise new releases immediately, including
+        // the first release supported by a newly added backend.
+        Settings::override_with(|s| s.minimum_release_age = Some("0".to_string()));
         let mut errored = vec![];
         self.github_summary(vec![
             "Tool".to_string(),
