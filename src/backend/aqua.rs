@@ -1110,6 +1110,7 @@ impl AquaBackend {
         };
         let target_arch = match target.arch_name() {
             "x64" => "amd64",
+            "arm" => "armv7l",
             other => other,
         };
         (target_os, target_arch)
@@ -3689,6 +3690,41 @@ packages:
     }
 
     #[test]
+    fn arm32_arch_is_rejected_by_validate() {
+        // The upstream aqua registry only ships amd64/arm64 assets and rejects ARM32 entries, so
+        // mise must refuse these hosts instead of hunting for a nonexistent armv7l asset.
+        let registry = ParsedRegistry::parse_yaml(
+            r#"
+packages:
+  - type: github_release
+    repo_owner: example
+    repo_name: tool
+    asset: tool.tar.gz
+"#,
+        )
+        .unwrap();
+        let pkg = registry.package("example/tool").unwrap();
+
+        for unsupported in ["arm", "armv7l"] {
+            let error = validate_platform(&pkg, "v1.0.0", "linux", unsupported)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains(&format!(
+                    "does not support 32-bit ARM (linux/{unsupported})"
+                )),
+                "{unsupported} should be rejected by validate: {error}"
+            );
+        }
+        for supported in ["amd64", "arm64"] {
+            assert!(
+                validate_platform(&pkg, "v1.0.0", "linux", supported).is_ok(),
+                "{supported} should be accepted by validate"
+            );
+        }
+    }
+
+    #[test]
     fn cargo_warning_uses_crate_name() {
         let registry = ParsedRegistry::parse_yaml(
             r#"
@@ -4992,18 +5028,33 @@ async fn get_tags_with_release_dates(
         .collect())
 }
 
+/// The upstream aqua registry does not support 32-bit ARM and has rejected ARM32 entries, so
+/// there is never an `armv7l` asset to pick: bail out early instead of searching for one.
+fn is_arm32_arch(arch: &str) -> bool {
+    matches!(arch, "arm" | "armv7l")
+}
+
 fn validate(pkg: &AquaPackage, version: &str) -> Result<()> {
+    validate_platform(pkg, version, os(), arch())
+}
+
+/// Test seam over `validate` with the host platform baked in. Accepting `os`/`arch` lets tests
+/// exercise the ARM32 rejection regardless of the architecture the test suite is built for.
+fn validate_platform(pkg: &AquaPackage, version: &str, os: &str, arch: &str) -> Result<()> {
+    if is_arm32_arch(arch) {
+        bail!(
+            "the aqua registry does not support 32-bit ARM ({os}/{arch}): only amd64 and arm64 are supported"
+        );
+    }
     if pkg.no_asset.unwrap_or(false) {
         bail!("no asset released");
     }
     if let Some(message) = &pkg.error_message {
         bail!("{}", message);
     }
-    if !is_platform_supported(&pkg.supported_envs, os(), arch()) {
+    if !is_platform_supported(&pkg.supported_envs, os, arch) {
         bail!(
-            "unsupported env: {}/{} (supported: {:?})",
-            os(),
-            arch(),
+            "unsupported env: {os}/{arch} (supported: {:?})",
             pkg.supported_envs
         );
     }
@@ -5227,7 +5278,7 @@ pub(crate) fn arch() -> &'static str {
     if cfg!(target_arch = "x86_64") {
         "amd64"
     } else if cfg!(target_arch = "arm") {
-        "armv6l"
+        "armv7l"
     } else if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
