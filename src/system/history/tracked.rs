@@ -298,6 +298,24 @@ impl TrackedSet {
             .map(|(index, _)| index)
     }
 
+    /// Whether a capture of this set would include `path`: under an entry,
+    /// not excluded, not inside mise's own directories or a `.git`.
+    pub(crate) fn would_capture(&self, path: &Path) -> Result<bool> {
+        if self.entry_for(path).is_none() {
+            return Ok(false);
+        }
+        if hard_exclusions().iter().any(|dir| path.starts_with(dir)) {
+            return Ok(false);
+        }
+        if path
+            .components()
+            .any(|component| component.as_os_str() == ".git")
+        {
+            return Ok(false);
+        }
+        Ok(!self.exclude_set()?.is_match(path))
+    }
+
     pub(crate) fn exclude_set(&self) -> Result<ExcludeSet> {
         ExcludeSet::new(&self.exclude)
     }

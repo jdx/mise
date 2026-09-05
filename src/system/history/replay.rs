@@ -528,18 +528,37 @@ async fn apply_steps(
             );
         }
         let was_directory = step.path.is_dir() && !step.path.is_symlink();
+        let mut empty_dirs = vec![];
         if was_directory && !matches!(&step.action, Action::Write { mode, .. } if mode == "040000")
         {
             // replacing or removing a directory removes everything inside
-            // it; every file there must be a step of this plan, or it
-            // appeared after protection
-            if let Some(stray) = unknown_file_in(&step.path, steps)? {
+            // it: a file history would capture must be a step of this plan
+            // (else it appeared after protection); a file history never
+            // covers goes with it, said out loud; empty subdirectories
+            // leave no trace in a snapshot and are recorded for undo
+            let inside = directory_contents(&step.path, steps, tracked)?;
+            if let Some(stray) = inside.appeared.first() {
                 bail!(
                     "{} appeared after {} was protected; nothing more was changed",
-                    display_path(&stray),
+                    display_path(stray),
                     display_path(&step.path)
                 );
             }
+            if !inside.uncovered.is_empty() {
+                // only reachable with --force (a type change): say what
+                // goes with the directory that no checkpoint holds
+                warn!(
+                    "history: {} contains files history does not cover; they are removed with it and cannot be undone: {}",
+                    display_path(&step.path),
+                    inside
+                        .uncovered
+                        .iter()
+                        .map(display_path)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+            empty_dirs = inside.empty_dirs;
         }
         let pending =
             journal::begin_changes("history", &display_path(&step.path), [step.path.clone()])?;
@@ -555,6 +574,7 @@ async fn apply_steps(
             op.affected.push(affected.clone());
             if was_directory {
                 op.directories.push(affected.clone());
+                op.directories.extend(empty_dirs.iter().map(display_path));
             }
         });
     }
@@ -578,20 +598,45 @@ async fn apply_steps(
     Ok(touched)
 }
 
-/// A file or link inside `dir` that no step of the plan accounts for.
-fn unknown_file_in(dir: &Path, steps: &[Step]) -> Result<Option<PathBuf>> {
+/// What replacing or removing `dir` would take with it beyond the plan.
+#[derive(Default)]
+struct DirectoryContents {
+    /// Files history would capture that no step accounts for: they
+    /// appeared after protection.
+    appeared: Vec<PathBuf>,
+    /// Files history never covers (excluded, omitted, special, `.git`).
+    uncovered: Vec<PathBuf>,
+    /// Empty subdirectories, invisible to snapshots.
+    empty_dirs: Vec<PathBuf>,
+}
+
+fn directory_contents(
+    dir: &Path,
+    steps: &[Step],
+    tracked: &TrackedSet,
+) -> Result<DirectoryContents> {
     let known: BTreeSet<&Path> = steps.iter().map(|step| step.path.as_path()).collect();
+    let mut out = DirectoryContents::default();
     for entry in walkdir::WalkDir::new(dir).min_depth(1).follow_links(false) {
         let entry = entry?;
+        let path = normalize(entry.path());
         if entry.file_type().is_dir() {
+            if std::fs::read_dir(entry.path())?.next().is_none() {
+                out.empty_dirs.push(path);
+            }
             continue;
         }
-        let path = normalize(entry.path());
-        if !known.contains(path.as_path()) {
-            return Ok(Some(path));
+        if known.contains(path.as_path()) {
+            continue;
+        }
+        let regular = entry.file_type().is_file() || entry.file_type().is_symlink();
+        if regular && tracked.would_capture(&path)? {
+            out.appeared.push(path);
+        } else {
+            out.uncovered.push(path);
         }
     }
-    Ok(None)
+    Ok(out)
 }
 
 /// What is on disk at `path` right now, as the (mode, object id) the

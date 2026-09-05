@@ -77,3 +77,27 @@ assert_succeed "mise bootstrap dotfiles undo --yes"
 assert "test -d ~/.config/hypr/empty2 && echo dir" "dir"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.affected | length'" "1"
 rmdir ~/.config/hypr/empty2
+
+# replacing a directory removes what is inside it: an excluded file goes with
+# it (said out loud, since no checkpoint holds it), and an empty subdirectory
+# is recreated by undo although no snapshot can hold it
+mkdir -p ~/.config/hypr/pack
+echo 'p' >~/.config/hypr/pack/p.conf
+assert_succeed "mise bootstrap dotfiles save"
+rm -rf ~/.config/hypr/pack
+echo 'a file now' >~/.config/hypr/pack
+assert_succeed "mise bootstrap dotfiles save"
+pack_file_id="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+rm ~/.config/hypr/pack
+mkdir -p ~/.config/hypr/pack/empty-sub ~/.config/hypr/pack/cache
+echo 'p' >~/.config/hypr/pack/p.conf
+echo 'c' >~/.config/hypr/pack/cache/c.bin
+printf '\n[history]\nexclude = ["~/.config/hypr/pack/cache/**"]\n' >>"$MISE_CONFIG_DIR/config.toml"
+assert_succeed "mise bootstrap dotfiles save"
+assert_contains "mise bootstrap dotfiles rollback ~/.config/hypr/pack --to $pack_file_id --yes --force 2>&1" "files history does not cover; they are removed with it and cannot be undone: ~/.config/hypr/pack/cache/c.bin"
+assert "cat ~/.config/hypr/pack" "a file now"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.directories | join(\",\")'" "~/.config/hypr/pack,~/.config/hypr/pack/empty-sub"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.config/hypr/pack/p.conf" "p"
+assert "test -d ~/.config/hypr/pack/empty-sub && echo dir" "dir"
+assert_fail "test -e ~/.config/hypr/pack/cache"
