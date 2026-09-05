@@ -41,9 +41,9 @@ use crate::packslip_pins::{self, Observed};
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
 
-/// The format is a draft and few projects publish one yet, so the backend
-/// is behind the experimental setting until both settle.
-pub(crate) const EXPERIMENTAL: bool = true;
+/// The backend installs only from a signed manifest, which is a property of
+/// the format rather than a rough edge, so nothing is held back by a setting.
+pub(crate) const EXPERIMENTAL: bool = false;
 
 /// The verified statement, kept beside the install so the rest of mise can
 /// read what the release declared without verifying it again.
@@ -581,10 +581,6 @@ impl PackslipBackend {
         Self { ba: Arc::new(ba) }
     }
 
-    fn ensure_experimental(&self) -> Result<()> {
-        Settings::get().ensure_experimental("packslip backend")
-    }
-
     fn project(&self) -> Result<String> {
         project_name(&self.ba.tool_name())
     }
@@ -928,7 +924,6 @@ impl PackslipBackend {
 
     /// Every version the vendor published, before stamps are applied.
     async fn vendor_versions(&self, raw_opts: &ToolVersionOptions) -> Result<Vec<VersionInfo>> {
-        self.ensure_experimental()?;
         let project = self.project()?;
         let opts = PackslipOptions::new(raw_opts);
         let pin = pin(&project, &opts)?;
@@ -1071,7 +1066,6 @@ impl Backend for PackslipBackend {
         before_date: Option<jiff::Timestamp>,
         refresh: bool,
     ) -> Result<Option<String>> {
-        self.ensure_experimental()?;
         let before =
             crate::backend::effective_latest_before_date(self, selection_opts, before_date)?;
         let query = query.as_deref().unwrap_or("latest");
@@ -1155,7 +1149,6 @@ impl Backend for PackslipBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        self.ensure_experimental()?;
         let project = self.project()?;
         let raw_opts = tv.request.options();
         let opts = PackslipOptions::new(&raw_opts);

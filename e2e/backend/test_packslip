@@ -5,14 +5,11 @@
 # release workflow, which is the identity the project name pins.
 
 # Every release carrying a packslip is recent; do not let the default
-# minimum release age hide them all. The backend is experimental.
+# minimum release age hide them all.
 export MISE_MINIMUM_RELEASE_AGE=0
-export MISE_EXPERIMENTAL=1
 
-# Without the experimental setting the backend refuses to do anything.
-assert_fail_contains "env -u MISE_EXPERIMENTAL mise ls-remote packslip:github.com/jdx/packslip" "experimental"
-
-assert_contains "mise ls-remote packslip:github.com/jdx/packslip" "0.2.0"
+# The backend needs no setting turned on to be used.
+assert_contains "env -u MISE_EXPERIMENTAL mise ls-remote packslip:github.com/jdx/packslip" "0.2.0"
 
 # Latest resolves and verifies the vendor recommendation without installing it.
 latest=$(mise latest packslip:github.com/jdx/packslip) || exit 1
@@ -61,7 +58,6 @@ assert_directory_not_exists agents
 
 # A lockfile records who signed, so the project commits to that signer.
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
 mkdir -p locked && cd locked
 touch mise.lock
 cat <<EOF >mise.toml

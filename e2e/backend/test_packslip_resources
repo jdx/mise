@@ -5,7 +5,6 @@
 # these fixtures start after verification, with the statement and the
 # resources already in the install.
 
-export MISE_EXPERIMENTAL=1
 # These installs are linked, not downloaded, and the project they name has no
 # releases to discover: discovery and verification are test_packslip's. Offline
 # keeps resolution to what is installed here.

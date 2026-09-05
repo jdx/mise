@@ -1,4 +1,4 @@
-# Packslip Completions and Skills <Badge type="warning" text="experimental" />
+# Packslip Completions and Skills
 
 Tools installed with the [packslip backend](/dev-tools/backends/packslip.html)
 can provide completions and agent skills for the version active in your project.
