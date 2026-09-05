@@ -989,7 +989,15 @@ impl Backend for PackslipBackend {
         crate::packslip::fetch_files(&tv, &statement, Some(&artifact), ctx.pr.as_ref()).await?;
         // The pin records what was installed, so a release that failed to
         // unpack or link leaves no mark; the check above is what refuses.
-        packslip_pins::record(&project, observed)?;
+        // A pin that cannot be written must not leave its artifact behind
+        // either: `always_keep_install` would preserve an install whose
+        // signer was never recorded, and the next release — from any signer
+        // at all — would then set the project's first pin with that one
+        // still in place.
+        if let Err(err) = packslip_pins::record(&project, observed) {
+            let _ = file::remove_all(tv.install_path());
+            return Err(err);
+        }
         Ok(tv)
     }
 
