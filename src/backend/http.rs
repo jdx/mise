@@ -1463,38 +1463,41 @@ fn referenced_cache_entries(
             )
         })?;
         if metadata.is_dir() && walked.insert(root.clone()) {
-            // A root holds tool directories, and a tool directory holds version
-            // entries. The version entry is where an ordinary install's link
-            // lives, so the walk reads that level everywhere; below it, only a
-            // tool positively identified as some other backend is left closed.
-            collect_referenced_entries(
-                canonical_tarballs,
-                &root,
-                &mut referenced,
-                Descend::OnlyHttpTools,
-            )?;
+            collect_referenced_entries(canonical_tarballs, &root, &mut referenced, Descend::Root)?;
         }
     }
     Ok(referenced)
 }
 
-/// How far into a directory the walk is allowed to go.
+/// Which level of the installs tree a directory sits at, and with it how much
+/// further the walk may go.
 ///
-/// The links live at known depths — `installs/<tool>/<version>` for an ordinary
-/// install, and one level further inside for a raw file with `bin_path` — so
-/// there is never a reason to open a tool's payload. Walking one would mean
-/// reading every directory of a Node or Python installation on a command that
-/// has nothing to do with either.
+/// `create_install_symlink` writes a link into the cache in exactly two shapes:
+/// the version directory *is* the link, or — for a raw file with `bin_path` —
+/// the version directory holds a chain of directories ending in one. Nothing
+/// else in an install tree can reference the cache, so the walk reads the tool
+/// and version levels everywhere and then follows only that chain. A tool's
+/// payload costs one `read_dir` and is never opened.
+///
+/// The bound is deliberately structural rather than a question about which
+/// backend owns the tool. Backend identity is recorded per tool and describes it
+/// as it is *now*, while these links belong to a version and outlive a
+/// migration, so identity cannot answer whether an old version directory still
+/// holds one. It is also keyed by the tool's short name rather than by its
+/// install directory, which is not what a walk over `installs/` has in hand.
+///
+/// If `create_install_symlink` ever writes anything beside that chain, this
+/// bound has to change with it.
 #[derive(Clone, Copy)]
 enum Descend {
-    /// Everything below here is small and may hold a link: an http tool's own
-    /// install directory.
-    Always,
-    /// Read this level for links, but do not open a subdirectory belonging to a
-    /// tool that is positively known to install through some other backend.
-    OnlyHttpTools,
-    /// Read this level for links and open nothing.
-    Never,
+    /// The installs root. Its entries are tool directories, always opened.
+    Root,
+    /// A tool directory. Its entries are version directories, always opened.
+    ToolDir,
+    /// A version directory, or one of the link chain's directories inside it.
+    /// Opened only while it holds a single entry — the shape the raw-file layout
+    /// leaves behind, and one a payload tree does not have.
+    Chain,
 }
 
 fn collect_referenced_entries(
@@ -1503,11 +1506,22 @@ fn collect_referenced_entries(
     referenced: &mut std::collections::HashSet<PathBuf>,
     depth: Descend,
 ) -> Result<()> {
+    // Collected rather than streamed because the bound below is a question about
+    // this directory as a whole: how many entries it holds.
     let entries = std::fs::read_dir(dir)
+        .map_err(|err| eyre::eyre!("failed to read {}: {err}", file::display_path(dir)))?
+        .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|err| eyre::eyre!("failed to read {}: {err}", file::display_path(dir)))?;
+    // A version directory holding more than one entry is a payload, not the
+    // single-entry chain the raw-file layout leaves behind. It is still read for
+    // links at this level — an ordinary install's link sits right here — and
+    // then left closed.
+    let (open_children, below) = match depth {
+        Descend::Root => (true, Descend::ToolDir),
+        Descend::ToolDir => (true, Descend::Chain),
+        Descend::Chain => (entries.len() == 1, Descend::Chain),
+    };
     for entry in entries {
-        let entry = entry
-            .map_err(|err| eyre::eyre!("failed to read {}: {err}", file::display_path(dir)))?;
         let path = entry.path();
         // Skipping an entry that cannot be inspected would report it as holding
         // no references, which is the one conclusion this walk is never allowed
@@ -1520,42 +1534,6 @@ fn collect_referenced_entries(
         if !file_type.is_dir() && !file_type.is_symlink() {
             continue;
         }
-        // What this entry's own contents are worth to the walk. At the root
-        // level the entry is a tool directory: it is always read, because an
-        // ordinary install's link sits at the version level inside it, but its
-        // version directories are only opened for a tool that installs through
-        // the http backend — the only one that puts a link deeper still.
-        // `install_state` keys tools by their install directory's name, so the
-        // name in hand is the lookup.
-        let below = match depth {
-            Descend::Always => Some(Descend::Always),
-            Descend::OnlyHttpTools => {
-                // A tool's payload is skipped only when it can be *positively*
-                // identified as something other than an http install. Install
-                // state names the backend for anything installed through one,
-                // and `CORE_PLUGINS` names the rest — between them they cover
-                // the large trees this bound exists to avoid.
-                //
-                // Everything else is walked, including a tool whose install
-                // state is missing or unreadable. That is the direction this
-                // sweep has to err in: "cannot tell" is not "holds no links",
-                // and treating it as such would record no reference for a live
-                // install and delete the entry underneath it.
-                let known_not_http = entry.file_name().to_str().is_some_and(|short| {
-                    crate::toolset::install_state::backend_type(short)
-                        .ok()
-                        .flatten()
-                        .is_some_and(|backend| backend != BackendType::Http)
-                        || crate::plugins::core::CORE_PLUGINS.contains_key(short)
-                });
-                Some(if known_not_http {
-                    Descend::Never
-                } else {
-                    Descend::Always
-                })
-            }
-            Descend::Never => None,
-        };
         // Never judge by `is_symlink` alone: on Windows `file::make_symlink`
         // creates a junction, which is a directory as far as `file_type` is
         // concerned, and a walk that missed that would step into the cache
@@ -1566,7 +1544,7 @@ fn collect_referenced_entries(
         let is_link = file_type.is_symlink()
             || (cfg!(windows) && file_type.is_dir() && file::is_symlink_or_junction(&path));
         if !is_link {
-            if let Some(below) = below {
+            if open_children {
                 collect_referenced_entries(canonical_tarballs, &path, referenced, below)?;
             }
             continue;
@@ -1599,11 +1577,19 @@ fn collect_referenced_entries(
 
 /// Whether an entry has been written to since the sweep started looking.
 ///
-/// A forced install (`-f`) takes no cache lock, so the lock-and-look-again pass
-/// below cannot see it. What it cannot hide is the entry's timestamp: an
-/// extraction that landed after the sweep began is not one the sweep observed to
-/// be orphaned, so it is left alone. Unreadable metadata counts as recent, which
-/// keeps the doubt on the side of not deleting.
+/// Installers in this version take the cache lock whether or not the install was
+/// forced — that is one of the changes here — so the lock-and-look-again pass
+/// below already sees them. This covers the writer it cannot: an *older* mise,
+/// which skips the lock on `-f`. What that cannot hide is the entry's timestamp.
+/// An extraction that landed after the sweep began is not one the sweep observed
+/// to be orphaned, so it is left alone. Unreadable metadata counts as recent,
+/// which keeps the doubt on the side of not deleting.
+///
+/// Known gap: an older mise that *reuses* an entry it finds already extracted
+/// writes nothing, so no timestamp moves. If it publishes its install link after
+/// the pass below has looked, the sweep still removes the entry and leaves that
+/// install dangling. Nothing observable after the fact distinguishes that from
+/// an entry no one wants; closing it needs a marker the reader writes.
 fn modified_since(path: &Path, started: SystemTime) -> bool {
     path.metadata()
         .and_then(|m| m.modified())
@@ -1721,7 +1707,8 @@ fn sweep_unreferenced_tarballs(
                 continue;
             }
             let path = tarballs_dir.join(name);
-            // Re-checked under the lock, and again for the unlocked forced case.
+            // Re-checked under the lock, and again for an older mise, which
+            // skips the lock on a forced install.
             if modified_since(&path, started) {
                 continue;
             }
@@ -2023,9 +2010,9 @@ mod tests {
         assert!(in_flight.exists());
     }
 
-    /// A forced install takes no cache lock, so the lock-and-look-again pass
-    /// cannot see it. An entry written after the sweep started is therefore not
-    /// one the sweep observed to be orphaned.
+    /// An older mise skips the cache lock on a forced install, so the
+    /// lock-and-look-again pass cannot see it. An entry written after the sweep
+    /// started is therefore not one the sweep observed to be orphaned.
     #[test]
     fn an_entry_written_after_the_sweep_started_is_left_alone() {
         let fx = tarball_fixture();
@@ -2143,54 +2130,123 @@ mod tests {
 
     /// The walk must not open a tool's payload. A Node or Python installation
     /// has thousands of directories under its version, and none of them can hold
-    /// a cache link — only the http backend puts one below the version level.
-    ///
-    /// The bound applies to a tool that can be *positively* identified as
-    /// something else, so this uses a core plugin's name. A tool the walk cannot
-    /// place is covered by the test below, which asserts the opposite.
+    /// a cache link. The one link that lives *below* a version directory is the
+    /// raw-file layout's, and that is a chain of single-entry directories — so
+    /// the bound is the shape, not the tool. A version directory holding more
+    /// than one entry is read for links and then left closed.
     #[test]
-    fn a_core_tool_has_its_versions_left_unopened() {
+    fn a_payload_version_directory_is_read_but_not_opened() {
         let fx = tarball_fixture();
         let orphan = fx.entry("orphan");
-        // Shaped like a Node install: a version directory with a tree under it.
-        let deep = fx
-            .installs
-            .join("node")
-            .join("22.0.0")
-            .join("lib")
-            .join("nested");
-        std::fs::create_dir_all(&deep).unwrap();
-        // A link planted where only a descent would find it. The walk is
-        // supposed to stop above this, so the entry stays reclaimable — this
-        // asserts the bound rather than the reachability.
-        file::make_symlink(&orphan, &deep.join("link")).unwrap();
+        let version = fx.installs.join("node").join("22.0.0");
+        // What a real install has at this level, and what the raw-file layout
+        // never does: more than one entry.
+        for dir in ["bin", "include", "lib", "share"] {
+            std::fs::create_dir_all(version.join(dir)).unwrap();
+        }
+        let buried = version.join("lib").join("nested");
+        std::fs::create_dir_all(&buried).unwrap();
+        // Planted where only a descent past the bound would reach it.
+        file::make_symlink(&orphan, &buried.join("link")).unwrap();
 
         let results = fx.sweep(false).unwrap();
         assert_eq!(
             results.count, 1,
-            "the walk opened a core tool's payload it had no reason to read"
+            "the walk opened a payload directory it had no reason to read"
         );
     }
 
-    /// The bound is allowed to skip a tool only when it is known not to be an
-    /// http install. A tool with no install state and no core plugin cannot be
-    /// placed, and the walk has to read it: stopping would record no reference
-    /// and take a live install's entry with it.
+    /// The other side of the same bound: the raw-file chain is followed to its
+    /// end, so the link at the bottom keeps its entry.
     #[test]
-    fn an_unidentifiable_tool_is_walked_rather_than_assumed_empty() {
+    fn a_raw_file_chain_below_the_version_directory_keeps_its_entry() {
         let fx = tarball_fixture();
         let live = fx.entry("live");
-        // `install_state` knows nothing about "mystery", and neither does
-        // `CORE_PLUGINS` — exactly the case where guessing is not allowed.
         let deep = fx.installs.join("mystery").join("1.0.0").join("bin");
+        std::fs::create_dir_all(&deep).unwrap();
+        file::make_symlink(&live, &deep.join("link")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
+        assert!(live.exists());
+    }
+
+    /// A registry shorthand that moves off `http:` can still have an older http
+    /// version installed, with its link below the version directory. Backend
+    /// identity is recorded per tool and describes it as it is *now*, so a bound
+    /// built on it would leave this directory closed and reclaim a live entry.
+    /// The shape does not move when the backend does.
+    #[test]
+    fn an_old_raw_file_install_survives_its_tool_moving_to_another_backend() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        // `node` is as positively "not http" as a name gets — it is a core
+        // plugin, and an identity check would stop right here.
+        let deep = fx.installs.join("node").join("1.0.0").join("bin");
         std::fs::create_dir_all(&deep).unwrap();
         file::make_symlink(&live, &deep.join("link")).unwrap();
 
         let results = fx.sweep(false).unwrap();
         assert_eq!(
             results.count, 0,
-            "a tool the walk could not place had its entry swept anyway"
+            "a live entry was reclaimed because its tool no longer identifies as http"
         );
+        assert!(live.exists());
+    }
+
+    /// An explicit-backend install directory is named `github-owner-repo`, while
+    /// install state is keyed by the short name `github:owner/repo` — a lookup
+    /// by directory name finds nothing there. A bound built on it would neither
+    /// protect this link nor keep the payload closed. The shape does both.
+    #[test]
+    fn an_explicit_backend_install_directory_is_bounded_and_still_searched() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let orphan = fx.entry("orphan");
+
+        let chain = fx
+            .installs
+            .join("github-owner-repo")
+            .join("1.0.0")
+            .join("bin");
+        std::fs::create_dir_all(&chain).unwrap();
+        file::make_symlink(&live, &chain.join("link")).unwrap();
+
+        let payload = fx.installs.join("npm-prettier").join("3.9.6");
+        for dir in ["bin", "lib"] {
+            std::fs::create_dir_all(payload.join(dir)).unwrap();
+        }
+        let buried = payload.join("lib").join("nested");
+        std::fs::create_dir_all(&buried).unwrap();
+        file::make_symlink(&orphan, &buried.join("link")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(
+            results.count, 1,
+            "the chain and the payload were not told apart"
+        );
+        assert!(live.exists());
+        assert!(!orphan.exists());
+    }
+
+    /// `bin_path` can name more than one component, so the chain can be longer
+    /// than a single directory. Nothing about the bound is tied to a depth.
+    #[test]
+    fn a_multi_component_bin_path_is_followed_to_the_end() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let deep = fx
+            .installs
+            .join("tool")
+            .join("1.0.0")
+            .join("bin")
+            .join("x86")
+            .join("v2");
+        std::fs::create_dir_all(&deep).unwrap();
+        file::make_symlink(&live, &deep.join("link")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
         assert!(live.exists());
     }
 
