@@ -322,6 +322,11 @@ mise bootstrap dotfiles edit --apply ~/.zshrc
 state and includes [origin information](#whole-file-entries). `--missing` changes the
 exit status when any selected entry is out of sync; it does not filter the displayed list.
 
+Every `apply`, `add`, `unapply`, and `edit --apply` records a
+[bootstrap generation](/bootstrap/generations.html) with a snapshot of the
+config directory and `dotfiles.root` before and after the change;
+`mise bootstrap generations` lists them.
+
 ## Capturing changes
 
 If you edit a copied dotfile in place and want to store those changes back

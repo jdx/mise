@@ -116,6 +116,17 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      generations: {
+        hide: false,
+        subcommands: {
+          ls: {
+            hide: false,
+          },
+          show: {
+            hide: false,
+          },
+        },
+      },
       launchd: {
         hide: true,
         subcommands: {

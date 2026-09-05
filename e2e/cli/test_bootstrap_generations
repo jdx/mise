@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# Every mutating bootstrap command records a generation: a snapshot of the
+# global config directory and dotfiles root plus a journal of what changed.
+
+require_cmd git
+
+store="$MISE_STATE_DIR/bootstrap"
+shadow="$store/generations.git"
+records="$store/generations"
+
+# assertions run in a subshell, so these are commands rather than functions
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  mode_of="stat -f %Lp"
+else
+  mode_of="stat -c %a"
+fi
+count_records="find '$records' -name '*.json' | wc -l | tr -d ' '"
+
+mkdir -p "$MISE_CONFIG_DIR/dotfiles"
+echo "alias ll='ls -l'" >"$MISE_CONFIG_DIR/dotfiles/zshrc"
+echo one >"$MISE_CONFIG_DIR/dotfiles/copied"
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.zshrc" = "dotfiles/zshrc"
+"~/.copied" = { source = "dotfiles/copied", mode = "copy" }
+EOF
+
+# dry runs record nothing
+assert_succeed "mise bootstrap dotfiles apply --dry-run"
+assert_directory_not_exists "$records"
+assert_contains "mise bootstrap generations 2>&1" "no bootstrap generations recorded"
+
+# the first apply records generation 1 with a before/after snapshot of the config dir
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "readlink ~/.zshrc" "$MISE_CONFIG_DIR/dotfiles/zshrc"
+assert "$count_records" "1"
+assert "$mode_of '$store'" "700"
+assert "mise bootstrap generations --json | jq -r '.[0] | \"\\(.id) \\(.status) \\(.command) \\(.snapshot.available)\"'" \
+  "1 completed bootstrap dotfiles apply --yes true"
+assert "mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[] | select(.label == \"config\") | .tree | length'" "40"
+assert "mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[] | select(.label == \"dotfiles\") | .skipped'" "missing"
+# targets live outside the snapshot roots, so the first apply changes nothing inside them
+assert "mise bootstrap generations --json | jq -r '.[0].snapshot.unchanged'" "true"
+assert "mise bootstrap generations --json | jq -r '.[0].journal[0].message'" "dotfiles: applied ~/.zshrc, ~/.copied"
+tree="$(mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[0].tree')"
+assert_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "dotfiles/zshrc"
+assert_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "config.toml"
+assert_succeed "git --git-dir='$shadow' rev-parse --verify -q refs/generations/1/after"
+
+# a run that changes nothing leaves no generation behind
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "$count_records" "1"
+
+# show
+assert_contains "mise bootstrap generations show 1" "Generation 1 (completed)"
+assert_contains "mise bootstrap generations show latest" "mise bootstrap dotfiles apply --yes"
+assert_contains "mise bootstrap generations show latest --files" "dotfiles/copied"
+assert_fail "mise bootstrap generations show 99" "no bootstrap generation 99"
+assert_contains "mise bootstrap generations" "completed"
+
+# a change to a source is a new generation whose snapshot differs
+echo two >"$MISE_CONFIG_DIR/dotfiles/copied"
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "cat ~/.copied" "two"
+assert "$count_records" "2"
+assert "mise bootstrap generations --json | jq -r '.[0].id, .[0].parent'" $'2\n1'
+# the edit happened before the run, so it shows between 1.after and 2.before, not within 2
+assert "mise bootstrap generations --json | jq -r '.[1].snapshot.after.tree == .[0].snapshot.before.tree'" "false"
+assert "mise bootstrap generations --json | jq -r '.[0].snapshot.unchanged'" "true"
+assert "mise bootstrap generations show latest~1 --json | jq -r .id" "1"
+
+# a full bootstrap run records one generation, not one per part
+assert_succeed "mise bootstrap --yes --only dotfiles"
+assert "$count_records" "2" # nothing changed, so nothing recorded
+echo three >"$MISE_CONFIG_DIR/dotfiles/copied"
+assert_succeed "mise bootstrap --yes --only dotfiles"
+assert "$count_records" "3"
+assert "mise bootstrap generations --json | jq -r '.[0].command'" "bootstrap --yes --only dotfiles"
+assert "mise bootstrap generations --json | jq -r '.[0].summary.parts | join(\",\")'" "dotfiles"
+
+# a generation whose run died shows as pending
+jq '.id = 4 | .status = "pending" | .finished_at = null' "$records/000003.json" >"$records/000004.json"
+assert_contains "mise bootstrap generations" "pending"
+assert "mise bootstrap generations --pending --json | jq length" "1"
+assert "mise bootstrap generations --json | jq -r '.[0].id'" "4"
+rm "$records/000004.json"
+
+# retention keeps the newest generations and leaves a consistent shadow repo
+for i in 4 5 6; do
+  echo "$i" >"$MISE_CONFIG_DIR/dotfiles/copied"
+  assert_succeed "mise bootstrap dotfiles apply --yes"
+done
+assert "$count_records" "6"
+echo seven >"$MISE_CONFIG_DIR/dotfiles/copied"
+assert_succeed "MISE_BOOTSTRAP_GENERATIONS_KEEP=2 mise bootstrap dotfiles apply --yes"
+assert "$count_records" "2"
+assert "mise bootstrap generations --json | jq -r '[.[].id] | join(\",\")'" "7,6"
+assert_fail "git --git-dir='$shadow' rev-parse --verify -q refs/generations/1/after"
+assert_succeed "git --git-dir='$shadow' fsck --no-progress"
+
+# recording can be turned off
+echo eight >"$MISE_CONFIG_DIR/dotfiles/copied"
+assert_succeed "MISE_BOOTSTRAP_GENERATIONS_ENABLED=0 mise bootstrap dotfiles apply --yes"
+assert "cat ~/.copied" "eight"
+assert "$count_records" "2"
+
+# without a usable git the generation is still recorded, just without content
+bindir="$PWD/stub-bin"
+mkdir -p "$bindir"
+printf '#!/bin/sh\nexit 127\n' >"$bindir/git"
+chmod +x "$bindir/git"
+echo nine >"$MISE_CONFIG_DIR/dotfiles/copied"
+assert_succeed "PATH='$bindir:$PATH' mise bootstrap dotfiles apply --yes"
+assert "cat ~/.copied" "nine"
+assert "mise bootstrap generations --json | jq -r '.[0].snapshot.available'" "false"
+assert_contains "mise bootstrap generations show latest" "Snapshot:   unavailable"
+assert_contains "mise bootstrap generations" "unavailable"
+
+# the user's own checkout of the config directory is never touched
+git -C "$MISE_CONFIG_DIR" init -q -b main
+git -C "$MISE_CONFIG_DIR" config user.email test@example.com
+git -C "$MISE_CONFIG_DIR" config user.name "mise test"
+git -C "$MISE_CONFIG_DIR" add .
+git -C "$MISE_CONFIG_DIR" commit -qm initial
+head="$(git -C "$MISE_CONFIG_DIR" rev-parse HEAD)"
+echo ten >"$MISE_CONFIG_DIR/dotfiles/copied"
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "git -C '$MISE_CONFIG_DIR' rev-parse HEAD" "$head"
+assert "git -C '$MISE_CONFIG_DIR' status --porcelain" " M dotfiles/copied"
+assert "mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[0].vcs.head'" "$head"
+assert "mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[0].vcs.branch'" "main"
