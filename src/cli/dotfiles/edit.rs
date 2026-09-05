@@ -7,6 +7,7 @@ use crate::config::Config;
 use crate::file;
 use crate::system;
 use crate::system::edits::{BlockSource, EditOp};
+use crate::system::generations::GenerationScope;
 use crate::ui::prompt;
 
 /// Edit a managed dotfile source
@@ -37,6 +38,18 @@ pub(crate) struct DotfilesEdit {
 impl DotfilesEdit {
     /// Open the managed source and optionally converge its target afterward.
     pub(crate) async fn run(self) -> Result<()> {
+        // The editor itself changes the managed source, so the whole command
+        // is one generation, not just the optional apply.
+        GenerationScope::wrap(
+            "bootstrap dotfiles edit",
+            "dotfiles",
+            false,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let mut config = Config::get().await?;
         let target = system::files::resolve_target_arg(&self.target);
         if self.apply {

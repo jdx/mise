@@ -152,6 +152,9 @@ jobs:
       # signal-driven termios restore — both places where the two platforms have
       # differed before. Run it here so the claim covers macOS as well.
       - run: mise run test:e2e e2e/cli/test_watch_terminal_restore_on_signal
+      # Generation snapshots shell out to git and need the Xcode Command
+      # Line Tools guard exercised on a real macOS runner.
+      - run: mise run test:e2e e2e/cli/test_bootstrap_generations
 
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}

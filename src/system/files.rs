@@ -1642,6 +1642,20 @@ pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<boo
         }
     }
     cleanup_reconciled_directories(&plan.reconciliation)?;
+    crate::system::generations::journal::note(format!(
+        "dotfiles: applied {}",
+        plan.todo
+            .iter()
+            .map(|(r, _)| r.target_raw.clone())
+            .chain(
+                plan.reconciliation
+                    .stale_links
+                    .iter()
+                    .map(|link| format!("removed {}", link.target.display_user()))
+            )
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
     let applied = plan
         .todo
         .iter()
@@ -1951,6 +1965,12 @@ pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> 
             remove_symlink_each_state(plan.req)?;
         }
     }
+    crate::system::generations::journal::note(format!(
+        "dotfiles: unapplied {}",
+        todo.iter()
+            .map(|plan| plan.req.target_raw.clone())
+            .join(", ")
+    ));
     info!(
         "files: unapplied {}",
         todo.iter()

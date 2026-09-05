@@ -23,6 +23,8 @@ use crate::path::PathExt;
 use crate::system;
 use crate::system::defaults::DefaultsState;
 use crate::system::files::{FileMode, FileRequest, FileState};
+use crate::system::generations::store::Summary;
+use crate::system::generations::{GenerationScope, journal};
 use crate::system::hooks::{self, BootstrapHookPhase};
 use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
@@ -32,6 +34,10 @@ use crate::system::resources::{ResourceAction, ResourceId};
 use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
 use crate::ui::table::MiseTable;
+
+mod generations;
+
+use generations::BootstrapGenerations;
 /// Set up a machine for the current config in one command
 ///
 /// Runs the bootstrap steps for the current config in order:
@@ -282,6 +288,7 @@ enum Commands {
     Dotfiles(BootstrapDotfiles),
     Files(BootstrapFiles),
     Firewall(BootstrapFirewall),
+    Generations(BootstrapGenerations),
     #[usage(hide = true)]
     Launchd(BootstrapLaunchd),
     Linux(BootstrapLinux),
@@ -1196,7 +1203,7 @@ impl Bootstrap {
         (self.dry_run, self.yes)
     }
 
-    pub(crate) async fn run(self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
         if self.from.is_some() || self.from_git.is_some() {
             if self.command.is_some() {
                 let flag = if self.from_git.is_some() {
@@ -1208,12 +1215,30 @@ impl Bootstrap {
             }
             return self.run_from();
         }
-        if let Some(command) = self.command {
+        if let Some(command) = self.command.take() {
             return command.run().await;
         }
+        let generation = GenerationScope::begin("bootstrap", self.dry_run);
+        let result = self.run_phases().await;
+        let error = result.as_ref().err().map(|err| format!("{err:#}"));
+        generation.finish(error, result.as_ref().ok().cloned());
+        result.map(|_| ())
+    }
+
+    /// Every bootstrap part in order. Returns what ran for the generation
+    /// record; declined prompts end the run early with a note.
+    async fn run_phases(&self) -> Result<Summary> {
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
+        let summary = Summary {
+            parts: BootstrapPart::ALL
+                .iter()
+                .filter(|part| !skip.contains(part))
+                .map(bootstrap_part_name)
+                .collect(),
+            message: None,
+        };
         let accounts_enabled = !skip.contains(&BootstrapPart::Accounts);
         let files_enabled = !skip.contains(&BootstrapPart::Files);
         let configured_accounts =
@@ -1484,7 +1509,7 @@ impl Bootstrap {
                     yes: self.yes,
                 };
                 if !system::files::apply(&config, &files, &opts)? {
-                    return Ok(());
+                    return Ok(declined(summary));
                 }
             }
 
@@ -1499,7 +1524,7 @@ impl Bootstrap {
                     yes: self.yes,
                 };
                 if !system::edits::apply(&config, &edits, &opts)? {
-                    return Ok(());
+                    return Ok(declined(summary));
                 }
             }
             if self.dry_run {
@@ -1684,6 +1709,9 @@ impl Bootstrap {
             let tasks = config.tasks().await?;
             if tasks.iter().any(|(_, t)| t.is_match("bootstrap")) {
                 info!("bootstrap: running `bootstrap` task");
+                if !self.dry_run {
+                    journal::unrecorded("task", "bootstrap", "task effects are not journaled");
+                }
                 self.run_task("bootstrap", skip.contains(&BootstrapPart::Tools))
                     .await?;
             } else {
@@ -1697,7 +1725,7 @@ impl Bootstrap {
                 .await?;
         }
         follow_up.print()?;
-        Ok(())
+        Ok(summary)
     }
 
     fn run_from(&self) -> Result<()> {
@@ -1722,8 +1750,17 @@ impl Bootstrap {
         };
 
         let checkout_is_empty = checkout.is_dir() && checkout.read_dir()?.next().is_none();
-        if checkout.exists() && !checkout_is_empty {
+        let reuse_checkout = checkout.exists() && !checkout_is_empty;
+        if reuse_checkout {
             validate_bootstrap_checkout(&checkout, url)?;
+        }
+        // The clone or pull changes the config checkout before the child
+        // process records the bootstrap itself, so it is a generation of its
+        // own. A checkout reused as-is changes nothing and records nothing.
+        let mutates_checkout = !reuse_checkout || self.update;
+        let generation =
+            mutates_checkout.then(|| GenerationScope::begin("bootstrap --from", self.dry_run));
+        if reuse_checkout {
             if self.update {
                 if self.dry_run {
                     miseprintln!(
@@ -1732,6 +1769,10 @@ impl Bootstrap {
                     );
                 } else {
                     run_bootstrap_git(&checkout, ["pull", "--ff-only"])?;
+                    journal::note(format!(
+                        "updated the checkout of {url} in {}",
+                        checkout.display_user()
+                    ));
                 }
             }
         } else if self.dry_run {
@@ -1751,6 +1792,16 @@ impl Bootstrap {
             if !status.success() {
                 bail!("git clone failed with {status}");
             }
+            journal::note(format!("cloned {url} into {}", checkout.display_user()));
+        }
+        if let Some(generation) = generation {
+            generation.finish(
+                None,
+                Some(Summary {
+                    parts: vec!["config-checkout".into()],
+                    message: Some(format!("checkout of {url}")),
+                }),
+            );
         }
 
         let checkout = dunce::canonicalize(&checkout)?;
@@ -1795,6 +1846,14 @@ impl Bootstrap {
         hooks: &[hooks::BootstrapHook],
         phase: BootstrapHookPhase,
     ) -> Result<()> {
+        // Recorded before the hooks run: a hook that fails may still have
+        // changed the machine.
+        if bootstrap_hooks_enabled()
+            && !self.dry_run
+            && hooks.iter().any(|hook| hook.phase == phase)
+        {
+            journal::unrecorded("hooks", phase.as_str(), "hook commands are not journaled");
+        }
         run_bootstrap_hooks(config, hooks, phase, self.dry_run).await
     }
 
@@ -2134,6 +2193,13 @@ fn is_mise_config_target(path: &std::path::Path) -> bool {
                 .is_some_and(|parent| parent.ends_with(".config/mise/conf.d")))
 }
 
+fn declined(summary: Summary) -> Summary {
+    Summary {
+        message: Some("dotfiles apply declined".into()),
+        ..summary
+    }
+}
+
 impl Commands {
     async fn run(self) -> Result<()> {
         match self {
@@ -2149,6 +2215,7 @@ impl Commands {
             Self::Dotfiles(cmd) => cmd.run().await,
             Self::Files(cmd) => cmd.run().await,
             Self::Firewall(cmd) => cmd.run().await,
+            Self::Generations(cmd) => cmd.run().await,
             Self::Launchd(cmd) => cmd.run().await,
             Self::Linux(cmd) => cmd.run().await,
             Self::Macos(cmd) => cmd.run().await,
@@ -2374,6 +2441,16 @@ impl BootstrapAccounts {
 
 impl BootstrapAccountsApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap accounts apply",
+            "accounts",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let requests = system::accounts::requests_from_config(&config)?;
         system::accounts::apply(&requests, self.dry_run, self.yes)?;
@@ -2423,6 +2500,16 @@ impl BootstrapFiles {
 
 impl BootstrapFilesApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap files apply",
+            "files",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, directories) = system::managed_files::requests_from_config(&config, &secrets)?;
@@ -2531,6 +2618,16 @@ impl BootstrapServices {
 
 impl BootstrapServicesApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap services apply",
+            "services",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let requests = system::services::requests_from_config(&config)?;
         system::services::apply(&requests, self.dry_run, self.yes)
@@ -2582,6 +2679,16 @@ impl BootstrapFirewall {
 
 impl BootstrapFirewallApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap firewall apply",
+            "firewall",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let Some(request) = system::firewall::request_from_config(&config)? else {
             info!("no bootstrap firewall configured");
@@ -2634,6 +2741,16 @@ impl BootstrapCompose {
 
 impl BootstrapComposeApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap compose apply",
+            "compose",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let requests = system::compose::requests_from_config(&config)?;
         system::compose::apply(&requests, self.dry_run, self.yes)
@@ -3762,16 +3879,19 @@ impl BootstrapDotfilesApply {
     }
 }
 
+fn bootstrap_hooks_enabled() -> bool {
+    !(config::Settings::no_hooks()
+        || config::Settings::get().no_hooks.unwrap_or(false)
+        || config::Settings::get().safe)
+}
+
 async fn run_bootstrap_hooks(
     config: &Config,
     hooks: &[hooks::BootstrapHook],
     phase: BootstrapHookPhase,
     dry_run: bool,
 ) -> Result<()> {
-    if config::Settings::no_hooks()
-        || config::Settings::get().no_hooks.unwrap_or(false)
-        || config::Settings::get().safe
-    {
+    if !bootstrap_hooks_enabled() {
         debug!("bootstrap: {phase} hooks disabled");
         return Ok(());
     }
@@ -3810,6 +3930,16 @@ impl BootstrapPlugins {
 
 impl BootstrapPluginsApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap plugins apply",
+            "plugins",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         apply_bootstrap_plugins(&config, self.dry_run).await
     }
@@ -3871,6 +4001,16 @@ impl BootstrapRepos {
 
 impl BootstrapReposApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap repos apply",
+            "repos",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_repos(
             system::repos_from_config(&config),
@@ -3884,6 +4024,16 @@ impl BootstrapReposApply {
 
 impl BootstrapReposUpdate {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap repos update",
+            "repos",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let repos = filter_repos(system::repos_from_config(&config), &self.paths)?;
         install::update_repos(repos, self.dry_run, self.yes, self.skip_dirty).await
@@ -4020,6 +4170,16 @@ impl BootstrapLaunchd {
 
 impl BootstrapLaunchdApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap macos launchd-agents apply",
+            "macos-launchd-agents",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_launchd(system::launchd_from_config(&config), self.dry_run, self.yes).await
     }
@@ -4123,6 +4283,16 @@ impl BootstrapSystemd {
 
 impl BootstrapSystemdApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap linux systemd-units apply",
+            "linux-systemd-units",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_systemd(system::systemd_from_config(&config), self.dry_run, self.yes).await
     }
@@ -4220,6 +4390,16 @@ impl BootstrapSystemdStatus {
 
 impl BootstrapMacosDefaultsApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap macos defaults apply",
+            "macos-defaults",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_defaults(
             system::defaults_from_config(&config),
@@ -4326,6 +4506,16 @@ impl BootstrapShell {
 
 impl BootstrapShellApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap mise-shell-activate apply",
+            "mise-shell-activate",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_shell_activation(
             &config,
@@ -4405,6 +4595,16 @@ impl BootstrapUser {
 
 impl BootstrapUserApply {
     async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap user apply",
+            "user",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_login_shell(
             system::login_shell_from_config(&config),

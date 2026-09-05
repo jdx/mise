@@ -687,13 +687,13 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
     for (req, desired) in &todo {
         apply_one(req, desired.as_deref())?;
     }
-    info!(
-        "edits: applied {}",
-        todo.iter()
-            .map(|(r, _)| format!("{} ({})", r.path_raw, r.describe_op()))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+    let applied = todo
+        .iter()
+        .map(|(r, _)| format!("{} ({})", r.path_raw, r.describe_op()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    crate::system::generations::journal::note(format!("edits: applied {applied}"));
+    info!("edits: applied {applied}");
     Ok(true)
 }
 
@@ -973,6 +973,13 @@ pub(crate) fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> R
     for plan in todo {
         unapply_one(plan.req)?;
     }
+    crate::system::generations::journal::note(format!(
+        "edits: unapplied {}",
+        todo.iter()
+            .map(|plan| format!("{} ({})", plan.req.path_raw, plan.req.describe_op()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
     info!(
         "edits: unapplied {}",
         todo.iter()
