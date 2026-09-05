@@ -182,7 +182,7 @@ impl RegistryBackend {
         // backend version lists or interprets opaque lockfile versions.
         let minimum = semver::Version::parse(minimum).expect("validated registry min_version");
         let request = request.strip_prefix("prefix:").unwrap_or(request);
-        let request = request.strip_prefix('v').unwrap_or(request);
+        let request = request.trim_start_matches(['v', 'V']);
         if let Ok(version) = semver::Version::parse(request) {
             return !version.cmp_precedence(&minimum).is_lt();
         }
@@ -921,6 +921,8 @@ mod tests {
             "prefix:1.57",
             "1.58.0",
             "v1.58.0",
+            "V1.58.0",
+            "prefix:V1.57",
             "1.58.1-rc.1",
         ] {
             assert!(!backend.supports_version(request), "{request}");
@@ -930,6 +932,7 @@ mod tests {
             "1.58",
             "prefix:1.58",
             "1.58.1",
+            "V1.58.1",
             "1.58.1+build.2",
             "2.0.0",
             "latest",
@@ -971,10 +974,45 @@ backends = [
             tool.backends_for_version(Some("latest")),
             ["packslip:github.com/example/tool", "aqua:example/tool"]
         );
-        for minimum in [r#""latest""#, r#""1.58""#, r#""01.58.1""#, "true", "12"] {
+        for minimum in [
+            r#""latest""#,
+            r#""1.58""#,
+            r#""01.58.1""#,
+            r#""1.0.0-01""#,
+            r#""1.0.0-a..b""#,
+            r#""1.0.0+a..b""#,
+            "true",
+            "12",
+        ] {
             assert!(parse("semver", minimum).is_err(), "{minimum}");
         }
         assert!(parse("source", r#""1.58.1""#).is_err());
+    }
+
+    #[test]
+    fn registry_min_version_schema_matches_semver_identifiers() {
+        let schema: serde_json::Value =
+            serde_json::from_str(include_str!("../schema/mise-registry-tool.json")).unwrap();
+        let pattern = schema["properties"]["backends"]["items"]["oneOf"][1]
+            ["properties"]["min_version"]["pattern"].as_str().unwrap();
+        let pattern = regex::Regex::new(pattern).unwrap();
+        for (version, valid) in [
+            ("1.58.1", true),
+            ("0.0.0", true),
+            ("1.0.0-0", true),
+            ("1.0.0-0alpha.1+build.01", true),
+            ("1.0.0+01", true),
+            ("1.0.0-a..b", false),
+            ("1.0.0-01", false),
+            ("1.0.0-alpha.01", false),
+            ("1.0.0+a..b", false),
+            ("1.0.0+", false),
+            ("1.0.0-", false),
+            ("01.0.0", false),
+        ] {
+            assert_eq!(pattern.is_match(version), valid, "{version}");
+            assert_eq!(semver::Version::parse(version).is_ok(), valid, "{version}");
+        }
     }
 
     #[test]

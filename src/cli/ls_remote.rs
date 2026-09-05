@@ -102,7 +102,7 @@ impl LsRemote {
     async fn run_single(
         self,
         config: &Arc<Config>,
-        plugin: Arc<dyn Backend>,
+        mut plugin: Arc<dyn Backend>,
         before_date: Option<Timestamp>,
     ) -> Result<()> {
         let before_date =
@@ -110,6 +110,7 @@ impl LsRemote {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
+                Some(ToolRequest::Prefix { prefix, .. }) => Some(prefix.clone()),
                 Some(ToolRequest::Sub {
                     sub, orig_version, ..
                 }) => Some(
@@ -120,6 +121,16 @@ impl LsRemote {
             },
             _ => self.prefix.clone(),
         };
+        let prefix = match prefix {
+            Some(prefix) => Some(config.resolve_alias(&plugin, &prefix).await?),
+            None => None,
+        };
+        if let Some(ba) = prefix
+            .as_deref()
+            .and_then(|prefix| plugin.ba().with_registry_version(prefix))
+        {
+            plugin = ba.backend()?;
+        }
         let matches_prefix = |v: &str| prefix.as_ref().is_none_or(|p| v.starts_with(p));
 
         let versions_matching_prefix = plugin

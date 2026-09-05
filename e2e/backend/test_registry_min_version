@@ -6,8 +6,13 @@ export MISE_EXPERIMENTAL=0
 export MISE_MINIMUM_RELEASE_AGE=0
 export MISE_REGISTRY_FLOATING=0
 
+# Registry CI must exercise the newly published preferred backend immediately.
+mise test-tool hk
+
 assert_contains "mise ls-remote hk@1.57" "1.57.0"
 assert_contains "mise ls-remote hk 1.57" "1.57.0"
+assert_contains "mise ls-remote hk@sub-0.1:1.58.1" "1.57.0"
+assert_contains "mise ls-remote hk@prefix:1.57" "1.57.0"
 assert "mise latest hk@1.57" "1.57.0"
 assert "mise latest hk 1.57" "1.57.0"
 assert_not_contains "MISE_BACKENDS_HK=packslip:github.com/jdx/hk mise ls-remote hk@1.57" "1.57"
@@ -36,6 +41,7 @@ old = "1.57.0"
 TOML
 assert_contains "mise exec hk@old -- hk --version" "hk 1.57.0"
 assert "mise latest hk@old" "1.57.0"
+assert_contains "mise ls-remote hk@old" "1.57.0"
 
 # Explicit backends remain explicit; no fallback after a verification error.
 assert_fail_contains "mise install --force packslip:github.com/jdx/hk@1.57.0" "no release"

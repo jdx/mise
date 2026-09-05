@@ -948,6 +948,7 @@ mod tests {
         // the backend selected for a different version in the same process.
         for (query, expected) in [
             ("hk@1.57.0", "aqua:jdx/hk"),
+            ("hk@V1.57.0", "aqua:jdx/hk"),
             ("hk@1.58.1", "packslip:github.com/jdx/hk"),
             ("hk@prefix:1.57", "aqua:jdx/hk"),
             ("hk@latest", "packslip:github.com/jdx/hk"),
