@@ -62,11 +62,20 @@ fn numeric_cmp(actual: &str, min: &str) -> Option<Ordering> {
 }
 
 fn version_from_output(output: &str) -> Option<String> {
-    output
+    let words: Vec<_> = output
         .split_whitespace()
         .map(|s| s.trim_matches(['"', '\'', '(', ')', '[', ']']))
-        .find(|s| numeric_cmp(s, "0").is_some())
-        .map(str::to_owned)
+        .collect();
+    let candidate = if let Some(i) = words.iter().position(|s| s.eq_ignore_ascii_case("version")) {
+        words.get(i + 1)?
+    } else if words.len() == 1 {
+        words.first()?
+    } else {
+        // Conventional `tool VERSION ...`, never a later build date that
+        // happens to be numeric when the version token was unrecognized.
+        words.get(1)?
+    };
+    numeric_cmp(candidate, "0").map(|_| (*candidate).to_owned())
 }
 
 async fn probe(program: &str, args: &[&str]) -> Option<String> {
@@ -241,6 +250,7 @@ pub(crate) async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathB
         if let Some(min) = &bin.min {
             let output = CmdLineRunner::new(path)
                 .arg("--version")
+                .env("MISE_AUTO_INSTALL", "0")
                 .read_isolated(64 * 1024)
                 .await
                 .ok();
@@ -301,5 +311,7 @@ mod tests {
                 "reading {release:?}"
             );
         }
+        assert_eq!(version_from_output("tool v1.2 built 2026"), None);
+        assert_eq!(version_from_output("openjdk 21-ea 2026-09-04"), None);
     }
 }

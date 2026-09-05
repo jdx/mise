@@ -181,6 +181,71 @@ fn version_info(
     })
 }
 
+/// The versions to try for `latest`, newest first. `order` is the backend's
+/// own, never a guess: a packslip version is semver because the
+/// specification says so, and [`version_info`] has already dropped every
+/// tag that is not. A recommendation changes only which candidate is tried
+/// first, not that order.
+fn latest_candidates(
+    versions: Vec<VersionInfo>,
+    preferred: Option<&str>,
+    prereleases: bool,
+    order: VersionOrder,
+) -> Vec<String> {
+    let versions = versions
+        .into_iter()
+        .filter(|v| prereleases || v.prerelease != Some(true))
+        .map(|v| v.version)
+        .collect();
+    let mut versions = order.order(versions);
+    versions.reverse();
+    if let Some(index) = preferred.and_then(|p| versions.iter().position(|v| v == p)) {
+        let preferred = versions.remove(index);
+        versions.insert(0, preferred);
+    }
+    versions
+}
+
+/// Policy exclusions can fall back; integrity errors stop resolution.
+async fn first_eligible<F, Fut>(candidates: Vec<String>, mut check: F) -> Result<Option<String>>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = Result<bool>>,
+{
+    for version in candidates {
+        if check(version.clone()).await? {
+            return Ok(Some(version));
+        }
+    }
+    Ok(None)
+}
+
+fn github_recommendation(
+    project: &str,
+    release: &github::GithubRelease,
+    list: Option<&ReleaseListStatement>,
+) -> Option<String> {
+    if release.draft {
+        return None;
+    }
+    if let Some(entry) = list.and_then(|l| {
+        l.predicate
+            .releases
+            .iter()
+            .find(|r| r.tag.as_deref() == Some(&release.tag_name))
+    }) {
+        return Some(entry.version.clone());
+    }
+    if !release
+        .assets
+        .iter()
+        .any(|a| a.name == bundle_name(project))
+    {
+        return None;
+    }
+    tag_version(&release.tag_name, project)
+}
+
 /// This host in the packslip's vocabulary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HostPlatform {
@@ -244,6 +309,10 @@ fn describe(artifact: &Artifact) -> String {
 /// wins, then mise's format preference decides, and two that still tie
 /// are refused. A gnu host that finds nothing takes a musl build, which
 /// is static, and says so.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+struct NoHostArtifact(String);
+
 pub(crate) fn select_artifact<'a>(
     artifacts: &'a [Artifact],
     host: &HostPlatform,
@@ -274,18 +343,22 @@ pub(crate) fn select_artifact<'a>(
             libc: Some("musl"),
             ..strict
         };
-        if let Ok(artifact) =
-            packslip::select_artifact(artifacts, &musl, variant, &FORMAT_PREFERENCE)
-        {
-            debug!(
-                "no gnu build fits this host; taking the musl build {}, which is static",
-                artifact.name
-            );
-            return Ok(artifact);
+        match packslip::select_artifact(artifacts, &musl, variant, &FORMAT_PREFERENCE) {
+            Ok(artifact) => {
+                debug!(
+                    "no gnu build fits this host; taking the musl build {}, which is static",
+                    artifact.name
+                );
+                return Ok(artifact);
+            }
+            Err(Selection::Ambiguous(a, b)) => bail!(
+                "the packslip lists {a} and {b} for this host and mise will not guess between them{hint}"
+            ),
+            Err(Selection::NoMatch) => {}
         }
     }
     let available = artifacts.iter().map(describe).join(", ");
-    bail!(
+    Err(NoHostArtifact(format!(
         "no artifact for {}/{}{}{hint}. The release has: {available}",
         host.os,
         host.arch,
@@ -293,7 +366,8 @@ pub(crate) fn select_artifact<'a>(
             .as_deref()
             .map(|l| format!("/{l}"))
             .unwrap_or_default(),
-    )
+    ))
+    .into())
 }
 
 /// The artifact this host would select from a stored statement, for
@@ -440,10 +514,7 @@ fn check_verified_age(
         Some(time) => (time, "transparency log"),
         None => (published_at, "unlogged manifest"),
     };
-    let time: jiff::Timestamp = time
-        .parse()
-        .wrap_err("invalid verified packslip timestamp")?;
-    if time > before {
+    if !verified_age_allowed(logged_at, published_at, Some(before))? {
         bail!(
             "packslip release was recorded by the {source} at {time}, after the allowed cutoff {before}; refusing to bypass minimum_release_age"
         );
@@ -465,6 +536,21 @@ fn refuse_if_withdrawn(project: &str, version: &str, entry: &ReleaseRef) -> Resu
         );
     }
     Ok(())
+}
+
+fn verified_age_allowed(
+    logged_at: Option<&str>,
+    published_at: &str,
+    before: Option<jiff::Timestamp>,
+) -> Result<bool> {
+    let Some(before) = before else {
+        return Ok(true);
+    };
+    let recorded: jiff::Timestamp = logged_at
+        .unwrap_or(published_at)
+        .parse()
+        .wrap_err("invalid verified packslip timestamp")?;
+    Ok(recorded <= before)
 }
 
 fn headers_for(url: &str) -> Result<HeaderMap> {
@@ -661,6 +747,152 @@ impl PackslipBackend {
         })
     }
 
+    async fn recommendation(
+        &self,
+        project: &str,
+        opts: &PackslipOptions<'_>,
+        pin: &Pin,
+    ) -> Result<Option<String>> {
+        let Some(repo) = Self::repo(project) else {
+            return Ok(self
+                .release_list(project, pin, opts)
+                .await?
+                .predicate
+                .latest);
+        };
+        let list = self.github_list(project, &repo, pin, opts).await?;
+        if let Some(latest) = list.as_ref().and_then(|l| l.predicate.latest.as_ref()) {
+            return Ok(Some(latest.clone()));
+        }
+        let release = match github::get_release_with_versions_host(&repo, "latest", false).await {
+            Ok(release) => release,
+            Err(err) if crate::http::error_code(&err) == Some(404) => return Ok(None),
+            Err(err) => return Err(err),
+        };
+        Ok(github_recommendation(project, &release, list.as_ref()))
+    }
+
+    /// Verification failures propagate; only policy exclusions return a reason.
+    async fn candidate_exclusion(
+        &self,
+        project: &str,
+        version: &str,
+        opts: &PackslipOptions<'_>,
+        pin: &Pin,
+        before: Option<jiff::Timestamp>,
+        stamps: Option<&crate::packslip_stamps::Stamps>,
+    ) -> Result<Option<String>> {
+        use sha2::{Digest, Sha256};
+        let request = ToolRequest::new_with_options(
+            self.ba.clone(),
+            version,
+            opts.raw.clone(),
+            crate::toolset::ToolSource::Unknown,
+        )?;
+        let tv = ToolVersion::new(request, version.to_string());
+        let stamp = match stamps {
+            Some(stamps) => match stamps.stamp(version) {
+                Some(stamp) => Some(stamp),
+                None => return Ok(Some(stamps.refusal(project, version).to_string())),
+            },
+            None => None,
+        };
+        // The same reach `install` makes, and for the same reason: with a
+        // stamp in hand the manifest is already named, so the vendor is asked
+        // only for what the vendor decides. Going through `locate_bundle`
+        // would demand the original release asset too, and refuse a version
+        // `install` accepts.
+        let (url, vendor_digest) = match stamp {
+            Some(stamp) => (
+                stamp.entry.packslip.clone(),
+                self.vendor_entry(project, &tv, pin, opts)
+                    .await?
+                    .and_then(|vendor| vendor.digest),
+            ),
+            None => {
+                let vendor = self.locate_bundle(project, &tv, pin, opts).await?;
+                (vendor.url, vendor.digest)
+            }
+        };
+        let url = url.as_str();
+        let text = HTTP_FETCH
+            .get_text_request(url)
+            .headers(&headers_for(url)?)
+            .send()
+            .await?;
+        let actual = hex::encode(Sha256::digest(text.as_bytes()));
+        for expected in vendor_digest
+            .iter()
+            .chain(stamp.and_then(|s| s.digest.as_ref()))
+        {
+            if &actual != expected {
+                bail!("packslip:{project}@{version}: manifest digest differs from signed list");
+            }
+        }
+        let verified = verify_bundle(&text, pin, !opts.allow_unlogged(), &[])?;
+        if verified.project != project || verified.version != version {
+            bail!(
+                "packslip:{project}@{version}: verified manifest project/version differs from discovery"
+            );
+        }
+        let scheme = verified.scheme.to_string();
+        let attested_by = verified.attested_by.to_string();
+        packslip_pins::check(
+            project,
+            Observed {
+                scheme: &scheme,
+                key_id: &verified.key_id,
+                issuer: verified.issuer.as_deref(),
+                attested_by: &attested_by,
+                provenance: verified.provenance_linked,
+                logged: verified.logged_at.is_some(),
+            },
+        )?;
+        // Parse errors are verification errors, not age-policy exclusions.
+        if !verified_age_allowed(
+            verified.logged_at.as_deref(),
+            &verified.published_at,
+            before,
+        )? {
+            return Ok(Some(
+                "verified release time is after the allowed cutoff".into(),
+            ));
+        }
+        let payload = packslip::sigstore::peek_statement(&text).map_err(|e| eyre!("{e}"))?;
+        let statement: Statement = serde_json::from_slice(&payload)?;
+        let artifact = match select_artifact(
+            &statement.predicate.artifacts,
+            &HostPlatform::current(),
+            opts.variant().as_deref(),
+        ) {
+            Ok(artifact) => artifact,
+            Err(err) if err.is::<NoHostArtifact>() => return Ok(Some(err.to_string())),
+            Err(err) => return Err(err),
+        };
+        let requirements = crate::packslip_requirements::check(artifact, &BTreeMap::new()).await;
+        if !requirements.failures.is_empty() && opts.raw.get("ignore_requirements") != Some("true")
+        {
+            return Ok(Some(requirements.failures.join("; ")));
+        }
+        Ok(None)
+    }
+
+    async fn policy_versions(&self, raw_opts: &ToolVersionOptions) -> Result<Vec<VersionInfo>> {
+        let mut versions = self.vendor_versions(raw_opts).await?;
+        // Only what a trusted stamper lists is released, as far as mise is
+        // concerned; the rest is not offered.
+        let project = self.project()?;
+        if let Some(stamps) = crate::packslip_stamps::fetch(&project, raw_opts).await? {
+            let before = versions.len();
+            versions.retain(|v| stamps.allows(&v.version));
+            debug!(
+                "packslip:{project}: {} of {before} version(s) carry a stamp",
+                versions.len()
+            );
+        }
+        Ok(versions)
+    }
+
     /// Put every executable the packslip names into the install's bin dir
     /// under the name it should have on PATH.
     fn link_bins(tv: &ToolVersion, artifact: &Artifact) -> Result<()> {
@@ -695,10 +927,10 @@ impl PackslipBackend {
     }
 
     /// Every version the vendor published, before stamps are applied.
-    async fn vendor_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+    async fn vendor_versions(&self, raw_opts: &ToolVersionOptions) -> Result<Vec<VersionInfo>> {
+        self.ensure_experimental()?;
         let project = self.project()?;
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let opts = PackslipOptions::new(&raw_opts);
+        let opts = PackslipOptions::new(raw_opts);
         let pin = pin(&project, &opts)?;
         if let Some(repo) = Self::repo(&project) {
             let asset_name = bundle_name(&project);
@@ -786,21 +1018,132 @@ impl Backend for PackslipBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        self.policy_versions(&opts).await
+    }
+
+    async fn list_remote_versions_with_info_and_options(
+        &self,
+        config: &Arc<Config>,
+        listing_opts: &ToolVersionOptions,
+        selection_opts: &ToolVersionOptions,
+        _refresh: bool,
+        has_local_version_listing_override: bool,
+    ) -> Result<Vec<VersionInfo>> {
+        // A cached accepted-version set cannot reflect changed stamper trust,
+        // new withdrawals, expired lists, or a list that disappeared, so online
+        // this always rereads policy. Offline that reading cannot happen at all
+        // — it means asking GitHub and every stamper — so the cache is all there
+        // is, and it is served the way every other backend serves it. Installing
+        // rechecks regardless.
+        let cache = self
+            .remote_version_cache_for(config, listing_opts, has_local_version_listing_override)
+            .await?;
+        let mut cache = cache.lock().await;
+        let versions = if Settings::get().offline() {
+            crate::backend::cached_remote_versions_offline(&self.ba, &cache)
+        } else {
+            // Written back so that a later offline command has something to
+            // serve. Like the shared path, the cache holds the prerelease
+            // superset and the filter below is applied on the way out.
+            let versions = self.policy_versions(selection_opts).await?;
+            if versions.is_empty() {
+                cache.clear()?;
+            } else if let Err(err) = cache.write(&versions) {
+                debug!(
+                    "could not cache the accepted versions of {}: {err:#}",
+                    self.ba
+                );
+            }
+            versions
+        };
+        Ok(crate::backend::filter_cached_prereleases(
+            versions,
+            self.include_prereleases(selection_opts),
+        ))
+    }
+
+    async fn latest_version_with_selection_options(
+        &self,
+        config: &Arc<Config>,
+        query: Option<String>,
+        selection_opts: &ToolVersionOptions,
+        before_date: Option<jiff::Timestamp>,
+        refresh: bool,
+    ) -> Result<Option<String>> {
         self.ensure_experimental()?;
-        let mut versions = self.vendor_versions(config).await?;
-        // Only what a trusted stamper lists is released, as far as mise is
-        // concerned; the rest is not offered.
+        let before =
+            crate::backend::effective_latest_before_date(self, selection_opts, before_date)?;
+        let query = query.as_deref().unwrap_or("latest");
+        if query != "latest" {
+            return self
+                .latest_version_for_query_with_selection_options(
+                    config,
+                    query,
+                    selection_opts,
+                    before,
+                    refresh,
+                )
+                .await;
+        }
+        if Settings::get().offline() {
+            // Policy lives on the network — the vendor's list, every stamper's,
+            // and the manifest itself — so offline there is nothing to consult
+            // and nothing to recommend. Take the newest the cache knows of;
+            // installing it will recheck policy, or fail for want of a network.
+            let versions = self
+                .list_remote_versions_with_info_with_selection_options(
+                    config,
+                    selection_opts,
+                    refresh,
+                )
+                .await?;
+            let candidates = latest_candidates(
+                versions,
+                None,
+                self.include_prereleases(selection_opts),
+                self.version_order(selection_opts)?,
+            );
+            return Ok(candidates.into_iter().next());
+        }
+        // Read policy directly: a cached version list must not hide new yanks,
+        // changed stampers, or a missing previously accepted signed list.
         let project = self.project()?;
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        if let Some(stamps) = crate::packslip_stamps::fetch(&project, &raw_opts).await? {
-            let before = versions.len();
-            versions.retain(|v| stamps.allows(&v.version));
-            debug!(
-                "packslip:{project}: {} of {before} version(s) carry a stamp",
-                versions.len()
+        let opts = PackslipOptions::new(selection_opts);
+        let pin = pin(&project, &opts)?;
+        let recommendation = self.recommendation(&project, &opts, &pin).await?;
+        let versions = self.vendor_versions(selection_opts).await?;
+        let stamps = crate::packslip_stamps::fetch(&project, selection_opts).await?;
+        let candidates = latest_candidates(
+            versions,
+            recommendation.as_deref(),
+            self.include_prereleases(selection_opts),
+            self.version_order(selection_opts)?,
+        );
+        if let Some(preferred) = &recommendation
+            && !candidates.iter().any(|v| v == preferred)
+        {
+            warn!(
+                "packslip:{project}: skipping recommended {preferred}: absent, withdrawn, or excluded prerelease"
             );
         }
-        Ok(versions)
+        first_eligible(candidates, |version| {
+            let project = &project;
+            let opts = &opts;
+            let pin = &pin;
+            let stamps = stamps.as_ref();
+            async move {
+                if let Some(reason) = self
+                    .candidate_exclusion(project, &version, opts, pin, before, stamps)
+                    .await?
+                {
+                    warn!("packslip:{project}: skipping {version}: {reason}");
+                    return Ok(false);
+                }
+                Ok(true)
+            }
+        })
+        .await
     }
 
     async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
@@ -1155,6 +1498,102 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn latest_keeps_recommendation_separate_from_order_and_admission() {
+        let versions = || {
+            ["2.8.4", "3.0.0", "4.0.0-beta.1"]
+                .into_iter()
+                .map(|v| version_info(Some(v.into()), None, None).unwrap())
+                .collect()
+        };
+        assert_eq!(
+            latest_candidates(versions(), Some("2.8.4"), false, VersionOrder::Semver),
+            ["2.8.4", "3.0.0"]
+        );
+        assert_eq!(
+            latest_candidates(versions(), None, false, VersionOrder::Semver),
+            ["3.0.0", "2.8.4"]
+        );
+        assert_eq!(
+            latest_candidates(versions(), Some("9.0.0"), false, VersionOrder::Semver),
+            ["3.0.0", "2.8.4"]
+        );
+        assert_eq!(
+            latest_candidates(
+                versions(),
+                Some("4.0.0-beta.1"),
+                false,
+                VersionOrder::Semver
+            ),
+            ["3.0.0", "2.8.4"]
+        );
+        assert_eq!(
+            latest_candidates(versions(), Some("2.8.4"), true, VersionOrder::Semver),
+            ["2.8.4", "4.0.0-beta.1", "3.0.0"]
+        );
+        {
+            let selected = first_eligible(
+                latest_candidates(versions(), Some("2.8.4"), false, VersionOrder::Semver),
+                |v| async move { Ok(v != "2.8.4") },
+            )
+            .await
+            .unwrap();
+            assert_eq!(selected.as_deref(), Some("3.0.0"));
+        }
+        let result = first_eligible(
+            latest_candidates(versions(), Some("2.8.4"), false, VersionOrder::Semver),
+            |_v| async { bail!("signature failure") },
+        )
+        .await;
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("signature failure")
+        );
+        assert_eq!(
+            first_eligible(
+                latest_candidates(versions(), None, false, VersionOrder::Semver),
+                |_v| async { Ok(false) }
+            )
+            .await
+            .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn github_latest_is_project_specific_and_supports_list_tag_mappings() {
+        let mut release: github::GithubRelease = serde_json::from_value(serde_json::json!({
+            "tag_name": "v2.8.4", "draft": false, "prerelease": false,
+            "created_at": "2026-01-01T00:00:00Z", "assets": []
+        }))
+        .unwrap();
+        assert_eq!(
+            github_recommendation("github.com/o/r/sub", &release, None),
+            None
+        );
+        release.assets.push(serde_json::from_value(serde_json::json!({
+            "name": "packslip.sub.sigstore.json", "browser_download_url": "https://x/p.json", "url": "https://api.github.com/assets/1", "size": 1
+        })).unwrap());
+        assert_eq!(
+            github_recommendation("github.com/o/r/sub", &release, None).as_deref(),
+            Some("2.8.4")
+        );
+        release.tag_name = "custom-tag".into();
+        let list: ReleaseListStatement = serde_json::from_value(serde_json::json!({
+            "_type": "https://in-toto.io/Statement/v1", "subject": [], "predicateType": "https://packslip.dev/releases/v1",
+            "predicate": {"project": "github.com/o/r/sub", "generated_at": "2026-01-01T00:00:00Z",
+            "expires_at": "2027-01-01T00:00:00Z", "sequence": 1,
+            "identity": {"scheme": "sigstore-key", "key_id": "key"},
+            "releases": [{"version": "2.8.4", "tag": "custom-tag", "published_at": "2026-01-01T00:00:00Z", "packslip": "https://x/p.json"}]}
+        })).unwrap();
+        assert_eq!(
+            github_recommendation("github.com/o/r/sub", &release, Some(&list)).as_deref(),
+            Some("2.8.4")
+        );
+    }
+
     #[test]
     fn age_is_checked_against_the_authenticated_log_time() {
         let before = Some("2026-09-03T00:00:00Z".parse().unwrap());
@@ -1377,6 +1816,17 @@ mod tests {
             "t-linux-x64",
             "what the bin entry's path must be"
         );
+    }
+
+    #[test]
+    fn an_ambiguous_musl_fallback_is_not_an_ineligible_host() {
+        let artifacts = [
+            artifact("a.tar.xz", "linux", "x86_64", Some("musl"), "tar.xz"),
+            artifact("b.tar.xz", "linux", "x86_64", Some("musl"), "tar.xz"),
+        ];
+        let err = select_artifact(&artifacts, &linux(), None).unwrap_err();
+        assert!(!err.is::<NoHostArtifact>());
+        assert!(err.to_string().contains("will not guess"));
     }
 
     #[test]

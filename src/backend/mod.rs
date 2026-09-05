@@ -2293,19 +2293,13 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // Only local overrides count: a registry-supplied value is identical for everyone, so
         // one entry is correct for it, and leaving it out keeps the shared versions host
         // available for the default case.
-        let opt_context = has_local_version_listing_override.then(|| {
-            listing_option_digest(listing_opts, self.remote_version_listing_tool_option_keys())
-        });
-        let cache_context = match (
-            self.remote_version_cache_context(config).await?,
-            opt_context,
-        ) {
-            (Some(backend_context), Some(opt_context)) => {
-                Some(hash::hash_to_str(&(backend_context, opt_context)))
-            }
-            (Some(context), None) | (None, Some(context)) => Some(context),
-            (None, None) => None,
-        };
+        let cache_context = self
+            .remote_version_cache_context_for(
+                config,
+                listing_opts,
+                has_local_version_listing_override,
+            )
+            .await?;
         let remote_versions = match cache_context.as_deref() {
             Some(context) => self.get_remote_version_cache_with_context(Some(context)),
             None => self.get_remote_version_cache(),
@@ -2412,21 +2406,10 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let want_prereleases = self.include_prereleases(selection_opts);
 
         if Settings::get().offline() {
-            trace!(
-                "Skipping remote version listing for {} due to offline mode",
-                ba.to_string()
-            );
-            match remote_versions.get_cached() {
-                Ok(versions) => return Ok(filter_cached_prereleases(versions, want_prereleases)),
-                Err(err) => {
-                    debug!(
-                        "No cached remote versions available for {} while offline: {:#}",
-                        ba.to_string(),
-                        err
-                    );
-                }
-            }
-            return Ok(vec![]);
+            return Ok(filter_cached_prereleases(
+                cached_remote_versions_offline(&ba, &remote_versions),
+                want_prereleases,
+            ));
         }
 
         let fetch = || async {
@@ -4089,6 +4072,56 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(VersionOrder::Source)
     }
 
+    /// The key of the remote-version cache entry these listing options select.
+    async fn remote_version_cache_context_for(
+        &self,
+        config: &Arc<Config>,
+        listing_opts: &ToolVersionOptions,
+        has_local_version_listing_override: bool,
+    ) -> eyre::Result<Option<String>> {
+        // The listing-relevant options shape the cached list, so they belong in its key.
+        // Only local overrides count: a registry-supplied value is identical for everyone, so
+        // one entry is correct for it, and leaving it out keeps the shared versions host
+        // available for the default case.
+        let opt_context = has_local_version_listing_override.then(|| {
+            listing_option_digest(listing_opts, self.remote_version_listing_tool_option_keys())
+        });
+        Ok(
+            match (
+                self.remote_version_cache_context(config).await?,
+                opt_context,
+            ) {
+                (Some(backend_context), Some(opt_context)) => {
+                    Some(hash::hash_to_str(&(backend_context, opt_context)))
+                }
+                (Some(context), None) | (None, Some(context)) => Some(context),
+                (None, None) => None,
+            },
+        )
+    }
+
+    /// The remote-version cache entry these listing options select. A backend
+    /// that overrides listing to consult a live policy still needs this, so
+    /// that offline it serves the same entry the shared path would.
+    async fn remote_version_cache_for(
+        &self,
+        config: &Arc<Config>,
+        listing_opts: &ToolVersionOptions,
+        has_local_version_listing_override: bool,
+    ) -> eyre::Result<Arc<TokioMutex<VersionCacheManager>>> {
+        let context = self
+            .remote_version_cache_context_for(
+                config,
+                listing_opts,
+                has_local_version_listing_override,
+            )
+            .await?;
+        Ok(match context.as_deref() {
+            Some(context) => self.get_remote_version_cache_with_context(Some(context)),
+            None => self.get_remote_version_cache(),
+        })
+    }
+
     fn get_remote_version_cache(&self) -> Arc<TokioMutex<VersionCacheManager>> {
         self.get_remote_version_cache_with_context(None)
     }
@@ -5260,6 +5293,30 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
 /// either from upstream metadata or, for metadata-free listing backends, mise's
 /// legacy pre-release pattern. This helper drops pre-release entries when the
 /// current tool opts don't opt in.
+/// What a backend may report while offline: whatever the cache holds, and
+/// otherwise nothing. Never the network, whatever the backend would rather
+/// recheck.
+pub(crate) fn cached_remote_versions_offline(
+    ba: &BackendArg,
+    cache: &VersionCacheManager,
+) -> Vec<VersionInfo> {
+    trace!(
+        "Skipping remote version listing for {} due to offline mode",
+        ba.to_string()
+    );
+    match cache.get_cached() {
+        Ok(versions) => versions,
+        Err(err) => {
+            debug!(
+                "No cached remote versions available for {} while offline: {:#}",
+                ba.to_string(),
+                err
+            );
+            vec![]
+        }
+    }
+}
+
 pub(crate) fn filter_cached_prereleases(
     versions: Vec<VersionInfo>,
     want_prereleases: bool,
