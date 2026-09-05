@@ -3,6 +3,7 @@ use super::super::upgrade::{UpgradeDecision, compare_live_version, read_live_ver
 use super::super::upgrade::{assess_auto_update, read_live_version_at};
 #[cfg(unix)]
 use super::*;
+use crate::result::Result;
 
 fn assert_unknown(decision: UpgradeDecision, reason: &str) {
     match decision {
@@ -104,18 +105,29 @@ fn read_fixture(appdir: &Path) -> Result<UpgradeDecision> {
     read_live_version_at(&parent, std::ffi::OsStr::new("Example.app"), "9.2.6")
 }
 
-#[cfg(unix)]
+fn plist_reader(value: plist::Value, binary: bool) -> Result<std::io::Cursor<Vec<u8>>> {
+    let mut bytes = Vec::new();
+    if binary {
+        value.to_writer_binary(&mut bytes)?;
+    } else {
+        value.to_writer_xml(&mut bytes)?;
+    }
+    Ok(std::io::Cursor::new(bytes))
+}
+
 #[test]
 fn plist_reads_xml_and_binary_preserving_original_version() -> Result<()> {
-    let tmp = trusted_tempdir()?;
     for binary in [false, true] {
-        write_version(&tmp.path().join("Example.app"), "09.002.003".into(), binary)?;
+        let mut dict = plist::Dictionary::new();
+        dict.insert("CFBundleShortVersionString".into(), "09.002.003".into());
+        let reader = plist_reader(plist::Value::Dictionary(dict), binary)?;
         assert_eq!(
-            read_fixture(tmp.path())?,
+            read_live_version_from(reader, "9.2.6"),
             UpgradeDecision::Older {
                 live: "09.002.003".into(),
                 available: "9.2.6".into()
-            }
+            },
+            "binary encoding: {binary}"
         );
     }
     Ok(())
@@ -131,30 +143,23 @@ fn plist_missing_app_is_distinct_from_missing_plist() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
-fn plist_rejects_corruption() -> Result<()> {
-    let tmp = trusted_tempdir()?;
-    std::fs::create_dir_all(tmp.path().join("Example.app/Contents"))?;
-    std::fs::write(
-        tmp.path().join("Example.app/Contents/Info.plist"),
-        "broken plist",
-    )?;
-    assert_unknown(read_fixture(tmp.path())?, "plist");
-    Ok(())
+fn plist_rejects_corruption() {
+    assert_unknown(
+        read_live_version_from(std::io::Cursor::new(b"broken plist"), "9.2.6"),
+        "plist",
+    );
 }
 
-#[cfg(unix)]
 #[test]
 fn plist_requires_short_version_string_without_build_version_fallback() -> Result<()> {
-    let tmp = trusted_tempdir()?;
-    let app = tmp.path().join("Example.app");
-    std::fs::create_dir_all(app.join("Contents"))?;
     let mut dict = plist::Dictionary::new();
     dict.insert("CFBundleVersion".into(), "9.2.3".into());
-    plist::Value::Dictionary(dict).to_file_xml(app.join("Contents/Info.plist"))?;
     assert_unknown(
-        read_fixture(tmp.path())?,
+        read_live_version_from(
+            plist_reader(plist::Value::Dictionary(dict.clone()), false)?,
+            "9.2.6",
+        ),
         "missing CFBundleShortVersionString",
     );
     for value in [
@@ -162,8 +167,14 @@ fn plist_requires_short_version_string_without_build_version_fallback() -> Resul
         plist::Value::Boolean(true),
         plist::Value::Array(vec![]),
     ] {
-        write_version(&app, value, false)?;
-        assert_unknown(read_fixture(tmp.path())?, "string");
+        dict.insert("CFBundleShortVersionString".into(), value);
+        assert_unknown(
+            read_live_version_from(
+                plist_reader(plist::Value::Dictionary(dict.clone()), false)?,
+                "9.2.6",
+            ),
+            "string",
+        );
     }
     Ok(())
 }
