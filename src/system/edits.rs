@@ -34,7 +34,7 @@ use crate::config::{Config, ConfigMap};
 use crate::file;
 use crate::path::PathExt;
 use crate::system::files::FileState;
-use crate::system::generations::journal;
+use crate::system::generations::journal::{self, Capture};
 use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
 
@@ -688,7 +688,7 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
         }
     }
     for (req, desired) in &todo {
-        let pending = journal::begin_changes(opts.part, &req.path_raw, [req.path.clone()]);
+        let pending = journal::begin_changes_with(opts.part, &req.path_raw, edit_paths(&req.path))?;
         apply_one(req, desired.as_deref())?;
         journal::commit_changes(pending);
     }
@@ -976,7 +976,7 @@ pub(crate) fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> R
     }
     for plan in todo {
         let pending =
-            journal::begin_changes("dotfiles", &plan.req.path_raw, [plan.req.path.clone()]);
+            journal::begin_changes("dotfiles", &plan.req.path_raw, [plan.req.path.clone()])?;
         unapply_one(plan.req)?;
         journal::commit_changes(pending);
     }
@@ -1066,6 +1066,17 @@ pub(crate) fn apply_dry_run_to_string(
     }
     let desired = desired_content(config, req)?;
     apply_to_string(req, desired.as_deref(), text).map(Some)
+}
+
+/// The paths an edit may create or change: the file itself, captured whole,
+/// preceded by any ancestors `apply_one` will have to create.
+fn edit_paths(path: &Path) -> Vec<(PathBuf, Capture)> {
+    let mut paths: Vec<(PathBuf, Capture)> = crate::system::files::missing_ancestors(path)
+        .into_iter()
+        .map(|dir| (dir, Capture::Shallow))
+        .collect();
+    paths.push((path.to_path_buf(), Capture::Full));
+    paths
 }
 
 fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {

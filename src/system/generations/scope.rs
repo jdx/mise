@@ -51,10 +51,14 @@ fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// Appends an entry to the open generation, if any, and persists it.
-/// Returns the entry's index in the journal.
-pub(crate) fn record(entry: JournalEntry) -> Option<u32> {
+/// Returns the entry's index in the journal, or an error when it could
+/// not be written to disk (the caller decides whether to proceed).
+pub(crate) fn record(entry: JournalEntry) -> Result<Option<u32>> {
     let shared = lock_unpoisoned(&CURRENT).clone();
-    shared.map(|shared| lock_unpoisoned(&shared).record(entry))
+    match shared {
+        Some(shared) => lock_unpoisoned(&shared).record(entry).map(Some),
+        None => Ok(None),
+    }
 }
 
 /// Whether a generation is open in this process.
@@ -216,13 +220,12 @@ impl Writer {
         Ok(writer)
     }
 
-    fn record(&mut self, entry: JournalEntry) -> u32 {
+    fn record(&mut self, entry: JournalEntry) -> Result<u32> {
         let seq = self.generation.journal.len() as u32;
         self.generation.journal.push(entry);
-        if let Err(err) = self.write() {
-            warn!("bootstrap generations: could not persist a journal entry: {err:#}");
-        }
-        seq
+        self.write()
+            .map_err(|err| eyre::eyre!("could not persist the generation journal: {err:#}"))?;
+        Ok(seq)
     }
 
     fn finish(&mut self, error: Option<String>, summary: Option<Summary>) -> Result<()> {
