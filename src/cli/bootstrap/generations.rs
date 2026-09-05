@@ -2,8 +2,8 @@ use eyre::{Result, bail};
 
 use crate::dirs;
 use crate::file::display_path;
-use crate::system::generations::shadow::ShadowRepo;
-use crate::system::generations::store::{self, Generation, GenerationStatus};
+use crate::system::generations::shadow::{DiffOpts, ShadowRepo};
+use crate::system::generations::store::{self, Generation, GenerationStatus, Snapshot};
 use crate::ui::table::MiseTable;
 
 /// Inspect recorded bootstrap generations
@@ -24,8 +24,44 @@ pub(crate) struct BootstrapGenerations {
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapGenerationsCommands {
+    Diff(BootstrapGenerationsDiff),
     Ls(BootstrapGenerationsLs),
     Show(BootstrapGenerationsShow),
+}
+
+/// Diff the snapshotted config and dotfiles between generations
+///
+/// With one id, shows what that generation's run changed inside the
+/// snapshot roots: its snapshot before the run against the one after.
+/// With two ids, compares the states the two runs left behind, which is
+/// how to see what changed by hand between runs. Paths are prefixed by
+/// their root (`config/`, `dotfiles/`, `mise.lock`).
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapGenerationsDiff {
+    /// Generation id, `latest`, or `latest~N`
+    #[usage(value_name = "A")]
+    a: String,
+
+    /// Compare the state after `A` with the state after this generation
+    #[usage(value_name = "B")]
+    b: Option<String>,
+
+    /// Print the full patch instead of a per-file summary
+    #[usage(long, short)]
+    patch: bool,
+
+    /// Restrict to one snapshot root or a path inside it
+    #[usage(long, value_name = "LABEL[/PATH]")]
+    root: Option<String>,
+
+    /// Exit 1 when the snapshots differ
+    #[usage(long)]
+    exit_code: bool,
+
+    /// Skip the journal entries of the generations covered
+    #[usage(long)]
+    no_journal: bool,
 }
 
 /// List recorded generations, newest first
@@ -65,6 +101,7 @@ struct BootstrapGenerationsShow {
 impl BootstrapGenerations {
     pub(crate) async fn run(self) -> Result<()> {
         match self.command {
+            Some(BootstrapGenerationsCommands::Diff(cmd)) => cmd.run(),
             Some(BootstrapGenerationsCommands::Ls(cmd)) => cmd.run(),
             Some(BootstrapGenerationsCommands::Show(cmd)) => cmd.run(),
             None => self.ls.run(),
@@ -281,6 +318,122 @@ impl BootstrapGenerationsShow {
     }
 }
 
+impl BootstrapGenerationsDiff {
+    fn run(self) -> Result<()> {
+        let generations = store::list_in(&dirs::STATE)?;
+        let a_id = store::resolve_id(&self.a, &generations)?;
+        let a = store::load_in(&dirs::STATE, a_id)?;
+        let (from, to, covered, label) = match &self.b {
+            Some(b) => {
+                let b_id = store::resolve_id(b, &generations)?;
+                let b = store::load_in(&dirs::STATE, b_id)?;
+                let (lo, hi) = (a_id.min(b_id), a_id.max(b_id));
+                let covered = generations
+                    .iter()
+                    .filter(|g| g.id > lo && g.id <= hi)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                (
+                    final_snapshot(&a)?,
+                    final_snapshot(&b)?,
+                    covered,
+                    format!("generation {a_id} -> {b_id}"),
+                )
+            }
+            None => {
+                let before = a.snapshot.before.clone().ok_or_else(|| no_snapshot(&a))?;
+                let after = final_snapshot(&a)?;
+                (before, after, vec![a.clone()], format!("generation {a_id}"))
+            }
+        };
+        let path = match &self.root {
+            Some(root) => Some(resolve_root_path(&to, root)?),
+            None => None,
+        };
+        let Some(shadow) = ShadowRepo::open_or_init_in(&dirs::STATE)? else {
+            bail!("comparing snapshots requires git");
+        };
+        let result = shadow.diff(
+            &from.tree,
+            &to.tree,
+            &DiffOpts {
+                patch: self.patch,
+                color: console::colors_enabled(),
+                path,
+            },
+        )?;
+        if result.changed {
+            miseprint!("{}", String::from_utf8_lossy(&result.output))?;
+        } else {
+            info!("{label}: no differences");
+        }
+        if !self.no_journal {
+            for generation in covered.iter().filter(|g| !g.journal.is_empty()) {
+                miseprintln!("Journal (generation {}):", generation.id);
+                for entry in &generation.journal {
+                    miseprintln!("  - {}", entry.describe());
+                }
+            }
+        }
+        if self.exit_code && result.changed {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+/// The state a generation left behind: its `after` snapshot, or `before`
+/// when the run never finished.
+fn final_snapshot(generation: &Generation) -> Result<Snapshot> {
+    generation
+        .snapshot
+        .after
+        .clone()
+        .or_else(|| generation.snapshot.before.clone())
+        .ok_or_else(|| no_snapshot(generation))
+}
+
+fn no_snapshot(generation: &Generation) -> eyre::Report {
+    eyre::eyre!(
+        "generation {} has no content snapshot ({})",
+        generation.id,
+        generation
+            .snapshot
+            .reason
+            .as_deref()
+            .unwrap_or("not recorded")
+    )
+}
+
+/// Turns `label` or `label/path` into a path inside the snapshot's top-level
+/// tree, following roots that are aliases of or contained in another.
+fn resolve_root_path(snapshot: &Snapshot, spec: &str) -> Result<String> {
+    let (label, rest) = spec.split_once('/').unwrap_or((spec, ""));
+    let root = snapshot
+        .roots
+        .iter()
+        .find(|root| root.label == label)
+        .ok_or_else(|| eyre::eyre!("no snapshot root named {label}"))?;
+    if let Some(reason) = &root.skipped {
+        bail!("snapshot root {label} was skipped ({reason})");
+    }
+    let mut base = if let Some(alias) = &root.alias_of {
+        alias.clone()
+    } else if let Some(outer) = &root.contained_in {
+        match &root.subpath {
+            Some(subpath) => format!("{outer}/{}", subpath.to_string_lossy()),
+            None => outer.clone(),
+        }
+    } else {
+        label.to_string()
+    };
+    if !rest.is_empty() {
+        base.push('/');
+        base.push_str(rest.trim_end_matches('/'));
+    }
+    Ok(base)
+}
+
 fn short(oid: &str) -> String {
     oid.chars().take(7).collect()
 }
@@ -326,5 +479,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap generations --json | jq '.[0]'</bold>
     $ <bold>mise bootstrap generations show latest</bold>
     $ <bold>mise bootstrap generations show 12 --files</bold>
+    $ <bold>mise bootstrap generations diff 11 12 --patch</bold>
 "#
 );

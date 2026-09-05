@@ -232,6 +232,9 @@ Show configured Linux host firewall state
 \fBbootstrap generations\fR
 Inspect recorded bootstrap generations
 .TP
+\fBbootstrap generations diff\fR
+Diff the snapshotted config and dotfiles between generations
+.TP
 \fBbootstrap generations ls\fR
 List recorded generations, newest first
 .RS
@@ -1544,6 +1547,42 @@ Only list generations whose run did not finish
 .TP
 \fB\-h, \-\-help\fR
 Print help
+.SH "MISE BOOTSTRAP GENERATIONS DIFF"
+Diff the snapshotted config and dotfiles between generations
+
+With one id, shows what that generation's run changed inside the
+snapshot roots: its snapshot before the run against the one after.
+With two ids, compares the states the two runs left behind, which is
+how to see what changed by hand between runs. Paths are prefixed by
+their root (`config/`, `dotfiles/`, `mise.lock`).
+.PP
+\fBUsage:\fR mise bootstrap generations diff [OPTIONS] <A> [<B>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-p, \-\-patch\fR
+Print the full patch instead of a per\-file summary
+.TP
+\fB\-\-root\fR \fI<LABEL[/PATH]>\fR
+Restrict to one snapshot root or a path inside it
+.TP
+\fB\-\-exit\-code\fR
+Exit 1 when the snapshots differ
+.TP
+\fB\-\-no\-journal\fR
+Skip the journal entries of the generations covered
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<A>\fR
+Generation id, `latest`, or `latest~N`
+.TP
+\fB<B>\fR
+Compare the state after `A` with the state after this generation
 .SH "MISE BOOTSTRAP GENERATIONS LS"
 List recorded generations, newest first
 .PP
