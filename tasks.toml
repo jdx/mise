@@ -106,7 +106,7 @@ sources = ["mise"]
 outputs = ["README.md"]
 run = [
   "mise render-help",
-  "mise run show-output-on-failure -- mise x node@latest -- npx markdown-magic",
+  "mise run show-output-on-failure -- mise x node npm:markdown-magic -- md-magic",
 ]
 
 ["render:llms"]
