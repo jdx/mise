@@ -1,0 +1,25 @@
+keep addressing feedback and failing checks until it settles
+
+---
+
+keep looking for feedback and address it until it settles
+
+---
+
+address feedback
+
+---
+
+keep checking for new feedback until ci is green
+
+---
+
+why did ci fail here? [https://github.com/jdx/mise/pull/12830](https://github.com/jdx/mise/pull/12830)
+
+---
+
+how should we fix that?
+
+---
+
+ok make a pr for that
