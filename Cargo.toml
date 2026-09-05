@@ -350,8 +350,6 @@ rustls-native-roots = [
 bin-dir = "mise/bin/mise"
 [package.metadata.binstall.overrides.aarch64-apple-darwin]
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-macos-arm64{ archive-suffix }"
-[package.metadata.binstall.overrides.x86_64-apple-darwin]
-pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-macos-x64{ archive-suffix }"
 [package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-arm64{ archive-suffix }"
 [package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]

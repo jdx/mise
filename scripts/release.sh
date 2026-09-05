@@ -20,7 +20,6 @@ platforms=(
 	linux-arm64-musl
 	linux-armv7
 	linux-armv7-musl
-	macos-x64
 	macos-arm64
 )
 for platform in "${platforms[@]}"; do
@@ -53,7 +52,6 @@ done
 echo "::group::Checksums"
 pushd "$RELEASE_DIR"
 cp mise-latest-linux-x64 mise-latest-linux-amd64
-cp mise-latest-macos-x64 mise-latest-macos-amd64
 sha256sum ./mise-latest-* >SHASUMS256.txt
 sha512sum ./mise-latest-* >SHASUMS512.txt
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS256.txt >SHASUMS256.asc

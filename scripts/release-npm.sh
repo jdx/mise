@@ -23,7 +23,6 @@ if [ "$PUBLISH_PLATFORM_PACKAGES" != "0" ]; then
 		linux-x64
 		linux-arm64
 		linux-armv7
-		macos-x64
 		macos-arm64
 	)
 	for platform in "${platforms[@]}"; do
@@ -99,6 +98,11 @@ function installArchSpecificPackage(version) {
 
     var platform = process.platform == 'win32' ? 'windows' : process.platform;
     var arch = platform == 'windows' && process.arch == 'ia32' ? 'x86' : process.arch;
+
+    if (platform == 'darwin' && arch == 'x64') {
+        console.error('mise does not provide prebuilt binaries for Intel macOS');
+        return process.exit(1);
+    }
 
     var cp = spawn(platform == 'windows' ? 'npm.cmd' : 'npm', ['install', '--no-save', ['$NPM_PLATFORM_PREFIX', platform, arch].join('-') + '@' + version], {
         stdio: 'inherit',

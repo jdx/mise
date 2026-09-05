@@ -696,6 +696,9 @@ impl SelfUpdate {
     }
 
     pub(crate) fn is_available() -> bool {
+        if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+            return false;
+        }
         if let Some(b) = *env::MISE_SELF_UPDATE_AVAILABLE {
             return b;
         }
