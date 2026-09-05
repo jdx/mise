@@ -62,7 +62,9 @@ mise use packslip:github.com/jdx/hk@1.58.1
 ```
 
 Only releases with Packslip manifests are available through this backend.
-For an older hk release without one, select Aqua explicitly: `mise use aqua:jdx/hk@VERSION`.
+The registry shorthand selects Aqua for hk versions before 1.58.1, so
+`mise use hk@1.57.0` continues to work. You can also select Aqua explicitly
+with `mise use aqua:jdx/hk@VERSION`.
 
 Packslip uses semantic versions, including compatible date versions such as
 `2026.9.1`. Prereleases are excluded unless you enable the
