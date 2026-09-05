@@ -7,6 +7,7 @@ backends = [
   ] },
   "cargo:usage-cli",
 ]
+bins = ["usage"]
 description = "A specification for CLIs"
 test = { cmd = "usage --version", expected = "usage {{version}}" }
 version_order = "semver"
