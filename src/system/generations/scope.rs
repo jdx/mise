@@ -51,11 +51,15 @@ fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// Appends an entry to the open generation, if any, and persists it.
-pub(crate) fn record(entry: JournalEntry) {
+/// Returns the entry's index in the journal.
+pub(crate) fn record(entry: JournalEntry) -> Option<u32> {
     let shared = lock_unpoisoned(&CURRENT).clone();
-    if let Some(shared) = shared {
-        lock_unpoisoned(&shared).record(entry);
-    }
+    shared.map(|shared| lock_unpoisoned(&shared).record(entry))
+}
+
+/// Whether a generation is open in this process.
+pub(crate) fn is_active() -> bool {
+    lock_unpoisoned(&CURRENT).is_some()
 }
 
 /// RAII handle for the generation a command records into. Inactive scopes
@@ -212,11 +216,13 @@ impl Writer {
         Ok(writer)
     }
 
-    fn record(&mut self, entry: JournalEntry) {
+    fn record(&mut self, entry: JournalEntry) -> u32 {
+        let seq = self.generation.journal.len() as u32;
         self.generation.journal.push(entry);
         if let Err(err) = self.write() {
             warn!("bootstrap generations: could not persist a journal entry: {err:#}");
         }
+        seq
     }
 
     fn finish(&mut self, error: Option<String>, summary: Option<Summary>) -> Result<()> {
