@@ -230,6 +230,7 @@ dotfiles root before and after. See [Generations](/bootstrap/generations.html).
 mise bootstrap generations
 mise bootstrap generations show latest
 mise bootstrap generations show 12 --files
+mise bootstrap generations diff 11 12
 ```
 
 `mise bootstrap status --missing` checks the whole declarative bootstrap
