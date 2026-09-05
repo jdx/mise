@@ -221,6 +221,8 @@ jobs:
             jobs=4
           fi
           echo "TEST_TOOL_JOBS=$jobs" >> "$GITHUB_ENV"
+      # Validate newly published backend releases immediately; user installs keep
+      # the default release-age policy. Apply this only inside the test containers.
       - id: test-tools
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
@@ -256,6 +258,7 @@ jobs:
             -e TEST_TRANCHE_COUNT="$TEST_TRANCHE_COUNT" \
             -e MISE_EXPERIMENTAL=1 \
             -e MISE_LOCKFILE=1 \
+            -e MISE_MINIMUM_RELEASE_AGE=0 \
             -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
@@ -317,6 +320,7 @@ jobs:
             -e TEST_TOOL_JOBS="$TEST_TOOL_JOBS" \
             -e MISE_EXPERIMENTAL=1 \
             -e MISE_LOCKFILE=1 \
+            -e MISE_MINIMUM_RELEASE_AGE=0 \
             -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
