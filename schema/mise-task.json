@@ -175,8 +175,7 @@
               "unevaluatedProperties": false,
               "properties": {
                 "auto": {
-                  "description": "automatically touch an internal tracked file instead of specifying outputs",
-                  "enum": [true],
+                  "description": "automatically touch an internal tracked file instead of specifying outputs (false disables auto tracking)",
                   "type": "boolean"
                 }
               },
