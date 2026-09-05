@@ -7,7 +7,7 @@
   "$defs": {
     "backendFull": {
       "type": "string",
-      "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|forgejo|gem|github|gitlab|go|http|npm|pipx|pkgx|s3|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
+      "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|forgejo|gem|github|gitlab|go|http|npm|packslip|pipx|pkgx|s3|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
     },
     "optionValue": {
       "description": "Backend option value.",
