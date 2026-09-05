@@ -106,8 +106,10 @@ pub(crate) fn render(entries: &[JournalEntry]) -> Vec<String> {
     lines.into_iter().map(|(_, line)| line).collect()
 }
 
-/// Content-addressed bytes. Small content is inlined into the generation
-/// record; larger content is a file under `$MISE_STATE_DIR/bootstrap/blobs/`.
+/// Content-addressed bytes. Small content is inlined into the record;
+/// larger content is a git blob in the history repository, referenced from
+/// the checkpoint's `blobs/<sha256>` tree entry (or, when no repository is
+/// usable, a file under the index directory).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct Blob {
     pub sha256: String,
@@ -115,10 +117,14 @@ pub(crate) struct Blob {
     /// base64 of the bytes when they fit [`BLOB_INLINE_MAX`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline: Option<String>,
+    /// The git blob id when the content is in the repository.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git: Option<String>,
 }
 
+/// Sidecar content for the case without a usable git.
 pub(crate) fn blobs_dir_in(state_dir: &Path) -> PathBuf {
-    super::store::store_dir_in(state_dir).join("blobs")
+    super::store::index_dir_in(state_dir).join("blobs")
 }
 
 impl Blob {
@@ -133,6 +139,15 @@ impl Blob {
                 sha256,
                 size,
                 inline: Some(base64::engine::general_purpose::STANDARD.encode(bytes)),
+                git: None,
+            });
+        }
+        if let Some(oid) = super::scope::store_blob(&sha256, bytes)? {
+            return Ok(Self {
+                sha256,
+                size,
+                inline: None,
+                git: Some(oid),
             });
         }
         let dir = blobs_dir_in(state_dir);
@@ -145,6 +160,7 @@ impl Blob {
             sha256,
             size,
             inline: None,
+            git: None,
         })
     }
 }
@@ -501,7 +517,7 @@ pub(crate) fn commit_changes(pending: Vec<PendingChange>) {
             seq: change.seq,
             after: PathState::observe(&change.path),
         }) {
-            warn!("bootstrap generations: {err:#}");
+            warn!("history: {err:#}");
         }
     }
 }
@@ -511,7 +527,7 @@ pub(crate) fn note(message: impl Into<String>) {
     if let Err(err) = super::scope::record(JournalEntry::Note {
         message: message.into(),
     }) {
-        warn!("bootstrap generations: {err:#}");
+        warn!("history: {err:#}");
     }
 }
 
@@ -522,7 +538,7 @@ pub(crate) fn unrecorded(part: &str, item: impl Into<String>, reason: impl Into<
         item: item.into(),
         reason: reason.into(),
     }) {
-        warn!("bootstrap generations: {err:#}");
+        warn!("history: {err:#}");
     }
 }
 
@@ -539,6 +555,7 @@ mod tests {
         let big = vec![7u8; BLOB_INLINE_MAX as usize + 1];
         let stored = Blob::store_in(tmp.path(), &big).unwrap();
         assert!(stored.inline.is_none());
+        // no operation is open here, so the content lands in the sidecar dir
         let on_disk = blobs_dir_in(tmp.path()).join(&stored.sha256);
         assert_eq!(std::fs::read(&on_disk).unwrap(), big);
         // content-addressed: storing again is a no-op with the same id

@@ -6,14 +6,18 @@ mod apply;
 mod diff;
 mod edit;
 mod status;
+pub(crate) mod track;
 mod unapply;
+mod untrack;
 
 pub(crate) use add::DotfilesAdd;
 pub(crate) use apply::DotfilesApply;
 pub(crate) use diff::DotfilesDiff;
 pub(crate) use edit::DotfilesEdit;
 pub(crate) use status::DotfilesStatus;
+pub(crate) use track::DotfilesTrack;
 pub(crate) use unapply::DotfilesUnapply;
+pub(crate) use untrack::DotfilesUntrack;
 
 /// Load, validate, and filter whole-file and edit requests with the same
 /// target semantics for every command that acts on both kinds of entry.

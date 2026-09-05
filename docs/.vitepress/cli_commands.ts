@@ -89,7 +89,13 @@ export const commands: { [key: string]: Command } = {
           status: {
             hide: false,
           },
+          track: {
+            hide: false,
+          },
           unapply: {
+            hide: false,
+          },
+          untrack: {
             hide: false,
           },
         },
@@ -476,6 +482,43 @@ export const commands: { [key: string]: Command } = {
   },
   global: {
     hide: true,
+  },
+  history: {
+    hide: false,
+    subcommands: {
+      describe: {
+        hide: false,
+      },
+      diff: {
+        hide: false,
+      },
+      ls: {
+        hide: false,
+      },
+      paths: {
+        hide: false,
+        subcommands: {
+          add: {
+            hide: false,
+          },
+          remove: {
+            hide: false,
+          },
+          set: {
+            hide: false,
+          },
+        },
+      },
+      save: {
+        hide: false,
+      },
+      show: {
+        hide: false,
+      },
+      status: {
+        hide: false,
+      },
+    },
   },
   "hook-env": {
     hide: true,

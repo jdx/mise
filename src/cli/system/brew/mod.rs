@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::system::generations::GenerationScope;
+use crate::system::history::OperationScope;
 
 pub(super) mod tap;
 pub(super) mod untap;
@@ -27,14 +27,14 @@ impl SystemBrew {
         match self.command {
             Commands::Tap(cmd) => {
                 let dry_run = cmd.dry_run;
-                GenerationScope::wrap("bootstrap packages brew tap", "packages", dry_run, async {
+                OperationScope::wrap("bootstrap packages brew tap", "packages", dry_run, async {
                     cmd.run()
                 })
                 .await
             }
             Commands::Untap(cmd) => {
                 let dry_run = cmd.dry_run;
-                GenerationScope::wrap(
+                OperationScope::wrap(
                     "bootstrap packages brew untap",
                     "packages",
                     dry_run,
