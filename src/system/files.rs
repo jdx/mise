@@ -35,7 +35,7 @@ use crate::dirs;
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::path::PathExt;
-use crate::system::generations::journal;
+use crate::system::generations::journal::{self, Capture};
 use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
 
@@ -1584,7 +1584,13 @@ pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<boo
     if plan.todo.is_empty() && !has_reconciliation {
         if !opts.dry_run {
             for req in plan.record_symlink_each {
+                let pending = journal::begin_changes(
+                    DOTFILES_PART,
+                    &req.target_raw,
+                    [symlink_each_state_path(req)],
+                )?;
                 save_symlink_each_state(req);
+                journal::commit_changes(pending);
             }
         }
         info!("files: all files are applied");
@@ -1628,13 +1634,28 @@ pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<boo
     for link in &plan.reconciliation.stale_links {
         if link_points_to(&link.source, &link.target) {
             let item = link.target.display_user().to_string();
-            let pending = journal::begin_changes(DOTFILES_PART, &item, [link.target.clone()]);
+            // parents up to the entry target may be pruned once empty
+            let root = plan
+                .reconciliation
+                .targets
+                .iter()
+                .find(|target| link.target.starts_with(target));
+            let mut paths = vec![(link.target.clone(), Capture::Full)];
+            if let Some(root) = root {
+                paths.extend(
+                    dirs_between(&link.target, root)
+                        .into_iter()
+                        .map(|dir| (dir, Capture::Shallow)),
+                );
+            }
+            let pending = journal::begin_changes_with(DOTFILES_PART, &item, paths)?;
             file::remove_file(&link.target)?;
             journal::commit_changes(pending);
         }
     }
     for (req, rendered) in &plan.todo {
-        let pending = journal::begin_changes(DOTFILES_PART, &req.target_raw, touched_paths(req)?);
+        let pending =
+            journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
         apply_one(req, rendered.as_deref())?;
         if req.mode == FileMode::SymlinkEach {
             save_symlink_each_state(req);
@@ -1648,7 +1669,7 @@ pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<boo
                 DOTFILES_PART,
                 &req.target_raw,
                 [symlink_each_state_path(req)],
-            );
+            )?;
             save_symlink_each_state(req);
             journal::commit_changes(pending);
         }
@@ -1958,26 +1979,32 @@ pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> 
         }
     }
     for plan in todo {
-        let mut paths = plan.paths.clone();
+        let mut paths: Vec<(PathBuf, Capture)> = plan
+            .paths
+            .iter()
+            .map(|path| (path.clone(), Capture::Full))
+            .collect();
         if plan.clear_symlink_each_state {
-            paths.push(symlink_each_state_path(plan.req));
+            paths.push((symlink_each_state_path(plan.req), Capture::Full));
         }
         if plan.cleanup_empty_dirs {
-            paths.push(plan.req.target.clone());
+            // the upward walk removes directories that end up empty
+            for path in &plan.paths {
+                paths.extend(
+                    dirs_between(path, &plan.req.target)
+                        .into_iter()
+                        .map(|dir| (dir, Capture::Shallow)),
+                );
+            }
+            paths.push((plan.req.target.clone(), Capture::Shallow));
         }
-        let pending = journal::begin_changes(DOTFILES_PART, &plan.req.target_raw, paths);
+        let pending = journal::begin_changes_with(DOTFILES_PART, &plan.req.target_raw, paths)?;
         unapply_one(plan)?;
         if plan.clear_symlink_each_state {
             remove_symlink_each_state(plan.req)?;
         }
         journal::commit_changes(pending);
     }
-    crate::system::generations::journal::note(format!(
-        "dotfiles: unapplied {}",
-        todo.iter()
-            .map(|plan| plan.req.target_raw.clone())
-            .join(", ")
-    ));
     info!(
         "files: unapplied {}",
         todo.iter()
@@ -2539,43 +2566,76 @@ pub(crate) fn print_diffs(config: &Config, requests: &[FileRequest]) -> Result<(
 
 const DOTFILES_PART: &str = "dotfiles";
 
-/// Every path `apply_one` may create, replace, or remove for `req`, so the
-/// journal can capture their prior state first.
-fn touched_paths(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    let mut paths: IndexMap<PathBuf, ()> = IndexMap::new();
+/// Every path `apply_one` may create, replace, or remove for `req`, with how
+/// deeply to capture it first: a path that gets replaced is captured whole,
+/// a directory that stays a directory only by existence.
+fn touched_paths(req: &FileRequest) -> Result<Vec<(PathBuf, Capture)>> {
+    let mut paths: IndexMap<PathBuf, Capture> = IndexMap::new();
     for dir in missing_ancestors(&req.target) {
-        paths.insert(dir, ());
+        paths.insert(dir, Capture::Shallow);
     }
+    // a directory that will keep being a directory is never walked; a file
+    // or link in the way of one is replaced and captured whole
+    let dir_capture = |dir: &Path| {
+        if dir.is_dir() {
+            Capture::Shallow
+        } else {
+            Capture::Full
+        }
+    };
     match req.mode {
         FileMode::Symlink | FileMode::Template | FileMode::Content => {
-            paths.insert(req.target.clone(), ());
+            paths.insert(req.target.clone(), Capture::Full);
         }
         FileMode::Copy => {
-            paths.insert(req.target.clone(), ());
             if req.source.is_dir() {
+                paths.insert(req.target.clone(), dir_capture(&req.target));
                 for (_, target) in walk_source_files(req)? {
-                    paths.insert(target, ());
+                    // intermediate directories the copy creates on the way
+                    // down; an existing one keeps being a directory
+                    for dir in missing_ancestors(&target) {
+                        paths.entry(dir).or_insert(Capture::Shallow);
+                    }
+                    paths.insert(target, Capture::Full);
                 }
+            } else {
+                paths.insert(req.target.clone(), Capture::Full);
             }
         }
         FileMode::SymlinkEach => {
             for dir in needed_dirs(req)? {
-                paths.insert(dir, ());
+                let capture = dir_capture(&dir);
+                paths.insert(dir, capture);
             }
             for (_, target) in walk_source_files(req)? {
-                paths.insert(target, ());
+                paths.insert(target, Capture::Full);
             }
             for stale in stale_links(req)? {
-                paths.insert(stale, ());
+                paths.insert(stale, Capture::Full);
             }
-            paths.insert(symlink_each_state_path(req), ());
+            paths.insert(symlink_each_state_path(req), Capture::Full);
         }
     }
-    Ok(paths.into_keys().collect())
+    Ok(paths.into_iter().collect())
+}
+
+/// Directories strictly between `path` and `root`, deepest first: the ones an
+/// upward cleanup may remove once they are empty.
+fn dirs_between(path: &Path, root: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![];
+    let mut dir = path.parent();
+    while let Some(d) = dir {
+        if d == root || !d.starts_with(root) {
+            break;
+        }
+        dirs.push(d.to_path_buf());
+        dir = d.parent();
+    }
+    dirs
 }
 
 /// Ancestors of `path` that do not exist yet, outermost first.
-fn missing_ancestors(path: &Path) -> Vec<PathBuf> {
+pub(crate) fn missing_ancestors(path: &Path) -> Vec<PathBuf> {
     let mut missing = vec![];
     let mut dir = path.parent();
     while let Some(d) = dir {

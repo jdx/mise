@@ -188,7 +188,7 @@ assert "mise bootstrap generations --json | jq -r '[.[0].journal[] | select(.kin
 mkdir -p ~/.local/other
 echo hi >~/.local/other/file
 echo eleven >"$MISE_CONFIG_DIR/dotfiles/copied"
-assert_succeed "MISE_DOTFILES_ROOT=$HOME/.local mise bootstrap dotfiles apply --yes"
+assert_succeed "MISE_DOTFILES_ROOT=$HOME/.local mise bootstrap dotfiles apply --yes ~/.copied"
 tree="$(mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[] | select(.label == "dotfiles") | .tree')"
 assert_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "other/file"
 assert_not_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "state/mise"
