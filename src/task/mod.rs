@@ -711,7 +711,7 @@ pub(crate) struct Task {
     pub raw_args: bool,
     #[serde(default)]
     pub interactive: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_arr")]
     pub sources: Vec<String>,
     #[serde(default)]
     pub watch: Option<TaskWatchOptions>,
@@ -1434,7 +1434,14 @@ impl Task {
         task.raw = p.parse_bool("raw").unwrap_or_default();
         task.raw_args = p.parse_bool("raw_args").unwrap_or_default();
         task.interactive = p.parse_bool("interactive").unwrap_or_default();
-        task.sources = p.parse_array("sources").unwrap_or_default();
+        task.sources = p
+            .get_raw("sources")
+            .map(|v| {
+                deserialize_arr::<_, Vec<String>, String>(v.clone())
+                    .map_err(|e| eyre!("failed to parse sources field in task header: {e}"))
+            })
+            .transpose()?
+            .unwrap_or_default();
         task.watch = p
             .get_raw("watch")
             .map(|v| {
@@ -4541,6 +4548,28 @@ echo "hello world"
         expected.aliases = vec!["b".to_string()];
         expected.sources = vec!["Cargo.toml".to_string(), "src/**/*.rs".to_string()];
         assert_eq!(result.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn test_from_path_sources_single_string() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("test_task");
+
+        fs::write(
+            &task_path,
+            r#"#!/bin/bash
+#MISE sources="src/**/*.rs"
+echo "hello world"
+"#,
+        )
+        .unwrap();
+
+        let result = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path()).await;
+        assert_eq!(result.unwrap().sources, vec!["src/**/*.rs".to_string()]);
     }
 
     #[tokio::test]
