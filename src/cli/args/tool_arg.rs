@@ -151,6 +151,23 @@ impl Display for ToolArg {
 }
 
 fn parse_input(s: &str) -> (&str, Option<&str>) {
+    // An identity or URL in inline options may contain '@'. Only a separator
+    // after the closing bracket starts a version; scoped package names still
+    // follow the ordinary rules below.
+    if let Some((name, _, suffix)) = super::backend_arg::split_bracketed_opts_with_suffix(s)
+        && parse_input(name) == (name, None)
+    {
+        if suffix.is_empty() {
+            return (s, None);
+        }
+        if let Some(version) = suffix.strip_prefix('@') {
+            return (
+                &s[..s.len() - suffix.len()],
+                (!version.is_empty()).then_some(version),
+            );
+        }
+    }
+
     let Some((left, right)) = s.split_once('@') else {
         return (s, None);
     };
@@ -258,7 +275,7 @@ mod tests {
     #[tokio::test]
     async fn test_tool_arg_parse_input() {
         let _config = Config::get().await.unwrap();
-        let t = |input, f, v| {
+        let t = |input: &str, f: &str, v: Option<&str>| {
             let (backend, version) = parse_input(input);
             assert_eq!(backend, f);
             assert_eq!(version, v);
@@ -298,5 +315,26 @@ mod tests {
         t("@biomejs/biome@latest", "@biomejs/biome", Some("latest"));
         t("@biomejs/biome@1.0.0", "@biomejs/biome", Some("1.0.0"));
         t("@biomejs/biome@", "@biomejs/biome", None);
+        for backend in [
+            "packslip:packslip.dev[identity_prefix=https://github.com/jdx/packslip/.github/workflows/release.yml@,list_identity_prefix=https://github.com/jdx/packslip/.github/workflows/packslip-releases.yml@]",
+            "npm:@scope/tool[registry=https://user@example.com]",
+            "@scope/tool[registry=https://user@example.com]",
+            "http:tool[url='https://example.com/a]@b']",
+            r#"http:tool[values=["a@b", "c[d]"]]"#,
+        ] {
+            t(backend, backend, None);
+            t(&format!("{backend}@"), backend, None);
+            t(&format!("{backend}@1.0.0"), backend, Some("1.0.0"));
+            t(
+                &format!("{backend}@path:/tmp/[tool]"),
+                backend,
+                Some("path:/tmp/[tool]"),
+            );
+            t(
+                &format!("{backend}@ref:branch@name"),
+                backend,
+                Some("ref:branch@name"),
+            );
+        }
     }
 }

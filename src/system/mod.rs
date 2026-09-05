@@ -59,6 +59,7 @@ pub(crate) mod login_shell;
 pub(crate) mod managed_files;
 pub(crate) mod packages;
 pub(crate) mod remote;
+pub(crate) mod remote_repository;
 pub(crate) mod repos;
 pub(crate) mod resources;
 pub(crate) mod secrets;

@@ -96,6 +96,8 @@ pub(crate) struct RemoteHost {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RemoteOverrides {
+    /// Git onboarding does not use the inventory's archive source.
+    pub from_git: bool,
     pub source: Option<PathBuf>,
     pub mise_env: Option<Vec<String>>,
     pub copy_links: bool,
@@ -113,6 +115,7 @@ pub(crate) struct RemoteOverrides {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RemoteRunOptions {
+    pub relay: Option<crate::github_relay::Scope>,
     pub dry_run: bool,
     pub yes: bool,
     pub update: bool,
@@ -300,7 +303,7 @@ impl RemoteHost {
         } else if overrides.no_install_mise {
             self.install_mise = None;
         }
-        self.validate()
+        self.validate_with_source(!overrides.from_git)
     }
 
     pub(crate) fn destination(&self) -> String {
@@ -311,6 +314,10 @@ impl RemoteHost {
     }
 
     fn validate(&self) -> Result<()> {
+        self.validate_with_source(true)
+    }
+
+    fn validate_with_source(&self, archive: bool) -> Result<()> {
         validate_ssh_atom("host", &self.host)?;
         if let Some(user) = &self.user {
             validate_ssh_atom("user", user)?;
@@ -318,14 +325,14 @@ impl RemoteHost {
         if self.port == Some(0) {
             bail!("remote host '{}' port must be greater than zero", self.name);
         }
-        if !self.source.is_dir() {
+        if archive && !self.source.is_dir() {
             bail!(
                 "remote host '{}' source is not a directory: {}",
                 self.name,
                 self.source.display()
             );
         }
-        if !self.copy_links {
+        if archive && !self.copy_links {
             for link in &self.copy_link {
                 validate_copy_link(&self.source, link).wrap_err_with(|| {
                     format!("remote host '{}' has invalid copy_link", self.name)
@@ -405,41 +412,109 @@ pub(crate) async fn run(
     host: &RemoteHost,
     options: &RemoteRunOptions,
     artifacts: &mut RemoteArtifactResolver,
+    repository: Option<&super::remote_repository::Source>,
+) -> Result<()> {
+    run_inner(host, options, artifacts, repository).await
+}
+
+/// Observe cancellation inside resource ownership, so cleanup can still be awaited.
+pub(crate) async fn interruptible<T>(
+    operation: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    #[cfg(unix)]
+    {
+        crate::github_relay::unix::lifecycle(operation).await
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::select! {
+            result = operation => result,
+            _ = tokio::signal::ctrl_c() => Err(crate::request_exit(130)),
+        }
+    }
+}
+
+async fn run_inner(
+    host: &RemoteHost,
+    options: &RemoteRunOptions,
+    artifacts: &mut RemoteArtifactResolver,
+    repository: Option<&super::remote_repository::Source>,
 ) -> Result<()> {
     let ssh = crate::file::which("ssh").ok_or_else(|| eyre!("required command 'ssh' not found"))?;
     let tar = crate::file::which("tar").ok_or_else(|| eyre!("required command 'tar' not found"))?;
     let control_directory = if cfg!(unix) {
-        Some(tempfile::tempdir()?)
+        Some(
+            tempfile::Builder::new()
+                .prefix("mise-ssh-")
+                .tempdir_in("/tmp")?,
+        )
     } else {
         None
     };
     let session = SshSession {
         ssh,
         host,
+        relay: options.relay.is_some(),
         connect_timeout: options.connect_timeout,
         control_path: control_directory
             .as_ref()
             .map(|directory| directory.path().join("control")),
     };
     info!("bootstrap remote {} ({})", host.name, host.destination());
-    let staging = session
-        .output(&["sh", "-c", staging_creation_script()])?
-        .trim()
-        .to_string();
-    validate_staging_path(&staging)?;
-    let mut result = run_staged(&session, &tar, &staging, options, artifacts).await;
-    if options.keep_staging {
-        warn!("remote staging retained on {}: {staging}", host.name);
-    } else if let Err(cleanup_error) = session.status(&["rm", "-rf", "--", &staging], false) {
-        if result.is_ok() {
-            result = Err(cleanup_error);
+    let mut staging = None;
+    let result = interruptible(async {
+        let path = session
+            .output_async(&["sh", "-c", staging_creation_script()])
+            .await?
+            .trim()
+            .to_string();
+        validate_staging_path(&path)?;
+        staging = Some(path);
+        run_staged(
+            &session,
+            &tar,
+            staging.as_deref().unwrap(),
+            options,
+            artifacts,
+            repository,
+        )
+        .await
+    })
+    .await;
+    finish_session(&session, staging.as_deref(), options.keep_staging, result).await
+}
+
+// Cleanup deliberately lives outside the interruptible future. Two bounded
+// attempts handle transient failures without blocking a Tokio worker in Drop.
+async fn finish_session(
+    session: &SshSession<'_>,
+    staging: Option<&str>,
+    retain: bool,
+    mut result: Result<()>,
+) -> Result<()> {
+    if let Some(path) = staging {
+        if retain {
+            warn!("remote staging retained on {}: {path}", session.host.name);
         } else {
-            warn!(
-                "failed to clean remote staging on {}: {cleanup_error:#}",
-                host.name
-            );
+            let mut cleanup = Err(eyre!("remote cleanup not attempted"));
+            for _ in 0..2 {
+                cleanup = session.cleanup(path).await;
+                if cleanup.is_ok() {
+                    break;
+                }
+            }
+            if let Err(error) = cleanup {
+                warn!(
+                    "failed to clean remote staging on {}: {path}: {error:#}",
+                    session.host.name
+                );
+                if result.is_ok() {
+                    result = Err(error);
+                }
+            }
         }
     }
+    session.close().await;
     result
 }
 
@@ -465,16 +540,75 @@ async fn run_staged(
     staging: &str,
     options: &RemoteRunOptions,
     artifacts: &mut RemoteArtifactResolver,
+    repository: Option<&super::remote_repository::Source>,
 ) -> Result<()> {
     let project = format!("{staging}/project");
-    session.status(&["mkdir", "-p", &project], false)?;
-    upload_source(session, tar, &project)?;
+    session
+        .status_async(&["mkdir", "-p", &project], false)
+        .await?;
+    if repository.is_none() {
+        upload_source(session, tar, &project).await?;
+    }
     let mise = provision_mise(session, staging, &project, options.dry_run, artifacts).await?;
+    #[cfg(unix)]
+    let relay = match &options.relay {
+        Some(scope) => Some(start_relay(session, staging, scope.clone()).await?),
+        None => None,
+    };
+    let project = if let Some(repository) = repository {
+        let bundle = format!("{staging}/repository.bundle");
+        session
+            .status_with_stdin_async(
+                &["sh", "-c", &format!("cat > {}", shell_quote(&bundle))],
+                File::open(&repository.bundle)?,
+            )
+            .await?;
+        let mut install = vec![
+            mise.as_str(),
+            "ssh",
+            "--repository-bundle",
+            bundle.as_str(),
+            "--repository-origin",
+            &repository.origin,
+            "--repository-revision",
+            &repository.revision,
+        ];
+        if options.update {
+            install.push("--repository-update");
+        }
+        if options.yes {
+            install.push("--repository-yes");
+        }
+        // The helper uses the target's XDG/global-config environment. Only its
+        // absolute result, never the staging directory, becomes trusted config.
+        let path = session
+            .output_async(&[&mise, "ssh", "--global-config-directory"])
+            .await?
+            .trim()
+            .to_string();
+        if !path.starts_with('/') || path.contains(['\n', '\r']) {
+            bail!("invalid remote global configuration path");
+        }
+        session.status_async(&install, true).await?;
+        path
+    } else {
+        project
+    };
     let mut argv = vec![
         "env".to_string(),
         format!("MISE_TRUSTED_CONFIG_PATHS={project}"),
     ];
     argv.push(format!("MISE_ENV={}", session.host.mise_env.join(",")));
+    #[cfg(unix)]
+    if relay.is_some() {
+        argv.extend([
+            mise.clone(),
+            "ssh".into(),
+            "--relay-session".into(),
+            format!("{staging}/github.sock"),
+            "--".into(),
+        ]);
+    }
     argv.extend([mise, "--cd".to_string(), project, "bootstrap".to_string()]);
     if options.dry_run {
         argv.push("--dry-run".to_string());
@@ -498,10 +632,105 @@ async fn run_staged(
         argv.extend(["--only".to_string(), part.clone()]);
     }
     let argv = argv.iter().map(String::as_str).collect::<Vec<_>>();
-    session.status(&argv, true)
+    let result = session.status_async(&argv, true).await;
+    if options.relay.is_some() {
+        info!(
+            "borrowed GitHub access has ended; future private updates require remote credentials or another relay-enabled session"
+        );
+    }
+    result
 }
 
-fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<()> {
+#[cfg(unix)]
+async fn start_relay(
+    session: &SshSession<'_>,
+    staging: &str,
+    scope: crate::github_relay::Scope,
+) -> Result<crate::github_relay::unix::Relay> {
+    let relay = crate::github_relay::unix::Relay::start(scope, &session.host.name).await?;
+    let control = session
+        .control_path
+        .as_ref()
+        .ok_or_else(|| eyre!("relay requires an owned SSH control connection"))?;
+    let status = tokio::process::Command::new(&session.ssh)
+        .kill_on_drop(true)
+        .arg("-S")
+        .arg(control)
+        .args(["-O", "forward", "-o", "ExitOnForwardFailure=yes", "-R"])
+        .arg(format!(
+            "{staging}/github.sock:{}",
+            relay.socket().display()
+        ))
+        .arg(session.host.destination())
+        .status()
+        .await?;
+    if !status.success() {
+        bail!("GitHub relay socket forwarding failed");
+    }
+    Ok(relay)
+}
+
+#[cfg(unix)]
+pub(crate) async fn ssh(
+    host: &RemoteHost,
+    scope: crate::github_relay::Scope,
+    command: &[String],
+) -> Result<()> {
+    crate::ui::ctrlc::exit_on_ctrl_c(false);
+    let directory = tempfile::Builder::new()
+        .prefix("mise-ssh-")
+        .tempdir_in("/tmp")?;
+    let session = SshSession {
+        ssh: crate::file::which("ssh").ok_or_else(|| eyre!("ssh not found"))?,
+        host,
+        relay: true,
+        connect_timeout: 10,
+        control_path: Some(directory.path().join("control")),
+    };
+    let mut staging = None;
+    let result = interruptible(async {
+        let path = session
+            .output_async(&["sh", "-c", staging_creation_script()])
+            .await?
+            .trim()
+            .to_string();
+        validate_staging_path(&path)?;
+        staging = Some(path);
+        let staging = staging.as_deref().unwrap();
+        let project = format!("{staging}/project");
+        session
+            .status_async(&["mkdir", "-p", &project], false)
+            .await?;
+        let mise = provision_mise(
+            &session,
+            staging,
+            &project,
+            false,
+            &mut RemoteArtifactResolver::default(),
+        )
+        .await?;
+        let _relay = start_relay(&session, staging, scope).await?;
+        let mut argv = vec![
+            mise,
+            "ssh".into(),
+            "--relay-session".into(),
+            format!("{staging}/github.sock"),
+            "--".into(),
+        ];
+        argv.extend_from_slice(command);
+        session
+            .status_async(&argv.iter().map(String::as_str).collect::<Vec<_>>(), true)
+            .await
+    })
+    .await;
+    let result = finish_session(&session, staging.as_deref(), false, result).await;
+    info!(
+        "borrowed GitHub access has ended; future private updates require remote credentials or another relay-enabled session"
+    );
+    result
+}
+
+async fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<()> {
     let temporary = tempfile::tempdir()?;
     let archive = temporary.path().join("source.tar.gz");
     let archive_source = if session.host.copy_links || session.host.copy_link.is_empty() {
@@ -515,7 +744,8 @@ fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<
         }
         source
     };
-    let mut command = Command::new(tar);
+    let mut command = tokio::process::Command::new(tar);
+    command.kill_on_drop(true);
     command.args(["-czf"]);
     command.arg(&archive);
     if session.host.copy_links {
@@ -524,11 +754,18 @@ fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<
     for exclude in &session.host.exclude {
         command.arg(format!("--exclude={exclude}"));
     }
-    let status = command.args(["-C"]).arg(archive_source).arg(".").status()?;
+    let status = command
+        .args(["-C"])
+        .arg(archive_source)
+        .arg(".")
+        .status()
+        .await?;
     if !status.success() {
         bail!("failed to archive remote source with {status}");
     }
-    session.status_with_stdin(&["tar", "-xzf", "-", "-C", project], File::open(archive)?)
+    session
+        .status_with_stdin_async(&["tar", "-xzf", "-", "-C", project], File::open(archive)?)
+        .await
 }
 
 fn validate_copy_link(source: &Path, link: &Path) -> Result<()> {
@@ -646,47 +883,50 @@ async fn provision_mise(
 ) -> Result<String> {
     if let Some(remote_mise) = &session.host.remote_mise {
         let remote_mise = resolve_configured_remote_mise(session, remote_mise, project)
+            .await
             .wrap_err_with(|| {
                 format!(
                     "remote host '{}' has an invalid remote_mise value",
                     session.host.name
                 )
             })?;
-        session.status(&[&remote_mise, "version"], false)?;
+        session
+            .status_async(&[&remote_mise, "version"], false)
+            .await?;
         return Ok(remote_mise);
     }
     if let Some(command) = &session.host.bootstrap_command {
         if dry_run {
-            let mise = resolve_remote_mise(session).wrap_err_with(|| {
+            let mise = resolve_remote_mise(session).await.wrap_err_with(|| {
                 format!(
                     "remote host '{}' has no existing mise executable; --dry-run does not execute bootstrap_command, so install mise first or set remote_mise or mise_bin",
                     session.host.name
                 )
             })?;
-            session.status(&[&mise, "version"], false)?;
+            session.status_async(&[&mise, "version"], false).await?;
             return Ok(mise);
         }
-        let before = discover_remote_mise_candidates(session)?;
-        let before_identities = remote_mise_candidate_identities(session, &before);
+        let before = discover_remote_mise_candidates(session).await?;
+        let before_identities = remote_mise_candidate_identities(session, &before).await;
         let candidates_file = format!("{staging}/mise-candidates");
         let lookup = remote_mise_candidate_union_script();
         let script = format!(
             "set -e\n{command}\n{lookup} > {}",
             shell_quote(&candidates_file),
         );
-        session.status(&["sh", "-lc", &script], true)?;
-        let candidates = session.output(&["cat", &candidates_file])?;
+        session.status_async(&["sh", "-lc", &script], true).await?;
+        let candidates = session.output_async(&["cat", &candidates_file]).await?;
         let candidates = parse_remote_mise_candidates(&candidates)?;
-        let after_identities = remote_mise_candidate_identities(session, &candidates);
+        let after_identities = remote_mise_candidate_identities(session, &candidates).await;
         let mise =
             select_bootstrapped_mise(&before, &before_identities, &candidates, &after_identities)?;
-        session.status(&[&mise, "version"], false)?;
+        session.status_async(&[&mise, "version"], false).await?;
         return Ok(mise);
     }
     let binary = if let Some(binary) = &session.host.mise_bin {
         binary.clone()
     } else {
-        let platform = detect_remote_platform(session)?;
+        let platform = detect_remote_platform(session).await?;
         let local_os = normalize_os(std::env::consts::OS);
         let local_arch = normalize_arch(std::env::consts::ARCH);
         let local = std::env::current_exe()?;
@@ -697,6 +937,7 @@ async fn provision_mise(
             ))
         } else {
             validate_default_binary_compatibility(session, &local, &platform.os)
+                .await
                 .err()
                 .map(|error| format!("{error:#}"))
         };
@@ -720,43 +961,42 @@ async fn provision_mise(
     let remote = match &session.host.install_mise {
         // A dry run stays inside the staging directory it already cleans up.
         Some(install_mise) if dry_run => {
-            info!(
-                "would install mise to {} on {}",
-                resolve_remote_install_path(session, install_mise)?,
-                session.host.name
-            );
-            stage_mise(session, &binary, staging)?
+            let target = resolve_remote_install_path(session, install_mise).await?;
+            info!("would install mise to {} on {}", target, session.host.name);
+            stage_mise(session, &binary, staging).await?
         }
         Some(install_mise) => {
-            let target = resolve_remote_install_path(session, install_mise)?;
-            install_remote_mise(session, &binary, &target)?;
+            let target = resolve_remote_install_path(session, install_mise).await?;
+            install_remote_mise(session, &binary, &target).await?;
             target
         }
-        None => stage_mise(session, &binary, staging)?,
+        None => stage_mise(session, &binary, staging).await?,
     };
-    session.status(&[&remote, "version"], false).wrap_err_with(|| {
+    session.status_async(&[&remote, "version"], false).await.wrap_err_with(|| {
         format!(
             "provisioned mise cannot run on remote host '{}'; set mise_bin, remote_mise, or bootstrap_command",
             session.host.name
         )
     })?;
     if session.host.install_mise.is_some() && !dry_run {
-        warn_when_installed_mise_is_off_login_path(session, &remote);
+        warn_when_installed_mise_is_off_login_path(session, &remote).await;
     }
     Ok(remote)
 }
 
-fn stage_mise(session: &SshSession<'_>, binary: &Path, staging: &str) -> Result<String> {
+async fn stage_mise(session: &SshSession<'_>, binary: &Path, staging: &str) -> Result<String> {
     let remote = format!("{staging}/mise");
-    session.upload_executable(binary, &remote)?;
+    session.upload_executable(binary, &remote).await?;
     Ok(remote)
 }
 
-fn resolve_remote_install_path(session: &SshSession<'_>, path: &str) -> Result<String> {
+async fn resolve_remote_install_path(session: &SshSession<'_>, path: &str) -> Result<String> {
     let Some(suffix) = path.strip_prefix("~/") else {
         return Ok(path.to_string());
     };
-    let output = session.output(&["sh", "-lc", "printf '%s\\n' \"$HOME\""])?;
+    let output = session
+        .output_async(&["sh", "-lc", "printf '%s\\n' \"$HOME\""])
+        .await?;
     let home = validated_absolute_remote_path_output(&output, "remote login home")?;
     let target = format!("{}/{suffix}", home.trim_end_matches('/'));
     validate_install_mise_path(&target)?;
@@ -765,9 +1005,12 @@ fn resolve_remote_install_path(session: &SshSession<'_>, path: &str) -> Result<S
 
 /// Installs the provisioned executable at a persistent remote path so the host
 /// keeps a usable mise once the staging directory is removed.
-fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) -> Result<()> {
+async fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) -> Result<()> {
     let expected = crate::hash::file_hash_sha256(binary, None)?;
-    if remote_executable_sha256(session, target)?.is_some_and(|installed| installed == expected) {
+    if remote_executable_sha256(session, target)
+        .await?
+        .is_some_and(|installed| installed == expected)
+    {
         info!(
             "mise is already installed at {target} on {}",
             session.host.name
@@ -776,10 +1019,12 @@ fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) ->
     }
     let file = File::open(binary)
         .wrap_err_with(|| format!("failed to open mise binary {}", binary.display()))?;
-    session.status_with_stdin(&["sh", "-c", &install_mise_script(target)], file)?;
+    session
+        .status_with_stdin_async(&["sh", "-c", &install_mise_script(target)], file)
+        .await?;
     // An install path can be writable by more than the SSH account, so confirm
     // the executable about to run is the one that was just written.
-    match remote_executable_sha256(session, target)? {
+    match remote_executable_sha256(session, target).await? {
         Some(installed) if installed != expected => bail!(
             "{target} on '{}' changed after it was installed; another writer owns that path",
             session.host.name
@@ -837,7 +1082,10 @@ fn remote_parent_directory(target: &str) -> &str {
 
 /// `None` when the path is missing or the host cannot compute SHA-256, which
 /// only costs an upload that would otherwise have been skipped.
-fn remote_executable_sha256(session: &SshSession<'_>, target: &str) -> Result<Option<String>> {
+async fn remote_executable_sha256(
+    session: &SshSession<'_>,
+    target: &str,
+) -> Result<Option<String>> {
     let script = format!(
         r#"target={}
 if [ ! -f "$target" ]; then
@@ -850,7 +1098,11 @@ elif command -v shasum >/dev/null 2>&1; then
 fi"#,
         shell_quote(target)
     );
-    let digest = session.output(&["sh", "-c", &script])?.trim().to_string();
+    let digest = session
+        .output_async(&["sh", "-c", &script])
+        .await?
+        .trim()
+        .to_string();
     if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Ok(None);
     }
@@ -859,7 +1111,7 @@ fi"#,
 
 /// An installed executable is only reachable later when its directory is on the
 /// login PATH, so report that once instead of leaving a silent surprise.
-fn warn_when_installed_mise_is_off_login_path(session: &SshSession<'_>, target: &str) {
+async fn warn_when_installed_mise_is_off_login_path(session: &SshSession<'_>, target: &str) {
     let script = format!(
         r#"case ":$PATH:" in
   *:{}:*) printf 'yes\n' ;;
@@ -867,7 +1119,7 @@ fn warn_when_installed_mise_is_off_login_path(session: &SshSession<'_>, target: 
 esac"#,
         shell_quote(remote_parent_directory(target))
     );
-    match session.output(&["sh", "-lc", &script]) {
+    match session.output_async(&["sh", "-lc", &script]).await {
         Ok(output) if output.trim() == "no" => warn!(
             "{target} is not on {}'s login PATH; add its directory to PATH or declare [bootstrap.mise_shell_activate] in the bootstrap project",
             session.host.name
@@ -880,23 +1132,25 @@ esac"#,
     }
 }
 
-fn resolve_remote_mise(session: &SshSession<'_>) -> Result<String> {
+async fn resolve_remote_mise(session: &SshSession<'_>) -> Result<String> {
     let script = remote_mise_output_script();
-    let mise = session.output(&["sh", "-lc", &script])?;
+    let mise = session.output_async(&["sh", "-lc", &script]).await?;
     validated_remote_command_output(&mise)
 }
 
-fn resolve_configured_remote_mise(
+async fn resolve_configured_remote_mise(
     session: &SshSession<'_>,
     command: &str,
     project: &str,
 ) -> Result<String> {
     validate_remote_executable(command)?;
     if !command.contains('/') {
-        return resolve_login_path_executable(session, command);
+        return resolve_login_path_executable(session, command).await;
     }
     let remote_home = if command.starts_with("~/") {
-        let output = session.output(&["sh", "-lc", "printf '%s\\n' \"$HOME\""])?;
+        let output = session
+            .output_async(&["sh", "-lc", "printf '%s\\n' \"$HOME\""])
+            .await?;
         Some(validated_absolute_remote_path_output(
             &output,
             "remote login home",
@@ -907,7 +1161,7 @@ fn resolve_configured_remote_mise(
     resolve_remote_mise_path(command, project, remote_home.as_deref())
 }
 
-fn resolve_login_path_executable(session: &SshSession<'_>, command: &str) -> Result<String> {
+async fn resolve_login_path_executable(session: &SshSession<'_>, command: &str) -> Result<String> {
     let script = format!(
         r#"command_path=$(command -v {} 2>/dev/null || true)
 case "$command_path" in
@@ -917,7 +1171,7 @@ esac"#,
         shell_quote(command),
         shell_quote(command),
     );
-    let output = session.output(&["sh", "-lc", &script])?;
+    let output = session.output_async(&["sh", "-lc", &script]).await?;
     validated_absolute_remote_path_output(&output, "remote login executable")
 }
 
@@ -975,9 +1229,9 @@ fn remote_mise_output_script() -> String {
     )
 }
 
-fn discover_remote_mise_candidates(session: &SshSession<'_>) -> Result<Vec<String>> {
+async fn discover_remote_mise_candidates(session: &SshSession<'_>) -> Result<Vec<String>> {
     let script = remote_mise_candidate_union_script();
-    let output = session.output(&["sh", "-lc", &script])?;
+    let output = session.output_async(&["sh", "-lc", &script]).await?;
     parse_remote_mise_candidates(&output)
 }
 
@@ -1024,35 +1278,36 @@ struct RemoteMiseIdentity {
     fingerprint: String,
 }
 
-fn remote_mise_candidate_identities(
+async fn remote_mise_candidate_identities(
     session: &SshSession<'_>,
     candidates: &[String],
 ) -> IndexMap<String, Option<RemoteMiseIdentity>> {
-    candidates
-        .iter()
-        .map(|candidate| {
-            let identity = session
-                .output(&[candidate, "version"])
-                .and_then(|version| {
-                    remote_mise_fingerprint(session, candidate).map(|fingerprint| {
-                        RemoteMiseIdentity {
-                            version: version.trim().to_string(),
-                            fingerprint,
-                        }
-                    })
-                })
-                .ok();
-            (candidate.clone(), identity)
-        })
-        .collect()
+    let mut identities = IndexMap::new();
+    for candidate in candidates {
+        let identity: Result<RemoteMiseIdentity> = async {
+            let version = session.output_async(&[candidate, "version"]).await?;
+            let fingerprint = remote_mise_fingerprint(session, candidate).await?;
+            Ok(RemoteMiseIdentity {
+                version: version.trim().to_string(),
+                fingerprint,
+            })
+        }
+        .await;
+        identities.insert(candidate.clone(), identity.ok());
+    }
+    identities
 }
 
-fn remote_mise_fingerprint(session: &SshSession<'_>, candidate: &str) -> Result<String> {
+async fn remote_mise_fingerprint(session: &SshSession<'_>, candidate: &str) -> Result<String> {
     let candidate = shell_quote(candidate);
     let script = format!(
         "if command -v sha256sum >/dev/null 2>&1; then sha256sum {candidate}; elif command -v shasum >/dev/null 2>&1; then shasum -a 256 {candidate}; else cksum {candidate}; fi"
     );
-    Ok(session.output(&["sh", "-c", &script])?.trim().to_string())
+    Ok(session
+        .output_async(&["sh", "-c", &script])
+        .await?
+        .trim()
+        .to_string())
 }
 
 fn select_bootstrapped_mise(
@@ -1350,8 +1605,10 @@ fn official_release_assets(os: &str, arch: &str) -> Result<Vec<String>> {
     }
 }
 
-fn detect_remote_platform(session: &SshSession<'_>) -> Result<RemotePlatform> {
-    let output = session.output(&["sh", "-c", remote_platform_script()])?;
+async fn detect_remote_platform(session: &SshSession<'_>) -> Result<RemotePlatform> {
+    let output = session
+        .output_async(&["sh", "-c", remote_platform_script()])
+        .await?;
     parse_remote_platform(&output).wrap_err_with(|| {
         format!(
             "could not detect the platform for remote host '{}'; set mise_bin, remote_mise, or bootstrap_command",
@@ -1422,7 +1679,7 @@ impl fmt::Display for AbiVersion {
     }
 }
 
-fn validate_default_binary_compatibility(
+async fn validate_default_binary_compatibility(
     session: &SshSession<'_>,
     binary: &Path,
     remote_os: &str,
@@ -1445,7 +1702,7 @@ fn validate_default_binary_compatibility(
         "if test -x {loader}; then {loader} --version 2>&1 || true; else printf '%s\\n' MISE_LOADER_MISSING; fi",
         loader = shell_quote(&interpreter),
     );
-    let remote_output = session.output(&["sh", "-c", &check])?;
+    let remote_output = session.output_async(&["sh", "-c", &check]).await?;
     if remote_output
         .lines()
         .any(|line| line == "MISE_LOADER_MISSING")
@@ -1675,6 +1932,7 @@ fn parse_libc_flavor(output: &str) -> Option<LibcFlavor> {
 }
 
 struct SshSession<'a> {
+    relay: bool,
     ssh: PathBuf,
     host: &'a RemoteHost,
     connect_timeout: u16,
@@ -1682,11 +1940,31 @@ struct SshSession<'a> {
 }
 
 impl SshSession<'_> {
+    async fn status_async(&self, remote_argv: &[&str], tty: bool) -> Result<()> {
+        let mut command = tokio::process::Command::new(&self.ssh);
+        command.args(self.args(tty, remote_argv)).kill_on_drop(true);
+        #[cfg(unix)]
+        let status = crate::github_relay::unix::wait_command(&mut command, None).await?;
+        #[cfg(not(unix))]
+        let status = command.status().await?;
+        if !status.success() {
+            return Err(crate::request_exit(status.code().unwrap_or(255)));
+        }
+        Ok(())
+    }
     fn args(&self, tty: bool, remote_argv: &[&str]) -> Vec<String> {
         let mut args = vec![
             "-o".to_string(),
             format!("ConnectTimeout={}", self.connect_timeout),
         ];
+        if self.relay {
+            args.extend([
+                "-o".into(),
+                "ServerAliveInterval=15".into(),
+                "-o".into(),
+                "ServerAliveCountMax=2".into(),
+            ]);
+        }
         if let Some(control_path) = &self.control_path {
             args.extend([
                 "-o".to_string(),
@@ -1718,43 +1996,36 @@ impl SshSession<'_> {
         args
     }
 
-    fn output(&self, remote_argv: &[&str]) -> Result<String> {
+    async fn output_async(&self, remote_argv: &[&str]) -> Result<String> {
         let args = self.args(false, remote_argv);
         info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
-        let output = Command::new(&self.ssh).args(&args).output()?;
+        let output = tokio::process::Command::new(&self.ssh)
+            .args(args)
+            .kill_on_drop(true)
+            .output()
+            .await?;
         checked_output(output, &self.host.name)
     }
 
-    fn status(&self, remote_argv: &[&str], tty: bool) -> Result<()> {
-        let args = self.args(tty, remote_argv);
-        info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
-        let status = Command::new(&self.ssh).args(args).status()?;
-        if !status.success() {
-            bail!(
-                "remote command on '{}' failed with {status}",
-                self.host.name
-            );
-        }
-        Ok(())
-    }
-
-    fn status_with_stdin(&self, remote_argv: &[&str], input: File) -> Result<()> {
+    async fn status_with_stdin_async(&self, remote_argv: &[&str], input: File) -> Result<()> {
         let args = self.args(false, remote_argv);
         info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
-        let status = Command::new(&self.ssh)
+        let status = tokio::process::Command::new(&self.ssh)
             .args(args)
             .stdin(Stdio::from(input))
-            .status()?;
+            .kill_on_drop(true)
+            .status()
+            .await?;
         if !status.success() {
             bail!("remote upload to '{}' failed with {status}", self.host.name);
         }
         Ok(())
     }
 
-    fn upload_executable(&self, local: &Path, remote: &str) -> Result<()> {
+    async fn upload_executable(&self, local: &Path, remote: &str) -> Result<()> {
         let file = File::open(local)
             .wrap_err_with(|| format!("failed to open mise binary {}", local.display()))?;
-        self.status_with_stdin(
+        self.status_with_stdin_async(
             &[
                 "sh",
                 "-c",
@@ -1766,32 +2037,45 @@ impl SshSession<'_> {
             ],
             file,
         )
+        .await
     }
 
-    fn close(&self) {
+    async fn cleanup(&self, path: &str) -> Result<()> {
+        validate_staging_path(path)?;
+        let mut command = tokio::process::Command::new(&self.ssh);
+        command
+            .args(self.args(false, &["rm", "-rf", "--", path]))
+            .kill_on_drop(true);
+        let status = tokio::time::timeout(std::time::Duration::from_secs(5), command.status())
+            .await
+            .map_err(|_| eyre!("remote cleanup timed out"))??;
+        if !status.success() {
+            bail!("remote cleanup failed with {status}");
+        }
+        Ok(())
+    }
+
+    async fn close(&self) {
         let Some(control_path) = &self.control_path else {
             return;
         };
-        let status = Command::new(&self.ssh)
+        let mut command = tokio::process::Command::new(&self.ssh);
+        command
+            .kill_on_drop(true)
             .args(["-S"])
             .arg(control_path)
             .args(["-O", "exit"])
             .arg(self.host.destination())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if status.is_ok_and(|status| !status.success()) {
+            .stderr(Stdio::null());
+        let status =
+            tokio::time::timeout(std::time::Duration::from_secs(2), command.status()).await;
+        if !matches!(status, Ok(Ok(status)) if status.success()) {
             debug!(
-                "SSH control connection for {} was already closed",
+                "SSH control connection for {} did not confirm closure (failed or timed out)",
                 self.host.name
             );
         }
-    }
-}
-
-impl Drop for SshSession<'_> {
-    fn drop(&mut self) {
-        self.close();
     }
 }
 
@@ -2102,6 +2386,22 @@ mod tests {
         assert_eq!(host.host, "example.com");
         assert_eq!(host.destination(), "ubuntu@example.com");
         assert!(ad_hoc_host("-oProxyCommand=bad", std::env::current_dir().unwrap(), &[]).is_err());
+    }
+
+    #[test]
+    fn git_onboarding_ignores_archive_source_but_validates_ssh() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut host = ad_hoc_host("devbox", temp.path().into(), &[]).unwrap();
+        host.source = temp.path().join("absent");
+        host.copy_link.push(PathBuf::from("absent-link"));
+        assert!(host.apply_overrides(&RemoteOverrides::default()).is_err());
+        let overrides = RemoteOverrides {
+            from_git: true,
+            ..Default::default()
+        };
+        host.apply_overrides(&overrides).unwrap();
+        host.port = Some(0);
+        assert!(host.apply_overrides(&overrides).is_err());
     }
 
     #[test]

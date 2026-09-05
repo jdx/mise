@@ -16,7 +16,7 @@ young, and its own version is what says what a manifest may contain.
 With [mise activated](/getting-started.html), install packslip itself:
 
 ```sh
-mise use -g packslip:github.com/jdx/packslip
+mise use -g packslip
 packslip version
 ```
 
@@ -25,8 +25,10 @@ For a project configuration:
 
 ```toml
 [tools]
-"packslip:github.com/jdx/packslip" = "latest"
+packslip = "latest"
 ```
+
+The registry entry supplies Packslip's signer policy.
 
 ### Project names and discovery
 
@@ -62,7 +64,7 @@ GitHub has a release-API integration; other hosts need the signed-list location.
 List the project's available versions with:
 
 ```sh
-mise ls-remote packslip:github.com/jdx/packslip
+mise ls-remote packslip
 ```
 
 Packslip versions use semver, including compatible date versions such as
@@ -284,6 +286,18 @@ its `.pub` file. The vendor list and release bundles must verify against it.
 Pin a keyless signer using an exact certificate identity or an identity prefix,
 plus its OIDC issuer. These options can replace the policy derived from a forge
 name. Keep the trailing slash when pinning a repository prefix.
+
+### `list_identity_prefix`
+
+When a different workflow signs the vendor's release list, pin its certificate
+identity prefix separately. It replaces `identity` and `identity_prefix` only
+for the vendor's list; release bundles still require their original signer.
+The OIDC `issuer` is shared (including an issuer derived from a forge project).
+Without this option, the list uses the same policy as release bundles.
+
+The value must be a non-empty string and requires an issuer. It cannot be
+combined with `pubkey`. It does not affect configured stampers, whose lists
+use their own pins.
 
 ### `allow_unlogged`
 

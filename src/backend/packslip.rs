@@ -110,6 +110,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "pubkey",
         "identity",
         "identity_prefix",
+        "list_identity_prefix",
         "issuer",
         "allow_unlogged",
         "ignore_requirements",
@@ -417,6 +418,7 @@ fn locate_entry(install_path: &Path, rel: &str, wanted: fn(&Path) -> bool) -> Op
 
 /// What the consumer pinned: the forge identity a name implies, or the key
 /// or identity given in the tool options.
+#[derive(Clone)]
 pub(crate) enum Pin {
     Identity(Policy),
     Key(packslip::minisign::PublicKey),
@@ -450,6 +452,28 @@ fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
 }
 
 impl Pin {
+    /// A vendor may publish its index from a different workflow than its bundles.
+    /// The override replaces only the list's subject constraint, retaining the issuer.
+    fn for_release_list(&self, opts: &PackslipOptions<'_>) -> Result<Self> {
+        let Some(value) = opts.raw.opts.get("list_identity_prefix") else {
+            return Ok(self.clone());
+        };
+        let Some(prefix) = value.as_str().filter(|prefix| !prefix.trim().is_empty()) else {
+            bail!("packslip: list_identity_prefix must be a non-empty string");
+        };
+        let Self::Identity(policy) = self else {
+            bail!("packslip: list_identity_prefix cannot be combined with pubkey");
+        };
+        if policy.issuer.as_deref().is_none_or(str::is_empty) {
+            bail!("packslip: list_identity_prefix requires an issuer");
+        }
+        Ok(Self::Identity(Policy {
+            issuer: policy.issuer.clone(),
+            identity: None,
+            identity_prefix: Some(prefix.to_string()),
+        }))
+    }
+
     fn trust(&self) -> Trust<'_> {
         match self {
             Pin::Identity(policy) => Trust::Identity(policy),
@@ -596,11 +620,12 @@ impl PackslipBackend {
         pin: &Pin,
         opts: &PackslipOptions<'_>,
     ) -> Result<ReleaseListStatement> {
+        let pin = pin.for_release_list(opts)?;
         let url = well_known_url(project);
         let text = HTTP_FETCH.get_text(&url).await.wrap_err_with(|| {
             format!("fetching the release list of packslip:{project} from {url}")
         })?;
-        let list = verify_release_list(&text, pin, !opts.allow_unlogged())
+        let list = verify_release_list(&text, &pin, !opts.allow_unlogged())
             .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
         if list.predicate.project != project {
             bail!(
@@ -613,10 +638,10 @@ impl PackslipBackend {
     }
 
     /// The signed list a github.com repository may keep at `.well-known`
-    /// on its default branch, verified against the same identity as its
-    /// packslips. `None` when the repository has none, which is the usual
-    /// case: a vendor writes one only to withdraw a release, flag a
-    /// security fix, or list a release whose tag names no version.
+    /// on its default branch, verified against its list signer (by default,
+    /// the same identity as its packslips). `None` when the repository has
+    /// none, which is the usual case: a vendor writes one only to withdraw
+    /// a release, flag a security fix, or list a release whose tag names no version.
     async fn github_list(
         &self,
         project: &str,
@@ -624,6 +649,7 @@ impl PackslipBackend {
         pin: &Pin,
         opts: &PackslipOptions<'_>,
     ) -> Result<Option<ReleaseListStatement>> {
+        let pin = pin.for_release_list(opts)?;
         let path = match repository_subpath(project) {
             Some(sub) => format!(".well-known/packslip/{sub}.json"),
             None => ".well-known/packslip.json".to_string(),
@@ -646,7 +672,7 @@ impl PackslipBackend {
                     .wrap_err_with(|| format!("fetching the release list of packslip:{project}"));
             }
         };
-        let list = verify_release_list(&text, pin, !opts.allow_unlogged())
+        let list = verify_release_list(&text, &pin, !opts.allow_unlogged())
             .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
         if list.predicate.project != project {
             bail!(
@@ -1006,6 +1032,7 @@ impl Backend for PackslipBackend {
             "pubkey",
             "identity",
             "identity_prefix",
+            "list_identity_prefix",
             "issuer",
             "allow_unlogged",
             "trust",
@@ -1465,6 +1492,86 @@ impl Backend for PackslipBackend {
 mod tests {
     use super::*;
     use packslip::model::Bin;
+
+    #[test]
+    fn release_list_policy_keeps_bundle_and_index_signers_separate() {
+        let raw: ToolVersionOptions = toml::from_str(
+            r#"
+issuer = "https://token.actions.githubusercontent.com"
+identity = "https://github.com/jdx/packslip/.github/workflows/release.yml@refs/tags/v1.1.1"
+identity_prefix = "https://github.com/jdx/packslip/.github/workflows/release.yml@"
+list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packslip-releases.yml@"
+"#,
+        )
+        .unwrap();
+        let opts = PackslipOptions::new(&raw);
+        let bundle_pin = pin("packslip.dev", &opts).unwrap();
+        let list_pin = bundle_pin.for_release_list(&opts).unwrap();
+        let (Pin::Identity(bundle), Pin::Identity(list)) = (&bundle_pin, list_pin) else {
+            panic!("expected keyless policies");
+        };
+        assert_eq!(bundle.identity, opts.identity());
+        assert_eq!(bundle.identity_prefix, opts.identity_prefix());
+        assert_eq!(list.issuer, bundle.issuer);
+        assert_eq!(list.identity, None);
+        assert_eq!(list.identity_prefix, raw.get_string("list_identity_prefix"));
+
+        let mut raw = raw.clone();
+        raw.opts.shift_remove("list_identity_prefix");
+        let Pin::Identity(list) = bundle_pin
+            .for_release_list(&PackslipOptions::new(&raw))
+            .unwrap()
+        else {
+            panic!("expected keyless policy");
+        };
+        assert_eq!(&list, bundle);
+    }
+
+    #[test]
+    fn release_list_policy_rejects_invalid_overrides() {
+        let bundle = Pin::Identity(Policy::for_project("github.com/jdx/packslip").unwrap());
+        for value in ["\"\"", "\"  \"", "true", "[]"] {
+            let raw: ToolVersionOptions =
+                toml::from_str(&format!("list_identity_prefix = {value}")).unwrap();
+            assert!(
+                bundle
+                    .for_release_list(&PackslipOptions::new(&raw))
+                    .err()
+                    .unwrap()
+                    .to_string()
+                    .contains("must be a non-empty string")
+            );
+        }
+        let raw: ToolVersionOptions = toml::from_str(
+            r#"list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packslip-releases.yml@""#,
+        )
+        .unwrap();
+        let opts = PackslipOptions::new(&raw);
+        let Pin::Identity(list) = bundle.for_release_list(&opts).unwrap() else {
+            panic!("expected keyless policy");
+        };
+        assert_eq!(
+            list.issuer.as_deref(),
+            Some("https://token.actions.githubusercontent.com")
+        );
+        let unpinned = Pin::Identity(Policy::default());
+        assert!(
+            unpinned
+                .for_release_list(&opts)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("requires an issuer")
+        );
+        let key = Pin::Key(packslip::minisign::SecretKey::from_seed([7; 32]).public_key());
+        assert!(
+            key.for_release_list(&opts)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("cannot be combined with pubkey")
+        );
+    }
 
     fn artifact(name: &str, os: &str, arch: &str, libc: Option<&str>, format: &str) -> Artifact {
         Artifact {
