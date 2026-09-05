@@ -22,8 +22,23 @@ if (!versionMatch) {
 }
 const latestVersion = versionMatch?.[1] ?? "0.0.0";
 const siteUrl = "https://mise.jdx.dev";
+// Keep in sync with --vp-c-brand-1 in theme/custom.css and theme_color in
+// public/site.webmanifest so browser chrome matches the installed-app chrome.
+const brandColor = "#8B2252";
 const siteDescription =
   "mise manages developer tools, environment variables, tasks, packages, and dotfiles in one project configuration for macOS, Linux, and Windows.";
+
+// `foo/index.md` publishes as `foo/`, everything else as `foo/bar.html`. Anchor
+// the index match on the leading slash so `guide/myindex.md` keeps its name.
+const pageUrl = (relativePath: string) =>
+  `${siteUrl}/${relativePath}`
+    .replace(/\/index\.md$/, "/")
+    .replace(/\.md$/, ".html");
+
+// VitePress writes an `application/ld+json` body through as raw HTML, so a page
+// whose title or description contains `</script>` would otherwise break out of
+// the tag. JSON allows `\u003c` anywhere `<` is legal.
+const ldJson = (data: unknown) => JSON.stringify(data).replace(/</g, "\\u003c");
 const publicSchemas = [
   "mise.json",
   "mise.plugin.json",
@@ -207,7 +222,7 @@ export default withMermaid(
       ],
       ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
       ["link", { rel: "manifest", href: "/site.webmanifest" }],
-      ["meta", { name: "theme-color", content: "#0d0221" }],
+      ["meta", { name: "theme-color", content: brandColor }],
       // Pre-paint setup to avoid first-load pop-in (see custom.css "preboot"
       // rules; Layout.vue removes the preboot classes right after hydration):
       // - `preboot` disables navbar transitions so hydration state
@@ -346,9 +361,7 @@ export default withMermaid(
       ],
     ],
     transformHead({ pageData, title, description }) {
-      const url = `${siteUrl}/${pageData.relativePath}`
-        .replace(/index\.md$/, "")
-        .replace(/\.md$/, ".html");
+      const url = pageUrl(pageData.relativePath);
 
       return [
         ["meta", { property: "og:url", content: url }],
@@ -359,7 +372,7 @@ export default withMermaid(
         [
           "script",
           { type: "application/ld+json" },
-          JSON.stringify({
+          ldJson({
             "@context": "https://schema.org",
             "@type": "WebPage",
             name: title,
@@ -375,9 +388,7 @@ export default withMermaid(
       ];
     },
     transformPageData(pageData) {
-      const canonicalUrl = `https://mise.jdx.dev/${pageData.relativePath}`
-        .replace(/index\.md$/, "")
-        .replace(/\.md$/, ".html");
+      const canonicalUrl = pageUrl(pageData.relativePath);
 
       pageData.frontmatter.head ??= [];
       pageData.frontmatter.head.push([

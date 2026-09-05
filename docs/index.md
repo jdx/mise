@@ -2,7 +2,12 @@
 layout: home
 title: Home
 
-hero: {}
+# Not rendered: Layout.vue overrides the theme's `home-hero-info` slot with the
+# custom hero, so these values never reach the page (no duplicate H1). They stay
+# here because docs/.vitepress/llms.ts reads them for the llms.txt header.
+hero:
+  name: mise-en-place
+  tagline: Dev tools, env vars, and tasks in one CLI
 ---
 
 <section class="landing-page" aria-label="mise overview">
