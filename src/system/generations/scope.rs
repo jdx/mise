@@ -220,6 +220,9 @@ impl Writer {
     }
 
     fn finish(&mut self, error: Option<String>, summary: Option<Summary>) -> Result<()> {
+        // Held across the snapshot: its objects are unreferenced until
+        // update-ref, and another run's prune must not gc them meanwhile.
+        let _lock = store_lock(&self.state_dir)?;
         self.snapshot(SnapshotPhase::After);
         self.generation.finished_at = Some(store::now_rfc3339());
         self.generation.status = if error.is_some() {
@@ -230,7 +233,6 @@ impl Writer {
         self.generation.error = error;
         self.generation.summary = summary;
         let id = self.generation.id;
-        let _lock = store_lock(&self.state_dir)?;
         // A run is a no-op only when every part it covered journals its
         // changes; a part that does not journal yet may have changed the
         // machine without leaving a trace here.

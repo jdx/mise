@@ -296,7 +296,7 @@ default = true
 description = "Record a bootstrap generation (a snapshot of the config directory and dotfiles root plus a journal of changes) on every mutating bootstrap command."
 docs = """
 Every `mise bootstrap` run and every `mise bootstrap <part> apply` records a generation under
-`$MISE_STATE_DIR/bootstrap/` so `mise bootstrap generations` can list, show, and diff machine
+`$MISE_STATE_DIR/bootstrap/` so `mise bootstrap generations` can list and show machine
 states. Dry runs never record. Set to `false` to turn recording off; delete that directory to
 discard what was recorded.
 """

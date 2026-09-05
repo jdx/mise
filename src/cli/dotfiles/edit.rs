@@ -38,6 +38,18 @@ pub(crate) struct DotfilesEdit {
 impl DotfilesEdit {
     /// Open the managed source and optionally converge its target afterward.
     pub(crate) async fn run(self) -> Result<()> {
+        // The editor itself changes the managed source, so the whole command
+        // is one generation, not just the optional apply.
+        GenerationScope::wrap(
+            "bootstrap dotfiles edit",
+            "dotfiles",
+            false,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let mut config = Config::get().await?;
         let target = system::files::resolve_target_arg(&self.target);
         if self.apply {
@@ -149,16 +161,6 @@ fn open_or_create(path: &std::path::Path) -> Result<()> {
 
 /// Apply a selected target after validating the complete composed footprint.
 async fn apply_target(target: &str) -> Result<()> {
-    GenerationScope::wrap(
-        "bootstrap dotfiles edit",
-        "dotfiles",
-        false,
-        apply_target_inner(target),
-    )
-    .await
-}
-
-async fn apply_target_inner(target: &str) -> Result<()> {
     let config = Config::reset().await?;
     let targets = vec![target.to_string()];
     let all_files = system::files::files_from_config(&config)?;
