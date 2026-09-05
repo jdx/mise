@@ -1475,7 +1475,7 @@ dependencies = [
  "bitflags 2.13.1",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2368,21 +2368,6 @@ checksum = "5ca28b0ae3115b884660db4118d803791fd6756b6e88f39c0f3f7859060d7566"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "crc"
-version = "3.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
-dependencies = [
- "crc-catalog",
-]
-
-[[package]]
-name = "crc-catalog"
-version = "2.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
 
 [[package]]
 name = "crc-fast"
@@ -4854,17 +4839,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "goblin"
-version = "0.10.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17582616a7718cca54cec18e534a76c7c4aec11a8b9a85695712f262fd15a4c8"
-dependencies = [
- "log",
- "plain",
- "scroll",
-]
-
-[[package]]
 name = "group"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5386,7 +5360,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -6181,16 +6155,6 @@ checksum = "869665372263eb337b14f480cfb864b89f12eade4eb42cb415f71517b4a67572"
 dependencies = [
  "cc",
  "which",
-]
-
-[[package]]
-name = "lzma-rs"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "297e814c836ae64db86b36cf2a557ba54368d03f6afcd7d947c266692f71115e"
-dependencies = [
- "byteorder",
- "crc",
 ]
 
 [[package]]
@@ -7045,39 +7009,25 @@ dependencies = [
 
 [[package]]
 name = "packslip"
-version = "0.2.0"
-source = "git+https://github.com/jdx/packslip?rev=89a9487#89a94872302c1addf561d6715d3ab98f4204de01"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "546adbfe64f11e2565379a1205f104f8eda98eaa69dd9ecb7a8bc33d101b2b62"
 dependencies = [
  "base64 0.22.1",
  "blake2 0.10.6",
- "bzip2",
- "color-eyre",
  "ed25519-dalek",
- "eyre",
- "flate2",
- "getrandom 0.3.4",
- "goblin",
  "jiff",
- "lzma-rs",
- "ruzstd",
- "schemars 1.2.2",
  "semver",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sigstore-bundle",
- "sigstore-oidc",
  "sigstore-rekor",
- "sigstore-sign",
  "sigstore-trust-root",
  "sigstore-types",
  "sigstore-verify",
- "tar",
  "thiserror 2.0.20",
  "tokio",
- "toml 1.1.4+spec-1.1.0",
- "usage-rs",
- "zip 8.6.0",
 ]
 
 [[package]]
@@ -7515,12 +7465,6 @@ name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
-
-[[package]]
-name = "plain"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "platforms"
@@ -8957,15 +8901,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ruzstd"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a252f5e20f038fe7b4ea53e073e65398d652c864cc162fc77c56c2f13717b888"
-dependencies = [
- "twox-hash",
-]
-
-[[package]]
 name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9053,26 +8988,6 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
-
-[[package]]
-name = "scroll"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1257cd4248b4132760d6524d6dda4e053bc648c9070b960929bf50cfb1e7add"
-dependencies = [
- "scroll_derive",
-]
-
-[[package]]
-name = "scroll_derive"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1a36a382ed65dbcc0ab47fd5e9a94112417ccd34560a392ef3b7b0f0ec39148"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.4",
-]
 
 [[package]]
 name = "scrypt"
@@ -9632,7 +9547,7 @@ version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
- "errno 0.3.14",
+ "errno 0.2.8",
  "libc",
 ]
 
@@ -9686,23 +9601,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sigstore-fulcio"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "823d3f43c29500feb1ccacec68552f8e2bcecd62ec99c5284570a623bcf0c921"
-dependencies = [
- "base64 0.22.1",
- "reqwest",
- "serde",
- "serde_json",
- "sigstore-crypto",
- "sigstore-oidc",
- "sigstore-types",
- "thiserror 2.0.20",
- "url",
-]
-
-[[package]]
 name = "sigstore-merkle"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9713,25 +9611,6 @@ dependencies = [
  "sigstore-crypto",
  "sigstore-types",
  "thiserror 2.0.20",
-]
-
-[[package]]
-name = "sigstore-oidc"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fdb57c6e3af8a17d535a06084353d8e0bd32bb70f4807262f51b6cd009c9b4f"
-dependencies = [
- "ambient-id",
- "base64 0.22.1",
- "rand 0.9.5",
- "reqwest",
- "serde",
- "serde_json",
- "sigstore-crypto",
- "sigstore-types",
- "thiserror 2.0.20",
- "tokio",
- "url",
 ]
 
 [[package]]
@@ -9750,26 +9629,6 @@ dependencies = [
  "sigstore-types",
  "thiserror 2.0.20",
  "url",
-]
-
-[[package]]
-name = "sigstore-sign"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df33672126088b7fa9d5827e79fe0cd87eda607efa0d28c1366e61bbb47f423a"
-dependencies = [
- "base64 0.22.1",
- "serde_json",
- "sigstore-bundle",
- "sigstore-crypto",
- "sigstore-fulcio",
- "sigstore-oidc",
- "sigstore-rekor",
- "sigstore-trust-root",
- "sigstore-tsa",
- "sigstore-types",
- "thiserror 2.0.20",
- "x509-cert 0.2.5",
 ]
 
 [[package]]
@@ -10943,12 +10802,6 @@ checksum = "a78e83a30223c757c3947cd144a31014ff04298d8719ae10d03c31c0448c8013"
 dependencies = [
  "cipher 0.4.4",
 ]
-
-[[package]]
-name = "twox-hash"
-version = "2.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5283634e518fe9e82c7b20520bb4bc209009fd16c82077c802f8111ecbb0117a"
 
 [[package]]
 name = "type-map"

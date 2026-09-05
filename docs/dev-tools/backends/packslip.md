@@ -1,4 +1,4 @@
-# packslip Backend <Badge type="warning" text="experimental" />
+# packslip Backend
 
 The `packslip` backend installs tools from a vendor's signed release manifest.
 The manifest names the release files, their digests, supported platforms, and
@@ -6,18 +6,16 @@ executable paths. mise verifies the signer and downloaded bytes, then installs
 the artifact that fits your host.
 
 ::: warning
-The backend and the [packslip format](https://packslip.dev) are experimental.
-Enable `experimental` to use the backend. A project must publish packslips for
-its releases; this backend cannot install arbitrary GitHub release assets.
+A project must publish packslips for its releases; this backend cannot install
+arbitrary GitHub release assets. The [packslip format](https://packslip.dev) is
+young, and its own version is what says what a manifest may contain.
 :::
 
 ## Usage
 
-With [mise activated](/getting-started.html), enable the backend and install
-packslip itself:
+With [mise activated](/getting-started.html), install packslip itself:
 
 ```sh
-mise settings experimental=true
 mise use -g packslip:github.com/jdx/packslip
 packslip version
 ```
@@ -26,9 +24,6 @@ Omit `-g` to manage the tool in the current project's `mise.toml` instead.
 For a project configuration:
 
 ```toml
-[settings]
-experimental = true
-
 [tools]
 "packslip:github.com/jdx/packslip" = "latest"
 ```
@@ -338,7 +333,6 @@ for source priority, caching, and when mise runs a vendor executable.
 
 | Symptom                                      | What to check                                                                                                                    |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Experimental backend refused                 | Enable `experimental` in settings.                                                                                               |
 | No release or bundle found                   | Confirm that the project publishes packslips, the subpath is correct, and the tag maps to a version or appears in a signed list. |
 | Nothing pins the signer                      | Supply `pubkey`, or a certificate identity/prefix and issuer, for a domain project.                                              |
 | Signer or trust downgrade refused            | Inspect `mise packslip pins`, explicit tool options, and `mise.lock`; confirm the publisher's change before resetting trust.     |
