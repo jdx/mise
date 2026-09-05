@@ -202,6 +202,9 @@ Show the changes needed to apply dotfiles from `[dotfiles]`
 \fBbootstrap dotfiles edit\fR
 Edit a managed dotfile source
 .TP
+\fBbootstrap dotfiles exclude\fR
+Never capture paths matching a glob
+.TP
 \fBbootstrap dotfiles history\fR
 Browse the checkpoints of your dotfiles (experimental)
 .TP
@@ -219,6 +222,9 @@ List checkpoints, newest first
 .TP
 \fBbootstrap dotfiles history show\fR
 Show one checkpoint: what triggered it, what changed, and its journal
+.TP
+\fBbootstrap dotfiles include\fR
+Capture paths matching a glob again
 .TP
 \fBbootstrap dotfiles paths\fR
 Show what history tracks and under which policies
@@ -246,6 +252,9 @@ Reverse a rollback or undo
 .TP
 \fBbootstrap dotfiles untrack\fR
 Stop tracking a file or directory
+.TP
+\fBbootstrap dotfiles watch\fR
+Save tracked files as they change
 .TP
 \fBbootstrap files\fR
 Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
@@ -1504,13 +1513,26 @@ Print help
 .TP
 \fB<TARGET>\fR
 Target to edit
-\fBExamples:\fR
+.SH "MISE BOOTSTRAP DOTFILES EXCLUDE"
+Never capture paths matching a glob
+
+Adds the glob to `[history] exclude` in the global config. Use it for
+logs, caches, databases, and constantly rewritten application state; a
+file that genuinely holds configuration but changes constantly is
+better tracked with `\-\-no\-autosave` and saved explicitly.
 .PP
+\fBUsage:\fR mise bootstrap dotfiles exclude [OPTIONS] <GLOB>
 .PP
-.RS 4
-mise bootstrap dotfiles edit ~/.zshrc
-mise bootstrap dotfiles edit \-\-apply ~/.config/starship.toml
-.RE
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<GLOB>\fR
+A glob such as `~/.config/hypr/plugins/**`
 .SH "MISE BOOTSTRAP DOTFILES HISTORY"
 Browse the checkpoints of your dotfiles (experimental)
 
@@ -1646,6 +1668,23 @@ Print help
 .TP
 \fB<REF>\fR
 Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix
+.SH "MISE BOOTSTRAP DOTFILES INCLUDE"
+Capture paths matching a glob again
+
+Removes the glob from `[history] exclude` in the global config.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles include [OPTIONS] <GLOB>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<GLOB>\fR
+The glob as written by `exclude`
 .SH "MISE BOOTSTRAP DOTFILES PATHS"
 Show what history tracks and under which policies
 
@@ -1664,6 +1703,9 @@ Output in JSON format
 .TP
 \fB\-\-preview\fR \fI<PATH>\fR
 Show what tracking this path would capture
+.TP
+\fB\-\-noisy\fR
+List the paths the watcher found changing constantly
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -1902,6 +1944,41 @@ Print help
 .TP
 \fB<PATH>\fR
 Paths to stop tracking
+.SH "MISE BOOTSTRAP DOTFILES WATCH"
+Save tracked files as they change
+
+Runs in the foreground: installs filesystem watches for every autosaved
+tracked entry, saves a checkpoint once a changed file has been quiet for
+`history.watch.debounce` (a file that keeps changing never delays the
+others; `history.watch.max_interval` saves it regardless), and
+reconciles the whole set at startup, every `history.watch.reconcile`,
+and when the configuration changes. Manual\-save entries are never
+watched.
+
+The `history\-watch` built\-in service runs this for you:
+
+    [bootstrap.services.mise\-history]
+    builtin = "history\-watch"
+
+Exit codes: 0 when history is disabled or another watcher already runs;
+1 when git is unusable, the store cannot open, or no watch can be
+installed. A capture that fails is retried with backoff and never drops
+the pending changes; one that would overlap another history operation
+is deferred.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles watch [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-once\fR
+Reconcile once and exit (for timers and cron)
+.TP
+\fB\-J, \-\-json\fR
+One JSON object per line instead of log lines
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP FILES"
 Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
 

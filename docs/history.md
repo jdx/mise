@@ -140,9 +140,11 @@ nothing does not count as having reversed it.
 
 ## Automatic saves
 
-`mise bootstrap dotfiles watch` saves tracked files as they change. Declare it once as
-the built-in user service and `mise bootstrap` installs and starts it on
-every platform (a systemd user unit, a LaunchAgent, or a Scheduled Task):
+`mise bootstrap dotfiles watch` saves tracked files as they change, whatever
+wrote them: an editor, a script, an agent, a distro update, or mise itself.
+Declare it once as the built-in user service and `mise bootstrap` installs
+and starts it on every platform (a systemd user unit, a LaunchAgent, or a
+Scheduled Task):
 
 ```toml
 [bootstrap.services.mise-history]
@@ -151,45 +153,84 @@ builtin = "history-watch"
 
 ```sh
 mise bootstrap services apply        # or the full `mise bootstrap`
-mise bootstrap dotfiles status                  # Automatic capture: running
+mise bootstrap dotfiles status       # watcher: running
 ```
 
 The watcher installs filesystem watches for every autosaved entry (a tracked
 directory recursively, a tracked file through its parent, a path that does
-not exist yet through its nearest existing ancestor) and saves a checkpoint
-once a changed file has been quiet for `history.watch.debounce` (2s). A file
-that keeps changing never delays the others: the batch flushes as soon as
-any pending path is quiet, and after `history.watch.max_interval` (30s)
-regardless. Manual-save entries (`autosave = false`) are never watched.
+not exist yet through its nearest existing ancestor). Manual-save entries
+(`autosave = false`) are never watched.
+
+### Adaptive scheduling
+
+Every file is scheduled on its own. An ordinary edit is saved once the file
+has been quiet for `history.watch.debounce` (2s). A file that is rewritten
+constantly is not saved on every change: when a save follows the previous
+one without the file ever settling, that file's own interval doubles, up to
+`history.watch.max_interval` (24h). It is still saved periodically at that
+interval for as long as it keeps changing; nothing is ever excluded or
+switched to manual saving automatically, and a checkpoint another file
+triggers carries the throttled file's last saved version, not its live
+content, so a whole-set reconciliation never defeats the throttling. As soon
+as the file stops changing its final state is captured promptly (after a
+fraction of its interval, at most five minutes), and a sustained quiet
+period (four intervals, at least five minutes) resets it to the base interval.
+A busy file never delays an ordinary one. Explicit saves and the protective
+checkpoints before a bootstrap, rollback, or undo always read every file
+live.
+
+The thresholds are fixed: an interval doubles when a file changed again
+within its settle time of the previous save and at least two changes
+arrived since. A person saving from an editor every few seconds leaves gaps
+longer than the settle time, so ordinary editing is never stretched. The
+schedule is persisted (`watch-schedule.json` in the history store), so a
+restart of the service does not reset a noisy file.
+
+Constantly rewritten application state, logs, caches, and databases are
+better excluded, and a file that genuinely holds configuration but changes
+constantly can be tracked with `autosave = false` and saved explicitly:
+
+```sh
+mise bootstrap dotfiles paths --noisy                      # what is throttled right now
+mise bootstrap dotfiles exclude '~/.config/hypr/plugins/**' # [history] exclude
+mise bootstrap dotfiles include '~/.config/hypr/plugins/**'
+mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave
+mise bootstrap dotfiles save ~/.config/app/state.json
+```
+
+### Reconciliation and failures
 
 The whole tracked set is reconciled at startup, every
 `history.watch.reconcile` (10m; `0` disables), when the configuration
 changes (an edit to `~/.config/mise/*.toml` or `conf.d/` reloads the
 declarations and replans the watches; `history.enabled = false` stops the
 watcher), and on shutdown, so an edit no watch reported is still saved.
-`mise bootstrap dotfiles watch --once` runs one reconcile and exits, for a timer or
-cron instead of the service.
+`mise bootstrap dotfiles watch --once` runs one reconcile and exits, for a
+timer or cron instead of the service.
 
 A capture that fails is retried with backoff (1s to 5min) and never drops
 the pending changes; one that would overlap another history operation (a
 running bootstrap, rollback, or undo) is deferred until that operation
 finishes. One watcher runs per store: a second one exits 0 immediately.
 `--json` prints one object per line (`started`, `captured`, `unchanged`,
-`deferred`, `replan`, `noise`, `degraded`, `error`, `stopped`).
+`deferred`, `replan`, `throttled`, `settled`, `degraded`, `error`,
+`stopped`).
 
-A path that changes more than 60 times in ten minutes is reported once per
-hour, with the exclusion to write if the churn is not wanted; nothing is
-excluded automatically, and `mise bootstrap dotfiles paths --noisy` lists what the
-watcher noticed:
+### Health
 
-```sh
-mise bootstrap dotfiles exclude '~/.config/hypr/plugins/**'   # [history] exclude
-mise bootstrap dotfiles include '~/.config/hypr/plugins/**'
-mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave
-```
+The watcher never notifies you. It persists its health (`health.json` in
+the history store) and two commands read it, without starting a sync,
+applying anything, or prompting:
 
-`mise bootstrap dotfiles status` reports the watcher as `running`, `declared but not
-running` (run `mise bootstrap services apply`), or `not declared`.
+- `mise doctor` prints a concise `dotfiles` section: a watcher that is
+  declared but not running (with the command that starts it), repeated
+  capture failures or an unusable store, and heavily throttled files. A
+  throttled file is informational, not a warning. Health older than a few
+  reconcile intervals is reported as stale rather than current.
+- `mise bootstrap dotfiles status` prints the detail: the watcher state
+  (`running`, `declared but not running`, `not declared`), the last capture
+  and reconcile, the last failure, and for every throttled file its
+  effective interval, last save, and unsaved changes.
 
 ## What is tracked
 

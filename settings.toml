@@ -1274,13 +1274,21 @@ type = "Integer"
 
 [history.watch.debounce]
 default = "2s"
-description = "How long a changed file must stay quiet before the history watcher saves it. A file that keeps changing never delays the others."
+description = "How long a changed file must stay quiet before the history watcher saves it (the base autosave interval). A file that keeps changing is stretched on its own and never delays the others."
 env = "MISE_HISTORY_WATCH_DEBOUNCE"
 type = "Duration"
 
 [history.watch.max_interval]
-default = "30s"
-description = "The history watcher saves pending changes after this long even when a file keeps changing."
+default = "24h"
+description = "The longest autosave interval the history watcher stretches a constantly changing file to. Sustained churn doubles a file's own interval up to this; a settled file is saved promptly again, and a sustained quiet period resets it."
+docs = """
+Ordinary edits are saved after `history.watch.debounce`. A file that keeps being rewritten is
+still saved periodically, ever more rarely, up to this interval; other files are never delayed
+by it. Constantly rewritten application state, logs, caches, and databases are better excluded
+(`mise bootstrap dotfiles exclude`); a file that genuinely holds configuration but changes
+constantly can be tracked with `autosave = false` and saved explicitly. Nothing is excluded or
+switched to manual saving automatically.
+"""
 env = "MISE_HISTORY_WATCH_MAX_INTERVAL"
 type = "Duration"
 

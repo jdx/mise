@@ -35,7 +35,7 @@ Describe 'history watch' {
         $LASTEXITCODE | Should -Be 0
 
         $status = mise bootstrap dotfiles status --json | Out-String | ConvertFrom-Json
-        $status.watcher | Should -Be 'not-declared'
+        $status.history.watcher | Should -Be 'not-declared'
 
         'two' | Out-File -FilePath (Join-Path $script:Tracked 'file.txt') -Encoding utf8NoBOM
         mise bootstrap dotfiles watch --once 2>&1 | Out-String | Out-Null
@@ -49,6 +49,6 @@ Describe 'history watch' {
 builtin = "history-watch"
 "@ | Out-File -FilePath (Join-Path $env:MISE_CONFIG_DIR 'config.toml') -Encoding utf8NoBOM
         $status = mise bootstrap dotfiles status --json | Out-String | ConvertFrom-Json
-        $status.watcher | Should -Be 'declared-not-running'
+        $status.history.watcher | Should -Be 'declared-not-running'
     }
 }

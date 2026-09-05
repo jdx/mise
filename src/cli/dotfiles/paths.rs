@@ -187,20 +187,26 @@ impl DotfilesPaths {
             return Ok(());
         }
         if record.paths.is_empty() {
-            info!("the watcher has not reported constantly changing paths");
+            info!("the watcher is not throttling any path");
             return Ok(());
         }
-        let mut table = MiseTable::new(false, &["Path", "Changes / 10 min", "Last seen"]);
+        let mut table = MiseTable::new(
+            false,
+            &["Path", "Saving every", "Unsaved changes", "Last seen"],
+        );
         for (path, noisy) in &record.paths {
             table.add_row(vec![
                 path.clone(),
-                noisy.changes_per_10m.to_string(),
+                crate::system::history::watch::runtime::humantime(std::time::Duration::from_secs(
+                    noisy.interval_secs,
+                )),
+                noisy.pending_changes.to_string(),
                 noisy.last_seen.clone(),
             ]);
         }
         table.print()?;
         miseprintln!(
-            "Exclude a path with `mise bootstrap dotfiles exclude '<glob>'` or track it with `--no-autosave`."
+            "These paths keep changing, so the watcher saves them ever more rarely (never excluded or switched to manual saving on its own). Exclude a log, cache, or database with `mise bootstrap dotfiles exclude '<glob>'`; track configuration that changes constantly with `--no-autosave` and save it explicitly."
         );
         Ok(())
     }

@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Adaptive autosaving: a constantly rewritten file is saved ever more rarely
+# (never excluded, never switched to manual saving), never delays an ordinary
+# edit, is captured promptly once it settles, keeps its throttling across a
+# watcher restart, and is reported by `mise doctor` and `dotfiles status`
+# without either of them changing anything.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+export MISE_HISTORY_WATCH_DEBOUNCE=1s
+export MISE_HISTORY_WATCH_MAX_INTERVAL=5s
+
+count="mise bootstrap dotfiles history --json -n 0 | jq length"
+throttled="mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].interval_secs // 0'"
+
+wait_until() {
+  for _ in $(seq 1 100); do
+    if eval "$1" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "timed out waiting for: $1" >&2
+  [[ -f watch.log ]] && cat watch.log >&2
+  return 1
+}
+
+mkdir -p ~/.config/hypr
+echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
+echo '{"n":0}' >~/.config/hypr/state.json
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+EOF
+
+# doctor reports the declared-but-not-running watcher without touching anything
+n="$(eval "$count")"
+assert_contains "mise doctor 2>&1 || true" "the history watcher is declared but not running"
+assert_contains "mise doctor 2>&1 || true" "mise bootstrap services apply"
+assert "mise doctor --json 2>/dev/null | jq -r .dotfiles.watcher" "declared but not running"
+assert "$count" "$n"
+
+mise bootstrap dotfiles watch --json >watch.log 2>&1 &
+watcher=$!
+churn=""
+cleanup() {
+  kill "$churn" 2>/dev/null || true
+  kill "$watcher" 2>/dev/null || true
+}
+trap cleanup EXIT
+wait_until "grep -q '\"event\":\"started\"' watch.log"
+
+# a loop rewrites state.json ten times a second
+(
+  i=0
+  while :; do
+    i=$((i + 1))
+    echo "{\"n\":$i}" >~/.config/hypr/state.json
+    sleep 0.1
+  done
+) &
+churn=$!
+
+# the churning file is throttled: its interval grows past the base
+wait_until "[[ \$($throttled) -ge 2 ]]"
+assert_contains "cat watch.log" '"event":"throttled"'
+assert_contains "mise bootstrap dotfiles paths --noisy" "state.json"
+assert_contains "mise bootstrap dotfiles status" "throttled: ~/.config/hypr/state.json changes constantly"
+assert_contains "mise doctor 2>&1 || true" "state.json changes constantly"
+assert_not_contains "mise doctor 2>&1 || true" "warning"
+# never excluded, never switched to manual saving
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "exclude"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "autosave"
+
+# an ordinary edit is still saved promptly while the churn goes on, and the
+# checkpoint it makes does not carry the churning file's live content
+echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
+wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
+saved_n="$(mise bootstrap dotfiles history show latest --files 2>/dev/null | grep -c state.json || true)"
+assert "echo $saved_n" "1"
+
+# the churn stops: the final state is captured promptly
+kill "$churn"
+churn=""
+sleep 0.3
+final="$(cat ~/.config/hypr/state.json)"
+wait_until "mise bootstrap dotfiles history diff --path ~/.config/hypr/state.json --exit-code"
+assert "$count" "$(($(eval "$count")))"
+
+# the throttling survives a restart of the watcher
+kill -TERM "$watcher"
+wait "$watcher" || true
+assert_contains "cat $MISE_STATE_DIR/history/watch-schedule.json" "state.json"
+mise bootstrap dotfiles watch --json >watch.log 2>&1 &
+watcher=$!
+wait_until "grep -q '\"event\":\"started\"' watch.log"
+assert "mise bootstrap dotfiles status --json | jq -r '.history.health.throttled | length'" "1"
+kill -TERM "$watcher"
+wait "$watcher" || true
+assert "cat ~/.config/hypr/state.json" "$final"

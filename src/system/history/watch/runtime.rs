@@ -1,8 +1,11 @@
-//! The foreground watcher process behind `mise bootstrap dotfiles watch` and the
-//! `history-watch` built-in service: installs filesystem watches for the
-//! tracked set, batches changes, and saves checkpoints. Captures never wait
-//! on the network and never run while another history operation holds the
-//! operation lock; they are deferred and retried.
+//! The foreground watcher process behind `mise bootstrap dotfiles watch` and
+//! the `history-watch` built-in service: installs filesystem watches for the
+//! tracked set, schedules each changed path on its own (a constantly
+//! rewritten file is saved ever more rarely, never floods the history, and
+//! never delays an ordinary edit), saves checkpoints, and persists its
+//! health for `mise doctor` and `mise bootstrap dotfiles status`. Captures
+//! never wait on the network and never run while another history operation
+//! holds the operation lock; they are deferred and retried.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -14,18 +17,19 @@ use notify_debouncer_full::{DebounceEventResult, Debouncer, NoCache, new_debounc
 use serde_json::json;
 use tokio::sync::mpsc;
 
-use super::batcher::Batcher;
-use super::noise::{self, NoiseMonitor, NoisyPath, NoisyRecord};
+use super::noise::{self, NoisyPath, NoisyRecord};
 use super::plan::{Anchor, Mode, PathKind, WatchPlan};
+use super::schedule::{self, Adjustment, Limits, PersistedSchedule, Schedule};
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::system::history::checkpoint::{Draft, Outcome, Store};
+use crate::system::history::health::{self, Health, ThrottledPath};
 use crate::system::history::store::{self, Trigger};
 use crate::system::history::tracked::{self, TrackedSet, hard_exclusions, normalize};
 
 /// How long the debouncer coalesces raw filesystem events before they reach
-/// the batcher, which applies the configured quiet period on top.
+/// the scheduler, which applies the configured quiet period on top.
 const COALESCE: Duration = Duration::from_millis(500);
 const BACKOFF_MIN: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(5 * 60);
@@ -64,8 +68,11 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     let settings = Settings::get();
     let intervals = Intervals::from_settings(&settings);
     let mut state = State::load().await?;
-    let mut capture = Capture::new(store, out);
-    capture.attempt(&state.tracked, "startup reconcile");
+    let mut capture = Capture::new(store, out, intervals.limits.clone());
+    capture.health.watcher.started_at = Some(store::now_rfc3339());
+    capture.attempt(&state.tracked, "startup reconcile", &[]);
+    capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
+    capture.write_health();
     if opts.once {
         return Ok(0);
     }
@@ -80,7 +87,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         NoCache,
         notify::Config::default(),
     )?;
-    let mut installed = install(&mut debouncer, &[], &state.plan.anchors, &capture.out)?;
+    let mut installed = install(&mut debouncer, &[], &state.plan.anchors, &mut capture)?;
     if installed.is_empty() {
         bail!("no watch could be installed for the tracked set");
     }
@@ -98,15 +105,14 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         ),
         json!({ "anchors": installed.len(), "pending": state.plan.pending.len() }),
     );
+    capture.write_health();
 
-    let mut batcher = Batcher::new(intervals.debounce, intervals.max_interval);
-    let mut noise = NoiseMonitor::new();
     let mut shutdown = Shutdown::new()?;
     let mut next_reconcile = intervals
         .reconcile
         .map(|every| tokio::time::Instant::now() + every);
     loop {
-        let flush_at = batcher.deadline().map(|at| capture.not_before(at));
+        let flush_at = capture.schedule.deadline().map(|at| capture.not_before(at));
         let flush = async {
             match flush_at {
                 Some(at) => tokio::time::sleep_until(tokio::time::Instant::from_std(at)).await,
@@ -144,19 +150,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                                     debug!("history watch: ignoring {}", path.display());
                                     continue;
                                 }
-                                if let Some(count) = noise.record(&path, now) {
-                                    capture.out.emit(
-                                        "noise",
-                                        &format!(
-                                            "{} changed {count} times in 10 minutes; exclude it with `mise bootstrap dotfiles exclude '{}'` or track it with `--no-autosave` if that is not wanted",
-                                            display_path(&path),
-                                            display_path(&path)
-                                        ),
-                                        json!({ "path": display_path(&path), "changes": count }),
-                                    );
-                                    capture.remember_noisy(&noise, now);
-                                }
-                                batcher.note(path, now);
+                                capture.schedule.note(path, now);
                             }
                         }
                     }
@@ -169,19 +163,34 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 if config_changed {
                     match state.reload().await {
                         Ok(true) => {
-                            installed = install(&mut debouncer, &installed, &state.plan.anchors, &capture.out)?;
+                            installed = install(&mut debouncer, &installed, &state.plan.anchors, &mut capture)?;
                             capture.out.emit(
                                 "replan",
                                 &format!("configuration changed; watching {} anchor(s)", installed.len()),
                                 json!({ "anchors": installed.len() }),
                             );
-                            let pending = batcher.drain();
-                            capture.attempt(&state.tracked, "configuration changed");
-                            for path in pending {
-                                if state.relevant(&path) {
-                                    batcher.note(path, now);
+                            // the configuration that changed is what this
+                            // capture is for: never held back
+                            let config_dir = state.config_dir.clone();
+                            let held: Vec<PathBuf> = capture
+                                .schedule
+                                .held_paths(now)
+                                .into_iter()
+                                .filter(|path| !path.starts_with(&config_dir))
+                                .collect();
+                            if capture.attempt(&state.tracked, "configuration changed", &held) {
+                                for path in capture.schedule.due_paths(now).into_iter().chain(
+                                    capture
+                                        .schedule
+                                        .held_paths(now)
+                                        .into_iter()
+                                        .filter(|path| path.starts_with(&config_dir)),
+                                ) {
+                                    capture.schedule.saved(&path, now);
                                 }
                             }
+                            capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
+                            capture.write_health();
                         }
                         Ok(false) => {
                             capture.out.emit("disabled", "history was disabled; stopping", json!({}));
@@ -194,22 +203,46 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         ),
                     }
                 } else if rescan {
-                    batcher.drain();
-                    capture.attempt(&state.tracked, "rescan");
+                    let held = capture.schedule.held_paths(now);
+                    capture.attempt(&state.tracked, "rescan", &held);
                 }
             }
             _ = flush => {
                 let now = Instant::now();
-                let ready = batcher.flush(now);
-                if !ready.is_empty() {
-                    let done = capture.attempt(&state.tracked, &describe(&ready));
-                    if !done {
-                        for path in ready {
-                            batcher.note(path, now);
+                let due = capture.schedule.due_paths(now);
+                if !due.is_empty() {
+                    let held = capture.schedule.held_paths(now);
+                    let done = capture.attempt(&state.tracked, &describe(&due), &held);
+                    if done {
+                        for path in &due {
+                            match capture.schedule.saved(path, now) {
+                                Adjustment::Stretched => {
+                                    let interval = capture.schedule.get(path).map(|s| s.interval).unwrap_or_default();
+                                    capture.out.emit(
+                                        "throttled",
+                                        &format!(
+                                            "{} keeps changing; saving it every {} now (up to {}). Exclude it with `mise bootstrap dotfiles exclude '{}'` if it is a log, cache, or database, or track it with `--no-autosave` and save it explicitly",
+                                            display_path(path),
+                                            humantime(interval),
+                                            humantime(capture.schedule.limits().max),
+                                            display_path(path)
+                                        ),
+                                        json!({ "path": display_path(path), "interval_secs": interval.as_secs() }),
+                                    );
+                                }
+                                Adjustment::Reset => capture.out.emit(
+                                    "settled",
+                                    &format!("{} settled; saving it promptly again", display_path(path)),
+                                    json!({ "path": display_path(path) }),
+                                ),
+                                Adjustment::Unchanged => {}
+                            }
                         }
+                        capture.schedule.prune(now);
+                        capture.persist_schedule();
+                        capture.write_health();
                     }
                 }
-                noise.prune(now);
             }
             _ = reconcile => {
                 if let Some(every) = intervals.reconcile {
@@ -218,16 +251,25 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 if state.plan.pending.iter().any(|path| path.exists())
                     && let Ok(true) = state.reload().await
                 {
-                    installed = install(&mut debouncer, &installed, &state.plan.anchors, &capture.out)?;
+                    installed = install(&mut debouncer, &installed, &state.plan.anchors, &mut capture)?;
                 }
-                capture.attempt(&state.tracked, "reconcile");
+                let now = Instant::now();
+                let held = capture.schedule.held_paths(now);
+                capture.attempt(&state.tracked, "reconcile", &held);
+                capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
+                capture.write_health();
             }
             _ = shutdown.wait() => {
-                // a full reconcile, not only the batch: a change still inside
-                // the coalescing window has not reached the batcher yet
-                batcher.drain();
-                capture.attempt(&state.tracked, "shutdown");
+                // a full capture, not only the due paths: a change still
+                // inside the coalescing window has not reached the scheduler
+                // yet, and a throttled file's final state is saved now
+                let now = Instant::now();
+                if capture.attempt(&state.tracked, "shutdown", &[]) {
+                    capture.schedule.clear_pending(now);
+                }
+                capture.persist_schedule();
                 capture.out.emit("stopped", "stopping", json!({}));
+                capture.write_health();
                 break;
             }
         }
@@ -248,9 +290,19 @@ fn describe(paths: &[PathBuf]) -> String {
     }
 }
 
+pub(crate) fn humantime(duration: Duration) -> String {
+    let secs = duration.as_secs();
+    if secs >= 3600 {
+        format!("{}h", secs / 3600)
+    } else if secs >= 60 {
+        format!("{}m", secs / 60)
+    } else {
+        format!("{secs}s")
+    }
+}
+
 struct Intervals {
-    debounce: Duration,
-    max_interval: Duration,
+    limits: Limits,
     reconcile: Option<Duration>,
 }
 
@@ -268,16 +320,18 @@ impl Intervals {
             Duration::from_secs(600),
         );
         Self {
-            debounce: parse(
-                "debounce",
-                &settings.history.watch.debounce,
-                Duration::from_secs(2),
-            ),
-            max_interval: parse(
-                "max_interval",
-                &settings.history.watch.max_interval,
-                Duration::from_secs(30),
-            ),
+            limits: Limits {
+                base: parse(
+                    "debounce",
+                    &settings.history.watch.debounce,
+                    Duration::from_secs(2),
+                ),
+                max: parse(
+                    "max_interval",
+                    &settings.history.watch.max_interval,
+                    Duration::from_secs(24 * 3600),
+                ),
+            },
             reconcile: (!reconcile.is_zero()).then_some(reconcile),
         }
     }
@@ -379,9 +433,10 @@ fn install(
     debouncer: &mut Debouncer<RecommendedWatcher, NoCache>,
     installed: &[Anchor],
     wanted: &[Anchor],
-    out: &Output,
+    capture: &mut Capture,
 ) -> Result<Vec<Anchor>> {
     let mut current: Vec<Anchor> = vec![];
+    capture.health.watcher.degraded.clear();
     for anchor in installed {
         if wanted.contains(anchor) {
             current.push(anchor.clone());
@@ -406,41 +461,60 @@ fn install(
                         display_path(&anchor.path)
                     );
                 }
-                out.emit(
+                let message = format!(
+                    "cannot watch {}: the system's watch limit is reached; reconciliation still saves it (on Linux raise fs.inotify.max_user_watches)",
+                    display_path(&anchor.path)
+                );
+                capture.health.watcher.degraded.push(message.clone());
+                capture.out.emit(
                     "degraded",
-                    &format!(
-                        "cannot watch {}: the system's watch limit is reached; reconciliation still saves it (on Linux raise fs.inotify.max_user_watches)",
-                        display_path(&anchor.path)
-                    ),
+                    &message,
                     json!({ "path": display_path(&anchor.path) }),
                 );
             }
-            Err(err) => out.emit(
-                "degraded",
-                &format!(
+            Err(err) => {
+                let message = format!(
                     "cannot watch {}: {err}; reconciliation still saves it",
                     display_path(&anchor.path)
-                ),
-                json!({ "path": display_path(&anchor.path), "message": err.to_string() }),
-            ),
+                );
+                capture.health.watcher.degraded.push(message.clone());
+                capture.out.emit(
+                    "degraded",
+                    &message,
+                    json!({ "path": display_path(&anchor.path), "message": err.to_string() }),
+                );
+            }
         }
     }
     Ok(current)
 }
 
-/// Captures with the operation lock respected and failures backed off.
+/// Captures with the operation lock respected, failures backed off, the
+/// per-path schedule applied, and health persisted.
 struct Capture {
     store: Store,
     out: Output,
+    schedule: Schedule,
+    health: Health,
     backoff: Duration,
     retry_at: Option<Instant>,
 }
 
 impl Capture {
-    fn new(store: Store, out: Output) -> Self {
+    fn new(store: Store, out: Output, limits: Limits) -> Self {
+        let mut schedule = Schedule::new(limits);
+        let persisted: PersistedSchedule =
+            std::fs::read_to_string(schedule_path_in(store.state_dir()))
+                .ok()
+                .and_then(|text| serde_json::from_str(&text).ok())
+                .unwrap_or_default();
+        schedule.restore(&persisted, epoch_secs());
+        let health = health::read(store.state_dir()).unwrap_or_default();
         Self {
             store,
             out,
+            schedule,
+            health,
             backoff: BACKOFF_MIN,
             retry_at: None,
         }
@@ -454,9 +528,11 @@ impl Capture {
         }
     }
 
-    /// Saves a checkpoint of the tracked set. Returns whether the attempt
-    /// ran (a deferred or failed attempt leaves its paths pending).
-    fn attempt(&mut self, tracked: &TrackedSet, reason: &str) -> bool {
+    /// Saves a checkpoint of the tracked set, with `held` paths carried
+    /// forward from the newest checkpoint instead of read live. Returns
+    /// whether the attempt ran (a deferred or failed attempt leaves its
+    /// paths pending).
+    fn attempt(&mut self, tracked: &TrackedSet, reason: &str, held: &[PathBuf]) -> bool {
         if let Some(retry) = self.retry_at
             && Instant::now() < retry
         {
@@ -479,11 +555,14 @@ impl Capture {
                     return false;
                 }
             };
-        let result = self.store.attempt(tracked, Draft::new(Trigger::Edit));
+        let mut draft = Draft::new(Trigger::Edit);
+        draft.held = held.to_vec();
+        let result = self.store.attempt(tracked, draft);
         drop(operation);
         match result {
             Ok(Outcome::Created(entry)) => {
                 self.recovered();
+                self.health.watcher.last_capture = Some(store::now_rfc3339());
                 self.out.emit(
                     "captured",
                     &format!(
@@ -496,6 +575,7 @@ impl Capture {
             }
             Ok(Outcome::Unchanged) => {
                 self.recovered();
+                self.health.watcher.last_capture = Some(store::now_rfc3339());
                 self.out.emit(
                     "unchanged",
                     &format!("nothing to save ({reason})"),
@@ -517,34 +597,84 @@ impl Capture {
     fn fail(&mut self, reason: &str, message: &str) {
         self.out.emit(
             "error",
-            &format!("could not save ({reason}): {message}; retrying in {:?}", self.backoff),
+            &format!(
+                "could not save ({reason}): {message}; retrying in {:?}",
+                self.backoff
+            ),
             json!({ "reason": reason, "message": message, "retry_in_secs": self.backoff.as_secs() }),
         );
         self.retry_at = Some(Instant::now() + self.backoff);
         self.backoff = (self.backoff * 2).min(BACKOFF_MAX);
+        self.health.watcher.last_error = Some(message.to_string());
+        self.health.watcher.last_error_at = Some(store::now_rfc3339());
+        self.health.watcher.consecutive_failures += 1;
+        self.write_health();
     }
 
     fn recovered(&mut self) {
         self.backoff = BACKOFF_MIN;
         self.retry_at = None;
+        self.health.watcher.last_error = None;
+        self.health.watcher.last_error_at = None;
+        self.health.watcher.consecutive_failures = 0;
     }
 
-    fn remember_noisy(&self, monitor: &NoiseMonitor, now: Instant) {
-        let path = noisy_path_in(self.store.state_dir());
+    fn persist_schedule(&self) {
+        let persisted = self.schedule.persist(Instant::now(), epoch_secs());
+        let path = schedule_path_in(self.store.state_dir());
+        if let Err(err) = store::write_json(&path, &persisted) {
+            debug!("history watch: could not write {}: {err}", path.display());
+        }
+        // what `paths --noisy` lists
         let mut record = NoisyRecord::default();
-        for (noisy, count) in monitor.noisy(now) {
+        for (path, schedule) in self.schedule.throttled() {
             record.paths.insert(
-                display_path(&noisy),
+                display_path(&path),
                 NoisyPath {
-                    changes_per_10m: count,
+                    interval_secs: schedule.interval.as_secs(),
+                    pending_changes: schedule.changes,
                     last_seen: store::now_rfc3339(),
                 },
             );
         }
-        if let Err(err) = noise::write(&path, &record) {
-            debug!("history watch: could not write {}: {err}", path.display());
+        let noisy = noisy_path_in(self.store.state_dir());
+        if let Err(err) = noise::write(&noisy, &record) {
+            debug!("history watch: could not write {}: {err}", noisy.display());
         }
     }
+
+    fn write_health(&mut self) {
+        let now = Instant::now();
+        self.health.throttled = self
+            .schedule
+            .throttled()
+            .into_iter()
+            .map(|(path, schedule)| ThrottledPath {
+                path: display_path(&path),
+                interval_secs: schedule.interval.as_secs(),
+                last_saved: schedule
+                    .last_saved
+                    .map(|saved| rfc3339_ago(now.saturating_duration_since(saved))),
+                pending_changes: schedule.changes,
+                heavy: schedule.interval >= schedule::HEAVY_INTERVAL,
+            })
+            .collect();
+        if let Err(err) = health::write(self.store.state_dir(), &mut self.health) {
+            debug!("history watch: could not write health: {err}");
+        }
+    }
+}
+
+fn epoch_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn rfc3339_ago(ago: Duration) -> String {
+    let at = chrono::Utc::now() - chrono::Duration::from_std(ago).unwrap_or_default();
+    at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 #[derive(Clone, Copy)]
@@ -566,7 +696,7 @@ impl Output {
             let _ = stdout.flush();
         } else {
             match event {
-                "error" | "degraded" | "noise" => warn!("history watch: {message}"),
+                "error" | "degraded" => warn!("history watch: {message}"),
                 "unchanged" | "deferred" => debug!("history watch: {message}"),
                 _ => info!("history watch: {message}"),
             }
@@ -581,6 +711,10 @@ pub(crate) fn watch_lock_in(state_dir: &Path) -> PathBuf {
 
 pub(crate) fn noisy_path_in(state_dir: &Path) -> PathBuf {
     store::store_dir_in(state_dir).join("noisy.json")
+}
+
+pub(crate) fn schedule_path_in(state_dir: &Path) -> PathBuf {
+    store::store_dir_in(state_dir).join("watch-schedule.json")
 }
 
 /// Whether a watcher currently holds the lock for this store.

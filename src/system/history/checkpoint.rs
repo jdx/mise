@@ -23,7 +23,7 @@ use super::store::{
     self, Annotation, Changes, Checkpoint, DescriptionSource, Entry, Index, IndexEntry, Machine,
     Operation, SavedRecord, TreeInfo, Trigger,
 };
-use super::tracked::{TrackedEntry, TrackedSet, display_to_tree_path, tree_path_to_display};
+use super::tracked::{TrackedEntry, TrackedSet, Walk, display_to_tree_path, tree_path_to_display};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 
@@ -53,6 +53,11 @@ pub(crate) struct Draft {
     /// Paths named explicitly: manual-save entries covering them are read
     /// live and promoted, becoming their new saved version.
     pub explicit_paths: Vec<PathBuf>,
+    /// Paths the watcher is throttling: their files are carried forward
+    /// from the newest checkpoint instead of read live, so a capture for
+    /// another path never defeats their schedule. Ignored by protective
+    /// captures and explicit saves.
+    pub held: Vec<PathBuf>,
 }
 
 impl Draft {
@@ -304,6 +309,13 @@ impl Store {
                             }
                         }
                     }
+                    let composed = self.hold_paths(
+                        repo,
+                        &composed,
+                        &walk,
+                        &draft,
+                        previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
+                    )?;
                     (Some(composed), result.roots, true, None)
                 }
                 Err(err) => {
@@ -473,6 +485,41 @@ impl Store {
     /// versions, and promotes the ones the draft names explicitly. A
     /// promotion is durable (a new commit on `refs/promoted`) before the
     /// checkpoint referencing it is written.
+    /// Carries the draft's held paths forward from the previous checkpoint:
+    /// their live content is not what this capture records. Protective
+    /// captures and explicit saves hold nothing.
+    fn hold_paths(
+        &self,
+        repo: &HistoryRepo,
+        tree: &str,
+        walk: &Walk,
+        draft: &Draft,
+        previous: Option<&str>,
+    ) -> Result<String> {
+        if draft.held.is_empty() || draft.protective || !draft.explicit_paths.is_empty() {
+            return Ok(tree.to_string());
+        }
+        let mut overlays = vec![];
+        for path in walk.files.keys() {
+            if !draft.held.iter().any(|held| path.starts_with(held)) {
+                continue;
+            }
+            let tree_path = display_to_tree_path(&display_path(path));
+            let object = match previous {
+                Some(previous) => repo.object_at(previous, &tree_path)?,
+                None => None,
+            };
+            overlays.push(Overlay {
+                path: tree_path,
+                object,
+            });
+        }
+        if overlays.is_empty() {
+            return Ok(tree.to_string());
+        }
+        repo.compose(tree, &overlays)
+    }
+
     fn compose_manual(
         &self,
         repo: &HistoryRepo,
