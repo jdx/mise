@@ -1,0 +1,81 @@
+PLEASE IMPLEMENT THIS PLAN:
+# GitHub relay, `mise ssh`, and private-repository remote onboarding
+
+## Summary
+
+Deliver one ready-for-review PR providing session-scoped, read-only GitHub access through the initiating machine, plus GitHub repository shorthand for bootstrap.
+
+```sh
+mise ssh devbox \
+  --github-relay-read-only \
+  --github-relay-repo jdx/dotfiles
+
+mise bootstrap remote --host devbox --from-git jdx/dotfiles \
+  --github-relay-read-only \
+  --github-relay-repo jdx/dotfiles
+```
+
+Remote `--from-git` installs the repository as the target’s **persistent global mise configuration**, matching local `bootstrap --from-git`. Credentials remain on the initiating machine.
+
+Initial support: Linux/macOS clients and Linux/macOS POSIX targets.
+
+## Public interfaces
+
+- Add `mise ssh <destination>` supporting SSH-config aliases, identity/port overrides, repeated SSH options, and an optional command after `--`. Without relay flags, delegate to ordinary OpenSSH without provisioning remote mise.
+- Add shared relay flags to `mise ssh` and `mise bootstrap remote`:
+  - `--github-relay-read-only`
+  - Repeatable `--github-relay-repo OWNER/REPO`
+  - `--github-relay-all-repos`
+- Require an explicit repository allowlist or explicit all-repositories scope when enabling the relay. Reject combining the two scope forms.
+- Add `--from-git <GIT_URL|OWNER/REPO>` to remote bootstrap, conflicting with `--source`.
+- Support `OWNER/REPO` shorthand in both local and remote bootstrap `--from-git`, expanding to `https://github.com/OWNER/REPO.git`. Preserve explicit URLs, SSH syntax, and local-path behavior; reject malformed shorthand rather than guessing.
+- Keep remote target selection explicit through existing inventory selectors or `--host`. Repository contents cannot silently select additional machines.
+- Shorthand does not enable the relay or expand its permissions. Fetching the setup repository locally uses ordinary local authentication independently of the relay.
+
+## Implementation
+
+### Shared relay and SSH lifecycle
+
+- Reuse remote bootstrap’s SSH session and verified mise-provisioning machinery. Relay-enabled `mise ssh` temporarily provisions a compatible remote mise executable.
+- Forward a private Unix-domain socket through the owned SSH connection. Require successful forwarding before running the session.
+- Resolve GitHub credentials locally using the existing resolver. Do not introduce token storage or automatically trigger login.
+- Support repository-scoped GitHub REST reads for metadata, refs, contents, releases, and assets, plus Git smart-HTTP clone/fetch.
+- Enforce read-only operations locally: permit upload-pack, including its POST requests; reject receive-pack, API mutations, GraphQL, arbitrary endpoints, and scope expansion.
+- Validate canonical repository paths and upstream destinations. Authenticate only approved GitHub endpoints; strip authentication on approved asset redirects and reject arbitrary/private-network destinations.
+- Provide session-only adapters for remote mise HTTP requests and GitHub Git transports. Never return credentials to remote Git or persist transport rewrites in user configuration.
+- Bound request sizes, concurrency, buffering, and timeouts. Redact credentials and sensitive download URLs from output.
+- Tear down relay processes and forwarding on completion, failure, cancellation, or disconnect, including when bootstrap staging is retained. Preserve SSH verification, terminal behavior, and exit status.
+
+### Remote `--from-git`
+
+- Resolve and fetch the source repository on the initiating machine using its credentials, without modifying that machine’s global configuration.
+- Pin one fetched commit for the entire remote-bootstrap invocation, including multiple targets. Transfer repository objects and the selected revision over SSH without transferring local credentials or Git configuration.
+- Establish the repository in the remote user’s global mise configuration directory, with `origin` set to the original credential-free URL—not a relay address. Never configure the relay for unattended future Git operations.
+- For a fresh destination, install the selected revision. For an existing matching checkout, preserve current bootstrap update semantics: reuse unless `--update` requests a safe fast-forward.
+- For a nonempty non-Git destination, preview adoption and require confirmation. Preserve machine-local configuration and existing conflicting files; fail on unresolved conflicts rather than force-replacing them.
+- Reject mismatched origins and unsafe checkout updates. Do not copy `.local.toml` content from the source repository over remote local overrides; report such entries as requiring resolution.
+- Use temporary staging for transfer and verification, then bootstrap from the persistent global configuration. Clean up only temporary resources, never the installed configuration.
+- Retain existing remote-bootstrap trust, confirmation, and dry-run contracts. Dry-run reports required fetch/adoption work without performing it.
+- Additional private GitHub accesses during bootstrap use the relay only when explicitly enabled and authorized. Without it, those operations use the target’s existing authentication.
+- Print a completion note explaining that borrowed access has ended: future independent private-repository updates require remote credentials or another relay-enabled session.
+
+## Tests and documentation
+
+- CLI tests for shorthand expansion, explicit URL preservation, malformed input, source conflicts, target selection, and relay scope validation.
+- Relay tests with fake credentials: approved clone/fetch and API/download operations succeed; denied repositories, writes, path bypasses, unsafe redirects, and unsupported endpoints fail.
+- Assert credentials never reach remote environment variables, arguments, files, Git configuration, logs, or error output.
+- SSH integration tests for interactive/command sessions, bootstrap integration, forwarding failure, interruption, disconnect, multi-target isolation, and cleanup.
+- Remote onboarding tests for fresh installation, existing matching checkout, `--update`, dirty/mismatched destinations, nonempty-directory adoption, preserved local overrides, and persistent configuration after staging cleanup.
+- Verify the transferred revision and credential-free origin, and that the local global config remains untouched.
+- Document a private-repository remote-onboarding example, explicit all-repository access, standalone `mise ssh`, and session-only versus independent authentication.
+- Run focused checks and regenerate CLI docs/completions. Open a non-draft PR against `main` with conventional title and required AI disclosure; do not merge.
+
+## Boundaries
+
+- No write relay, Windows support, GitHub Enterprise relay, remote `gh` adapter, persistent relay daemon, automatic OAuth enrollment, history-stack implementation, or blog edits.
+- A compromised target can read authorized private content during the session. Keeping credentials local limits exposure but does not make the target trustworthy.
+- Existing non-relay SSH and remote-bootstrap workflows retain their behavior.
+
+---
+
+address feedback and failing pr checks until it settles

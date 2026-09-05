@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1S66V1YHCBT4T522X83W8BT",
+  "strategy": "manual-commit",
+  "branch": "codex/github-read-only-relay",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/bootstrap/remote.md",
+    "e2e/cli/test_bootstrap_remote_git",
+    "src/cli/bootstrap.rs",
+    "src/github_relay.rs",
+    "src/http.rs",
+    "src/system/remote.rs",
+    "src/system/remote_repository.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 216014,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2976128,
+    "output_tokens": 12563,
+    "api_call_count": 37
+  }
+}
