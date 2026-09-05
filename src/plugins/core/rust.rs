@@ -388,6 +388,8 @@ impl Backend for RustPlugin {
             None => self.rustup_default_profile(tv, &runtime)?,
         };
         let effective_profile = normalize_rustup_profile(&effective_profile)?;
+        let active_toolchain = self.rustup_active_toolchain(tv, &runtime)?;
+        let host = active_toolchain.as_deref().and_then(rustup_toolchain_host);
 
         // Query components even when none were explicitly requested. This
         // verifies that rustup still has the toolchain represented by mise's
@@ -398,13 +400,11 @@ impl Backend for RustPlugin {
         };
 
         let mut required_components = components.unwrap_or_default();
-        required_components.extend(fallback_rustup_profile_components(effective_profile));
+        required_components.extend(fallback_rustup_profile_components(effective_profile, host));
         required_components.sort();
         required_components.dedup();
 
         if !required_components.is_empty() {
-            let active_toolchain = self.rustup_active_toolchain(tv, &runtime)?;
-            let host = active_toolchain.as_deref().and_then(rustup_toolchain_host);
             let missing =
                 self.missing_components(&required_components, &installed_components, host);
             if !missing.is_empty() {
@@ -562,8 +562,10 @@ impl Backend for RustPlugin {
             None => self.rustup_default_profile(&tv, &runtime)?,
         };
         let effective_profile = normalize_rustup_profile(&effective_profile)?;
+        let active_toolchain = self.rustup_active_toolchain(&tv, &runtime)?;
+        let host = active_toolchain.as_deref().and_then(rustup_toolchain_host);
         let mut components = components.unwrap_or_default();
-        components.extend(fallback_rustup_profile_components(effective_profile));
+        components.extend(fallback_rustup_profile_components(effective_profile, host));
         components.sort();
         components.dedup();
 
@@ -1132,7 +1134,7 @@ fn normalize_rustup_profile(profile: &str) -> Result<&'static str> {
     }
 }
 
-fn fallback_rustup_profile_components(profile: &str) -> Vec<String> {
+fn fallback_rustup_profile_components(profile: &str, host: Option<&str>) -> Vec<String> {
     let mut components = match profile {
         "minimal" | "default" => RUST_MINIMAL_PROFILE_COMPONENTS
             .iter()
@@ -1147,6 +1149,9 @@ fn fallback_rustup_profile_components(profile: &str) -> Vec<String> {
                 .iter()
                 .map(|component| (*component).to_string()),
         );
+    }
+    if host.is_some_and(|host| host.ends_with("-pc-windows-gnu")) {
+        components.push("rust-mingw".to_string());
     }
     components
 }
@@ -1374,11 +1379,11 @@ mod tests {
     #[test]
     fn required_profile_components_match_rustup() {
         assert_eq!(
-            fallback_rustup_profile_components("minimal"),
+            fallback_rustup_profile_components("minimal", Some("x86_64-unknown-linux-gnu")),
             ["cargo", "rust-std", "rustc"]
         );
         assert_eq!(
-            fallback_rustup_profile_components("default"),
+            fallback_rustup_profile_components("default", Some("x86_64-unknown-linux-gnu")),
             [
                 "cargo",
                 "rust-std",
@@ -1388,7 +1393,11 @@ mod tests {
                 "rustfmt"
             ]
         );
-        assert!(fallback_rustup_profile_components("complete").is_empty());
+        assert_eq!(
+            fallback_rustup_profile_components("minimal", Some("x86_64-pc-windows-gnu")),
+            ["cargo", "rust-std", "rustc", "rust-mingw"]
+        );
+        assert!(fallback_rustup_profile_components("complete", None).is_empty());
     }
 
     #[test]
