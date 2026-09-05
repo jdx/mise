@@ -75,9 +75,40 @@ for version in ("1.0.0", "2.0.0"):
         },
     }
     (root / ".mise-packslip.json").write_text(json.dumps(statement))
+
+# An install whose only completion is a file it ships, for the read-only
+# system and shared installs mise is expected to serve completions from.
+static = Path("3.0.0")
+(static / "bin").mkdir(parents=True)
+(static / "_probe.bash").write_text("complete -W 'shipped' probe\n")
+# Nothing should run it: the completion this install ships is a file.
+program = static / "bin/probe"
+program.write_text("#!/usr/bin/env sh\nexit 1\n")
+program.chmod(0o755)
+(static / ".mise-packslip.json").write_text(json.dumps({
+    "_type": "https://in-toto.io/Statement/v1",
+    "subject": [{"name": "probe.tar.gz", "digest": {"sha256": "a" * 64}}],
+    "predicateType": "https://packslip.dev/release/v1",
+    "predicate": {
+        "project": "github.com/test/probe",
+        "version": "3.0.0",
+        "published_at": "2026-09-01T00:00:00Z",
+        "artifacts": [{
+            "name": "probe.tar.gz", "size": 1, "format": "tar.gz", "bin": ["bin/probe"],
+        }],
+        "resources": [
+            {"kind": "completion", "bin": "probe", "shell": "bash", "archive": "_probe.bash"},
+        ],
+        "identity": {
+            "scheme": "sigstore-oidc",
+            "key_id": "https://github.com/test/probe/.github/workflows/release.yml@refs/tags/v3.0.0",
+            "issuer": "https://token.actions.githubusercontent.com",
+        },
+    },
+}))
 PY
 
-for version in 1.0.0 2.0.0; do
+for version in 1.0.0 2.0.0 3.0.0; do
   mise link "packslip:test/probe@$version" "$PWD/$version"
   mkdir "project-$version"
   printf '[tools]\n"packslip:test/probe" = "%s"\n' "$version" >"project-$version/mise.toml"
@@ -167,3 +198,15 @@ assert_contains "cat ../skills/probe/SKILL.md" "# probe 2.0.0"
 cd ../project-1.0.0
 mise skills sync --dir ../skills
 assert_contains "cat ../skills/probe/SKILL.md" "# probe 1.0.0"
+
+# A completion the release ships is read, not generated, so it asks nothing
+# of the install: no lock, no directory, and no write. That is what lets a
+# system or shared install, which is read-only, complete at all.
+cd ../project-3.0.0
+assert_contains "mise completion bash --tool probe" "complete -W 'shipped' probe"
+assert "test ! -e ../3.0.0/.mise-packslip/completions && echo clean" "clean"
+if [ "$(id -u)" != 0 ]; then
+  chmod -R a-w ../3.0.0
+  assert_contains "mise completion bash --tool probe" "complete -W 'shipped' probe"
+  chmod -R u+w ../3.0.0
+fi

@@ -179,7 +179,7 @@ Resources may name one exact `artifact` when layouts differ between archive form
 
 Exec resources receive the manifest’s environment variables, with `{shell}` expanded for completions. They run in a temporary directory with the installed executables on PATH, no stdin, discarded stderr, and a five-second timeout. The same execution rules apply to skills when `packslip.exec` permits generating them.
 
-A script that comes back empty is a failed source, not a completion: mise moves on to the next source and caches nothing. Shells completing the same command at once take turns, so the tool runs once between them rather than once each, and no shell reads a half-written entry. A CLI spec generated for one shell, as `{shell}` in the command allows, is kept under that shell's name and written whole.
+A script that comes back empty is a failed source, not a completion: mise moves on to the next source and caches nothing. Shells completing the same command at once take turns, so the tool runs once between them rather than once each, and no shell reads a half-written entry. Only generation takes turns: a completion the release ships is read straight out of the install, so a read-only system or shared install still completes. A CLI spec generated for one shell, as `{shell}` in the command allows, is kept under that shell's name and written whole.
 
 Static `cli-spec` entries are ranked like a shipped script's: the release's own archive, then a signed asset, then the source repository, with the order they are written in breaking ties.
 

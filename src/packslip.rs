@@ -1195,34 +1195,29 @@ pub(crate) async fn completion_script(
         )
     })?;
     let cache = completion_cache_path(&install_path, bin, shell)?;
-    // Deriving a script runs the tool. Several shells can complete the same
-    // command at once, so they take turns here: the first generates and the
-    // rest read what it cached, and no shell reads a half-written entry.
-    // The lock lives beside the cache, shared by every process that shares
-    // the install, and is taken off the runtime's threads.
-    let lock_path = cache.with_extension("lock");
-    let _lock = tokio::task::spawn_blocking(move || -> Result<fslock::LockFile> {
-        if let Some(dir) = lock_path.parent() {
-            file::create_dir_all(dir)?;
-        }
-        let mut lock = fslock::LockFile::open(&lock_path)?;
-        lock.lock()?;
-        Ok(lock)
-    })
-    .await??;
-    // An empty entry is what an interrupted generation leaves behind, not a
-    // completion; reading it back would hide every source the vendor offers.
-    if let Ok(cached) = file::read_to_string(&cache)
-        && !cached.trim().is_empty()
-    {
-        return Ok(cached);
-    }
+    // Nothing below happens until a source that runs the tool comes up. A
+    // system or shared install is read-only, and a completion that is simply
+    // a file in it has to stay readable there: taking the lock first would
+    // ask to write to the install before reading anything from it.
+    // `None` until the first source that runs the tool, and `Some(None)`
+    // where the install cannot be written to and so cannot be locked.
+    let mut generating: Option<Option<fslock::LockFile>> = None;
     let mut skipped = Vec::new();
     for source in sources {
         let ran_tool = matches!(
             source,
             CompletionSource::Exec(..) | CompletionSource::SpecExec { .. }
         );
+        if ran_tool && generating.is_none() {
+            generating = Some(lock_generation(&cache).await);
+            // An empty entry is what an interrupted generation leaves behind,
+            // not a completion; reading it back would hide every source below.
+            if let Ok(cached) = file::read_to_string(&cache)
+                && !cached.trim().is_empty()
+            {
+                return Ok(cached);
+            }
+        }
         let attempt = match source {
             CompletionSource::File(path) => file::read_to_string(&path),
             CompletionSource::Spec { format, bin, path } => {
@@ -1279,6 +1274,38 @@ pub(crate) async fn completion_script(
         tv.style(),
         skipped.join("; ")
     )
+}
+
+/// Take turns generating, so that of the shells completing one command at
+/// once the first runs the tool and the rest read what it cached. The lock
+/// lives beside the cache, shared by every process that shares the install,
+/// and is taken off the runtime's threads.
+///
+/// A read-only install cannot be locked and does not need to be: nothing
+/// will be cached there either, so each shell generates its own script
+/// rather than being refused a completion.
+async fn lock_generation(cache: &Path) -> Option<fslock::LockFile> {
+    let lock_path = cache.with_extension("lock");
+    let taken = tokio::task::spawn_blocking(move || -> Result<fslock::LockFile> {
+        if let Some(dir) = lock_path.parent() {
+            file::create_dir_all(dir)?;
+        }
+        let mut lock = fslock::LockFile::open(&lock_path)?;
+        lock.lock()?;
+        Ok(lock)
+    })
+    .await;
+    match taken {
+        Ok(Ok(lock)) => Some(lock),
+        Ok(Err(err)) => {
+            debug!("generating a completion without a lock: {err}");
+            None
+        }
+        Err(err) => {
+            debug!("generating a completion without a lock: {err}");
+            None
+        }
+    }
 }
 
 /// A stub the shell loads by name, which asks mise for the real script at
@@ -1821,6 +1848,48 @@ mod tests {
             bins(Some("github.com/o/r")),
             Vec::<String>::new(),
             "an ambiguous tool id must not complete an arbitrary executable"
+        );
+    }
+
+    #[test]
+    fn a_shipped_skill_never_shadows_a_scoped_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // The unscoped source is the one on disk, so it would win a race the
+        // fetch loop's "a higher source already has it" skip could start.
+        let shipped = root.join("share/skills/t");
+        std::fs::create_dir_all(&shipped).unwrap();
+        std::fs::write(shipped.join("SKILL.md"), "# shipped").unwrap();
+        let s = statement_with(
+            r#"[
+            {"kind":"skill","name":"t","archive":"top/share/skills/t"},
+            {"kind":"skill","name":"t","os":"linux","asset":"t-skill.tar.gz"}
+        ]"#,
+        );
+        let linux = s.predicate.artifacts[0].clone();
+        // Fetching and reading agree because both narrow to the most specific
+        // entry per skill name first: the unscoped entry is not a "higher
+        // source" for the scoped one, it is a different platform's answer to
+        // the same question and is gone before either looks.
+        let selected: Vec<_> = selected_resources(&s, Some(&linux))
+            .into_iter()
+            .map(|r| r.asset.as_deref().or(r.archive.as_deref()))
+            .collect();
+        assert_eq!(selected, [Some("t-skill.tar.gz")]);
+        assert!(
+            skills_of(&s, root, "tool", "1", Some(&linux)).is_empty(),
+            "the scoped skill is the skill, and it is not on disk yet"
+        );
+        // With nothing scoped fitting, the shipped one applies as it always did.
+        let mut windows = linux.clone();
+        windows.os = Some("windows".into());
+        windows.libc = None;
+        assert_eq!(
+            skills_of(&s, root, "tool", "1", Some(&windows))
+                .iter()
+                .map(|s| s.path.clone())
+                .collect::<Vec<_>>(),
+            [shipped]
         );
     }
 
