@@ -88,7 +88,11 @@ printf 'COMPLETE=ok\n'
         }
         finally {
             foreach ($name in $saved.Keys) {
-                [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process')
+                if ($null -eq $saved[$name]) {
+                    Remove-Item "Env:\$name" -ErrorAction Ignore
+                } else {
+                    [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process')
+                }
             }
         }
     }
@@ -108,7 +112,11 @@ printf 'COMPLETE=ok\n'
         }
         finally {
             foreach ($name in $saved.Keys) {
-                [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process')
+                if ($null -eq $saved[$name]) {
+                    Remove-Item "Env:\$name" -ErrorAction Ignore
+                } else {
+                    [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process')
+                }
             }
         }
     }

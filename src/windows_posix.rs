@@ -360,7 +360,8 @@ fn prefix_matches(path: &str, prefix: &str) -> bool {
     if prefix == "/" {
         return path.starts_with('/');
     }
-    strip_prefix_ascii(path, prefix).is_some_and(|tail| tail.is_empty() || tail.starts_with('/'))
+    strip_prefix_ascii(path, prefix)
+        .is_some_and(|tail| prefix.ends_with('/') || tail.is_empty() || tail.starts_with('/'))
 }
 
 fn strip_prefix_ascii<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
@@ -790,6 +791,29 @@ mod tests {
         mapper.cygdrive = "/drives".into();
         assert_eq!(mapper.posix_to_windows("/drives/d"), "D:\\");
         assert_eq!(mapper.posix_to_windows("/proc/cygdrive/d"), "D:\\");
+    }
+
+    #[test]
+    fn drive_root_mounts_match_descendants() {
+        let mut mapper = msys();
+        mapper.apply_fstab(
+            "D:/ /data ntfs binary 0 0\nD:/tools /tools ntfs binary 0 0",
+            Path::new(r"C:\Program Files\Git"),
+            "fstab",
+        );
+        assert_eq!(mapper.windows_to_posix(r"D:\"), "/data");
+        assert_eq!(
+            mapper.windows_to_posix(r"d:\projects\bin"),
+            "/data/projects/bin"
+        );
+        assert_eq!(mapper.windows_to_posix(r"D:\tools\bin"), "/tools/bin");
+        assert_eq!(
+            mapper.posix_to_windows("/data/projects/bin"),
+            r"D:\projects\bin"
+        );
+        assert_eq!(mapper.posix_to_windows("/data"), r"D:\");
+        assert_eq!(mapper.windows_to_posix(r"E:\projects"), "/e/projects");
+        assert_eq!(mapper.windows_to_posix(r"D:relative"), "D:relative");
     }
 
     #[test]
