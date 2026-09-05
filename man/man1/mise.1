@@ -223,6 +223,9 @@ Show one checkpoint: what triggered it, what changed, and its journal
 \fBbootstrap dotfiles paths\fR
 Show what history tracks and under which policies
 .TP
+\fBbootstrap dotfiles rollback\fR
+Return files to the version a checkpoint holds
+.TP
 \fBbootstrap dotfiles save\fR
 Save a checkpoint of the tracked files now
 .TP
@@ -237,6 +240,9 @@ Track a file or directory where it is (experimental)
 .TP
 \fBbootstrap dotfiles unapply\fR
 Remove dotfiles applied from `[dotfiles]`
+.TP
+\fBbootstrap dotfiles undo\fR
+Reverse a rollback, undo, or apply
 .TP
 \fBbootstrap dotfiles untrack\fR
 Stop tracking a file or directory
@@ -1658,6 +1664,42 @@ Show what tracking this path would capture
 .TP
 \fB\-h, \-\-help\fR
 Print help
+.SH "MISE BOOTSTRAP DOTFILES ROLLBACK"
+Return files to the version a checkpoint holds
+
+Without `\-\-to`, each path returns to its most recent saved version that
+differs from what is on disk; unrelated checkpoints never influence the
+choice. With `\-\-to <ref>`, the named checkpoint is the source, and
+`\-\-all` selects everything it covers. The current state is saved in a
+protective checkpoint first, so `mise bootstrap dotfiles undo` can reverse it.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles rollback [OPTIONS] [<PATH>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-to\fR \fI<REF>\fR
+The checkpoint to roll back to: id, `latest`, `latest~N`, or a uuid prefix
+.TP
+\fB\-\-all\fR
+With \-\-to: everything the checkpoint covers
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show the plan without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Apply without prompting
+.TP
+\fB\-\-force\fR
+Replace a path whose type changed (file, symlink, directory)
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Paths to roll back (files or directories)
 .SH "MISE BOOTSTRAP DOTFILES SAVE"
 Save a checkpoint of the tracked files now
 
@@ -1804,15 +1846,31 @@ Print help
 .TP
 \fB<TARGET>\fR
 Only unapply these targets
-\fBExamples:\fR
+.SH "MISE BOOTSTRAP DOTFILES UNDO"
+Reverse a rollback, undo, or apply
+
+Restores exactly the paths that operation changed from the protective
+checkpoint it took, leaving everything else as it is now. Without a
+reference, the newest operation not yet undone is reversed.
 .PP
+\fBUsage:\fR mise bootstrap dotfiles undo [OPTIONS] [<REF>]
 .PP
-.RS 4
-mise bootstrap dotfiles unapply
-mise bootstrap dotfiles unapply ~/.zshrc
-mise bootstrap dotfiles unapply \-\-dry\-run
-mise bootstrap dotfiles unapply \-\-force \-\-yes
-.RE
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show the plan without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Apply without prompting
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<REF>\fR
+The operation's checkpoint: id, `latest`, `latest~N`, or a uuid prefix
 .SH "MISE BOOTSTRAP DOTFILES UNTRACK"
 Stop tracking a file or directory
 

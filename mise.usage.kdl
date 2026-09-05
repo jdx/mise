@@ -705,7 +705,7 @@ dotfiles root, and every `[dotfiles]` entry. A checkpoint holds files,
 never package or service state: restoring one restores files. Without a
 subcommand this lists them, newest first.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles history\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history --path ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history show latest\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history diff\u{1b}[22m          # the working tree against the latest checkpoint\n    $ \u{1b}[1mmise bootstrap dotfiles history diff 11 12 --patch\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles save --description \"before the theme change\"\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles history\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history --path ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history show latest\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history diff\u{1b}[22m          # the working tree against the latest checkpoint\n    $ \u{1b}[1mmise bootstrap dotfiles history diff 11 12 --patch\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles save --description \"before the theme change\"\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles undo\u{1b}[22m\n"
             flag "-J --json" help="Output in JSON format"
             flag "-n --limit" help="Show at most this many checkpoints (0 for all)" default="20" {
                 arg <LIMIT>
@@ -779,6 +779,27 @@ enrollment is never mistaken for protection.
                 arg <PATH>
             }
             flag "-h --help" help="Print help" action=help builtin=#true
+        }
+        cmd rollback help="Return files to the version a checkpoint holds" effect=destructive {
+            long_help #"""
+Return files to the version a checkpoint holds
+
+Without `--to`, each path returns to its most recent saved version that
+differs from what is on disk; unrelated checkpoints never influence the
+choice. With `--to <ref>`, the named checkpoint is the source, and
+`--all` selects everything it covers. The current state is saved in a
+protective checkpoint first, so `mise bootstrap dotfiles undo` can reverse it.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles rollback ~/.zshrc --to 42\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles rollback --to latest~3 --all --dry-run\u{1b}[22m\n"
+            flag --to help="The checkpoint to roll back to: id, `latest`, `latest~N`, or a uuid prefix" {
+                arg <REF>
+            }
+            flag --all help="With --to: everything the checkpoint covers"
+            flag "-n --dry-run" help="Show the plan without changing anything"
+            flag "-y --yes" help="Apply without prompting"
+            flag --force help="Replace a path whose type changed (file, symlink, directory)"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[PATH]…" help="Paths to roll back (files or directories)" required=#false var=#true
         }
         cmd save help="Save a checkpoint of the tracked files now" effect=write {
             long_help #"""
@@ -875,6 +896,19 @@ mise bootstrap dotfiles unapply ~/.zshrc
 mise bootstrap dotfiles unapply --dry-run
 mise bootstrap dotfiles unapply --force --yes
 """#
+        }
+        cmd undo help="Reverse a rollback, undo, or apply" effect=destructive {
+            long_help #"""
+Reverse a rollback, undo, or apply
+
+Restores exactly the paths that operation changed from the protective
+checkpoint it took, leaving everything else as it is now. Without a
+reference, the newest operation not yet undone is reversed.
+"""#
+            flag "-n --dry-run" help="Show the plan without changing anything"
+            flag "-y --yes" help="Apply without prompting"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[REF]" help="The operation's checkpoint: id, `latest`, `latest~N`, or a uuid prefix" required=#false
         }
         cmd untrack help="Stop tracking a file or directory" effect=write {
             long_help #"""

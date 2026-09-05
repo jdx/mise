@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use eyre::{Result, bail};
@@ -196,7 +196,7 @@ impl OperationScope {
         let mut writer = lock_unpoisoned(shared);
         // held across the reservation, the capture, and the removal: the
         // capture writes the index and a checkpoint ref, which a concurrent
-        // `mise history save` must not interleave with
+        // `mise bootstrap dotfiles save` must not interleave with
         let _store_lock = writer.store.lock()?;
         let previous = writer.before.take();
         let id = writer.store.reserve_id()?;

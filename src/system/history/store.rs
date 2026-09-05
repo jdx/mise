@@ -509,8 +509,6 @@ pub(crate) struct OperationSource {
     pub paths: Vec<String>,
 }
 
-}
-
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct Summary {
     pub message: Option<String>,

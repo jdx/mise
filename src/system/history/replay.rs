@@ -402,7 +402,6 @@ async fn execute(
             (
                 None,
                 Summary {
-                    parts: vec!["history".into()],
                     message: Some(exec.message.clone()),
                 },
             )
@@ -410,7 +409,6 @@ async fn execute(
         Err(err) => (
             Some(format!("{err:#}")),
             Summary {
-                parts: vec!["history".into()],
                 message: Some(format!("{} failed", exec.message)),
             },
         ),

@@ -10,7 +10,9 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::dotfiles::{
-    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesHistory, DotfilesPaths, DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesTrack, DotfilesUnapply, DotfilesUndo, DotfilesUntrack,
+    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesHistory, DotfilesPaths,
+    DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesTrack, DotfilesUnapply, DotfilesUndo,
+    DotfilesUntrack,
 };
 use super::install::Install;
 use super::plugins::install::install_plugin;

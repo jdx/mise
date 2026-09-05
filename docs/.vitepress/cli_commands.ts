@@ -106,6 +106,9 @@ export const commands: { [key: string]: Command } = {
           paths: {
             hide: false,
           },
+          rollback: {
+            hide: false,
+          },
           save: {
             hide: false,
           },
@@ -116,6 +119,9 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
           unapply: {
+            hide: false,
+          },
+          undo: {
             hide: false,
           },
           untrack: {
