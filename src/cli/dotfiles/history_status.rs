@@ -62,7 +62,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         checkpoints: entries.len(),
         latest,
         pending_operations,
-        watcher: super::capture_health::watcher(),
+        watcher: super::capture_health::watcher().await?,
         unavailable: store.unavailable().map(str::to_string),
     })
 }

@@ -104,24 +104,7 @@ impl DotfilesUntrack {
                     } else {
                         key.clone()
                     };
-                    let mut doc = super::track::read_document(&global)?;
-                    let history = doc
-                        .entry("history")
-                        .or_insert(Item::Table(toml_edit::Table::new()));
-                    if let Some(table) = history.as_table_mut() {
-                        table.set_implicit(false);
-                        let exclude = table
-                            .entry("exclude")
-                            .or_insert(Item::Value(Value::Array(toml_edit::Array::new())));
-                        if let Some(array) = exclude.as_array_mut()
-                            && !array
-                                .iter()
-                                .any(|value| value.as_str() == Some(glob.as_str()))
-                        {
-                            array.push(Value::String(toml_edit::Formatted::new(glob.clone())));
-                        }
-                    }
-                    file::write(&global, doc.to_string())?;
+                    super::track::edit_exclude(&glob, true)?;
                     info!(
                         "dotfiles: {key} is covered by {} ({}); excluded it in {}",
                         owner.display(),

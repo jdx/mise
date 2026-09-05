@@ -24,6 +24,10 @@ pub(crate) struct DotfilesPaths {
     /// Show what tracking this path would capture
     #[usage(long, value_name = "PATH")]
     preview: Option<PathBuf>,
+
+    /// List the paths the watcher found changing constantly
+    #[usage(long)]
+    noisy: bool,
 }
 
 #[derive(Serialize)]
@@ -47,6 +51,9 @@ struct PathRow {
 impl DotfilesPaths {
     pub(crate) async fn run(self) -> Result<()> {
         crate::system::history::ensure_experimental()?;
+        if self.noisy {
+            return self.print_noisy();
+        }
         let tracked = match &self.preview {
             Some(path) => {
                 let mut set = TrackedSet {
@@ -167,4 +174,56 @@ impl DotfilesPaths {
         }
         Ok(())
     }
+}
+
+impl HistoryPaths {
+    fn print_noisy(&self) -> Result<()> {
+        use crate::system::history::watch::{noise, runtime};
+        let record = noise::read(&runtime::noisy_path_in(
+            &crate::system::history::store::state_dir(),
+        ));
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&record.paths)?);
+            return Ok(());
+        }
+        if record.paths.is_empty() {
+            info!("the watcher has not reported constantly changing paths");
+            return Ok(());
+        }
+        let mut table = MiseTable::new(false, &["Path", "Changes / 10 min", "Last seen"]);
+        for (path, noisy) in &record.paths {
+            table.add_row(vec![
+                path.clone(),
+                noisy.changes_per_10m.to_string(),
+                noisy.last_seen.clone(),
+            ]);
+        }
+        table.print()?;
+        miseprintln!(
+            "Exclude a path with `mise bootstrap dotfiles exclude '<glob>'` or track it with `--no-autosave`."
+        );
+        Ok(())
+    }
+}
+
+pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<()> {
+    let glob = glob.trim();
+    if glob.is_empty() {
+        eyre::bail!("a glob is required");
+    }
+    let global = crate::config::global_config_path();
+    let changed = crate::cli::dotfiles::track::edit_exclude(glob, add)?;
+    match (add, changed) {
+        (true, true) => info!(
+            "history: {glob} is excluded from capture ({})",
+            display_path(&global)
+        ),
+        (true, false) => info!("history: {glob} was already excluded"),
+        (false, true) => info!(
+            "history: {glob} is captured again ({})",
+            display_path(&global)
+        ),
+        (false, false) => info!("history: {glob} was not excluded"),
+    }
+    Ok(())
 }

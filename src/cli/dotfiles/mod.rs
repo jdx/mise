@@ -6,6 +6,7 @@ mod apply;
 pub(crate) mod capture_health;
 mod diff;
 mod edit;
+mod exclude;
 pub(crate) mod history;
 mod history_status;
 mod paths;
@@ -16,11 +17,13 @@ pub(crate) mod track;
 mod unapply;
 mod undo;
 mod untrack;
+mod watch;
 
 pub(crate) use add::DotfilesAdd;
 pub(crate) use apply::DotfilesApply;
 pub(crate) use diff::DotfilesDiff;
 pub(crate) use edit::DotfilesEdit;
+pub(crate) use exclude::{DotfilesExclude, DotfilesInclude};
 pub(crate) use history::DotfilesHistory;
 pub(crate) use paths::DotfilesPaths;
 pub(crate) use rollback::DotfilesRollback;
@@ -30,6 +33,7 @@ pub(crate) use track::DotfilesTrack;
 pub(crate) use unapply::DotfilesUnapply;
 pub(crate) use undo::DotfilesUndo;
 pub(crate) use untrack::DotfilesUntrack;
+pub(crate) use watch::DotfilesWatch;
 
 /// Load, validate, and filter whole-file and edit requests with the same
 /// target semantics for every command that acts on both kinds of entry.

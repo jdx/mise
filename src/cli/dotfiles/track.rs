@@ -143,7 +143,7 @@ impl DotfilesTrack {
             }
             return Err(err.wrap_err(format!("{} was left unchanged", display_path(&config_path))));
         }
-        crate::cli::dotfiles::capture_health::report();
+        crate::cli::dotfiles::capture_health::report().await;
         Ok(())
     }
 
@@ -341,3 +341,41 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap dotfiles track ~/.ssh/config --no-share</bold>
 "#
 );
+
+/// Adds (or removes) a glob in `[history] exclude` of the global config.
+/// Returns whether the file changed.
+pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
+    use toml_edit::{Item, Value};
+    let global = crate::config::global_config_path();
+    let mut doc = read_document(&global)?;
+    let history = doc
+        .entry("history")
+        .or_insert(Item::Table(toml_edit::Table::new()));
+    let Some(table) = history.as_table_mut() else {
+        eyre::bail!("[history] in {} is not a table", display_path(&global));
+    };
+    table.set_implicit(false);
+    let exclude = table
+        .entry("exclude")
+        .or_insert(Item::Value(Value::Array(toml_edit::Array::new())));
+    let Some(array) = exclude.as_array_mut() else {
+        eyre::bail!(
+            "[history] exclude in {} is not an array",
+            display_path(&global)
+        );
+    };
+    let present = array.iter().any(|value| value.as_str() == Some(glob));
+    let changed = if add && !present {
+        array.push(Value::String(toml_edit::Formatted::new(glob.to_string())));
+        true
+    } else if !add && present {
+        array.retain(|value| value.as_str() != Some(glob));
+        true
+    } else {
+        false
+    };
+    if changed {
+        crate::file::write(&global, doc.to_string())?;
+    }
+    Ok(changed)
+}

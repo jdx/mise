@@ -138,6 +138,59 @@ forced, and an empty directory it replaced. It refuses when that checkpoint
 was pruned. Undoing an undo re-applies the operation; an undo that changed
 nothing does not count as having reversed it.
 
+## Automatic saves
+
+`mise bootstrap dotfiles watch` saves tracked files as they change. Declare it once as
+the built-in user service and `mise bootstrap` installs and starts it on
+every platform (a systemd user unit, a LaunchAgent, or a Scheduled Task):
+
+```toml
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+```
+
+```sh
+mise bootstrap services apply        # or the full `mise bootstrap`
+mise bootstrap dotfiles status                  # Automatic capture: running
+```
+
+The watcher installs filesystem watches for every autosaved entry (a tracked
+directory recursively, a tracked file through its parent, a path that does
+not exist yet through its nearest existing ancestor) and saves a checkpoint
+once a changed file has been quiet for `history.watch.debounce` (2s). A file
+that keeps changing never delays the others: the batch flushes as soon as
+any pending path is quiet, and after `history.watch.max_interval` (30s)
+regardless. Manual-save entries (`autosave = false`) are never watched.
+
+The whole tracked set is reconciled at startup, every
+`history.watch.reconcile` (10m; `0` disables), when the configuration
+changes (an edit to `~/.config/mise/*.toml` or `conf.d/` reloads the
+declarations and replans the watches; `history.enabled = false` stops the
+watcher), and on shutdown, so an edit no watch reported is still saved.
+`mise bootstrap dotfiles watch --once` runs one reconcile and exits, for a timer or
+cron instead of the service.
+
+A capture that fails is retried with backoff (1s to 5min) and never drops
+the pending changes; one that would overlap another history operation (a
+running bootstrap, rollback, or undo) is deferred until that operation
+finishes. One watcher runs per store: a second one exits 0 immediately.
+`--json` prints one object per line (`started`, `captured`, `unchanged`,
+`deferred`, `replan`, `noise`, `degraded`, `error`, `stopped`).
+
+A path that changes more than 60 times in ten minutes is reported once per
+hour, with the exclusion to write if the churn is not wanted; nothing is
+excluded automatically, and `mise bootstrap dotfiles paths --noisy` lists what the
+watcher noticed:
+
+```sh
+mise bootstrap dotfiles exclude '~/.config/hypr/plugins/**'   # [history] exclude
+mise bootstrap dotfiles include '~/.config/hypr/plugins/**'
+mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave
+```
+
+`mise bootstrap dotfiles status` reports the watcher as `running`, `declared but not
+running` (run `mise bootstrap services apply`), or `not declared`.
+
 ## What is tracked
 
 `mise bootstrap dotfiles paths` lists every entry with its mode, policies, the file that

@@ -18,6 +18,11 @@ use crate::file::{self, display_path};
 
 pub(crate) const SCHEMA_VERSION: u32 = 1;
 
+/// The state directory the store lives under.
+pub(crate) fn state_dir() -> PathBuf {
+    crate::dirs::STATE.to_path_buf()
+}
+
 pub(crate) fn store_dir_in(state_dir: &Path) -> PathBuf {
     state_dir.join("history")
 }

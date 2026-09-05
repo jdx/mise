@@ -1272,6 +1272,24 @@ env = "MISE_HISTORY_KEEP_COUNT"
 rust_type = "usize"
 type = "Integer"
 
+[history.watch.debounce]
+default = "2s"
+description = "How long a changed file must stay quiet before the history watcher saves it. A file that keeps changing never delays the others."
+env = "MISE_HISTORY_WATCH_DEBOUNCE"
+type = "Duration"
+
+[history.watch.max_interval]
+default = "30s"
+description = "The history watcher saves pending changes after this long even when a file keeps changing."
+env = "MISE_HISTORY_WATCH_MAX_INTERVAL"
+type = "Duration"
+
+[history.watch.reconcile]
+default = "10m"
+description = "How often the history watcher rescans the whole tracked set for changes its watches missed. `0` disables periodic reconciliation (startup and configuration changes still reconcile)."
+env = "MISE_HISTORY_WATCH_RECONCILE"
+type = "Duration"
+
 [hook_env.cache_ttl]
 default = "0s"
 description = "Cache hook-env directory checks for this duration. Useful for slow filesystems like NFS."

@@ -19,6 +19,7 @@ pub(crate) mod select;
 pub(crate) mod shadow;
 pub(crate) mod store;
 pub(crate) mod tracked;
+pub(crate) mod watch;
 
 pub(crate) use scope::OperationScope;
 

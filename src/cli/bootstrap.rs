@@ -10,9 +10,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::dotfiles::{
-    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesHistory, DotfilesPaths,
-    DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesTrack, DotfilesUnapply, DotfilesUndo,
-    DotfilesUntrack,
+    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesExclude, DotfilesHistory, DotfilesInclude, DotfilesPaths, DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesTrack, DotfilesUnapply, DotfilesUndo, DotfilesUntrack, DotfilesWatch,
 };
 use super::install::Install;
 use super::plugins::install::install_plugin;
@@ -842,7 +840,9 @@ enum BootstrapDotfilesCommands {
     Apply(BootstrapDotfilesApply),
     Diff(DotfilesDiff),
     Edit(DotfilesEdit),
+    Exclude(DotfilesExclude),
     History(DotfilesHistory),
+    Include(DotfilesInclude),
     Paths(DotfilesPaths),
     Rollback(DotfilesRollback),
     Save(DotfilesSave),
@@ -851,6 +851,7 @@ enum BootstrapDotfilesCommands {
     Unapply(DotfilesUnapply),
     Undo(DotfilesUndo),
     Untrack(DotfilesUntrack),
+    Watch(DotfilesWatch),
 }
 
 /// Apply dotfiles from `[dotfiles]`
@@ -4103,7 +4104,9 @@ impl BootstrapDotfiles {
             BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Diff(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Exclude(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::History(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Include(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Paths(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Rollback(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Save(cmd) => cmd.run().await,
@@ -4112,6 +4115,7 @@ impl BootstrapDotfiles {
             BootstrapDotfilesCommands::Unapply(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Undo(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Untrack(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Watch(cmd) => cmd.run().await,
         }
     }
 }
