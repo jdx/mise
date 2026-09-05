@@ -22,6 +22,9 @@ pub(crate) struct LaunchdTomlConfig {
     pub run_at_load: bool,
     #[serde(default)]
     pub keep_alive: bool,
+    /// `KeepAlive = { SuccessfulExit = false }`: relaunch only after a failure.
+    #[serde(default)]
+    pub keep_alive_on_failure: bool,
     #[serde(default)]
     pub start_interval: Option<u64>,
     #[serde(default)]
@@ -71,6 +74,7 @@ pub(crate) struct LaunchdRequest {
     pub args: Vec<String>,
     pub run_at_load: bool,
     pub keep_alive: bool,
+    pub keep_alive_on_failure: bool,
     pub start_interval: Option<u64>,
     pub throttle_interval: Option<u64>,
     pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
@@ -109,6 +113,9 @@ impl LaunchdRequest {
         if program.is_empty() {
             bail!("agent '{name}' must set a non-empty `program`");
         }
+        if config.keep_alive && config.keep_alive_on_failure {
+            bail!("agent '{name}' cannot set both `keep_alive` and `keep_alive_on_failure`");
+        }
         if let Some(interval) = &config.start_calendar_interval {
             interval.validate(&name)?;
         }
@@ -134,6 +141,7 @@ impl LaunchdRequest {
             args: config.args,
             run_at_load: config.run_at_load,
             keep_alive: config.keep_alive,
+            keep_alive_on_failure: config.keep_alive_on_failure,
             start_interval: config.start_interval,
             throttle_interval: config.throttle_interval,
             start_calendar_interval: config.start_calendar_interval,
@@ -317,6 +325,76 @@ pub(crate) async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<
     Ok(())
 }
 
+/// Whether the agent's process is currently running (not merely loaded).
+pub(crate) async fn is_running(label: &str) -> Result<bool> {
+    let target = format!("{}/{}", launchctl_domain(), label);
+    let output = tokio::process::Command::new("launchctl")
+        .args(["print", &target])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await?;
+    if !output.status.success() {
+        return Ok(false);
+    }
+    Ok(print_reports_running(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+fn print_reports_running(output: &str) -> bool {
+    output.lines().map(str::trim).any(|line| {
+        line.strip_prefix("state = ")
+            .is_some_and(|state| state.trim() == "running")
+    })
+}
+
+/// Unload (stopping its process) the agent `label` if it is loaded, keeping
+/// the plist in place.
+pub(crate) async fn unload(label: &str, dry_run: bool) -> Result<()> {
+    let domain = launchctl_domain();
+    let path = launch_agents_dir().join(format!("{label}.plist"));
+    if dry_run {
+        miseprintln!(
+            "{}",
+            shell_words::join([
+                "launchctl".to_string(),
+                "bootout".to_string(),
+                domain,
+                path.display().to_string(),
+            ])
+        );
+        return Ok(());
+    }
+    bootout(&domain, &path).await
+}
+
+/// Unload and delete the LaunchAgent mise wrote for `name`
+/// (`dev.mise.<name>`). Returns whether a plist existed.
+pub(crate) async fn remove_agent(name: &str, dry_run: bool) -> Result<bool> {
+    let label = format!("dev.mise.{name}");
+    let path = launch_agents_dir().join(format!("{label}.plist"));
+    if !path.exists() {
+        return Ok(false);
+    }
+    unload(&label, dry_run).await?;
+    if dry_run {
+        miseprintln!(
+            "{}",
+            shell_words::join(["rm".to_string(), path.display().to_string()])
+        );
+        return Ok(true);
+    }
+    std::fs::remove_file(&path)?;
+    Ok(true)
+}
+
+/// The plist path mise uses for an agent named `name`.
+pub(crate) fn agent_plist_path(name: &str) -> PathBuf {
+    launch_agents_dir().join(format!("dev.mise.{name}.plist"))
+}
+
 pub(crate) fn render_plist(request: &LaunchdRequest) -> Result<Vec<u8>> {
     let mut out = vec![];
     plist::to_writer_xml(&mut out, &plist_value(request))?;
@@ -334,6 +412,10 @@ fn plist_value(request: &LaunchdRequest) -> Value {
     }
     if request.keep_alive {
         dict.insert("KeepAlive".into(), Value::Boolean(true));
+    } else if request.keep_alive_on_failure {
+        let mut keep_alive = Dictionary::new();
+        keep_alive.insert("SuccessfulExit".into(), Value::Boolean(false));
+        dict.insert("KeepAlive".into(), Value::Dictionary(keep_alive));
     }
     if let Some(interval) = request.start_interval {
         dict.insert("StartInterval".into(), Value::Integer(interval.into()));
@@ -615,6 +697,7 @@ mod tests {
             args: vec!["hello".to_string()],
             run_at_load: true,
             keep_alive: true,
+            keep_alive_on_failure: false,
             start_interval: Some(60),
             throttle_interval: Some(300),
             start_calendar_interval: Some(LaunchdCalendarIntervals::Single(
@@ -725,6 +808,7 @@ mod tests {
             args: vec![],
             run_at_load: false,
             keep_alive: false,
+            keep_alive_on_failure: false,
             start_interval: None,
             throttle_interval: None,
             start_calendar_interval: Some(LaunchdCalendarIntervals::Multiple(vec![

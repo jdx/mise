@@ -66,6 +66,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap firewall status", Read),
     ("bootstrap services", Read),
     ("bootstrap services apply", Destructive),
+    ("bootstrap services remove", Destructive),
     ("bootstrap services status", Read),
     // Hidden compatibility spellings of the nested macos/linux subcommands.
     ("bootstrap launchd", Read),

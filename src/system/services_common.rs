@@ -17,6 +17,53 @@ pub(crate) enum ServiceState {
     #[default]
     Running,
     Stopped,
+    /// User scope only: the installed service definition is removed.
+    Absent,
+}
+
+impl ServiceState {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Stopped => "stopped",
+            Self::Absent => "absent",
+        }
+    }
+}
+
+/// Which service manager a `[bootstrap.services]` entry targets.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ServiceScope {
+    /// An existing Linux systemd system unit (the original behaviour).
+    #[default]
+    System,
+    /// A service mise defines for the current user: a systemd user unit on
+    /// Linux, a LaunchAgent on macOS, a Scheduled Task on Windows.
+    User,
+}
+
+/// Restart policy of a user-scope service, with one meaning on every platform.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ServiceRestart {
+    /// Restart whenever the process exits, even successfully.
+    Always,
+    /// Restart only after a failure.
+    #[default]
+    OnFailure,
+    /// Never restart automatically.
+    Never,
+}
+
+impl ServiceRestart {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::OnFailure => "on-failure",
+            Self::Never => "never",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -39,6 +86,30 @@ pub(crate) struct ServiceTomlConfig {
     pub masked: bool,
     #[serde(default)]
     pub on_change: ServiceChangeAction,
+    /// `"system"` (default) or `"user"`. A `builtin` implies `"user"`.
+    #[serde(default)]
+    pub scope: Option<ServiceScope>,
+    /// A service definition mise supplies (for example `"history-watch"`).
+    #[serde(default)]
+    pub builtin: Option<String>,
+    /// User scope: the command line to run.
+    #[serde(default)]
+    pub command: Option<String>,
+    /// User scope: a human-readable description.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// User scope: restart policy (default `"on-failure"`).
+    #[serde(default)]
+    pub restart: Option<ServiceRestart>,
+    /// User scope: environment variables for the process.
+    #[serde(default)]
+    pub environment: IndexMap<String, String>,
+    /// User scope: working directory (`~` is expanded).
+    #[serde(default)]
+    pub working_directory: Option<String>,
+    /// User scope: converge after `[tools]` are installed.
+    #[serde(default)]
+    pub requires_tools: bool,
 }
 
 impl Default for ServiceTomlConfig {
@@ -48,7 +119,44 @@ impl Default for ServiceTomlConfig {
             enabled: true,
             masked: false,
             on_change: ServiceChangeAction::default(),
+            scope: None,
+            builtin: None,
+            command: None,
+            description: None,
+            restart: None,
+            environment: IndexMap::new(),
+            working_directory: None,
+            requires_tools: false,
         }
+    }
+}
+
+impl ServiceTomlConfig {
+    /// The effective scope: explicit `scope`, else `"user"` when a `builtin`
+    /// is named, else `"system"`.
+    pub(crate) fn scope(&self) -> ServiceScope {
+        self.scope.unwrap_or(if self.builtin.is_some() {
+            ServiceScope::User
+        } else {
+            ServiceScope::System
+        })
+    }
+
+    /// Fields that only apply to user-scope services, when set.
+    fn user_only_fields(&self) -> Vec<&'static str> {
+        [
+            (self.builtin.is_some(), "builtin"),
+            (self.command.is_some(), "command"),
+            (self.description.is_some(), "description"),
+            (self.restart.is_some(), "restart"),
+            (!self.environment.is_empty(), "environment"),
+            (self.working_directory.is_some(), "working_directory"),
+            (self.requires_tools, "requires_tools"),
+            (self.state == ServiceState::Absent, "state = \"absent\""),
+        ]
+        .into_iter()
+        .filter_map(|(is_set, field)| is_set.then_some(field))
+        .collect()
     }
 }
 
@@ -82,6 +190,44 @@ impl ServiceNotifications {
                 .insert(source.clone());
         }
     }
+}
+
+/// The system-scope entries of `[bootstrap.services]`, validated: fields that
+/// only apply to user services are rejected here so a typo in `scope` cannot
+/// silently turn a user service into a lookup of a system unit.
+pub(crate) fn compose_system_declarations(
+    config: &Config,
+) -> Result<IndexMap<String, (ServiceTomlConfig, ResourceOrigin)>> {
+    let mut out = IndexMap::new();
+    for (name, (declaration, origin)) in compose_declarations(config)? {
+        if declaration.scope() != ServiceScope::System {
+            continue;
+        }
+        let user_only = declaration.user_only_fields();
+        if !user_only.is_empty() {
+            bail!(
+                "bootstrap service '{name}' sets {}, which only applies to `scope = \"user\"` services",
+                user_only.join(", ")
+            );
+        }
+        out.insert(name, (declaration, origin));
+    }
+    Ok(out)
+}
+
+/// The user-scope entries of `[bootstrap.services]`.
+pub(crate) fn compose_user_declarations(
+    config: &Config,
+) -> Result<IndexMap<String, (ServiceTomlConfig, ResourceOrigin)>> {
+    Ok(compose_declarations(config)?
+        .into_iter()
+        .filter(|(_, (declaration, _))| declaration.scope() == ServiceScope::User)
+        .collect())
+}
+
+/// Names of every user-scope service, for notification validation.
+pub(crate) fn user_service_names(config: &Config) -> Result<Vec<String>> {
+    Ok(compose_user_declarations(config)?.into_keys().collect())
 }
 
 /// `[bootstrap.services]` from every config map, rejecting redeclarations that
@@ -134,6 +280,7 @@ pub(crate) fn validate_notifications(
     files: &[super::managed_files::ManagedFileRequest],
     directories: &[super::managed_files::ManagedDirectoryRequest],
     services: &[ServiceRequest],
+    user_services: &[String],
 ) -> Result<()> {
     let configured = services
         .iter()
@@ -153,6 +300,13 @@ pub(crate) fn validate_notifications(
                 .map(move |notification| (directory.path.as_path(), notification))
         }))
     {
+        if user_services.iter().any(|name| name == notification) {
+            bail!(
+                "managed path '{}' notifies user-scope bootstrap service '{}'; notifications apply to system services only",
+                resource.display(),
+                notification
+            );
+        }
         if !configured.contains(notification.as_str()) {
             bail!(
                 "managed path '{}' notifies unconfigured bootstrap service '{}'",

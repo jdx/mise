@@ -479,6 +479,53 @@ pub(crate) async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<
     Ok(())
 }
 
+/// Stop, disable, and delete the service unit mise wrote for `name`
+/// (`dev.mise.<name>.service`), then reload the user manager. Returns whether
+/// a unit file existed.
+pub(crate) async fn remove_service(name: &str, dry_run: bool) -> Result<bool> {
+    let unit = format!("dev.mise.{name}.service");
+    let path = user_units_dir().join(&unit);
+    if !path.exists() {
+        return Ok(false);
+    }
+    if dry_run {
+        for verb in ["stop", "disable"] {
+            miseprintln!(
+                "{}",
+                shell_words::join([
+                    "systemctl".to_string(),
+                    "--user".to_string(),
+                    verb.to_string(),
+                    unit.clone(),
+                ])
+            );
+        }
+        miseprintln!(
+            "{}",
+            shell_words::join(["rm".to_string(), path.display().to_string()])
+        );
+        miseprintln!(
+            "{}",
+            shell_words::join([
+                "systemctl".to_string(),
+                "--user".to_string(),
+                "daemon-reload".to_string(),
+            ])
+        );
+        return Ok(true);
+    }
+    stop_unit(&unit).await?;
+    disable_unit(&unit).await?;
+    std::fs::remove_file(&path)?;
+    systemctl(&["daemon-reload".to_string()]).await?;
+    Ok(true)
+}
+
+/// The unit file path mise uses for a service named `name`.
+pub(crate) fn service_unit_path(name: &str) -> PathBuf {
+    user_units_dir().join(format!("dev.mise.{name}.service"))
+}
+
 pub(crate) fn render_unit(request: &SystemdRequest) -> String {
     let mut out = String::new();
     out.push_str("[Unit]\n");

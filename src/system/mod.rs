@@ -63,6 +63,7 @@ pub(crate) mod remote;
 pub(crate) mod remote_repository;
 pub(crate) mod repos;
 pub(crate) mod resources;
+pub(crate) mod scheduled_tasks;
 pub(crate) mod secrets;
 #[cfg(target_os = "linux")]
 pub(crate) mod services;
@@ -73,6 +74,7 @@ pub(crate) mod services_common;
 pub(crate) mod shell_activation;
 pub(crate) mod sudo;
 pub(crate) mod systemd;
+pub(crate) mod user_services;
 
 /// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]

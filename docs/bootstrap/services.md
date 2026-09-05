@@ -1,9 +1,106 @@
-# System services
+# Services
 
-`[bootstrap.services]` declaratively manages the lifecycle of existing Linux
-systemd system units. Package installation and `[bootstrap.files]` run first,
-so a service may be installed by a package or supplied as a managed unit file.
-After file changes, mise reloads systemd before applying service changes.
+`[bootstrap.services]` declares services in two scopes:
+
+- **System services** (the default) manage the lifecycle of existing Linux
+  systemd system units: start, stop, enable, mask, and reload on change.
+- **User services** (`scope = "user"`) are services mise defines for the
+  current user, declared once and installed on every platform: a systemd user
+  unit on Linux, a LaunchAgent on macOS, a Scheduled Task on Windows.
+
+## User services
+
+```toml
+[bootstrap.services.mise-history]        # the built-in history watcher
+builtin = "history-watch"                # implies scope = "user"
+
+[bootstrap.services.my-agent]
+scope = "user"
+command = "~/.local/bin/my-agent --serve"
+description = "My agent"
+restart = "on-failure"                   # "always" | "on-failure" | "never"
+environment = { RUST_LOG = "info" }
+working_directory = "~"
+requires_tools = true                    # converge after [tools] are installed
+```
+
+One declaration is rendered for the platform's user service manager:
+
+| platform | definition                                                                            | manager            |
+| -------- | ------------------------------------------------------------------------------------- | ------------------ |
+| Linux    | `~/.config/systemd/user/dev.mise.<name>.service`                                      | `systemctl --user` |
+| macOS    | `~/Library/LaunchAgents/dev.mise.<name>.plist`                                        | `launchctl`        |
+| Windows  | Scheduled Task `mise\<name>` (definition kept under `$MISE_STATE_DIR/user-services/`) | `schtasks`         |
+
+### User service options
+
+- `command`: the command line to run. `~` and `~/` are expanded. Required
+  unless `builtin` is set.
+- `builtin`: a definition mise supplies. `"history-watch"` runs
+  `mise history watch` through a durable mise executable with
+  `restart = "on-failure"` and a low priority. A builtin implies
+  `scope = "user"`; `command` cannot be combined with it.
+- `description`: shown by the service manager.
+- `restart`: `"on-failure"` (default), `"always"`, or `"never"`. On Linux this
+  is `Restart=`; on macOS `KeepAlive` (`{ SuccessfulExit = false }` for
+  on-failure); on Windows the task restarts up to three times a minute apart
+  after a failure and runs again at logon.
+- `environment` and `working_directory` map directly to the platform
+  definition. On Windows, environment variables are set through `cmd.exe`.
+- `state`: `"running"` (default), `"stopped"` (installed but not running), or
+  `"absent"` (the installed definition is removed and stays removed while
+  declared so).
+- `enabled`: whether the service starts at login (default `true`).
+- `requires_tools`: converge in a second pass after `[tools]` and plugin
+  package managers, so a service that runs a tool starts after it exists. The
+  built-in watcher needs only mise and converges in the services step.
+
+Names must contain only letters, numbers, `.`, `_`, or `-`, and must not also
+appear in `[bootstrap.linux.systemd.units]` or
+`[bootstrap.macos.launchd.agents]`: both would write the same definition.
+
+### Durable executable
+
+A builtin is written with an absolute path to the mise that installed it.
+mise uses the running executable unless it lives in a temporary directory or
+in the staging directory of `mise bootstrap remote`, and otherwise a `mise`
+found on `PATH` outside those. When only a staged binary exists the service is
+reported as `unknown: no durable mise executable; install mise on this host
+first` and is never written with a path that will be deleted.
+
+### Remove and disable
+
+`state = "absent"` removes the installed unit, agent, or task and keeps it
+absent on later runs while declared so. Deleting the declaration leaves the
+installed service in place until it is removed once:
+
+```sh
+mise bootstrap services remove my-agent
+```
+
+The next `mise bootstrap` recreates it if it is still declared.
+
+### Status and apply
+
+`mise bootstrap services status` and `mise bootstrap services apply` cover
+both scopes; `mise bootstrap status` and `mise bootstrap plan` list user
+services as `user-service:<name>`. `status --json` includes each user
+service's rendered definition, so what mise would install can be inspected
+before applying. When the platform's user service manager is unavailable (for
+example, no systemd user manager in a container), user services are reported
+as `unknown` and skipped with a follow-up note; nothing is written.
+
+Fields that only apply to user services (`command`, `builtin`, `description`,
+`restart`, `environment`, `working_directory`, `requires_tools`, and
+`state = "absent"`) are rejected on a system-scope entry, so a missing
+`scope = "user"` cannot silently turn a service definition into a lookup of a
+system unit. Managed-file notifications apply to system services only.
+
+## System services
+
+Package installation and `[bootstrap.files]` run first, so a service may be
+installed by a package or supplied as a managed unit file. After file changes,
+mise reloads systemd before applying service changes.
 
 ```toml
 [bootstrap.packages]
@@ -17,15 +114,16 @@ enabled = true
 Names without a unit suffix receive `.service`. Explicit unit names such as
 `postgresql@16-main.service`, sockets, and timers are also accepted.
 
-For user-owned units written under `~/.config/systemd/user`, use
-[systemd user units](/bootstrap/systemd.html) instead. This section manages
-system units already supplied by packages or [managed files](/bootstrap/files.html).
+This section manages system units already supplied by packages or
+[managed files](/bootstrap/files.html). A service that runs as your user is a
+[user service](#user-services) (`scope = "user"`, above); hand-written user
+units go through [systemd user units](/bootstrap/systemd.html).
 
 Preview with `mise bootstrap services apply --dry-run`. If the unit will be
 created by the same configuration, use the full bootstrap to install its package
 or file before converging the service.
 
-## Options
+### System service options
 
 - `state`: `"running"` (default) or `"stopped"`
 - `enabled`: whether the unit starts at boot (default `true`)

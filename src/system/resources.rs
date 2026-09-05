@@ -412,7 +412,8 @@ pub(crate) async fn plan(
         cfg!(target_os = "linux"),
     )?;
     let services = super::services::status_requests_from_config(config)?;
-    super::services::validate_notifications(&files, &directories, &services)?;
+    let user_services = super::services_common::user_service_names(config)?;
+    super::services::validate_notifications(&files, &directories, &services, &user_services)?;
     let notified_services = super::managed_files::pending_notifications(&files, &directories)?;
     let directory_states = directories
         .iter()
@@ -536,6 +537,10 @@ pub(crate) async fn plan(
         for dependency in &service_dependencies {
             plan.add_dependency(&id, dependency.clone())?;
         }
+    }
+    let user_service_requests = super::user_services::requests_from_config(config)?;
+    for status in super::user_services::status(&user_service_requests).await? {
+        plan.insert(status.plan())?;
     }
     if let Some(mut firewall) = super::firewall::prepare_request_from_config(config)? {
         super::firewall::inspect_request(&mut firewall)?;

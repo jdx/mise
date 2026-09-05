@@ -43,11 +43,11 @@ use crate::ui::table::MiseTable;
 ///
 /// 1. Linux accounts, then package-manager plugins.
 /// 2. The pre-packages hook, then packages handled by built-in managers.
-/// 3. Privileged files/directories, system services, firewall, and Compose projects.
+/// 3. Privileged files/directories, system and user services, firewall, and Compose projects.
 /// 4. Git repositories, then dotfiles, each with its pre/post hooks.
 /// 5. Shell activation, macOS defaults and LaunchAgents, Linux user units, and user settings.
 /// 6. The pre-tools hook, versioned tools, and post-tools hook.
-/// 7. Package-plugin packages, then the post-packages hook.
+/// 7. Package-plugin packages, then the post-packages hook and services requiring tools.
 /// 8. The `bootstrap` task, when defined, then the final hook.
 ///
 /// Defaults and user settings also have pre/post hooks. See
@@ -498,10 +498,12 @@ struct BootstrapFilesStatus {
     prompt_secrets: bool,
 }
 
-/// Manage Linux system services from `[bootstrap.services]`
+/// Manage services from `[bootstrap.services]`
 ///
-/// These are system-level systemd services. For units in the current user session,
-/// use `bootstrap linux systemd-units` instead.
+/// System-scope entries (the default) converge existing Linux systemd system
+/// units. `scope = "user"` entries are services mise defines for the current
+/// user on every platform: a systemd user unit on Linux, a LaunchAgent on
+/// macOS, a Scheduled Task on Windows.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapServices {
@@ -512,10 +514,11 @@ struct BootstrapServices {
 #[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapServicesCommands {
     Apply(BootstrapServicesApply),
+    Remove(BootstrapServicesRemove),
     Status(BootstrapServicesStatus),
 }
 
-/// Apply configured Linux system service state
+/// Apply configured service state (system and user scope)
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapServicesApply {
     /// Print what would change without changing anything
@@ -527,7 +530,23 @@ struct BootstrapServicesApply {
     yes: bool,
 }
 
-/// Show configured Linux system service state
+/// Remove an installed user-scope service, declared or not
+///
+/// Deleting a `scope = "user"` declaration leaves its installed unit, agent,
+/// or task in place; this removes it once. The next `mise bootstrap`
+/// recreates it if it is still declared.
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapServicesRemove {
+    /// The service name as declared in `[bootstrap.services]`
+    name: String,
+
+    /// Print what would change without changing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+}
+
+/// Show configured service state (system and user scope)
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapServicesStatus {
     /// Output in JSON format
@@ -1356,10 +1375,16 @@ impl Bootstrap {
             let services = configured_services
                 .as_ref()
                 .expect("configured notifications prepared services");
-            system::services::validate_notifications(files, directories, services)?;
+            let user_services = system::services_common::user_service_names(&config)?;
+            system::services::validate_notifications(files, directories, services, &user_services)?;
         }
         let mut managed_services =
             services_enabled.then_some(configured_services.unwrap_or_default());
+        let user_services = if services_enabled {
+            system::user_services::requests_from_config(&config)?
+        } else {
+            vec![]
+        };
         let mut managed_firewall = if skip.contains(&BootstrapPart::Firewall) {
             None
         } else {
@@ -1502,8 +1527,14 @@ impl Bootstrap {
                     self.yes,
                 )?;
             }
+            let early = user_services
+                .iter()
+                .filter(|request| !request.requires_tools)
+                .cloned()
+                .collect::<Vec<_>>();
+            apply_user_services(&early, self.dry_run, self.yes, Some(&mut follow_up)).await?;
         } else {
-            debug!("bootstrap: system services skipped");
+            debug!("bootstrap: services skipped");
         }
 
         if skip.contains(&BootstrapPart::Firewall) {
@@ -1768,6 +1799,18 @@ impl Bootstrap {
                 self.run_hooks(&config, &hooks, BootstrapHookPhase::PostPackages)
                     .await?;
             }
+        }
+
+        let late = user_services
+            .iter()
+            .filter(|request| request.requires_tools)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !late.is_empty() {
+            if skip.contains(&BootstrapPart::Tools) {
+                info!("bootstrap: tools skipped; user services with requires_tools still converge");
+            }
+            apply_user_services(&late, self.dry_run, self.yes, Some(&mut follow_up)).await?;
         }
 
         if skip.contains(&BootstrapPart::Task) {
@@ -2562,7 +2605,13 @@ impl BootstrapFilesApply {
                 .any(|directory| !directory.notify.is_empty())
         {
             let services = system::services::prepare_requests_from_config(&config)?;
-            system::services::validate_notifications(&files, &directories, &services)?;
+            let user_services = system::services_common::user_service_names(&config)?;
+            system::services::validate_notifications(
+                &files,
+                &directories,
+                &services,
+                &user_services,
+            )?;
             Some(services)
         } else {
             None
@@ -2654,8 +2703,44 @@ impl BootstrapServices {
     async fn run(self) -> Result<()> {
         match self.command {
             BootstrapServicesCommands::Apply(command) => command.run().await,
+            BootstrapServicesCommands::Remove(command) => command.run().await,
             BootstrapServicesCommands::Status(command) => command.run().await,
         }
+    }
+}
+
+impl BootstrapServicesRemove {
+    async fn run(self) -> Result<()> {
+        OperationScope::wrap(
+            "bootstrap services remove",
+            "services",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
+        let config = Config::get().await?;
+        let declared = system::user_services::requests_from_config(&config)?
+            .iter()
+            .any(|request| request.name == self.name);
+        let removed = system::user_services::remove_named(&self.name, self.dry_run).await?;
+        let manager = system::user_services::manager_name();
+        if !removed {
+            info!("user service {}: no {manager} installed", self.name);
+        } else if self.dry_run {
+            info!("user service {}: would remove its {manager}", self.name);
+        } else {
+            info!("user service {}: removed its {manager}", self.name);
+        }
+        if declared {
+            info!(
+                "user service {} is still declared in [bootstrap.services]; the next `mise bootstrap` recreates it",
+                self.name
+            );
+        }
+        Ok(())
     }
 }
 
@@ -2673,25 +2758,61 @@ impl BootstrapServicesApply {
     async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let requests = system::services::requests_from_config(&config)?;
-        system::services::apply(&requests, self.dry_run, self.yes)
+        let user_requests = system::user_services::requests_from_config(&config)?;
+        system::services::apply(&requests, self.dry_run, self.yes)?;
+        apply_user_services(&user_requests, self.dry_run, self.yes, None).await
     }
+}
+
+/// Converge user-scope services, reporting an unavailable service manager as
+/// a skipped follow-up instead of a failure.
+async fn apply_user_services(
+    requests: &[system::user_services::UserServiceRequest],
+    dry_run: bool,
+    yes: bool,
+    follow_up: Option<&mut BootstrapFollowUp>,
+) -> Result<()> {
+    if requests.is_empty() {
+        return Ok(());
+    }
+    info!("bootstrap: user services");
+    if let Some(reason) = system::user_services::apply(requests, dry_run, yes).await? {
+        let message = format!(
+            "user services: {} service(s) skipped ({reason})",
+            requests.len()
+        );
+        match follow_up {
+            Some(follow_up) => follow_up.add_skipped(message),
+            None => warn!("{message}"),
+        }
+    }
+    Ok(())
 }
 
 impl BootstrapServicesStatus {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let requests = system::services::requests_from_config(&config)?;
-        let resources = system::services::plans_with_notifications(
+        let mut resources = system::services::plans_with_notifications(
             &requests,
             &system::services::ServiceNotifications::default(),
         );
+        let user_requests = system::user_services::requests_from_config(&config)?;
+        let user_statuses = system::user_services::status(&user_requests).await?;
+        resources.extend(user_statuses.iter().map(|status| status.plan()));
         let missing = resources
             .iter()
             .any(|resource| resource.action != system::resources::ResourceAction::Noop);
         if self.json {
-            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+            miseprintln!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "resources": resources,
+                    "user_services": user_statuses,
+                }))?
+            );
         } else if resources.is_empty() {
-            info!("no bootstrap system services configured");
+            info!("no bootstrap services configured");
         } else {
             let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
             for resource in resources {
@@ -3117,7 +3238,13 @@ impl BootstrapStatus {
         )?;
         let service_requests = system::services::status_requests_from_config(config)?;
         let firewall_request = system::firewall::status_request_from_config(config)?;
-        system::services::validate_notifications(&files, &directories, &service_requests)?;
+        let user_services = system::services_common::user_service_names(config)?;
+        system::services::validate_notifications(
+            &files,
+            &directories,
+            &service_requests,
+            &user_services,
+        )?;
         let notified_services = system::managed_files::pending_notifications(&files, &directories)?;
         let compose_requests = system::compose::requests_from_config(config)?;
         self.collect_secrets(&secrets.used_statuses()?, &mut report);
@@ -3125,6 +3252,7 @@ impl BootstrapStatus {
         self.collect_accounts(&accounts, &mut report);
         self.collect_files(files, directories, unavailable_files, &mut report)?;
         self.collect_services(&service_requests, &notified_services, &mut report);
+        self.collect_user_services(config, &mut report).await?;
         self.collect_firewall(firewall_request.as_ref(), &mut report);
         self.collect_compose(&compose_requests, &mut report);
         self.collect_repos(config, &mut report).await?;
@@ -3222,6 +3350,29 @@ impl BootstrapStatus {
             );
         }
         report.json.insert("services".to_string(), json!(resources));
+    }
+
+    async fn collect_user_services(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let requests = system::user_services::requests_from_config(config)?;
+        let statuses = system::user_services::status(&requests).await?;
+        for status in &statuses {
+            let missing = status.action != system::resources::ResourceAction::Noop;
+            report.row(
+                "user-service",
+                status.name.clone(),
+                status.current.clone(),
+                status.action.to_string(),
+                missing,
+            );
+        }
+        report
+            .json
+            .insert("user_services".to_string(), json!(statuses));
+        Ok(())
     }
 
     fn collect_firewall(

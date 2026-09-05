@@ -5,7 +5,7 @@
 - **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
-Apply configured Linux system service state
+Apply configured service state (system and user scope)
 
 ## Flags
 - **`-n --dry-run`** — Print what would change without changing anything

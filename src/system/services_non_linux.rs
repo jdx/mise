@@ -11,7 +11,7 @@ pub(crate) struct ServiceRequest {
 }
 
 pub(crate) fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
-    Ok(compose_declarations(config)?
+    Ok(compose_system_declarations(config)?
         .into_iter()
         .map(|(name, _)| ServiceRequest { name })
         .collect())
@@ -54,8 +54,12 @@ pub(crate) fn apply_privileged_plan_from_stdin() -> Result<()> {
 fn reject_configured(config: &Config) -> Result<Vec<ServiceRequest>> {
     let configured = config.bootstrap_config_maps().any(|config_files| {
         config_files.values().any(|cf| {
-            cf.bootstrap_config()
-                .is_some_and(|bootstrap| !bootstrap.services.is_empty())
+            cf.bootstrap_config().is_some_and(|bootstrap| {
+                bootstrap
+                    .services
+                    .values()
+                    .any(|service| service.scope() == ServiceScope::System)
+            })
         })
     });
     if configured {
