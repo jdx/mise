@@ -1150,7 +1150,7 @@ fn fallback_rustup_profile_components(profile: &str, host: Option<&str>) -> Vec<
                 .map(|component| (*component).to_string()),
         );
     }
-    if host.is_some_and(|host| host.ends_with("-pc-windows-gnu")) {
+    if profile != "complete" && host.is_some_and(|host| host.ends_with("-pc-windows-gnu")) {
         components.push("rust-mingw".to_string());
     }
     components
@@ -1398,6 +1398,10 @@ mod tests {
             ["cargo", "rust-std", "rustc", "rust-mingw"]
         );
         assert!(fallback_rustup_profile_components("complete", None).is_empty());
+        assert!(
+            fallback_rustup_profile_components("complete", Some("x86_64-pc-windows-gnu"))
+                .is_empty()
+        );
     }
 
     #[test]
