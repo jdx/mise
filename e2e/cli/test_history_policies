@@ -36,7 +36,7 @@ assert "jq -r '.[\"~/.config/app/state.json\"].trigger' '$MISE_STATE_DIR/history
 
 # a rewrite of the live file survives unrelated saves unpromoted
 echo v2-live >~/.config/app/state.json
-echo 'extra = 1' >>"$MISE_CONFIG_DIR/config.toml"
+sed -i.bak 's/name = "test"/name = "test2"/' "$MISE_CONFIG_DIR/config.toml" && rm -f "$MISE_CONFIG_DIR/config.toml.bak"
 assert_succeed "mise history save"
 assert "mise history --json | jq -r '.[0].description'" "edited mise/config.toml"
 assert "$snapshot_of latest .config/app/state.json" "v1"
@@ -51,7 +51,7 @@ assert "$snapshot_of latest .config/app/state.json" "v2-live"
 assert "mise history show latest --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.config/app/state.json\") | .state'" "live"
 assert "git --git-dir='$repo' rev-list --count refs/promoted" "2"
 assert "jq -r '.[\"~/.config/app/state.json\"] | \"\\(.trigger) \\(.checkpoint | length)\"' '$MISE_STATE_DIR/history/index/saved.json'" "save 36"
-assert_fail "mise history save ~/.untracked" "is not tracked"
+assert_fail "mise history save ~/.untracked" "is not captured"
 
 # a protective capture records the live contents but never promotes them; the
 # outcome carries the saved version forward, and a no-op run still records nothing
@@ -73,6 +73,19 @@ assert "$count" "$n"
 rm "$MISE_STATE_DIR/history/index/saved.json"
 assert_succeed "mise history save --description rebuild"
 assert "jq -r '.[\"~/.config/app/state.json\"].trigger' '$MISE_STATE_DIR/history/index/saved.json'" "save"
+
+# a hand-written manual-save entry is promoted by its first capture, never dropped
+mkdir -p ~/.config/other
+echo hand >~/.config/other/state.json
+cat <<'EOF2' >>"$MISE_CONFIG_DIR/config.toml"
+"~/.config/other/state.json" = { mode = "track", autosave = false }
+EOF2
+assert_succeed "mise history save --description hand-written"
+assert "$snapshot_of latest .config/other/state.json" "hand"
+assert "jq -r '.[\"~/.config/other/state.json\"].trigger' '$MISE_STATE_DIR/history/index/saved.json'" "save"
+echo hand2 >~/.config/other/state.json
+assert_succeed "mise history save --description unrelated"
+assert "$snapshot_of latest .config/other/state.json" "hand"
 
 # a template's rendered output is tracked locally and never shared
 assert "mise history show latest --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.gitconfig\") | \"\\(.mode) \\(.share) \\(.backup)\"'" "template false false"

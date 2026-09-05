@@ -126,6 +126,26 @@ impl OperationScope {
         Ok(Self(Some(shared)))
     }
 
+    /// Reloads the tracked set so the outcome capture covers what the
+    /// operation declared or removed (a new track entry, a new destination).
+    pub(crate) async fn refresh_tracked(&self) {
+        if self.0.is_none() {
+            return;
+        }
+        let tracked = match crate::config::Config::reset().await {
+            Ok(config) => TrackedSet::from_config(&config),
+            Err(err) => Err(err),
+        };
+        match tracked {
+            Ok(tracked) => {
+                if let Some(shared) = &self.0 {
+                    lock_unpoisoned(shared).tracked = tracked;
+                }
+            }
+            Err(err) => warn!("history: keeping the tracked set from before the run: {err:#}"),
+        }
+    }
+
     /// Runs `f` inside an operation for `command`, a single-part command,
     /// and finishes it with the outcome.
     pub(crate) async fn wrap<T, F>(command: &str, part: &str, dry_run: bool, f: F) -> Result<T>
@@ -134,6 +154,7 @@ impl OperationScope {
     {
         let scope = Self::begin(command, dry_run).await?;
         let result = f.await;
+        scope.refresh_tracked().await;
         let summary = Summary {
             parts: vec![part.to_string()],
             message: None,

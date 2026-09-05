@@ -1247,6 +1247,7 @@ impl Bootstrap {
         }
         let generation = OperationScope::begin("bootstrap", self.dry_run).await?;
         let result = self.run_phases().await;
+        generation.refresh_tracked().await;
         let error = result.as_ref().err().map(|err| format!("{err:#}"));
         generation.finish(error, result.as_ref().ok().cloned());
         result.map(|_| ())

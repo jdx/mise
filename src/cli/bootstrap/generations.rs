@@ -325,10 +325,11 @@ impl BootstrapGenerationsDiff {
         let (from, to, covered, label) = match &self.b {
             Some(b) => {
                 let b = resolve_operation(b, &entries)?;
+                let (low, high) = (a.id.min(b.id), a.id.max(b.id));
                 let covered: Vec<Entry> = entries
                     .iter()
                     .filter(|entry| {
-                        entry.checkpoint.operation.is_some() && entry.id > a.id && entry.id <= b.id
+                        entry.checkpoint.operation.is_some() && entry.id > low && entry.id <= high
                     })
                     .cloned()
                     .collect();

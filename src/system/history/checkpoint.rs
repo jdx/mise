@@ -214,7 +214,9 @@ impl Store {
         }
         // manual-save entries: carried forward from their promoted version
         // unless named explicitly (promoted) or captured protectively
-        let manual = manual_plan(&walk, &draft);
+        let promoted: std::collections::BTreeSet<String> =
+            store::read_saved_index_in(&self.state_dir)?.into_keys().collect();
+        let manual = manual_plan(&walk, &draft, &promoted);
         if !manual.carry.is_empty() {
             let carried: BTreeSet<usize> = manual.carry.iter().copied().collect();
             let dropped: Vec<PathBuf> = walk
@@ -639,7 +641,11 @@ struct ManualPlan {
     promote: Vec<usize>,
 }
 
-fn manual_plan(walk: &super::tracked::Walk, draft: &Draft) -> ManualPlan {
+fn manual_plan(
+    walk: &super::tracked::Walk,
+    draft: &Draft,
+    promoted: &std::collections::BTreeSet<String>,
+) -> ManualPlan {
     let mut plan = ManualPlan::default();
     for (index, entry) in walk.entries.iter().enumerate() {
         if entry.policy.autosave {
@@ -649,7 +655,10 @@ fn manual_plan(walk: &super::tracked::Walk, draft: &Draft) -> ManualPlan {
             .explicit_paths
             .iter()
             .any(|path| path.starts_with(&entry.path) || entry.path.starts_with(path));
-        if named {
+        // an entry that was never promoted has no saved version to carry
+        // forward: its first capture is its baseline
+        let never_promoted = !promoted.contains(&entry.display());
+        if named || (never_promoted && !draft.protective) {
             plan.promote.push(index);
         } else if !draft.protective {
             plan.carry.push(index);
