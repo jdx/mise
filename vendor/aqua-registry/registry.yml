@@ -25098,6 +25098,16 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/charmbracelet/meta/.github/workflows/goreleaser.yml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate
+              - https://github.com/charmbracelet/gum/releases/download/{{.Version}}/checksums.txt.pem
+              - --signature
+              - https://github.com/charmbracelet/gum/releases/download/{{.Version}}/checksums.txt.sig
         overrides:
           - goos: windows
             format: zip
@@ -25114,6 +25124,45 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/charmbracelet/meta/.github/workflows/goreleaser.yml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate
+              - https://github.com/charmbracelet/gum/releases/download/{{.Version}}/checksums.txt.pem
+              - --signature
+              - https://github.com/charmbracelet/gum/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("< 2.0.0")
+        asset: gum_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: gum
+            src: "{{.AssetWithoutExt}}/gum"
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/charmbracelet/meta/.github/workflows/goreleaser.yml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate
+              - https://github.com/charmbracelet/gum/releases/download/{{.Version}}/checksums.txt.pem
+              - --signature
+              - https://github.com/charmbracelet/gum/releases/download/{{.Version}}/checksums.txt.sig
         overrides:
           - goos: windows
             format: zip
@@ -25133,6 +25182,15 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/charmbracelet/meta/.github/workflows/goreleaser.yml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -79493,48 +79551,10 @@ packages:
           asset: kubectl-whoami_{{trimV .Version}}_checksums.txt
           algorithm: sha256
   - type: github_release
-    repo_owner: rancher
-    repo_name: cli
-    description: Rancher CLI
-    rosetta2: true
-    supported_envs:
-      - darwin
-      - amd64
-    asset: rancher-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
-    format: tar.gz
-    overrides:
-      - goos: windows
-        format: zip
-    files:
-      - name: rancher
-        src: rancher-{{.Version}}/rancher
-    checksum:
-      type: github_release
-      asset: sha256sum.txt
-      algorithm: sha256
-  - type: github_release
-    repo_owner: rancher
-    repo_name: kim
-    description: In ur kubernetes, buildin ur imagez
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 0.1.0-alpha.3")
-        asset: kim-{{.OS}}-{{.Arch}}
-        format: raw
-        windows_arm_emulation: true
-      - version_constraint: semver("<= 0.1.0-alpha.6")
-        no_asset: true
-      - version_constraint: "true"
-        asset: kim-{{.OS}}-{{.Arch}}
-        format: raw
-        windows_arm_emulation: true
-        checksum:
-          type: github_release
-          asset: sha256sum.txt
-          algorithm: sha256
-  - type: github_release
-    repo_owner: rancher
+    repo_owner: rancher-archives
     repo_name: rke
+    aliases:
+      - name: rancher/rke
     description: Rancher Kubernetes Engine (RKE), an extremely simple, lightning fast Kubernetes distribution that runs entirely within containers
     version_constraint: "false"
     version_overrides:
@@ -79660,6 +79680,46 @@ packages:
         format: raw
         rosetta2: true
         windows_arm_emulation: true
+  - type: github_release
+    repo_owner: rancher
+    repo_name: cli
+    description: Rancher CLI
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - amd64
+    asset: rancher-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: rancher
+        src: rancher-{{.Version}}/rancher
+    checksum:
+      type: github_release
+      asset: sha256sum.txt
+      algorithm: sha256
+  - type: github_release
+    repo_owner: rancher
+    repo_name: kim
+    description: In ur kubernetes, buildin ur imagez
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.0-alpha.3")
+        asset: kim-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.1.0-alpha.6")
+        no_asset: true
+      - version_constraint: "true"
+        asset: kim-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
   - type: github_release
     repo_owner: raviqqe
     repo_name: muffet
@@ -84647,7 +84707,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<= 10.4.2")
         asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -84666,6 +84726,18 @@ packages:
           - linux
           - darwin/arm64
           - windows
+      - version_constraint: "true"
+        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: sharkdp
     repo_name: hexyl
