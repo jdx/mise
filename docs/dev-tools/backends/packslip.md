@@ -1,6 +1,6 @@
 # packslip Backend
 
-The `packslip` backend installs tools from a vendor's signed release manifest.
+The [packslip](https://packslip.dev) backend installs tools from a vendor's signed release manifest.
 The manifest names the release files, their digests, supported platforms, and
 executable paths. mise verifies the signer and downloaded bytes, then installs
 the artifact that fits your host.
