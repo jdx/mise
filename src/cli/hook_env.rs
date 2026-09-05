@@ -318,7 +318,8 @@ impl HookEnv {
 
         let (pre, post, post_user) = match &*env::__MISE_ORIG_PATH {
             Some(orig_path) if !Settings::get().activate_aggressive => {
-                let orig_paths: Vec<PathBuf> = split_paths(orig_path).collect();
+                let orig_path = crate::windows_posix::orig_path_for_windows(orig_path);
+                let orig_paths: Vec<PathBuf> = split_paths(orig_path.as_ref()).collect();
                 let orig_set: HashSet<_> = orig_paths.iter().collect();
 
                 // Get all mise-managed paths from the previous session
