@@ -4,7 +4,7 @@ See the [contributing guide](https://mise.jdx.dev/contributing).
 
 ## mbx build cache
 
-`mise install` installs [mbx](https://mr-boxington.jdx.dev) 1.4. The normal
+`mise install` installs [mbx](https://mr-boxington.jdx.dev) 1.8. The normal
 `mise run build`, `mise run test:unit`, and `mise run lint` workflows activate
 its transparent Cargo wrapper and therefore use the cache while invoking Cargo
 normally. Standalone Cargo commands require an activated mise shell. To bypass
