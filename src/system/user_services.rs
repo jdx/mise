@@ -107,10 +107,12 @@ impl UserServiceRequest {
                 restart.get_or_insert(definition.restart);
                 nice = definition.nice;
                 match executable {
-                    Some(exe) => Some(shell_words::join(
-                        std::iter::once(exe.to_string_lossy().to_string())
-                            .chain(definition.args.iter().map(|arg| arg.to_string())),
-                    )),
+                    Some(exe) => Some(
+                        std::iter::once(quote_program(&exe.to_string_lossy()))
+                            .chain(definition.args.iter().map(|arg| arg.to_string()))
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                    ),
                     None => {
                         unresolved = Some(
                             "no durable mise executable; install mise on this host first"
@@ -219,6 +221,21 @@ impl UserServiceRequest {
 impl std::fmt::Display for UserServiceRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} (user)", self.name)
+    }
+}
+
+/// Quote an executable path for the platform's command line: double quotes
+/// on Windows (what Task Scheduler and `cmd.exe` understand), POSIX shell
+/// quoting elsewhere.
+fn quote_program(path: &str) -> String {
+    if cfg!(windows) {
+        if path.contains(char::is_whitespace) {
+            format!("\"{path}\"")
+        } else {
+            path.to_string()
+        }
+    } else {
+        shell_words::quote(path).to_string()
     }
 }
 
@@ -387,10 +404,7 @@ fn render_definition(request: &UserServiceRequest) -> Result<String> {
         let plist = launchd::render_plist(&request.launchd_request()?)?;
         Ok(String::from_utf8_lossy(&plist).to_string())
     } else {
-        Ok(scheduled_tasks::render_xml(
-            &request.scheduled_task_request(),
-            "<user>",
-        ))
+        scheduled_tasks::render_xml(&request.scheduled_task_request(), "<user>")
     }
 }
 
@@ -405,6 +419,29 @@ fn definition_path(name: &str) -> PathBuf {
 }
 
 async fn status_one(request: &UserServiceRequest) -> Result<UserServiceStatus> {
+    let path = definition_path(&request.name);
+    // removal needs no command: an absent builtin is removed even when no
+    // durable executable resolves
+    if request.state == ServiceState::Absent {
+        if !is_available() {
+            let mut out = UserServiceStatus::new(
+                request,
+                format!("unavailable: {}", unavailable_reason()),
+                ResourceAction::Unknown,
+            );
+            out.path = Some(path);
+            return Ok(out);
+        }
+        let installed = if cfg!(windows) {
+            scheduled_tasks::exists(&request.name).await?
+        } else {
+            path.exists()
+        };
+        let (current, action) = absent_state(installed);
+        let mut out = UserServiceStatus::new(request, current.to_string(), action);
+        out.path = Some(path);
+        return Ok(out);
+    }
     if let Some(reason) = &request.unresolved {
         return Ok(UserServiceStatus::new(
             request,
@@ -413,7 +450,6 @@ async fn status_one(request: &UserServiceRequest) -> Result<UserServiceStatus> {
         ));
     }
     let definition = render_definition(request)?;
-    let path = definition_path(&request.name);
     if !is_available() {
         let mut out = UserServiceStatus::new(
             request,
@@ -426,9 +462,7 @@ async fn status_one(request: &UserServiceRequest) -> Result<UserServiceStatus> {
     }
     let (current, action) = if cfg!(target_os = "linux") {
         let unit = request.systemd_request()?;
-        if request.state == ServiceState::Absent {
-            absent_state(path.exists())
-        } else {
+        {
             let status = systemd::status(std::slice::from_ref(&unit))
                 .await?
                 .pop()
@@ -446,9 +480,7 @@ async fn status_one(request: &UserServiceRequest) -> Result<UserServiceStatus> {
         }
     } else if cfg!(target_os = "macos") {
         let agent = request.launchd_request()?;
-        if request.state == ServiceState::Absent {
-            absent_state(path.exists())
-        } else {
+        {
             let status = launchd::status(std::slice::from_ref(&agent))
                 .await?
                 .pop()
@@ -468,9 +500,7 @@ async fn status_one(request: &UserServiceRequest) -> Result<UserServiceStatus> {
         }
     } else {
         let task = request.scheduled_task_request();
-        if request.state == ServiceState::Absent {
-            absent_state(scheduled_tasks::exists(&request.name).await?)
-        } else {
+        {
             let status = scheduled_tasks::status(std::slice::from_ref(&task))
                 .await?
                 .pop()
@@ -771,7 +801,7 @@ mod tests {
         assert!(!task.at_logon);
         assert!(!task.restart_on_failure);
         assert!(task.start);
-        let xml = scheduled_tasks::render_xml(&task, "me");
+        let xml = scheduled_tasks::render_xml(&task, "me").unwrap();
         assert!(xml.contains("<Command>C:\\Tools\\agent.exe</Command>"));
     }
 

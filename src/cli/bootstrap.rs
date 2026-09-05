@@ -2798,19 +2798,17 @@ impl BootstrapServicesStatus {
             &system::services::ServiceNotifications::default(),
         );
         let user_requests = system::user_services::requests_from_config(&config)?;
-        let user_statuses = system::user_services::status(&user_requests).await?;
-        resources.extend(user_statuses.iter().map(|status| status.plan()));
+        resources.extend(
+            system::user_services::status(&user_requests)
+                .await?
+                .iter()
+                .map(|status| status.plan()),
+        );
         let missing = resources
             .iter()
             .any(|resource| resource.action != system::resources::ResourceAction::Noop);
         if self.json {
-            miseprintln!(
-                "{}",
-                serde_json::to_string_pretty(&json!({
-                    "resources": resources,
-                    "user_services": user_statuses,
-                }))?
-            );
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
         } else if resources.is_empty() {
             info!("no bootstrap services configured");
         } else {

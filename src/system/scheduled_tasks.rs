@@ -107,17 +107,17 @@ fn current_user_id() -> String {
 
 /// Render the task definition (Task Scheduler XML, UTF-16LE with a BOM as
 /// `schtasks /create /xml` expects).
-pub(crate) fn render_definition(request: &ScheduledTaskRequest, user_id: &str) -> Vec<u8> {
-    let xml = render_xml(request, user_id);
+pub(crate) fn render_definition(request: &ScheduledTaskRequest, user_id: &str) -> Result<Vec<u8>> {
+    let xml = render_xml(request, user_id)?;
     let mut out = vec![0xFF, 0xFE];
     for unit in xml.encode_utf16() {
         out.extend_from_slice(&unit.to_le_bytes());
     }
-    out
+    Ok(out)
 }
 
-pub(crate) fn render_xml(request: &ScheduledTaskRequest, user_id: &str) -> String {
-    let (command, arguments) = exec_action(request);
+pub(crate) fn render_xml(request: &ScheduledTaskRequest, user_id: &str) -> Result<String> {
+    let (command, arguments) = exec_action(request)?;
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n");
     out.push_str(
@@ -179,28 +179,51 @@ pub(crate) fn render_xml(request: &ScheduledTaskRequest, user_id: &str) -> Strin
     }
     out.push_str("    </Exec>\n  </Actions>\n");
     out.push_str("</Task>\n");
-    out
+    Ok(out)
 }
 
 /// Split the command line into the executable and its arguments. Task
-/// Scheduler has no environment block, so variables are set through `cmd.exe`.
-fn exec_action(request: &ScheduledTaskRequest) -> (String, String) {
+/// Scheduler has no environment block, so variables are set through
+/// `cmd.exe`, which reinterprets some characters; values that it would
+/// change are rejected rather than passed through differently.
+fn exec_action(request: &ScheduledTaskRequest) -> Result<(String, String)> {
     let (program, args) = split_command(&request.command);
     if request.environment.is_empty() {
-        return (program, args);
+        return Ok((program, args));
     }
-    let sets = request
-        .environment
-        .iter()
-        .map(|(key, value)| format!("set \"{key}={value}\""))
-        .collect::<Vec<_>>()
-        .join(" && ");
+    let mut sets = vec![];
+    for (key, value) in &request.environment {
+        if key.is_empty() || key.contains(['=', '"', '%', '\n', '\r']) {
+            bail!(
+                "user service '{}': environment key {key:?} cannot be set through cmd.exe",
+                request.name
+            );
+        }
+        if let Some(c) = value
+            .chars()
+            .find(|c| matches!(c, '"' | '%' | '&' | '|' | '<' | '>' | '^' | '\n' | '\r'))
+        {
+            bail!(
+                "user service '{}': environment value for {key} contains {c:?}, which cmd.exe would reinterpret; set it inside the program instead",
+                request.name
+            );
+        }
+        sets.push(format!("set \"{key}={value}\""));
+    }
+    let program = if program.contains(char::is_whitespace) {
+        format!("\"{program}\"")
+    } else {
+        program
+    };
     let rest = if args.is_empty() {
         program
     } else {
         format!("{program} {args}")
     };
-    ("cmd.exe".to_string(), format!("/c {sets} && {rest}"))
+    Ok((
+        "cmd.exe".to_string(),
+        format!("/c {} && {rest}", sets.join(" && ")),
+    ))
 }
 
 fn split_command(command: &str) -> (String, String) {
@@ -249,7 +272,7 @@ pub(crate) async fn status(requests: &[ScheduledTaskRequest]) -> Result<Vec<Sche
             None => ScheduledTaskState::Missing,
             Some(query) => {
                 let stored = std::fs::read(&path).unwrap_or_default();
-                if stored != render_definition(req, &user_id) {
+                if stored != render_definition(req, &user_id)? {
                     ScheduledTaskState::Differs
                 } else if query.running {
                     ScheduledTaskState::Running
@@ -299,7 +322,7 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&path, render_definition(req, &user_id))?;
+        std::fs::write(&path, render_definition(req, &user_id)?)?;
         schtasks(&create).await?;
         match schtasks(&run_or_end).await {
             Ok(()) => {}
@@ -349,17 +372,22 @@ struct Query {
     disabled: bool,
 }
 
+/// The task's state through the Task Scheduler API rather than the
+/// localized text `schtasks /query` prints. Prints `MISSING` for an
+/// unregistered task and the `TaskState` name otherwise.
+const QUERY_SCRIPT: &str = "$t = Get-ScheduledTask -TaskPath '\\mise\\' -TaskName $args[0] -ErrorAction SilentlyContinue; if ($null -eq $t) { 'MISSING' } else { $t.State.ToString() }";
+
 async fn query(task: &str) -> Result<Option<Query>> {
+    let name = task.strip_prefix("mise\\").unwrap_or(task);
     let args = [
-        "/query".to_string(),
-        "/tn".to_string(),
-        task.to_string(),
-        "/fo".to_string(),
-        "LIST".to_string(),
-        "/v".to_string(),
+        "-NoProfile".to_string(),
+        "-NonInteractive".to_string(),
+        "-Command".to_string(),
+        QUERY_SCRIPT.to_string(),
+        name.to_string(),
     ];
-    debug!("$ schtasks {}", shell_words::join(&args));
-    let mut cmd = tokio::process::Command::new("schtasks");
+    debug!("$ powershell {}", shell_words::join(&args));
+    let mut cmd = tokio::process::Command::new("powershell.exe");
     cmd.args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -367,45 +395,25 @@ async fn query(task: &str) -> Result<Option<Query>> {
         .kill_on_drop(true);
     let output = tokio::time::timeout(SCHTASKS_TIMEOUT, cmd.output())
         .await
-        .map_err(|_| eyre!("`schtasks {}` timed out", shell_words::join(&args)))??;
+        .map_err(|_| eyre!("querying scheduled task {task} timed out"))??;
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if query_error_is_missing(&stderr) {
-            return Ok(None);
-        }
         bail!(
-            "`schtasks {}` failed: {}",
-            shell_words::join(&args),
-            stderr.trim()
+            "querying scheduled task {task} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
         );
     }
-    Ok(Some(parse_query(&String::from_utf8_lossy(&output.stdout))))
+    Ok(parse_query(&String::from_utf8_lossy(&output.stdout)))
 }
 
-fn parse_query(output: &str) -> Query {
-    let mut query = Query {
-        running: false,
-        disabled: false,
-    };
-    for line in output.lines() {
-        let Some((key, value)) = line.split_once(':') else {
-            continue;
-        };
-        let value = value.trim();
-        match key.trim() {
-            "Status" => query.running = value.eq_ignore_ascii_case("running"),
-            "Scheduled Task State" => query.disabled = value.eq_ignore_ascii_case("disabled"),
-            _ => {}
-        }
+fn parse_query(output: &str) -> Option<Query> {
+    let state = output.trim();
+    if state.eq_ignore_ascii_case("MISSING") || state.is_empty() {
+        return None;
     }
-    query
-}
-
-fn query_error_is_missing(stderr: &str) -> bool {
-    let stderr = stderr.to_ascii_lowercase();
-    stderr.contains("cannot find the file specified")
-        || stderr.contains("does not exist")
-        || stderr.contains("cannot find the path specified")
+    Some(Query {
+        running: state.eq_ignore_ascii_case("Running"),
+        disabled: state.eq_ignore_ascii_case("Disabled"),
+    })
 }
 
 fn end_error_is_noop(error: &str) -> bool {
@@ -438,7 +446,7 @@ async fn schtasks(args: &[String]) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn request() -> ScheduledTaskRequest {
+    fn sample() -> ScheduledTaskRequest {
         let mut request = ScheduledTaskRequest::new("agent");
         request.command = "C:\\Tools\\agent.exe --serve".to_string();
         request.description = Some("My <agent>".to_string());
@@ -448,7 +456,7 @@ mod tests {
 
     #[test]
     fn renders_a_logon_task() {
-        let xml = render_xml(&request(), "HOST\\me");
+        let xml = render_xml(&sample(), "HOST\\me").unwrap();
         assert!(xml.contains("<Description>My &lt;agent&gt;</Description>"));
         assert!(xml.contains(
             "<LogonTrigger>\n      <Enabled>true</Enabled>\n      <UserId>HOST\\me</UserId>"
@@ -461,17 +469,32 @@ mod tests {
 
     #[test]
     fn environment_goes_through_cmd() {
-        let mut request = request();
+        let mut request = sample();
         request.environment.insert("RUST_LOG".into(), "info".into());
         request.at_logon = false;
         request.restart_on_failure = false;
-        let xml = render_xml(&request, "me");
+        let xml = render_xml(&request, "me").unwrap();
         assert!(xml.contains("<Command>cmd.exe</Command>"));
         assert!(xml.contains(
             "<Arguments>/c set &quot;RUST_LOG=info&quot; &amp;&amp; C:\\Tools\\agent.exe --serve</Arguments>"
         ));
         assert!(xml.contains("<Enabled>false</Enabled>\n      <UserId>me</UserId>"));
         assert!(!xml.contains("<RestartOnFailure>"));
+
+        let mut request = sample();
+        request.command = "\"C:\\Program Files\\x\\a.exe\" --serve".to_string();
+        request.environment.insert("A".into(), "1".into());
+        let xml = render_xml(&request, "me").unwrap();
+        assert!(xml.contains(
+            "<Arguments>/c set &quot;A=1&quot; &amp;&amp; &quot;C:\\Program Files\\x\\a.exe&quot; --serve</Arguments>"
+        ));
+
+        let mut request = sample();
+        request
+            .environment
+            .insert("P".into(), "%PATH%;C:\\x".into());
+        let err = render_xml(&request, "me").unwrap_err().to_string();
+        assert!(err.contains("cmd.exe would reinterpret"), "{err}");
     }
 
     #[test]
@@ -491,27 +514,28 @@ mod tests {
 
     #[test]
     fn definition_is_utf16_with_bom() {
-        let bytes = render_definition(&request(), "me");
+        let bytes = render_definition(&sample(), "me").unwrap();
         assert_eq!(&bytes[..2], &[0xFF, 0xFE]);
         assert_eq!(&bytes[2..4], &[b'<', 0]);
     }
 
     #[test]
     fn parses_query_output() {
-        let query = parse_query(
-            "HostName:      PC\nTaskName:      \\mise\\agent\nStatus:        Running\nScheduled Task State: Enabled\n",
-        );
+        let query = parse_query("Running\r\n").unwrap();
         assert!(query.running);
         assert!(!query.disabled);
-        let query = parse_query("Status:        Ready\nScheduled Task State: Disabled\n");
+        let query = parse_query("Disabled\n").unwrap();
         assert!(!query.running);
         assert!(query.disabled);
+        let query = parse_query("Ready\n").unwrap();
+        assert!(!query.running && !query.disabled);
+        assert!(parse_query("MISSING\n").is_none());
     }
 
     #[test]
     fn desired_state_follows_start() {
         let mut status = ScheduledTaskStatus {
-            request: request(),
+            request: sample(),
             path: PathBuf::from("x"),
             state: ScheduledTaskState::Running,
         };

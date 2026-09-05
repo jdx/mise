@@ -29,7 +29,7 @@ environment = { RUST_LOG = "info" }
 builtin = "history-watch"
 "@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
 
-        $json = mise bootstrap services status --json 2>&1 | Out-String
+        $json = mise bootstrap status --json 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
         $status = $json | ConvertFrom-Json
         $agent = $status.user_services | Where-Object { $_.name -eq 'agent' }
@@ -60,7 +60,7 @@ command = "powershell.exe -NoProfile -Command Start-Sleep 300"
         $LASTEXITCODE | Should -Be 0
         schtasks /query /tn $script:Task 2>&1 | Out-Null
         $LASTEXITCODE | Should -Be 0
-        $status = (mise bootstrap services status --json | Out-String | ConvertFrom-Json).user_services[0]
+        $status = (mise bootstrap services status --json | Out-String | ConvertFrom-Json)[0]
         $status.current | Should -Be 'running'
         $status.action | Should -Be 'noop'
 
@@ -70,7 +70,7 @@ scope = "user"
 command = "powershell.exe -NoProfile -Command Start-Sleep 300"
 state = "absent"
 "@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
-        $status = (mise bootstrap services status --json | Out-String | ConvertFrom-Json).user_services[0]
+        $status = (mise bootstrap services status --json | Out-String | ConvertFrom-Json)[0]
         $status.action | Should -Be 'remove'
         mise bootstrap services apply --yes 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0

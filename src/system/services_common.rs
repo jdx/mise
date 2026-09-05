@@ -45,7 +45,7 @@ pub(crate) enum ServiceScope {
 
 /// Restart policy of a user-scope service, with one meaning on every platform.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum ServiceRestart {
     /// Restart whenever the process exits, even successfully.
     Always,

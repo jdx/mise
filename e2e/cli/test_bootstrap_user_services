@@ -40,20 +40,20 @@ assert_contains "mise bootstrap plan" "user-service:later"
 
 # the rendered definition is inspectable before anything is installed, and a
 # builtin runs through the mise that installed it
-assert "mise bootstrap services status --json | jq -r '.user_services[] | select(.name == \"agent\") | .restart'" "always"
-assert "mise bootstrap services status --json | jq -r '.user_services[] | select(.name == \"later\") | .requires_tools'" "true"
-assert "mise bootstrap services status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .builtin'" "history-watch"
-assert_contains "mise bootstrap services status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .command'" "history watch"
+assert "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"agent\") | .restart'" "always"
+assert "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"later\") | .requires_tools'" "true"
+assert "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .builtin'" "history-watch"
+assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .command'" "history watch"
 if [[ "$(uname -s)" == "Linux" ]]; then
-  assert_contains "mise bootstrap services status --json | jq -r '.user_services[] | select(.name == \"agent\") | .definition'" "Restart=always"
-  assert_contains "mise bootstrap services status --json | jq -r '.user_services[] | select(.name == \"agent\") | .definition'" 'Environment="RUST_LOG=info"'
-  assert_contains "mise bootstrap services status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .definition'" "Nice=10"
-  assert_contains "mise bootstrap services status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .path'" "/.config/systemd/user/dev.mise.mise-history.service"
+  assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"agent\") | .definition'" "Restart=always"
+  assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"agent\") | .definition'" 'Environment="RUST_LOG=info"'
+  assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .definition'" "Nice=10"
+  assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .path'" "/.config/systemd/user/dev.mise.mise-history.service"
 fi
 
 # without a user service manager (this container has none) nothing is written:
 # status reports unknown, apply and the full bootstrap skip with a follow-up
-if ! mise bootstrap services status --json | jq -e '.user_services | all(.action != "unknown")' >/dev/null; then
+if ! mise bootstrap services status --json | jq -e 'all(.action != "unknown")' >/dev/null; then
   assert_contains "mise bootstrap services status --json" '"action": "unknown"'
   assert_fail "mise bootstrap services status --missing"
   assert_contains "mise bootstrap services apply --dry-run --yes 2>&1" "skipped"
@@ -143,10 +143,11 @@ cat <<'EOF' >mise.toml
 builtin = "history-watch"
 EOF
 assert_not_contains "mise bootstrap --skip services --dry-run --yes 2>&1" "user services"
-assert_contains "mise bootstrap services status --json | jq -r '.user_services[0].scope'" "user"
+assert_contains "mise bootstrap status --json | jq -r '.user_services[0].scope'" "user"
+assert_contains "mise bootstrap services status --json | jq -r '.[0].id.kind'" "user-service"
 
 # on macOS the LaunchAgent is really installed, started, and removed
-if [[ "$(uname -s)" == "Darwin" ]] && mise bootstrap services status --json | jq -e '.user_services | all(.action != "unknown")' >/dev/null; then
+if [[ "$(uname -s)" == "Darwin" ]] && mise bootstrap services status --json | jq -e 'all(.action != "unknown")' >/dev/null; then
   cat <<'TOML' >mise.toml
 [bootstrap.services.mise-e2e-sleep]
 scope = "user"
@@ -154,8 +155,8 @@ command = "/bin/sleep 300"
 TOML
   assert_succeed "mise bootstrap services apply --yes"
   assert "test -f $HOME/Library/LaunchAgents/dev.mise.mise-e2e-sleep.plist && echo yes" "yes"
-  assert "mise bootstrap services status --json | jq -r '.user_services[0] | \"\\(.current) \\(.action)\"'" "running noop"
-  assert_contains "mise bootstrap services status --json | jq -r '.user_services[0].definition'" "SuccessfulExit"
+  assert "mise bootstrap services status --json | jq -r '.[0] | \"\\(.current) \\(.action)\"'" "running noop"
+  assert_contains "mise bootstrap status --json | jq -r '.user_services[0].definition'" "SuccessfulExit"
   assert_succeed "mise bootstrap services status --missing"
   cat <<'TOML' >mise.toml
 [bootstrap.services.mise-e2e-sleep]
@@ -163,10 +164,10 @@ scope = "user"
 command = "/bin/sleep 300"
 state = "absent"
 TOML
-  assert "mise bootstrap services status --json | jq -r '.user_services[0] | \"\\(.current) \\(.action)\"'" "installed remove"
+  assert "mise bootstrap services status --json | jq -r '.[0] | \"\\(.current) \\(.action)\"'" "installed remove"
   assert_succeed "mise bootstrap services apply --yes"
   assert_fail "test -e $HOME/Library/LaunchAgents/dev.mise.mise-e2e-sleep.plist"
-  assert "mise bootstrap services status --json | jq -r '.user_services[0] | \"\\(.current) \\(.action)\"'" "absent noop"
+  assert "mise bootstrap services status --json | jq -r '.[0] | \"\\(.current) \\(.action)\"'" "absent noop"
   # an undeclared leftover is removed once, explicitly
   cat <<'TOML' >mise.toml
 [bootstrap.services.mise-e2e-sleep]

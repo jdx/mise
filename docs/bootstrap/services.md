@@ -43,14 +43,21 @@ One declaration is rendered for the platform's user service manager:
 - `description`: shown by the service manager.
 - `restart`: `"on-failure"` (default), `"always"`, or `"never"`. On Linux this
   is `Restart=`; on macOS `KeepAlive` (`{ SuccessfulExit = false }` for
-  on-failure); on Windows the task restarts up to three times a minute apart
-  after a failure and runs again at logon.
+  on-failure). Task Scheduler restarts only failed runs, so on Windows
+  `"always"` and `"on-failure"` both restart up to three times a minute apart
+  after a failure and run again at logon; a clean exit is not restarted.
 - `environment` and `working_directory` map directly to the platform
-  definition. On Windows, environment variables are set through `cmd.exe`.
+  definition. On Windows, environment variables are set through `cmd.exe`,
+  so values containing characters it would reinterpret (`%`, `"`, `&`, `|`,
+  `<`, `>`, `^`) are rejected; set those inside the program instead.
 - `state`: `"running"` (default), `"stopped"` (installed but not running), or
   `"absent"` (the installed definition is removed and stays removed while
   declared so).
-- `enabled`: whether the service starts at login (default `true`).
+- `enabled`: whether the service starts at login (default `true`). On macOS
+  this is `RunAtLoad`, which launchd also honours when the agent is loaded,
+  so a stopped agent is written without it (it starts at login again once it
+  is set running), and `restart = "always"` (`KeepAlive`) starts the agent at
+  login regardless of `enabled`.
 - `requires_tools`: converge in a second pass after `[tools]` and plugin
   package managers, so a service that runs a tool starts after it exists. The
   built-in watcher needs only mise and converges in the services step.
@@ -84,9 +91,9 @@ The next `mise bootstrap` recreates it if it is still declared.
 
 `mise bootstrap services status` and `mise bootstrap services apply` cover
 both scopes; `mise bootstrap status` and `mise bootstrap plan` list user
-services as `user-service:<name>`. `status --json` includes each user
-service's rendered definition, so what mise would install can be inspected
-before applying. When the platform's user service manager is unavailable (for
+services as `user-service:<name>`. `mise bootstrap status --json` includes
+each user service's rendered definition under `user_services`, so what mise
+would install can be inspected before applying. When the platform's user service manager is unavailable (for
 example, no systemd user manager in a container), user services are reported
 as `unknown` and skipped with a follow-up note; nothing is written.
 
