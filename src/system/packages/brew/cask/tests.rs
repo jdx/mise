@@ -7398,3 +7398,6 @@ fn git_only_path_rejects_symlink_escape() -> Result<()> {
     assert!(git_only_path_source(&cask, &checkout, Path::new("escaped")).is_err());
     Ok(())
 }
+
+#[path = "upgrade_tests.rs"]
+mod upgrade_tests;
