@@ -265,6 +265,7 @@
 - [mise skills ls](https://mise.jdx.dev/cli/skills/ls.html): List the skills the active tools declare
 - [mise skills sync](https://mise.jdx.dev/cli/skills/sync.html): Link the active tools' skills where an agent looks for them
 - [mise sponsors](https://mise.jdx.dev/cli/sponsors.html): Show the companies sponsoring mise and the jdx.dev open source tools
+- [mise ssh](https://mise.jdx.dev/cli/ssh.html): Open an SSH session, optionally borrowing read-only GitHub access
 - [mise sync](https://mise.jdx.dev/cli/sync.html): Synchronize tools from other version managers with mise
 - [mise sync node](https://mise.jdx.dev/cli/sync/node.html): Symlink node versions installed by nvm, nodenv, or Homebrew into mise
 - [mise sync python](https://mise.jdx.dev/cli/sync/python.html): Symlink python versions installed by pyenv or uv into mise

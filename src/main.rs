@@ -55,6 +55,7 @@ pub(crate) mod forgejo;
 mod fuzzy;
 mod git;
 pub(crate) mod github;
+mod github_relay;
 pub(crate) mod gitlab;
 mod gpg;
 mod hash;

@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+
+mkdir -p seed fakebin remotes
+git -C seed init -b main
+git -C seed config user.email test@example.invalid
+git -C seed config user.name Test
+echo '[tools]' >seed/config.toml
+git -C seed add .
+git -C seed -c core.hooksPath=/dev/null commit -m first
+first_revision=$(git -C seed rev-parse HEAD)
+source_repo="$PWD/seed"
+binary=$(command -v mise)
+export FAKE_REMOTE_BASE="$PWD/remotes"
+export SSH_LOG="$PWD/ssh.log"
+cat >fakebin/ssh <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$SSH_LOG"
+while test "$#" -gt 0; do
+  case "$1" in
+    -o|-p|-i|-S) shift 2 ;;
+    -tt) shift ;;
+    -O)
+      if test "$2" = forward; then exit 1; fi
+      if test "${BLOCK_CLEANUP:-}" = 1; then exec sleep 60; fi
+      exit 0
+      ;;
+    *)
+      destination=$1
+      shift
+      case "$1" in
+        'tar -xzf '*|*' version')
+          if test "${BLOCK_PROVISION_STEP:-}" = 1; then
+            echo $$ >"$FAKE_REMOTE_BASE/$destination.pid"
+            exec sleep 60
+          fi
+          ;;
+        'rm -rf -- /tmp/mise-bootstrap.'*)
+          if test "${FAIL_CLEANUP_ONCE:-}" = 1; then
+            echo attempt >>"$FAKE_REMOTE_BASE/cleanup-attempts"
+            if test ! -f "$FAKE_REMOTE_BASE/cleanup-failed"; then
+              touch "$FAKE_REMOTE_BASE/cleanup-failed"
+              exit 1
+            fi
+          fi
+          if test "${BLOCK_CLEANUP:-}" = 1; then
+            echo $$ >>"$FAKE_REMOTE_BASE/cleanup-pids"
+            exec sleep 60
+          fi
+          ;;
+        *repository.bundle*)
+          if test "${BLOCK_BUNDLE_UPLOAD:-}" = 1; then
+            echo $$ >"$FAKE_REMOTE_BASE/upload.pid"
+            exec sleep 60
+          fi
+          ;;
+      esac
+      export HOME="$FAKE_REMOTE_BASE/$destination"
+      export MISE_CONFIG_DIR="$HOME/.config/mise"
+      export MISE_GLOBAL_CONFIG_FILE="$MISE_CONFIG_DIR/config.toml"
+      export MISE_DATA_DIR="$HOME/.local/share/mise"
+      export MISE_CACHE_DIR="$HOME/.cache/mise"
+      unset MISE_GITHUB_TOKEN MISE_GITHUB_API_TOKEN GITHUB_TOKEN GH_TOKEN
+      mkdir -p "$MISE_CONFIG_DIR"
+      exec sh -c "$1"
+      ;;
+  esac
+done
+EOF
+chmod +x fakebin/ssh
+export PATH="$PWD/fakebin:$PATH"
+
+mkdir -p remotes/one/.config/mise
+echo '# machine local' >remotes/one/.config/mise/config.local.toml
+mise bootstrap remote --host one --host two --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes
+assert "git -C remotes/one/.config/mise rev-parse HEAD" "$first_revision"
+assert "git -C remotes/two/.config/mise rev-parse HEAD" "$first_revision"
+assert "git -C remotes/one/.config/mise config remote.origin.url" "$source_repo"
+assert "cat remotes/one/.config/mise/config.local.toml" '# machine local'
+assert_contains "cat '$SSH_LOG'" '/.config/mise bootstrap'
+test ! -d "$HOME/.config/mise/.git"
+
+echo '# second' >>seed/config.toml
+git -C seed add .
+git -C seed -c core.hooksPath=/dev/null commit -m second
+second_revision=$(git -C seed rev-parse HEAD)
+mise bootstrap remote --host one --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes
+assert "git -C remotes/one/.config/mise rev-parse HEAD" "$first_revision"
+mise bootstrap remote --host one --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes --update
+assert "git -C remotes/one/.config/mise rev-parse HEAD" "$second_revision"
+assert "git -C remotes/one/.config/mise rev-parse '@{upstream}'" "$second_revision"
+assert "cat remotes/one/.config/mise/config.local.toml" '# machine local'
+echo '# dirty' >>remotes/one/.config/mise/config.toml
+assert_fail "mise bootstrap remote --host one --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --update" 'uncommitted changes'
+
+# A failed forwarding request must prevent bootstrap and close the owned master.
+assert_fail "MISE_GITHUB_TOKEN=fake-local-relay-token mise bootstrap remote --host two --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --github-relay-read-only --github-relay-repo owner/repo" 'forwarding failed'
+assert_contains "cat '$SSH_LOG'" '-O exit'
+assert_not_contains "cat '$SSH_LOG'" 'fake-local-relay-token'
+
+# Both archive upload and executable provisioning must yield to cancellation.
+for step in archive provision; do
+  if test "$step" = archive; then
+    source_args=(--source "$source_repo")
+  else
+    source_args=(--from-git "$source_repo")
+  fi
+  BLOCK_PROVISION_STEP=1 mise bootstrap remote --host "$step" "${source_args[@]}" --remote-mise "$binary" --only dotfiles --yes &
+  bootstrap_pid=$!
+  wait_for_file "$FAKE_REMOTE_BASE/$step.pid" "blocked $step" 10 "$bootstrap_pid"
+  step_pid=$(cat "$FAKE_REMOTE_BASE/$step.pid")
+  kill -INT "$bootstrap_pid"
+  step_status=0
+  wait "$bootstrap_pid" || step_status=$?
+  test "$step_status" -eq 130
+  assert_fail "kill -0 '$step_pid' 2>/dev/null"
+done
+
+# A stalled bundle transfer must not block cancellation or leave its SSH child alive.
+BLOCK_BUNDLE_UPLOAD=1 mise bootstrap remote --host stalled --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes &
+bootstrap_pid=$!
+wait_for_file "$FAKE_REMOTE_BASE/upload.pid" 'blocked bundle upload' 10 "$bootstrap_pid"
+upload_pid=$(cat "$FAKE_REMOTE_BASE/upload.pid")
+kill -TERM "$bootstrap_pid"
+wait "$bootstrap_pid" && exit 1
+for _ in {1..50}; do
+  kill -0 "$upload_pid" 2>/dev/null || break
+  sleep 0.1
+done
+assert_fail "kill -0 '$upload_pid' 2>/dev/null"
+
+# Failed cleanup is retried before closing the owned control session.
+FAIL_CLEANUP_ONCE=1 mise bootstrap remote --host retry-cleanup --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes
+assert "cat '$FAKE_REMOTE_BASE/cleanup-attempts'" 'attempt
+attempt'
+
+# Cleanup and control-close commands themselves cannot hang cancellation.
+BLOCK_BUNDLE_UPLOAD=1 BLOCK_CLEANUP=1 mise bootstrap remote --host blocked-cleanup --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes &
+bootstrap_pid=$!
+for _ in {1..100}; do
+  test -f "$FAKE_REMOTE_BASE/upload.pid" && test "$(cat "$FAKE_REMOTE_BASE/upload.pid")" != "$upload_pid" && break
+  sleep 0.1
+done
+kill -TERM "$bootstrap_pid"
+for _ in {1..300}; do
+  kill -0 "$bootstrap_pid" 2>/dev/null || break
+  sleep 0.1
+done
+assert_fail "kill -0 '$bootstrap_pid' 2>/dev/null"
+wait "$bootstrap_pid" && exit 1
+while read -r cleanup_pid; do
+  assert_fail "kill -0 '$cleanup_pid' 2>/dev/null"
+done <"$FAKE_REMOTE_BASE/cleanup-pids"
+
+# Local Git fetching is cancellable too; credentials/helpers need not finish.
+export REAL_GIT
+REAL_GIT=$(command -v git)
+cat >fakebin/git <<'EOF'
+#!/bin/sh
+if test "$1" = -c && test "$2" = http.followRedirects=false && test "$3" = clone && test "${BLOCK_FETCH:-}" = 1; then
+  echo $$ >"$FAKE_REMOTE_BASE/fetch.pid"
+  exec sleep 60
+fi
+exec "$REAL_GIT" "$@"
+EOF
+chmod +x fakebin/git
+BLOCK_FETCH=1 mise bootstrap remote --host fetch-cancel --from-git "$source_repo" --remote-mise "$binary" --yes &
+bootstrap_pid=$!
+wait_for_file "$FAKE_REMOTE_BASE/fetch.pid" 'blocked repository fetch' 10 "$bootstrap_pid"
+fetch_pid=$(cat "$FAKE_REMOTE_BASE/fetch.pid")
+kill -INT "$bootstrap_pid"
+wait "$bootstrap_pid" && exit 1
+for _ in {1..50}; do
+  kill -0 "$fetch_pid" 2>/dev/null || break
+  sleep 0.1
+done
+assert_fail "kill -0 '$fetch_pid' 2>/dev/null"
+
+# Even an authenticated HTTPS origin must not redirect Git onto plaintext HTTP.
+openssl req -x509 -newkey rsa:2048 -nodes -keyout redirect.key -out redirect.crt -days 1 -subj /CN=localhost >/dev/null 2>&1
+python3 "$ROOT/e2e/fixtures/git_redirect.py" redirect.crt redirect.key &
+redirect_pid=$!
+trap 'kill "$redirect_pid" 2>/dev/null || true' EXIT
+wait_for_file redirect-port 'HTTPS redirect fixture' 10 "$redirect_pid"
+# This test certificate is self-signed; disable verification only for this fixture.
+assert_fail "GIT_SSL_NO_VERIFY=1 mise bootstrap remote --host redirect --from-git 'https://127.0.0.1:$(cat redirect-port)/repo' --remote-mise '$binary' --yes" 'could not fetch setup repository'
+test -f redirect-requested
+test ! -e redirect-followed
+kill "$redirect_pid"
+wait "$redirect_pid" || true
