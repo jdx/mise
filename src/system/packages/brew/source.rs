@@ -254,7 +254,7 @@ async fn fetch_formula_rb(rf: &ResolvedFormula, pr: &dyn SingleReport) -> Result
         .as_deref()
         .map(|base| base.trim_end_matches("/HEAD"))
         .unwrap_or(HOMEBREW_CORE_RAW);
-    let url = format!("{raw_base}/{commit}/{rb_path}");
+    let url = super::tap::ruby_source_url(&format!("{raw_base}/{commit}"), rb_path);
     pr.set_message(format!("download {rb_path}"));
     HTTP_FETCH.download_file(&url, &dest, Some(pr)).await?;
     crate::hash::ensure_checksum(&dest, sha256, Some(pr), "sha256")?;
