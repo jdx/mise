@@ -15,22 +15,29 @@ need to reinstall completions after changing versions.
 
 ### Set up hk completions
 
-hk publishes a [usage](https://usage.jdx.dev) CLI specification. Install hk
-through Packslip and install `usage` to generate and run its completions:
+hk has its own completion installer, available however hk was installed:
 
 ```sh
-mise use packslip:github.com/jdx/hk
-mise use -g usage
+hk completion zsh --install
 ```
 
-Install the completion file for your shell:
+Follow the setup instructions it prints, then start a new shell. Replace `zsh`
+with `bash`, `fish`, or `powershell` for another shell. Its scripts ask the active
+hk binary for suggestions and need no separate `usage` installation. See
+[hk's completion reference](https://hk.jdx.dev/cli/completion.html).
 
-| Shell      | Command                                          |
-| ---------- | ------------------------------------------------ |
-| zsh        | `mise completion zsh --tool hk --install`        |
-| bash       | `mise completion bash --tool hk --install`       |
-| fish       | `mise completion fish --tool hk --install`       |
-| PowerShell | `mise completion powershell --tool hk --install` |
+### Completions from a Packslip manifest
+
+For tools that declare completions in their Packslip manifest, mise can install
+a completion file that loads those resources. Replace `TOOL` below with the
+executable's name:
+
+| Shell      | Command                                            |
+| ---------- | -------------------------------------------------- |
+| zsh        | `mise completion zsh --tool TOOL --install`        |
+| bash       | `mise completion bash --tool TOOL --install`       |
+| fish       | `mise completion fish --tool TOOL --install`       |
+| PowerShell | `mise completion powershell --tool TOOL --install` |
 
 Follow any one-time setup instructions printed by the command, then load the
 completion file or start a new shell. mise writes the completion file but does
@@ -40,11 +47,11 @@ create unless you pass `--force`.
 To print a completion script without installing it, omit `--install`:
 
 ```sh
-mise completion zsh --tool hk
+mise completion zsh --tool TOOL
 ```
 
-For another tool, replace `hk` with its executable name. `--install` takes the
-command name, not a backend identifier such as `packslip:github.com/jdx/hk`.
+`--install` takes the command name, not a backend identifier such as
+`packslip:github.com/jdx/hk`.
 If a release contains several commands, choose the one you want to complete.
 Without `--tool`, `mise completion` generates completions for mise itself.
 

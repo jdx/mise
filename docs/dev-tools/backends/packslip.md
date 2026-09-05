@@ -92,17 +92,20 @@ for signed lists, withdrawals, and fallback behavior.
 
 ## Completions and skills {#completions}
 
-hk publishes a [usage](https://usage.jdx.dev) CLI specification that mise can use
-for shell completions. Install `usage`, then set up completions for your shell:
+hk provides its own completion installer:
 
 ```sh
-mise use -g usage
-mise completion zsh --tool hk --install
+hk completion zsh --install
 ```
 
-Follow any shell setup instructions printed by the command. The installed
-completion file follows the hk version active in each project. Bash, fish, and
-PowerShell are also supported.
+Follow any shell setup instructions printed by the command. The script asks the
+active hk binary for suggestions, so no separate `usage` installation is needed.
+Replace `zsh` with `bash`, `fish`, or `powershell` for another shell. See
+[hk's completion reference](https://hk.jdx.dev/cli/completion.html).
+
+For tools whose completions are provided by their release manifest, mise can
+install them with `mise completion SHELL --tool TOOL --install`. See
+[Packslip completions](/dev-tools/packslip-resources.html#completions).
 
 <span id="skills"></span>
 
