@@ -7,6 +7,7 @@ use crate::config::Config;
 use crate::file;
 use crate::system;
 use crate::system::edits::{BlockSource, EditOp};
+use crate::system::generations::GenerationScope;
 use crate::ui::prompt;
 
 /// Edit a managed dotfile source
@@ -148,6 +149,16 @@ fn open_or_create(path: &std::path::Path) -> Result<()> {
 
 /// Apply a selected target after validating the complete composed footprint.
 async fn apply_target(target: &str) -> Result<()> {
+    GenerationScope::wrap(
+        "bootstrap dotfiles edit",
+        "dotfiles",
+        false,
+        apply_target_inner(target),
+    )
+    .await
+}
+
+async fn apply_target_inner(target: &str) -> Result<()> {
     let config = Config::reset().await?;
     let targets = vec![target.to_string()];
     let all_files = system::files::files_from_config(&config)?;
