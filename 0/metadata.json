@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1SEYJ94G7ACFFGD99X9F7EN",
+  "session_id": "01a07200-0330-74e2-8dea-9f54c72bc6f4",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-05T18:58:00.568668Z",
+  "branch": "codex/github-read-only-relay",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "e2e/fixtures/github_relay.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "b970b92bb78c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1255190,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 39136512,
+    "output_tokens": 130573,
+    "api_call_count": 309
+  },
+  "session_metrics": {
+    "turn_count": 15
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-05T18:58:00.294138Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 1,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
