@@ -228,17 +228,23 @@ fn exec_action(request: &ScheduledTaskRequest) -> Result<(String, String)> {
 
 fn split_command(command: &str) -> (String, String) {
     let trimmed = command.trim();
-    if let Some(rest) = trimmed.strip_prefix('"')
+    let (program, args) = if let Some(rest) = trimmed.strip_prefix('"')
         && let Some(end) = rest.find('"')
     {
-        let program = rest[..end].to_string();
-        let args = rest[end + 1..].trim().to_string();
-        return (program, args);
-    }
-    match trimmed.split_once(char::is_whitespace) {
-        Some((program, args)) => (program.to_string(), args.trim().to_string()),
-        None => (trimmed.to_string(), String::new()),
-    }
+        (rest[..end].to_string(), rest[end + 1..].trim().to_string())
+    } else {
+        match trimmed.split_once(char::is_whitespace) {
+            Some((program, args)) => (program.to_string(), args.trim().to_string()),
+            None => (trimmed.to_string(), String::new()),
+        }
+    };
+    // `~` and `~/` expand on every platform, as the docs promise
+    let program = if program == "~" || program.starts_with("~/") || program.starts_with("~\\") {
+        expand_path_string(&program)
+    } else {
+        program
+    };
+    (program, args)
 }
 
 fn escape(value: &str) -> String {
@@ -374,17 +380,29 @@ struct Query {
 
 /// The task's state through the Task Scheduler API rather than the
 /// localized text `schtasks /query` prints. Prints `MISSING` for an
-/// unregistered task and the `TaskState` name otherwise.
-const QUERY_SCRIPT: &str = "$t = Get-ScheduledTask -TaskPath '\\mise\\' -TaskName $args[0] -ErrorAction SilentlyContinue; if ($null -eq $t) { 'MISSING' } else { $t.State.ToString() }";
+/// unregistered task and the `TaskState` name otherwise. The name is
+/// embedded in the script (arguments after `-Command` are more command
+/// text, not `$args`); names are validated to letters, digits, `.`, `_`,
+/// and `-` before they get here.
+fn query_script(name: &str) -> String {
+    format!(
+        "$t = Get-ScheduledTask -TaskPath '\\mise\\' -TaskName '{name}' -ErrorAction SilentlyContinue; if ($null -eq $t) {{ 'MISSING' }} else {{ $t.State.ToString() }}"
+    )
+}
 
 async fn query(task: &str) -> Result<Option<Query>> {
     let name = task.strip_prefix("mise\\").unwrap_or(task);
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
+        bail!("scheduled task name {name:?} contains characters that cannot be queried");
+    }
     let args = [
         "-NoProfile".to_string(),
         "-NonInteractive".to_string(),
         "-Command".to_string(),
-        QUERY_SCRIPT.to_string(),
-        name.to_string(),
+        query_script(name),
     ];
     debug!("$ powershell {}", shell_words::join(&args));
     let mut cmd = tokio::process::Command::new("powershell.exe");
@@ -495,6 +513,14 @@ mod tests {
             .insert("P".into(), "%PATH%;C:\\x".into());
         let err = render_xml(&request, "me").unwrap_err().to_string();
         assert!(err.contains("cmd.exe would reinterpret"), "{err}");
+    }
+
+    #[test]
+    fn tilde_expands_in_the_program() {
+        let (program, args) = split_command("~/.local/bin/agent --serve");
+        assert!(!program.starts_with('~'), "{program}");
+        assert!(program.ends_with("agent"), "{program}");
+        assert_eq!(args, "--serve");
     }
 
     #[test]

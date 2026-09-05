@@ -292,7 +292,9 @@ pub(crate) fn durable_mise_executable() -> Option<PathBuf> {
 }
 
 fn is_durable(path: &Path) -> bool {
-    if path.starts_with(std::env::temp_dir()) {
+    let temp = std::env::temp_dir();
+    let temp = std::fs::canonicalize(&temp).unwrap_or(temp);
+    if path.starts_with(&temp) {
         return false;
     }
     let text = path.to_string_lossy();
@@ -735,6 +737,7 @@ mod tests {
     #[test]
     fn staged_binaries_are_not_durable() {
         let temp = std::env::temp_dir();
+        let temp = std::fs::canonicalize(&temp).unwrap_or(temp);
         assert!(!is_durable(
             &temp.join("mise-bootstrap.abc123").join("mise")
         ));

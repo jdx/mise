@@ -1801,11 +1801,16 @@ impl Bootstrap {
             }
         }
 
-        let late = user_services
-            .iter()
-            .filter(|request| request.requires_tools)
-            .cloned()
-            .collect::<Vec<_>>();
+        // resolved again: the run may have installed a durable mise since
+        // the requests were first built (a remote-staged bootstrap)
+        let late = if services_enabled {
+            system::user_services::requests_from_config(&config)?
+                .into_iter()
+                .filter(|request| request.requires_tools)
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
         if !late.is_empty() {
             if skip.contains(&BootstrapPart::Tools) {
                 info!("bootstrap: tools skipped; user services with requires_tools still converge");
