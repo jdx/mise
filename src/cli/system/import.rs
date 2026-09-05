@@ -21,6 +21,7 @@ use crate::file::display_path;
 use crate::system;
 #[cfg(unix)]
 use crate::system::PackageTomlConfig;
+use crate::system::generations::GenerationScope;
 #[cfg(unix)]
 use crate::system::packages::SystemPackageManager;
 #[cfg(unix)]
@@ -69,6 +70,16 @@ pub(crate) struct SystemImport {
 
 impl SystemImport {
     pub(crate) async fn run(self) -> Result<()> {
+        GenerationScope::wrap(
+            "bootstrap packages import",
+            "packages",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         if Settings::get()
             .system_packages
             .managers

@@ -4,8 +4,8 @@
 //! the global config directory and `dotfiles.root` taken before and after
 //! the run in a mise-owned bare git repository (the "shadow" repo), the
 //! global lockfile, and a journal of what the run changed. Together they
-//! give a named machine state that `mise bootstrap generations` can list,
-//! show, and diff.
+//! give a named machine state that `mise bootstrap generations` can list
+//! and show.
 //!
 //! Layout under `$MISE_STATE_DIR/bootstrap/` (created `0700`):
 //!

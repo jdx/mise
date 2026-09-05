@@ -389,6 +389,15 @@ fn scan_root(root: &Path) -> ScannedRoot {
         warnings: vec![],
         skipped: None,
     };
+    // Directories mise owns that sit under the root are pruned from the walk
+    // below, so they must be handed to git as exclusions here.
+    for dir in &mise_dirs {
+        if let Ok(rel) = dir.strip_prefix(&root_canonical)
+            && !rel.as_os_str().is_empty()
+        {
+            scanned.excludes.push(rel.to_path_buf());
+        }
+    }
     let walker = WalkDir::new(root)
         .follow_links(false)
         .into_iter()
@@ -412,14 +421,6 @@ fn scan_root(root: &Path) -> ScannedRoot {
         };
         let file_type = entry.file_type();
         if file_type.is_dir() {
-            if entry.file_name() == ".git" {
-                continue;
-            }
-            // Directories mise owns are pruned from the walk above; git must
-            // skip them too.
-            if mise_dirs.contains(&canonical(entry.path())) {
-                scanned.excludes.push(rel);
-            }
             continue;
         }
         if file_type.is_symlink() {

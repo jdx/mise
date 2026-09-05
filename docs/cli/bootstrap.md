@@ -93,7 +93,7 @@ cannot be used together.
 - [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.md)
 - [`mise bootstrap files <SUBCOMMAND>`](/cli/bootstrap/files.md)
 - [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.md)
-- [`mise bootstrap generations [FLAGS] <SUBCOMMAND>`](/cli/bootstrap/generations.md)
+- [`mise bootstrap generations [FLAGS] [SUBCOMMAND]`](/cli/bootstrap/generations.md)
 - [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.md)
 - [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.md)
 - [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.md)

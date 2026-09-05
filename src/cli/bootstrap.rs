@@ -1235,7 +1235,7 @@ impl Bootstrap {
             parts: BootstrapPart::ALL
                 .iter()
                 .filter(|part| !skip.contains(part))
-                .map(|part| format!("{part:?}").to_kebab_case())
+                .map(bootstrap_part_name)
                 .collect(),
             message: None,
         };
@@ -1709,9 +1709,11 @@ impl Bootstrap {
             let tasks = config.tasks().await?;
             if tasks.iter().any(|(_, t)| t.is_match("bootstrap")) {
                 info!("bootstrap: running `bootstrap` task");
+                if !self.dry_run {
+                    journal::unrecorded("task", "bootstrap", "task effects are not journaled");
+                }
                 self.run_task("bootstrap", skip.contains(&BootstrapPart::Tools))
                     .await?;
-                journal::unrecorded("task", "bootstrap", "task effects are not journaled");
             } else {
                 debug!("bootstrap: no `bootstrap` task defined, skipping");
             }
@@ -1747,6 +1749,9 @@ impl Bootstrap {
             )
         };
 
+        // The clone or pull changes the config checkout before the child
+        // process records the bootstrap itself, so it is a generation of its own.
+        let generation = GenerationScope::begin("bootstrap --from", self.dry_run);
         let checkout_is_empty = checkout.is_dir() && checkout.read_dir()?.next().is_none();
         if checkout.exists() && !checkout_is_empty {
             validate_bootstrap_checkout(&checkout, url)?;
@@ -1778,6 +1783,19 @@ impl Bootstrap {
                 bail!("git clone failed with {status}");
             }
         }
+        if !self.dry_run {
+            journal::note(format!(
+                "checked out {url} into {}",
+                checkout.display_user()
+            ));
+        }
+        generation.finish(
+            None,
+            Some(Summary {
+                parts: vec!["config-checkout".into()],
+                message: Some(format!("checkout of {url}")),
+            }),
+        );
 
         let checkout = dunce::canonicalize(&checkout)?;
         let mut command = Command::new(std::env::current_exe()?);
@@ -1821,11 +1839,15 @@ impl Bootstrap {
         hooks: &[hooks::BootstrapHook],
         phase: BootstrapHookPhase,
     ) -> Result<()> {
-        run_bootstrap_hooks(config, hooks, phase, self.dry_run).await?;
-        if !self.dry_run && hooks.iter().any(|hook| hook.phase == phase) {
+        // Recorded before the hooks run: a hook that fails may still have
+        // changed the machine.
+        if bootstrap_hooks_enabled()
+            && !self.dry_run
+            && hooks.iter().any(|hook| hook.phase == phase)
+        {
             journal::unrecorded("hooks", phase.as_str(), "hook commands are not journaled");
         }
-        Ok(())
+        run_bootstrap_hooks(config, hooks, phase, self.dry_run).await
     }
 
     fn skip_parts(&self) -> HashSet<BootstrapPart> {
@@ -3850,16 +3872,19 @@ impl BootstrapDotfilesApply {
     }
 }
 
+fn bootstrap_hooks_enabled() -> bool {
+    !(config::Settings::no_hooks()
+        || config::Settings::get().no_hooks.unwrap_or(false)
+        || config::Settings::get().safe)
+}
+
 async fn run_bootstrap_hooks(
     config: &Config,
     hooks: &[hooks::BootstrapHook],
     phase: BootstrapHookPhase,
     dry_run: bool,
 ) -> Result<()> {
-    if config::Settings::no_hooks()
-        || config::Settings::get().no_hooks.unwrap_or(false)
-        || config::Settings::get().safe
-    {
+    if !bootstrap_hooks_enabled() {
         debug!("bootstrap: {phase} hooks disabled");
         return Ok(());
     }
