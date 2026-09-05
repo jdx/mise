@@ -630,8 +630,13 @@ development:
 
 - **release-plz**: Automated release management based on conventional commits
 - Automatically creates release PRs and publishes releases
-- Runs daily via scheduled workflow
+- Runs on every push to `main` and daily via scheduled workflow
 - Handles version bumping and changelog generation
+- The release PR's dry run (`release.yml`) only builds the release tarballs
+  once auto-merge is enabled on that PR. Until then its required `release`
+  check fails with a message saying so, which keeps the PR from merging
+  without a dry run while avoiding a full tarball build on every push to
+  `main`.
 
 ## Adding a new setting
 
