@@ -644,6 +644,28 @@
           "description": "How often to check for a new mise release when auto-update is enabled.",
           "type": "string"
         },
+        "bootstrap": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "generations": {
+              "type": "object",
+              "unevaluatedProperties": false,
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Record a bootstrap generation (a snapshot of the config directory and dotfiles root plus a journal of changes) on every mutating bootstrap command.",
+                  "type": "boolean"
+                },
+                "keep": {
+                  "default": 20,
+                  "description": "How many bootstrap generations to retain. Older finished generations and their snapshots are pruned after each run; `0` keeps all of them.",
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
         "cache_prune_age": {
           "default": "30d",
           "description": "Delete files in cache that have not been accessed in this duration",

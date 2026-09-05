@@ -92,6 +92,7 @@
 - [launchd](https://mise.jdx.dev/bootstrap/launchd.html): mise can declare macOS user LaunchAgents in [bootstrap.macos.launchd.agents] and apply them with mise bootstrap macos launchd-agents apply or as part of mise bootstrap.
 - [systemd](https://mise.jdx.dev/bootstrap/systemd.html): mise can declare Linux systemd user services and timers in [bootstrap.linux.systemd.units] and apply them with mise bootstrap linux systemd-units apply or as part of mise bootstrap.
 - [User Login Shell](https://mise.jdx.dev/bootstrap/user.html): mise can declare the current user's login shell in [bootstrap.user] and apply it with mise bootstrap user apply or as part of mise bootstrap.
+- [Generations](https://mise.jdx.dev/bootstrap/generations.html): Every mutating bootstrap command records a generation: a named machine state you can list, inspect, and compare.
 
 ## Environments
 
@@ -175,6 +176,7 @@
 - [mise bootstrap dotfiles](https://mise.jdx.dev/cli/bootstrap/dotfiles.html): Manage dotfiles from [dotfiles]
 - [mise bootstrap files](https://mise.jdx.dev/cli/bootstrap/files.html): Manage privileged files and directories from [bootstrap.files] and [bootstrap.directories]
 - [mise bootstrap firewall](https://mise.jdx.dev/cli/bootstrap/firewall.html): Manage the Linux host firewall from [bootstrap.linux.firewall]
+- [mise bootstrap generations](https://mise.jdx.dev/cli/bootstrap/generations.html): Inspect recorded bootstrap generations
 - [mise bootstrap linux](https://mise.jdx.dev/cli/bootstrap/linux.html): Manage Linux bootstrap config from [bootstrap.linux]
 - [mise bootstrap macos](https://mise.jdx.dev/cli/bootstrap/macos.html): Manage macOS bootstrap config from [bootstrap.macos]
 - [mise bootstrap mise-shell-activate](https://mise.jdx.dev/cli/bootstrap/mise-shell-activate.html): Manage mise shell activation from [bootstrap.mise_shell_activate]

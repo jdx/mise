@@ -29,6 +29,8 @@ source_code_link_template #"""
 {%- set path = "dotfiles/status.rs" -%}
 {%- elif path == "bootstrap/dotfiles/unapply" -%}
 {%- set path = "dotfiles/unapply.rs" -%}
+{%- elif path is starting_with(pat="bootstrap/generations") -%}
+{%- set path = "bootstrap/generations.rs" -%}
 {%- elif path is starting_with(pat="bootstrap") -%}
 {%- set path = "bootstrap.rs" -%}
 {%- elif path == "tasks/run" -%}
@@ -685,6 +687,38 @@ edits require `--force`.
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 when the firewall is not converged"
             flag "-h --help" help="Print help" action=help builtin=#true
+        }
+    }
+    cmd generations help="Inspect recorded bootstrap generations" effect=read {
+        long_help #"""
+Inspect recorded bootstrap generations
+
+Every mutating bootstrap command records a generation: what ran, a
+snapshot of the global config directory and dotfiles root taken before
+and after the run, the global lockfile, and a journal of what changed.
+Without a subcommand this lists them, newest first.
+"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap generations\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations --json | jq '.[0]'\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations show latest\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations show 12 --files\u{1b}[22m\n"
+        flag "-J --json" help="Output in JSON format"
+        flag "-n --limit" help="Show at most this many generations (0 for all)" default="20" {
+            arg <LIMIT>
+        }
+        flag --pending help="Only list generations whose run did not finish"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        cmd ls help="List recorded generations, newest first" effect=read {
+            alias list
+            flag "-J --json" help="Output in JSON format"
+            flag "-n --limit" help="Show at most this many generations (0 for all)" default="20" {
+                arg <LIMIT>
+            }
+            flag --pending help="Only list generations whose run did not finish"
+            flag "-h --help" help="Print help" action=help builtin=#true
+        }
+        cmd show help="Show one generation: what ran, its snapshot, and its journal" effect=read {
+            flag "-J --json" help="Output in JSON format"
+            flag --files help="List every file in the snapshot taken after the run"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[ID]" help="Generation id, `latest` (the default), or `latest~N`" required=#false
         }
     }
     cmd launchd hide=#true subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" effect=read {

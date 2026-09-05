@@ -229,6 +229,18 @@ Apply the configured Linux host firewall
 \fBbootstrap firewall status\fR
 Show configured Linux host firewall state
 .TP
+\fBbootstrap generations\fR
+Inspect recorded bootstrap generations
+.TP
+\fBbootstrap generations ls\fR
+List recorded generations, newest first
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
+\fBbootstrap generations show\fR
+Show one generation: what ran, its snapshot, and its journal
+.TP
 \fBbootstrap linux\fR
 Manage Linux bootstrap config from `[bootstrap.linux]`
 .TP
@@ -1508,6 +1520,76 @@ Exit with code 1 when the firewall is not converged
 .TP
 \fB\-h, \-\-help\fR
 Print help
+.SH "MISE BOOTSTRAP GENERATIONS"
+Inspect recorded bootstrap generations
+
+Every mutating bootstrap command records a generation: what ran, a
+snapshot of the global config directory and dotfiles root taken before
+and after the run, the global lockfile, and a journal of what changed.
+Without a subcommand this lists them, newest first.
+.PP
+\fBUsage:\fR mise bootstrap generations [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
+Show at most this many generations (0 for all)
+.RS
+\fIDefault: \fR20
+.RE
+.TP
+\fB\-\-pending\fR
+Only list generations whose run did not finish
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP GENERATIONS LS"
+List recorded generations, newest first
+.PP
+\fBUsage:\fR mise bootstrap generations ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
+Show at most this many generations (0 for all)
+.RS
+\fIDefault: \fR20
+.RE
+.TP
+\fB\-\-pending\fR
+Only list generations whose run did not finish
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP GENERATIONS SHOW"
+Show one generation: what ran, its snapshot, and its journal
+.PP
+\fBUsage:\fR mise bootstrap generations show [OPTIONS] [<ID>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-files\fR
+List every file in the snapshot taken after the run
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<ID>\fR
+Generation id, `latest` (the default), or `latest~N`
 .SH "MISE BOOTSTRAP LINUX"
 Manage Linux bootstrap config from `[bootstrap.linux]`
 .PP
