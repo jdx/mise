@@ -152,6 +152,64 @@ impl<'a> GitBackendOptions<'a> {
             .collect()
     }
 
+    /// Whether a platform-scoped direct download URL is configured for *any*
+    /// platform.
+    ///
+    /// `url` short-circuits asset selection entirely in
+    /// `resolve_asset_for_target`, so a release with no uploaded assets still
+    /// installs. Version listing has to keep those releases, and the question
+    /// has to be answered without a target because the listing is shared
+    /// across platforms.
+    ///
+    /// Only the platform-scoped spellings count, because only those are read at
+    /// install time: [`Self::direct_url_for_target`] goes through
+    /// `platform_string_for_target_without_base`, which resolves
+    /// `platforms.<os>-<arch>.url` and `platform_<os>_<arch>_url` and never
+    /// falls back to a bare top-level `url`. Treating a base-level `url` as an
+    /// exemption would keep asset-less releases listed for a tool that still
+    /// runs asset selection and still fails.
+    ///
+    /// The `<os>-<arch>` half of that is load-bearing, which is why this checks
+    /// the shape rather than just the prefix and suffix.
+    /// `lookup_platform_value_for_aliases` builds every key it reads as
+    /// `{platform|platforms}.{os}-{arch}.url` or
+    /// `{platform|platforms}_{os}_{arch}_url`, so an option named
+    /// `platforms.url` or `platform_linux_url` is never read at all. Counting
+    /// one of those as an exemption is the same failure as counting a base-level
+    /// `url`: the release stays listed and the install still ends in "No
+    /// matching asset found".
+    ///
+    /// A `url` covering only some platforms exempts the tool everywhere, so an
+    /// asset-less release stays listed on a platform the `url` misses and fails
+    /// to install there. Narrowing that would mean deciding the version list
+    /// per target, which is the thing this filter is written to avoid; the
+    /// uncovered platform is no worse off than it was before any filtering
+    /// existed.
+    ///
+    /// Whether a *value* counts is not decided here: the two lookups the install
+    /// path uses answer that, so a value they reject cannot be read as an
+    /// exemption and one they accept cannot be missed. They take any TOML scalar
+    /// — `url = false` resolves to the string `"false"` and short-circuits asset
+    /// selection just as a real URL would, badly but definitely — and reject
+    /// tables and arrays.
+    fn has_direct_url(&self) -> bool {
+        let raw = self.values.raw();
+        let opts = raw.opts.as_map();
+        opts.iter().any(|(key, value)| {
+            (key == "platforms" || key == "platform")
+                && value.as_table().is_some_and(|table| {
+                    table.keys().any(|platform| {
+                        platform.contains('-')
+                            && raw
+                                .get_nested_string(&format!("{key}.{platform}.url"))
+                                .is_some()
+                    })
+                })
+        }) || opts
+            .keys()
+            .any(|key| is_flat_platform_url_key(key) && raw.get_string(key).is_some())
+    }
+
     fn direct_url_for_target(&self, target: &PlatformTarget) -> Option<String> {
         self.values
             .platform_string_for_target_without_base("url", target)
@@ -322,6 +380,71 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
     ]
 }
 
+/// Whether a flat option name is one the install path reads as a
+/// platform-scoped `url`: `platform_<os>_<arch>_url` or the `platforms_` spelling.
+///
+/// The arch half is required. `platform_linux_url` looks like one of these and
+/// is never read, so treating it as an exemption would list releases that
+/// cannot be installed. Split on the *first* underscore only, so an arch that
+/// contains one — `platform_linux_x86_64_url` — still resolves.
+fn is_flat_platform_url_key(key: &str) -> bool {
+    key.strip_prefix("platforms_")
+        .or_else(|| key.strip_prefix("platform_"))
+        .and_then(|rest| rest.strip_suffix("_url"))
+        .and_then(|platform| platform.split_once('_'))
+        .is_some_and(|(os, arch)| !os.is_empty() && !arch.is_empty())
+}
+
+/// Partition the remote-version cache only when this tool's direct-URL
+/// exemption is not the one the registry hands everybody.
+///
+/// The exemption changes the shape of the version list, so a tool that has it
+/// cannot share a cache entry with one that does not. But a registry entry that
+/// declares platform URLs gives *every* client the same exemption, and
+/// mise-versions is built from that same canonical configuration — so isolating
+/// there would only cost the shared listing for no difference in content. The
+/// context therefore appears when a local config, alias, or inline option moves
+/// the exemption away from the registry default, in either direction.
+///
+/// This mirrors what `has_local_version_listing_option_override` already does
+/// for `api_url` and `version_prefix` in `backend/mod.rs`: a registry-supplied
+/// value is identical for everyone, so it keeps the versions host available.
+///
+/// Only the effective boolean is hashed. The URL itself is install-only and may
+/// carry a token.
+fn direct_url_cache_context(effective: bool, registry_default: bool) -> Option<String> {
+    (effective != registry_default).then(|| crate::hash::hash_to_str(&effective))
+}
+
+/// Whether a release has anything mise could install from.
+///
+/// A release with nothing attached has no source at all: mise never falls back
+/// to the forge's auto-generated source archives, so every asset-selection path
+/// ends in "No matching asset found". Listing such a release advertises a
+/// version that cannot be installed -- `mise install <tool>@<version>` fails
+/// with that error rather than doing anything useful.
+///
+/// Deliberately *not* "has an asset for the current platform". That would make
+/// the version list platform-dependent, which cross-platform lockfiles rely on
+/// it not being. Emptiness gives the same answer on every host.
+fn github_release_has_assets(release: &github::GithubRelease) -> bool {
+    !release.assets.is_empty()
+}
+
+/// GitLab counterpart of [`github_release_has_assets`], keyed on `links`.
+///
+/// `assets.sources` is GitLab's auto-generated zip/tar.gz of the tag and is
+/// always populated, so testing the whole `assets` struct would never exclude
+/// anything. The install path reads `assets.links` exclusively.
+fn gitlab_release_has_assets(release: &gitlab::GitlabRelease) -> bool {
+    !release.assets.links.is_empty()
+}
+
+/// Forgejo counterpart of [`github_release_has_assets`].
+fn forgejo_release_has_assets(release: &forgejo::ForgejoRelease) -> bool {
+    !release.assets.is_empty()
+}
+
 #[async_trait]
 impl Backend for UnifiedGitBackend {
     fn version_order(&self, opts: &ToolVersionOptions) -> Result<VersionOrder> {
@@ -391,11 +514,23 @@ impl Backend for UnifiedGitBackend {
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
 
-        let releases = github::list_releases_from_url(api_url.as_str(), &repo)
-            .await
-            .unwrap_or_default();
+        // Same `require_assets` this backend's own listing asks for, so the two
+        // share a cache entry instead of fetching the repository's releases
+        // twice under different keys. `list_releases_from_url` would hardcode
+        // `false` and split them. The flag comes from the backend arg rather
+        // than the config, which is all this trait method is handed; a `url`
+        // set only in config would still split, as it did before.
+        let releases = github::list_releases_including_prereleases_from_url(
+            api_url.as_str(),
+            &repo,
+            !opts.has_direct_url(),
+        )
+        .await
+        .unwrap_or_default();
 
-        let latest_release = releases.first();
+        // What `list_releases_from_url` used to answer: the newest release that
+        // is not a prerelease.
+        let latest_release = releases.iter().find(|r| !r.prerelease);
 
         // Check for checksum files in assets
         if let Some(release) = latest_release {
@@ -446,6 +581,33 @@ impl Backend for UnifiedGitBackend {
         &["api_url", "version_prefix"]
     }
 
+    /// The registry baseline is read straight off the registry entry, not
+    /// reconstructed from the effective options' provenance.
+    ///
+    /// `options_from_sources` attributes whole *top-level* keys, so a local
+    /// `[platforms]` table replaces the registry's table and takes the
+    /// attribution with it: the registry's `platforms.<os>-<arch>.url` becomes
+    /// unrecoverable. Paired with a local `platforms` table carrying no `url`,
+    /// both sides would read `false`, no context would be produced, and a
+    /// configuration that *must* filter asset-less releases would read the
+    /// canonical unfiltered listing -- advertising versions whose install then
+    /// fails, which is the failure this whole change exists to remove.
+    ///
+    /// [`BackendArg::registry_opts`] is the very layer `resolve_opts_with_layers`
+    /// applies as [`crate::toolset::ToolOptionSource::Registry`], so it cannot
+    /// lose the key. It also settles the mirror case: a local
+    /// `platforms.<b>.url` replacing the registry's `platforms.<a>.url` matches
+    /// the baseline and keeps the shared partition instead of being isolated
+    /// for nothing.
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        let effective = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let registry_default = self.ba.registry_opts();
+        Ok(direct_url_cache_context(
+            self.options(&effective).has_direct_url(),
+            self.options(&registry_default).has_direct_url(),
+        ))
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let repo = self.ba.tool_name();
         let id = self.ba.to_string();
@@ -453,6 +615,10 @@ impl Backend for UnifiedGitBackend {
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
         let version_prefix = opts.version_prefix();
+
+        // A tool with a `url` option never selects an asset, so its releases
+        // must not be judged on having one.
+        let skip_asset_check = opts.has_direct_url();
 
         let web_url_base = self.web_url_base(&api_url, &repo);
 
@@ -462,6 +628,7 @@ impl Backend for UnifiedGitBackend {
                 .await?
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+                .filter(|r| skip_asset_check || gitlab_release_has_assets(r))
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name, &opts),
                     created_at: r.released_at,
@@ -470,39 +637,49 @@ impl Backend for UnifiedGitBackend {
                 })
                 .collect()
         } else if self.is_forgejo() {
-            forgejo::list_releases_including_prereleases_from_url(api_url.as_str(), &repo)
-                .await?
-                .into_iter()
-                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
-                .map(|r| VersionInfo {
-                    version: self.strip_version_prefix(&r.tag_name, &opts),
-                    created_at: Some(r.created_at),
-                    release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
-                    prerelease: Some(r.prerelease),
-                    ..Default::default()
-                })
-                .collect()
+            forgejo::list_releases_including_prereleases_from_url(
+                api_url.as_str(),
+                &repo,
+                !skip_asset_check,
+            )
+            .await?
+            .into_iter()
+            .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+            .filter(|r| skip_asset_check || forgejo_release_has_assets(r))
+            .map(|r| VersionInfo {
+                version: self.strip_version_prefix(&r.tag_name, &opts),
+                created_at: Some(r.created_at),
+                release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                prerelease: Some(r.prerelease),
+                ..Default::default()
+            })
+            .collect()
         } else {
             // Always fetch the pre-release superset and stamp `prerelease` on
             // each entry. The shared remote-versions cache stores the superset
             // so flipping the `prerelease` tool option (e.g. via a project
             // override) is correct without invalidating the cache; the read
             // path filters on `prerelease` according to the current opts.
-            github::list_releases_including_prereleases_from_url(api_url.as_str(), &repo)
-                .await?
-                .into_iter()
-                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
-                .map(|r| {
-                    let created_at = Some(r.released_at().to_string());
-                    VersionInfo {
-                        version: self.strip_version_prefix(&r.tag_name, &opts),
-                        created_at,
-                        release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
-                        prerelease: Some(r.prerelease),
-                        ..Default::default()
-                    }
-                })
-                .collect()
+            github::list_releases_including_prereleases_from_url(
+                api_url.as_str(),
+                &repo,
+                !skip_asset_check,
+            )
+            .await?
+            .into_iter()
+            .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+            .filter(|r| skip_asset_check || github_release_has_assets(r))
+            .map(|r| {
+                let created_at = Some(r.released_at().to_string());
+                VersionInfo {
+                    version: self.strip_version_prefix(&r.tag_name, &opts),
+                    created_at,
+                    release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                    prerelease: Some(r.prerelease),
+                    ..Default::default()
+                }
+            })
+            .collect()
         };
 
         // Apply common validation and reverse order
@@ -545,11 +722,22 @@ impl Backend for UnifiedGitBackend {
             return Ok(None);
         }
 
+        // The `/releases/latest` shortcut has to reject an asset-less release for
+        // the same reason the full listing does, or `latest` would resolve to a
+        // version the listing no longer offers and the install would fail with
+        // "No matching asset found". Returning `None` falls through to
+        // `latest_version_for_query`, which picks the newest listed version.
+        let skip_asset_check = opts.has_direct_url();
+
         let latest_release = if self.is_gitlab() {
             // GitLab doesn't have a "latest" endpoint
             return Ok(None);
         } else if self.is_forgejo() {
             match forgejo::get_release_for_url(&api_url, &repo, "latest").await {
+                Ok(r) if !skip_asset_check && !forgejo_release_has_assets(&r) => {
+                    debug!("Latest Forgejo release for {repo} has no assets; using the listing");
+                    return Ok(None);
+                }
                 Ok(r) => Some((r.tag_name, r.created_at, r.prerelease)),
                 Err(e) => {
                     debug!("Failed to fetch latest Forgejo release for {repo}: {e}");
@@ -561,6 +749,10 @@ impl Backend for UnifiedGitBackend {
                 .get_github_release_for_url(&api_url, &repo, "latest")
                 .await
             {
+                Ok(r) if !skip_asset_check && !github_release_has_assets(&r) => {
+                    debug!("Latest GitHub release for {repo} has no assets; using the listing");
+                    return Ok(None);
+                }
                 Ok(r) => {
                     let released_at = r.released_at().to_string();
                     Some((r.tag_name, released_at, r.prerelease))
@@ -3207,6 +3399,332 @@ mod tests {
             pick_slsa_provenance(&picker, &assets, "tool-linux-amd64").as_deref(),
             Some("tool-linux-amd64.provenance.json")
         );
+    }
+
+    fn github_release(assets: Vec<&str>) -> github::GithubRelease {
+        github::GithubRelease {
+            tag_name: "v1.0.0".into(),
+            draft: false,
+            prerelease: false,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            published_at: None,
+            assets: assets
+                .into_iter()
+                .map(|name| github::GithubAsset {
+                    name: name.into(),
+                    browser_download_url: format!("https://example.com/{name}"),
+                    url: format!("https://api.example.com/{name}"),
+                    digest: None,
+                })
+                .collect(),
+        }
+    }
+
+    fn gitlab_release(sources: Vec<&str>, links: Vec<&str>) -> gitlab::GitlabRelease {
+        gitlab::GitlabRelease {
+            tag_name: "v1.0.0".into(),
+            description: None,
+            released_at: None,
+            assets: gitlab::GitlabAssets {
+                sources: sources
+                    .into_iter()
+                    .map(|format| gitlab::GitlabAssetSource {
+                        format: format.into(),
+                        url: "https://example.com/source".into(),
+                    })
+                    .collect(),
+                links: links
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, name)| gitlab::GitlabAssetLink {
+                        id: i as i64,
+                        name: name.into(),
+                        url: format!("https://example.com/{name}"),
+                        direct_asset_url: format!("https://example.com/d/{name}"),
+                        link_type: "other".into(),
+                    })
+                    .collect(),
+            },
+        }
+    }
+
+    fn forgejo_release(assets: Vec<&str>) -> forgejo::ForgejoRelease {
+        forgejo::ForgejoRelease {
+            id: 1,
+            tag_name: "v1.0.0".into(),
+            draft: false,
+            prerelease: false,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            assets: assets
+                .into_iter()
+                .enumerate()
+                .map(|(i, name)| forgejo::ForgejoAsset {
+                    id: i as u64,
+                    name: name.into(),
+                    uuid: format!("uuid-{i}"),
+                    browser_download_url: format!("https://example.com/{name}"),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn test_a_release_with_no_assets_is_not_listable() {
+        // Nothing is attached, so every asset-selection path would end in
+        // "No matching asset found" -- there is no source archive fallback.
+        // Measured cases: pypa/hatch hatch-v1.7.0 and kitlangton/ghui v0.3.3.
+        assert!(!github_release_has_assets(&github_release(vec![])));
+        assert!(github_release_has_assets(&github_release(vec![
+            "tool-x86_64-unknown-linux-gnu.tar.gz"
+        ])));
+
+        assert!(!forgejo_release_has_assets(&forgejo_release(vec![])));
+        assert!(forgejo_release_has_assets(&forgejo_release(vec![
+            "tool-linux.tar.gz"
+        ])));
+    }
+
+    #[test]
+    fn test_a_configured_url_exempts_a_tool_from_the_asset_check() {
+        // `url` short-circuits asset selection during install
+        // (`resolve_asset_for_target` returns before any picker runs), so those
+        // releases install without carrying an asset and must stay listed.
+        let backend = create_test_backend();
+        let has_url = |opts: &ToolVersionOptions| backend.options(opts).has_direct_url();
+
+        assert!(!has_url(&ToolVersionOptions::default()));
+
+        // A bare top-level `url` is *not* an exemption: install reads the
+        // option through `platform_string_for_target_without_base`, which
+        // resolves only the platform-scoped spellings and never falls back to
+        // this one. Exempting it would keep asset-less releases listed for a
+        // tool that still runs asset selection and still fails.
+        let mut base = ToolVersionOptions::default();
+        base.opts.insert(
+            "url".into(),
+            toml::Value::String("https://example.com/tool.tar.gz".into()),
+        );
+        assert!(!has_url(&base));
+
+        // Platform-scoped, which is how the option has to be written to take
+        // effect. The check has to see it without a target, because one version
+        // list is shared across platforms.
+        let mut scoped = ToolVersionOptions::default();
+        let mut linux = toml::Table::new();
+        linux.insert(
+            "url".into(),
+            toml::Value::String("https://example.com/tool-linux.tar.gz".into()),
+        );
+        let mut platforms = toml::Table::new();
+        platforms.insert("linux-x64".into(), toml::Value::Table(linux));
+        scoped
+            .opts
+            .insert("platforms".into(), toml::Value::Table(platforms));
+        assert!(has_url(&scoped));
+
+        // The flat spelling of the same thing.
+        let mut flat = ToolVersionOptions::default();
+        flat.opts.insert(
+            "platform_linux_x64_url".into(),
+            toml::Value::String("https://example.com/tool-linux.tar.gz".into()),
+        );
+        assert!(has_url(&flat));
+
+        // An arch that contains an underscore still resolves: the split takes
+        // the first underscore only.
+        let mut underscored_arch = ToolVersionOptions::default();
+        underscored_arch.opts.insert(
+            "platform_linux_x86_64_url".into(),
+            toml::Value::String("https://example.com/tool-linux.tar.gz".into()),
+        );
+        assert!(has_url(&underscored_arch));
+
+        // Shapes that *look* platform-scoped but name no platform the install
+        // path ever asks for. `lookup_platform_value_for_aliases` only builds
+        // `{os}-{arch}` keys, so neither of these is ever read, and counting
+        // them would list releases that cannot be installed.
+        let mut nested_without_platform = ToolVersionOptions::default();
+        let mut bare = toml::Table::new();
+        bare.insert(
+            "url".into(),
+            toml::Value::String("https://example.com/tool.tar.gz".into()),
+        );
+        nested_without_platform
+            .opts
+            .insert("platforms".into(), toml::Value::Table(bare));
+        assert!(!has_url(&nested_without_platform));
+
+        let mut os_only_nested = ToolVersionOptions::default();
+        let mut linux_only = toml::Table::new();
+        linux_only.insert(
+            "url".into(),
+            toml::Value::String("https://example.com/tool.tar.gz".into()),
+        );
+        let mut os_only_platforms = toml::Table::new();
+        os_only_platforms.insert("linux".into(), toml::Value::Table(linux_only));
+        os_only_nested
+            .opts
+            .insert("platforms".into(), toml::Value::Table(os_only_platforms));
+        assert!(!has_url(&os_only_nested));
+
+        let mut os_only_flat = ToolVersionOptions::default();
+        os_only_flat.opts.insert(
+            "platform_linux_url".into(),
+            toml::Value::String("https://example.com/tool.tar.gz".into()),
+        );
+        assert!(!has_url(&os_only_flat));
+
+        // Values are judged by the two lookups the install path uses, not by a
+        // separate rule here. A table has no scalar reading, so
+        // `get_nested_string` returns `None` and asset selection still runs.
+        let mut table_valued = ToolVersionOptions::default();
+        let mut inner = toml::Table::new();
+        inner.insert("href".into(), toml::Value::String("https://x".into()));
+        let mut linux_table = toml::Table::new();
+        linux_table.insert("url".into(), toml::Value::Table(inner));
+        let mut table_platforms = toml::Table::new();
+        table_platforms.insert("linux-x64".into(), toml::Value::Table(linux_table));
+        table_valued
+            .opts
+            .insert("platforms".into(), toml::Value::Table(table_platforms));
+        assert!(!has_url(&table_valued));
+
+        // A non-string scalar *is* read: `get_nested_string` renders it, so
+        // install short-circuits asset selection with the string "false" and
+        // fails on the download rather than on asset matching. Rejecting it
+        // here would filter releases out of a listing for a tool whose install
+        // path never runs asset selection -- the direction that hides
+        // installable versions.
+        let mut boolean_valued = ToolVersionOptions::default();
+        let mut linux_bool = toml::Table::new();
+        linux_bool.insert("url".into(), toml::Value::Boolean(false));
+        let mut bool_platforms = toml::Table::new();
+        bool_platforms.insert("linux-x64".into(), toml::Value::Table(linux_bool));
+        boolean_valued
+            .opts
+            .insert("platforms".into(), toml::Value::Table(bool_platforms));
+        assert!(has_url(&boolean_valued));
+
+        // A neighbouring option that merely ends in `url` is not one.
+        let mut unrelated = ToolVersionOptions::default();
+        unrelated.opts.insert(
+            "api_url".into(),
+            toml::Value::String("https://api.github.example".into()),
+        );
+        assert!(!has_url(&unrelated));
+
+        // The two platform-scoped spellings of the same thing must agree, so
+        // they cannot land in different cache partitions.
+        assert_eq!(
+            backend.options(&scoped).has_direct_url(),
+            backend.options(&flat).has_direct_url()
+        );
+    }
+
+    #[test]
+    fn test_direct_url_cache_context_isolates_only_departures_from_the_registry() {
+        // Both cases where the tool agrees with the registry share the default
+        // partition — which is what keeps mise-versions usable. That matters
+        // most for the second one: a registry entry that ships platform URLs
+        // gives every client the same exemption, and mise-versions is built
+        // from that same configuration.
+        assert_eq!(direct_url_cache_context(false, false), None);
+        assert_eq!(direct_url_cache_context(true, true), None);
+
+        // A local config that adds an exemption the registry does not have, and
+        // one that takes away an exemption the registry does have, are both
+        // departures and both need their own entry.
+        let added = direct_url_cache_context(true, false);
+        let removed = direct_url_cache_context(false, true);
+        assert!(added.is_some());
+        assert!(removed.is_some());
+
+        // ...and they are not the same entry: the two produce different lists.
+        assert_ne!(added, removed);
+    }
+
+    #[test]
+    fn test_a_local_platforms_table_cannot_erase_the_registry_url_baseline() {
+        use crate::toolset::{ResolvedToolOptions, ToolOptionSource};
+
+        let backend = create_test_backend();
+        let has_url = |opts: &ToolVersionOptions| backend.options(opts).has_direct_url();
+
+        // `platforms.<os>-<arch>.url`, the shape the install path reads.
+        let platforms_url = |platform: &str| {
+            let mut entry = toml::Table::new();
+            entry.insert(
+                "url".into(),
+                toml::Value::String("https://example.com/tool.tar.gz".into()),
+            );
+            let mut platforms = toml::Table::new();
+            platforms.insert(platform.into(), toml::Value::Table(entry));
+            let mut opts = ToolVersionOptions::default();
+            opts.opts
+                .insert("platforms".into(), toml::Value::Table(platforms));
+            opts
+        };
+
+        // The registry entry declares a platform URL, so every client gets the
+        // exemption and the canonical listing is the unfiltered one.
+        let registry = platforms_url("linux-x64");
+        let baseline = has_url(&registry);
+        assert!(baseline);
+
+        // A local `[platforms]` table carrying no `url` replaces it wholesale.
+        // This tool therefore *does* filter asset-less releases and must not
+        // read the canonical listing.
+        let mut local = ToolVersionOptions::default();
+        let mut entry = toml::Table::new();
+        entry.insert("checksum".into(), toml::Value::String("sha256:abc".into()));
+        let mut platforms = toml::Table::new();
+        platforms.insert("linux-x64".into(), toml::Value::Table(entry));
+        local
+            .opts
+            .insert("platforms".into(), toml::Value::Table(platforms));
+
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&registry, ToolOptionSource::Registry);
+        resolved.apply_overrides(&local, ToolOptionSource::Config);
+        let effective = has_url(resolved.effective());
+        assert!(!effective);
+
+        // Reading the registry entry itself keeps the baseline, so the
+        // departure is seen and the listing gets its own partition.
+        assert!(direct_url_cache_context(effective, baseline).is_some());
+
+        // The provenance reconstruction this replaces loses it: `platforms` is
+        // one top-level key, so the local table takes the attribution with it
+        // and the registry-filtered view is empty. Both sides then read
+        // `false`, no context is produced, and the filtered configuration lands
+        // on the shared unfiltered partition.
+        let reconstructed = resolved.options_from_sources(&[ToolOptionSource::Registry]);
+        let lost_baseline = has_url(&reconstructed);
+        assert!(!lost_baseline);
+        assert_eq!(direct_url_cache_context(effective, lost_baseline), None);
+
+        // The mirror case: a local table that moves the `url` to another
+        // platform still matches the registry baseline, so it stays on the
+        // shared partition rather than being isolated for nothing.
+        let mut mirrored = ResolvedToolOptions::default();
+        mirrored.apply_overrides(&registry, ToolOptionSource::Registry);
+        mirrored.apply_overrides(&platforms_url("macos-arm64"), ToolOptionSource::Config);
+        let moved_url = has_url(mirrored.effective());
+        assert!(moved_url);
+        assert_eq!(direct_url_cache_context(moved_url, baseline), None);
+    }
+
+    #[test]
+    fn test_gitlab_auto_generated_sources_do_not_count_as_assets() {
+        // The case that makes GitLab need its own predicate: `assets.sources`
+        // is the auto-generated zip/tar.gz of the tag and is always populated,
+        // so testing the whole `assets` struct would never exclude anything.
+        // Only `links` is read by the install path.
+        let sources_only = gitlab_release(vec!["zip", "tar.gz"], vec![]);
+        assert!(!gitlab_release_has_assets(&sources_only));
+
+        let with_link = gitlab_release(vec!["zip", "tar.gz"], vec!["tool-linux.tar.gz"]);
+        assert!(gitlab_release_has_assets(&with_link));
     }
 
     #[test]
