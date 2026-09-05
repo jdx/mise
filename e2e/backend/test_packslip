@@ -11,10 +11,20 @@ export MISE_MINIMUM_RELEASE_AGE=0
 # The backend needs no setting turned on to be used.
 assert_contains "env -u MISE_EXPERIMENTAL mise ls-remote packslip:github.com/jdx/packslip" "0.2.0"
 
+# New releases use the canonical domain identity. Pin the publishing repository's
+# workflows explicitly: the signed list and release bundles use different workflows.
+mkdir canonical
+pushd canonical >/dev/null
+cat >mise.toml <<'EOF'
+[tools]
+"packslip:packslip.dev" = { version = "latest", issuer = "https://token.actions.githubusercontent.com", identity_prefix = "https://github.com/jdx/packslip/.github/workflows/" }
+EOF
 # Latest resolves and verifies the vendor recommendation without installing it.
-latest=$(mise latest packslip:github.com/jdx/packslip) || exit 1
+latest=$(mise latest packslip:packslip.dev) || exit 1
 [[ -n $latest ]] || exit 1
-assert_contains "mise ls-remote packslip:github.com/jdx/packslip" "$latest"
+assert_contains "mise ls-remote packslip:packslip.dev" "$latest"
+mise packslip forget packslip.dev
+popd >/dev/null
 
 # A warm accepted-version cache must not hide changed stamper policy.
 mkdir stamp-policy

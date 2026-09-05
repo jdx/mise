@@ -826,11 +826,7 @@ impl PackslipBackend {
             }
         }
         let verified = verify_bundle(&text, pin, !opts.allow_unlogged(), &[])?;
-        if verified.project != project || verified.version != version {
-            bail!(
-                "packslip:{project}@{version}: verified manifest project/version differs from discovery"
-            );
-        }
+        validate_discovered_identity(project, version, &verified.project, &verified.version)?;
         let scheme = verified.scheme.to_string();
         let attested_by = verified.attested_by.to_string();
         packslip_pins::check(
@@ -1461,10 +1457,49 @@ impl Backend for PackslipBackend {
     }
 }
 
+/// A trusted signer does not make a different project or version interchangeable.
+fn validate_discovered_identity(
+    project: &str,
+    version: &str,
+    signed_project: &str,
+    signed_version: &str,
+) -> Result<()> {
+    if signed_project != project || signed_version != version {
+        bail!(
+            "packslip:{project}@{version}: verified manifest project/version differs from discovery"
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use packslip::model::Bin;
+
+    #[test]
+    fn discovery_requires_exact_signed_project_and_version() {
+        assert!(
+            validate_discovered_identity("packslip.dev", "1.1.1", "packslip.dev", "1.1.1").is_ok()
+        );
+        for (signed_project, signed_version) in [
+            ("packslip.dev", "1.1.1"),
+            ("github.com/jdx/packslip", "1.1.0"),
+            ("packslip.dev", "1.1.0"),
+        ] {
+            assert!(
+                validate_discovered_identity(
+                    "github.com/jdx/packslip",
+                    "1.1.1",
+                    signed_project,
+                    signed_version
+                )
+                .unwrap_err()
+                .to_string()
+                .contains("project/version differs from discovery")
+            );
+        }
+    }
 
     fn artifact(name: &str, os: &str, arch: &str, libc: Option<&str>, format: &str) -> Artifact {
         Artifact {

@@ -16,7 +16,7 @@ young, and its own version is what says what a manifest may contain.
 With [mise activated](/getting-started.html), install packslip itself:
 
 ```sh
-mise use -g packslip:github.com/jdx/packslip
+mise use -g 'packslip:packslip.dev[issuer=https://token.actions.githubusercontent.com,identity_prefix=https://github.com/jdx/packslip/.github/workflows/]'
 packslip version
 ```
 
@@ -25,10 +25,16 @@ For a project configuration:
 
 ```toml
 [tools]
-"packslip:github.com/jdx/packslip" = "latest"
+"packslip:packslip.dev" = { version = "latest", issuer = "https://token.actions.githubusercontent.com", identity_prefix = "https://github.com/jdx/packslip/.github/workflows/" }
 ```
 
 ### Project names and discovery
+
+New packslip releases identify their project as `packslip.dev`. The explicit
+issuer and identity prefix above trust its GitHub publishing workflows for both
+the signed release list and release bundles. Historical releases such as
+`packslip:github.com/jdx/packslip@0.2.0` retain their original GitHub identity;
+the two project names are not interchangeable.
 
 A project name is a host followed by an optional path, without `https://`.
 `packslip:owner/repo` is shorthand for `packslip:github.com/owner/repo`.
@@ -62,7 +68,7 @@ GitHub has a release-API integration; other hosts need the signed-list location.
 List the project's available versions with:
 
 ```sh
-mise ls-remote packslip:github.com/jdx/packslip
+mise ls-remote packslip:packslip.dev
 ```
 
 Packslip versions use semver, including compatible date versions such as
