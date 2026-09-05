@@ -2421,6 +2421,16 @@ dot\-source — it is printed for you to add.
 \fB\-\-force\fR
 Replace a file at the target path that mise did not write
 .TP
+\fB\-\-tool\fR \fI<TOOL>\fR
+A tool's completion instead of mise's own, from the packslip it was installed from
+
+NAME is a tool installed with the `packslip:` backend, or one of its executables. The
+script comes from whichever version is active here, from the most verifiable source its
+packslip offers: a file the vendor shipped, a script derived from its CLI spec, or, only
+with `packslip.exec` enabled, a command of the tool's own. With \-\-install, what is written
+is a small stub that asks mise for the script when the shell first completes the tool, so
+it follows version switches without being rewritten.
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR

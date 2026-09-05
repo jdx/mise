@@ -2113,6 +2113,20 @@ parse_env = "list_by_colon"
 rc = true
 type = "ListString"
 
+[packslip.exec]
+default = false
+description = "Run a tool's own command for a completion or skill its packslip offers only as an exec entry."
+docs = """
+A packslip may say that a tool generates its own shell completion or agent
+skill: `tool completion zsh`, for example. That runs a freshly installed
+binary when the shell first asks for a completion rather than when you first
+run the tool yourself, so mise refuses such entries by default and uses only
+what the vendor shipped as files or as a CLI spec. Turn this on to let mise
+run the command when nothing static is offered.
+"""
+env = "MISE_PACKSLIP_EXEC"
+type = "Bool"
+
 [paranoid]
 description = "Enables extra-secure behavior."
 docs = """

@@ -288,6 +288,19 @@ pub(crate) fn select_artifact<'a>(
     )
 }
 
+/// The artifact this host would select from a stored statement, for
+/// scoping resources to it later. `None` when nothing fits, in which case
+/// only unscoped resources apply.
+pub(crate) fn selected_artifact(statement: &Statement, variant: Option<&str>) -> Option<Artifact> {
+    select_artifact(
+        &statement.predicate.artifacts,
+        &HostPlatform::current(),
+        variant,
+    )
+    .ok()
+    .cloned()
+}
+
 /// A path from a packslip that may be joined onto a directory of mise's:
 /// relative, slash-separated, every segment a plain file name. A verified
 /// manifest is still the vendor's data, not mise's.
@@ -881,6 +894,8 @@ impl Backend for PackslipBackend {
             tv.install_path().join(STATEMENT_FILE),
             serde_json::to_vec_pretty(&statement)?,
         )?;
+        // Completions and CLI specs the vendor keeps outside the artifact.
+        crate::packslip::fetch_files(&tv, &statement, Some(&artifact), ctx.pr.as_ref()).await?;
         Ok(tv)
     }
 
