@@ -95,11 +95,32 @@ mise completion zsh --tool rg           # print the script
 mise completion zsh --tool rg --install # put a stub where zsh looks
 ```
 
-The script comes from whichever version of the tool is active in the current directory. A vendor whose layouts differ by platform scopes an entry with `os`, `arch`, or `libc`; mise keeps the entries that apply to the artifact it installed and, of those, the most specific. It then takes the most verifiable source the vendor offered, in the order the specification gives: a file inside the artifact or a separate signed asset, a file from the source repository at the release's commit, a script derived from the tool's [usage](https://usage.jdx.dev) spec with the `usage` command, and only then a command of the tool's own. That last kind runs a freshly installed binary before you have run it yourself, so mise refuses it unless the [`packslip.exec`](/configuration/settings#packslip-exec) setting is on.
+The script comes from whichever version of the tool is active in the current directory. A vendor whose layouts differ by platform scopes an entry with `os`, `arch`, or `libc`; mise keeps the entries that apply to the artifact it installed and, of those, the most specific. It then takes the most verifiable source the vendor offered, in the order the specification gives: a file inside the artifact or a separate signed asset, a file from the source repository at the release's commit, a script derived from the tool's [usage](https://usage.jdx.dev) spec with the `usage` command, and only then a command of the tool's own. That last kind is how cobra, clap, and oclif tools ship completions, so mise runs it: the stub calls mise the first time your shell completes the command, which is when you were going to run the tool anyway, and mise caches the script beside the install so the command runs once per version rather than at every tab. No setting is needed. The [`packslip.exec`](/configuration/settings#packslip-exec) setting governs only exec resources mise would run at install time and write to disk, such as an agent skill.
 
 `--install` writes a stub, not the script. Completions are global shell state while the active version depends on the directory, so the stub asks mise for the script when the shell completes the tool. In zsh and bash the vendor's script takes over for one completion and the stub is put back afterwards, so a version switch in another directory is followed on the next tab; fish and PowerShell load the script once per shell session. The file goes where the shell loads completions by name, the same place `mise completion zsh --install` puts mise's own, and the command prints any one-time line your shell still needs.
 
 Files the vendor keeps outside the artifact (a separate release asset, or a path in the repository) are fetched at install time. An asset must match the digest the packslip signed; a repository file is pinned by the release's commit. Completions derived from a usage spec call `usage complete-word` at shell runtime, so install `usage` alongside such tools (`mise use -g usage`).
+
+## Skills
+
+A packslip may also declare an agent skill: a directory holding `SKILL.md` and whatever it references, in the Agent Skills format. mise fetches it at install time, from inside the artifact, from a separate signed asset, or from the source repository at the release's commit, so every installed version carries its own copy.
+
+```sh
+mise skills ls              # the skills of the tools active here
+mise skills sync            # link them into .claude/skills
+mise skills sync --prune    # and drop links for versions no longer active
+```
+
+Since a project pins its tool versions in `mise.toml`, mise knows exactly which version of each skill an agent working in that project should see. `mise skills sync` writes one symlink per skill into the project's `.claude/skills` (or `--dir` for another agent's location, `--global` for `~/.claude/skills`), pointing at the installed version's directory. Run it again after `mise use` changes a version and the links follow. Only links mise made are ever replaced or pruned; a directory or link of your own at a skill's name is left alone and reported.
+
+Four settings shape this:
+
+- [`skills.dir`](/configuration/settings#skills-dir) is where the links go, relative to the project root (or the home directory with `--global`): `.claude/skills` by default, `.agents/skills` for agents that look there.
+- [`skills.auto_sync`](/configuration/settings#skills-auto-sync) runs the sync after every `mise install` and `mise use`, so the links never lag the versions in `mise.toml`.
+- [`skills.prune`](/configuration/settings#skills-prune) makes removing links for versions no longer active the default, for the command and for auto sync.
+- [`skills.fetch`](/configuration/settings#skills-fetch) turned off installs tools without their skills.
+
+A skill the packslip offers only as a command of the tool's own (`tool skill`, printing `SKILL.md`) is generated at install time only when [`packslip.exec`](/configuration/settings#packslip-exec) is on, for the same reason as completions.
 
 ## Versions
 

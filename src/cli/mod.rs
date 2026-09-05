@@ -65,6 +65,7 @@ mod set;
 mod settings;
 mod shell;
 mod shell_alias;
+mod skills;
 mod sponsors;
 mod sync;
 pub(crate) mod system;
@@ -271,6 +272,7 @@ pub(crate) enum Commands {
     Settings(settings::Settings),
     Shell(shell::Shell),
     ShellAlias(shell_alias::ShellAlias),
+    Skills(skills::Skills),
     Sponsors(sponsors::Sponsors),
     Sync(sync::Sync),
     Tasks(tasks::Tasks),
@@ -401,6 +403,7 @@ impl Commands {
             Self::Settings(cmd) => cmd.run().await,
             Self::Shell(cmd) => cmd.run().await,
             Self::ShellAlias(cmd) => cmd.run().await,
+            Self::Skills(cmd) => cmd.run().await,
             Self::Sponsors(cmd) => cmd.run(),
             Self::Sync(cmd) => cmd.run().await,
             Self::Tasks(cmd) => cmd.run().await,

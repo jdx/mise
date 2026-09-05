@@ -5,6 +5,7 @@
 //! mise can hand a shell: a completion script for whichever version of the
 //! tool is active, from the most verifiable source the vendor offered.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -12,15 +13,15 @@ use eyre::{Result, WrapErr, bail, eyre};
 use packslip::model::{Artifact, Resource, ResourceSource, Statement, resource_fits};
 use reqwest::header::{HeaderMap, HeaderValue};
 
-use crate::backend::Backend;
 use crate::backend::packslip::{
-    STATEMENT_FILE, is_safe_relative, locate_in_install, selected_artifact,
+    STATEMENT_FILE, is_safe_relative, locate_dir_in_install, locate_in_install, selected_artifact,
 };
+use crate::backend::{Backend, MISE_BINS_DIR};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file;
 use crate::github;
-use crate::http::HTTP;
+use crate::http::{HTTP, HTTP_FETCH};
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 
@@ -69,6 +70,40 @@ fn asset_name(resource: &Resource) -> Option<&str> {
 /// The repository path an entry names, if it is safe to join.
 fn repo_path(resource: &Resource) -> Option<&str> {
     resource.repo.as_deref().filter(|rel| is_safe_relative(rel))
+}
+
+/// The name of a skill, if it is a plain file name and not the file
+/// `sync_skills` keeps its own state in.
+fn skill_name(resource: &Resource) -> Option<&str> {
+    resource
+        .name
+        .as_deref()
+        .filter(|name| file::is_plain_file_name(name) && *name != SYNC_STATE)
+}
+
+/// Where a directory resource, a skill, is inside the install, if it is
+/// there: in the unpacked artifact, or where [`fetch_files`] put it.
+pub(crate) fn resource_dir(install_path: &Path, resource: &Resource) -> Option<PathBuf> {
+    let fetched = |sub: &str, rel: &str| {
+        Some(install_path.join(RESOURCES_DIR).join(sub).join(rel)).filter(|p| p.is_dir())
+    };
+    match resource.source()? {
+        ResourceSource::Archive => {
+            locate_dir_in_install(install_path, resource.archive.as_deref()?)
+        }
+        ResourceSource::Asset | ResourceSource::Exec => fetched("skills", skill_name(resource)?),
+        ResourceSource::Repo => fetched("repo", repo_path(resource)?),
+    }
+}
+
+/// The `owner/repo` of a release built from a github.com repository.
+fn github_repo(statement: &Statement) -> Option<String> {
+    let repo = statement.predicate.source.as_ref()?.repo.as_str();
+    let path = repo
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .strip_prefix("https://github.com/")?;
+    (path.matches('/').count() == 1).then(|| path.to_string())
 }
 
 /// Where to fetch a repository file at the release's commit, and with what
@@ -132,11 +167,19 @@ pub(crate) async fn fetch_files(
     pr: &dyn SingleReport,
 ) -> Result<()> {
     let base = tv.install_path().join(RESOURCES_DIR);
+    let fetch_skills = Settings::get().skills.fetch;
     for resource in &statement.predicate.resources {
         // An entry scoped to another platform is not for this install.
         if let Some(artifact) = artifact
             && !resource_fits(resource, artifact)
         {
+            continue;
+        }
+        if resource.kind == "skill" && !fetch_skills {
+            debug!(
+                "{}: skills are not fetched (skills.fetch is off)",
+                tv.style()
+            );
             continue;
         }
         match resource.source() {
@@ -150,37 +193,132 @@ pub(crate) async fn fetch_files(
                     continue;
                 };
                 let dest = base.join("assets").join(name);
-                if dest.exists() {
-                    continue;
+                if !dest.exists() {
+                    let Some(url) = &resource.url else {
+                        warn!("{}: asset {name} has no download URL", tv.style());
+                        continue;
+                    };
+                    pr.set_message(format!("download {name}"));
+                    file::create_dir_all(dest.parent().unwrap_or(&base))?;
+                    // The tool is installed by now and the asset is an extra:
+                    // one that cannot be fetched is reported, not fatal. One
+                    // that arrives with the wrong digest is another matter.
+                    if let Err(err) = HTTP
+                        .download_file_with_headers(url, &dest, &headers_for(url)?, Some(pr))
+                        .await
+                    {
+                        let _ = file::remove_all(&dest);
+                        warn!("{}: could not fetch {name}: {err}", tv.style());
+                        continue;
+                    }
+                    let (actual, _) = packslip::digest_file(&dest)?;
+                    let expected = statement.digest_of(name);
+                    if expected != Some(actual.as_str()) {
+                        let _ = file::remove_all(&dest);
+                        bail!(
+                            "{name}: sha256 is {actual}, the packslip says {}",
+                            expected.unwrap_or("it is not a subject")
+                        );
+                    }
                 }
-                let Some(url) = &resource.url else {
-                    warn!("{}: asset {name} has no download URL", tv.style());
+                // The archive and the unpacked skill are separate: an archive
+                // left by an earlier attempt still needs unpacking.
+                if resource.kind == "skill"
+                    && let Some(skill) = skill_name(resource)
+                {
+                    let dir = base.join("skills").join(skill);
+                    // Like the other skill sources: a skill that cannot be
+                    // unpacked is reported, and the tool still installs. The
+                    // digest check above stays fatal.
+                    if !dir.join("SKILL.md").is_file()
+                        && let Err(err) = unpack_skill(&dest, &dir, pr)
+                    {
+                        warn!("{}: could not unpack skill {skill}: {err}", tv.style());
+                    }
+                }
+            }
+            Some(ResourceSource::Repo) if resource.kind == "skill" => {
+                let commit = statement
+                    .predicate
+                    .source
+                    .as_ref()
+                    .and_then(|s| s.commit.as_deref());
+                let (Some(rel), Some(commit)) = (repo_path(resource), commit) else {
+                    warn!(
+                        "{}: skill {:?} in the source repository is not pinned by a commit, or its path is not safe to fetch",
+                        tv.style(),
+                        resource.repo.as_deref().unwrap_or_default()
+                    );
                     continue;
                 };
-                pr.set_message(format!("download {name}"));
-                file::create_dir_all(dest.parent().unwrap_or(&base))?;
-                // The tool is installed by now and the asset is an extra: one
-                // that cannot be fetched is reported, not fatal. One that
-                // arrives with the wrong digest is another matter.
-                if let Err(err) = HTTP
-                    .download_file_with_headers(url, &dest, &headers_for(url)?, Some(pr))
-                    .await
-                {
-                    let _ = file::remove_all(&dest);
-                    warn!("{}: could not fetch {name}: {err}", tv.style());
+                let dest = base.join("repo").join(rel);
+                // A finished skill holds SKILL.md; a bare directory may be
+                // no more than a parent that fetching a file created.
+                if dest.join("SKILL.md").is_file() {
                     continue;
                 }
-                let (actual, _) = packslip::digest_file(&dest)?;
-                let expected = statement.digest_of(name);
-                if expected != Some(actual.as_str()) {
-                    let _ = file::remove_all(&dest);
-                    bail!(
-                        "{name}: sha256 is {actual}, the packslip says {}",
-                        expected.unwrap_or("it is not a subject")
+                let Some(repo) = github_repo(statement) else {
+                    warn!(
+                        "{}: skill {rel} lives in the source repository, which mise can only read on github.com",
+                        tv.style()
+                    );
+                    continue;
+                };
+                // Built beside its final place and moved there whole, so a
+                // half-fetched skill never passes for a finished one.
+                let fetched = match staging_dir(&dest) {
+                    Ok(staging) => {
+                        let built = fetch_repo_dir(&repo, commit, rel, &staging, pr).await;
+                        into_place(&staging, &dest, built)
+                    }
+                    Err(err) => Err(err),
+                };
+                if let Err(err) = fetched {
+                    warn!(
+                        "{}: could not fetch skill {rel} from the source repository: {err}",
+                        tv.style()
                     );
                 }
             }
-            Some(ResourceSource::Repo) if resource.kind != "skill" => {
+            Some(ResourceSource::Exec) if resource.kind == "skill" => {
+                let Some(skill) = skill_name(resource) else {
+                    continue;
+                };
+                let dir = base.join("skills").join(skill);
+                if dir.join("SKILL.md").is_file() {
+                    continue;
+                }
+                if !Settings::get().packslip.exec {
+                    debug!(
+                        "{}: skill {skill} is generated by running the tool; packslip.exec is off",
+                        tv.style()
+                    );
+                    continue;
+                }
+                let Some((program, args)) = resource.exec.split_first() else {
+                    continue;
+                };
+                let Some(path) = installed_bin(&tv.install_path(), program) else {
+                    warn!(
+                        "{}: skill {skill} is generated by {program}, which the install does not hold",
+                        tv.style()
+                    );
+                    continue;
+                };
+                pr.set_message(format!("generate skill {skill}"));
+                let generated = match CmdLineRunner::new(path).args(args).read().await {
+                    // Written beside its place and moved whole, like a fetched skill.
+                    Ok(text) => staging_dir(&dir).and_then(|staging| {
+                        let written = file::write(staging.join("SKILL.md"), text);
+                        into_place(&staging, &dir, written)
+                    }),
+                    Err(err) => Err(err),
+                };
+                if let Err(err) = generated {
+                    warn!("{}: could not generate skill {skill}: {err}", tv.style());
+                }
+            }
+            Some(ResourceSource::Repo) => {
                 let Some(rel) = repo_path(resource) else {
                     warn!(
                         "{}: the packslip names a repository path {:?}, which is not safe to fetch",
@@ -216,6 +354,461 @@ pub(crate) async fn fetch_files(
         }
     }
     Ok(())
+}
+
+/// An executable of the install, by the name the packslip gave it.
+fn installed_bin(install_path: &Path, program: &str) -> Option<PathBuf> {
+    if !is_safe_relative(program) {
+        return None;
+    }
+    let linked = install_path.join(MISE_BINS_DIR).join(program);
+    if linked.exists() {
+        return Some(linked);
+    }
+    locate_in_install(install_path, program)
+}
+
+/// Unpack a skill shipped as its own archive, dropping a lone top-level
+/// directory the way artifacts are unpacked.
+fn unpack_skill(archive: &Path, dir: &Path, pr: &dyn SingleReport) -> Result<()> {
+    let name = archive.file_name().unwrap_or_default().to_string_lossy();
+    let format = file::ExtractionFormat::from_file_name(&name);
+    if !format.is_archive() {
+        bail!("skill asset {name} is not an archive mise can unpack");
+    }
+    let strip_components = usize::from(file::should_strip_components(archive, format)?);
+    let staging = staging_dir(dir)?;
+    let unpacked = file::extract_archive(
+        archive,
+        &staging,
+        format,
+        &file::ExtractOptions {
+            strip_components,
+            pr: Some(pr),
+            ..Default::default()
+        },
+    );
+    into_place(&staging, dir, unpacked)
+}
+
+/// A fresh sibling directory to build a skill in, so `dir` only ever
+/// exists once it is complete and an interrupted attempt cannot pass for
+/// a finished one on the next install.
+fn staging_dir(dir: &Path) -> Result<PathBuf> {
+    let name = dir.file_name().unwrap_or_default().to_string_lossy();
+    let staging = dir.with_file_name(format!(".{name}.partial"));
+    if staging.exists() {
+        file::remove_all(&staging)?;
+    }
+    file::create_dir_all(&staging)?;
+    Ok(staging)
+}
+
+/// Move a finished staging directory to where it belongs, or clean it up
+/// when building it failed.
+fn into_place(staging: &Path, dir: &Path, built: Result<()>) -> Result<()> {
+    if let Err(err) = built {
+        let _ = file::remove_all(staging);
+        return Err(err);
+    }
+    if dir.exists() {
+        file::remove_all(dir)?;
+    }
+    std::fs::rename(staging, dir).wrap_err_with(|| {
+        format!(
+            "moving {} into place at {}",
+            staging.display(),
+            dir.display()
+        )
+    })
+}
+
+/// Fetch a directory of the source repository at `commit` into `dest`,
+/// through the GitHub contents API. Entries that are not plain files or
+/// directories (symlinks, submodules) are left out.
+async fn fetch_repo_dir(
+    repo: &str,
+    commit: &str,
+    rel: &str,
+    dest: &Path,
+    pr: &dyn SingleReport,
+) -> Result<()> {
+    let url = format!(
+        "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
+        url_path(rel)
+    );
+    // The client asks for the raw media type on every contents URL, which
+    // is right for a file body and wrong for a directory listing.
+    let mut headers = github::get_headers(&url)?;
+    headers.insert(
+        reqwest::header::ACCEPT,
+        HeaderValue::from_static("application/vnd.github+json"),
+    );
+    let listing: serde_json::Value = HTTP_FETCH.json_with_headers(&url, &headers).await?;
+    let Some(entries) = listing.as_array() else {
+        bail!("{rel} is not a directory of the repository");
+    };
+    file::create_dir_all(dest)?;
+    for entry in entries {
+        let Some(name) = entry["name"].as_str() else {
+            continue;
+        };
+        if !file::is_plain_file_name(name) {
+            continue;
+        }
+        match entry["type"].as_str() {
+            Some("dir") => {
+                Box::pin(fetch_repo_dir(
+                    repo,
+                    commit,
+                    &format!("{rel}/{name}"),
+                    &dest.join(name),
+                    pr,
+                ))
+                .await?;
+            }
+            Some("file") => {
+                // Through the contents API rather than the entry's raw
+                // download URL: the client's token, and the raw media type it
+                // sets on contents URLs, apply there, so a private repository
+                // works the same as a public one.
+                let file_url = format!(
+                    "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
+                    url_path(&format!("{rel}/{name}"))
+                );
+                pr.set_message(format!("download {rel}/{name}"));
+                HTTP.download_file_with_headers(
+                    &file_url,
+                    &dest.join(name),
+                    &github::get_headers(&file_url)?,
+                    Some(pr),
+                )
+                .await?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// A skill one of the active tools declares: a directory holding
+/// `SKILL.md`, for the exact version that is active here.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct Skill {
+    pub name: String,
+    pub tool: String,
+    pub version: String,
+    pub path: PathBuf,
+}
+
+/// Where `sync_skills` records which links in a directory it made, so
+/// only those are ever replaced or pruned. A link's target alone would not
+/// tell a link mise made from one a person pointed into mise's installs.
+pub(crate) const SYNC_STATE: &str = ".mise-skills.json";
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct SyncState {
+    /// Each link mise made, by name, with the target it was made with. A
+    /// link at that name pointing anywhere else is somebody else's, even
+    /// if it points into mise's installs.
+    #[serde(default)]
+    links: BTreeMap<String, String>,
+}
+
+/// A missing state file means nothing was linked yet. A malformed one is
+/// an error, not an empty set: forgetting which links are mise's would
+/// leave them as foreign, unreplaced and unpruned, for good.
+fn read_sync_state(dir: &Path) -> Result<SyncState> {
+    let path = dir.join(SYNC_STATE);
+    if !path.is_file() {
+        return Ok(SyncState::default());
+    }
+    let text = file::read_to_string(&path)?;
+    serde_json::from_str(&text).wrap_err_with(|| {
+        format!(
+            "{} is not valid; it records which links in {} mise made. Fix or remove it, then run sync again",
+            path.display(),
+            dir.display()
+        )
+    })
+}
+
+fn write_sync_state(dir: &Path, state: &SyncState) -> Result<()> {
+    let path = dir.join(SYNC_STATE);
+    if state.links.is_empty() {
+        if path.exists() {
+            file::remove_file(&path)?;
+        }
+        return Ok(());
+    }
+    file::write_atomic(&path, serde_json::to_string_pretty(state)?)
+}
+
+/// The skills a statement declares that are present in the install.
+pub(crate) fn skills_of(
+    statement: &Statement,
+    install_path: &Path,
+    tool: &str,
+    version: &str,
+    artifact: Option<&Artifact>,
+) -> Vec<Skill> {
+    // A vendor may offer one skill from several sources, as completions
+    // are offered; the most verifiable one that is on disk is the skill.
+    let rank = |r: &Resource| match r.source() {
+        Some(ResourceSource::Archive) => 0,
+        Some(ResourceSource::Asset) => 1,
+        Some(ResourceSource::Repo) => 2,
+        Some(ResourceSource::Exec) => 3,
+        None => 4,
+    };
+    // Each name is its own skill, so platform scope is resolved per name:
+    // a skill for one platform never hides the skills for every platform.
+    let skills: Vec<&Resource> = statement
+        .predicate
+        .resources
+        .iter()
+        .filter(|r| r.kind == "skill")
+        .collect();
+    let mut names: Vec<&str> = Vec::new();
+    for name in skills.iter().filter_map(|r| skill_name(r)) {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    let mut chosen: Vec<(usize, Skill)> = Vec::new();
+    for name in names {
+        let mut group = applicable(
+            skills
+                .iter()
+                .copied()
+                .filter(|r| skill_name(r) == Some(name)),
+            artifact,
+        );
+        group.sort_by_key(|r| rank(r));
+        if let Some((r, path)) = group
+            .into_iter()
+            .find_map(|r| resource_dir(install_path, r).map(|p| (r, p)))
+        {
+            chosen.push((
+                rank(r),
+                Skill {
+                    name: name.to_string(),
+                    tool: tool.to_string(),
+                    version: version.to_string(),
+                    path,
+                },
+            ));
+        }
+    }
+    chosen.sort_by_key(|(rank, _)| *rank);
+    chosen.into_iter().map(|(_, skill)| skill).collect()
+}
+
+/// The skills of every tool active in the current directory.
+pub(crate) async fn active_skills(config: &Arc<Config>) -> Result<Vec<Skill>> {
+    let ts = config.get_toolset().await?;
+    let mut skills = Vec::new();
+    for (backend, tv) in ts.list_current_installed_versions(config) {
+        let install_path = tv.install_path();
+        let statement = match statement(&install_path) {
+            Ok(Some(statement)) => statement,
+            Ok(None) => continue,
+            Err(err) => {
+                warn!("{}: {err}", tv.style());
+                continue;
+            }
+        };
+        let artifact = selected_artifact(
+            &statement,
+            tv.request.options().get_string("variant").as_deref(),
+        );
+        skills.extend(skills_of(
+            &statement,
+            &install_path,
+            &backend.ba().short,
+            &tv.version,
+            artifact.as_ref(),
+        ));
+    }
+    Ok(skills)
+}
+
+/// Where skills are linked under `root`, a project root or the home
+/// directory: the `skills.dir` setting, or that setting itself when it
+/// is absolute.
+pub(crate) fn skills_dir(root: &Path) -> PathBuf {
+    root.join(&Settings::get().skills.dir)
+}
+
+/// With `skills.auto_sync` on, link the active tools' skills into the
+/// project after an install or a version change. Nothing fails an install
+/// here: a problem is reported and the tools stay installed. Outside a
+/// project root there is nowhere to link into, so nothing happens.
+pub(crate) async fn auto_sync_skills(config: &Arc<Config>) {
+    let settings = Settings::get();
+    if !settings.skills.auto_sync {
+        return;
+    }
+    let Some(root) = &config.project_root else {
+        return;
+    };
+    let dir = skills_dir(root);
+    let result = async {
+        let skills = active_skills(config).await?;
+        if skills.is_empty() && !settings.skills.prune {
+            return Ok(SyncReport::default());
+        }
+        sync_skills(&dir, &skills, &crate::dirs::INSTALLS, settings.skills.prune)
+    }
+    .await;
+    match result {
+        Ok(report) => {
+            for name in &report.linked {
+                info!("linked skill {name} into {}", dir.display());
+            }
+            for name in &report.pruned {
+                info!("removed skill link {name} from {}", dir.display());
+            }
+            for (name, why) in &report.skipped {
+                warn!("skipped skill {name}: {why}");
+            }
+        }
+        Err(err) => warn!("could not sync skills into {}: {err}", dir.display()),
+    }
+}
+
+/// What [`sync_skills`] did.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct SyncReport {
+    pub linked: Vec<String>,
+    pub unchanged: Vec<String>,
+    pub pruned: Vec<String>,
+    /// Skills not linked, with why.
+    pub skipped: Vec<(String, String)>,
+}
+
+/// Link each skill into `dir` under its name. Only links mise made, which
+/// it records in [`SYNC_STATE`] beside them and which point into
+/// `installs`, are ever replaced or, with `prune`, removed; anything else
+/// at a skill's name is left alone.
+pub(crate) fn sync_skills(
+    dir: &Path,
+    skills: &[Skill],
+    installs: &Path,
+    prune: bool,
+) -> Result<SyncReport> {
+    let mut report = SyncReport::default();
+    let before = read_sync_state(dir)?.links;
+    let mut wanted: BTreeMap<&str, &Skill> = BTreeMap::new();
+    for skill in skills {
+        match wanted.get(skill.name.as_str()) {
+            Some(first) => report.skipped.push((
+                skill.name.clone(),
+                format!(
+                    "{} also provides a skill called {}; keeping that one",
+                    first.tool, skill.name
+                ),
+            )),
+            None => {
+                wanted.insert(&skill.name, skill);
+            }
+        }
+    }
+    // Mise's own link: recorded under this name, still a link, still
+    // pointing exactly where mise pointed it, and that is inside installs.
+    // Where a link points, as recorded. Windows reports a junction's target
+    // with a verbatim prefix, so both sides are simplified; a target that
+    // still exists is also matched by identity.
+    let points_at = |link: &Path, target: &str| {
+        std::fs::read_link(link).is_ok_and(|t| {
+            dunce::simplified(&t) == dunce::simplified(Path::new(target))
+                || same_file::is_same_file(link, target).unwrap_or(false)
+        })
+    };
+    let ours = |name: &str, link: &Path| {
+        before.get(name).is_some_and(|target| {
+            file::is_symlink_or_junction(link)
+                && points_at(link, target)
+                && file::is_symlink_target_within(link, installs).unwrap_or(false)
+        })
+    };
+    // The record is written before a link is made and after one is
+    // removed, so a sync cut short never leaves a link mise made that it
+    // would not recognise as its own next time.
+    let mut current = before.clone();
+    let persist = |links: &BTreeMap<String, String>| {
+        write_sync_state(
+            dir,
+            &SyncState {
+                links: links.clone(),
+            },
+        )
+    };
+    if !wanted.is_empty() {
+        file::create_dir_all(dir)?;
+    }
+    for (name, skill) in &wanted {
+        let link = dir.join(name);
+        // Already right, and mise's: a link a person made to the same place
+        // is still theirs and is not adopted.
+        if ours(name, &link) && file::is_symlink_to(&link, &skill.path) {
+            report.unchanged.push(name.to_string());
+            continue;
+        }
+        if link.exists() || file::is_symlink_or_junction(&link) {
+            if !ours(name, &link) {
+                report.skipped.push((
+                    name.to_string(),
+                    format!("{} exists and is not a link mise made", link.display()),
+                ));
+                continue;
+            }
+            file::remove_all(&link)?;
+        }
+        current.insert(name.to_string(), skill.path.display().to_string());
+        persist(&current)?;
+        file::make_symlink(&skill.path, &link)?;
+        report.linked.push(name.to_string());
+    }
+    let mut made: BTreeMap<String, String> = report
+        .linked
+        .iter()
+        .chain(&report.unchanged)
+        .filter_map(|name| {
+            wanted
+                .get(name.as_str())
+                .map(|skill| (name.clone(), skill.path.display().to_string()))
+        })
+        .collect();
+    if prune && dir.is_dir() {
+        for entry in file::ls(dir)? {
+            let Some(name) = entry.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !wanted.contains_key(name) && ours(name, &entry) {
+                file::remove_all(&entry)?;
+                current.remove(name);
+                persist(&current)?;
+                report.pruned.push(name.to_string());
+            }
+        }
+    } else {
+        // Without pruning, links made earlier stay mise's as long as they
+        // still are what mise made.
+        made.extend(
+            before
+                .iter()
+                .filter(|(name, target)| {
+                    let link = dir.join(name);
+                    file::is_symlink_or_junction(&link) && points_at(&link, target)
+                })
+                .map(|(name, target)| (name.clone(), target.clone())),
+        );
+    }
+    if made != current {
+        persist(&made)?;
+    }
+    Ok(report)
 }
 
 /// Where a completion for one shell can come from, most verifiable first.
@@ -458,32 +1051,32 @@ pub(crate) async fn completion_script(
             tv.style()
         );
     }
-    let allow_exec = Settings::get().packslip.exec;
-    let refused = |argv: &[String]| {
-        format!(
-            "`{}` would generate it, but running a tool at completion time is off; set `packslip.exec = true` to allow it",
-            argv.join(" ")
-        )
-    };
+    // A completion is asked for the moment a shell completes the command,
+    // which is when the user was going to run it anyway, so an `exec`
+    // source runs on demand with no setting; the specification's Running
+    // an exec entry says so. Because it runs the tool, its result is
+    // cached beside the install so the command runs once per version and
+    // shell rather than at every tab.
+    let cache = install_path
+        .join(RESOURCES_DIR)
+        .join("completions")
+        .join(format!("{shell}.completion"));
+    if let Ok(cached) = file::read_to_string(&cache) {
+        return Ok(cached);
+    }
     let mut skipped = Vec::new();
     for source in sources {
+        let ran_tool = matches!(
+            source,
+            CompletionSource::Exec(_) | CompletionSource::SpecExec { .. }
+        );
         let attempt = match source {
             CompletionSource::File(path) => file::read_to_string(&path),
             CompletionSource::Spec { format, bin, path } => {
                 derive_from_spec(config, ts, &format, &bin, &path, shell).await
             }
-            CompletionSource::Exec(argv) => {
-                if !allow_exec {
-                    skipped.push(refused(&argv));
-                    continue;
-                }
-                run_tool(config, &backend, &tv, &argv).await
-            }
+            CompletionSource::Exec(argv) => run_tool(config, &backend, &tv, &argv).await,
             CompletionSource::SpecExec { format, bin, argv } => {
-                if !allow_exec {
-                    skipped.push(refused(&argv));
-                    continue;
-                }
                 // Any failure here is one more reason to try the next source,
                 // not the end of the search. The spec is kept in the install:
                 // a script derived from it names the file at completion time,
@@ -503,7 +1096,15 @@ pub(crate) async fn completion_script(
             }
         };
         match attempt {
-            Ok(script) => return Ok(script),
+            Ok(script) => {
+                if ran_tool
+                    && let Some(dir) = cache.parent()
+                    && file::create_dir_all(dir).is_ok()
+                {
+                    let _ = file::write_atomic(&cache, &script);
+                }
+                return Ok(script);
+            }
             Err(err) => skipped.push(err.to_string()),
         }
     }
@@ -874,6 +1475,223 @@ mod tests {
             vec![CompletionSource::File(root.join("_t.any"))],
             "with no artifact selected only unscoped entries apply"
         );
+    }
+
+    #[test]
+    fn skills_are_found_where_the_install_holds_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("share/skills/t")).unwrap();
+        std::fs::create_dir_all(root.join("share/skills/here")).unwrap();
+        std::fs::create_dir_all(root.join("share/skills/elsewhere")).unwrap();
+        std::fs::create_dir_all(root.join(RESOURCES_DIR).join("skills/packed")).unwrap();
+        std::fs::create_dir_all(root.join(RESOURCES_DIR).join("repo/skills/fromrepo")).unwrap();
+        let s = statement_with(
+            r#"[
+            {"kind":"skill","name":"t","archive":"top/share/skills/t"},
+            {"kind":"skill","name":"packed","asset":"t-skill.tar.gz"},
+            {"kind":"skill","name":"fromrepo","repo":"skills/fromrepo"},
+            {"kind":"skill","name":"t","repo":"skills/fromrepo"},
+            {"kind":"skill","name":"generated","exec":["t","skill"]},
+            {"kind":"skill","name":"missing","archive":"nowhere"},
+            {"kind":"skill","name":"here","os":"linux","archive":"top/share/skills/here"},
+            {"kind":"skill","name":"elsewhere","os":"windows","archive":"top/share/skills/elsewhere"}
+        ]"#,
+        );
+        // A name that would leave the directory, as a tampered file could carry.
+        let mut s = s;
+        let mut escape = s.predicate.resources[0].clone();
+        escape.name = Some("../escape".into());
+        s.predicate.resources.push(escape);
+        let host = s.predicate.artifacts[0].clone();
+        let skills = skills_of(&s, root, "tool", "1", Some(&host));
+        assert_eq!(
+            skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+            ["t", "here", "packed", "fromrepo"],
+            "an exec skill not yet generated, a missing directory, and another platform's skill are absent; a fallback source for t is not a second t; a scoped skill hides none of the unscoped ones"
+        );
+        assert_eq!(
+            skills[0].path,
+            root.join("share/skills/t"),
+            "a stripped top dir"
+        );
+        assert_eq!(skills[0].tool, "tool");
+        assert_eq!(github_repo(&s).as_deref(), Some("o/r"));
+    }
+
+    #[test]
+    fn a_failed_unpack_leaves_nothing_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("skill.tar.gz");
+        std::fs::write(&archive, b"not an archive").unwrap();
+        let target = dir.path().join("skills/t");
+        let pr = crate::ui::progress_report::QuietReport::new();
+        assert!(unpack_skill(&archive, &target, &pr).is_err());
+        assert!(!target.exists());
+        assert!(
+            !dir.path().join("skills/.t.partial").exists(),
+            "the staging directory is cleaned up"
+        );
+        assert!(
+            !dir.path().join("skills").exists()
+                || std::fs::read_dir(dir.path().join("skills"))
+                    .unwrap()
+                    .next()
+                    .is_none()
+        );
+    }
+
+    #[test]
+    fn sync_links_only_what_mise_made() {
+        let dir = tempfile::tempdir().unwrap();
+        let installs = dir.path().join("installs");
+        let v1 = installs.join("tool/1/skills/t");
+        let v2 = installs.join("tool/2/skills/t");
+        let other = installs.join("other/1/skills/o");
+        for p in [&v1, &v2, &other] {
+            std::fs::create_dir_all(p).unwrap();
+        }
+        let skill = |name: &str, tool: &str, version: &str, path: &Path| Skill {
+            name: name.into(),
+            tool: tool.into(),
+            version: version.into(),
+            path: path.to_path_buf(),
+        };
+        let target = dir.path().join("project/.claude/skills");
+
+        let report =
+            sync_skills(&target, &[skill("t", "tool", "1", &v1)], &installs, false).unwrap();
+        assert_eq!(report.linked, ["t"]);
+        assert!(file::is_symlink_to(&target.join("t"), &v1));
+
+        // Same again: nothing to do. A version switch: the link follows.
+        let report =
+            sync_skills(&target, &[skill("t", "tool", "1", &v1)], &installs, false).unwrap();
+        assert_eq!(report.unchanged, ["t"]);
+        let report =
+            sync_skills(&target, &[skill("t", "tool", "2", &v2)], &installs, false).unwrap();
+        assert_eq!(report.linked, ["t"]);
+        assert!(file::is_symlink_to(&target.join("t"), &v2));
+
+        // A real directory, or a link mise did not make, is left alone.
+        std::fs::create_dir_all(target.join("mine")).unwrap();
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        file::make_symlink(&elsewhere, &target.join("theirs")).unwrap();
+        let report = sync_skills(
+            &target,
+            &[
+                skill("mine", "tool", "2", &v2),
+                skill("theirs", "tool", "2", &v2),
+                skill("o", "other", "1", &other),
+                skill("o", "tool", "2", &v2),
+            ],
+            &installs,
+            true,
+        )
+        .unwrap();
+        assert_eq!(report.linked, ["o"]);
+        assert_eq!(report.skipped.len(), 3, "{:?}", report.skipped);
+        assert!(target.join("mine").is_dir());
+        assert!(file::is_symlink_to(&target.join("theirs"), &elsewhere));
+        assert_eq!(
+            report.pruned,
+            ["t"],
+            "no longer active, and a link mise made"
+        );
+        assert!(!target.join("t").is_symlink());
+        let state: serde_json::Value =
+            serde_json::from_str(&file::read_to_string(target.join(SYNC_STATE)).unwrap()).unwrap();
+        assert_eq!(
+            state["links"],
+            serde_json::json!({ "o": other.display().to_string() })
+        );
+
+        // A person who removes mise's link and makes their own at the same
+        // name, even into the installs directory, keeps it: the target is
+        // not the one mise recorded.
+        file::remove_all(target.join("o")).unwrap();
+        file::make_symlink(&v1, &target.join("o")).unwrap();
+        let report = sync_skills(
+            &target,
+            &[skill("o", "other", "1", &other)],
+            &installs,
+            true,
+        )
+        .unwrap();
+        assert!(file::is_symlink_to(&target.join("o"), &v1), "left alone");
+        assert_eq!(report.skipped.len(), 1, "{:?}", report.skipped);
+        assert_eq!(report.pruned, Vec::<String>::new());
+        let state: serde_json::Value = serde_json::from_str(
+            &file::read_to_string(target.join(SYNC_STATE)).unwrap_or("{}".into()),
+        )
+        .unwrap();
+        assert!(
+            state["links"].get("o").is_none(),
+            "no longer mise's: {state}"
+        );
+        file::remove_all(target.join("o")).unwrap();
+        let report = sync_skills(
+            &target,
+            &[skill("o", "other", "1", &other)],
+            &installs,
+            false,
+        )
+        .unwrap();
+        assert_eq!(report.linked, ["o"]);
+
+        // A link a person pointed into mise's installs is not mise's to touch,
+        // even though its target says otherwise.
+        file::make_symlink(&v1, &target.join("handmade")).unwrap();
+        let report = sync_skills(
+            &target,
+            &[
+                skill("handmade", "tool", "2", &v2),
+                skill("o", "other", "1", &other),
+            ],
+            &installs,
+            true,
+        )
+        .unwrap();
+        assert!(
+            file::is_symlink_to(&target.join("handmade"), &v1),
+            "left alone"
+        );
+        assert_eq!(report.pruned, Vec::<String>::new());
+        assert_eq!(report.skipped.len(), 1, "{:?}", report.skipped);
+
+        // Even a person's link that already points at the wanted skill is
+        // not adopted: it is skipped, not recorded as mise's.
+        file::make_symlink(&other, &target.join("same")).unwrap();
+        let report = sync_skills(
+            &target,
+            &[skill("same", "other", "1", &other)],
+            &installs,
+            false,
+        )
+        .unwrap();
+        assert_eq!(report.unchanged, Vec::<String>::new());
+        assert_eq!(report.skipped.len(), 1, "{:?}", report.skipped);
+        let state: serde_json::Value =
+            serde_json::from_str(&file::read_to_string(target.join(SYNC_STATE)).unwrap()).unwrap();
+        assert!(state["links"].get("same").is_none(), "{state}");
+
+        // A malformed state file is an error, never an empty set.
+        file::write(target.join(SYNC_STATE), "{not json").unwrap();
+        let err = sync_skills(
+            &target,
+            &[skill("o", "other", "1", &other)],
+            &installs,
+            false,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("is not valid"), "{err}");
+
+        // Nothing to link creates nothing.
+        let empty = dir.path().join("empty");
+        let report = sync_skills(&empty, &[], &installs, false).unwrap();
+        assert_eq!(report, SyncReport::default());
+        assert!(!empty.exists());
     }
 
     #[test]

@@ -312,16 +312,25 @@ pub(crate) fn is_safe_relative(rel: &str) -> bool {
 /// stripped a lone top-level directory on extraction, the same path without
 /// its first component. `..` and absolute paths never resolve.
 pub(crate) fn locate_in_install(install_path: &Path, rel: &str) -> Option<PathBuf> {
+    locate_entry(install_path, rel, Path::is_file)
+}
+
+/// The same for a directory, such as a skill.
+pub(crate) fn locate_dir_in_install(install_path: &Path, rel: &str) -> Option<PathBuf> {
+    locate_entry(install_path, rel, Path::is_dir)
+}
+
+fn locate_entry(install_path: &Path, rel: &str, wanted: fn(&Path) -> bool) -> Option<PathBuf> {
     if !is_safe_relative(rel) {
         return None;
     }
     let exact = install_path.join(rel);
-    if exact.is_file() {
+    if wanted(&exact) {
         return Some(exact);
     }
     rel.split_once('/')
         .map(|(_, rest)| install_path.join(rest))
-        .filter(|p| p.is_file())
+        .filter(|p| wanted(p))
 }
 
 /// What the consumer pinned: the forge identity a name implies, or the key
@@ -1242,6 +1251,16 @@ mod tests {
             locate_in_install(root, "bin"),
             None,
             "a directory is not a bin"
+        );
+        assert_eq!(locate_dir_in_install(root, "bin"), Some(root.join("bin")));
+        assert_eq!(
+            locate_dir_in_install(root, "top/bin"),
+            Some(root.join("bin"))
+        );
+        assert_eq!(
+            locate_dir_in_install(root, "bare"),
+            None,
+            "a file is not a dir"
         );
     }
 }

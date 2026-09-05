@@ -257,6 +257,9 @@
 - [mise shell-alias ls](https://mise.jdx.dev/cli/shell-alias/ls.html): List shell aliases
 - [mise shell-alias set](https://mise.jdx.dev/cli/shell-alias/set.html): Add/update a shell alias
 - [mise shell-alias unset](https://mise.jdx.dev/cli/shell-alias/unset.html): Remove a shell alias
+- [mise skills](https://mise.jdx.dev/cli/skills.html): Agent skills the active tools ship, from their packslips
+- [mise skills ls](https://mise.jdx.dev/cli/skills/ls.html): List the skills the active tools declare
+- [mise skills sync](https://mise.jdx.dev/cli/skills/sync.html): Link the active tools' skills where an agent looks for them
 - [mise sponsors](https://mise.jdx.dev/cli/sponsors.html): Show the companies sponsoring mise and the jdx.dev open source tools
 - [mise sync](https://mise.jdx.dev/cli/sync.html): Synchronize tools from other version managers with mise
 - [mise sync node](https://mise.jdx.dev/cli/sync/node.html): Symlink node versions installed by nvm, nodenv, or Homebrew into mise

@@ -3547,6 +3547,55 @@ This modifies the contents of ~/.config/mise/config.toml
         arg <shell_alias> help="The alias to remove"
     }
 }
+cmd skills help="Agent skills the active tools ship, from their packslips" effect=read {
+    alias skill
+    long_help #"""
+Agent skills the active tools ship, from their packslips
+
+A tool installed with the `packslip:` backend may declare an agent skill: a
+directory holding `SKILL.md` and whatever it references, in the Agent Skills
+format. mise knows which version of each tool is active here, so it can hand
+an agent the skill for exactly that version.
+"""#
+    flag "-h --help" help="Print help" action=help builtin=#true
+    cmd ls help="List the skills the active tools declare" effect=read {
+        alias list
+        long_help #"""
+List the skills the active tools declare
+
+Each line is a skill of a tool that is installed and active in the current
+directory, with the version it belongs to and the directory holding its
+`SKILL.md`.
+"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise skills ls\u{1b}[22m\n    Skill  Tool                        Version  Path\n    mise   packslip:github.com/jdx/mise  2026.9.1  ~/.local/share/mise/installs/.../skills/mise\n"
+        flag "-J --json" help="Output in JSON format"
+        flag "-h --help" help="Print help" action=help builtin=#true
+    }
+    cmd sync help="Link the active tools' skills where an agent looks for them" effect=write {
+        long_help #"""
+Link the active tools' skills where an agent looks for them
+
+Writes one symlink per skill into DIR, named after the skill and pointing
+at the directory of the version that is active here. DIR defaults to the
+`skills.dir` setting, `.claude/skills`, under the project root: the
+directory of the nearest mise config. Run it again after `mise use` changes
+a version and the links follow, or set `skills.auto_sync` to have mise do
+that after every install and `mise use`.
+
+Only links mise made, which point into its installs directory, are ever
+replaced or, with --prune or the `skills.prune` setting, removed. A real
+directory or a link of your own at a skill's name is left alone and reported.
+"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # into the project's .claude/skills, or wherever skills.dir says\n    $ \u{1b}[1mmise skills sync\u{1b}[22m\n\n    # somewhere else, and drop links for skills that are no longer active\n    $ \u{1b}[1mmise skills sync --dir .agents/skills --prune\u{1b}[22m\n"
+        flag --dir help="The directory to link skills into" {
+            arg <DIR>
+        }
+        flag "-g --global" help="Link into ~/.claude/skills instead of the project's directory" conflicts=--dir
+        flag --prune help="Remove links mise made for skills that are no longer active"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        complete dir type=dir
+    }
+}
 cmd sponsors help="Show the companies sponsoring mise and the jdx.dev open source tools" effect=read {
     flag "-h --help" help="Print help" action=help builtin=#true
 }
