@@ -1,9 +1,18 @@
-backends = [
-  "packslip:github.com/jdx/packslip",
-  "github:jdx/packslip",
-  "cargo:packslip",
-]
 bins = ["packslip"]
 description = "A signed release manifest for vendor binaries"
 test = { cmd = "packslip --version", expected = "packslip {{version}}" }
 version_order = "semver"
+
+[[backends]]
+full = "packslip:packslip.dev"
+
+[backends.options]
+identity_prefix = "https://github.com/jdx/packslip/.github/workflows/release.yml@"
+issuer = "https://token.actions.githubusercontent.com"
+list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packslip-releases.yml@"
+
+[[backends]]
+full = "github:jdx/packslip"
+
+[[backends]]
+full = "cargo:packslip"

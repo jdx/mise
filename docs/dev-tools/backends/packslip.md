@@ -16,7 +16,7 @@ young, and its own version is what says what a manifest may contain.
 With [mise activated](/getting-started.html), install packslip itself:
 
 ```sh
-mise use -g 'packslip:packslip.dev[issuer=https://token.actions.githubusercontent.com,identity_prefix=https://github.com/jdx/packslip/.github/workflows/release.yml@,list_identity_prefix=https://github.com/jdx/packslip/.github/workflows/packslip-releases.yml@]'
+mise use -g packslip
 packslip version
 ```
 
@@ -24,12 +24,11 @@ Omit `-g` to manage the tool in the current project's `mise.toml` instead.
 For a project configuration:
 
 ```toml
-[tools."packslip:packslip.dev"]
-version = "latest"
-issuer = "https://token.actions.githubusercontent.com"
-identity_prefix = "https://github.com/jdx/packslip/.github/workflows/release.yml@"
-list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packslip-releases.yml@"
+[tools]
+packslip = "latest"
 ```
+
+The registry entry supplies Packslip's signer policy.
 
 ### Project names and discovery
 
@@ -65,7 +64,7 @@ GitHub has a release-API integration; other hosts need the signed-list location.
 List the project's available versions with:
 
 ```sh
-mise ls-remote packslip:packslip.dev
+mise ls-remote packslip
 ```
 
 Packslip versions use semver, including compatible date versions such as
