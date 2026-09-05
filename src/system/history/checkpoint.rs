@@ -215,7 +215,9 @@ impl Store {
         // manual-save entries: carried forward from their promoted version
         // unless named explicitly (promoted) or captured protectively
         let promoted: std::collections::BTreeSet<String> =
-            store::read_saved_index_in(&self.state_dir)?.into_keys().collect();
+            store::read_saved_index_in(&self.state_dir)?
+                .into_keys()
+                .collect();
         let manual = manual_plan(&walk, &draft, &promoted);
         if !manual.carry.is_empty() {
             let carried: BTreeSet<usize> = manual.carry.iter().copied().collect();

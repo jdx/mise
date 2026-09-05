@@ -95,6 +95,9 @@ impl DotfilesAdd {
             bail!("--source can only be used with one target");
         }
         let mode = match self.mode.as_deref() {
+            Some("track") => bail!(
+                "`--mode track` tracks a file where it is and takes no source; use `mise bootstrap dotfiles track <path>`"
+            ),
             Some(mode) => {
                 FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))?
             }
