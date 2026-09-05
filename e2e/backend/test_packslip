@@ -11,10 +11,25 @@ export MISE_MINIMUM_RELEASE_AGE=0
 # The backend needs no setting turned on to be used.
 assert_contains "env -u MISE_EXPERIMENTAL mise ls-remote packslip:github.com/jdx/packslip" "0.2.0"
 
+# New releases use the canonical domain identity. Pin each publishing workflow
+# separately so CI signing jobs cannot authorize either bundles or the index.
+mkdir canonical
+pushd canonical >/dev/null
+cat >mise.toml <<'EOF'
+[tools]
+"packslip:packslip.dev" = { version = "latest", issuer = "https://token.actions.githubusercontent.com", identity_prefix = "https://github.com/jdx/packslip/.github/workflows/release.yml@", list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packslip-releases.yml@" }
+EOF
 # Latest resolves and verifies the vendor recommendation without installing it.
-latest=$(mise latest packslip:github.com/jdx/packslip) || exit 1
+latest=$(mise latest packslip:packslip.dev) || exit 1
 [[ -n $latest ]] || exit 1
-assert_contains "mise ls-remote packslip:github.com/jdx/packslip" "$latest"
+assert_contains "mise ls-remote packslip:packslip.dev" "$latest"
+# Changing a list policy must not reuse the accepted versions from the warm cache.
+assert_fail_contains "mise ls-remote 'packslip:packslip.dev[list_identity_prefix=https://github.com/jdx/packslip/.github/workflows/ci.yml@]'" "verifying the release list"
+# A trusted index does not authorize its signer (or CI) to sign release bundles.
+assert_fail_contains "mise latest 'packslip:packslip.dev[identity_prefix=https://github.com/jdx/packslip/.github/workflows/packslip-releases.yml@]'" "expected an identity starting with"
+assert_fail_contains "mise latest 'packslip:packslip.dev[identity_prefix=https://github.com/jdx/packslip/.github/workflows/ci.yml@]'" "expected an identity starting with"
+mise packslip forget packslip.dev
+popd >/dev/null
 
 # A warm accepted-version cache must not hide changed stamper policy.
 mkdir stamp-policy

@@ -16,7 +16,7 @@ young, and its own version is what says what a manifest may contain.
 With [mise activated](/getting-started.html), install packslip itself:
 
 ```sh
-mise use -g packslip:github.com/jdx/packslip
+mise use -g 'packslip:packslip.dev[issuer=https://token.actions.githubusercontent.com,identity_prefix=https://github.com/jdx/packslip/.github/workflows/release.yml@,list_identity_prefix=https://github.com/jdx/packslip/.github/workflows/packslip-releases.yml@]'
 packslip version
 ```
 
@@ -24,11 +24,23 @@ Omit `-g` to manage the tool in the current project's `mise.toml` instead.
 For a project configuration:
 
 ```toml
-[tools]
-"packslip:github.com/jdx/packslip" = "latest"
+[tools."packslip:packslip.dev"]
+version = "latest"
+issuer = "https://token.actions.githubusercontent.com"
+identity_prefix = "https://github.com/jdx/packslip/.github/workflows/release.yml@"
+list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packslip-releases.yml@"
 ```
 
 ### Project names and discovery
+
+New packslip releases identify their project as `packslip.dev`. The explicit
+issuer and workflow prefixes above trust `release.yml` for release bundles and
+`packslip-releases.yml` for the signed release list. The trailing `@` pins the
+whole workflow filename while allowing its Git refs to vary. A repository-wide
+prefix would also trust non-release workflows such as `ci.yml`. Historical
+releases such as
+`packslip:github.com/jdx/packslip@0.2.0` retain their original GitHub identity;
+the two project names are not interchangeable.
 
 A project name is a host followed by an optional path, without `https://`.
 `packslip:owner/repo` is shorthand for `packslip:github.com/owner/repo`.
@@ -62,7 +74,7 @@ GitHub has a release-API integration; other hosts need the signed-list location.
 List the project's available versions with:
 
 ```sh
-mise ls-remote packslip:github.com/jdx/packslip
+mise ls-remote packslip:packslip.dev
 ```
 
 Packslip versions use semver, including compatible date versions such as
@@ -284,6 +296,18 @@ its `.pub` file. The vendor list and release bundles must verify against it.
 Pin a keyless signer using an exact certificate identity or an identity prefix,
 plus its OIDC issuer. These options can replace the policy derived from a forge
 name. Keep the trailing slash when pinning a repository prefix.
+
+### `list_identity_prefix`
+
+When a different workflow signs the vendor's release list, pin its certificate
+identity prefix separately. It replaces `identity` and `identity_prefix` only
+for the vendor's list; release bundles still require their original signer.
+The OIDC `issuer` is shared (including an issuer derived from a forge project).
+Without this option, the list uses the same policy as release bundles.
+
+The value must be a non-empty string and requires an issuer. It cannot be
+combined with `pubkey`. It does not affect configured stampers, whose lists
+use their own pins.
 
 ### `allow_unlogged`
 

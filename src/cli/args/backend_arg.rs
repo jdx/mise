@@ -114,8 +114,18 @@ pub(crate) fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
     if !s.ends_with(']') {
         return None;
     }
+    let (name, opts, suffix) = split_bracketed_opts_with_suffix(s)?;
+    suffix.is_empty().then_some((name, opts))
+}
 
+/// Split inline options while preserving a following version, even when option
+/// values contain '@', quoted brackets, or nested arrays.
+pub(crate) fn split_bracketed_opts_with_suffix(s: &str) -> Option<(&str, &str, &str)> {
+    if !s.contains('[') {
+        return None;
+    }
     let mut bracket_start = None;
+    let mut depth = 0;
     let mut in_single_quotes = false;
     let mut in_double_quotes = false;
     let mut escaped = false;
@@ -124,14 +134,16 @@ pub(crate) fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
         match ch {
             '\'' if !in_double_quotes => in_single_quotes = !in_single_quotes,
             '"' if !in_single_quotes && !escaped => in_double_quotes = !in_double_quotes,
-            '[' if !in_single_quotes && !in_double_quotes && bracket_start.is_none() => {
-                bracket_start = Some(index);
+            '[' if !in_single_quotes && !in_double_quotes => {
+                bracket_start.get_or_insert(index);
+                depth += 1;
             }
-            ']' if !in_single_quotes && !in_double_quotes && index == s.len() - 1 => {
-                if let Some(start) = bracket_start {
-                    return Some((&s[..start], &s[start + 1..index]));
+            ']' if !in_single_quotes && !in_double_quotes => {
+                let start = bracket_start?;
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&s[..start], &s[start + 1..index], &s[index + 1..]));
                 }
-                return None;
             }
             _ => {}
         }
