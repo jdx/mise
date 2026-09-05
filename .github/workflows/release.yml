@@ -571,6 +571,13 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    # The workflow-level env puts the publishing token in every step. This job
+    # runs the binary it just built, so it takes the token back out and hands
+    # it only to the two steps that publish with it.
+    env:
+      GH_TOKEN: ""
+      GITHUB_TOKEN: ""
+      GITHUB_API_TOKEN: ""
     steps:
       - name: Download release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -580,8 +587,9 @@ jobs:
       # From this a consumer generates completions, a man page, and
       # documentation with its own copy of usage, so nothing of mise's has to
       # run on the machine it is being installed on. Generating it and
-      # uploading it are separate steps so that the release token is not in
-      # the environment of the binary that was just built.
+      # uploading it are separate steps so that the release token is only in
+      # the environment of the step that publishes, not of the binary that was
+      # just built.
       - name: Generate the CLI specification
         run: |
           mkdir -p bin
