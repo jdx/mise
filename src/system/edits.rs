@@ -687,13 +687,13 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
     for (req, desired) in &todo {
         apply_one(req, desired.as_deref())?;
     }
-    info!(
-        "edits: applied {}",
-        todo.iter()
-            .map(|(r, _)| format!("{} ({})", r.path_raw, r.describe_op()))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+    let applied = todo
+        .iter()
+        .map(|(r, _)| format!("{} ({})", r.path_raw, r.describe_op()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    crate::system::generations::journal::note(format!("edits: applied {applied}"));
+    info!("edits: applied {applied}");
     Ok(true)
 }
 
