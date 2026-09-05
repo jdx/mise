@@ -162,11 +162,20 @@ pub(crate) enum PathSnapshot {
     Symlink {
         dest: PathBuf,
     },
-    /// A directory replaced wholesale (`--force`). Empty subdirectories are
-    /// not preserved.
+    /// A directory that is about to be replaced wholesale (`--force`),
+    /// captured with its whole contents.
     Dir {
         files: Vec<DirFileSnapshot>,
         links: Vec<DirLinkSnapshot>,
+        /// every subdirectory, empty ones included, with its mode
+        #[serde(default)]
+        dirs: Vec<DirDirSnapshot>,
+        mode: u32,
+    },
+    /// A directory that stays a directory (something inside it changes, or
+    /// it may be pruned once empty), so only its existence and mode are
+    /// captured, never its contents.
+    Directory {
         mode: u32,
     },
     /// Existed but could not be captured.
@@ -189,10 +198,25 @@ pub(crate) struct DirLinkSnapshot {
     pub dest: PathBuf,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct DirDirSnapshot {
+    pub rel: PathBuf,
+    pub mode: u32,
+}
+
+/// How much of a path to capture before it is touched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Capture {
+    /// Everything, including a directory's contents: the path is replaced.
+    Full,
+    /// A directory only by existence and mode: it stays a directory.
+    Shallow,
+}
+
 impl PathSnapshot {
     /// Captures `path` without following symlinks. Never fails: anything
     /// that cannot be read becomes `Unrecorded` with the reason.
-    pub(crate) fn capture_in(state_dir: &Path, path: &Path) -> Self {
+    pub(crate) fn capture_with(state_dir: &Path, path: &Path, capture: Capture) -> Self {
         let metadata = match std::fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Self::Missing,
@@ -226,10 +250,16 @@ impl PathSnapshot {
             };
         }
         if file_type.is_dir() {
+            if capture == Capture::Shallow {
+                return Self::Directory {
+                    mode: mode_of(&metadata),
+                };
+            }
             return match capture_dir(state_dir, path) {
-                Ok((files, links)) => Self::Dir {
+                Ok((files, links, dirs)) => Self::Dir {
                     files,
                     links,
+                    dirs,
                     mode: mode_of(&metadata),
                 },
                 Err(reason) => Self::Unrecorded {
@@ -252,6 +282,7 @@ impl PathSnapshot {
             Self::Dir { files, links, .. } => {
                 format!("a directory ({} files, {} links)", files.len(), links.len())
             }
+            Self::Directory { .. } => "a directory".into(),
             Self::Unrecorded { kind, reason } => format!("{kind} (not captured: {reason})"),
         }
     }
@@ -269,11 +300,16 @@ fn capture_file(state_dir: &Path, path: &Path, size: u64) -> std::result::Result
     Blob::store_in(state_dir, &bytes).map_err(|err| format!("{err:#}"))
 }
 
-type DirCapture = (Vec<DirFileSnapshot>, Vec<DirLinkSnapshot>);
+type DirCapture = (
+    Vec<DirFileSnapshot>,
+    Vec<DirLinkSnapshot>,
+    Vec<DirDirSnapshot>,
+);
 
 fn capture_dir(state_dir: &Path, dir: &Path) -> std::result::Result<DirCapture, String> {
     let mut files = vec![];
     let mut links = vec![];
+    let mut dirs = vec![];
     let mut total = 0u64;
     for entry in walkdir::WalkDir::new(dir).follow_links(false) {
         let entry = entry.map_err(|err| err.to_string())?;
@@ -301,11 +337,17 @@ fn capture_dir(state_dir: &Path, dir: &Path) -> std::result::Result<DirCapture, 
                 content,
                 mode: mode_of(&metadata),
             });
-        } else if !file_type.is_dir() {
+        } else if file_type.is_dir() {
+            let metadata = entry.metadata().map_err(|err| err.to_string())?;
+            dirs.push(DirDirSnapshot {
+                rel,
+                mode: mode_of(&metadata),
+            });
+        } else {
             return Err(format!("{} is a special file", display_path(entry.path())));
         }
     }
-    Ok((files, links))
+    Ok((files, links, dirs))
 }
 
 /// Identity of a path after a mutation, enough to tell later whether it
@@ -314,10 +356,20 @@ fn capture_dir(state_dir: &Path, dir: &Path) -> std::result::Result<DirCapture, 
 #[serde(tag = "state", rename_all = "snake_case")]
 pub(crate) enum PathState {
     Missing,
-    File { sha256: String, mode: u32 },
-    Symlink { dest: PathBuf },
-    Dir,
-    Other { kind: String },
+    File {
+        sha256: String,
+        mode: u32,
+    },
+    Symlink {
+        dest: PathBuf,
+    },
+    /// with how many entries it holds, so additions since are detectable
+    Dir {
+        entries: u64,
+    },
+    Other {
+        kind: String,
+    },
 }
 
 impl PathState {
@@ -326,7 +378,12 @@ impl PathState {
 
         let metadata = match std::fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
-            Err(_) => return Self::Missing,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Self::Missing,
+            Err(err) => {
+                return Self::Other {
+                    kind: format!("unreadable: {err}"),
+                };
+            }
         };
         let file_type = metadata.file_type();
         if file_type.is_symlink() {
@@ -349,7 +406,14 @@ impl PathState {
             };
         }
         if file_type.is_dir() {
-            return Self::Dir;
+            return match std::fs::read_dir(path) {
+                Ok(entries) => Self::Dir {
+                    entries: entries.count() as u64,
+                },
+                Err(err) => Self::Other {
+                    kind: format!("unreadable directory: {err}"),
+                },
+            };
         }
         Self::Other {
             kind: "special file".into(),
@@ -359,9 +423,11 @@ impl PathState {
     pub(crate) fn describe(&self) -> String {
         match self {
             Self::Missing => "missing".into(),
-            Self::File { sha256, .. } => format!("a file ({})", &sha256[..7]),
+            Self::File { sha256, .. } => {
+                format!("a file ({})", sha256.get(..7).unwrap_or(sha256))
+            }
             Self::Symlink { dest } => format!("a symlink to {}", display_path(dest)),
-            Self::Dir => "a directory".into(),
+            Self::Dir { entries } => format!("a directory ({entries} entries)"),
             Self::Other { kind } => kind.clone(),
         }
     }
@@ -392,42 +458,72 @@ pub(crate) fn begin_changes(
     part: &str,
     item: &str,
     paths: impl IntoIterator<Item = PathBuf>,
-) -> Vec<PendingChange> {
+) -> Result<Vec<PendingChange>> {
+    begin_changes_with(
+        part,
+        item,
+        paths.into_iter().map(|path| (path, Capture::Full)),
+    )
+}
+
+/// [`begin_changes`] with a capture depth per path. Fails when an entry
+/// cannot be persisted: the mutation must not go ahead without its
+/// write-ahead record.
+pub(crate) fn begin_changes_with(
+    part: &str,
+    item: &str,
+    paths: impl IntoIterator<Item = (PathBuf, Capture)>,
+) -> Result<Vec<PendingChange>> {
     if !super::scope::is_active() {
-        return vec![];
+        return Ok(vec![]);
     }
     let mut pending = vec![];
-    for path in paths {
-        let prior = PathSnapshot::capture_in(&dirs::STATE, &path);
+    for (path, capture) in paths {
+        let prior = PathSnapshot::capture_with(&dirs::STATE, &path, capture);
         if let Some(seq) = super::scope::record(JournalEntry::PathChanged {
             part: part.to_string(),
             item: item.to_string(),
             path: path.clone(),
             prior,
-        }) {
+        })? {
             pending.push(PendingChange { seq, path });
         }
     }
-    pending
+    Ok(pending)
 }
 
 /// Records the resulting state of each pending change.
 pub(crate) fn commit_changes(pending: Vec<PendingChange>) {
     for change in pending {
-        super::scope::record(JournalEntry::Committed {
+        // the mutation already happened; a missing `committed` is handled by
+        // inspecting the path later, so this is a warning
+        if let Err(err) = super::scope::record(JournalEntry::Committed {
             seq: change.seq,
             after: PathState::observe(&change.path),
-        });
+        }) {
+            warn!("bootstrap generations: {err:#}");
+        }
+    }
+}
+
+/// Records a free-form note on the open generation.
+pub(crate) fn note(message: impl Into<String>) {
+    if let Err(err) = super::scope::record(JournalEntry::Note {
+        message: message.into(),
+    }) {
+        warn!("bootstrap generations: {err:#}");
     }
 }
 
 /// Records that `part` changed `item` in a way rollback cannot undo.
 pub(crate) fn unrecorded(part: &str, item: impl Into<String>, reason: impl Into<String>) {
-    super::scope::record(JournalEntry::Unrecorded {
+    if let Err(err) = super::scope::record(JournalEntry::Unrecorded {
         part: part.to_string(),
         item: item.into(),
         reason: reason.into(),
-    });
+    }) {
+        warn!("bootstrap generations: {err:#}");
+    }
 }
 
 #[cfg(test)]
@@ -457,10 +553,10 @@ mod tests {
         let file = tmp.path().join("file");
         std::fs::write(&file, "content").unwrap();
         assert!(matches!(
-            PathSnapshot::capture_in(&state, &tmp.path().join("nope")),
+            PathSnapshot::capture_with(&state, &tmp.path().join("nope"), Capture::Full),
             PathSnapshot::Missing
         ));
-        match PathSnapshot::capture_in(&state, &file) {
+        match PathSnapshot::capture_with(&state, &file, Capture::Full) {
             PathSnapshot::File { content, .. } => assert_eq!(content.size, 7),
             other => panic!("{other:?}"),
         }
@@ -469,32 +565,40 @@ mod tests {
             let link = tmp.path().join("link");
             std::os::unix::fs::symlink("file", &link).unwrap();
             assert!(matches!(
-                PathSnapshot::capture_in(&state, &link),
+                PathSnapshot::capture_with(&state, &link, Capture::Full),
                 PathSnapshot::Symlink { dest } if dest == Path::new("file")
             ));
             nix::unistd::mkfifo(&tmp.path().join("fifo"), nix::sys::stat::Mode::S_IRWXU).unwrap();
             assert!(matches!(
-                PathSnapshot::capture_in(&state, &tmp.path().join("fifo")),
+                PathSnapshot::capture_with(&state, &tmp.path().join("fifo"), Capture::Full),
                 PathSnapshot::Unrecorded { .. }
             ));
         }
         let dir = tmp.path().join("dir/nested");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("a"), "a").unwrap();
-        match PathSnapshot::capture_in(&state, &tmp.path().join("dir")) {
-            PathSnapshot::Dir { files, .. } => {
+        std::fs::create_dir_all(tmp.path().join("dir/empty")).unwrap();
+        match PathSnapshot::capture_with(&state, &tmp.path().join("dir"), Capture::Full) {
+            PathSnapshot::Dir { files, dirs, .. } => {
                 assert_eq!(files.len(), 1);
                 assert_eq!(files[0].rel, Path::new("nested/a"));
+                let mut names: Vec<_> = dirs.iter().map(|d| d.rel.clone()).collect();
+                names.sort();
+                assert_eq!(names, vec![PathBuf::from("empty"), PathBuf::from("nested")]);
             }
             other => panic!("{other:?}"),
         }
+        assert!(matches!(
+            PathSnapshot::capture_with(&state, &tmp.path().join("dir"), Capture::Shallow),
+            PathSnapshot::Directory { .. }
+        ));
         let large = tmp.path().join("large");
         std::fs::File::create(&large)
             .unwrap()
             .set_len(BLOB_MAX + 1)
             .unwrap();
         assert!(matches!(
-            PathSnapshot::capture_in(&state, &large),
+            PathSnapshot::capture_with(&state, &large, Capture::Full),
             PathSnapshot::Unrecorded { kind, .. } if kind == "file"
         ));
     }
@@ -510,7 +614,15 @@ mod tests {
         assert_ne!(PathState::observe(&file), first);
         std::fs::write(&file, "one").unwrap();
         assert_eq!(PathState::observe(&file), first);
-        assert_eq!(PathState::observe(tmp.path()), PathState::Dir);
+        assert!(matches!(
+            PathState::observe(tmp.path()),
+            PathState::Dir { entries: 1 }
+        ));
+        std::fs::write(tmp.path().join("second"), "").unwrap();
+        assert!(matches!(
+            PathState::observe(tmp.path()),
+            PathState::Dir { entries: 2 }
+        ));
     }
 
     #[test]
@@ -536,9 +648,14 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert!(lines[0].contains("missing -> a symlink to"), "{}", lines[0]);
         assert_eq!(lines[1], "hi");
-        let entry: JournalEntry =
-            serde_json::from_str(r#"{"kind":"committed","seq":3,"after":{"state":"dir"}}"#)
-                .unwrap();
+        let entry: JournalEntry = serde_json::from_str(
+            r#"{"kind":"committed","seq":3,"after":{"state":"dir","entries":2}}"#,
+        )
+        .unwrap();
         assert!(matches!(entry, JournalEntry::Committed { seq: 3, .. }));
+        // a record without `dirs` (written before they were captured) still loads
+        let old: PathSnapshot =
+            serde_json::from_str(r#"{"state":"dir","files":[],"links":[],"mode":493}"#).unwrap();
+        assert!(matches!(old, PathSnapshot::Dir { .. }));
     }
 }

@@ -290,7 +290,7 @@ impl DotfilesAdd {
                             "dotfiles",
                             &item.target_raw,
                             [item.target.clone(), item.source.clone()],
-                        );
+                        )?;
                         remove_path(&item.source)?;
                         if let Some(parent) = item.source.parent() {
                             file::create_dir_all(parent)?;
