@@ -661,6 +661,7 @@ of the full backend specification.
      features for tools without packslips
    - **[github](dev-tools/backends/github.md)** - Simple GitHub releases following
      standard conventions
+   - **[gitlab](dev-tools/backends/gitlab.md)** - Tools released through GitLab
    - **Language package managers** - `npm`, `pipx`, `cargo`, `gem`, etc. for
      ecosystem-specific tools
    - **[Core tools](core-tools.md)** - Built-in support for major languages
@@ -672,6 +673,7 @@ of the full backend specification.
    version_order = "semver"
    description = "Brief description of the tool"
    backends = ["packslip:github.com/owner/repo", "aqua:owner/repo", "github:owner/repo"]
+   bins = ["your-tool"]
    test = { cmd = "your-tool --version", expected = "{{version}}" }
    ```
 
@@ -751,6 +753,7 @@ backends = [
     "aqua:owner/repo",               # Fallback backend
     "github:owner/repo",             # Fallback backend
 ]
+bins = ["your-tool"]
 test = { cmd = "your-tool --version", expected = "{{version}}" }
 aliases = ["alt-name"] # Optional alternative names
 os = ["linux", "macos"] # Optional OS restrictions
@@ -767,11 +770,15 @@ or whenever the convention is uncertain. Semantic ordering currently affects
 the Aqua, GitHub, GitLab, Forgejo, and HTTP backends; the field still documents
 the policy for tools whose current backend owns version ordering itself.
 
-When `aqua` is the preferred backend, mise derives the tool's command names from
-the Aqua registry's file metadata. Do not add `bins` when that inferred list is
-correct. Set `bins` explicitly only when the registry shorthand needs a different
-backend-independent command set, such as commands bundled by a fallback backend
-that Aqua does not describe.
+Set `bins` to the tool's executable names so mise can create shims for
+[lazy installation](/dev-tools/shims.html#lazy-tools) before downloading the tool. When
+`packslip` or another non-Aqua backend is first, mise cannot infer these names
+from the registry entry; list them explicitly as in the examples above.
+
+When `aqua` is the first backend, mise derives the command names from the Aqua
+registry's file metadata. Omit `bins` when that inferred list is correct. Set it
+explicitly when the shorthand needs a different backend-independent command set,
+such as commands bundled by a fallback backend that Aqua does not describe.
 
 #### Idiomatic version files
 

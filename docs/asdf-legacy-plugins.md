@@ -35,9 +35,10 @@ Only use asdf plugins when:
 1. [packslip backend](dev-tools/backends/packslip.md) - Preferred for signed release manifests
 2. [aqua backend](dev-tools/backends/aqua.md) - Curated metadata for tools without packslips
 3. [github backend](dev-tools/backends/github.md) - Simple GitHub releases
-4. [Language package managers](dev-tools/backends/) - npm, pipx, cargo, gem, etc.
-5. [backend plugins](backend-plugin-development.md) - Enhanced plugins with backend methods
-6. [tool plugins](tool-plugin-development.md) - Hook-based cross-platform plugins
+4. [gitlab backend](dev-tools/backends/gitlab.md) - Tools released through GitLab
+5. [Language package managers](dev-tools/backends/) - npm, pipx, cargo, gem, etc.
+6. [backend plugins](backend-plugin-development.md) - Enhanced plugins with backend methods
+7. [tool plugins](tool-plugin-development.md) - Hook-based cross-platform plugins
 
 ## Installing asdf (Legacy) Plugins
 
