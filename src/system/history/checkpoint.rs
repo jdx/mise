@@ -704,17 +704,12 @@ pub(crate) fn describe(
     total_files: u64,
 ) -> String {
     if let Some(operation) = &draft.operation {
-        let parts = if operation.parts.is_empty() {
-            String::new()
-        } else {
-            format!(" {}", operation.parts.join(", "))
-        };
         let what = match operation.message.as_deref() {
             Some(message) => format!(": {message}"),
             None if !changes.is_empty() => format!(": {}", describe_changes(changes)),
             None => String::new(),
         };
-        return truncate(format!("{}{parts}{what}", operation.kind.as_str()));
+        return truncate(format!("{}{what}", operation.kind.as_str()));
     }
     if draft.protective {
         return truncate(format!(
@@ -869,16 +864,11 @@ mod tests {
             undoes: None,
             applied: None,
             affected: vec![],
-            parts: vec!["dotfiles".into()],
             message: None,
             journal: vec![],
-            lockfile: None,
         });
         let c = changes(&["~/.zshrc"], &[], &[]);
-        assert_eq!(
-            describe(&draft, &c, true, 0),
-            "bootstrap dotfiles: edited ~/.zshrc"
-        );
+        assert_eq!(describe(&draft, &c, true, 0), "bootstrap: edited ~/.zshrc");
         let mut protective = Draft::new(Trigger::BootstrapBefore);
         protective.protective = true;
         assert_eq!(describe(&protective, &c, true, 0), "before bootstrap");

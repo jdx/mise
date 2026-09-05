@@ -1,18 +1,27 @@
-# History
+# Dotfiles history
 
-`mise history` keeps checkpoints of your configuration files: the global mise
-config directory, the dotfiles root, every `[dotfiles]` entry, and any file
-you [track](/dotfiles.html#tracking-files-in-place) where it is. A checkpoint
-is recorded by every mutating bootstrap command (before and after the run)
-and by `mise history save`. From there you can browse what changed, compare
-versions, and find the version of a file you want.
+mise keeps checkpoints of your configuration files: the global mise config
+directory, the dotfiles root, every `[dotfiles]` entry, and any file you
+[track](/dotfiles.html#tracking-files-in-place) where it is. A checkpoint is
+recorded whenever those files change, regardless of whether an editor, an
+agent, or a mise command changed them: by the watcher, by every mutating
+bootstrap command (before and after the run), and by
+`mise bootstrap dotfiles save`. `mise bootstrap dotfiles history` browses
+them; from there you can see what changed, compare versions, and find the
+version of a file you want.
+
+A checkpoint holds files, not machine state. It does not journal other mise
+activity and does not reverse system effects: restoring a package
+declaration does not uninstall a package, and restoring a service definition
+does not restore whether that service was running. Applying configuration
+stays an explicit bootstrap action.
 
 ```sh
 mise bootstrap dotfiles track ~/.zshrc ~/.config/hypr   # adopt files where they are
-mise history                                            # newest first
-mise history --path ~/.config/hypr/bindings.lua        # only where that file changed
-mise history diff                                       # what changed by hand since the latest checkpoint
-mise history save --description "before the theme change"
+mise bootstrap dotfiles history                                            # newest first
+mise bootstrap dotfiles history --path ~/.config/hypr/bindings.lua        # only where that file changed
+mise bootstrap dotfiles history diff                                       # what changed by hand since the latest checkpoint
+mise bootstrap dotfiles save --description "before the theme change"
 ```
 
 Nothing leaves the machine: checkpoints live under `$MISE_STATE_DIR/history/`,
@@ -31,20 +40,20 @@ Every checkpoint carries:
   that was never covered.
 - **What changed** since the previous checkpoint, and a description computed
   from it (`edited hypr/bindings.lua; added omarchy/hooks/post-theme`).
-  `mise history describe <ref> "…"` replaces the description.
+  `mise bootstrap dotfiles history describe <ref> "…"` replaces the description.
 - **The trigger**: `save`, `baseline` (a newly tracked path), or the two halves
   of an operation: `bootstrap-before` (the protective checkpoint taken before
   a bootstrap command changes anything) and `bootstrap` (the outcome, with a
   journal of every path the run touched and its prior state).
 
-`mise history show <ref>` prints all of it; `--files` lists the snapshot,
+`mise bootstrap dotfiles history show <ref>` prints all of it; `--files` lists the snapshot,
 `--json` gives the record.
 
 ## Referring to checkpoints
 
 Commands take a numeric id, `latest`, `latest~N`, or a uuid prefix. With
 `--path`, `latest~N` counts only the checkpoints where that path changed, so
-`mise history show latest~1 --path ~/.zshrc` is the state before its most
+`mise bootstrap dotfiles history show latest~1 --path ~/.zshrc` is the state before its most
 recent change however many other checkpoints came in between.
 
 Numeric ids are local handles: they can have gaps (a run that changed nothing
@@ -54,15 +63,15 @@ repository. Uuids are stable.
 ## Comparing
 
 ```sh
-mise history diff                        # working tree against the latest checkpoint
-mise history diff 12                     # what checkpoint 12 changed
-mise history diff 11 12 --patch --path ~/.config/hypr
-mise history diff --exit-code            # exit 1 when something differs
+mise bootstrap dotfiles history diff                        # working tree against the latest checkpoint
+mise bootstrap dotfiles history diff 12                     # what checkpoint 12 changed
+mise bootstrap dotfiles history diff 11 12 --patch --path ~/.config/hypr
+mise bootstrap dotfiles history diff --exit-code            # exit 1 when something differs
 ```
 
 ## Saving
 
-`mise history save` records a checkpoint now. It fails when nothing could be
+`mise bootstrap dotfiles save` records a checkpoint now. It fails when nothing could be
 saved — git missing, history disabled, a path that is not tracked — so a
 script or an agent gets a trustworthy answer; `--best-effort` turns that into
 a warning for `set -e` update scripts. Saving again without changes records
@@ -70,13 +79,13 @@ nothing, while a save with `--description`, `--label`, or `--task` always does.
 
 A file tracked with `autosave = false` is a **manual-save** file: automatic
 checkpoints carry its last saved version forward, and only
-`mise history save <path>` (or an operation that names it) promotes what is on
-disk. `mise history diff --path <file>` shows saved against live. Promotions
+`mise bootstrap dotfiles save <path>` (or an operation that names it) promotes what is on
+disk. `mise bootstrap dotfiles history diff --path <file>` shows saved against live. Promotions
 are recorded in the repository (`refs/promoted`), never only in an index.
 
 ## What is tracked
 
-`mise history paths` lists every entry with its mode, policies, the file that
+`mise bootstrap dotfiles paths` lists every entry with its mode, policies, the file that
 declared it, and how many files it covers, followed by exclusions, derived
 symlink targets, private files, and any declaration history could not honour.
 
@@ -106,7 +115,7 @@ every checkpoint from the start so nothing needs migrating.
 are found, and credential stores under the config directory
 (`github_tokens.toml`, `age.txt`, `*.key`, …) are neither shared nor backed
 up. A per-file `[dotfiles]` declaration is the only override, and
-`mise history paths` lists every private file so the choice stays visible.
+`mise bootstrap dotfiles paths` lists every private file so the choice stays visible.
 
 ## Retention
 
@@ -119,8 +128,8 @@ disables a cap. Pruned content is freed from the repository.
 ## Requirements and settings
 
 History needs a `git` binary (on macOS, the Xcode Command Line Tools). Without
-one, `mise history save` fails and bootstrap commands still run, recording
-their journals without content; `mise history status` says so.
+one, `mise bootstrap dotfiles save` fails and bootstrap commands still run, recording
+their journals without content; `mise bootstrap dotfiles status` says so.
 
 | Setting              | Default | Env                       |
 | -------------------- | ------- | ------------------------- |

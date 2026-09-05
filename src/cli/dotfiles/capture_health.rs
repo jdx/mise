@@ -29,7 +29,7 @@ pub(crate) fn advice(state: Watcher) -> &'static str {
     match state {
         Watcher::Running => "edits are saved automatically",
         Watcher::NotDeclared => {
-            "automatic capture is inactive: edits are saved by `mise history save` and by every mutating bootstrap command"
+            "automatic capture is inactive: edits are saved by `mise bootstrap dotfiles save` and by every mutating bootstrap command"
         }
     }
 }

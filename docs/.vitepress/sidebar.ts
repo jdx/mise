@@ -183,7 +183,7 @@ export const sidebar: SidebarItem[] = [
         link: "/bootstrap/user",
       },
       {
-        text: "History",
+        text: "Dotfiles history",
         link: "/history",
       },
     ],

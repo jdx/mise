@@ -14,7 +14,7 @@ use crate::system::history::tracked::normalize;
 /// `set -e` update scripts.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
-pub(crate) struct HistorySave {
+pub(crate) struct DotfilesSave {
     /// Paths to save; every one must be tracked
     #[usage(value_name = "PATH")]
     paths: Vec<PathBuf>,
@@ -40,7 +40,7 @@ pub(crate) struct HistorySave {
     best_effort: bool,
 }
 
-impl HistorySave {
+impl DotfilesSave {
     pub(crate) async fn run(self) -> Result<()> {
         match self.save().await {
             Ok(()) => Ok(()),
@@ -62,7 +62,7 @@ impl HistorySave {
         if !crate::config::Settings::get().history.enabled {
             bail!("history is disabled (history.enabled = false)");
         }
-        let (store, tracked, _entries) = super::open().await?;
+        let (store, tracked, _entries) = super::history::open().await?;
         if let Some(reason) = store.unavailable() {
             bail!("cannot save: {reason}");
         }

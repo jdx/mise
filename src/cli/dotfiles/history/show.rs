@@ -1,7 +1,6 @@
 use eyre::{Result, bail};
 
 use super::{display_arg, local_time, short};
-use crate::file::display_path;
 use crate::system::history::journal;
 use crate::ui::table::MiseTable;
 
@@ -65,21 +64,11 @@ impl HistoryShow {
             {
                 miseprintln!("  Before:      checkpoint {}", before.id);
             }
-            if !operation.parts.is_empty() {
-                miseprintln!("  Parts:       {}", operation.parts.join(", "));
-            }
             if let Some(message) = &operation.message {
                 miseprintln!("  Note:        {message}");
             }
             if let Some(error) = &operation.error {
                 miseprintln!("  Error:       {error}");
-            }
-            if let Some(lock) = &operation.lockfile {
-                miseprintln!(
-                    "  Lockfile:    {} (sha256 {})",
-                    display_path(&lock.path),
-                    &lock.sha256[..12.min(lock.sha256.len())]
-                );
             }
         }
         if c.tree.available {

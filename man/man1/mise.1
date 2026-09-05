@@ -202,6 +202,30 @@ Show the changes needed to apply dotfiles from `[dotfiles]`
 \fBbootstrap dotfiles edit\fR
 Edit a managed dotfile source
 .TP
+\fBbootstrap dotfiles history\fR
+Browse the checkpoints of your dotfiles
+.TP
+\fBbootstrap dotfiles history describe\fR
+Set the description of a checkpoint
+.TP
+\fBbootstrap dotfiles history diff\fR
+Compare checkpoints, or the working tree against one
+.TP
+\fBbootstrap dotfiles history ls\fR
+List checkpoints, newest first
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
+\fBbootstrap dotfiles history show\fR
+Show one checkpoint: what triggered it, what changed, and its journal
+.TP
+\fBbootstrap dotfiles paths\fR
+Show what history tracks and under which policies
+.TP
+\fBbootstrap dotfiles save\fR
+Save a checkpoint of the tracked files now
+.TP
 \fBbootstrap dotfiles status\fR
 Show the status of dotfiles from `[dotfiles]`
 .RS
@@ -234,21 +258,6 @@ Apply the configured Linux host firewall
 .TP
 \fBbootstrap firewall status\fR
 Show configured Linux host firewall state
-.TP
-\fBbootstrap generations\fR
-Inspect the operations bootstrap recorded
-.TP
-\fBbootstrap generations diff\fR
-Diff the tracked files between operations
-.TP
-\fBbootstrap generations ls\fR
-List recorded operations, newest first
-.RS
-\fIAliases: \fRlist
-.RE
-.TP
-\fBbootstrap generations show\fR
-Show one operation: what ran, its snapshots, and its journal
 .TP
 \fBbootstrap linux\fR
 Manage Linux bootstrap config from `[bootstrap.linux]`
@@ -519,42 +528,6 @@ Generate shims to run mise tasks
 .TP
 \fBgenerate tool\-stub\fR
 Generate a tool stub for HTTP\-based tools
-.TP
-\fBhistory\fR
-Browse and save checkpoints of your configuration files
-.TP
-\fBhistory describe\fR
-Set the description of a checkpoint
-.TP
-\fBhistory diff\fR
-Compare checkpoints, or the working tree against one
-.TP
-\fBhistory ls\fR
-List checkpoints, newest first
-.RS
-\fIAliases: \fRlist
-.RE
-.TP
-\fBhistory paths\fR
-Show what history tracks and under which policies
-.TP
-\fBhistory paths add\fR
-Track a file or directory where it is
-.TP
-\fBhistory paths set\fR
-Track a file or directory where it is
-.TP
-\fBhistory paths remove\fR
-Stop tracking a file or directory
-.TP
-\fBhistory save\fR
-Save a checkpoint of the tracked files now
-.TP
-\fBhistory show\fR
-Show one checkpoint: what triggered it, what changed, and its journal
-.TP
-\fBhistory status\fR
-Report capture health: what is tracked, the latest checkpoint, and
 .TP
 \fBimplode\fR
 Remove the mise CLI and all related data
@@ -1522,13 +1495,199 @@ Print help
 .TP
 \fB<TARGET>\fR
 Target to edit
-\fBExamples:\fR
+.SH "MISE BOOTSTRAP DOTFILES HISTORY"
+Browse the checkpoints of your dotfiles
+
+Every save, every mutating bootstrap command, and the watcher record a
+checkpoint of the tracked files: the global mise config directory, the
+dotfiles root, and every `[dotfiles]` entry. A checkpoint holds files,
+never package or service state: restoring one restores files. Without a
+subcommand this lists them, newest first.
 .PP
+\fBUsage:\fR mise bootstrap dotfiles history [OPTIONS] [COMMAND]
 .PP
-.RS 4
-mise bootstrap dotfiles edit ~/.zshrc
-mise bootstrap dotfiles edit \-\-apply ~/.config/starship.toml
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
+Show at most this many checkpoints (0 for all)
+.RS
+\fIDefault: \fR20
 .RE
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Only checkpoints where this path (or something under it) changed
+.TP
+\fB\-\-trigger\fR \fI<TRIGGER>\fR
+Only checkpoints with this trigger (edit, save, bootstrap, …)
+.TP
+\fB\-\-pending\fR
+Only checkpoints recorded by operations that did not finish
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES HISTORY DESCRIBE"
+Set the description of a checkpoint
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history describe [OPTIONS] <REF> <TEXT>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<REF>\fR
+Checkpoint id, `latest`, `latest~N`, or a uuid prefix
+.TP
+\fB<TEXT>\fR
+The new description
+.SH "MISE BOOTSTRAP DOTFILES HISTORY DIFF"
+Compare checkpoints, or the working tree against one
+
+Without arguments, shows what changed by hand since the latest
+checkpoint. With one reference, shows what that checkpoint changed
+against the one before it. With two, compares the two states.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history diff [OPTIONS] [<A>] [<B>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-p, \-\-patch\fR
+Print the full patch instead of a per\-file summary
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Restrict to one path (a file or a directory)
+.TP
+\fB\-\-exit\-code\fR
+Exit 1 when the two sides differ
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<A>\fR
+Checkpoint id, `latest`, `latest~N`, or a uuid prefix
+.TP
+\fB<B>\fR
+Compare `A` with this checkpoint instead of its predecessor
+.SH "MISE BOOTSTRAP DOTFILES HISTORY LS"
+List checkpoints, newest first
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
+Show at most this many checkpoints (0 for all)
+.RS
+\fIDefault: \fR20
+.RE
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Only checkpoints where this path (or something under it) changed
+.TP
+\fB\-\-trigger\fR \fI<TRIGGER>\fR
+Only checkpoints with this trigger (edit, save, bootstrap, …)
+.TP
+\fB\-\-pending\fR
+Only checkpoints recorded by operations that did not finish
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES HISTORY SHOW"
+Show one checkpoint: what triggered it, what changed, and its journal
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history show [OPTIONS] [<REF>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-files\fR
+List every file in the snapshot
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Resolve `latest~N` among the checkpoints where this path changed
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<REF>\fR
+Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix
+.SH "MISE BOOTSTRAP DOTFILES PATHS"
+Show what history tracks and under which policies
+
+Every entry is listed with the file that declared it, its policies, and
+how many files it currently covers. Declarations history could not
+honour are listed as invalid so a failed enrollment is never mistaken
+for protection.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles paths [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-preview\fR \fI<PATH>\fR
+Show what tracking this path would capture
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES SAVE"
+Save a checkpoint of the tracked files now
+
+Fails when nothing could be saved, so a script or an agent gets a
+trustworthy result; `\-\-best\-effort` turns that into a warning for
+`set \-e` update scripts.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles save [OPTIONS] [<PATH>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-d, \-\-description\fR \fI<TEXT>\fR
+A description for the checkpoint
+.TP
+\fB\-\-trigger\fR \fI<TRIGGER>\fR
+What is saving: save (the default), agent, or update
+.RS
+\fIDefault: \fRsave
+.RE
+.TP
+\fB\-\-task\fR \fI<ID>\fR
+The task an agent is working on
+.TP
+\fB\-\-label\fR \fI<LABEL>\fR
+A label to find the checkpoint by later
+.TP
+\fB\-\-best\-effort\fR
+Warn instead of failing when nothing could be saved
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Paths to save; every one must be tracked
 .SH "MISE BOOTSTRAP DOTFILES STATUS"
 Show the status of dotfiles from `[dotfiles]`
 
@@ -1569,7 +1728,7 @@ Track a file or directory where it is
 Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 is, nothing is copied or linked, and history saves a checkpoint of it
 right away. With the history watcher service running, later edits are
-saved automatically; without it, `mise history save` saves them.
+saved automatically; without it, `mise bootstrap dotfiles save` saves them.
 
 `\-\-os` and `\-\-profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
@@ -1587,7 +1746,7 @@ Declare a variant for this platform (macos, linux, linux/arm64, …)
 Declare a variant for this mise environment
 .TP
 \fB\-\-no\-autosave\fR
-Save only on `mise history save <path>`, never automatically
+Save only on `mise bootstrap dotfiles save <path>`, never automatically
 .TP
 \fB\-\-no\-share\fR
 Keep the file out of the shared setup (still backed up)
@@ -1761,111 +1920,6 @@ Exit with code 1 when the firewall is not converged
 .TP
 \fB\-h, \-\-help\fR
 Print help
-.SH "MISE BOOTSTRAP GENERATIONS"
-Inspect the operations bootstrap recorded
-
-Every mutating bootstrap command records a pair of history checkpoints:
-the tracked files before the run and after it, with a journal of what
-the run changed. This lists those operations, newest first; `mise
-history` lists every checkpoint.
-.PP
-\fBUsage:\fR mise bootstrap generations [OPTIONS] [COMMAND]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
-Show at most this many operations (0 for all)
-.RS
-\fIDefault: \fR20
-.RE
-.TP
-\fB\-\-pending\fR
-Only list operations whose run did not finish
-.TP
-\fB\-h, \-\-help\fR
-Print help
-.SH "MISE BOOTSTRAP GENERATIONS DIFF"
-Diff the tracked files between operations
-
-With one id, shows what that operation's run changed: the checkpoint
-before the run against the one after. With two ids, compares the states
-the two runs left behind, which is how to see what changed by hand
-between runs.
-.PP
-\fBUsage:\fR mise bootstrap generations diff [OPTIONS] <A> [<B>]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-p, \-\-patch\fR
-Print the full patch instead of a per\-file summary
-.TP
-\fB\-\-root\fR \fI<LABEL[/PATH]>\fR
-Restrict to `config` or `dotfiles` (the config directory or dotfiles root), a path inside one (`config/dotfiles/zshrc`), or any tracked path
-.TP
-\fB\-\-exit\-code\fR
-Exit 1 when the snapshots differ
-.TP
-\fB\-\-no\-journal\fR
-Skip the journal entries of the operations covered
-.TP
-\fB\-h, \-\-help\fR
-Print help
-\fBArguments:\fR
-.PP
-.TP
-\fB<A>\fR
-Checkpoint id, `latest`, or `latest~N` (among operations)
-.TP
-\fB<B>\fR
-Compare the state after `A` with the state after this operation
-.SH "MISE BOOTSTRAP GENERATIONS LS"
-List recorded operations, newest first
-.PP
-\fBUsage:\fR mise bootstrap generations ls [OPTIONS]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
-Show at most this many operations (0 for all)
-.RS
-\fIDefault: \fR20
-.RE
-.TP
-\fB\-\-pending\fR
-Only list operations whose run did not finish
-.TP
-\fB\-h, \-\-help\fR
-Print help
-.SH "MISE BOOTSTRAP GENERATIONS SHOW"
-Show one operation: what ran, its snapshots, and its journal
-.PP
-\fBUsage:\fR mise bootstrap generations show [OPTIONS] [<ID>]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-\-files\fR
-List every file in the snapshot taken after the run
-.TP
-\fB\-h, \-\-help\fR
-Print help
-\fBArguments:\fR
-.PP
-.TP
-\fB<ID>\fR
-Checkpoint id, `latest` (the default), or `latest~N` (among operations)
 .SH "MISE BOOTSTRAP LINUX"
 Manage Linux bootstrap config from `[bootstrap.linux]`
 .PP
@@ -3857,353 +3911,6 @@ Print help
 .TP
 \fB<OUTPUT>\fR
 Output file path for the tool stub
-\fBExamples:\fR
-.PP
-Download and inspect a real archive to detect its binary and checksum
-.PP
-.RS 4
-mise generate tool\-stub ./bin/node \-\-platform\-url https://nodejs.org/dist/v22.17.1/node\-v22.17.1\-darwin\-arm64.tar.gz
-.RE
-.PP
-Add a Linux artifact to the same stub
-.PP
-.RS 4
-mise generate tool\-stub ./bin/node \-\-platform\-url linux\-x64:https://nodejs.org/dist/v22.17.1/node\-v22.17.1\-linux\-x64.tar.gz
-.RE
-.PP
-Create a draft for your own artifact without fetching the placeholder URL
-.PP
-.RS 4
-mise generate tool\-stub ./bin/my\-tool \-\-url https://example.com/my\-tool.tar.gz \-\-skip\-download
-# Replace the URL with a real artifact before fetching metadata or executing it
-.RE
-.PP
-Fill missing checksums and sizes in an existing stub
-.PP
-.RS 4
-mise generate tool\-stub ./bin/node \-\-fetch
-.RE
-.PP
-For an existing registry\-backed stub, resolve and embed version/platform lock data
-.PP
-.RS 4
-mise generate tool\-stub ./bin/registry\-node \-\-lock \-\-version 22
-.RE
-.SH "MISE HISTORY"
-Browse and save checkpoints of your configuration files
-
-Every mutating bootstrap command and every `mise history save` records a
-checkpoint of the tracked files: the global mise config directory, the
-dotfiles root, and every `[dotfiles]` entry. Without a subcommand this
-lists them, newest first.
-.PP
-\fBUsage:\fR mise history [OPTIONS] [COMMAND]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
-Show at most this many checkpoints (0 for all)
-.RS
-\fIDefault: \fR20
-.RE
-.TP
-\fB\-\-path\fR \fI<PATH>\fR
-Only checkpoints where this path (or something under it) changed
-.TP
-\fB\-\-trigger\fR \fI<TRIGGER>\fR
-Only checkpoints with this trigger (edit, save, bootstrap, …)
-.TP
-\fB\-\-pending\fR
-Only checkpoints recorded by operations that did not finish
-.TP
-\fB\-h, \-\-help\fR
-Print help
-.SH "MISE HISTORY DESCRIBE"
-Set the description of a checkpoint
-.PP
-\fBUsage:\fR mise history describe [OPTIONS] <REF> <TEXT>
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-h, \-\-help\fR
-Print help
-\fBArguments:\fR
-.PP
-.TP
-\fB<REF>\fR
-Checkpoint id, `latest`, `latest~N`, or a uuid prefix
-.TP
-\fB<TEXT>\fR
-The new description
-.SH "MISE HISTORY DIFF"
-Compare checkpoints, or the working tree against one
-
-Without arguments, shows what changed by hand since the latest
-checkpoint. With one reference, shows what that checkpoint changed
-against the one before it. With two, compares the two states.
-.PP
-\fBUsage:\fR mise history diff [OPTIONS] [<A>] [<B>]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-p, \-\-patch\fR
-Print the full patch instead of a per\-file summary
-.TP
-\fB\-\-path\fR \fI<PATH>\fR
-Restrict to one path (a file or a directory)
-.TP
-\fB\-\-exit\-code\fR
-Exit 1 when the two sides differ
-.TP
-\fB\-h, \-\-help\fR
-Print help
-\fBArguments:\fR
-.PP
-.TP
-\fB<A>\fR
-Checkpoint id, `latest`, `latest~N`, or a uuid prefix
-.TP
-\fB<B>\fR
-Compare `A` with this checkpoint instead of its predecessor
-.SH "MISE HISTORY LS"
-List checkpoints, newest first
-.PP
-\fBUsage:\fR mise history ls [OPTIONS]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
-Show at most this many checkpoints (0 for all)
-.RS
-\fIDefault: \fR20
-.RE
-.TP
-\fB\-\-path\fR \fI<PATH>\fR
-Only checkpoints where this path (or something under it) changed
-.TP
-\fB\-\-trigger\fR \fI<TRIGGER>\fR
-Only checkpoints with this trigger (edit, save, bootstrap, …)
-.TP
-\fB\-\-pending\fR
-Only checkpoints recorded by operations that did not finish
-.TP
-\fB\-h, \-\-help\fR
-Print help
-.SH "MISE HISTORY PATHS"
-Show what history tracks and under which policies
-
-Every entry is listed with the file that declared it, its policies, and
-how many files it currently covers. Declarations history could not
-honour are listed as invalid so a failed enrollment is never mistaken
-for protection.
-.PP
-\fBUsage:\fR mise history paths [OPTIONS] [COMMAND]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-\-preview\fR \fI<PATH>\fR
-Show what tracking this path would capture
-.TP
-\fB\-h, \-\-help\fR
-Print help
-.SH "MISE HISTORY PATHS ADD"
-Track a file or directory where it is
-
-Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
-is, nothing is copied or linked, and history saves a checkpoint of it
-right away. With the history watcher service running, later edits are
-saved automatically; without it, `mise history save` saves them.
-
-`\-\-os` and `\-\-profile` declare a variant: a separate shared stream for
-machines matching that platform or mise environment, so a Mac and a
-Linux box can share the same live path with different contents.
-.PP
-\fBUsage:\fR mise history paths add [OPTIONS] <PATH> ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-\-os\fR \fI<OS>\fR
-Declare a variant for this platform (macos, linux, linux/arm64, …)
-.TP
-\fB\-\-profile\fR \fI<PROFILE>\fR
-Declare a variant for this mise environment
-.TP
-\fB\-\-no\-autosave\fR
-Save only on `mise history save <path>`, never automatically
-.TP
-\fB\-\-no\-share\fR
-Keep the file out of the shared setup (still backed up)
-.TP
-\fB\-\-no\-backup\fR
-Keep the file out of remote backups (still protected locally)
-.TP
-\fB\-\-local\fR
-Write to config.local.toml (this machine only) instead of config.toml
-.TP
-\fB\-y, \-\-yes\fR
-Accept without prompting
-.TP
-\fB\-h, \-\-help\fR
-Print help
-\fBArguments:\fR
-.PP
-.TP
-\fB<PATH>\fR
-Paths to track (absolute or starting with ~/)
-.SH "MISE HISTORY PATHS SET"
-Track a file or directory where it is
-
-Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
-is, nothing is copied or linked, and history saves a checkpoint of it
-right away. With the history watcher service running, later edits are
-saved automatically; without it, `mise history save` saves them.
-
-`\-\-os` and `\-\-profile` declare a variant: a separate shared stream for
-machines matching that platform or mise environment, so a Mac and a
-Linux box can share the same live path with different contents.
-.PP
-\fBUsage:\fR mise history paths set [OPTIONS] <PATH> ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-\-os\fR \fI<OS>\fR
-Declare a variant for this platform (macos, linux, linux/arm64, …)
-.TP
-\fB\-\-profile\fR \fI<PROFILE>\fR
-Declare a variant for this mise environment
-.TP
-\fB\-\-no\-autosave\fR
-Save only on `mise history save <path>`, never automatically
-.TP
-\fB\-\-no\-share\fR
-Keep the file out of the shared setup (still backed up)
-.TP
-\fB\-\-no\-backup\fR
-Keep the file out of remote backups (still protected locally)
-.TP
-\fB\-\-local\fR
-Write to config.local.toml (this machine only) instead of config.toml
-.TP
-\fB\-y, \-\-yes\fR
-Accept without prompting
-.TP
-\fB\-h, \-\-help\fR
-Print help
-\fBArguments:\fR
-.PP
-.TP
-\fB<PATH>\fR
-Paths to track (absolute or starting with ~/)
-.SH "MISE HISTORY PATHS REMOVE"
-Stop tracking a file or directory
-
-Removes the `[dotfiles]` track entry (or switches an inherited one off in
-config.local.toml) and stops future captures. The file itself and its
-existing checkpoints are left exactly as they are.
-.PP
-\fBUsage:\fR mise history paths remove [OPTIONS] <PATH> ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-h, \-\-help\fR
-Print help
-\fBArguments:\fR
-.PP
-.TP
-\fB<PATH>\fR
-Paths to stop tracking
-.SH "MISE HISTORY SAVE"
-Save a checkpoint of the tracked files now
-
-Fails when nothing could be saved, so a script or an agent gets a
-trustworthy result; `\-\-best\-effort` turns that into a warning for
-`set \-e` update scripts.
-.PP
-\fBUsage:\fR mise history save [OPTIONS] [<PATH>] ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-d, \-\-description\fR \fI<TEXT>\fR
-A description for the checkpoint
-.TP
-\fB\-\-trigger\fR \fI<TRIGGER>\fR
-What is saving: save (the default), agent, or update
-.RS
-\fIDefault: \fRsave
-.RE
-.TP
-\fB\-\-task\fR \fI<ID>\fR
-The task an agent is working on
-.TP
-\fB\-\-label\fR \fI<LABEL>\fR
-A label to find the checkpoint by later
-.TP
-\fB\-\-best\-effort\fR
-Warn instead of failing when nothing could be saved
-.TP
-\fB\-h, \-\-help\fR
-Print help
-\fBArguments:\fR
-.PP
-.TP
-\fB<PATH>\fR
-Paths to save; every one must be tracked
-.SH "MISE HISTORY SHOW"
-Show one checkpoint: what triggered it, what changed, and its journal
-.PP
-\fBUsage:\fR mise history show [OPTIONS] [<REF>]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-\-files\fR
-List every file in the snapshot
-.TP
-\fB\-\-path\fR \fI<PATH>\fR
-Resolve `latest~N` among the checkpoints where this path changed
-.TP
-\fB\-h, \-\-help\fR
-Print help
-\fBArguments:\fR
-.PP
-.TP
-\fB<REF>\fR
-Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix
-.SH "MISE HISTORY STATUS"
-Report capture health: what is tracked, the latest checkpoint, and
-whether anything is saving automatically
-.PP
-\fBUsage:\fR mise history status [OPTIONS]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-h, \-\-help\fR
-Print help
 .SH "MISE IMPLODE"
 Remove the mise CLI and all related data
 

@@ -222,16 +222,16 @@ mise bootstrap firewall status
 mise bootstrap user status
 ```
 
-Use `mise history` to see the checkpoints bootstrap has recorded — a pair per
+Use `mise bootstrap dotfiles history` to see the checkpoints bootstrap has recorded — a pair per
 mutating run, with the tracked files before and after — and
-`mise bootstrap generations` for the operations alone. See
+`mise bootstrap dotfiles history` for the operations alone. See
 [History](/history.html).
 
 ```sh
-mise history
-mise history show latest
-mise bootstrap generations
-mise bootstrap generations diff 11 12
+mise bootstrap dotfiles history
+mise bootstrap dotfiles history show latest
+mise bootstrap dotfiles history
+mise bootstrap dotfiles history diff 11 12
 ```
 
 `mise bootstrap status --missing` checks the whole declarative bootstrap

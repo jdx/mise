@@ -16,10 +16,7 @@ use crate::ui::table::MiseTable;
 /// for protection.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
-pub(crate) struct HistoryPaths {
-    #[usage(subcommand)]
-    command: Option<HistoryPathsCommands>,
-
+pub(crate) struct DotfilesPaths {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
@@ -27,18 +24,6 @@ pub(crate) struct HistoryPaths {
     /// Show what tracking this path would capture
     #[usage(long, value_name = "PATH")]
     preview: Option<PathBuf>,
-}
-
-/// Aliases of `mise bootstrap dotfiles track` and `untrack`: they edit the
-/// same `[dotfiles]` declaration.
-#[derive(Debug, usage_rs::Subcommands)]
-enum HistoryPathsCommands {
-    /// Track a path where it is (alias of `mise bootstrap dotfiles track`)
-    Add(crate::cli::dotfiles::DotfilesTrack),
-    /// Change a tracked path's policies or variants (alias of `track`)
-    Set(crate::cli::dotfiles::DotfilesTrack),
-    /// Stop tracking a path (alias of `mise bootstrap dotfiles untrack`)
-    Remove(crate::cli::dotfiles::DotfilesUntrack),
 }
 
 #[derive(Serialize)]
@@ -59,15 +44,8 @@ struct PathRow {
     declared_in: Option<String>,
 }
 
-impl HistoryPaths {
+impl DotfilesPaths {
     pub(crate) async fn run(self) -> Result<()> {
-        match self.command {
-            Some(HistoryPathsCommands::Add(cmd) | HistoryPathsCommands::Set(cmd)) => {
-                return cmd.run().await;
-            }
-            Some(HistoryPathsCommands::Remove(cmd)) => return cmd.run().await,
-            None => {}
-        }
         let tracked = match &self.preview {
             Some(path) => {
                 let mut set = TrackedSet {
@@ -145,7 +123,7 @@ impl HistoryPaths {
                     Some(variant) => format!("{} ({variant})", row.mode),
                     None => row.mode.clone(),
                 };
-                let mut policy = super::show::policy(row.autosave, row.share, row.backup);
+                let mut policy = super::history::show::policy(row.autosave, row.share, row.backup);
                 if let Some(note) = &row.note {
                     policy = format!("{policy}: {note}");
                 }
@@ -169,7 +147,7 @@ impl HistoryPaths {
                     "  private: {} ({}; {})",
                     display_path(&private.path),
                     private.reason,
-                    super::show::policy(
+                    super::history::show::policy(
                         private.policy.autosave,
                         private.policy.share,
                         private.policy.backup

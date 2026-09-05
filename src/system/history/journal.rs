@@ -28,14 +28,8 @@ pub(crate) const DIR_SNAPSHOT_MAX: u64 = 256 * 1024 * 1024;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum JournalEntry {
-    /// Context for someone reading `mise bootstrap generations show`.
+    /// Context for someone reading `mise bootstrap dotfiles history show`.
     Note { message: String },
-    /// A change rollback cannot undo. Reported, never inverted.
-    Unrecorded {
-        part: String,
-        item: String,
-        reason: String,
-    },
     /// Written before `path` is mutated on behalf of `item` (a dotfile
     /// target, an edit key) in bootstrap part `part`.
     PathChanged {
@@ -57,9 +51,6 @@ impl JournalEntry {
     pub(crate) fn describe(&self) -> String {
         match self {
             Self::Note { message } => message.clone(),
-            Self::Unrecorded { part, item, reason } => {
-                format!("{part}: {item} — not recorded ({reason})")
-            }
             Self::PathChanged {
                 part,
                 item,
@@ -532,16 +523,6 @@ pub(crate) fn note(message: impl Into<String>) {
 }
 
 /// Records that `part` changed `item` in a way rollback cannot undo.
-pub(crate) fn unrecorded(part: &str, item: impl Into<String>, reason: impl Into<String>) {
-    if let Err(err) = super::scope::record(JournalEntry::Unrecorded {
-        part: part.to_string(),
-        item: item.into(),
-        reason: reason.into(),
-    }) {
-        warn!("history: {err:#}");
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

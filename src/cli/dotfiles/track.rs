@@ -17,7 +17,7 @@ use crate::system::history::tracked::{EntryKind, TrackedSet, normalize};
 /// Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 /// is, nothing is copied or linked, and history saves a checkpoint of it
 /// right away. With the history watcher service running, later edits are
-/// saved automatically; without it, `mise history save` saves them.
+/// saved automatically; without it, `mise bootstrap dotfiles save` saves them.
 ///
 /// `--os` and `--profile` declare a variant: a separate shared stream for
 /// machines matching that platform or mise environment, so a Mac and a
@@ -37,7 +37,7 @@ pub(crate) struct DotfilesTrack {
     #[usage(long, value_name = "PROFILE")]
     profile: Option<String>,
 
-    /// Save only on `mise history save <path>`, never automatically
+    /// Save only on `mise bootstrap dotfiles save <path>`, never automatically
     #[usage(long)]
     no_autosave: bool,
 
@@ -142,7 +142,7 @@ impl DotfilesTrack {
             }
             return Err(err.wrap_err(format!("{} was left unchanged", display_path(&config_path))));
         }
-        crate::cli::history::capture_health::report();
+        crate::cli::dotfiles::capture_health::report();
         Ok(())
     }
 

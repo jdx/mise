@@ -197,10 +197,8 @@ mod tests {
             undoes: None,
             applied: None,
             affected: vec![],
-            parts: vec![],
             message: None,
             journal: vec![],
-            lockfile: None,
         });
         (before, outcome)
     }
