@@ -50,6 +50,7 @@ mod ls_remote;
 mod mcp;
 mod oci;
 mod outdated;
+mod packslip;
 mod patrons;
 mod plugins;
 pub(crate) mod prune;
@@ -256,6 +257,7 @@ pub(crate) enum Commands {
     LsRemote(ls_remote::LsRemote),
     Mcp(mcp::Mcp),
     Oci(oci::Oci),
+    Packslip(packslip::Packslip),
     Outdated(outdated::Outdated),
     Patrons(patrons::Patrons),
     Plugins(plugins::Plugins),
@@ -387,6 +389,7 @@ impl Commands {
             Self::LsRemote(cmd) => cmd.run().await,
             Self::Mcp(cmd) => cmd.run().await,
             Self::Oci(cmd) => cmd.run().await,
+            Self::Packslip(cmd) => cmd.run().await,
             Self::Outdated(cmd) => cmd.run().await,
             Self::Patrons(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,

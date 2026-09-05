@@ -25,10 +25,10 @@ For a vendor:
 
 For a user asking a vendor for one:
 
-- **The name says who may sign, the way `~/.ssh/known_hosts` says which key a host must present.** `packslip:github.com/owner/repo` accepts only a packslip signed by that repository's release workflow through GitHub's issuer; the signature, its transparency log entry, the statement, and the artifact's digest and size are all checked before anything is unpacked.
+- **The name says who may sign, the way `~/.ssh/known_hosts` says which key a host must present.** `packslip:github.com/owner/repo` accepts only a packslip signed by that repository's release workflow through GitHub's issuer; the signature, its transparency log entry, the statement, and the artifact's digest and size are all checked before anything is unpacked. mise then remembers the signer it accepted, as [Pinned signers](#pinned-signers) describes, and refuses a later release from anyone else.
 - **The right artifact, with no registry to update first.** musl and gnu, universal binaries, a `fips` or `baseline` variant, the executable's path inside the archive: all from the manifest the vendor wrote when it cut the release, so nobody plays catch-up after a rename.
 - **Completions and skills that match the version in use**, from the vendor, with no per-tool setup in mise or in your shell config.
-- **Upgrades are checked the way first installs are.** A checksum in `mise.lock` proves one download is the same file it was the first time. A packslip proves the next version came from the same signer as well, so an upgrade on a teammate's machine or in CI is checked against the project's identity rather than against a hash nobody could verify when it was first recorded.
+- **Upgrades are checked the way first installs are.** A checksum in `mise.lock` proves one download is the same file it was the first time. A packslip proves the next version came from the same signer as well, so an upgrade on a teammate's machine or in CI is checked against the project's identity rather than against a hash nobody could verify when it was first recorded. `mise.lock` records that signer next to the URL and digest, so a machine with the lockfile refuses a release signed by anyone else even on its first install.
 
 The specification and the `packslip` CLI are at [packslip.dev](https://packslip.dev).
 
@@ -60,6 +60,17 @@ A project on its own domain publishes a signed release list at `https://<host>/.
 Only after that does mise unpack the artifact and put the executables the packslip names on PATH. The verified statement is kept in the install directory as `.mise-packslip.json`.
 
 The artifact is chosen as the specification's consumer rules say. An artifact fits when each of its `os`, `arch`, and `libc` is absent or equal to the host's, so a universal macOS binary, a jar, or a script fits everywhere; among those that fit, the one naming the most of those three wins, so a build for the host beats a portable one; then mise's format preference decides, archives first (`tar.xz`, `tar.zst`, `tar.gz`, `tar.bz2`, `tar`, `zip`, `7z`), then a single compressed executable (`xz`, `zst`, `gz`, `bz2`), then a bare one. Installer formats such as `deb`, `dmg`, and `msi` are never chosen. When two artifacts still tie, mise refuses to guess; set `variant` to say which one you mean. A glibc host with no gnu build takes a musl build, which is static, and says so in the debug log.
+
+## Pinned signers
+
+mise remembers which signer it accepted a project's packslips from, the way SSH remembers hosts, in `packslip/pins.toml` under its state directory: the scheme, the workflow path (without its ref, since a new tag of the same workflow is the same signer) or key id, who attested, whether every artifact linked provenance, and the highest release-list sequence seen. A later release that comes from another signer, is a repackager's where the vendor's own was accepted before, or drops the provenance every artifact linked before is refused, as the specification's no-downgrade rule says; anything that got stronger is remembered as the new floor.
+
+```sh
+mise packslip pins                     # what is pinned, and from what
+mise packslip forget github.com/o/r    # the vendor rotated a key: let the next release set the pin
+```
+
+A lockfile carries the project's commitment as well: each platform entry records the `signer` (as `scheme:signer`) and, for a repackager's document, `attested_by = "repackager"`, next to the URL and digest. A release signed by anyone else is refused on every machine that has the lockfile, whether or not that machine has seen the project before; removing the entry from `mise.lock` accepts the change for the project.
 
 ## Tool Options
 
