@@ -1519,6 +1519,7 @@ impl Bootstrap {
             } else {
                 info!("bootstrap: dotfile edits");
                 let opts = system::edits::ApplyOpts {
+                    part: "dotfiles",
                     dry_run: self.dry_run,
                     verbose: false,
                     yes: self.yes,

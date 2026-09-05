@@ -35,6 +35,7 @@ use crate::dirs;
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::path::PathExt;
+use crate::system::generations::journal;
 use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
 
@@ -1626,36 +1627,33 @@ pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<boo
     }
     for link in &plan.reconciliation.stale_links {
         if link_points_to(&link.source, &link.target) {
+            let item = link.target.display_user().to_string();
+            let pending = journal::begin_changes(DOTFILES_PART, &item, [link.target.clone()]);
             file::remove_file(&link.target)?;
+            journal::commit_changes(pending);
         }
     }
     for (req, rendered) in &plan.todo {
+        let pending = journal::begin_changes(DOTFILES_PART, &req.target_raw, touched_paths(req)?);
         apply_one(req, rendered.as_deref())?;
         if req.mode == FileMode::SymlinkEach {
             save_symlink_each_state(req);
         }
+        journal::commit_changes(pending);
         info!("files: {}", describe_applied(req)?);
     }
     for req in plan.record_symlink_each {
         if !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, req)) {
+            let pending = journal::begin_changes(
+                DOTFILES_PART,
+                &req.target_raw,
+                [symlink_each_state_path(req)],
+            );
             save_symlink_each_state(req);
+            journal::commit_changes(pending);
         }
     }
     cleanup_reconciled_directories(&plan.reconciliation)?;
-    crate::system::generations::journal::note(format!(
-        "dotfiles: applied {}",
-        plan.todo
-            .iter()
-            .map(|(r, _)| r.target_raw.clone())
-            .chain(
-                plan.reconciliation
-                    .stale_links
-                    .iter()
-                    .map(|link| format!("removed {}", link.target.display_user()))
-            )
-            .collect::<Vec<_>>()
-            .join(", ")
-    ));
     let applied = plan
         .todo
         .iter()
@@ -1960,10 +1958,19 @@ pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> 
         }
     }
     for plan in todo {
+        let mut paths = plan.paths.clone();
+        if plan.clear_symlink_each_state {
+            paths.push(symlink_each_state_path(plan.req));
+        }
+        if plan.cleanup_empty_dirs {
+            paths.push(plan.req.target.clone());
+        }
+        let pending = journal::begin_changes(DOTFILES_PART, &plan.req.target_raw, paths);
         unapply_one(plan)?;
         if plan.clear_symlink_each_state {
             remove_symlink_each_state(plan.req)?;
         }
+        journal::commit_changes(pending);
     }
     crate::system::generations::journal::note(format!(
         "dotfiles: unapplied {}",
@@ -2528,6 +2535,58 @@ pub(crate) fn print_diffs(config: &Config, requests: &[FileRequest]) -> Result<(
         info!("files: all files are applied");
     }
     Ok(())
+}
+
+const DOTFILES_PART: &str = "dotfiles";
+
+/// Every path `apply_one` may create, replace, or remove for `req`, so the
+/// journal can capture their prior state first.
+fn touched_paths(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    let mut paths: IndexMap<PathBuf, ()> = IndexMap::new();
+    for dir in missing_ancestors(&req.target) {
+        paths.insert(dir, ());
+    }
+    match req.mode {
+        FileMode::Symlink | FileMode::Template | FileMode::Content => {
+            paths.insert(req.target.clone(), ());
+        }
+        FileMode::Copy => {
+            paths.insert(req.target.clone(), ());
+            if req.source.is_dir() {
+                for (_, target) in walk_source_files(req)? {
+                    paths.insert(target, ());
+                }
+            }
+        }
+        FileMode::SymlinkEach => {
+            for dir in needed_dirs(req)? {
+                paths.insert(dir, ());
+            }
+            for (_, target) in walk_source_files(req)? {
+                paths.insert(target, ());
+            }
+            for stale in stale_links(req)? {
+                paths.insert(stale, ());
+            }
+            paths.insert(symlink_each_state_path(req), ());
+        }
+    }
+    Ok(paths.into_keys().collect())
+}
+
+/// Ancestors of `path` that do not exist yet, outermost first.
+fn missing_ancestors(path: &Path) -> Vec<PathBuf> {
+    let mut missing = vec![];
+    let mut dir = path.parent();
+    while let Some(d) = dir {
+        if d.exists() || d.as_os_str().is_empty() {
+            break;
+        }
+        missing.push(d.to_path_buf());
+        dir = d.parent();
+    }
+    missing.reverse();
+    missing
 }
 
 fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {

@@ -223,6 +223,7 @@ pub(crate) fn apply_shell_activation(
         .map(|request| request.edit)
         .collect::<Vec<_>>();
     let opts = system::edits::ApplyOpts {
+        part: "mise-shell-activate",
         dry_run,
         verbose: Settings::get().verbose,
         yes,
