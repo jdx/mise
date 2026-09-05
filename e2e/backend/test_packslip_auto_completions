@@ -44,6 +44,26 @@ mkdir empty
 export CALL_LOG="$PWD/calls"
 export FIXTURE_ROOT="$PWD"
 
+# A clean shell needs neither an existing completion nor a separate compinit.
+bash --noprofile --norc <<'BASH'
+set -eu
+cd "$FIXTURE_ROOT/project-1.0.0"
+eval "$(mise activate bash)"
+eval "$(mise hook-env -s bash --force)"
+complete -p probe >/dev/null
+eval "$(command mise deactivate)"
+if complete -p probe 2>/dev/null; then exit 1; fi
+BASH
+zsh -f <<'ZSH'
+set -eu
+cd "$FIXTURE_ROOT/project-1.0.0"
+eval "$(mise activate zsh)"
+eval "$(mise hook-env -s zsh --force)"
+[[ ${_comps[probe]} == _probe ]]
+eval "$(command mise deactivate)"
+(( ! $+_comps[probe] ))
+ZSH
+
 # Activation registers loaders without an install-completion command. Existing
 # completions return when the tool leaves the active toolset or mise deactivates.
 bash --noprofile --norc <<'BASH' >bash.out
