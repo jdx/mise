@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1SD16X8CXK5AMYDRG4NTMDB",
+  "session_id": "01a07200-0330-74e2-8dea-9f54c72bc6f4",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-05T18:24:30.067453Z",
+  "branch": "codex/github-read-only-relay",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/bootstrap/remote.md",
+    "e2e/cli/test_bootstrap_remote_git",
+    "e2e/fixtures/git_redirect.py",
+    "src/system/remote_repository.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "b970b92bb78c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1221939,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 36433152,
+    "output_tokens": 127290,
+    "api_call_count": 292
+  },
+  "session_metrics": {
+    "turn_count": 13
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-05T18:24:29.808915Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 69,
+    "human_modified": 10,
+    "human_removed": 0,
+    "total_committed": 69,
+    "total_lines_changed": 79,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
