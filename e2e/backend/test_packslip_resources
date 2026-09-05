@@ -32,7 +32,8 @@ elif shell == "powershell":
     print("}")
 else:
     print('name "probe"')
-    print("# " + shell + " " + root.name)
+    print("// " + shell + " " + root.name)
+    print('flag "--from-spec"')
 '''
 
 RESOURCES = [
@@ -113,23 +114,20 @@ for version in 1.0.0 2.0.0 3.0.0; do
   printf '[tools]\n"packslip:test/probe" = "%s"\n' "$version" >"project-$version/mise.toml"
 done
 
-# A stand-in for the usage command, which turns a CLI spec into a script.
-# It says which spec file it read, so the assertions can name it.
-cat >"$HOME/bin/usage" <<'EOF'
+# A separate usage executable must never be used for these completions.
+cat >"$HOME/bin/usage" <<'EOF_USAGE'
 #!/usr/bin/env sh
-printf '# spec: %s\n' "$6"
-cat "$6"
-EOF
+echo 'unexpected external usage execution' >&2
+exit 99
+EOF_USAGE
 chmod +x "$HOME/bin/usage"
-# The release workflow installs the real usage into cargo's bin, which the
-# harness puts ahead of this stub.
 export PATH="$HOME/bin:$PATH"
 
 cd project-1.0.0
 
 # What an interrupted generation leaves is not a completion, and the shells
 # asking at once run the tool once between them rather than once each.
-cache="../1.0.0/.mise-packslip/completions/probe"
+cache="../1.0.0/.mise-packslip/completions-v2/probe"
 mkdir -p "$cache"
 printf ' \n' >"$cache/fish.completion"
 for i in 1 2 3 4; do
@@ -146,10 +144,10 @@ assert "wc -l <../1.0.0/calls-fish | tr -d ' '" "1"
 mise completion bash --tool probe >bash.completion &
 mise completion zsh --tool probe >zsh.completion
 wait
-assert_contains "cat bash.completion" "specs/bash/probe.usage"
-assert_contains "cat zsh.completion" "specs/zsh/probe.usage"
-assert_contains "cat ../1.0.0/.mise-packslip/specs/bash/probe.usage" "# bash 1.0.0"
-assert_contains "cat ../1.0.0/.mise-packslip/specs/zsh/probe.usage" "# zsh 1.0.0"
+assert_contains "cat bash.completion" "__usage_complete_word"
+assert_contains "cat zsh.completion" "__usage_complete_word"
+assert_contains "cat ../1.0.0/.mise-packslip/specs/bash/probe.usage" "// bash 1.0.0"
+assert_contains "cat ../1.0.0/.mise-packslip/specs/zsh/probe.usage" "// zsh 1.0.0"
 
 # The skill the release ships is the skill, and the link follows the
 # version that is active here.
@@ -206,7 +204,7 @@ assert_contains "cat ../skills/probe/SKILL.md" "# probe 1.0.0"
 # system or shared install, which is read-only, complete at all.
 cd ../project-3.0.0
 assert_contains "mise completion bash --tool probe" "complete -W 'shipped' probe"
-assert "test ! -e ../3.0.0/.mise-packslip/completions && echo clean" "clean"
+assert "test ! -e ../3.0.0/.mise-packslip/completions-v2 && echo clean" "clean"
 if [ "$(id -u)" != 0 ]; then
   chmod -R a-w ../3.0.0
   assert_contains "mise completion bash --tool probe" "complete -W 'shipped' probe"
