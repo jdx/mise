@@ -430,6 +430,15 @@ impl RustPlugin {
         runtime: &RustRuntime,
     ) -> Result<Option<RustupProfileComponents>> {
         let Some(installed) = self.rustup_toolchain_manifest(tv, runtime)? else {
+            if self
+                .rustup_installed_items(tv, "component", runtime)?
+                .is_some()
+            {
+                bail!(
+                    "cannot reconcile the rustup complete profile for {} because its active toolchain could not be determined",
+                    tv.style()
+                );
+            }
             return Ok(None);
         };
         if let Some(manifest) = installed.contents {
@@ -527,8 +536,7 @@ impl Backend for RustPlugin {
 
         let mut required_components = components.unwrap_or_default();
         let manifest_host = if effective_profile == "complete" {
-            let Some(profile_components) =
-                self.rustup_complete_profile_components(tv, &runtime)?
+            let Some(profile_components) = self.rustup_complete_profile_components(tv, &runtime)?
             else {
                 return Ok(false);
             };
