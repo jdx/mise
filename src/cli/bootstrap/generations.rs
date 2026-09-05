@@ -243,15 +243,21 @@ impl BootstrapGenerationsShow {
         }
 
         if self.files {
-            let Some(snapshot) = snapshot.after.as_ref().or(snapshot.before.as_ref()) else {
-                bail!("generation {id} has no content snapshot");
+            let (snapshot, phase) = match (&snapshot.after, &snapshot.before) {
+                (Some(after), _) => (after, "after"),
+                (None, Some(before)) => (before, "before"),
+                (None, None) => bail!("generation {id} has no content snapshot"),
             };
             let Some(shadow) = ShadowRepo::open_or_init_in(&dirs::STATE)? else {
                 bail!("listing snapshot files requires git");
             };
             for root in snapshot.roots.iter().filter(|root| root.tree.is_some()) {
                 miseprintln!("");
-                miseprintln!("Files in {} ({}):", root.label, display_path(&root.path));
+                miseprintln!(
+                    "Files in {} ({}) from the snapshot taken {phase} the run:",
+                    root.label,
+                    display_path(&root.path)
+                );
                 for entry in shadow.ls_tree(&snapshot.commit, &root.label)? {
                     let size = entry
                         .size
@@ -265,6 +271,10 @@ impl BootstrapGenerationsShow {
                         entry.path
                     );
                 }
+            }
+            if let Some(blob) = g.lockfile.as_ref().and_then(|lock| lock.blob.as_deref()) {
+                miseprintln!("");
+                miseprintln!("Lockfile in the snapshot: mise.lock ({})", short(blob));
             }
         }
         Ok(())

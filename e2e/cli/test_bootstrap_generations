@@ -129,3 +129,13 @@ assert "git -C '$MISE_CONFIG_DIR' rev-parse HEAD" "$head"
 assert "git -C '$MISE_CONFIG_DIR' status --porcelain" " M dotfiles/copied"
 assert "mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[0].vcs.head'" "$head"
 assert "mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[0].vcs.branch'" "main"
+
+# mise's own state, cache, and data directories under a root are never captured
+mkdir -p ~/.local/other
+echo hi >~/.local/other/file
+echo eleven >"$MISE_CONFIG_DIR/dotfiles/copied"
+assert_succeed "MISE_DOTFILES_ROOT=$HOME/.local mise bootstrap dotfiles apply --yes"
+tree="$(mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[] | select(.label == "dotfiles") | .tree')"
+assert_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "other/file"
+assert_not_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "state/mise"
+assert_not_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "share/mise"

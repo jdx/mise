@@ -13,8 +13,11 @@ mise bootstrap generations show 12 --files
 
 Generations are what make a bootstrap run a known transition rather than an
 unrecorded mutation: after `mise bootstrap`, `mise bootstrap dotfiles apply`,
-or any other `mise bootstrap <part> apply`, there is a record of the state the
-machine was in before and the state it reached.
+any other `mise bootstrap <part> apply`, or a command that changes managed
+files or config in place (`dotfiles add`, `unapply`, `edit`, `packages use`,
+`import`, brew `tap`), there is a record of the state the machine was in
+before and the state it reached — when recording is enabled and, for the
+content snapshot, when git is available.
 
 ## What is recorded
 

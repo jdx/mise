@@ -149,16 +149,30 @@ pub(crate) fn ensure_store_dir_in(state_dir: &Path) -> Result<()> {
     let store = store_dir_in(state_dir);
     if !store.is_dir() {
         file::create_dir_all(state_dir)?;
-        let mut builder = std::fs::DirBuilder::new();
         #[cfg(unix)]
-        {
+        let created = {
             use std::os::unix::fs::DirBuilderExt;
+            let mut builder = std::fs::DirBuilder::new();
             builder.mode(0o700);
-        }
-        match builder.create(&store) {
+            builder.create(&store)
+        };
+        #[cfg(not(unix))]
+        let created = std::fs::DirBuilder::new().create(&store);
+        match created {
             Ok(()) => {}
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(err) => return Err(err).map_err(|e| eyre!("{}: {e}", display_path(&store))),
+        }
+    }
+    // The directory may predate this version or have been created by
+    // something else: snapshots can hold secrets, so it is private regardless.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&store)?.permissions().mode() & 0o777;
+        if mode != 0o700 {
+            std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| eyre!("{}: cannot make private: {e}", display_path(&store)))?;
         }
     }
     file::create_dir_all(records_dir_in(state_dir))

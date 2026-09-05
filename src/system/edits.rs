@@ -973,6 +973,13 @@ pub(crate) fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> R
     for plan in todo {
         unapply_one(plan.req)?;
     }
+    crate::system::generations::journal::note(format!(
+        "edits: unapplied {}",
+        todo.iter()
+            .map(|plan| format!("{} ({})", plan.req.path_raw, plan.req.describe_op()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
     info!(
         "edits: unapplied {}",
         todo.iter()

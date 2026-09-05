@@ -115,10 +115,12 @@ preflight prevents a missing input from leaving a partially provisioned host.
 17. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
 18. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
-Every mutating run — the full `mise bootstrap` and each `mise bootstrap <part>
-apply` — records a [generation](/bootstrap/generations.html): a snapshot of
-the config directory and dotfiles root before and after, plus a journal of
-what changed. Dry runs record nothing.
+Every mutating run — the full `mise bootstrap`, each `mise bootstrap <part>
+apply`, and the commands that change dotfiles or bootstrap config in place
+(`dotfiles add`, `unapply`, `edit`, `packages use`, `import`, brew `tap`) —
+records a [generation](/bootstrap/generations.html): a snapshot of the config
+directory and dotfiles root before and after, plus a journal of what changed.
+Dry runs record nothing.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
 `accounts`, `plugins`, `packages`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`,
