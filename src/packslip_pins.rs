@@ -221,6 +221,22 @@ pub(crate) fn check_sequence_at(path: &Path, project: &str, sequence: u64) -> Re
     Ok(())
 }
 
+/// An absent supplementary list is allowed only before this machine has
+/// accepted one. Its disappearance must not undo signed withdrawals.
+pub(crate) fn check_missing_list(project: &str) -> Result<()> {
+    check_missing_list_at(&pins_file(), project)
+}
+
+fn check_missing_list_at(path: &Path, project: &str) -> Result<()> {
+    let _lock = locked(path)?;
+    if load(path)?.sequences.contains_key(project) {
+        bail!(
+            "the signed release list of packslip:{project} disappeared; restore the list or explicitly forget this project's packslip pin"
+        );
+    }
+    Ok(())
+}
+
 /// Every pin, by project.
 pub(crate) fn list() -> Result<BTreeMap<String, Pin>> {
     Ok(load(&pins_file())?.pins)
@@ -261,6 +277,18 @@ mod tests {
             provenance: false,
             logged: true,
         }
+    }
+
+    #[test]
+    fn an_accepted_list_cannot_disappear_until_forgotten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        check_missing_list_at(&path, "github.com/o/r").unwrap();
+        check_sequence_at(&path, "github.com/o/r", 0).unwrap();
+        assert!(check_missing_list_at(&path, "github.com/o/r").is_err());
+        check_missing_list_at(&path, "github.com/o/other").unwrap();
+        assert!(forget_at(&path, "github.com/o/r").unwrap());
+        check_missing_list_at(&path, "github.com/o/r").unwrap();
     }
 
     #[test]
