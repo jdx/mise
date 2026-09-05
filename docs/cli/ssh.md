@@ -17,4 +17,8 @@ Open an SSH session, optionally borrowing read-only GitHub access
 - **`--github-relay-read-only`** — Borrow read-only GitHub access for this session only
 - **`--github-relay-repo <OWNER/REPO>`** — Approved GitHub repository; repeat to authorize more repositories
 - **`--github-relay-all-repos`** — Explicitly authorize reads of all repositories accessible locally
+- **`--github-relay-log-requests`** — Log sanitized relay requests on local stderr
+- **`--github-relay-no-log-requests`** — Disable request logging, overriding the saved preference
+- **`--github-relay-log-format <FORMAT>`** — Relay log and summary format: text or jsonl
+- **`--github-relay-max-duration <DURATION>`** — Expire borrowed access after a duration such as 1h (0s: session lifetime)
 - **`-h --help`** — Print help

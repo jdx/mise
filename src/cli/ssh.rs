@@ -24,6 +24,18 @@ pub(crate) struct Ssh {
     /// Explicitly authorize reads of all repositories accessible locally
     #[usage(long)]
     github_relay_all_repos: bool,
+    /// Log sanitized relay requests on local stderr
+    #[usage(long, conflicts = "github_relay_no_log_requests")]
+    github_relay_log_requests: bool,
+    /// Disable request logging, overriding the saved preference
+    #[usage(long)]
+    github_relay_no_log_requests: bool,
+    /// Relay log and summary format: text or jsonl
+    #[usage(long, value_name = "FORMAT")]
+    github_relay_log_format: Option<String>,
+    /// Expire borrowed access after a duration such as 1h (0s: session lifetime)
+    #[usage(long, value_name = "DURATION")]
+    github_relay_max_duration: Option<String>,
     /// Internal session adapter
     #[usage(long, hide = true)]
     relay_session: Option<PathBuf>,
@@ -84,6 +96,13 @@ impl Ssh {
             self.github_relay_read_only,
             &self.github_relay_repo,
             self.github_relay_all_repos,
+        )?;
+        let scope = crate::github_relay::configure(
+            scope,
+            self.github_relay_log_requests,
+            self.github_relay_no_log_requests,
+            self.github_relay_log_format.as_deref(),
+            self.github_relay_max_duration.as_deref(),
         )?;
         if let Some(socket) = self.relay_session {
             if scope.is_some() {
@@ -158,6 +177,9 @@ mod tests {
             "--github-relay-read-only",
             "--github-relay-repo",
             "jdx/mise",
+            "--github-relay-log-requests",
+            "--github-relay-log-format=jsonl",
+            "--github-relay-max-duration=1h",
             "-p",
             "2222",
             "-o",
@@ -173,6 +195,9 @@ mod tests {
         };
         assert_eq!(args.destination.as_deref(), Some("devbox"));
         assert!(args.github_relay_read_only);
+        assert!(args.github_relay_log_requests);
+        assert_eq!(args.github_relay_log_format.as_deref(), Some("jsonl"));
+        assert_eq!(args.github_relay_max_duration.as_deref(), Some("1h"));
         assert_eq!(args.github_relay_repo, ["jdx/mise"]);
         assert_eq!(args.command, ["git", "fetch", "--all"]);
         assert_eq!(args.port, Some(2222));

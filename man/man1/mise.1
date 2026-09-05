@@ -2008,6 +2008,18 @@ Approved GitHub repository; repeat for multiple repositories
 \fB\-\-github\-relay\-all\-repos\fR
 Explicitly authorize all repositories accessible locally
 .TP
+\fB\-\-github\-relay\-log\-requests\fR
+Log sanitized relay requests on local stderr
+.TP
+\fB\-\-github\-relay\-no\-log\-requests\fR
+Disable request logging, overriding the saved preference
+.TP
+\fB\-\-github\-relay\-log\-format\fR \fI<FORMAT>\fR
+Relay log and summary format: text or jsonl
+.TP
+\fB\-\-github\-relay\-max\-duration\fR \fI<DURATION>\fR
+Expire borrowed access after a duration such as 1h (0s: session lifetime)
+.TP
 \fB\-\-all\fR
 Select every configured inventory host
 .TP
@@ -4812,6 +4824,18 @@ Approved GitHub repository; repeat to authorize more repositories
 .TP
 \fB\-\-github\-relay\-all\-repos\fR
 Explicitly authorize reads of all repositories accessible locally
+.TP
+\fB\-\-github\-relay\-log\-requests\fR
+Log sanitized relay requests on local stderr
+.TP
+\fB\-\-github\-relay\-no\-log\-requests\fR
+Disable request logging, overriding the saved preference
+.TP
+\fB\-\-github\-relay\-log\-format\fR \fI<FORMAT>\fR
+Relay log and summary format: text or jsonl
+.TP
+\fB\-\-github\-relay\-max\-duration\fR \fI<DURATION>\fR
+Expire borrowed access after a duration such as 1h (0s: session lifetime)
 .TP
 \fB\-\-relay\-session\fR \fI<RELAY_SESSION>\fR
 Internal session adapter

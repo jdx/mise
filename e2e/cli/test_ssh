@@ -2,6 +2,13 @@
 
 assert_fail "mise ssh devbox --github-relay-read-only"
 assert_fail "mise ssh devbox --github-relay-repo owner/repo"
+assert_fail "mise ssh devbox --github-relay-log-requests"
+assert_fail "mise ssh devbox --github-relay-max-duration 1h"
+assert_fail "mise ssh devbox --github-relay-log-format jsonl"
+assert_fail "mise ssh devbox --github-relay-read-only --github-relay-all-repos --github-relay-log-requests --github-relay-no-log-requests"
+assert_fail "mise ssh devbox --github-relay-read-only --github-relay-all-repos --github-relay-log-format invalid"
+assert_fail "MISE_GITHUB_RELAY_CONCURRENCY=0 mise ssh devbox --github-relay-read-only --github-relay-all-repos"
+assert_fail "MISE_GITHUB_RELAY_REQUEST_TIMEOUT=0s mise ssh devbox --github-relay-read-only --github-relay-all-repos"
 assert_fail "mise ssh devbox --github-relay-read-only --github-relay-all-repos --github-relay-repo owner/repo"
 assert_fail "mise bootstrap remote --host devbox --from-git owner/repo --source ."
 assert_fail "mise bootstrap remote --from-git owner/repo"

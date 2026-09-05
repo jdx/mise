@@ -619,6 +619,18 @@ struct BootstrapRemote {
     /// Explicitly authorize all repositories accessible locally
     #[usage(long)]
     github_relay_all_repos: bool,
+    /// Log sanitized relay requests on local stderr
+    #[usage(long, conflicts = "github_relay_no_log_requests")]
+    github_relay_log_requests: bool,
+    /// Disable request logging, overriding the saved preference
+    #[usage(long)]
+    github_relay_no_log_requests: bool,
+    /// Relay log and summary format: text or jsonl
+    #[usage(long, value_name = "FORMAT")]
+    github_relay_log_format: Option<String>,
+    /// Expire borrowed access after a duration such as 1h (0s: session lifetime)
+    #[usage(long, value_name = "DURATION")]
+    github_relay_max_duration: Option<String>,
     /// Inventory host names from `[bootstrap.remote.hosts]`
     #[usage(value_name = "TARGET")]
     targets: Vec<String>,
@@ -2702,6 +2714,13 @@ impl BootstrapRemote {
             self.github_relay_read_only,
             &self.github_relay_repo,
             self.github_relay_all_repos,
+        )?;
+        let relay = crate::github_relay::configure(
+            relay,
+            self.github_relay_log_requests,
+            self.github_relay_no_log_requests,
+            self.github_relay_log_format.as_deref(),
+            self.github_relay_max_duration.as_deref(),
         )?;
         if relay.is_some() && !cfg!(unix) {
             bail!("GitHub relay requires Linux or macOS");

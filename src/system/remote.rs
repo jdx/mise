@@ -623,7 +623,7 @@ async fn start_relay(
     staging: &str,
     scope: crate::github_relay::Scope,
 ) -> Result<crate::github_relay::unix::Relay> {
-    let relay = crate::github_relay::unix::Relay::start(scope).await?;
+    let relay = crate::github_relay::unix::Relay::start(scope, &session.host.name).await?;
     let control = session
         .control_path
         .as_ref()

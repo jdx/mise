@@ -61,7 +61,7 @@ mise ssh devbox --github-relay-read-only --github-relay-all-repos
 mise ssh devbox -i ~/.ssh/devbox -p 2222 -o ServerAliveInterval=30 -- uname -a
 ```
 
-The same three relay flags work with `mise bootstrap remote`. Enabling the relay
+The same relay flags work with `mise bootstrap remote`. Enabling the relay
 requires either a repository allowlist or explicit all-repository access, not
 both. Credentials are resolved on the initiating machine using mise's existing
 GitHub token resolution; there is no automatic login or new credential store.
@@ -71,8 +71,9 @@ and Git's GitHub HTTPS/SSH transports use session-only adapters. The local broke
 authorizes repository metadata, refs, contents, releases, assets, and smart-HTTP
 clone/fetch. Pushes, API mutations, GraphQL, and other endpoints are denied.
 Only approved GitHub asset redirects are followed, without authentication.
-Requests are limited to 8 MiB, eight concurrent upstream operations, 32 accepted
-connections, and five-minute transfer timeouts; responses are streamed.
+Requests are limited to 8 MiB and 32 accepted connections; responses are streamed.
+The default concurrency is eight requests and the default total request timeout
+is five minutes. Both limits can be configured on the initiating machine.
 
 Borrowed access ends when the session ends, including failures and disconnects.
 No GitHub token or persistent transport rewrite is installed on the target.
@@ -95,6 +96,52 @@ releases, release assets, and tar/zip source archives. Archive and asset redirec
 are restricted to approved GitHub download hosts and never carry your credential.
 Resume requests retain their range headers, and denied downloads fail rather than
 being saved as artifacts.
+
+### Observing and limiting borrowed access
+
+```sh
+mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
+  --github-relay-log-requests --github-relay-max-duration 1h
+
+# Structured relay events for troubleshooting or auditing:
+mise bootstrap remote --host devbox --from-git jdx/dotfiles \
+  --github-relay-read-only --github-relay-repo jdx/dotfiles \
+  --github-relay-log-requests --github-relay-log-format jsonl
+```
+
+Request logs are off by default. Enable them per invocation or save preferences
+in your **local global** mise configuration:
+
+```toml
+[settings.github_relay]
+log_requests = true
+log_format = "text" # or "jsonl"
+max_duration = "1h" # default "0s": until the session ends
+request_timeout = "5m"
+concurrency = 8 # 1-32; excess requests fail closed rather than queue
+```
+
+`--github-relay-no-log-requests` overrides a saved logging preference. The format
+and duration flags also override their respective settings. These preferences
+never enable the relay or authorize repositories: access and scope still require
+explicit flags on every invocation.
+
+Events go to the initiating machine's stderr, not the remote command's stdout.
+They show the method, repository and fixed operation name, status, and time to
+response headers. Approved download redirects are identified by host only. Query
+values, refs, filenames, headers, credentials, bodies, and signed download URLs
+are omitted; rejected paths appear as `unapproved operation`. JSONL applies to
+relay events; other mise diagnostics can still appear on stderr.
+
+Every relay prints a session-end summary, even when request logging is off:
+requests received (excluding heartbeat probes), denied/unavailable requests,
+upstream response bytes received, and up to 128 authorized repositories requested.
+Redirects are separate log events but do not add to the incoming request count.
+
+The duration limit starts when the local relay is created. Expiration immediately
+revokes borrowed access and cancels active transfers; the remote adapter then
+ends its command after detecting failed heartbeat probes. No credentials are
+installed to extend access beyond this limit.
 
 ```toml
 [bootstrap.remote]

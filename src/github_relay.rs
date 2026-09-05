@@ -1,9 +1,12 @@
 //! Session-only GitHub access. Authorization is checked on the initiating machine;
 //! neither the remote transport nor its callers can request a credential.
+use crate::duration;
 use eyre::{Result, bail};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Scope {
+    #[cfg(unix)]
+    options: Options,
     #[cfg(any(unix, test))]
     repositories: std::collections::BTreeSet<String>,
     #[cfg(any(unix, test))]
@@ -32,6 +35,8 @@ impl Scope {
         #[cfg(not(any(unix, test)))]
         let _ = repositories;
         Ok(Some(Self {
+            #[cfg(unix)]
+            options: Options::default(),
             #[cfg(any(unix, test))]
             repositories,
             #[cfg(any(unix, test))]
@@ -43,6 +48,81 @@ impl Scope {
     fn permits(&self, repo: &str) -> bool {
         self.all || self.repositories.contains(&repo.to_ascii_lowercase())
     }
+}
+
+#[derive(Clone, Debug)]
+#[cfg(unix)]
+struct Options {
+    log_requests: bool,
+    jsonl: bool,
+    max_duration: std::time::Duration,
+    request_timeout: std::time::Duration,
+    concurrency: usize,
+}
+
+#[cfg(unix)]
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            log_requests: false,
+            jsonl: false,
+            max_duration: std::time::Duration::ZERO,
+            request_timeout: std::time::Duration::from_secs(300),
+            concurrency: 8,
+        }
+    }
+}
+
+/// Resolve observability and limits only after explicit access authorization.
+pub(crate) fn configure(
+    scope: Option<Scope>,
+    log_requests: bool,
+    no_log_requests: bool,
+    format: Option<&str>,
+    max_duration: Option<&str>,
+) -> Result<Option<Scope>> {
+    let Some(scope) = scope else {
+        if log_requests || no_log_requests || format.is_some() || max_duration.is_some() {
+            bail!("relay options require --github-relay-read-only");
+        }
+        return Ok(None);
+    };
+    let settings = crate::config::Settings::get();
+    let settings = &settings.github_relay;
+    let format = format.unwrap_or(&settings.log_format);
+    if !matches!(format, "text" | "jsonl") {
+        bail!("relay log format must be text or jsonl");
+    }
+    let timeout = duration::parse_duration(&settings.request_timeout)?;
+    if timeout.is_zero() {
+        bail!("relay request timeout must be greater than zero");
+    }
+    if !(1..=32).contains(&settings.concurrency) {
+        bail!("relay concurrency must be between 1 and 32");
+    }
+    let max_duration = duration::parse_duration(max_duration.unwrap_or(&settings.max_duration))?;
+    if std::time::Instant::now().checked_add(timeout).is_none()
+        || std::time::Instant::now()
+            .checked_add(max_duration)
+            .is_none()
+    {
+        bail!("relay duration is too large");
+    }
+    #[cfg(not(unix))]
+    let _ = max_duration;
+    #[cfg(unix)]
+    let scope = {
+        let mut scope = scope;
+        scope.options = Options {
+            log_requests: !no_log_requests && (log_requests || settings.log_requests),
+            jsonl: format == "jsonl",
+            max_duration,
+            request_timeout: timeout,
+            concurrency: settings.concurrency as usize,
+        };
+        scope
+    };
+    Ok(Some(scope))
 }
 
 fn repository(value: &str) -> Result<String> {
@@ -283,8 +363,109 @@ pub(crate) mod unix {
         }
     }
 
+    /// Session-local audit data; never stores credentials, URLs or response bodies.
+    struct Audit {
+        destination: String,
+        options: Options,
+        requests: std::sync::atomic::AtomicU64,
+        denied: std::sync::atomic::AtomicU64,
+        bytes: std::sync::atomic::AtomicU64,
+        repositories: std::sync::Mutex<std::collections::BTreeSet<String>>,
+    }
+
+    impl Audit {
+        fn new(destination: &str, options: Options) -> Self {
+            Self {
+                destination: destination.to_string(),
+                options,
+                requests: Default::default(),
+                denied: Default::default(),
+                bytes: Default::default(),
+                repositories: Default::default(),
+            }
+        }
+
+        fn operation(&self, scope: &Scope, request: &Request) -> String {
+            let method = match request.method().as_str() {
+                "GET" => "GET",
+                "HEAD" => "HEAD",
+                "POST" => "POST",
+                _ => "OTHER",
+            };
+            let Ok(target) = authorize(
+                scope,
+                request.method().as_str(),
+                request.uri().path().strip_prefix('/').unwrap_or_default(),
+                request.uri().query(),
+            ) else {
+                return format!("{method} unapproved operation");
+            };
+            let url = Url::parse(&target.url).expect("authorized URL");
+            let segments: Vec<_> = url.path().trim_start_matches('/').split('/').collect();
+            let offset = usize::from(url.host_str() == Some("api.github.com"));
+            let repository = format!(
+                "{}/{}",
+                segments[offset],
+                segments[offset + 1].trim_end_matches(".git")
+            );
+            let mut repositories = self.repositories.lock().unwrap();
+            if repositories.len() < 128 {
+                repositories.insert(repository.clone());
+            }
+            // Only fixed route names are shown. Refs, filenames, and URL query
+            // values can contain private data unrelated to debugging transport.
+            let route = segments.get(offset + 2).copied().unwrap_or("metadata");
+            format!("{method} {repository}/{route}")
+        }
+
+        fn line(&self, mut event: serde_json::Value) -> String {
+            event["destination"] = self.destination.clone().into();
+            event["timestamp_ms"] = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+                .to_string()
+                .into();
+            if self.options.jsonl {
+                event.to_string()
+            } else {
+                let label = serde_json::to_string(&self.destination).unwrap();
+                match event["event"].as_str() {
+                    Some("request") => format!(
+                        "github-relay [{label}] {} → {} (headers: {}ms)",
+                        event["operation"].as_str().unwrap_or_default(),
+                        event["status"],
+                        event["headers_ms"]
+                    ),
+                    Some("expired") => format!("github-relay [{label}] borrowed access expired"),
+                    Some("summary") => format!(
+                        "github-relay [{label}] {} requests, {} denied/unavailable, {} bytes, repositories: {}",
+                        event["requests"],
+                        event["denied_or_unavailable"],
+                        event["bytes"],
+                        event["repositories"]
+                    ),
+                    _ => format!("github-relay [{label}] {event}"),
+                }
+            }
+        }
+
+        fn emit(&self, event: serde_json::Value) {
+            use std::io::Write;
+            let line = self.line(event);
+            // A closed stderr must never panic or affect the remote command.
+            let _ = writeln!(std::io::stderr().lock(), "{line}");
+        }
+
+        fn summary(&self) {
+            use std::sync::atomic::Ordering::Relaxed;
+            self.emit(serde_json::json!({"event": "summary", "requests": self.requests.load(Relaxed), "denied_or_unavailable": self.denied.load(Relaxed), "bytes": self.bytes.load(Relaxed), "repositories": *self.repositories.lock().unwrap()}));
+        }
+    }
+
     #[derive(Clone)]
     struct Broker {
+        audit: Arc<Audit>,
         scope: Scope,
         client: Client,
         permits: Arc<Semaphore>,
@@ -295,6 +476,8 @@ pub(crate) mod unix {
     }
 
     pub(crate) struct Relay {
+        audit: Arc<Audit>,
+        expiry: Option<AbortTask>,
         task: JoinHandle<()>,
         directory: tempfile::TempDir,
         cancel: CancellationToken,
@@ -303,7 +486,7 @@ pub(crate) mod unix {
         pub(crate) fn socket(&self) -> PathBuf {
             self.directory.path().join("relay.sock")
         }
-        pub(crate) async fn start(scope: Scope) -> Result<Self> {
+        pub(crate) async fn start(scope: Scope, destination: &str) -> Result<Self> {
             let (token, _) = crate::github::resolve_token("github.com").ok_or_else(|| {
                 eyre::eyre!(
                     "no local GitHub credential found; sign in locally with `mise token github`"
@@ -316,16 +499,19 @@ pub(crate) mod unix {
                 .tempdir_in("/tmp")?;
             let listener = UnixListener::bind(directory.path().join("relay.sock"))?;
             let cancel = CancellationToken::new();
+            let audit = Arc::new(Audit::new(destination, scope.options.clone()));
+            let expiry = expiry_task(cancel.clone(), audit.clone());
             let broker = Broker {
-                scope,
+                audit: audit.clone(),
                 client: Client::builder()
                     .no_proxy()
                     .redirect(reqwest::redirect::Policy::none())
-                    .timeout(Duration::from_secs(300))
+                    .timeout(scope.options.request_timeout)
                     .connect_timeout(Duration::from_secs(15))
                     .user_agent("mise-github-relay")
                     .build()?,
-                permits: Arc::new(Semaphore::new(8)),
+                permits: Arc::new(Semaphore::new(scope.options.concurrency)),
+                scope,
                 cancel: cancel.clone(),
                 token: Arc::new(token),
                 #[cfg(test)]
@@ -339,6 +525,8 @@ pub(crate) mod unix {
                 .await;
             });
             Ok(Self {
+                audit,
+                expiry,
                 task,
                 directory,
                 cancel,
@@ -349,24 +537,54 @@ pub(crate) mod unix {
         fn drop(&mut self) {
             self.cancel.cancel();
             self.task.abort();
+            self.expiry.take();
+            self.audit.summary();
         }
     }
 
+    fn expiry_task(cancel: CancellationToken, audit: Arc<Audit>) -> Option<AbortTask> {
+        if audit.options.max_duration.is_zero() {
+            return None;
+        }
+        Some(AbortTask(tokio::spawn(async move {
+            tokio::time::sleep(audit.options.max_duration).await;
+            cancel.cancel();
+            audit.emit(serde_json::json!({"event": "expired"}));
+        })))
+    }
+
     async fn handle(State(broker): State<Broker>, request: Request) -> Response {
-        if request.method() == Method::GET
-            && request.uri().path() == "/_session"
-            && !broker.cancel.is_cancelled()
-        {
+        if request.method() == Method::GET && request.uri().path() == "/_session" {
             return Response::builder()
-                .status(204)
+                .status(if broker.cancel.is_cancelled() {
+                    403
+                } else {
+                    204
+                })
                 .body(Body::empty())
                 .expect("valid response");
         }
+        let started = std::time::Instant::now();
+        let audit = broker.audit.clone();
+        let operation = audit.operation(&broker.scope, &request);
+        audit
+            .requests
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let cancel = broker.cancel.clone();
         let result = tokio::select! {
-            result = tokio::time::timeout(Duration::from_secs(300), forward(broker, request)) => result.unwrap_or_else(|_| Err(eyre::eyre!("request timeout"))),
+            biased;
             _ = cancel.cancelled() => Err(eyre::eyre!("session ended")),
+            result = tokio::time::timeout(audit.options.request_timeout, forward(broker, request)) => result.unwrap_or_else(|_| Err(eyre::eyre!("request timeout"))),
         };
+        let status = result.as_ref().map(|r| r.status().as_u16()).unwrap_or(403);
+        if status >= 400 {
+            audit
+                .denied
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        if audit.options.log_requests && result.is_err() {
+            audit.emit(serde_json::json!({"event": "request", "operation": operation, "status": status, "headers_ms": started.elapsed().as_millis()}));
+        }
         match result {
             Ok(response) => response,
             // Deliberately never serialize upstream errors, URLs or credentials.
@@ -378,6 +596,8 @@ pub(crate) mod unix {
     }
 
     async fn forward(broker: Broker, request: Request) -> Result<Response> {
+        let deadline = tokio::time::Instant::now() + broker.audit.options.request_timeout;
+        let operation = broker.audit.operation(&broker.scope, &request);
         let permit = broker.permits.clone().try_acquire_owned()?;
         let target = authorize(
             &broker.scope,
@@ -422,7 +642,11 @@ pub(crate) mod unix {
         if parts.method == Method::POST {
             req = req.header("content-type", "application/x-git-upload-pack-request");
         }
+        let sent_at = std::time::Instant::now();
         let mut response = req.body(body).send().await?;
+        if broker.audit.options.log_requests {
+            broker.audit.emit(serde_json::json!({"event": "request", "operation": operation, "status": response.status().as_u16(), "headers_ms": sent_at.elapsed().as_millis()}));
+        }
         // Only asset redirects are followed. Preserve resume headers, never credentials.
         for _ in 0..3 {
             if !response.status().is_redirection() {
@@ -439,6 +663,8 @@ pub(crate) mod unix {
             {
                 bail!("unsupported redirect");
             }
+            let redirect_host = url.host_str().unwrap_or_default().to_string();
+            let redirected_at = std::time::Instant::now();
             let mut redirected = broker.client.request(parts.method.clone(), url);
             for name in ["range", "if-range"] {
                 if let Some(value) = parts.headers.get(name) {
@@ -446,6 +672,9 @@ pub(crate) mod unix {
                 }
             }
             response = redirected.send().await?;
+            if broker.audit.options.log_requests {
+                broker.audit.emit(serde_json::json!({"event": "request", "operation": format!("{} {redirect_host}/<download>", parts.method), "status": response.status().as_u16(), "headers_ms": redirected_at.elapsed().as_millis()}));
+            }
         }
         if response.status().is_redirection() {
             bail!("too many redirects");
@@ -464,13 +693,19 @@ pub(crate) mod unix {
             }
         }
         let stream = futures_util::stream::try_unfold(
-            (response, permit, broker.cancel),
-            |(mut response, permit, cancel)| async move {
+            (response, permit, broker.cancel, broker.audit, deadline),
+            |(mut response, permit, cancel, audit, deadline)| async move {
                 let chunk = tokio::select! {
-                    result = response.chunk() => result.map_err(|_| std::io::Error::other("relay transfer failed"))?,
+                    biased;
                     _ = cancel.cancelled() => return Err(std::io::Error::other("session ended")),
+                    result = tokio::time::timeout_at(deadline, response.chunk()) => result.map_err(|_| std::io::Error::other("relay transfer timeout"))?.map_err(|_| std::io::Error::other("relay transfer failed"))?,
                 };
-                Ok(chunk.map(|chunk| (chunk, (response, permit, cancel))))
+                if let Some(chunk) = &chunk {
+                    audit
+                        .bytes
+                        .fetch_add(chunk.len() as u64, std::sync::atomic::Ordering::Relaxed);
+                }
+                Ok(chunk.map(|chunk| (chunk, (response, permit, cancel, audit, deadline))))
             },
         );
         Ok(builder.body(Body::from_stream(stream))?)
@@ -519,7 +754,7 @@ pub(crate) mod unix {
             .unix_socket(socket)
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(300))
+            .read_timeout(Duration::from_secs(300))
             .build()?;
         let permits = Arc::new(Semaphore::new(8));
         let service = Router::new().fallback(move |request: Request| {
@@ -743,7 +978,7 @@ pub(crate) mod unix {
             .unix_socket(socket)
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(300))
+            .read_timeout(Duration::from_secs(300))
             .build()?;
         let mut req = client.request(method, relay_url);
         for name in ["accept", "range", "if-range"] {
@@ -759,6 +994,51 @@ pub(crate) mod unix {
     #[cfg(test)]
     mod tests {
         use super::*;
+        #[test]
+        fn audit_redacts_dynamic_paths_queries_and_denied_requests() {
+            let audit = Audit::new(
+                "devbox",
+                Options {
+                    jsonl: true,
+                    ..Default::default()
+                },
+            );
+            let scope = Scope::from_flags(true, &["jdx/mise".into()], false)
+                .unwrap()
+                .unwrap();
+            for uri in [
+                "/api/repos/jdx/mise/contents/private-secret?ref=query-secret",
+                "/api/repos/other/private-secret?token=query-secret",
+            ] {
+                let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+                let operation = audit.operation(&scope, &request);
+                let line = audit.line(serde_json::json!({"event":"request", "operation":operation, "status":403, "headers_ms":1}));
+                assert!(!line.contains("private-secret"));
+                assert!(!line.contains("query-secret"));
+                let event: serde_json::Value = serde_json::from_str(&line).unwrap();
+                assert_eq!(event["destination"], "devbox");
+            }
+        }
+
+        #[tokio::test]
+        async fn access_duration_expires_and_timer_is_owned() {
+            let audit = Arc::new(Audit::new(
+                "test",
+                Options {
+                    max_duration: Duration::from_millis(10),
+                    ..Default::default()
+                },
+            ));
+            let cancel = CancellationToken::new();
+            let _timer = expiry_task(cancel.clone(), audit.clone());
+            tokio::time::timeout(Duration::from_secs(1), cancel.cancelled())
+                .await
+                .unwrap();
+            let cancel = CancellationToken::new();
+            drop(expiry_task(cancel.clone(), audit));
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            assert!(!cancel.is_cancelled());
+        }
         #[test]
         fn archives_only_redirect_to_the_authorized_repository() {
             for (url, expected) in [
@@ -807,6 +1087,7 @@ pub(crate) mod unix {
                 .create_async()
                 .await;
             let broker = Broker {
+                audit: Arc::new(Audit::new("test", Options::default())),
                 scope: Scope::from_flags(true, &["jdx/mise".into()], false)
                     .unwrap()
                     .unwrap(),
@@ -844,7 +1125,33 @@ pub(crate) mod unix {
             api.assert_async().await;
             git.assert_async().await;
             redirect.assert_async().await;
+            use std::sync::atomic::Ordering::Relaxed;
+            assert_eq!(broker.audit.requests.load(Relaxed), 5);
+            assert_eq!(broker.audit.denied.load(Relaxed), 3);
+            assert_eq!(broker.audit.bytes.load(Relaxed), 11);
+            let permits = broker.permits.clone().acquire_many_owned(8).await.unwrap();
+            let response = handle(
+                State(broker.clone()),
+                Request::builder()
+                    .uri("/api/repos/jdx/mise/releases/latest")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(response.status(), 403);
+            drop(permits);
             broker.cancel.cancel();
+            let requests = broker.audit.requests.load(Relaxed);
+            let heartbeat = handle(
+                State(broker.clone()),
+                Request::builder()
+                    .uri("/_session")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(heartbeat.status(), 403);
+            assert_eq!(broker.audit.requests.load(Relaxed), requests);
             let response = handle(
                 State(broker),
                 Request::builder()
@@ -949,6 +1256,33 @@ mod tests {
             assert_eq!(expand_repository(value).unwrap(), value);
         }
         assert!(expand_repository("not/a/repository").is_err());
+    }
+
+    #[test]
+    fn observability_options_never_enable_access() {
+        assert!(configure(None, false, false, None, None).unwrap().is_none());
+        assert!(configure(None, true, false, None, None).is_err());
+        assert!(configure(None, false, false, Some("jsonl"), None).is_err());
+        assert!(configure(None, false, false, None, Some("1h")).is_err());
+        assert!(configure(Some(scope()), false, false, Some("invalid"), None).is_err());
+        assert!(configure(Some(scope()), false, false, None, Some("-1h")).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cli_observability_overrides() {
+        let scope = configure(Some(scope()), true, false, Some("jsonl"), Some("1h"))
+            .unwrap()
+            .unwrap();
+        assert!(scope.options.log_requests);
+        assert!(scope.options.jsonl);
+        assert_eq!(scope.options.max_duration.as_secs(), 3600);
+        let scope = configure(Some(scope), true, true, Some("text"), Some("0s"))
+            .unwrap()
+            .unwrap();
+        assert!(!scope.options.log_requests);
+        assert!(!scope.options.jsonl);
+        assert!(scope.options.max_duration.is_zero());
     }
 
     #[test]

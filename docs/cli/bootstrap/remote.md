@@ -15,6 +15,10 @@ Bootstrap one or more machines over OpenSSH
 - **`--github-relay-read-only`** — Borrow read-only GitHub access for this invocation
 - **`--github-relay-repo <OWNER/REPO>`** — Approved GitHub repository; repeat for multiple repositories
 - **`--github-relay-all-repos`** — Explicitly authorize all repositories accessible locally
+- **`--github-relay-log-requests`** — Log sanitized relay requests on local stderr
+- **`--github-relay-no-log-requests`** — Disable request logging, overriding the saved preference
+- **`--github-relay-log-format <FORMAT>`** — Relay log and summary format: text or jsonl
+- **`--github-relay-max-duration <DURATION>`** — Expire borrowed access after a duration such as 1h (0s: session lifetime)
 - **`--all`** — Select every configured inventory host
 - **`--bootstrap-command <COMMAND>`** — Explicit remote shell command that installs mise and places it on PATH
 - **`--connect-timeout <CONNECT_TIMEOUT>`** — SSH connection timeout in seconds

@@ -967,6 +967,14 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
             arg "<OWNER/REPO>"
         }
         flag --github-relay-all-repos help="Explicitly authorize all repositories accessible locally"
+        flag --github-relay-log-requests help="Log sanitized relay requests on local stderr" conflicts=--github-relay-no-log-requests
+        flag --github-relay-no-log-requests help="Disable request logging, overriding the saved preference"
+        flag --github-relay-log-format help="Relay log and summary format: text or jsonl" {
+            arg <FORMAT>
+        }
+        flag --github-relay-max-duration help="Expire borrowed access after a duration such as 1h (0s: session lifetime)" {
+            arg <DURATION>
+        }
         flag --all help="Select every configured inventory host"
         flag --bootstrap-command help="Explicit remote shell command that installs mise and places it on PATH" {
             conflicts "--mise-bin" "--remote-mise" "--install-mise"
@@ -3514,6 +3522,14 @@ cmd ssh help="Open an SSH session, optionally borrowing read-only GitHub access"
         arg "<OWNER/REPO>"
     }
     flag --github-relay-all-repos help="Explicitly authorize reads of all repositories accessible locally"
+    flag --github-relay-log-requests help="Log sanitized relay requests on local stderr" conflicts=--github-relay-no-log-requests
+    flag --github-relay-no-log-requests help="Disable request logging, overriding the saved preference"
+    flag --github-relay-log-format help="Relay log and summary format: text or jsonl" {
+        arg <FORMAT>
+    }
+    flag --github-relay-max-duration help="Expire borrowed access after a duration such as 1h (0s: session lifetime)" {
+        arg <DURATION>
+    }
     flag --relay-session help="Internal session adapter" hide=#true {
         arg <RELAY_SESSION>
     }
