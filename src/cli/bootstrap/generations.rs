@@ -341,13 +341,25 @@ impl BootstrapGenerationsDiff {
                 )
             }
             None => {
+                if a.status == GenerationStatus::Pending {
+                    bail!(
+                        "generation {a_id} did not finish; there is no state after the run to compare"
+                    );
+                }
                 let before = a.snapshot.before.clone().ok_or_else(|| no_snapshot(&a))?;
-                let after = final_snapshot(&a)?;
+                let Some(after) = a.snapshot.after.clone() else {
+                    bail!("generation {a_id} has no snapshot after the run to compare");
+                };
                 (before, after, vec![a.clone()], format!("generation {a_id}"))
             }
         };
-        let path = match &self.root {
-            Some(root) => Some(resolve_root_path(&to, root)?),
+        // resolved per side: a root may be an alias or nested in one snapshot
+        // and stand alone in the other
+        let paths = match &self.root {
+            Some(root) => Some((
+                resolve_root_path(&from, root)?,
+                resolve_root_path(&to, root)?,
+            )),
             None => None,
         };
         let Some(shadow) = ShadowRepo::open_or_init_in(&dirs::STATE)? else {
@@ -359,7 +371,7 @@ impl BootstrapGenerationsDiff {
             &DiffOpts {
                 patch: self.patch,
                 color: console::colors_enabled(),
-                path,
+                paths,
             },
         )?;
         if result.changed {
@@ -421,7 +433,8 @@ fn resolve_root_path(snapshot: &Snapshot, spec: &str) -> Result<String> {
         alias.clone()
     } else if let Some(outer) = &root.contained_in {
         match &root.subpath {
-            Some(subpath) => format!("{outer}/{}", subpath.to_string_lossy()),
+            // git tree paths always use `/`
+            Some(subpath) => format!("{outer}/{}", subpath.to_string_lossy().replace('\\', "/")),
             None => outer.clone(),
         }
     } else {

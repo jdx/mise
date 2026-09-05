@@ -75,9 +75,9 @@ pub(crate) struct DiffOpts {
     /// Full patch instead of a per-file summary.
     pub patch: bool,
     pub color: bool,
-    /// Restrict the comparison to `<label>` or `<label>/<path>` inside the
-    /// snapshot trees.
-    pub path: Option<String>,
+    /// Restrict the comparison to a path inside each snapshot tree, resolved
+    /// separately for `a` and `b` since a root may move between them.
+    pub paths: Option<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -258,8 +258,8 @@ impl ShadowRepo {
 
     /// Compares two snapshot trees, from `a` to `b`.
     pub(crate) fn diff(&self, a: &str, b: &str, opts: &DiffOpts) -> Result<DiffResult> {
-        let (from, to) = match &opts.path {
-            Some(path) => (format!("{a}:{path}"), format!("{b}:{path}")),
+        let (from, to) = match &opts.paths {
+            Some((from, to)) => (format!("{a}:{from}"), format!("{b}:{to}")),
             None => (a.to_string(), b.to_string()),
         };
         let output = self.git.output_unchecked(PlumbingCall::new([
@@ -286,9 +286,17 @@ impl ShadowRepo {
             }),
             _ => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                if let Some(path) = &opts.path
-                    && stderr.contains("invalid object name")
+                // `path '…' does not exist in '…'` for a valid tree, `invalid
+                // object name` when the tree itself is unknown
+                if let Some((from, to)) = &opts.paths
+                    && (stderr.contains("does not exist in")
+                        || stderr.contains("invalid object name"))
                 {
+                    let path = if from == to {
+                        from.clone()
+                    } else {
+                        format!("{from} / {to}")
+                    };
                     bail!("{path} is not in both snapshots");
                 }
                 bail!("git diff failed ({}): {}", output.status, stderr.trim())
@@ -798,22 +806,29 @@ mod tests {
                 &b.tree,
                 &DiffOpts {
                     patch: true,
-                    path: Some("config/zshrc".into()),
+                    paths: Some(("config/zshrc".into(), "config/zshrc".into())),
                     ..Default::default()
                 },
             )
             .unwrap();
         let text = String::from_utf8_lossy(&patch.output);
         assert!(text.contains("-one") && text.contains("+two"), "{text}");
-        let missing = repo.diff(
-            &a.tree,
-            &b.tree,
-            &DiffOpts {
-                path: Some("config/nope".into()),
-                ..Default::default()
-            },
+        let missing = repo
+            .diff(
+                &a.tree,
+                &b.tree,
+                &DiffOpts {
+                    paths: Some(("config/nope".into(), "config/nope".into())),
+                    ..Default::default()
+                },
+            )
+            .unwrap_err();
+        assert!(
+            missing
+                .to_string()
+                .contains("config/nope is not in both snapshots"),
+            "{missing}"
         );
-        assert!(missing.is_err());
     }
 
     #[test]
