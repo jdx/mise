@@ -97,6 +97,19 @@ This will disable the [asdf](./dev-tools/backends/asdf.html) backend. See [Alias
 
 You can also specify the full name for a tool using `mise use aqua:1password/cli` if you want to use a specific backend.
 
+### Version-specific backends
+
+A registry backend can declare the first tool version it supports. mise skips
+it for older version requests and uses the next eligible backend. For example,
+`mise use hk@1.58.0` uses Aqua, while `mise use hk@1.58.1` uses Packslip.
+Older prefixes such as `hk@1.57` also use Aqua; `latest` and prefixes spanning
+the boundary keep the normal backend priority.
+
+These boundaries apply to registry shorthands. You can still choose a backend
+explicitly, and matching lockfile entries preserve their recorded backend.
+See [minimum backend versions](/contributing.html#minimum-backend-versions)
+for the registry format.
+
 ### Environment Variable Overrides
 
 You can override the backend for any tool using environment variables with the pattern `MISE_BACKENDS_<TOOL>`. This takes the highest priority and overrides any registry or alias configuration:

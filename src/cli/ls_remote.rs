@@ -181,11 +181,16 @@ impl LsRemote {
     async fn get_plugin(&self, config: &Arc<Config>) -> Result<Option<Arc<dyn Backend>>> {
         match &self.plugin {
             Some(tool_arg) => {
-                let mut backend = tool_arg.ba.backend()?;
+                let ba = self
+                    .prefix
+                    .as_deref()
+                    .and_then(|prefix| tool_arg.ba.with_registry_version(prefix));
+                let ba = ba.as_ref().unwrap_or(&tool_arg.ba);
+                let mut backend = ba.backend()?;
                 let mpr = MultiProgressReport::get();
                 if let Some(plugin) = backend.plugin() {
                     plugin.ensure_installed(config, &mpr, false, false).await?;
-                    backend = tool_arg.ba.backend()?;
+                    backend = ba.backend()?;
                 }
                 Ok(Some(backend))
             }

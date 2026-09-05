@@ -551,6 +551,9 @@ pub(crate) fn alias_backends() -> BackendList {
 pub(crate) fn get(ba: &BackendArg) -> Option<ABackend> {
     // Inline opts are command-scoped, so a short-name cache hit must not drop
     // the caller's BackendArg options.
+    if ba.has_registry_version() {
+        return arg_to_backend(ba.clone());
+    }
     if (ba.explicit_opts().is_some() || ba.has_explicit_backend())
         && let Some(backend) = arg_to_backend(ba.clone())
     {
@@ -4147,6 +4150,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 let mut cm = CacheManagerBuilder::new(
                     self.ba().cache_path.join("remote_versions.msgpack.z"),
                 )
+                .with_cache_key(self.ba().full())
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
                 if let Some(context) = context {
                     cm = cm.with_cache_key(context.to_string());
@@ -5016,10 +5020,39 @@ mod latest_version_tests {
         );
     }
 
-    /// The regression this fixes: two option values that produce different listings shared one
-    /// cache entry, so whichever ran first answered for both. `short` is the same for the two
-    /// (inline opts are stripped from it), so they do share a cache *directory* — only the key
-    /// keeps them apart.
+    #[tokio::test]
+    async fn registry_min_version_partitions_persisted_backend_lists() {
+        let config = Config::get().await.unwrap();
+        let make_backend = |full: &str, version: &str| {
+            let mut backend = LatestBackend::new("test-registry-min-version-cache")
+                .with_remote_versions(vec![VersionInfo {
+                    version: version.to_string(),
+                    ..Default::default()
+                }]);
+            backend.ba = Arc::new(BackendArg::new(
+                "test-registry-min-version-cache".to_string(),
+                Some(full.to_string()),
+            ));
+            backend
+        };
+        let older = make_backend("aqua:example/tool", "1.0.0");
+        let newer = make_backend("packslip:github.com/example/tool", "2.0.0");
+        assert_eq!(older.ba().cache_path, newer.ba().cache_path);
+        let _ = fs::remove_dir_all(&older.ba().cache_path);
+        assert_eq!(
+            older.list_remote_versions(&config).await.unwrap(),
+            ["1.0.0"]
+        );
+        // Separate in-memory entries must also have separate files on disk.
+        assert_eq!(
+            newer.list_remote_versions(&config).await.unwrap(),
+            ["2.0.0"]
+        );
+        assert_eq!(newer.list_calls(), 1);
+    }
+
+    /// Two option values that produce different listings must not share a cache
+    /// entry, even though inline options are stripped from the cache directory.
     #[tokio::test]
     async fn test_remote_versions_cache_is_partitioned_by_listing_options() {
         let config = Config::get().await.unwrap();

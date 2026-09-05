@@ -54,11 +54,15 @@ impl Latest {
             _ => bail!("invalid version: {}", tool.style()),
         };
 
-        let mut backend = tool.ba.backend()?;
+        let ba = prefix
+            .as_deref()
+            .and_then(|prefix| tool.ba.with_registry_version(prefix));
+        let ba = ba.as_ref().unwrap_or(&tool.ba);
+        let mut backend = ba.backend()?;
         let mpr = MultiProgressReport::get();
         if let Some(plugin) = backend.plugin() {
             plugin.ensure_installed(&config, &mpr, false, false).await?;
-            backend = tool.ba.backend()?;
+            backend = ba.backend()?;
         }
         let prefix = match &tool.tvr {
             Some(ToolRequest::Sub {
@@ -72,6 +76,12 @@ impl Latest {
             },
         };
 
+        if let Some(ba) = prefix
+            .as_deref()
+            .and_then(|prefix| ba.with_registry_version(prefix))
+        {
+            backend = ba.backend()?;
+        }
         let latest_version = if installed {
             backend.latest_installed_version(prefix)?
         } else {

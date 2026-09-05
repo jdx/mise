@@ -100,6 +100,10 @@ impl ToolRequest {
                 backend.short
             );
         }
+        let backend = backend
+            .with_registry_version(&s)
+            .map(Arc::new)
+            .unwrap_or(backend);
         let options = backend.resolve_opts_with_config_and_request(None, Some(request_options));
         Ok(match s.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
@@ -206,6 +210,36 @@ impl ToolRequest {
     pub(crate) fn backend(&self) -> Result<ABackend> {
         self.ba().backend()
     }
+    /// Reapply registry defaults after an alias, prefix, or subtraction resolves
+    /// across a backend boundary. Retain every non-registry option's provenance.
+    pub(super) fn with_registry_version(mut self, version: &str) -> Self {
+        let Some(backend) = self.ba().with_registry_version(version) else {
+            return self;
+        };
+        let previous = self.resolved_options().clone();
+        let mut options = ResolvedToolOptions::default();
+        options.apply_overrides(&backend.registry_opts(), ToolOptionSource::Registry);
+        for source in [
+            ToolOptionSource::InstallManifest,
+            ToolOptionSource::BackendAlias,
+            ToolOptionSource::Config,
+            ToolOptionSource::Request,
+            ToolOptionSource::InlineBackendArg,
+        ] {
+            options.apply_overrides(&previous.options_from_sources(&[source]), source);
+        }
+        *self.resolved_options_mut() = options;
+        match &mut self {
+            Self::Version { backend: b, .. }
+            | Self::Prefix { backend: b, .. }
+            | Self::Ref { backend: b, .. }
+            | Self::Sub { backend: b, .. }
+            | Self::Path { backend: b, .. }
+            | Self::System { backend: b, .. } => *b = Arc::new(backend),
+        }
+        self
+    }
+
     pub(crate) fn source(&self) -> &ToolSource {
         match self {
             Self::Version { source, .. }
@@ -816,6 +850,38 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         ))
+    }
+
+    #[tokio::test]
+    async fn registry_min_version_replaces_only_registry_defaults() {
+        use super::*;
+        let _config = Config::get().await.unwrap();
+        let mut request = ToolRequest::new(
+            Arc::new(BackendArg::from("hk")),
+            "latest",
+            ToolSource::Argument,
+        )
+        .unwrap();
+        let old_defaults =
+            crate::toolset::parse_tool_options("identity_prefix=https://example.test/old/");
+        request
+            .resolved_options_mut()
+            .apply_overrides(&old_defaults, ToolOptionSource::Registry);
+        let explicit = crate::toolset::parse_tool_options("variant=custom");
+        request
+            .resolved_options_mut()
+            .apply_overrides(&explicit, ToolOptionSource::Request);
+        let request = request.with_registry_version("1.57.0");
+        assert_eq!(request.ba().full(), "aqua:jdx/hk");
+        assert_eq!(request.version(), "latest");
+        assert_eq!(request.options().get("identity_prefix"), None);
+        assert_eq!(request.options().get("variant"), Some("custom"));
+        assert_eq!(
+            request.option_source("variant"),
+            Some(ToolOptionSource::Request)
+        );
+        let resolved = ToolVersion::new(request, "1.58.1".to_string());
+        assert_eq!(resolved.ba().full(), "packslip:github.com/jdx/hk");
     }
 
     #[test]

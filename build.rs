@@ -199,6 +199,7 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                         r##"RegistryBackend{{
                             full: r#"{backend}"#,
                             platforms: &[],
+                            min_version: None,
                             options: &[],
                         }}"##
                     ));
@@ -215,11 +216,27 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
+                    let min_version = backend
+                        .get("min_version")
+                        .map(|value| {
+                            let value = value
+                                .as_str()
+                                .expect("backend min_version must be a string");
+                            assert_eq!(
+                                version_order, "VersionOrder::Semver",
+                                "[{short}] backend min_version requires version_order = semver"
+                            );
+                            semver::Version::parse(value)
+                                .expect("backend min_version must be a semantic version");
+                            format!("Some({})", raw_string_literal(value))
+                        })
+                        .unwrap_or_else(|| "None".to_string());
                     let backend_options = parse_options(backend.get("options"));
                     backends.push(format!(
                         r##"RegistryBackend{{
                             full: r#"{full}"#,
                             platforms: &[{platforms}],
+                            min_version: {min_version},
                             options: &[{options}],
                         }}"##,
                         platforms = platforms
