@@ -52,6 +52,10 @@ export const sidebar: SidebarItem[] = [
         text: "Packslip Completions and Skills",
         link: "/dev-tools/packslip-resources",
       },
+      {
+        text: "Packslip Verification and Policy",
+        link: "/dev-tools/packslip-verification",
+      },
       { text: "OCI Images (experimental)", link: "/dev-tools/mise-oci" },
       { text: "Deps", link: "/dev-tools/deps" },
       {
