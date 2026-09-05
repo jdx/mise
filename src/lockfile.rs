@@ -2395,8 +2395,9 @@ fn reinsert_deferred_baselines(
 /// some later command rewrites it. Only entries no request still resolves to are
 /// removed, and only when they are exactly the baseline the verified version would have
 /// been checked against. Detection-only provenance (for example an entry another
-/// platform's `mise lock` populated for this one) does not count. Returns the pruned
-/// versions.
+/// platform's `mise lock` populated for this one) does not count, and a baseline that
+/// another requested entry (say a second option variant of the same version) is still
+/// waiting on stays until that entry verifies too. Returns the pruned versions.
 fn prune_verified_provenance_baselines(
     tools: &mut Vec<LockfileTool>,
     requested_versions: &BTreeSet<String>,
@@ -2404,25 +2405,35 @@ fn prune_verified_provenance_baselines(
 ) -> Vec<String> {
     let mut pruned = Vec::new();
     loop {
-        let stale = tools
+        let verified_here = |tool: &LockfileTool| {
+            tool.platforms
+                .get(platform_key)
+                .is_some_and(|info| info.provenance.is_some() && info.provenance_verified)
+        };
+        // The baseline the deferred regression check for `tool` compares against, as
+        // `check_provenance_regression` computes it for a not-yet-verified entry.
+        let baseline_of = |tool: &LockfileTool| {
+            find_provenance_regression_baseline(
+                Some(tools.as_slice()),
+                &tool.version,
+                tool.backend.as_deref().unwrap_or(""),
+                platform_key,
+                None,
+            )
+            .map(|baseline| (baseline.version.clone(), baseline.options.clone()))
+        };
+        let requested = tools
             .iter()
-            .filter(|tool| requested_versions.contains(&tool.version))
-            .filter(|tool| {
-                tool.platforms
-                    .get(platform_key)
-                    .is_some_and(|info| info.provenance.is_some() && info.provenance_verified)
-            })
-            .filter_map(|tool| {
-                find_provenance_regression_baseline(
-                    Some(tools.as_slice()),
-                    &tool.version,
-                    tool.backend.as_deref().unwrap_or(""),
-                    platform_key,
-                    None,
-                )
-            })
-            .find(|baseline| !requested_versions.contains(&baseline.version))
-            .map(|baseline| (baseline.version.clone(), baseline.options.clone()));
+            .filter(|tool| requested_versions.contains(&tool.version));
+        let still_needed: HashSet<LockfileToolKey> = requested
+            .clone()
+            .filter(|tool| !verified_here(tool))
+            .filter_map(baseline_of)
+            .collect();
+        let stale = requested
+            .filter(|tool| verified_here(tool))
+            .filter_map(baseline_of)
+            .find(|key| !requested_versions.contains(&key.0) && !still_needed.contains(key));
         let Some((version, options)) = stale else {
             return pruned;
         };
@@ -5052,6 +5063,39 @@ options = { exe = "rg" }
         let mut tools = vec![detected_only, verified_github_tool("0.11.0", &platform)];
         assert!(prune_verified_provenance_baselines(&mut tools, &requested, &platform).is_empty());
         assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.11.0"]);
+
+        // Two option variants of the requested version, only one verified: the other
+        // still relies on the baseline for its deferred check.
+        let mut musl_variant = basic_tool("0.12.0", "github:owner/repo");
+        musl_variant
+            .options
+            .insert("flavor".to_string(), "musl".to_string());
+        let mut tools = vec![
+            verified_github_tool("0.12.0", &platform),
+            musl_variant,
+            verified_github_tool("0.11.0", &platform),
+        ];
+        assert!(prune_verified_provenance_baselines(&mut tools, &requested, &platform).is_empty());
+        assert_eq!(
+            lockfile_tool_versions(&tools),
+            vec!["0.12.0", "0.12.0", "0.11.0"]
+        );
+
+        // Once that variant verifies as well, the baseline has served both and goes.
+        let mut musl_variant = verified_github_tool("0.12.0", &platform);
+        musl_variant
+            .options
+            .insert("flavor".to_string(), "musl".to_string());
+        let mut tools = vec![
+            verified_github_tool("0.12.0", &platform),
+            musl_variant,
+            verified_github_tool("0.11.0", &platform),
+        ];
+        assert_eq!(
+            prune_verified_provenance_baselines(&mut tools, &requested, &platform),
+            vec!["0.11.0".to_string()]
+        );
+        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.12.0"]);
 
         // Both versions are requested (multi-version config): neither is a baseline.
         let both: BTreeSet<String> = ["0.11.0".to_string(), "0.12.0".to_string()].into();
