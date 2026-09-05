@@ -790,7 +790,6 @@ impl PackslipBackend {
             crate::toolset::ToolSource::Unknown,
         )?;
         let tv = ToolVersion::new(request, version.to_string());
-        let vendor = self.locate_bundle(project, &tv, pin, opts).await?;
         let stamp = match stamps {
             Some(stamps) => match stamps.stamp(version) {
                 Some(stamp) => Some(stamp),
@@ -798,17 +797,31 @@ impl PackslipBackend {
             },
             None => None,
         };
-        let url = stamp
-            .map(|s| s.entry.packslip.as_str())
-            .unwrap_or(&vendor.url);
+        // The same reach `install` makes, and for the same reason: with a
+        // stamp in hand the manifest is already named, so the vendor is asked
+        // only for what the vendor decides. Going through `locate_bundle`
+        // would demand the original release asset too, and refuse a version
+        // `install` accepts.
+        let (url, vendor_digest) = match stamp {
+            Some(stamp) => (
+                stamp.entry.packslip.clone(),
+                self.vendor_entry(project, &tv, pin, opts)
+                    .await?
+                    .and_then(|vendor| vendor.digest),
+            ),
+            None => {
+                let vendor = self.locate_bundle(project, &tv, pin, opts).await?;
+                (vendor.url, vendor.digest)
+            }
+        };
+        let url = url.as_str();
         let text = HTTP_FETCH
             .get_text_request(url)
             .headers(&headers_for(url)?)
             .send()
             .await?;
         let actual = hex::encode(Sha256::digest(text.as_bytes()));
-        for expected in vendor
-            .digest
+        for expected in vendor_digest
             .iter()
             .chain(stamp.and_then(|s| s.digest.as_ref()))
         {
