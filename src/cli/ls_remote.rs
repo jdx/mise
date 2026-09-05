@@ -122,7 +122,15 @@ impl LsRemote {
             _ => self.prefix.clone(),
         };
         let prefix = match prefix {
-            Some(prefix) => Some(config.resolve_alias(&plugin, &prefix).await?),
+            Some(prefix) => {
+                let prefix = config.resolve_alias(&plugin, &prefix).await?;
+                Some(
+                    prefix
+                        .strip_prefix("prefix:")
+                        .unwrap_or(&prefix)
+                        .to_string(),
+                )
+            }
             None => None,
         };
         if let Some(ba) = prefix

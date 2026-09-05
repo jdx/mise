@@ -38,10 +38,12 @@ assert_fail_contains "MISE_DISABLE_BACKENDS=aqua mise latest hk@1.57" "none of i
 cat >>mise.toml <<'TOML'
 [tool_alias.hk.versions]
 old = "1.57.0"
+old_prefix = "prefix:1.57"
 TOML
 assert_contains "mise exec hk@old -- hk --version" "hk 1.57.0"
 assert "mise latest hk@old" "1.57.0"
 assert_contains "mise ls-remote hk@old" "1.57.0"
+assert_contains "mise ls-remote hk@old_prefix" "1.57.0"
 
 # Explicit backends remain explicit; no fallback after a verification error.
 assert_fail_contains "mise install --force packslip:github.com/jdx/hk@1.57.0" "no release"
