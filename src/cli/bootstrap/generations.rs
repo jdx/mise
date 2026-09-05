@@ -2,6 +2,7 @@ use eyre::{Result, bail};
 
 use crate::dirs;
 use crate::file::display_path;
+use crate::system::generations::journal;
 use crate::system::generations::shadow::{DiffOpts, ShadowRepo};
 use crate::system::generations::store::{self, Generation, GenerationStatus, Snapshot};
 use crate::ui::table::MiseTable;
@@ -274,8 +275,8 @@ impl BootstrapGenerationsShow {
         if !g.journal.is_empty() {
             miseprintln!("");
             miseprintln!("Journal:");
-            for entry in &g.journal {
-                miseprintln!("  - {}", entry.describe());
+            for line in journal::render(&g.journal) {
+                miseprintln!("  - {line}");
             }
         }
 
@@ -382,8 +383,8 @@ impl BootstrapGenerationsDiff {
         if !self.no_journal {
             for generation in covered.iter().filter(|g| !g.journal.is_empty()) {
                 miseprintln!("Journal (generation {}):", generation.id);
-                for entry in &generation.journal {
-                    miseprintln!("  - {}", entry.describe());
+                for line in journal::render(&generation.journal) {
+                    miseprintln!("  - {line}");
                 }
             }
         }

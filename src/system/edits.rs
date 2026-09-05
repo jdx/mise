@@ -34,6 +34,7 @@ use crate::config::{Config, ConfigMap};
 use crate::file;
 use crate::path::PathExt;
 use crate::system::files::FileState;
+use crate::system::generations::journal;
 use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
 
@@ -560,6 +561,8 @@ pub(crate) struct ApplyOpts {
     pub dry_run: bool,
     pub verbose: bool,
     pub yes: bool,
+    /// bootstrap part these edits belong to, for the generation journal
+    pub part: &'static str,
 }
 
 /// Apply all edits that aren't already in the desired state. Edits never
@@ -685,14 +688,15 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
         }
     }
     for (req, desired) in &todo {
+        let pending = journal::begin_changes(opts.part, &req.path_raw, [req.path.clone()]);
         apply_one(req, desired.as_deref())?;
+        journal::commit_changes(pending);
     }
     let applied = todo
         .iter()
         .map(|(r, _)| format!("{} ({})", r.path_raw, r.describe_op()))
         .collect::<Vec<_>>()
         .join(", ");
-    crate::system::generations::journal::note(format!("edits: applied {applied}"));
     info!("edits: applied {applied}");
     Ok(true)
 }
@@ -971,7 +975,10 @@ pub(crate) fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> R
         }
     }
     for plan in todo {
+        let pending =
+            journal::begin_changes("dotfiles", &plan.req.path_raw, [plan.req.path.clone()]);
         unapply_one(plan.req)?;
+        journal::commit_changes(pending);
     }
     crate::system::generations::journal::note(format!(
         "edits: unapplied {}",

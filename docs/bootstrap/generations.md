@@ -22,14 +22,14 @@ content snapshot, when git is available.
 
 ## What is recorded
 
-| Field      | Contents                                                                                           |
-| ---------- | -------------------------------------------------------------------------------------------------- |
-| `command`  | The mise command line that ran, such as `bootstrap dotfiles apply --yes`                           |
-| `snapshot` | Content snapshots of the config directory and `dotfiles.root` before and after the run             |
-| `lockfile` | The global `mise.lock` (its hash, and its bytes inside the snapshot)                               |
-| `journal`  | Entries describing what changed. Hook commands and the `bootstrap` task are noted as not journaled |
-| `summary`  | The bootstrap parts the run covered                                                                |
-| `status`   | `completed`, `failed`, or `pending` when the run did not finish                                    |
+| Field      | Contents                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------ |
+| `command`  | The mise command line that ran, such as `bootstrap dotfiles apply --yes`                   |
+| `snapshot` | Content snapshots of the config directory and `dotfiles.root` before and after the run     |
+| `lockfile` | The global `mise.lock` (its hash, and its bytes inside the snapshot)                       |
+| `journal`  | Every path the run touched, with what was there before and what it left behind (see below) |
+| `summary`  | The bootstrap parts the run covered                                                        |
+| `status`   | `completed`, `failed`, or `pending` when the run did not finish                            |
 
 The snapshot covers two roots:
 
@@ -52,6 +52,21 @@ with more than 100,000 files or 1 GiB is skipped with a warning. A git
 repository nested inside a root (a plugin checkout, say) is recorded as a
 reference to its commit, not by content.
 
+## The journal
+
+Before a dotfile apply, unapply, `add`, or edit touches a path, the run
+records a `path_changed` entry holding the path's prior state: its content
+and mode for a file, its destination for a symlink, its files for a directory
+replaced with `--force`, or `missing`. After the mutation a `committed` entry
+records the state it left behind. Prior content up to 64 KiB is embedded in
+the record; larger content goes to `$MISE_STATE_DIR/bootstrap/blobs/` by
+hash; files over 8 MiB and directories over 256 MiB are noted as not
+captured. `symlink-each` entries journal every link they create or remove
+plus their ownership state file. An entry without a matching `committed`
+means the run died mid-change. Hook commands and the `bootstrap` task are
+noted as not journaled. `mise bootstrap generations show` renders each
+entry as `part: item: path <before> -> <after>`.
+
 A run that changes nothing and records nothing in its journal leaves no
 generation behind, so a daily `mise bootstrap` on a converged machine does not
 accumulate entries. Dry runs never record.
@@ -61,6 +76,7 @@ accumulate entries. Dry runs never record.
 ```text
 $MISE_STATE_DIR/bootstrap/
 ├── generations.git/          bare git repository holding every snapshot
+├── blobs/                    prior file content over 64 KiB, by sha256
 └── generations/
     ├── 000041.json
     └── 000042.json

@@ -191,6 +191,7 @@ async fn apply_target(target: &str) -> Result<()> {
     }
     if !edits.is_empty() {
         let opts = system::edits::ApplyOpts {
+            part: "dotfiles",
             dry_run: false,
             verbose: false,
             yes: true,

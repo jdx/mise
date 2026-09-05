@@ -85,6 +85,7 @@ impl DotfilesApply {
         }
         if !edits.is_empty() {
             let opts = system::edits::ApplyOpts {
+                part: "dotfiles",
                 dry_run: self.dry_run,
                 verbose: Settings::get().verbose,
                 yes: self.yes,
