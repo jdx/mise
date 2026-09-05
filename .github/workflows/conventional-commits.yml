@@ -1,0 +1,27 @@
+name: conventional-commits
+
+on: # zizmor: ignore[dangerous-triggers] reads only the PR title and executes no untrusted code
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check pull request title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(chore|ci|docs|feat|fix|perf|refactor|registry|revert|security|style|test)(\([[:alnum:]][[:alnum:]./_-]*(, ?[[:alnum:]][[:alnum:]./_-]*)*\))?!?: [[:lower:]](.*[[:graph:]])?$'
+          if [[ ! "$PR_TITLE" =~ $pattern || "$PR_TITLE" =~ ^registry\( ]]; then
+            echo "::error title=Invalid pull request title::The title does not match the required format."
+            printf 'Received title: %q\n' "$PR_TITLE"
+            echo "Use: <type>[optional scope][optional !]: <description starting lowercase>"
+            exit 1
+          fi

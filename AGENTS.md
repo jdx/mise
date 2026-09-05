@@ -171,9 +171,10 @@ Mise is a Rust CLI tool that manages development environments, tools, tasks, and
 ## Development Guidelines
 
 ### Conventional Commits (REQUIRED)
-All commit messages and PR titles MUST follow conventional commit format:
+PR titles MUST follow conventional commit format. Intermediate commit subjects
+SHOULD use the same format:
 
-**Format:** `<type>(<scope>): <description>`
+**Format:** `<type>[optional scope][optional !]: <description>`
 
 **Types:**
 - `feat:` - New features
@@ -185,7 +186,9 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `test:` - Testing changes
 - `chore:` - Maintenance tasks, releases, dependency updates, CI/infrastructure changes
 - `security:` - Security-related changes
-- `registry:` - Any changes to `registry/` (no scope needed, use for both new tools and fixes)
+- `registry:` - Any changes to `registry/` (do not add a scope)
+- `ci:` - CI and automation changes
+- `revert:` - Reverting a previous change
 
 **Scopes:**
 - For command-specific changes, use the command name: `install`, `activate`, `use`, `exec`, etc.
@@ -193,7 +196,7 @@ All commit messages and PR titles MUST follow conventional commit format:
 - Use `task` (not `run`) for task-related changes, even if the code lives in `src/cli/run.rs` or `src/cmd.rs`
 
 **Description Style:**
-- Use lowercase after the colon
+- Start the description with a lowercase character
 - Use imperative mood ("add feature" not "added feature")
 - Keep it concise but descriptive
 
@@ -206,6 +209,11 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `chore: release 2026.1.6`
 - `chore(ci): add FORGEJO_TOKEN for API authentication`
 - `registry: add miller`
+
+CI validates the pull request title and re-runs when it is edited. Intermediate
+commit subjects are not checked because pull requests are squash-merged. CI
+mechanically checks the allowed type, syntax, and lowercase-leading description;
+imperative mood and breaking-change details remain review rules.
 
 ### Pre-commit Process
 1. Run `mise run lint-fix` and `git add` any lint fixes before committing

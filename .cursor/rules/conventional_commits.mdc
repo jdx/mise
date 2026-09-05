@@ -5,11 +5,12 @@ description: how to write commit and PR titles
 
 ## Conventional Commits (REQUIRED)
 
-All commit messages and PR titles MUST follow conventional commit format:
+PR titles MUST follow conventional commit format. Intermediate commit subjects
+SHOULD use the same format:
 
 ### Format
 ```
-<type>(<scope>): <description>
+<type>[optional scope][optional !]: <description>
 ```
 
 ### Types
@@ -21,6 +22,8 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `perf:` - Performance improvements
 - `test:` - Testing changes
 - `chore:` - Maintenance tasks, releases, dependency updates, CI/infrastructure
+- `ci:` - CI and automation changes
+- `revert:` - Revert a previous change
 - `security:` - Security-related changes
 - `registry:` - Any changes to `registry/` (no extra scope)
 
@@ -43,4 +46,4 @@ Command names (`install`, `activate`, `use`, `exec`, …) or subsystems:
 Use `task` (not `run`) for task-related changes, even if the code lives in
 `src/cli/run.rs` or `src/cmd.rs`.
 
-Description: lowercase after the colon, imperative mood, concise.
+Description: start with a lowercase character, use imperative mood, and keep it concise.
