@@ -52,7 +52,67 @@ case "$1 $2" in
 		toolchain="$toolchain-$host"
 		toolchain_exists=false
 		[[ -d "$MISE_RUSTUP_HOME/toolchains/$toolchain" ]] && toolchain_exists=true
-		mkdir -p "$MISE_RUSTUP_HOME/toolchains/$toolchain"
+		mkdir -p "$MISE_RUSTUP_HOME/toolchains/$toolchain/lib/rustlib"
+		cat >"$MISE_RUSTUP_HOME/toolchains/$toolchain/lib/rustlib/multirust-channel-manifest.toml" <<'MANIFEST'
+[renames.clippy]
+to = "clippy-preview"
+
+[renames.miri]
+to = "miri-preview"
+
+[renames.rust-analyzer]
+to = "rust-analyzer-preview"
+
+[renames.rustfmt]
+to = "rustfmt-preview"
+
+[profiles]
+minimal = ["rustc", "cargo", "rust-std"]
+default = ["rustc", "cargo", "rust-std", "rust-docs", "rustfmt-preview", "clippy-preview"]
+complete = ["rustc", "cargo", "rust-std", "rust-docs", "rustfmt-preview", "clippy-preview", "rust-analyzer-preview", "rust-src", "miri-preview"]
+
+[pkg.rust.target.x86_64-unknown-linux-gnu]
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.components]]
+pkg = "rustc"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.components]]
+pkg = "cargo"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.components]]
+pkg = "rust-std"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.components]]
+pkg = "rust-docs"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.extensions]]
+pkg = "rust-std"
+target = "wasm32-unknown-unknown"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.extensions]]
+pkg = "rustfmt-preview"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.extensions]]
+pkg = "clippy-preview"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.extensions]]
+pkg = "rust-analyzer-preview"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.extensions]]
+pkg = "rust-src"
+target = "*"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.extensions]]
+pkg = "miri-preview"
+target = "x86_64-unknown-linux-gnu"
+MANIFEST
 		profile=""
 		while [[ $# -gt 0 ]]; do
 			case "$1" in
@@ -166,17 +226,45 @@ assert_contains "cat '$MISE_CARGO_HOME/components'" "rust-std-x86_64-unknown-lin
 
 cat >mise.toml <<EOF
 [tools]
+rust = { version = "1.81.0", profile = "complete" }
+EOF
+
+printf '%s\n' \
+  cargo-x86_64-unknown-linux-gnu \
+  clippy-x86_64-unknown-linux-gnu \
+  miri-x86_64-unknown-linux-gnu \
+  rust-analyzer-x86_64-unknown-linux-gnu \
+  rust-docs-x86_64-unknown-linux-gnu \
+  rust-src \
+  rust-std-x86_64-unknown-linux-gnu \
+  rustc-x86_64-unknown-linux-gnu \
+  rustfmt-x86_64-unknown-linux-gnu >"$MISE_CARGO_HOME/components"
+sed -i '/^miri-/d' "$MISE_CARGO_HOME/components"
+assert_hook_env_does_not_call_rustup
+assert_fail_contains "mise install rust --dry-run-code 2>&1" "would install"
+mise install
+assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "7"
+assert_contains "cat '$MISE_CARGO_HOME/components'" "miri-x86_64-unknown-linux-gnu"
+
+manifest="$MISE_RUSTUP_HOME/toolchains/1.81.0-x86_64-unknown-linux-gnu/lib/rustlib/multirust-channel-manifest.toml"
+cp "$manifest" "$manifest.valid"
+echo 'not valid toml = [' >"$manifest"
+assert_fail_contains "mise install rust --dry-run-code 2>&1" "installed manifest is unusable"
+mv "$manifest.valid" "$manifest"
+
+cat >mise.toml <<EOF
+[tools]
 rust = { version = "1.81.0", components = ["rustfmt", "rust-src"], targets = ["wasm32-unknown-unknown"] }
 EOF
 
 assert_fail_contains "mise install rust --dry-run-code 2>&1" "would install"
 
 mise exec -- rustc -V
-assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "7"
+assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "8"
 assert_contains "cat '$MISE_CARGO_HOME/components'" "rustfmt"
 assert_contains "cat '$MISE_CARGO_HOME/components'" "rust-src"
 assert_contains "cat '$MISE_CARGO_HOME/targets'" "wasm32-unknown-unknown"
 
 mise install
-assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "7"
+assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "8"
 assert_contains "mise install rust --dry-run-code 2>&1" "already installed"
