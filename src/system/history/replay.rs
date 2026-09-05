@@ -377,7 +377,8 @@ async fn execute(
             conflicts.len()
         );
     }
-    if !steps.iter().any(|step| step.action.mutates()) {
+    let restores = exec.restore_dirs.iter().filter(|dir| !dir.is_dir()).count();
+    if !steps.iter().any(|step| step.action.mutates()) && restores == 0 {
         info!("history: nothing to do");
         return Ok(());
     }
@@ -527,6 +528,19 @@ async fn apply_steps(
             );
         }
         let was_directory = step.path.is_dir() && !step.path.is_symlink();
+        if was_directory && !matches!(&step.action, Action::Write { mode, .. } if mode == "040000")
+        {
+            // replacing or removing a directory removes everything inside
+            // it; every file there must be a step of this plan, or it
+            // appeared after protection
+            if let Some(stray) = unknown_file_in(&step.path, steps)? {
+                bail!(
+                    "{} appeared after {} was protected; nothing more was changed",
+                    display_path(&stray),
+                    display_path(&step.path)
+                );
+            }
+        }
         let pending =
             journal::begin_changes("history", &display_path(&step.path), [step.path.clone()])?;
         match &step.action {
@@ -545,14 +559,39 @@ async fn apply_steps(
         });
     }
     for dir in &exec.restore_dirs {
-        if !dir.exists() && !dir.is_symlink() {
-            file::create_dir_all(dir)?;
+        if dir.is_dir() && !dir.is_symlink() {
+            continue;
+        }
+        if dir.exists() || dir.is_symlink() {
+            bail!(
+                "{} cannot be recreated as a directory: something else is there now; nothing more was changed",
+                display_path(dir)
+            );
+        }
+        file::create_dir_all(dir)?;
+        if !touched.contains(dir) {
             touched.push(dir.clone());
             let affected = display_path(dir);
             scope.with_operation(|op| op.affected.push(affected.clone()));
         }
     }
     Ok(touched)
+}
+
+/// A file or link inside `dir` that no step of the plan accounts for.
+fn unknown_file_in(dir: &Path, steps: &[Step]) -> Result<Option<PathBuf>> {
+    let known: BTreeSet<&Path> = steps.iter().map(|step| step.path.as_path()).collect();
+    for entry in walkdir::WalkDir::new(dir).min_depth(1).follow_links(false) {
+        let entry = entry?;
+        if entry.file_type().is_dir() {
+            continue;
+        }
+        let path = normalize(entry.path());
+        if !known.contains(path.as_path()) {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
 }
 
 /// What is on disk at `path` right now, as the (mode, object id) the
@@ -567,19 +606,24 @@ fn current_object(repo: &HistoryRepo, path: &Path) -> Result<Option<(String, Str
         return Ok(Some(("120000".into(), oid)));
     }
     if meta.is_dir() {
-        return Ok(Some(("040000".into(), String::new())));
+        // an empty directory is invisible to the sample; one with files is
+        // marked so a directory that appeared after protection is noticed
+        let empty = std::fs::read_dir(path)?.next().is_none();
+        let marker = if empty { "" } else { "nonempty" };
+        return Ok(Some(("040000".into(), marker.into())));
     }
     let oid = repo.hash_blob(&std::fs::read(path)?)?;
     Ok(Some(("100644".into(), oid)))
 }
 
 /// Same kind and content; a directory's tree id is not compared because its
-/// files are verified as their own steps.
+/// files are verified as their own steps (and checked again before the
+/// directory is replaced).
 fn same_object(expected: &Option<(String, String)>, current: &Option<(String, String)>) -> bool {
     match (expected, current) {
         (None, None) => true,
         // an empty directory is invisible to the sample, as it is to the plan
-        (None, Some((cmode, _))) if cmode == "040000" => true,
+        (None, Some((cmode, coid))) if cmode == "040000" && coid.is_empty() => true,
         (Some((emode, eoid)), Some((cmode, coid))) => {
             kind_of(emode) == kind_of(cmode) && (emode == "040000" || eoid == coid)
         }

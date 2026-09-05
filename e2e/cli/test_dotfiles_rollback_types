@@ -63,3 +63,17 @@ assert "cat ~/.config/hypr/monitors.lua" "m1"
 assert "cat ~/.config/hypr/bindings.lua" "b1"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.sources | length'" "2"
 assert "mise bootstrap dotfiles history show latest | grep -c 'Source:'" "2"
+
+# recreating an empty directory is a change of its own: with the file the
+# rollback wrote already gone, undo still restores the directory
+echo 'was a file' >~/.config/hypr/empty2
+assert_succeed "mise bootstrap dotfiles save"
+file2_id="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+rm ~/.config/hypr/empty2
+mkdir ~/.config/hypr/empty2
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/empty2 --to $file2_id --yes --force"
+rm ~/.config/hypr/empty2
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "test -d ~/.config/hypr/empty2 && echo dir" "dir"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.affected | length'" "1"
+rmdir ~/.config/hypr/empty2
