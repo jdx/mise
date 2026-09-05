@@ -26,6 +26,7 @@ pub(crate) enum BackendType {
     Gitlab,
     Go,
     Npm,
+    Packslip,
     Pipx,
     Pkgx,
     Spm,
@@ -71,6 +72,7 @@ impl BackendType {
             "gitlab" => BackendType::Gitlab,
             "go" => BackendType::Go,
             "npm" => BackendType::Npm,
+            "packslip" => BackendType::Packslip,
             "pipx" => BackendType::Pipx,
             "pkgx" => BackendType::Pkgx,
             "spm" => BackendType::Spm,
@@ -84,9 +86,10 @@ impl BackendType {
 
     /// Returns true if this backend is still gated behind experimental mode.
     pub(crate) fn is_experimental(&self) -> bool {
-        use super::{dotnet, pkgx, s3, spm};
+        use super::{dotnet, packslip, pkgx, s3, spm};
         match self {
             BackendType::Dotnet => dotnet::EXPERIMENTAL,
+            BackendType::Packslip => packslip::EXPERIMENTAL,
             BackendType::Pkgx => pkgx::EXPERIMENTAL,
             BackendType::S3 => s3::EXPERIMENTAL,
             BackendType::Spm => spm::EXPERIMENTAL,

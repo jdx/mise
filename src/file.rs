@@ -1945,7 +1945,7 @@ pub(crate) fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
 /// concurrent tasks (progress bars, downloads, other installs) keep running. Outside a runtime, or
 /// on a current-thread runtime (e.g. `#[tokio::test]`), `block_in_place` would panic, so fall back
 /// to running the closure inline.
-fn run_blocking<T>(f: impl FnOnce() -> T) -> T {
+pub(crate) fn run_blocking<T>(f: impl FnOnce() -> T) -> T {
     match tokio::runtime::Handle::try_current() {
         Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
             tokio::task::block_in_place(f)

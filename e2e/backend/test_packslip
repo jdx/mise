@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# The packslip backend installs a release from its vendor's signed manifest.
+# jdx/packslip publishes one for its own releases, signed keylessly by its
+# release workflow, which is the identity the project name pins.
+
+# Every release carrying a packslip is recent; do not let the default
+# minimum release age hide them all. The backend is experimental.
+export MISE_MINIMUM_RELEASE_AGE=0
+export MISE_EXPERIMENTAL=1
+
+# Without the experimental setting the backend refuses to do anything.
+assert_fail_contains "env -u MISE_EXPERIMENTAL mise ls-remote packslip:github.com/jdx/packslip" "experimental"
+
+assert_contains "mise ls-remote packslip:github.com/jdx/packslip" "0.2.0"
+
+mise use packslip:github.com/jdx/packslip@0.2.0
+assert_contains "$MISE_DATA_DIR/shims/packslip version" "packslip 0.2.0"
+
+# github.com is implied for owner/repo.
+assert_contains "mise x packslip:jdx/packslip@0.2.0 -- packslip version" "packslip 0.2.0"
+
+# The verified statement is kept beside the install, and the lockfile
+# entry carries the URL and digest the statement signed.
+install_path="$(mise where packslip:github.com/jdx/packslip@0.2.0)"
+assert_contains "cat $install_path/.mise-packslip.json" '"project": "github.com/jdx/packslip"'
+assert_contains "mise tool packslip:github.com/jdx/packslip" "packslip"
+
+# A release that carries no packslip is refused rather than guessed at.
+assert_fail_contains "mise install packslip:jdx/mise-test-fixtures@1.0.0" "no release"

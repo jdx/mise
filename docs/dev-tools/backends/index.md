@@ -20,6 +20,7 @@ Below is a list of the available backends in mise:
 - [go](/dev-tools/backends/go)
 - [http](/dev-tools/backends/http)
 - [npm](/dev-tools/backends/npm)
+- [packslip](/dev-tools/backends/packslip) <Badge type="warning" text="experimental" />
 - [pipx](/dev-tools/backends/pipx)
 - [pkgx](/dev-tools/backends/pkgx) <Badge type="warning" text="experimental" />
 - [s3](/dev-tools/backends/s3)
