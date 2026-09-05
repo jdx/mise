@@ -1057,7 +1057,7 @@ async fn run_resource_command(
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .with_timeout(timeout)
-        .read()
+        .read_isolated(4 * 1024 * 1024)
         .await?;
     if output.trim().is_empty() {
         bail!("resource command produced no output");
