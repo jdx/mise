@@ -22,6 +22,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         url = urllib.parse.urlsplit(self.path)
         if self.command == "GET" and url.path == "/_session":
             self.send_response(204)
+            self.send_header("x-mise-relay-timeout", '{"secs":600,"nanos":0}')
             self.end_headers()
             return
         if self.headers.get("Authorization"):

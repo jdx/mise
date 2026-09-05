@@ -46,6 +46,14 @@ pub(crate) fn validate_origin(origin: &str) -> Result<()> {
         bail!("invalid repository origin");
     }
     if let Ok(url) = url::Url::parse(origin)
+        && origin.contains("://")
+        && matches!(url.scheme(), "http" | "git")
+    {
+        bail!(
+            "remote bootstrap requires an encrypted repository transport (HTTPS or SSH) or a local path"
+        );
+    }
+    if let Ok(url) = url::Url::parse(origin)
         && (url.password().is_some()
             || (url.scheme() != "ssh" && !url.username().is_empty())
             || url.query().is_some()
@@ -394,6 +402,22 @@ mod tests {
         assert!(validate_origin("https://user:secret@github.com/jdx/mise").is_err());
         assert!(validate_origin("https://github.com/jdx/mise?token=secret").is_err());
         assert!(validate_origin("git@github.com:jdx/mise.git").is_ok());
+        for origin in [
+            "http://github.com/jdx/mise",
+            "git://github.com/jdx/mise",
+            "HTTP://example.com/repo",
+        ] {
+            assert!(validate_origin(origin).is_err());
+        }
+        for origin in [
+            "https://github.com/jdx/mise",
+            "ssh://git@github.com/jdx/mise.git",
+            "git:repo",
+            "file:///tmp/repo",
+            "./repo",
+        ] {
+            assert!(validate_origin(origin).is_ok());
+        }
     }
 
     #[tokio::test]

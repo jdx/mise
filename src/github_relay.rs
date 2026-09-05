@@ -561,6 +561,11 @@ pub(crate) mod unix {
                 } else {
                     204
                 })
+                .header(
+                    "x-mise-relay-timeout",
+                    serde_json::to_string(&broker.audit.options.request_timeout)
+                        .expect("duration is serializable"),
+                )
                 .body(Body::empty())
                 .expect("valid response");
         }
@@ -743,6 +748,7 @@ pub(crate) mod unix {
     /// Git only speaks TCP HTTP. A loopback bridge with a per-session capability
     /// adapts it to the private socket; the broker remains the authority.
     pub(crate) async fn session(socket: &Path, command: Vec<String>) -> Result<()> {
+        let (client, request_timeout) = adapter_client(socket).await?;
         let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
         let address = listener.local_addr()?;
         let capability = rand::random::<[u8; 32]>()
@@ -750,12 +756,6 @@ pub(crate) mod unix {
             .map(|b| format!("{b:02x}"))
             .collect::<String>();
         let prefix = format!("/{capability}/");
-        let client = Client::builder()
-            .unix_socket(socket)
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .read_timeout(Duration::from_secs(300))
-            .build()?;
         let permits = Arc::new(Semaphore::new(8));
         let service = Router::new().fallback(move |request: Request| {
             let client = client.clone();
@@ -775,19 +775,16 @@ pub(crate) mod unix {
                         .ok_or_else(|| eyre::eyre!("invalid capability"))?;
                     let url = format!("http://localhost/{path}");
                     let (parts, body) = request.into_parts();
-                    let body = tokio::time::timeout(
-                        Duration::from_secs(300),
-                        to_bytes(body, 8 * 1024 * 1024),
-                    )
-                    .await??;
+                    let body =
+                        tokio::time::timeout(request_timeout, to_bytes(body, 8 * 1024 * 1024))
+                            .await??;
                     let mut req = client.request(parts.method, url);
                     for name in ["accept", "content-type", "git-protocol", "content-encoding"] {
                         if let Some(value) = parts.headers.get(name) {
                             req = req.header(name, value);
                         }
                     }
-                    let response =
-                        send_adapter_request(req.body(body), Duration::from_secs(300)).await?;
+                    let response = send_adapter_request(req.body(body), request_timeout).await?;
                     let mut builder = Response::builder().status(response.status());
                     for name in ["content-type", "content-length"] {
                         if let Some(value) = response.headers().get(name) {
@@ -989,19 +986,46 @@ pub(crate) mod unix {
         };
         let mut relay_url = Url::parse(&format!("http://localhost/{prefix}{}", url.path()))?;
         relay_url.set_query(url.query());
-        let client = Client::builder()
-            .unix_socket(socket)
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .read_timeout(Duration::from_secs(300))
-            .build()?;
+        let (client, request_timeout) = adapter_client(socket).await?;
         let mut req = client.request(method, relay_url);
         for name in ["accept", "range", "if-range"] {
             if let Some(value) = headers.get(name) {
                 req = req.header(name, value);
             }
         }
-        send_adapter_request(req, Duration::from_secs(300)).await
+        send_adapter_request(req, request_timeout).await
+    }
+
+    // Obtain the initiating machine's policy, not the target's saved settings.
+    // Discovery itself has a short fixed bound and bypasses broker request slots.
+    async fn adapter_client(socket: &Path) -> Result<(Client, Duration)> {
+        let builder = || {
+            Client::builder()
+                .unix_socket(socket)
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+        };
+        let response = builder()
+            .build()?
+            .get("http://localhost/_session")
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await
+            .map_err(|error| {
+                eyre::Report::new(error.without_url()).wrap_err("GitHub relay policy unavailable")
+            })?;
+        if response.status() != 204 {
+            bail!("GitHub relay is not connected");
+        }
+        let value = response
+            .headers()
+            .get("x-mise-relay-timeout")
+            .ok_or_else(|| eyre::eyre!("GitHub relay timeout policy missing"))?;
+        let timeout: Duration = serde_json::from_slice(value.as_bytes())?;
+        if timeout.is_zero() || std::time::Instant::now().checked_add(timeout).is_none() {
+            bail!("invalid GitHub relay timeout policy");
+        }
+        Ok((builder().read_timeout(timeout).build()?, timeout))
     }
 
     // Bound connecting and writing as well as waiting for response headers.
@@ -1021,6 +1045,53 @@ pub(crate) mod unix {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[tokio::test]
+        async fn adapters_use_the_brokers_timeout_policy() {
+            for timeout in [Duration::from_secs(600), Duration::from_millis(20)] {
+                let directory = tempfile::Builder::new()
+                    .prefix("relay-policy-")
+                    .tempdir_in("/tmp")
+                    .unwrap();
+                let socket = directory.path().join("relay.sock");
+                let listener = UnixListener::bind(&socket).unwrap();
+                let service = Router::new().fallback(move |request: Request| async move {
+                    if request.uri().path() == "/_session" {
+                        Response::builder()
+                            .status(204)
+                            .header(
+                                "x-mise-relay-timeout",
+                                serde_json::to_string(&timeout).unwrap(),
+                            )
+                            .body(Body::empty())
+                            .unwrap()
+                    } else {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        Response::new(Body::empty())
+                    }
+                });
+                let _server = AbortTask(tokio::spawn(async move {
+                    axum::serve(listener, service).await.unwrap();
+                }));
+                // This same policy/client pair is used by Git's adapter.
+                let (client, actual) = adapter_client(&socket).await.unwrap();
+                assert_eq!(actual, timeout);
+                let git = send_adapter_request(
+                    client.post("http://localhost/git/owner/repo/git-upload-pack"),
+                    actual,
+                )
+                .await;
+                let api = request(
+                    &socket,
+                    Method::GET,
+                    &Url::parse("https://api.github.com/repos/owner/repo/releases").unwrap(),
+                    &http::HeaderMap::new(),
+                )
+                .await;
+                assert_eq!(git.is_ok(), timeout.as_secs() == 600);
+                assert_eq!(api.is_ok(), timeout.as_secs() == 600);
+            }
+        }
 
         #[tokio::test]
         async fn adapter_setup_timeout_bounds_stalled_socket_writes() {
