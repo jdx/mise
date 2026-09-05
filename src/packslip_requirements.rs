@@ -223,7 +223,10 @@ pub(crate) async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathB
         let path = commands
             .get(&bin.name)
             .cloned()
-            .or_else(|| file::which(&bin.name));
+            // `which` matches the bare name, so on Windows `git.exe` and
+            // `node.cmd` read as missing; `which_spawnable` applies PATHEXT
+            // and only offers a path the OS will start.
+            .or_else(|| file::which_spawnable(&bin.name));
         let Some(path) = path else {
             report.warnings.push(format!(
                 "command {}{} is missing; install it before using features that need it",

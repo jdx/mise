@@ -985,7 +985,10 @@ impl Backend for PackslipBackend {
         let mut commands = BTreeMap::new();
         if let Some(req) = &artifact.requires {
             for bin in &req.bin {
-                if let Some(path) = ctx.ts.which_bin(&ctx.config, &bin.name).await {
+                // Spawnable, not merely present: the probe below runs the
+                // path with `--version`, so a shebang-only script or a `.ps1`
+                // would be chosen and then fail to start.
+                if let Some(path) = ctx.ts.which_bin_spawnable(&ctx.config, &bin.name).await {
                     commands.insert(bin.name.clone(), path);
                 }
             }

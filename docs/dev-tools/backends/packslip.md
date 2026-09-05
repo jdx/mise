@@ -185,7 +185,7 @@ The release API or list timestamp helps select candidates. Before downloading an
 
 ## Host requirements
 
-After selecting the artifact, mise checks its declared minimum OS/glibc and host libraries before downloading it. Confirmed failures refuse installation; `ignore_requirements = true` overrides this for one tool. Missing or old commands warn, and unknown checks warn instead of refusing. Active mise command paths take precedence over ambient PATH. Requirements never break an artifact-selection tie or select a different build.
+After selecting the artifact, mise checks its declared minimum OS/glibc and host libraries before downloading it. Confirmed failures refuse installation; `ignore_requirements = true` overrides this for one tool. Missing or old commands warn, and unknown checks warn instead of refusing. Active mise command paths take precedence over ambient PATH; either way mise picks a path the OS can start, so a Windows `git.exe` or `node.cmd` counts and a shebang-only script does not. Requirements never break an artifact-selection tie or select a different build.
 
 On Linux the OS version is the kernel release from `uname -r`, read up to the distribution's suffix: `6.8.0-31-generic` is compared as `6.8.0`. OS and glibc probes and command version probes have bounded execution and output. Linux library checks use `LD_LIBRARY_PATH`, standard directories, and `ldconfig -p`; Windows uses PATH and the system directory. macOS checks common library directories but reports unknown absence because the dyld shared cache can contain libraries with no filesystem entry.
 
