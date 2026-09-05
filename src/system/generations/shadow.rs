@@ -256,10 +256,59 @@ impl ShadowRepo {
         Ok(entries)
     }
 
-    /// Compares two snapshot trees, from `a` to `b`.
+    /// The type of the object at `spec` (`<tree>:<path>`), or `None` when
+    /// nothing is there.
+    fn object_type(&self, spec: &str) -> Result<Option<String>> {
+        let output = self
+            .git
+            .output_unchecked(PlumbingCall::new(["cat-file", "-t", spec]))?;
+        if output.status.success() {
+            Ok(Some(
+                String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            ))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// An empty object of `kind` (`tree` or `blob`), written so it can stand
+    /// in for a side of a diff where a path does not exist yet.
+    fn empty_object(&self, kind: &str) -> Result<String> {
+        let args: &[&str] = match kind {
+            "tree" => &["mktree"],
+            _ => &["hash-object", "-w", "--stdin"],
+        };
+        self.output_str(PlumbingCall::new(args.iter().copied()).stdin(b""))
+    }
+
+    /// Compares two snapshot trees, from `a` to `b`. With `paths`, a path that
+    /// exists on only one side is compared against an empty tree or blob so an
+    /// added or removed root shows up as its whole contents.
     pub(crate) fn diff(&self, a: &str, b: &str, opts: &DiffOpts) -> Result<DiffResult> {
         let (from, to) = match &opts.paths {
-            Some((from, to)) => (format!("{a}:{from}"), format!("{b}:{to}")),
+            Some((from_path, to_path)) => {
+                let from = format!("{a}:{from_path}");
+                let to = format!("{b}:{to_path}");
+                match (self.object_type(&from)?, self.object_type(&to)?) {
+                    (Some(_), Some(_)) => (from, to),
+                    (Some(kind), None) => {
+                        let empty = self.empty_object(&kind)?;
+                        (from, empty)
+                    }
+                    (None, Some(kind)) => {
+                        let empty = self.empty_object(&kind)?;
+                        (empty, to)
+                    }
+                    (None, None) => {
+                        let path = if from_path == to_path {
+                            from_path.clone()
+                        } else {
+                            format!("{from_path} / {to_path}")
+                        };
+                        bail!("{path} is not in either snapshot");
+                    }
+                }
+            }
             None => (a.to_string(), b.to_string()),
         };
         let output = self.git.output_unchecked(PlumbingCall::new([
@@ -286,19 +335,6 @@ impl ShadowRepo {
             }),
             _ => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                // `path '…' does not exist in '…'` for a valid tree, `invalid
-                // object name` when the tree itself is unknown
-                if let Some((from, to)) = &opts.paths
-                    && (stderr.contains("does not exist in")
-                        || stderr.contains("invalid object name"))
-                {
-                    let path = if from == to {
-                        from.clone()
-                    } else {
-                        format!("{from} / {to}")
-                    };
-                    bail!("{path} is not in both snapshots");
-                }
                 bail!("git diff failed ({}): {}", output.status, stderr.trim())
             }
         }
@@ -826,9 +862,47 @@ mod tests {
         assert!(
             missing
                 .to_string()
-                .contains("config/nope is not in both snapshots"),
+                .contains("config/nope is not in either snapshot"),
             "{missing}"
         );
+        // a path on one side only is compared against an empty object
+        std::fs::write(config.join("added"), "added\n").unwrap();
+        let c = repo
+            .snapshot(
+                &[root("config", &config)],
+                None,
+                6,
+                SnapshotPhase::After,
+                "c",
+            )
+            .unwrap();
+        let added = repo
+            .diff(
+                &b.tree,
+                &c.tree,
+                &DiffOpts {
+                    patch: true,
+                    paths: Some(("config/added".into(), "config/added".into())),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(added.changed);
+        let text = String::from_utf8_lossy(&added.output);
+        assert!(text.contains("+added"), "{text}");
+        let removed = repo
+            .diff(
+                &c.tree,
+                &b.tree,
+                &DiffOpts {
+                    patch: true,
+                    paths: Some(("config/added".into(), "config/added".into())),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let text = String::from_utf8_lossy(&removed.output);
+        assert!(text.contains("-added"), "{text}");
     }
 
     #[test]
