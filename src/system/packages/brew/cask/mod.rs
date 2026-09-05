@@ -37,6 +37,7 @@ mod flight;
 mod model;
 mod paths;
 mod state;
+mod upgrade;
 
 use artifacts::*;
 use fetch::*;
@@ -2038,6 +2039,16 @@ fn open_trusted_directory(
 /// recovery, all of which resolve pathnames again.
 #[cfg(unix)]
 fn ensure_trusted_appdir(appdir: &Path) -> Result<TrustedOperationParent> {
+    open_trusted_appdir(appdir, true)
+}
+
+#[cfg(unix)]
+fn open_trusted_appdir_readonly(appdir: &Path) -> Result<TrustedOperationParent> {
+    open_trusted_appdir(appdir, false)
+}
+
+#[cfg(unix)]
+fn open_trusted_appdir(appdir: &Path, create_missing: bool) -> Result<TrustedOperationParent> {
     // Anchor the walk at `/` and verify every component from there. `/` is the
     // only directory that cannot be renamed or replaced, so it is the one safe
     // pathname to open; each component below it is opened with `openat` and
@@ -2063,7 +2074,7 @@ fn ensure_trusted_appdir(appdir: &Path) -> Result<TrustedOperationParent> {
     })?;
     // `allow_current_user` is true because a per-user appdir such as
     // `~/Applications` is legitimately owned by the invoking user.
-    open_trusted_directory(Path::new("/"), relative, true, true)
+    open_trusted_directory(Path::new("/"), relative, true, create_missing)
 }
 
 fn run_installer_artifact(
