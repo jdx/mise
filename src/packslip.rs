@@ -269,6 +269,19 @@ pub(crate) fn applicable<'a>(
 /// specification says a consumer takes them: the entries that apply to
 /// the selected artifact, then shipped scripts, then a script derived
 /// from a CLI spec, then anything that runs the tool.
+/// Whether the statement offers this shell a completion at all, however the
+/// install turned out. A declared file that never reached the install drops
+/// out of [`completion_sources`], and the two cases want different answers:
+/// one is the vendor declaring nothing, the other is a fetch that failed or
+/// was skipped, and reporting the second as the first hides it.
+pub(crate) fn declares_completion(statement: &Statement, shell: &str) -> bool {
+    statement.predicate.resources.iter().any(|r| {
+        r.kind == "cli-spec"
+            || (r.kind == "completion"
+                && (r.shell.as_deref() == Some(shell) || r.shells.iter().any(|s| s == shell)))
+    })
+}
+
 pub(crate) fn completion_sources(
     statement: &Statement,
     install_path: &Path,
@@ -434,6 +447,12 @@ pub(crate) async fn completion_script(
         Some(tool),
     );
     if sources.is_empty() {
+        if declares_completion(&statement, shell) {
+            bail!(
+                "the packslip of {} declares a {shell} completion, but none of the files it names are in the install: the resource fetch failed or was skipped",
+                tv.style()
+            );
+        }
         bail!(
             "the packslip of {} declares no {shell} completion",
             tv.style()
@@ -696,6 +715,31 @@ mod tests {
             assert_eq!(resource_path(root, r), None, "{r:?}");
         }
         assert!(outside.exists());
+    }
+
+    #[test]
+    fn a_declared_completion_is_not_an_absent_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let s = statement_with(
+            r#"[
+            {"kind":"completion","bin":"t","shell":"zsh","archive":"_t"},
+            {"kind":"skill","name":"t","asset":"t-skill.tar.gz"}
+        ]"#,
+        );
+        let host = s.predicate.artifacts[0].clone();
+        assert!(
+            completion_sources(&s, root, "zsh", Some(&host), Some("t")).is_empty(),
+            "the file it names was never fetched into the install"
+        );
+        assert!(
+            declares_completion(&s, "zsh"),
+            "so the failure is the fetch's, and must not be reported as the \
+             vendor declaring nothing"
+        );
+        assert!(!declares_completion(&s, "fish"));
+        let none = statement_with(r#"[{"kind":"skill","name":"t","asset":"t-skill.tar.gz"}]"#);
+        assert!(!declares_completion(&none, "zsh"));
     }
 
     #[test]
