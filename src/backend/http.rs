@@ -1642,9 +1642,16 @@ pub(crate) fn prune_unreferenced_tarballs(dry_run: bool) -> Result<crate::cache:
 /// safety rule — absent means no references, unreadable means unknown — so the
 /// system dir is added back here unconditionally and left for the walk to judge.
 /// Overlapping roots are de-duplicated during the walk.
+///
+/// It has to be added back from [`crate::env::system_installs_dir`], the same
+/// source `shared_install_dirs` drops it from. `MISE_SYSTEM_INSTALLS_DIR` is
+/// only the fallback for when settings cannot be read, so restoring *that*
+/// would put back a directory the user may not be using while still leaving a
+/// configured one out — the unreadable-root case this function exists for,
+/// reintroduced one level up.
 fn sweep_install_roots() -> Vec<PathBuf> {
     let mut roots = crate::path_env::mise_install_dirs();
-    roots.push(crate::env::MISE_SYSTEM_INSTALLS_DIR.clone());
+    roots.push(crate::env::system_installs_dir());
     roots
 }
 
@@ -2120,10 +2127,17 @@ mod tests {
     /// `shared_install_dirs` drops it on `is_dir()`, which is false both for a
     /// dir that is not there and for one whose metadata cannot be read — and the
     /// second is precisely the case the walk must refuse to guess about.
+    ///
+    /// Asserted against `env::system_installs_dir()` rather than
+    /// `MISE_SYSTEM_INSTALLS_DIR`: those are the same path only until someone
+    /// configures `system_installs_dir`, and it is exactly then that restoring
+    /// the constant hands the walk a directory the user is not using while
+    /// leaving the one they are out of it. Naming the constant here would pass
+    /// either way and pin nothing.
     #[test]
-    fn the_system_installs_dir_always_reaches_the_walk() {
+    fn the_configured_system_installs_dir_always_reaches_the_walk() {
         assert!(
-            sweep_install_roots().contains(&crate::env::MISE_SYSTEM_INSTALLS_DIR),
+            sweep_install_roots().contains(&crate::env::system_installs_dir()),
             "the walk cannot apply its own rule to a root it is never handed"
         );
     }
