@@ -121,6 +121,9 @@ printf '# spec: %s\n' "$6"
 cat "$6"
 EOF
 chmod +x "$HOME/bin/usage"
+# The release workflow installs the real usage into cargo's bin, which the
+# harness puts ahead of this stub.
+export PATH="$HOME/bin:$PATH"
 
 cd project-1.0.0
 
