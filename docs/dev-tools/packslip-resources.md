@@ -50,9 +50,9 @@ next completion uses that directory's active version.
 | fish       | Loads the vendor script in a child shell for each completion, keeping registrations out of the parent shell. |
 | PowerShell | Hands a completion to the vendor completer, then restores mise's completer.                                  |
 
-These four shells support `--tool ... --install`. For shells that load
-completions eagerly, such as nushell or elvish, generate the script without
-`--install` and load it yourself. Regenerate it when the active version changes.
+These four are the shells `mise completion` knows, for `--tool` with and
+without `--install`. A tool's packslip completions are not available in any
+other shell.
 
 ### Static files, usage specs, and generated scripts
 
@@ -72,6 +72,10 @@ If the only usable source runs the vendor executable, mise runs it on demand
 and caches successful output per installed version, executable, and shell.
 Concurrent requests share that work. Empty output, a failure, or a timeout
 does not become a cached script; mise tries the next source.
+
+Only generation takes turns, and only generation writes: a completion the
+release ships is read straight out of the install, so a read-only system or
+shared install still completes.
 
 Calling `mise completion ... --tool` directly can also trigger generation.
 The [`packslip.exec`](/configuration/settings.html#packslip.exec) setting does
