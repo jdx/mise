@@ -106,10 +106,6 @@ pub(crate) trait Shell: Display {
     fn supports_move_path(&self) -> bool {
         false
     }
-    /// Whether native Windows PATH values must be mapped before this shell consumes them.
-    fn uses_posix_path_syntax(&self) -> bool {
-        false
-    }
     fn unset_env(&self, k: &str) -> String;
 
     /// Set a shell alias. Returns empty string if not supported by this shell.
@@ -187,11 +183,7 @@ pub(crate) const EXAMPLE_SHELL: &str = "zsh";
 /// `how` is the caller's own instruction, because the commands differ: `mise activate` takes the
 /// shell as an argument, `mise hook-env` takes `--shell`, and `mise shell` takes neither.
 pub(crate) fn require_shell(shell: Option<ShellType>, how: &str) -> eyre::Result<Box<dyn Shell>> {
-    let shell = get_shell(shell).ok_or_else(|| eyre::eyre!(no_shell_error(how)))?;
-    if shell.uses_posix_path_syntax() {
-        crate::windows_posix::ensure_available()?;
-    }
-    Ok(shell)
+    get_shell(shell).ok_or_else(|| eyre::eyre!(no_shell_error(how)))
 }
 
 /// Split out from [`require_shell`] so it can be tested: the detection it fails on reads

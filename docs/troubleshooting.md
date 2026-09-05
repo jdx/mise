@@ -227,6 +227,23 @@ shell = '"C:\Program Files\Git\bin\bash.exe" -c'
 
 #### Cygwin
 
+Native Windows mise can activate Bash, Zsh, and Fish inside Git Bash, MSYS2, or Cygwin.
+Run `mise activate` in the shell that will consume its output. mise identifies the
+calling shell executable and its runtime DLL, rather than relying on `SHELL` or
+`MSYSTEM`, which may be missing or inherited from another shell. Generating an
+activation script in PowerShell and sourcing it later in a different runtime is
+not supported.
+
+PATH assignments and the executable references in generated hooks use that
+runtime's paths. Internally, mise retains native Windows PATH values, including
+its saved original PATH. No `cygpath` subprocess is started by activation or hooks.
+Mapping supports runtime defaults and persistent `etc/fstab` and `etc/fstab.d`
+mounts, including custom drive prefixes. Session-only `mount` changes and arbitrary
+filesystem symlinks are not reconstructed; use persistent mounts for custom PATH
+locations. Restart the shell after changing its mount configuration.
+
+For tasks:
+
 Point `MISE_BASH_PATH` at your Cygwin bash so the intended one is used:
 
 ```powershell

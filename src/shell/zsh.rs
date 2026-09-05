@@ -18,7 +18,8 @@ impl Shell for Zsh {
         let exe = opts.exe;
         let flags = opts.flags;
 
-        let exe = escape(exe.to_string_lossy());
+        let exe = exe.to_string_lossy();
+        let exe = escape(crate::windows_posix::executable_for_shell(&exe));
         let mut out = String::new();
 
         out.push_str(&shell::build_deactivation_script(self));
@@ -170,10 +171,6 @@ impl Shell for Zsh {
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
         Bash::default().prepend_env(k, v)
-    }
-
-    fn uses_posix_path_syntax(&self) -> bool {
-        true
     }
 
     fn unset_env(&self, k: &str) -> String {

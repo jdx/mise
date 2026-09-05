@@ -34,7 +34,8 @@ impl Shell for Bash {
         let exe = opts.exe;
         let settings = Settings::get();
 
-        let exe = escape(exe.to_string_lossy());
+        let exe = exe.to_string_lossy();
+        let exe = escape(crate::windows_posix::executable_for_shell(&exe));
         let flags = render_flags_array(&opts.flags);
 
         let mut out = String::new();
@@ -81,7 +82,7 @@ impl Shell for Bash {
 
     fn set_env(&self, k: &str, v: &str) -> String {
         let is_path = env::is_path_key(k);
-        let v = if is_path || k == "__MISE_ORIG_PATH" {
+        let v = if is_path {
             crate::windows_posix::windows_path_list_for_shell(v)
         } else {
             v.into()
@@ -106,10 +107,6 @@ impl Shell for Bash {
             .replace('`', "\\`")
             .replace('$', "\\$");
         format!("export {k}=\"{v}:${k}\"\n")
-    }
-
-    fn uses_posix_path_syntax(&self) -> bool {
-        true
     }
 
     fn unset_env(&self, k: &str) -> String {

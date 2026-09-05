@@ -1,5 +1,11 @@
 Describe 'POSIX activation PATH on Windows' {
-    It 'keeps Git Bash usable while native mise updates PATH' {
+    It 'keeps <Runtime> usable while native mise updates PATH' -TestCases @(
+        @{ Runtime = 'Git Bash'; Candidate = 'C:\Program Files\Git\bin\bash.exe' },
+        @{ Runtime = 'raw Git Bash'; Candidate = 'C:\Program Files\Git\usr\bin\bash.exe' },
+        @{ Runtime = 'MSYS2'; Candidate = "$(if ($env:MISE_TEST_MSYS_ROOT) { $env:MISE_TEST_MSYS_ROOT } else { 'C:\msys64' })\usr\bin\bash.exe" },
+        @{ Runtime = 'Cygwin'; Candidate = "$(if ($env:MISE_TEST_CYGWIN_ROOT) { $env:MISE_TEST_CYGWIN_ROOT } else { 'C:\cygwin64' })\bin\bash.exe" }
+    ) {
+        param($Runtime, $Candidate)
         function Test-PosixRuntimeBash([string] $Path) {
             if (-not $Path -or -not (Test-Path $Path)) {
                 return $false
@@ -15,19 +21,9 @@ Describe 'POSIX activation PATH on Windows' {
             return $false
         }
 
-        $bashCandidates = @(
-            'C:\Program Files\Git\bin\bash.exe',
-            'C:\Program Files (x86)\Git\bin\bash.exe',
-            "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe",
-            'C:\msys64\usr\bin\bash.exe',
-            'C:\msys32\usr\bin\bash.exe'
-        ) + @(Get-Command bash.exe -All -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
-        $wslLauncher = Join-Path $env:SystemRoot 'System32\bash.exe'
-        $bash = $bashCandidates |
-            Where-Object { $_ -and ($_ -ne $wslLauncher) -and (Test-PosixRuntimeBash $_) } |
-            Select-Object -First 1
-        if (-not $bash) {
-            Set-ItResult -Skipped -Because 'Git Bash/MSYS2 is not installed'
+        $bash = $Candidate
+        if (-not (Test-PosixRuntimeBash $bash)) {
+            Set-ItResult -Skipped -Because "$Runtime is not installed at $Candidate"
             return
         }
 
@@ -65,7 +61,7 @@ Write-Output $env:PATH
         $saved = @{}
         foreach ($name in 'MISE_E2E_EXE', 'MISE_E2E_ROOT', 'MISE_E2E_NESTED', 'MISE_E2E_ORIGINAL_A',
             'MISE_E2E_ORIGINAL_B', 'MISE_E2E_PREPENDED', 'MISE_E2E_INTERLEAVED', 'MISE_E2E_APPENDED',
-            'MISE_E2E_NATIVE_PROBE', 'MISE_TRUSTED_CONFIG_PATHS') {
+            'MISE_E2E_NATIVE_PROBE', 'MISE_TRUSTED_CONFIG_PATHS', 'PATH', 'SHELL', 'MSYSTEM') {
             $saved[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
         }
         $env:MISE_E2E_EXE = (Get-Command mise.exe).Source
@@ -78,9 +74,17 @@ Write-Output $env:PATH
         $env:MISE_E2E_APPENDED = $appended
         $env:MISE_E2E_NATIVE_PROBE = Join-Path $TestDrive 'native-path.ps1'
         $env:MISE_TRUSTED_CONFIG_PATHS = $TestDrive
+        $env:PATH = "$(Split-Path $bash);$env:PATH"
+        Remove-Item Env:SHELL, Env:MSYSTEM -ErrorAction Ignore
 
         $probe = @'
-set -e
+set -eu
+mise_exe=$(cygpath -u "$MISE_E2E_EXE")
+apply_mise() {
+  local code
+  code=$("$mise_exe" "$@") || return $?
+  eval "$code"
+}
 original_a=$(cygpath -u "$MISE_E2E_ORIGINAL_A")
 original_b=$(cygpath -u "$MISE_E2E_ORIGINAL_B")
 prepended=$(cygpath -u "$MISE_E2E_PREPENDED")
@@ -90,7 +94,8 @@ root=$(cygpath -u "$MISE_E2E_ROOT")
 nested=$(cygpath -u "$MISE_E2E_NESTED")
 export PATH="$original_a:$original_b:$PATH"
 
-eval "$("$MISE_E2E_EXE" activate bash)"
+apply_mise activate bash
+mise --version >/dev/null
 original-marker.exe cmd.exe >/dev/null
 rest=
 IFS=: read -ra path_entries <<< "$PATH"
@@ -103,30 +108,34 @@ done
 export PATH="$prepended:$original_b:$interleaved:$original_a:$rest:$original_a:$appended"
 
 cd "$root"
-eval "$("$MISE_E2E_EXE" hook-env -s bash)"
+# Exercise the generated cd hook before a direct invocation could conceal failure.
 root-marker.exe cmd.exe >/dev/null
-eval "$("$MISE_E2E_EXE" env -s bash)"
+apply_mise hook-env -s bash
 root-marker.exe cmd.exe >/dev/null
 printf 'ROOT_PATH=%s\n' "$PATH"
+apply_mise env -s bash
+root-marker.exe cmd.exe >/dev/null
+printf 'ENV_PATH=%s\n' "$PATH"
 
 cd "$nested"
-eval "$("$MISE_E2E_EXE" hook-env -s bash)"
 nested-marker.exe cmd.exe >/dev/null
+apply_mise hook-env -s bash
 printf 'NESTED_PATH=%s\n' "$PATH"
 
 cd "$root"
-eval "$("$MISE_E2E_EXE" hook-env -s bash)"
 root-marker.exe cmd.exe >/dev/null
+apply_mise hook-env -s bash
 printf 'RETURN_PATH=%s\n' "$PATH"
 
+powershell.exe -NoProfile -Command '(Get-Command root-marker.exe).Source' | sed 's/^/NATIVE_LOOKUP=/'
 powershell.exe -NoProfile -File "$MISE_E2E_NATIVE_PROBE" | sed 's/^/NATIVE_PATH=/'
-eval "$("$MISE_E2E_EXE" deactivate)"
+apply_mise deactivate
 command -v rm >/dev/null
 command -v cygpath >/dev/null
 original-marker.exe cmd.exe >/dev/null
 printf 'DEACTIVATED_PATH=%s\n' "$PATH"
 
-eval "$("$MISE_E2E_EXE" activate bash --shims)"
+apply_mise activate bash --shims
 printf 'SHIMS_PATH=%s\n' "$PATH"
 '@
 
@@ -143,7 +152,17 @@ printf 'SHIMS_PATH=%s\n' "$PATH"
             $rootPath.IndexOf((Split-Path $originalB -Leaf)) | Should -BeLessThan $rootPath.IndexOf((Split-Path $originalA -Leaf))
             $rootPath | Should -Match ([regex]::Escape((Split-Path $interleaved -Leaf)))
             $rootPath.IndexOf((Split-Path $interleaved -Leaf)) | Should -BeLessThan $rootPath.IndexOf((Split-Path $appended -Leaf))
-            ([regex]::Matches($rootPath, [regex]::Escape((Split-Path $originalA -Leaf))).Count) | Should -Be 2
+            ([regex]::Matches($rootPath, [regex]::Escape((Split-Path $originalA -Leaf))).Count) | Should -Be 2 -Because $rootPath
+            # `mise env` computes a deduplicated environment; hook-env preserves the
+            # live shell's user-owned duplicates. Pin these contracts separately.
+            $envPath = ($output -split "`r?`n" | Where-Object { $_ -like 'ENV_PATH=*' } | Select-Object -Last 1)
+            ([regex]::Matches($envPath, [regex]::Escape((Split-Path $originalA -Leaf))).Count) | Should -Be 1
+            foreach ($line in ($output -split "`r?`n" | Where-Object { $_ -match '^(ROOT|ENV|NESTED|RETURN|DEACTIVATED|SHIMS)_PATH=' })) {
+                $line | Should -Not -Match '(?:^|=|:)[A-Za-z]:[\\/]'
+                $line | Should -Not -Match '::'
+            }
+            $output | Should -Match ('NATIVE_LOOKUP=' + [regex]::Escape((Join-Path $rootBin 'root-marker.exe')))
+            $output | Should -Match 'SHIMS_PATH=[^\r\n]*/shims:'
 
             $nativePath = ($output -split "`r?`n" | Where-Object { $_ -like 'NATIVE_PATH=*' } | Select-Object -Last 1)
             $nativePath | Should -Not -BeNullOrEmpty

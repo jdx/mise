@@ -18,7 +18,8 @@ impl Shell for Fish {
         let exe = opts.exe;
         let flags = opts.flags;
 
-        let exe = escape(exe.to_string_lossy());
+        let exe = exe.to_string_lossy();
+        let exe = escape(crate::windows_posix::executable_for_shell(&exe));
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
 
@@ -147,6 +148,11 @@ impl Shell for Fish {
     }
 
     fn set_env(&self, key: &str, v: &str) -> String {
+        if cfg!(windows) && key == "__MISE_ORIG_PATH" {
+            // An opaque native snapshot, not a Fish path list. MSYS must not
+            // reinterpret it before mise reads it back.
+            return format!("set --unpath -gx __MISE_ORIG_PATH {}\n", escape(v.into()));
+        }
         let k = if env::is_path_key(key) {
             "PATH".into()
         } else {
@@ -160,7 +166,7 @@ impl Shell for Fish {
         // Empty entries are dropped, as they are in `prepend_env` and in `env::split_colon_list`:
         // an empty element of a fish list is the current directory, and a Windows PATH ending in
         // `;` -- the usual shape -- yields one from `split_paths`.
-        if env::is_path_key(key) || key == "__MISE_ORIG_PATH" {
+        if env::is_path_key(key) || !cfg!(windows) && key == "__MISE_ORIG_PATH" {
             let paths = crate::windows_posix::windows_path_entries_for_shell(v)
                 .into_iter()
                 .filter_map(|p| {
@@ -226,10 +232,6 @@ impl Shell for Fish {
     }
 
     fn supports_move_path(&self) -> bool {
-        true
-    }
-
-    fn uses_posix_path_syntax(&self) -> bool {
         true
     }
 

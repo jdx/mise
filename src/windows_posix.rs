@@ -1,8 +1,9 @@
 //! PATH translation at the boundary between native Windows mise and an active
 //! MSYS2/Cygwin shell.
 //!
-//! mise keeps Windows paths internally. This module is deliberately used only
-//! by POSIX shell writers and when reading the shell-owned `__MISE_ORIG_PATH`.
+//! mise keeps Windows paths internally, including the opaque `__MISE_ORIG_PATH`
+//! snapshot. Only shell PATH assignments and executable references are mapped.
+//! The reverse mapper supports original-PATH snapshots inherited from older mise.
 
 use std::borrow::Cow;
 #[cfg(any(windows, test))]
@@ -11,42 +12,11 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-use eyre::{Result, eyre};
-
 #[cfg(any(windows, test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RuntimeKind {
     Msys,
     Cygwin,
-}
-
-#[cfg(any(windows, test))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RuntimeIntent {
-    Inactive,
-    RequiredMsys,
-    ProbeCygwin,
-}
-
-#[cfg(any(windows, test))]
-fn runtime_intent(msystem: Option<&str>, shell: Option<&str>, is_wsl: bool) -> RuntimeIntent {
-    if is_wsl {
-        return RuntimeIntent::Inactive;
-    }
-    if msystem.is_some_and(|value| !value.is_empty()) {
-        return RuntimeIntent::RequiredMsys;
-    }
-    let Some(name) = shell.and_then(|shell| shell.rsplit(['/', '\\']).next()) else {
-        return RuntimeIntent::Inactive;
-    };
-    if matches!(
-        name.to_ascii_lowercase().as_str(),
-        "sh" | "sh.exe" | "bash" | "bash.exe" | "zsh" | "zsh.exe" | "fish" | "fish.exe"
-    ) {
-        RuntimeIntent::ProbeCygwin
-    } else {
-        RuntimeIntent::Inactive
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +32,8 @@ struct PathMapper {
     mounts: Vec<Mount>,
     cygdrive: String,
     #[cfg(any(windows, test))]
+    user_temp: Option<String>,
+    #[cfg(any(windows, test))]
     next_precedence: usize,
 }
 
@@ -70,6 +42,7 @@ impl PathMapper {
     fn new(kind: RuntimeKind, root: &Path, subsystem: Option<&str>) -> Self {
         let mut mapper = Self {
             mounts: Vec::new(),
+            user_temp: None,
             cygdrive: if kind == RuntimeKind::Cygwin {
                 "/cygdrive".into()
             } else {
@@ -84,6 +57,9 @@ impl PathMapper {
         } else {
             root.join("usr")
         };
+        if kind == RuntimeKind::Msys {
+            mapper.add_mount(usr_dir.join("bin").to_string_lossy().as_ref(), "/bin");
+        }
         mapper.add_mount(usr_dir.join("bin").to_string_lossy().as_ref(), "/usr/bin");
         mapper.add_mount(usr_dir.join("lib").to_string_lossy().as_ref(), "/usr/lib");
         if kind == RuntimeKind::Msys
@@ -107,10 +83,7 @@ impl PathMapper {
             return;
         }
         // A later fstab entry replaces a default/system entry at the same mountpoint.
-        self.mounts.retain(|mount| {
-            !(eq_ascii(&mount.posix, &posix)
-                || prefix_matches(&mount.posix, &posix) && mount.posix.len() > posix.len())
-        });
+        self.mounts.retain(|mount| !eq_ascii(&mount.posix, &posix));
         self.mounts.push(Mount {
             windows,
             posix,
@@ -126,6 +99,15 @@ impl PathMapper {
                 Ok(None) => {}
                 Ok(Some(FstabEntry::Cygdrive(prefix))) => {
                     self.cygdrive = normalize_posix(&prefix);
+                }
+                Ok(Some(FstabEntry::Usertemp(prefix))) => {
+                    if let Some(temp) = self.user_temp.clone() {
+                        self.add_mount(&temp, &prefix);
+                    } else {
+                        warn!(
+                            "ignoring usertemp mount in {source}: native temporary directory unavailable"
+                        );
+                    }
                 }
                 Ok(Some(FstabEntry::Mount {
                     native,
@@ -192,7 +174,7 @@ impl PathMapper {
         }
         // Drive mounts take precedence over the implicit `/` runtime mount.
         if let Some((drive, tail)) = self.split_cygdrive(&normalized) {
-            return append_windows_tail(&format!("{}:", drive.to_ascii_uppercase()), tail);
+            return append_windows_tail(&format!("{}:\\", drive.to_ascii_uppercase()), tail);
         }
         if normalized.starts_with("//") {
             return normalized.replace('/', "\\");
@@ -218,7 +200,9 @@ impl PathMapper {
     }
 
     fn split_cygdrive<'a>(&self, path: &'a str) -> Option<(char, &'a str)> {
-        let rest = if self.cygdrive == "/" {
+        let rest = if let Some(rest) = path.strip_prefix("/proc/cygdrive/") {
+            rest
+        } else if self.cygdrive == "/" {
             path.strip_prefix('/')?
         } else {
             let rest = strip_prefix_ascii(path, self.cygdrive.trim_end_matches('/'))?;
@@ -246,6 +230,7 @@ enum FstabEntry {
         bind: bool,
     },
     Cygdrive(String),
+    Usertemp(String),
 }
 
 #[cfg(any(windows, test))]
@@ -261,6 +246,12 @@ fn parse_fstab_line(line: &str) -> std::result::Result<Option<FstabEntry>, Strin
     let target = &fields[1];
     let fs_type = &fields[2];
     let options = fields.get(3).map(String::as_str).unwrap_or("");
+    if fs_type.eq_ignore_ascii_case("usertemp") {
+        if !target.starts_with('/') {
+            return Err("usertemp mountpoint must be absolute".into());
+        }
+        return Ok(Some(FstabEntry::Usertemp(target.clone())));
+    }
     if fs_type.eq_ignore_ascii_case("cygdrive") {
         if !target.starts_with('/') {
             return Err("cygdrive prefix must be absolute".into());
@@ -441,14 +432,21 @@ fn split_posix_path_list(value: &str) -> Vec<&str> {
 }
 
 fn map_windows_path_list(mapper: &PathMapper, value: &str) -> String {
-    value
-        .split(';')
+    windows_path_entries(value)
+        .iter()
+        .filter(|entry| !entry.is_empty())
         .map(|entry| mapper.windows_to_posix(entry))
         .collect::<Vec<_>>()
         .join(":")
 }
 
 fn map_posix_path_list(mapper: &PathMapper, value: &str) -> String {
+    // Activation stores native Windows PATH as an opaque value. Older sessions
+    // can supply either a POSIX list or an MSYS-converted native list.
+    if value.contains(';') || is_windows_absolute(value) && split_posix_path_list(value).len() == 1
+    {
+        return value.to_owned();
+    }
     split_posix_path_list(value)
         .into_iter()
         .map(|entry| mapper.posix_to_windows(entry))
@@ -456,29 +454,41 @@ fn map_posix_path_list(mapper: &PathMapper, value: &str) -> String {
         .join(";")
 }
 
-static ACTIVE_MAPPER: LazyLock<Result<Option<PathMapper>, String>> =
-    LazyLock::new(detect_active_mapper);
-
-/// Fail before a POSIX shell command can emit a PATH if MSYS positively identifies
-/// the current shell but its installation root cannot be recovered.
-pub(crate) fn ensure_available() -> Result<()> {
-    ACTIVE_MAPPER
-        .as_ref()
-        .map(|_| ())
-        .map_err(|err| eyre!(err.clone()))
+fn windows_path_entries(value: &str) -> Vec<String> {
+    // Match Windows PATH quoting even when mapper unit tests run on Unix.
+    let mut quoted = false;
+    let mut entries = vec![String::new()];
+    for ch in value.chars() {
+        match ch {
+            '"' => quoted = !quoted,
+            ';' if !quoted => entries.push(String::new()),
+            _ => entries.last_mut().unwrap().push(ch),
+        }
+    }
+    entries
 }
+
+pub(crate) fn executable_for_shell(value: &str) -> Cow<'_, str> {
+    match ACTIVE_MAPPER.as_ref() {
+        Some(mapper) => Cow::Owned(mapper.windows_to_posix(value)),
+        _ => Cow::Borrowed(value),
+    }
+}
+
+static ACTIVE_MAPPER: LazyLock<Option<PathMapper>> = LazyLock::new(detect_active_mapper);
 
 pub(crate) fn windows_path_list_for_shell(value: &str) -> Cow<'_, str> {
     match ACTIVE_MAPPER.as_ref() {
-        Ok(Some(mapper)) => Cow::Owned(map_windows_path_list(mapper, value)),
+        Some(mapper) => Cow::Owned(map_windows_path_list(mapper, value)),
         _ => Cow::Borrowed(value),
     }
 }
 
 pub(crate) fn windows_path_entries_for_shell(value: &str) -> Vec<String> {
     match ACTIVE_MAPPER.as_ref() {
-        Ok(Some(mapper)) => value
-            .split(';')
+        Some(mapper) => windows_path_entries(value)
+            .iter()
+            .filter(|entry| !entry.is_empty())
             .map(|entry| mapper.windows_to_posix(entry))
             .collect(),
         _ => std::env::split_paths(value)
@@ -489,81 +499,111 @@ pub(crate) fn windows_path_entries_for_shell(value: &str) -> Vec<String> {
 
 pub(crate) fn orig_path_for_windows(value: &str) -> Cow<'_, str> {
     match ACTIVE_MAPPER.as_ref() {
-        Ok(Some(mapper)) => Cow::Owned(map_posix_path_list(mapper, value)),
+        Some(mapper) => Cow::Owned(map_posix_path_list(mapper, value)),
         _ => Cow::Borrowed(value),
     }
 }
 
-#[cfg(not(windows))]
-fn detect_active_mapper() -> std::result::Result<Option<PathMapper>, String> {
-    Ok(None)
+#[cfg(any(not(windows), test))]
+fn detect_active_mapper() -> Option<PathMapper> {
+    // Unit tests exercise explicit PathMapper values. Ambient caller state must
+    // not change shell snapshots; production detection is covered by Windows E2E.
+    None
 }
 
-#[cfg(windows)]
-fn detect_active_mapper() -> std::result::Result<Option<PathMapper>, String> {
-    let is_wsl =
-        std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some();
-    let msystem = std::env::var("MSYSTEM").ok().filter(|v| !v.is_empty());
-    let shell = std::env::var("SHELL").ok();
-    let intent = runtime_intent(msystem.as_deref(), shell.as_deref(), is_wsl);
-    if intent == RuntimeIntent::Inactive {
-        return Ok(None);
-    }
-    let candidate = shell
-        .as_deref()
-        .filter(|shell| {
-            let name = shell.rsplit(['/', '\\']).next().unwrap_or(shell);
-            matches!(
-                name.to_ascii_lowercase().as_str(),
-                "sh" | "sh.exe" | "bash" | "bash.exe" | "zsh" | "zsh.exe" | "fish" | "fish.exe"
-            )
-        })
-        .unwrap_or("bash.exe");
-    let executable = find_runtime_executable(candidate);
-
-    let Some((kind, root)) = executable.as_deref().and_then(runtime_root) else {
-        return if intent == RuntimeIntent::RequiredMsys {
-            Err("MSYSTEM identifies an active MSYS shell, but mise could not locate its runtime root from PATH".into())
-        } else {
-            // This includes BusyBox Bash and ordinary native Windows callers.
-            Ok(None)
-        };
-    };
-    if intent == RuntimeIntent::ProbeCygwin && kind != RuntimeKind::Cygwin {
-        return Ok(None);
-    }
-
+#[cfg(all(windows, not(test)))]
+fn detect_active_mapper() -> Option<PathMapper> {
+    // SHELL and MSYSTEM can be absent in a raw shell, or inherited by PowerShell,
+    // BusyBox, WSL, or a different installation. The immediate caller is evidence
+    // of the runtime actually crossing this boundary. Do not search PATH.
+    let executable = parent_executable()?;
+    let (kind, root) = runtime_root(&executable)?;
+    let msystem = std::env::var("MSYSTEM").ok();
     let mut mapper = PathMapper::new(kind, &root, msystem.as_deref());
+    // usertemp mounts (the default /tmp in Git for Windows) use GetTempPathW
+    // in the runtime. Windows temp_dir uses the same user environment inputs.
+    mapper.user_temp = std::env::temp_dir()
+        .to_str()
+        .filter(|path| is_windows_absolute(path))
+        .map(str::to_owned);
     load_fstab(&mut mapper, &root.join("etc/fstab"), &root);
     let username = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
         .ok();
-    if let Some(username) = username.filter(|u| !u.contains(['/', '\\'])) {
+    if let Some(username) = username
+        && !username.contains(['/', '\\'])
+    {
         load_fstab(&mut mapper, &root.join("etc/fstab.d").join(username), &root);
     }
-    Ok(Some(mapper))
+    Some(mapper)
 }
 
-#[cfg(windows)]
-fn find_runtime_executable(name: &str) -> Option<PathBuf> {
-    let name = if name.to_ascii_lowercase().ends_with(".exe") {
-        name.to_string()
-    } else {
-        format!("{name}.exe")
+#[cfg(all(windows, not(test)))]
+fn parent_executable() -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+        TH32CS_SNAPPROCESS,
     };
-    if is_windows_absolute(&name) && Path::new(&name).is_file() {
-        return Some(PathBuf::from(name));
-    }
-    let name = name.rsplit(['/', '\\']).next().unwrap_or(&name);
-    std::env::var_os("PATH")
-        .into_iter()
-        .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
-        .map(|dir| dir.join(name))
-        .find(|path| path.is_file())
-}
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    };
 
+    // SAFETY: no pointers are passed; validate the returned handle before owning it.
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return None;
+    }
+    // SAFETY: the valid handle was freshly allocated and has exactly one owner.
+    let snapshot = unsafe { OwnedHandle::from_raw_handle(snapshot) };
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: entry is initialized, correctly sized, and writable.
+    let mut found = unsafe { Process32FirstW(snapshot.as_raw_handle(), &mut entry) } != 0;
+    while found && entry.th32ProcessID != std::process::id() {
+        // SAFETY: the snapshot remains alive and entry remains writable.
+        found = unsafe { Process32NextW(snapshot.as_raw_handle(), &mut entry) } != 0;
+    }
+    if !found {
+        return None;
+    }
+    // SAFETY: query-only access, with no inherited handle and no pointer arguments.
+    let process = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION,
+            0,
+            entry.th32ParentProcessID,
+        )
+    };
+    if process.is_null() {
+        return None;
+    }
+    // SAFETY: the valid process handle is freshly allocated and uniquely owned.
+    let process = unsafe { OwnedHandle::from_raw_handle(process) };
+    let mut image = vec![0u16; 32768];
+    let mut len = image.len() as u32;
+    // SAFETY: image has len writable UTF-16 elements and the handle remains alive.
+    if unsafe {
+        QueryFullProcessImageNameW(process.as_raw_handle(), 0, image.as_mut_ptr(), &mut len)
+    } == 0
+    {
+        return None;
+    }
+    Some(std::ffi::OsString::from_wide(&image[..len as usize]).into())
+}
 #[cfg(any(windows, test))]
 fn runtime_root(executable: &Path) -> Option<(RuntimeKind, PathBuf)> {
+    let name = executable.file_name()?.to_str()?.to_ascii_lowercase();
+    if !matches!(
+        name.as_str(),
+        "sh.exe" | "bash.exe" | "zsh.exe" | "fish.exe"
+    ) {
+        return None;
+    }
     for ancestor in executable.ancestors().skip(1).take(5) {
         if ancestor.join("usr/bin/msys-2.0.dll").is_file() {
             return Some((RuntimeKind::Msys, ancestor.to_path_buf()));
@@ -575,7 +615,7 @@ fn runtime_root(executable: &Path) -> Option<(RuntimeKind, PathBuf)> {
     None
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, not(test)))]
 fn load_fstab(mapper: &mut PathMapper, path: &Path, root: &Path) {
     match std::fs::read_to_string(path) {
         Ok(contents) => mapper.apply_fstab(&contents, root, &path.to_string_lossy()),
@@ -655,7 +695,10 @@ mod tests {
         );
         assert_eq!(mapper.posix_to_windows("/opt/sdk/bin"), r"D:\SDK Files\bin");
         assert_eq!(mapper.posix_to_windows("/tools/x"), r"D:\SDK Files\tools\x");
-        assert_eq!(mapper.posix_to_windows("/usr/bin"), r"E:\usr\bin");
+        assert_eq!(
+            mapper.posix_to_windows("/usr/bin"),
+            r"C:\Program Files\Git\usr\bin"
+        );
         assert_eq!(mapper.posix_to_windows("/cafe/bin"), r"D:\café\bin");
     }
 
@@ -673,13 +716,13 @@ mod tests {
     }
 
     #[test]
-    fn lists_preserve_empty_relative_unicode_and_mixed_entries() {
+    fn lists_preserve_relative_unicode_and_mixed_entries_without_empty_windows_entries() {
         let mapper = msys();
         let posix = map_windows_path_list(&mapper, r"C:\工具\bin;;relative;D:/two");
-        assert_eq!(posix, "/c/工具/bin::relative:/d/two");
+        assert_eq!(posix, "/c/工具/bin:relative:/d/two");
         assert_eq!(
             map_posix_path_list(&mapper, &posix),
-            r"C:\工具\bin;;relative;D:\two"
+            r"C:\工具\bin;relative;D:\two"
         );
         assert_eq!(
             map_posix_path_list(&mapper, r"C:\native:/d/posix::relative"),
@@ -721,24 +764,67 @@ mod tests {
     }
 
     #[test]
-    fn emulator_intent_excludes_wsl_powershell_and_unrecognized_contexts() {
+    fn native_original_paths_are_not_converted_twice() {
+        let mapper = msys();
+        for value in [
+            r"C:\a;D:\b",
+            r"C:\a",
+            r"relative;D:\b",
+            r"\\server\share;C:\bin",
+        ] {
+            assert_eq!(map_posix_path_list(&mapper, value), value);
+        }
+        assert_eq!(map_posix_path_list(&mapper, "/c/a:/d/b"), r"C:\a;D:\b");
+    }
+
+    #[test]
+    fn drive_roots_and_msys_aliases_are_absolute() {
+        let mapper = msys();
+        assert_eq!(mapper.posix_to_windows("/d"), "D:\\");
+        assert_eq!(mapper.posix_to_windows("/proc/cygdrive/d"), "D:\\");
         assert_eq!(
-            runtime_intent(Some("MINGW64"), Some("/bin/bash"), true),
-            RuntimeIntent::Inactive
+            mapper.posix_to_windows("/bin"),
+            r"C:\Program Files\Git\usr\bin"
+        );
+        let mut mapper = PathMapper::new(RuntimeKind::Cygwin, Path::new(r"C:\cygwin"), None);
+        mapper.cygdrive = "/drives".into();
+        assert_eq!(mapper.posix_to_windows("/drives/d"), "D:\\");
+        assert_eq!(mapper.posix_to_windows("/proc/cygdrive/d"), "D:\\");
+    }
+
+    #[test]
+    fn parent_mounts_do_not_remove_child_mounts() {
+        let mut mapper = msys();
+        mapper.add_mount(r"D:\child", "/custom/deep");
+        mapper.add_mount(r"E:\parent", "/custom");
+        assert_eq!(mapper.posix_to_windows("/custom/deep/bin"), r"D:\child\bin");
+        assert_eq!(mapper.posix_to_windows("/custom/bin"), r"E:\parent\bin");
+    }
+
+    #[test]
+    fn windows_path_quotes_protect_semicolons_without_adding_empty_entries() {
+        assert_eq!(
+            map_windows_path_list(&msys(), "\"C:\\a;b\";;D:\\c;"),
+            "/c/a;b:/d/c"
+        );
+    }
+
+    #[test]
+    fn usertemp_maps_the_native_temporary_directory() {
+        let mut mapper = msys();
+        mapper.user_temp = Some(r"C:\Users\someone\AppData\Local\Temp".into());
+        mapper.apply_fstab(
+            "none /tmp usertemp binary,posix=0 0 0",
+            Path::new(r"C:\Git"),
+            "fstab",
         );
         assert_eq!(
-            runtime_intent(None, Some("pwsh.exe"), false),
-            RuntimeIntent::Inactive
-        );
-        assert_eq!(runtime_intent(None, None, false), RuntimeIntent::Inactive);
-        // The shell name merely permits a DLL probe; it never proves an emulator.
-        assert_eq!(
-            runtime_intent(None, Some("bash"), false),
-            RuntimeIntent::ProbeCygwin
+            mapper.posix_to_windows("/tmp/bin"),
+            r"C:\Users\someone\AppData\Local\Temp\bin"
         );
         assert_eq!(
-            runtime_intent(Some("UCRT64"), None, false),
-            RuntimeIntent::RequiredMsys
+            mapper.windows_to_posix(r"C:\Users\someone\AppData\Local\Temp\bin"),
+            "/tmp/bin"
         );
     }
 
@@ -757,5 +843,7 @@ mod tests {
             runtime_root(&bash),
             Some((RuntimeKind::Msys, temp.path().into()))
         );
+        // A native program installed under a runtime is not a POSIX shell.
+        assert_eq!(runtime_root(&temp.path().join("bin/pwsh.exe")), None);
     }
 }
