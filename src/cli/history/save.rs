@@ -66,14 +66,19 @@ impl HistorySave {
         if let Some(reason) = store.unavailable() {
             bail!("cannot save: {reason}");
         }
-        for path in &self.paths {
-            let path = normalize(path);
-            if tracked.entry_for(&path).is_none() {
-                bail!(
-                    "{} is not tracked; track it with `mise bootstrap dotfiles track {}`",
-                    display_path(&path),
-                    display_path(&path)
-                );
+        if !self.paths.is_empty() {
+            let walk = tracked.walk()?;
+            for path in &self.paths {
+                let path = normalize(path);
+                let captured = walk.files.keys().any(|file| file.starts_with(&path));
+                if !captured {
+                    let reason = if tracked.entry_for(&path).is_some() {
+                        "it is excluded, missing, or omitted from capture"
+                    } else {
+                        "track it with `mise bootstrap dotfiles track`"
+                    };
+                    bail!("{} is not captured; {reason}", display_path(&path));
+                }
             }
         }
         let mut draft = Draft::new(trigger);

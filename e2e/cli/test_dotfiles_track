@@ -98,6 +98,12 @@ assert_succeed "mise bootstrap dotfiles track ~/.zshrc --local --no-share"
 assert "grep -c 'variants = \[{ os = \"$this_os\" }, { os = \"$other_os\" }\]' '$local_config'" "1"
 assert "grep -c 'share = false' '$local_config'" "1"
 assert "mise history paths --json | jq -r '.entries[] | select(.path == \"~/.zshrc\") | \"\\(.share) \\(.variant) \\(.declared_in)\"'" "false $this_os ~/.config/mise/config.local.toml"
+# untracking through a local override removes the user's own declaration underneath too
+assert_succeed "mise bootstrap dotfiles untrack ~/.zshrc"
+assert_not_contains "cat '$config'" '"~/.zshrc" = { mode = "track"'
+assert_not_contains "cat '$local_config'" '"~/.zshrc"'
+assert "mise history paths --json | jq -r '[.entries[] | select(.path == \"~/.zshrc\")] | length'" "0"
+assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $this_os"
 
 # private by default: .local.toml anywhere, credential stores under the config dir;
 # an explicit per-file declaration is the only override
@@ -110,6 +116,18 @@ cat <<'EOF2' >>"$config"
 EOF2
 assert "mise history paths --json | jq -r '[.private[] | select(.path == \"~/.config/mise/other.local.toml\")] | length'" "0"
 assert "mise history paths --json | jq -r '.entries[] | select(.path == \"~/.config/mise/other.local.toml\") | .share'" "true"
+
+# a save of a path capture skips is rejected, not silently accepted
+assert_fail "mise history save ~/.config/mise/nope" "is not captured"
+
+# an enrollment that cannot save its baseline leaves the configuration unchanged
+bindir="$PWD/stub-bin"
+mkdir -p "$bindir"
+printf '#!/bin/sh\nexit 127\n' >"$bindir/git"
+chmod +x "$bindir/git"
+echo t >~/.tracked-without-git
+assert_fail "PATH='$bindir:$PATH' mise bootstrap dotfiles track ~/.tracked-without-git" "was left unchanged"
+assert_not_contains "cat '$config'" "tracked-without-git"
 
 # an invalid declaration is reported, never counted as protection
 cat <<'EOF2' >>"$config"
@@ -150,8 +168,13 @@ if [[ -n ${MISE_SYSTEM_CONFIG_DIR:-} && -w $MISE_SYSTEM_CONFIG_DIR ]]; then
   assert "mise history paths --json | jq -r '[.entries[] | select(.path == \"~/.inherited\")] | length'" "0"
   rm "$MISE_SYSTEM_CONFIG_DIR/config.toml"
 fi
-# a child of an always-tracked directory is excluded instead
+# a child of an always-tracked directory is excluded instead, and saving it is refused
 assert_succeed "mise bootstrap dotfiles untrack ~/.config/mise/templates"
 assert_contains "cat '$config'" 'exclude = ["~/.config/mise/templates/**"]'
 assert "mise history paths --json | jq -r '.exclude | join(\",\")'" "~/.config/mise/templates/**"
+# (a source a declaration references stays captured; an unreferenced child does not)
+mkdir -p "$MISE_CONFIG_DIR/scratch"
+echo n >"$MISE_CONFIG_DIR/scratch/notes.txt"
+assert_succeed "mise bootstrap dotfiles untrack ~/.config/mise/scratch"
+assert_fail "mise history save ~/.config/mise/scratch/notes.txt" "excluded, missing, or omitted"
 assert_fail "mise bootstrap dotfiles untrack ~/.copied" 'managed by a `copy` entry'

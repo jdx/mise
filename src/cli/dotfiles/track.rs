@@ -64,6 +64,8 @@ impl DotfilesTrack {
         let managed = crate::system::files::files_from_config(&config)?;
         let config_path = declaration_file(self.local)?;
         let mut doc = read_document(&config_path)?;
+        let original = doc.to_string();
+        let existed = config_path.exists();
         let mut declared: Vec<(String, PathBuf)> = vec![];
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
@@ -129,25 +131,20 @@ impl DotfilesTrack {
             );
         }
 
-        // the declaration must be active before it counts as protection
-        let config = Config::reset().await?;
-        let tracked = TrackedSet::from_config(&config)?;
-        for (key, target) in &declared {
-            let path = normalize(target);
-            let active = tracked
-                .entry_for(&path)
-                .is_some_and(|entry| entry.kind == EntryKind::Track && entry.path == path);
-            if !active {
-                let reason = tracked
-                    .invalid
-                    .iter()
-                    .find(|invalid| invalid.path == display_path(&path))
-                    .map(|invalid| invalid.reason.clone())
-                    .unwrap_or_else(|| "the declaration was not loaded".into());
-                bail!("dotfiles: {key} is declared but not tracked: {reason}");
+        // a declaration that ends up protecting nothing must not stay: the
+        // write is undone when the entry is not active or no baseline could
+        // be saved
+        if let Err(err) = activate_and_baseline(&declared).await {
+            if existed {
+                file::write(&config_path, &original)?;
+            } else {
+                let _ = std::fs::remove_file(&config_path);
             }
+            return Err(err.wrap_err(format!(
+                "{} was left unchanged",
+                display_path(&config_path)
+            )));
         }
-        baseline(&tracked, &declared).await?;
         crate::cli::history::capture_health::report();
         Ok(())
     }
@@ -214,6 +211,28 @@ impl DotfilesTrack {
         }
         table
     }
+}
+
+/// Checks that every declared entry is active and saves their baseline.
+async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
+    let config = Config::reset().await?;
+    let tracked = TrackedSet::from_config(&config)?;
+    for (key, target) in declared {
+        let path = normalize(target);
+        let active = tracked
+            .entry_for(&path)
+            .is_some_and(|entry| entry.kind == EntryKind::Track && entry.path == path);
+        if !active {
+            let reason = tracked
+                .invalid
+                .iter()
+                .find(|invalid| invalid.path == display_path(&path))
+                .map(|invalid| invalid.reason.clone())
+                .unwrap_or_else(|| "the declaration was not loaded".into());
+            bail!("dotfiles: {key} could not be tracked: {reason}");
+        }
+    }
+    baseline(&tracked, declared).await
 }
 
 /// Saves the baseline checkpoint of newly tracked paths; a failure fails

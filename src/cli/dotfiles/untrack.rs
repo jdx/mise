@@ -113,23 +113,64 @@ impl DotfilesUntrack {
                 }
             }
         }
-        let config = Config::reset().await?;
-        let tracked = TrackedSet::from_config(&config)?;
+        let mut config = Config::reset().await?;
+        let mut tracked = TrackedSet::from_config(&config)?;
         for target_raw in &self.targets {
-            let path = normalize(&crate::system::files::resolve_target_arg(target_raw));
+            let target = crate::system::files::resolve_target_arg(target_raw)
+                .components()
+                .collect::<PathBuf>();
+            let key = super::track::normalized_target(&target);
+            let path = normalize(&target);
             let still = tracked
                 .entry_for(&path)
-                .filter(|entry| entry.kind == EntryKind::Track && entry.path == path);
+                .filter(|entry| entry.kind == EntryKind::Track && entry.path == path)
+                .cloned();
             if let Some(entry) = still {
-                bail!(
-                    "dotfiles: {} is still tracked by {}",
-                    display_path(&path),
+                // removing a local override exposed the declaration underneath:
+                // the user's own global one goes too; an inherited one is
+                // switched off on this machine
+                if entry.declared_in.as_deref() == Some(global.as_path()) {
+                    let mut doc = super::track::read_document(&global)?;
+                    if let Some(table) = doc["dotfiles"].as_table_mut() {
+                        table.remove(&key);
+                    }
+                    file::write(&global, doc.to_string())?;
+                    info!("dotfiles: {key} removed from {}", display_path(&global));
+                    config = Config::reset().await?;
+                    tracked = TrackedSet::from_config(&config)?;
+                    if !tracked
+                        .entry_for(&path)
+                        .is_some_and(|entry| entry.kind == EntryKind::Track && entry.path == path)
+                    {
+                        continue;
+                    }
+                }
+                let mut doc = super::track::read_document(&local)?;
+                let mut table = toml_edit::InlineTable::new();
+                table.insert(
+                    "mode",
+                    Value::String(toml_edit::Formatted::new("track".into())),
+                );
+                table.insert("enabled", Value::Boolean(toml_edit::Formatted::new(false)));
+                doc["dotfiles"][&key] = Item::Value(Value::InlineTable(table));
+                file::write(&local, doc.to_string())?;
+                info!(
+                    "dotfiles: {key} is also declared in {}; switched off in {}",
                     entry
                         .declared_in
                         .as_deref()
                         .map(display_path)
-                        .unwrap_or_else(|| "another declaration".into())
+                        .unwrap_or_else(|| "another layer".into()),
+                    display_path(&local)
                 );
+                config = Config::reset().await?;
+                tracked = TrackedSet::from_config(&config)?;
+                if tracked
+                    .entry_for(&path)
+                    .is_some_and(|entry| entry.kind == EntryKind::Track && entry.path == path)
+                {
+                    bail!("dotfiles: {} is still tracked", display_path(&path));
+                }
             }
         }
         info!("dotfiles: the files and their checkpoints were left in place");

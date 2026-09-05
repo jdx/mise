@@ -55,6 +55,7 @@ assert_contains "mise bootstrap generations diff 2 6 --patch" "+two"
 assert_contains "mise bootstrap generations diff 2 6 --root config/dotfiles/copied --patch" "-one"
 assert_contains "mise bootstrap generations diff 2 6 --root ~/.config/mise/dotfiles/copied --patch" "-one"
 assert_contains "mise bootstrap generations diff 2 6 2>&1" "dotfiles: ~/.copied: ~/.copied a file (4 bytes) -> a file"
+assert_contains "mise bootstrap generations diff 6 2 2>&1" "dotfiles: ~/.copied: ~/.copied a file (4 bytes) -> a file"
 assert_not_contains "mise bootstrap generations diff 2 6 --no-journal 2>&1" "dotfiles: ~/.copied"
 # within the run only the copied output changed
 assert_contains "mise bootstrap generations diff 6" "home/.copied"
@@ -91,6 +92,9 @@ assert "mise bootstrap generations --json | jq -r '.[0].operation.journal[0].kin
 echo 'real file' >~/.newrc
 assert_succeed "mise bootstrap dotfiles add --yes ~/.newrc"
 assert "readlink ~/.newrc" "$HOME/.dotfiles/.newrc"
+# the outcome covers what the run declared: the new source is in its snapshot
+assert_contains "mise bootstrap generations show latest --files" "~/.dotfiles/.newrc"
+assert_contains "mise bootstrap generations diff 2 latest --patch" "+real file"
 assert "mise bootstrap generations --json | jq -r '[.[0].operation.journal[] | select(.kind == \"path_changed\") | .prior.state] | .[0:2] | join(\" \")'" "file missing"
 assert "mise bootstrap generations --json | jq -r '.[0].operation.journal[0].prior.content.inline' | base64 -d" "real file"
 
