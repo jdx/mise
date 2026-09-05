@@ -1,7 +1,1 @@
-add a pr to the top of the packslip stack that improves the packslip related docs. i want improved content, prose, and structure, and whatever else needs to be improved.
-
-Before that though, merge 52 and 50 packslip PRs into origin/main
-
----
-
 that's a good improvement i merged it, but I was actually asking about the giant mise PR stack for packslip support
