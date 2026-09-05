@@ -7,7 +7,7 @@ shell completions and agent skills.
 
 Packslip is the preferred [Tier 1 backend](/registry.html#backends) for tools
 whose publishers provide these manifests. For other tools, use
-[aqua](/dev-tools/backends/aqua.html), [github](/dev-tools/backends/github.html),
+[aqua](/dev-tools/backends/aqua.html), [GitHub](/dev-tools/backends/github.html),
 or another supported backend. You do not need to install the Packslip CLI.
 
 ## Quick start {#usage}
