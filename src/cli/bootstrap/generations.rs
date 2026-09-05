@@ -1,18 +1,22 @@
+//! `mise bootstrap generations`: the operations `mise bootstrap` recorded,
+//! as a view over `mise history`.
+
 use eyre::{Result, bail};
 
-use crate::dirs;
+use crate::cli::history::{local_time, short};
 use crate::file::display_path;
-use crate::system::generations::journal;
-use crate::system::generations::shadow::{DiffOpts, ShadowRepo};
-use crate::system::generations::store::{self, Generation, GenerationStatus, Snapshot};
+use crate::system::history::journal;
+use crate::system::history::shadow::DiffOpts;
+use crate::system::history::store::{Entry, OperationStatus};
+use crate::system::history::tracked::{display_to_tree_path, global_config_dir};
 use crate::ui::table::MiseTable;
 
-/// Inspect recorded bootstrap generations
+/// Inspect the operations bootstrap recorded
 ///
-/// Every mutating bootstrap command records a generation: what ran, a
-/// snapshot of the global config directory and dotfiles root taken before
-/// and after the run, the global lockfile, and a journal of what changed.
-/// Without a subcommand this lists them, newest first.
+/// Every mutating bootstrap command records a pair of history checkpoints:
+/// the tracked files before the run and after it, with a journal of what
+/// the run changed. This lists those operations, newest first; `mise
+/// history` lists every checkpoint.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct BootstrapGenerations {
@@ -30,21 +34,20 @@ enum BootstrapGenerationsCommands {
     Show(BootstrapGenerationsShow),
 }
 
-/// Diff the snapshotted config and dotfiles between generations
+/// Diff the tracked files between operations
 ///
-/// With one id, shows what that generation's run changed inside the
-/// snapshot roots: its snapshot before the run against the one after.
-/// With two ids, compares the states the two runs left behind, which is
-/// how to see what changed by hand between runs. Paths are prefixed by
-/// their root (`config/`, `dotfiles/`, `mise.lock`).
+/// With one id, shows what that operation's run changed: the checkpoint
+/// before the run against the one after. With two ids, compares the states
+/// the two runs left behind, which is how to see what changed by hand
+/// between runs.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapGenerationsDiff {
-    /// Generation id, `latest`, or `latest~N`
+    /// Checkpoint id, `latest`, or `latest~N` (among operations)
     #[usage(value_name = "A")]
     a: String,
 
-    /// Compare the state after `A` with the state after this generation
+    /// Compare the state after `A` with the state after this operation
     #[usage(value_name = "B")]
     b: Option<String>,
 
@@ -52,7 +55,8 @@ struct BootstrapGenerationsDiff {
     #[usage(long, short)]
     patch: bool,
 
-    /// Restrict to one snapshot root or a path inside it
+    /// Restrict to `config` or `dotfiles` (the config directory or dotfiles
+    /// root), a path inside one (`config/dotfiles/zshrc`), or any tracked path
     #[usage(long, value_name = "LABEL[/PATH]")]
     root: Option<String>,
 
@@ -60,12 +64,12 @@ struct BootstrapGenerationsDiff {
     #[usage(long)]
     exit_code: bool,
 
-    /// Skip the journal entries of the generations covered
+    /// Skip the journal entries of the operations covered
     #[usage(long)]
     no_journal: bool,
 }
 
-/// List recorded generations, newest first
+/// List recorded operations, newest first
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_alias = "list", verbatim_doc_comment)]
 struct BootstrapGenerationsLs {
@@ -73,20 +77,20 @@ struct BootstrapGenerationsLs {
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Show at most this many generations (0 for all)
+    /// Show at most this many operations (0 for all)
     #[usage(long, short = 'n', default_value_t = 20, default = "20")]
     limit: usize,
 
-    /// Only list generations whose run did not finish
+    /// Only list operations whose run did not finish
     #[usage(long)]
     pending: bool,
 }
 
-/// Show one generation: what ran, its snapshot, and its journal
+/// Show one operation: what ran, its snapshots, and its journal
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapGenerationsShow {
-    /// Generation id, `latest` (the default), or `latest~N`
+    /// Checkpoint id, `latest` (the default), or `latest~N` (among operations)
     #[usage(value_name = "ID")]
     id: Option<String>,
 
@@ -102,217 +106,212 @@ struct BootstrapGenerationsShow {
 impl BootstrapGenerations {
     pub(crate) async fn run(self) -> Result<()> {
         match self.command {
-            Some(BootstrapGenerationsCommands::Diff(cmd)) => cmd.run(),
-            Some(BootstrapGenerationsCommands::Ls(cmd)) => cmd.run(),
-            Some(BootstrapGenerationsCommands::Show(cmd)) => cmd.run(),
-            None => self.ls.run(),
+            Some(BootstrapGenerationsCommands::Diff(cmd)) => cmd.run().await,
+            Some(BootstrapGenerationsCommands::Ls(cmd)) => cmd.run().await,
+            Some(BootstrapGenerationsCommands::Show(cmd)) => cmd.run().await,
+            None => self.ls.run().await,
         }
     }
 }
 
+/// The operation outcomes among all checkpoints, oldest first.
+fn operations(entries: &[Entry]) -> Vec<Entry> {
+    entries
+        .iter()
+        .filter(|entry| entry.checkpoint.operation.is_some())
+        .cloned()
+        .collect()
+}
+
+fn before_of<'a>(entries: &'a [Entry], entry: &Entry) -> Option<&'a Entry> {
+    let before = entry.checkpoint.operation.as_ref()?.before.as_deref()?;
+    entries
+        .iter()
+        .find(|candidate| candidate.checkpoint.uuid == before)
+}
+
 impl BootstrapGenerationsLs {
-    fn run(self) -> Result<()> {
-        let mut generations = store::list_in(&dirs::STATE)?;
-        generations.reverse();
+    async fn run(self) -> Result<()> {
+        let (_store, _tracked, entries) = crate::cli::history::open().await?;
+        let mut operations = operations(&entries);
+        operations.reverse();
         if self.pending {
-            generations.retain(|generation| generation.status == GenerationStatus::Pending);
+            operations.retain(|entry| entry.checkpoint.status() == Some(OperationStatus::Pending));
         }
         if self.limit > 0 {
-            generations.truncate(self.limit);
+            operations.truncate(self.limit);
         }
         if self.json {
-            miseprintln!("{}", serde_json::to_string_pretty(&generations)?);
+            miseprintln!("{}", serde_json::to_string_pretty(&operations)?);
             return Ok(());
         }
-        if generations.is_empty() {
+        if operations.is_empty() {
             if self.pending {
-                info!("no pending bootstrap generations");
+                info!("no pending bootstrap operations");
             } else {
-                info!("no bootstrap generations recorded");
+                info!("no bootstrap operations recorded");
             }
             return Ok(());
         }
         let mut table = MiseTable::new(
             false,
-            &["ID", "Status", "When", "Command", "Parts", "Snapshot"],
+            &[
+                "ID", "Status", "When", "Command", "Parts", "Before", "Changes",
+            ],
         );
-        for generation in &generations {
+        for entry in &operations {
+            let operation = entry.checkpoint.operation.as_ref().expect("filtered");
             table.add_row(vec![
-                generation.id.to_string(),
-                generation.status.as_str().to_string(),
-                local_time(&generation.created_at),
-                generation.command.clone(),
-                parts(generation),
-                snapshot_summary(generation),
+                entry.id.to_string(),
+                operation.status.as_str().to_string(),
+                local_time(&entry.checkpoint.created_at),
+                operation.command.clone(),
+                if operation.parts.is_empty() {
+                    "-".to_string()
+                } else {
+                    operation.parts.join(",")
+                },
+                before_of(&entries, entry)
+                    .map(|before| before.id.to_string())
+                    .unwrap_or_else(|| "-".into()),
+                if entry.checkpoint.tree.available {
+                    entry.checkpoint.changes.len().to_string()
+                } else {
+                    "unavailable".into()
+                },
             ]);
         }
         table.print()
     }
 }
 
+fn resolve_operation(spec: &str, entries: &[Entry]) -> Result<Entry> {
+    let operations = operations(entries);
+    let id = if spec.starts_with("latest") {
+        crate::system::history::store::resolve_ref(spec, &operations)?
+    } else {
+        crate::system::history::store::resolve_ref(spec, entries)?
+    };
+    entries
+        .iter()
+        .find(|entry| entry.id == id)
+        .cloned()
+        .ok_or_else(|| eyre::eyre!("no bootstrap generation {id}"))
+}
+
 impl BootstrapGenerationsShow {
-    fn run(self) -> Result<()> {
-        let generations = store::list_in(&dirs::STATE)?;
-        let spec = self.id.as_deref().unwrap_or("latest");
-        let id = store::resolve_id(spec, &generations)?;
-        let generation = store::load_in(&dirs::STATE, id)?;
+    async fn run(self) -> Result<()> {
+        let (store, _tracked, entries) = crate::cli::history::open().await?;
+        let entry = resolve_operation(self.id.as_deref().unwrap_or("latest"), &entries)?;
         if self.json {
-            miseprintln!("{}", serde_json::to_string_pretty(&generation)?);
+            miseprintln!("{}", serde_json::to_string_pretty(&entry)?);
             return Ok(());
         }
-        let g = &generation;
-        miseprintln!("Generation {} ({})", g.id, g.status.as_str());
-        miseprintln!("  Command:    mise {}", g.command);
-        let finished = g
-            .finished_at
-            .as_deref()
-            .map(local_time)
-            .unwrap_or_else(|| "(not finished)".into());
-        miseprintln!(
-            "  Recorded:   {} -> {}",
-            local_time(&g.created_at),
-            finished
-        );
-        miseprintln!("  Directory:  {}", display_path(&g.cwd));
-        if let Some(user) = &g.user {
+        let c = &entry.checkpoint;
+        let Some(operation) = &c.operation else {
+            bail!(
+                "checkpoint {} is not a bootstrap operation; see `mise history show {}`",
+                entry.id,
+                entry.id
+            );
+        };
+        miseprintln!("Generation {} ({})", entry.id, operation.status.as_str());
+        miseprintln!("  Command:    mise {}", operation.command);
+        miseprintln!("  Started:    {}", local_time(&c.created_at));
+        if let Some(finished) = &operation.finished_at {
+            miseprintln!("  Finished:   {}", local_time(finished));
+        }
+        miseprintln!("  Directory:  {}", display_path(&operation.cwd));
+        if let Some(user) = &operation.user {
             miseprintln!("  User:       {user}");
         }
-        miseprintln!("  mise:       {}", g.mise_version);
-        if let Some(parent) = g.parent {
-            miseprintln!("  Parent:     {parent}");
-        }
-        if let Some(of) = g.rollback_of {
-            miseprintln!("  Rolled back to: {of}");
-        }
-        match &g.lockfile {
-            Some(lock) => miseprintln!(
+        miseprintln!("  mise:       {}", c.mise_version);
+        if let Some(lock) = &operation.lockfile {
+            miseprintln!(
                 "  Lockfile:   {} (sha256 {})",
                 display_path(&lock.path),
                 &lock.sha256[..12.min(lock.sha256.len())]
-            ),
-            None => miseprintln!("  Lockfile:   none"),
+            );
         }
-        let snapshot = &g.snapshot;
-        if snapshot.available {
-            let before = snapshot.before.as_ref().map(|s| short(&s.commit));
-            let after = snapshot.after.as_ref().map(|s| short(&s.commit));
-            let unchanged = match snapshot.unchanged {
-                Some(true) => " (unchanged)",
+        let before = before_of(&entries, &entry);
+        if c.tree.available {
+            let before_tree = before.and_then(|before| before.checkpoint.tree.snapshot.as_deref());
+            let unchanged = match (before_tree, c.tree.snapshot.as_deref()) {
+                (Some(a), Some(b)) if a == b => " (unchanged)",
                 _ => "",
             };
             miseprintln!(
                 "  Snapshot:   before {} after {}{unchanged}",
-                before.unwrap_or_else(|| "-".into()),
-                after.unwrap_or_else(|| "-".into())
+                before
+                    .map(|before| format!("checkpoint {}", before.id))
+                    .unwrap_or_else(|| "-".into()),
+                c.tree
+                    .snapshot
+                    .as_deref()
+                    .map(short)
+                    .unwrap_or_else(|| "-".into())
             );
-            miseprintln!("  Repository: {}", display_path(&snapshot.repo));
+            miseprintln!(
+                "  Repository: {}",
+                display_path(
+                    store
+                        .repo()
+                        .map(|repo| repo.dir().to_path_buf())
+                        .unwrap_or_default()
+                )
+            );
         } else {
             miseprintln!(
                 "  Snapshot:   unavailable ({})",
-                snapshot.reason.as_deref().unwrap_or("unknown reason")
+                c.tree.reason.as_deref().unwrap_or("unknown reason")
             );
         }
-        if let Some(summary) = &g.summary {
-            if !summary.parts.is_empty() {
-                miseprintln!("  Parts:      {}", summary.parts.join(", "));
-            }
-            if let Some(message) = &summary.message {
-                miseprintln!("  Note:       {message}");
-            }
+        if !operation.parts.is_empty() {
+            miseprintln!("  Parts:      {}", operation.parts.join(", "));
         }
-        if let Some(error) = &g.error {
+        if let Some(message) = &operation.message {
+            miseprintln!("  Note:       {message}");
+        }
+        if let Some(error) = &operation.error {
             miseprintln!("  Error:      {error}");
         }
-
-        if let Some(roots) = snapshot.after.as_ref().or(snapshot.before.as_ref()) {
+        if !c.changes.is_empty() {
             miseprintln!("");
-            let mut table = MiseTable::new(false, &["Root", "Path", "Tree", "Files", "Note"]);
-            for root in &roots.roots {
-                let note = if let Some(reason) = &root.skipped {
-                    format!("skipped: {reason}")
-                } else if let Some(label) = &root.alias_of {
-                    format!("same directory as {label}")
-                } else if let Some(label) = &root.contained_in {
-                    format!(
-                        "inside {label} at {}",
-                        root.subpath
-                            .as_deref()
-                            .map(display_path)
-                            .unwrap_or_default()
-                    )
-                } else if let Some(vcs) = &root.vcs {
-                    format!(
-                        "git checkout {}{}",
-                        vcs.branch.as_deref().unwrap_or("(detached)"),
-                        vcs.head
-                            .as_deref()
-                            .map(|head| format!(" @ {}", short(head)))
-                            .unwrap_or_default()
-                    )
-                } else {
-                    String::new()
-                };
-                table.add_row(vec![
-                    root.label.clone(),
-                    display_path(&root.path),
-                    root.tree
-                        .as_deref()
-                        .map(short)
-                        .unwrap_or_else(|| "-".into()),
-                    root.tree
-                        .as_ref()
-                        .map(|_| root.files.to_string())
-                        .unwrap_or_default(),
-                    note,
-                ]);
+            miseprintln!("Changed by the run:");
+            for path in &c.changes.modified {
+                miseprintln!("  M {path}");
             }
-            table.print()?;
-            for warning in &roots.warnings {
-                miseprintln!("  warning: {warning}");
+            for path in &c.changes.added {
+                miseprintln!("  A {path}");
+            }
+            for path in &c.changes.removed {
+                miseprintln!("  D {path}");
             }
         }
-
-        if !g.journal.is_empty() {
+        if !operation.journal.is_empty() {
             miseprintln!("");
             miseprintln!("Journal:");
-            for line in journal::render(&g.journal) {
+            for line in journal::render(&operation.journal) {
                 miseprintln!("  - {line}");
             }
         }
-
         if self.files {
-            let (snapshot, phase) = match (&snapshot.after, &snapshot.before) {
-                (Some(after), _) => (after, "after"),
-                (None, Some(before)) => (before, "before"),
-                (None, None) => bail!("generation {id} has no content snapshot"),
+            let Some(tree) = &c.tree.snapshot else {
+                bail!("generation {} has no content snapshot", entry.id);
             };
-            let Some(shadow) = ShadowRepo::open_or_init_in(&dirs::STATE)? else {
+            let Some(repo) = store.repo() else {
                 bail!("listing snapshot files requires git");
             };
-            for root in snapshot.roots.iter().filter(|root| root.tree.is_some()) {
-                miseprintln!("");
+            miseprintln!("");
+            miseprintln!("Files in the snapshot taken after the run:");
+            for file in repo.ls_tree(tree)? {
+                let size = file.size.map(|size| size.to_string()).unwrap_or_default();
                 miseprintln!(
-                    "Files in {} ({}) from the snapshot taken {phase} the run:",
-                    root.label,
-                    display_path(&root.path)
+                    "  {} {:>8} {}",
+                    file.mode,
+                    size,
+                    crate::system::history::tracked::tree_path_to_display(&file.path)
                 );
-                for entry in shadow.ls_tree(&snapshot.commit, &root.label)? {
-                    let size = entry
-                        .size
-                        .map(|size| size.to_string())
-                        .unwrap_or_else(|| "-".into());
-                    miseprintln!(
-                        "  {} {:>9} {} {}",
-                        entry.mode,
-                        size,
-                        short(&entry.oid),
-                        entry.path
-                    );
-                }
-            }
-            if let Some(blob) = g.lockfile.as_ref().and_then(|lock| lock.blob.as_deref()) {
-                miseprintln!("");
-                miseprintln!("Lockfile in the snapshot: mise.lock ({})", short(blob));
             }
         }
         Ok(())
@@ -320,59 +319,58 @@ impl BootstrapGenerationsShow {
 }
 
 impl BootstrapGenerationsDiff {
-    fn run(self) -> Result<()> {
-        let generations = store::list_in(&dirs::STATE)?;
-        let a_id = store::resolve_id(&self.a, &generations)?;
-        let a = store::load_in(&dirs::STATE, a_id)?;
+    async fn run(self) -> Result<()> {
+        let (store, _tracked, entries) = crate::cli::history::open().await?;
+        let a = resolve_operation(&self.a, &entries)?;
         let (from, to, covered, label) = match &self.b {
             Some(b) => {
-                let b_id = store::resolve_id(b, &generations)?;
-                let b = store::load_in(&dirs::STATE, b_id)?;
-                let (lo, hi) = (a_id.min(b_id), a_id.max(b_id));
-                let covered = generations
+                let b = resolve_operation(b, &entries)?;
+                let covered: Vec<Entry> = entries
                     .iter()
-                    .filter(|g| g.id > lo && g.id <= hi)
+                    .filter(|entry| {
+                        entry.checkpoint.operation.is_some() && entry.id > a.id && entry.id <= b.id
+                    })
                     .cloned()
-                    .collect::<Vec<_>>();
+                    .collect();
                 (
-                    final_snapshot(&a)?,
-                    final_snapshot(&b)?,
+                    tree_of(&a)?,
+                    tree_of(&b)?,
                     covered,
-                    format!("generation {a_id} -> {b_id}"),
+                    format!("generation {} -> {}", a.id, b.id),
                 )
             }
             None => {
-                if a.status == GenerationStatus::Pending {
+                if a.checkpoint.status() == Some(OperationStatus::Pending) {
                     bail!(
-                        "generation {a_id} did not finish; there is no state after the run to compare"
+                        "generation {} did not finish; there is no state after the run to compare",
+                        a.id
                     );
                 }
-                let before = a.snapshot.before.clone().ok_or_else(|| no_snapshot(&a))?;
-                let Some(after) = a.snapshot.after.clone() else {
-                    bail!("generation {a_id} has no snapshot after the run to compare");
+                let Some(before) = before_of(&entries, &a) else {
+                    bail!(
+                        "generation {} has no snapshot before the run to compare",
+                        a.id
+                    );
                 };
-                (before, after, vec![a.clone()], format!("generation {a_id}"))
+                (
+                    tree_of(before)?,
+                    tree_of(&a)?,
+                    vec![a.clone()],
+                    format!("generation {}", a.id),
+                )
             }
         };
-        // resolved per side: a root may be an alias or nested in one snapshot
-        // and stand alone in the other
-        let paths = match &self.root {
-            Some(root) => Some((
-                resolve_root_path(&from, root)?,
-                resolve_root_path(&to, root)?,
-            )),
-            None => None,
-        };
-        let Some(shadow) = ShadowRepo::open_or_init_in(&dirs::STATE)? else {
+        let paths = self.root.as_deref().map(root_path).transpose()?;
+        let Some(repo) = store.repo() else {
             bail!("comparing snapshots requires git");
         };
-        let result = shadow.diff(
-            &from.tree,
-            &to.tree,
+        let result = repo.diff(
+            &from,
+            &to,
             &DiffOpts {
                 patch: self.patch,
                 color: console::colors_enabled(),
-                paths,
+                paths: paths.map(|path| (path.clone(), path)),
             },
         )?;
         if result.changed {
@@ -381,10 +379,12 @@ impl BootstrapGenerationsDiff {
             info!("{label}: no differences");
         }
         if !self.no_journal {
-            for generation in covered.iter().filter(|g| !g.journal.is_empty()) {
-                miseprintln!("Journal (generation {}):", generation.id);
-                for line in journal::render(&generation.journal) {
-                    miseprintln!("  - {line}");
+            for entry in &covered {
+                let Some(operation) = &entry.checkpoint.operation else {
+                    continue;
+                };
+                for line in journal::render(&operation.journal) {
+                    info!("{line}");
                 }
             }
         }
@@ -395,95 +395,31 @@ impl BootstrapGenerationsDiff {
     }
 }
 
-/// The state a generation left behind: its `after` snapshot, or `before`
-/// when the run never finished.
-fn final_snapshot(generation: &Generation) -> Result<Snapshot> {
-    generation
+fn tree_of(entry: &Entry) -> Result<String> {
+    entry
+        .checkpoint
+        .tree
         .snapshot
-        .after
         .clone()
-        .or_else(|| generation.snapshot.before.clone())
-        .ok_or_else(|| no_snapshot(generation))
+        .ok_or_else(|| eyre::eyre!("generation {} has no content snapshot", entry.id))
 }
 
-fn no_snapshot(generation: &Generation) -> eyre::Report {
-    eyre::eyre!(
-        "generation {} has no content snapshot ({})",
-        generation.id,
-        generation
-            .snapshot
-            .reason
-            .as_deref()
-            .unwrap_or("not recorded")
-    )
-}
-
-/// Turns `label` or `label/path` into a path inside the snapshot's top-level
-/// tree, following roots that are aliases of or contained in another.
-fn resolve_root_path(snapshot: &Snapshot, spec: &str) -> Result<String> {
+/// `config[/path]`, `dotfiles[/path]`, or any path -> a snapshot tree path.
+fn root_path(spec: &str) -> Result<String> {
     let (label, rest) = spec.split_once('/').unwrap_or((spec, ""));
-    let root = snapshot
-        .roots
-        .iter()
-        .find(|root| root.label == label)
-        .ok_or_else(|| eyre::eyre!("no snapshot root named {label}"))?;
-    if let Some(reason) = &root.skipped {
-        bail!("snapshot root {label} was skipped ({reason})");
-    }
-    let mut base = if let Some(alias) = &root.alias_of {
-        alias.clone()
-    } else if let Some(outer) = &root.contained_in {
-        match &root.subpath {
-            // git tree paths always use `/`
-            Some(subpath) => format!("{outer}/{}", subpath.to_string_lossy().replace('\\', "/")),
-            None => outer.clone(),
+    let base = match label {
+        "config" => global_config_dir(),
+        "dotfiles" => crate::system::files::dotfiles_root(),
+        _ => {
+            return Ok(display_to_tree_path(spec));
         }
-    } else {
-        label.to_string()
     };
-    if !rest.is_empty() {
-        base.push('/');
-        base.push_str(rest.trim_end_matches('/'));
-    }
-    Ok(base)
-}
-
-fn short(oid: &str) -> String {
-    oid.chars().take(7).collect()
-}
-
-fn parts(generation: &Generation) -> String {
-    generation
-        .summary
-        .as_ref()
-        .map(|summary| summary.parts.join(","))
-        .filter(|parts| !parts.is_empty())
-        .unwrap_or_else(|| "-".into())
-}
-
-fn snapshot_summary(generation: &Generation) -> String {
-    let snapshot = &generation.snapshot;
-    if !snapshot.available {
-        return "unavailable".into();
-    }
-    match (&snapshot.before, &snapshot.after) {
-        (_, Some(after)) if snapshot.unchanged == Some(true) => {
-            format!("{} (unchanged)", short(&after.commit))
-        }
-        (_, Some(after)) => short(&after.commit),
-        (Some(before), None) => format!("{} (before only)", short(&before.commit)),
-        (None, None) => "-".into(),
-    }
-}
-
-fn local_time(rfc3339: &str) -> String {
-    chrono::DateTime::parse_from_rfc3339(rfc3339)
-        .map(|time| {
-            time.with_timezone(&chrono::Local)
-                .format("%Y-%m-%d %H:%M")
-                .to_string()
-        })
-        .unwrap_or_else(|_| rfc3339.to_string())
+    let path = if rest.is_empty() {
+        base
+    } else {
+        base.join(rest.trim_end_matches('/'))
+    };
+    Ok(display_to_tree_path(&path.to_string_lossy()))
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

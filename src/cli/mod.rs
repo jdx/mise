@@ -20,7 +20,7 @@ mod current;
 mod deactivate;
 mod direnv;
 mod doctor;
-mod dotfiles;
+pub(crate) mod dotfiles;
 mod en;
 mod env;
 pub(crate) mod exec;
@@ -29,6 +29,7 @@ mod fmt;
 mod generate;
 mod github;
 mod global;
+pub(crate) mod history;
 mod hook_env;
 mod hook_not_found;
 mod tool_alias;
@@ -264,6 +265,7 @@ pub(crate) enum Commands {
     Generate(generate::Generate),
     Github(github::Github),
     Global(global::Global),
+    History(history::History),
     HookEnv(hook_env::HookEnv),
     HookNotFound(hook_not_found::HookNotFound),
     Implode(implode::Implode),
@@ -401,6 +403,7 @@ impl Commands {
             Self::Fmt(cmd) => cmd.run(),
             Self::Generate(cmd) => cmd.run().await,
             Self::Github(cmd) => cmd.run().await,
+            Self::History(cmd) => cmd.run().await,
             Self::Global(cmd) => cmd.run().await,
             Self::HookEnv(cmd) => cmd.run().await,
             Self::HookNotFound(cmd) => cmd.run().await,

@@ -10,7 +10,8 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::dotfiles::{
-    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesStatus, DotfilesUnapply,
+    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesStatus, DotfilesTrack,
+    DotfilesUnapply, DotfilesUntrack,
 };
 use super::install::Install;
 use super::plugins::install::install_plugin;
@@ -23,8 +24,8 @@ use crate::path::PathExt;
 use crate::system;
 use crate::system::defaults::DefaultsState;
 use crate::system::files::{FileMode, FileRequest, FileState};
-use crate::system::generations::store::Summary;
-use crate::system::generations::{GenerationScope, journal};
+use crate::system::history::store::Summary;
+use crate::system::history::{OperationScope, journal};
 use crate::system::hooks::{self, BootstrapHookPhase};
 use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
@@ -826,7 +827,9 @@ enum BootstrapDotfilesCommands {
     Diff(DotfilesDiff),
     Edit(DotfilesEdit),
     Status(BootstrapDotfilesStatus),
+    Track(DotfilesTrack),
     Unapply(DotfilesUnapply),
+    Untrack(DotfilesUntrack),
 }
 
 /// Apply dotfiles from `[dotfiles]`
@@ -1273,12 +1276,12 @@ impl Bootstrap {
                 };
                 bail!("{flag} cannot be used with a bootstrap subcommand");
             }
-            return self.run_from();
+            return self.run_from().await;
         }
         if let Some(command) = self.command.take() {
             return command.run().await;
         }
-        let generation = GenerationScope::begin("bootstrap", self.dry_run);
+        let generation = OperationScope::begin("bootstrap", self.dry_run).await?;
         let result = self.run_phases().await;
         let error = result.as_ref().err().map(|err| format!("{err:#}"));
         generation.finish(error, result.as_ref().ok().cloned());
@@ -1789,7 +1792,7 @@ impl Bootstrap {
         Ok(summary)
     }
 
-    fn run_from(&self) -> Result<()> {
+    async fn run_from(&self) -> Result<()> {
         let expanded = self
             .from_git
             .as_deref()
@@ -1824,8 +1827,11 @@ impl Bootstrap {
         // process records the bootstrap itself, so it is a generation of its
         // own. A checkout reused as-is changes nothing and records nothing.
         let mutates_checkout = !reuse_checkout || self.update;
-        let generation =
-            mutates_checkout.then(|| GenerationScope::begin("bootstrap --from", self.dry_run));
+        let generation = if mutates_checkout {
+            Some(OperationScope::begin("bootstrap --from", self.dry_run).await?)
+        } else {
+            None
+        };
         if reuse_checkout {
             if self.update {
                 if self.dry_run {
@@ -2507,7 +2513,7 @@ impl BootstrapAccounts {
 
 impl BootstrapAccountsApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap accounts apply",
             "accounts",
             self.dry_run,
@@ -2566,7 +2572,7 @@ impl BootstrapFiles {
 
 impl BootstrapFilesApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap files apply",
             "files",
             self.dry_run,
@@ -2684,7 +2690,7 @@ impl BootstrapServices {
 
 impl BootstrapServicesApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap services apply",
             "services",
             self.dry_run,
@@ -2745,7 +2751,7 @@ impl BootstrapFirewall {
 
 impl BootstrapFirewallApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap firewall apply",
             "firewall",
             self.dry_run,
@@ -2807,7 +2813,7 @@ impl BootstrapCompose {
 
 impl BootstrapComposeApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap compose apply",
             "compose",
             self.dry_run,
@@ -3522,6 +3528,7 @@ impl BootstrapStatus {
                 system::files::FileState::Differs(reason) => {
                     (format!("differs ({reason})"), "differs", true)
                 }
+                system::files::FileState::Tracked => ("tracked".to_string(), "tracked", false),
             };
             report.row(
                 "dotfiles",
@@ -3558,6 +3565,7 @@ impl BootstrapStatus {
                 system::files::FileState::Differs(reason) => {
                     (format!("differs ({reason})"), "differs", true)
                 }
+                system::files::FileState::Tracked => ("tracked".to_string(), "tracked", false),
             };
             report.row(
                 "dotfiles",
@@ -3969,7 +3977,9 @@ impl BootstrapDotfiles {
             BootstrapDotfilesCommands::Diff(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Track(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Unapply(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Untrack(cmd) => cmd.run().await,
         }
     }
 }
@@ -4047,7 +4057,7 @@ impl BootstrapPlugins {
 
 impl BootstrapPluginsApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap plugins apply",
             "plugins",
             self.dry_run,
@@ -4118,7 +4128,7 @@ impl BootstrapRepos {
 
 impl BootstrapReposApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap repos apply",
             "repos",
             self.dry_run,
@@ -4141,7 +4151,7 @@ impl BootstrapReposApply {
 
 impl BootstrapReposUpdate {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap repos update",
             "repos",
             self.dry_run,
@@ -4287,7 +4297,7 @@ impl BootstrapLaunchd {
 
 impl BootstrapLaunchdApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap macos launchd-agents apply",
             "macos-launchd-agents",
             self.dry_run,
@@ -4400,7 +4410,7 @@ impl BootstrapSystemd {
 
 impl BootstrapSystemdApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap linux systemd-units apply",
             "linux-systemd-units",
             self.dry_run,
@@ -4507,7 +4517,7 @@ impl BootstrapSystemdStatus {
 
 impl BootstrapMacosDefaultsApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap macos defaults apply",
             "macos-defaults",
             self.dry_run,
@@ -4623,7 +4633,7 @@ impl BootstrapShell {
 
 impl BootstrapShellApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap mise-shell-activate apply",
             "mise-shell-activate",
             self.dry_run,
@@ -4712,7 +4722,7 @@ impl BootstrapUser {
 
 impl BootstrapUserApply {
     async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap user apply",
             "user",
             self.dry_run,
@@ -4815,6 +4825,7 @@ fn file_state_display(state: &FileState) -> String {
         FileState::Missing => "missing".to_string(),
         FileState::SourceMissing => "source missing".to_string(),
         FileState::Differs(reason) => format!("differs ({reason})"),
+        FileState::Tracked => "tracked".to_string(),
     }
 }
 
@@ -4824,6 +4835,7 @@ fn file_state_json(state: &FileState) -> &'static str {
         FileState::Missing => "missing",
         FileState::SourceMissing => "source_missing",
         FileState::Differs(_) => "differs",
+        FileState::Tracked => "tracked",
     }
 }
 

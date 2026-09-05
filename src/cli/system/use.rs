@@ -9,7 +9,7 @@ use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{ConfigPathOptions, resolve_target_config_path};
 use crate::file::display_path;
 use crate::system;
-use crate::system::generations::GenerationScope;
+use crate::system::history::OperationScope;
 use crate::system::packages::PackageRequest;
 
 /// Add bootstrap packages to [bootstrap.packages] and install them
@@ -68,7 +68,7 @@ pub(crate) struct SystemUse {
 
 impl SystemUse {
     pub(crate) async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap packages use",
             "packages",
             self.dry_run,

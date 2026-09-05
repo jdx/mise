@@ -3,7 +3,7 @@ use eyre::{Result, bail};
 use crate::config::Config;
 use crate::config::Settings;
 use crate::system;
-use crate::system::generations::GenerationScope;
+use crate::system::history::OperationScope;
 #[cfg(unix)]
 use crate::system::packages::SystemPackageManager;
 #[cfg(unix)]
@@ -45,7 +45,7 @@ pub(crate) struct SystemPrune {
 
 impl SystemPrune {
     pub(crate) async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap packages prune",
             "packages",
             self.dry_run,

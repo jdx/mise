@@ -6,12 +6,12 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap/generations.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/generations.rs)
 
-List recorded generations, newest first
+List recorded operations, newest first
 
 ## Flags
 - **`-J --json`** — Output in JSON format
-- **`-n --limit <LIMIT>`** — Show at most this many generations (0 for all)
+- **`-n --limit <LIMIT>`** — Show at most this many operations (0 for all)
 
   **Default:** `20`
-- **`--pending`** — Only list generations whose run did not finish
+- **`--pending`** — Only list operations whose run did not finish
 - **`-h --help`** — Print help

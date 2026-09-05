@@ -183,8 +183,8 @@ export const sidebar: SidebarItem[] = [
         link: "/bootstrap/user",
       },
       {
-        text: "Generations",
-        link: "/bootstrap/generations",
+        text: "History",
+        link: "/history",
       },
     ],
   },

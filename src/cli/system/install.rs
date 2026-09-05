@@ -3,7 +3,7 @@ use eyre::Result;
 use super::driver::{self, Action, DriverOpts};
 use crate::config::{Config, Settings};
 use crate::system;
-use crate::system::generations::GenerationScope;
+use crate::system::history::OperationScope;
 
 #[derive(Debug, Default)]
 pub(crate) struct BootstrapApplyReport {
@@ -59,7 +59,7 @@ pub(crate) struct SystemInstall {
 
 impl SystemInstall {
     pub(crate) async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap packages apply",
             "packages",
             self.dry_run,

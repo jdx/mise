@@ -434,6 +434,8 @@ pub(crate) struct MiseToml {
     bootstrap: Option<BootstrapTomlConfig>,
     #[serde(default)]
     dotfiles: Option<DotfilesTomlConfig>,
+    #[serde(default)]
+    history: Option<crate::system::history::config::HistoryTomlConfig>,
     #[serde(default, deserialize_with = "deserialize_vars")]
     vars: EnvList,
     #[serde(default)]
@@ -1759,6 +1761,15 @@ impl ConfigFile for MiseToml {
     }
 }
 
+impl MiseToml {
+    /// `[history]` as declared by this file.
+    pub(crate) fn history_config(
+        &self,
+    ) -> Option<crate::system::history::config::HistoryTomlConfig> {
+        self.history.clone()
+    }
+}
+
 fn resolve_plugin_source_path(config_path: &Path, source: String) -> eyre::Result<String> {
     let source_path = Path::new(&source);
     let is_explicit_relative = matches!(
@@ -1929,6 +1940,7 @@ impl Clone for MiseToml {
             oci: self.oci.clone(),
             bootstrap: self.bootstrap.clone(),
             dotfiles: self.dotfiles.clone(),
+            history: self.history.clone(),
             vars: self.vars.clone(),
             monorepo_root: self.monorepo_root,
             experimental_monorepo_root: self.experimental_monorepo_root,

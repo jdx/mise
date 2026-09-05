@@ -12,8 +12,8 @@ use crate::file;
 use crate::path::PathExt;
 use crate::system;
 use crate::system::files::{FileManifest, FileMode, FileRequest};
-use crate::system::generations::GenerationScope;
-use crate::system::generations::journal;
+use crate::system::history::OperationScope;
+use crate::system::history::journal;
 use crate::ui::prompt;
 
 /// Add or update dotfiles in `[dotfiles]`
@@ -85,7 +85,7 @@ pub(crate) struct DotfilesAdd {
 impl DotfilesAdd {
     /// Validate and capture the requested targets as one transactional update.
     pub(crate) async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap dotfiles add",
             "dotfiles",
             self.dry_run,
@@ -156,6 +156,14 @@ impl DotfilesAdd {
                 .collect::<PathBuf>();
             if target.is_relative() {
                 bail!("{target_raw}: target must be absolute or start with ~/");
+            }
+            if managed
+                .iter()
+                .any(|req| req.mode == FileMode::Track && req.target == target)
+            {
+                bail!(
+                    "{target_raw}: tracked in place; pass `--mode copy` after `mise bootstrap dotfiles untrack {target_raw}` to seed a source instead"
+                );
             }
             if managed_edits.iter().any(|req| {
                 system::files::matches_target(
@@ -536,6 +544,9 @@ impl PlannedAdd {
                 .parent()
                 .unwrap_or(std::path::Path::new("."))
                 .to_path_buf(),
+            policy: system::files::FilePolicy::for_mode(self.mode),
+            variants: vec![],
+            enabled: true,
             origin: crate::system::resources::ResourceOrigin {
                 config: config_path.to_path_buf(),
                 config_root: crate::config::config_file::config_root::config_root(config_path),
@@ -608,7 +619,9 @@ fn describe_apply(item: &PlannedAdd) -> String {
         FileMode::Copy if item.source.is_dir() => format!("cp -r {source} {target}"),
         FileMode::Copy => format!("cp {source} {target}"),
         FileMode::Template => format!("render {source} -> {target}"),
-        FileMode::Content => unreachable!("dotfiles add always captures a source file"),
+        FileMode::Content | FileMode::Track => {
+            unreachable!("dotfiles add always captures a source file")
+        }
     }
 }
 
