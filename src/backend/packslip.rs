@@ -1031,23 +1031,36 @@ impl Backend for PackslipBackend {
         has_local_version_listing_override: bool,
     ) -> Result<Vec<VersionInfo>> {
         // A cached accepted-version set cannot reflect changed stamper trust,
-        // new withdrawals, expired lists, or a list that disappeared. Offline
-        // it is still all there is: rechecking policy means asking GitHub and
-        // every stamper, which listing may not do, so serve the cache the way
-        // every other backend does. Installing rechecks regardless.
+        // new withdrawals, expired lists, or a list that disappeared, so online
+        // this always rereads policy. Offline that reading cannot happen at all
+        // — it means asking GitHub and every stamper — so the cache is all there
+        // is, and it is served the way every other backend serves it. Installing
+        // rechecks regardless.
+        let cache = self
+            .remote_version_cache_for(config, listing_opts, has_local_version_listing_override)
+            .await?;
+        let mut cache = cache.lock().await;
         let versions = if Settings::get().offline() {
-            let cache = self
-                .remote_version_cache_for(config, listing_opts, has_local_version_listing_override)
-                .await?;
-            let cache = cache.lock().await;
             crate::backend::cached_remote_versions_offline(&self.ba, &cache)
         } else {
-            self.policy_versions(selection_opts).await?
+            // Written back so that a later offline command has something to
+            // serve. Like the shared path, the cache holds the prerelease
+            // superset and the filter below is applied on the way out.
+            let versions = self.policy_versions(selection_opts).await?;
+            if versions.is_empty() {
+                cache.clear()?;
+            } else if let Err(err) = cache.write(&versions) {
+                debug!(
+                    "could not cache the accepted versions of {}: {err:#}",
+                    self.ba
+                );
+            }
+            versions
         };
-        Ok(versions
-            .into_iter()
-            .filter(|v| self.include_prereleases(selection_opts) || v.prerelease != Some(true))
-            .collect())
+        Ok(crate::backend::filter_cached_prereleases(
+            versions,
+            self.include_prereleases(selection_opts),
+        ))
     }
 
     async fn latest_version_with_selection_options(
