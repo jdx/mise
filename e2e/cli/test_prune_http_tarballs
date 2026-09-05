@@ -162,3 +162,37 @@ assert "test '$(entry_count)' = 2"
 MISE_YES=1 assert "mise prune"
 assert "test '$(entry_count)' = 1"
 assert_contains "mise x -- solo-tool" "solo-tool-ok"
+
+# A targeted prune must not run the sweep. The positional argument promises to
+# touch only the tools named, and an entry is content two tools can share, so a
+# global reclaim would reach outside that promise.
+cat >mise.toml <<EOF
+[tools."http:orphan-me"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/shared.tar.gz"
+bin_path = "shared/bin"
+
+[tools."http:solo"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/solo.tar.gz"
+bin_path = "solo/bin"
+EOF
+
+mise install
+before="$(entry_count)"
+
+# Drop it from the config so its entry is genuinely orphaned, then prune a
+# different tool by name. The orphan must survive.
+cat >mise.toml <<EOF
+[tools."http:solo"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/solo.tar.gz"
+bin_path = "solo/bin"
+EOF
+
+MISE_YES=1 assert "mise prune solo"
+assert "test '$(entry_count)' = $before"
+
+# ...and an untargeted prune still reclaims it.
+MISE_YES=1 assert "mise prune"
+assert "test '$(entry_count)' = 1"
