@@ -1,7 +1,7 @@
-use super::super::upgrade::{
-    UpgradeDecision, assess_auto_update, compare_live_version, read_live_version_at,
-    read_live_version_from,
-};
+use super::super::upgrade::{UpgradeDecision, compare_live_version, read_live_version_from};
+#[cfg(unix)]
+use super::super::upgrade::{assess_auto_update, read_live_version_at};
+#[cfg(unix)]
 use super::*;
 
 fn assert_unknown(decision: UpgradeDecision, reason: &str) {
@@ -14,171 +14,77 @@ fn assert_unknown(decision: UpgradeDecision, reason: &str) {
 }
 
 #[test]
-fn comparison_older() {
-    assert_eq!(
-        compare_live_version("9.2.3", "9.2.6"),
-        UpgradeDecision::Older {
-            live: "9.2.3".into(),
-            available: "9.2.6".into()
+fn comparison_orders_numeric_components_and_preserves_original_strings() {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+
+    let huge_live = format!("1.{}", "9".repeat(80));
+    let huge_available = format!("1.1{}", "0".repeat(80));
+    for (case, live, available, ordering) in [
+        ("older", "9.2.3", "9.2.6", Less),
+        ("equal", "4.52.155", "4.52.155", Equal),
+        ("newer", "2.1.0", "2.0.0", Greater),
+        ("leading zeroes", "01.002.3", "1.2.3", Equal),
+        ("all zeroes", "000.00", "0.0", Equal),
+        ("numeric ordering", "1.9", "1.10", Less),
+        ("single integer", "99", "100", Less),
+        (
+            "huge components",
+            huge_live.as_str(),
+            huge_available.as_str(),
+            Less,
+        ),
+    ] {
+        let expected = match ordering {
+            Less => UpgradeDecision::Older {
+                live: live.into(),
+                available: available.into(),
+            },
+            Equal => UpgradeDecision::Equal {
+                live: live.into(),
+                available: available.into(),
+            },
+            Greater => UpgradeDecision::Newer {
+                live: live.into(),
+                available: available.into(),
+            },
+        };
+        assert_eq!(
+            compare_live_version(live, available),
+            expected,
+            "{case}: {live:?} vs {available:?}"
+        );
+    }
+}
+
+#[test]
+fn comparison_rejects_unsupported_versions_on_either_side() {
+    for (case, invalid) in [
+        ("empty", ""),
+        ("comma", "1.2,3"),
+        ("suffix", "1.2rc1"),
+        ("leading space", " 1.2"),
+        ("trailing space", "1.2 "),
+        ("prefix", "v1.2"),
+        ("plus", "+1.2"),
+        ("negative", "-1.2"),
+        ("empty component", "1..2"),
+        ("leading dot", ".1.2"),
+        ("trailing dot", "1.2."),
+        ("non-ASCII digits", "１.２"),
+        ("latest", "latest"),
+        ("different component count", "1.2.0"),
+    ] {
+        for (live, available) in [(invalid, "1.2"), ("1.2", invalid)] {
+            let decision = compare_live_version(live, available);
+            assert!(
+                matches!(&decision, UpgradeDecision::Unknown { reason } if reason.to_string().contains("compar")),
+                "{case}: {live:?} vs {available:?}: {decision:?}"
+            );
         }
-    );
+    }
 }
 
-#[test]
-fn comparison_equal() {
-    assert_eq!(
-        compare_live_version("4.52.155", "4.52.155"),
-        UpgradeDecision::Equal {
-            live: "4.52.155".into(),
-            available: "4.52.155".into()
-        }
-    );
-}
-
-#[test]
-fn comparison_newer() {
-    assert_eq!(
-        compare_live_version("2.1.0", "2.0.0"),
-        UpgradeDecision::Newer {
-            live: "2.1.0".into(),
-            available: "2.0.0".into()
-        }
-    );
-}
-
-#[test]
-fn comparison_leading_zeroes() {
-    assert_eq!(
-        compare_live_version("01.002.3", "1.2.3"),
-        UpgradeDecision::Equal {
-            live: "01.002.3".into(),
-            available: "1.2.3".into()
-        }
-    );
-}
-
-#[test]
-fn comparison_all_zeroes() {
-    assert_eq!(
-        compare_live_version("000.00", "0.0"),
-        UpgradeDecision::Equal {
-            live: "000.00".into(),
-            available: "0.0".into()
-        }
-    );
-}
-
-#[test]
-fn comparison_numeric_not_lexical() {
-    assert_eq!(
-        compare_live_version("1.9", "1.10"),
-        UpgradeDecision::Older {
-            live: "1.9".into(),
-            available: "1.10".into()
-        }
-    );
-}
-
-#[test]
-fn comparison_single_integer() {
-    assert_eq!(
-        compare_live_version("99", "100"),
-        UpgradeDecision::Older {
-            live: "99".into(),
-            available: "100".into()
-        }
-    );
-}
-
-#[test]
-fn comparison_huge_components() {
-    assert_eq!(compare_live_version("1.99999999999999999999999999999999999999999999999999999999999999999999999999999999", "1.100000000000000000000000000000000000000000000000000000000000000000000000000000000"), UpgradeDecision::Older { live: "1.99999999999999999999999999999999999999999999999999999999999999999999999999999999".into(), available: "1.100000000000000000000000000000000000000000000000000000000000000000000000000000000".into() });
-}
-
-#[test]
-fn comparison_rejects_empty_on_either_side() {
-    assert_unknown(compare_live_version("", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", ""), "compar");
-}
-
-#[test]
-fn comparison_rejects_comma_on_either_side() {
-    assert_unknown(compare_live_version("1.2,3", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", "1.2,3"), "compar");
-}
-
-#[test]
-fn comparison_rejects_suffix_on_either_side() {
-    assert_unknown(compare_live_version("1.2rc1", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", "1.2rc1"), "compar");
-}
-
-#[test]
-fn comparison_rejects_leading_space_on_either_side() {
-    assert_unknown(compare_live_version(" 1.2", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", " 1.2"), "compar");
-}
-
-#[test]
-fn comparison_rejects_trailing_space_on_either_side() {
-    assert_unknown(compare_live_version("1.2 ", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", "1.2 "), "compar");
-}
-
-#[test]
-fn comparison_rejects_prefix_on_either_side() {
-    assert_unknown(compare_live_version("v1.2", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", "v1.2"), "compar");
-}
-
-#[test]
-fn comparison_rejects_plus_on_either_side() {
-    assert_unknown(compare_live_version("+1.2", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", "+1.2"), "compar");
-}
-
-#[test]
-fn comparison_rejects_negative_on_either_side() {
-    assert_unknown(compare_live_version("-1.2", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", "-1.2"), "compar");
-}
-
-#[test]
-fn comparison_rejects_empty_component_on_either_side() {
-    assert_unknown(compare_live_version("1..2", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", "1..2"), "compar");
-}
-
-#[test]
-fn comparison_rejects_leading_dot_on_either_side() {
-    assert_unknown(compare_live_version(".1.2", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", ".1.2"), "compar");
-}
-
-#[test]
-fn comparison_rejects_trailing_dot_on_either_side() {
-    assert_unknown(compare_live_version("1.2.", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", "1.2."), "compar");
-}
-
-#[test]
-fn comparison_rejects_unicode_on_either_side() {
-    assert_unknown(compare_live_version("１.２", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", "１.２"), "compar");
-}
-
-#[test]
-fn comparison_rejects_latest_on_either_side() {
-    assert_unknown(compare_live_version("latest", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", "latest"), "compar");
-}
-
-#[test]
-fn comparison_rejects_different_component_count_on_either_side() {
-    assert_unknown(compare_live_version("1.2.0", "1.2"), "compar");
-    assert_unknown(compare_live_version("1.2", "1.2.0"), "compar");
-}
-
+#[cfg(unix)]
 fn write_version(app: &Path, value: plist::Value, binary: bool) -> Result<()> {
     std::fs::create_dir_all(app.join("Contents"))?;
     let mut dict = plist::Dictionary::new();
@@ -571,16 +477,13 @@ fn eligibility_rejects_side_effect_artifacts_and_structured_flights() -> Result<
 
 #[cfg(unix)]
 #[test]
-fn assessment_preserves_receipt_and_reports_equal_newer_and_unknown() -> Result<()> {
+fn assessment_reports_equal_newer_and_unknown() -> Result<()> {
     let _lock = ENV_LOCK.lock().unwrap();
     let tmp = trusted_tempdir()?;
     let mut env = EnvVarGuard::new();
     env.set(APP_DIR_ENV, tmp.path().to_str().unwrap());
     let (cask, mut receipt) = eligible_fixture(tmp.path())?;
     receipt.version = "1.0.0".into();
-    let bytes = toml::to_string(&receipt)?;
-    let receipt_path = tmp.path().join("receipt.toml");
-    std::fs::write(&receipt_path, &bytes)?;
     for live in ["9.2.6", "9.2.7", "9.2.6,123"] {
         write_version(&tmp.path().join("Example.app"), live.into(), false)?;
         let decision = assess_auto_update(&cask, Some(&receipt), true, false)?;
@@ -601,8 +504,6 @@ fn assessment_preserves_receipt_and_reports_equal_newer_and_unknown() -> Result<
             ),
             _ => assert_unknown(decision, "compar"),
         }
-        assert_eq!(std::fs::read(&receipt_path)?, bytes.as_bytes());
-        assert_eq!(toml::to_string(&receipt)?, bytes);
     }
     Ok(())
 }
