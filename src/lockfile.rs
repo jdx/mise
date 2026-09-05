@@ -2385,7 +2385,8 @@ fn reinsert_deferred_baselines(
 }
 
 /// Drop prior-version entries that survived the merge only as deferred provenance
-/// baselines once the upgrade they guarded has verified provenance on `platform_key`.
+/// baselines once the upgrade they guarded has cryptographically verified provenance
+/// on `platform_key`.
 ///
 /// `reinsert_deferred_baselines` keeps the prior provenance-bearing version alive when
 /// an already-installed upgrade skipped its download, so the auto-lock pass can compare
@@ -2393,7 +2394,9 @@ fn reinsert_deferred_baselines(
 /// its job; leaving it behind ships a lockfile listing two versions of the tool until
 /// some later command rewrites it. Only entries no request still resolves to are
 /// removed, and only when they are exactly the baseline the verified version would have
-/// been checked against. Returns the pruned versions.
+/// been checked against. Detection-only provenance (for example an entry another
+/// platform's `mise lock` populated for this one) does not count. Returns the pruned
+/// versions.
 fn prune_verified_provenance_baselines(
     tools: &mut Vec<LockfileTool>,
     requested_versions: &BTreeSet<String>,
@@ -2407,7 +2410,7 @@ fn prune_verified_provenance_baselines(
             .filter(|tool| {
                 tool.platforms
                     .get(platform_key)
-                    .is_some_and(|info| info.provenance.is_some())
+                    .is_some_and(|info| info.provenance.is_some() && info.provenance_verified)
             })
             .filter_map(|tool| {
                 find_provenance_regression_baseline(
@@ -4969,6 +4972,7 @@ options = { exe = "rg" }
         );
     }
 
+    /// A github tool entry whose provenance was cryptographically verified on `platform`.
     fn verified_github_tool(version: &str, platform: &str) -> LockfileTool {
         let mut tool = basic_tool(version, "github:owner/repo");
         tool.platforms.insert(
@@ -4976,12 +4980,14 @@ options = { exe = "rg" }
             PlatformInfo {
                 url: Some(format!("https://example.com/repo-{version}.tar.gz")),
                 provenance: Some(ProvenanceType::GithubAttestations),
+                provenance_verified: true,
                 ..Default::default()
             },
         );
         tool
     }
 
+    /// The versions of `tools` in lockfile order.
     fn lockfile_tool_versions(tools: &[LockfileTool]) -> Vec<&str> {
         tools.iter().map(|tool| tool.version.as_str()).collect()
     }
@@ -5032,6 +5038,18 @@ options = { exe = "rg" }
             verified_github_tool("0.12.0", "other-platform"),
             verified_github_tool("0.11.0", &platform),
         ];
+        assert!(prune_verified_provenance_baselines(&mut tools, &requested, &platform).is_empty());
+        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.11.0"]);
+
+        // Provenance detected but never cryptographically verified on this platform, as
+        // when another platform's `mise lock` populated the entry: not good enough.
+        let mut detected_only = verified_github_tool("0.12.0", &platform);
+        detected_only
+            .platforms
+            .get_mut(&platform)
+            .unwrap()
+            .provenance_verified = false;
+        let mut tools = vec![detected_only, verified_github_tool("0.11.0", &platform)];
         assert!(prune_verified_provenance_baselines(&mut tools, &requested, &platform).is_empty());
         assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.11.0"]);
 
