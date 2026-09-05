@@ -8,6 +8,84 @@ Remote targets must provide a POSIX shell plus `cksum`, `mktemp`, `tar`, and `un
 Linux and macOS hosts satisfy these requirements by default. The orchestrating
 machine needs local `ssh` and `tar` commands.
 
+## Private configuration repositories
+
+Install your configuration repository into the remote user's persistent global
+mise configuration directory:
+
+```sh
+# Authenticate on this machine first (for example, using gh auth login).
+mise bootstrap remote --host devbox --from-git jdx/dotfiles \
+  --github-relay-read-only --github-relay-repo jdx/dotfiles
+```
+
+`OWNER/REPO` expands to `https://github.com/OWNER/REPO.git`. Explicit Git URLs,
+SSH syntax, and local paths also work. `--from-git` conflicts with `--source`.
+Targets still come from explicit `--host` or inventory selectors, never from the
+downloaded repository's inventory.
+
+mise fetches the repository once using **local Git authentication**, pins that
+commit for every selected target, and transfers a Git bundle over SSH. It does
+not modify the initiating machine's global configuration or copy its Git
+configuration. The remote checkout retains the original credential-free origin,
+its branch, and its upstream. Temporary staging is removed; the installed global
+configuration is not. Use `--install-mise` to also install mise persistently when
+the target does not already have it.
+
+An existing matching checkout is reused unless `--update` requests a safe
+fast-forward. Dirty checkouts, mismatched origins, conflicting files, and source
+files ending in `.local.toml` require manual resolution. A nonempty non-Git
+directory can be adopted after confirmation: existing files and local overrides
+are preserved. `--dry-run` reports the required fetch/adoption work without
+fetching the source or changing the target.
+
+The relay is separate from this initial transfer. Enable it when bootstrap needs
+additional private GitHub content, authorizing each required repository with a
+repeated `--github-relay-repo`. Shorthand never enables or expands relay access.
+
+## Borrowing GitHub access for one session
+
+```sh
+mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles
+mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
+  -- git clone https://github.com/jdx/dotfiles.git
+
+# Deliberately allow every repository your local credential can read:
+mise ssh devbox --github-relay-read-only --github-relay-all-repos
+
+# Ordinary OpenSSH, without provisioning mise or starting a relay:
+mise ssh devbox -i ~/.ssh/devbox -p 2222 -o ServerAliveInterval=30 -- uname -a
+```
+
+The same three relay flags work with `mise bootstrap remote`. Enabling the relay
+requires either a repository allowlist or explicit all-repository access, not
+both. Credentials are resolved on the initiating machine using mise's existing
+GitHub token resolution; there is no automatic login or new credential store.
+
+The owned SSH connection forwards a private Unix socket. Remote mise requests
+and Git's GitHub HTTPS/SSH transports use session-only adapters. The local broker
+authorizes repository metadata, refs, contents, releases, assets, and smart-HTTP
+clone/fetch. Pushes, API mutations, GraphQL, and other endpoints are denied.
+Only approved GitHub asset redirects are followed, without authentication.
+Requests are limited to 8 MiB, eight concurrent upstream operations, 32 accepted
+connections, and five-minute transfer timeouts; responses are streamed.
+
+Borrowed access ends when the session ends, including failures and disconnects.
+No GitHub token or persistent transport rewrite is installed on the target.
+Future independent private-repository updates need that machine's own
+credentials or another relay-enabled session. Without the relay, existing remote
+authentication works as before.
+
+::: warning Trust the target with the content you authorize
+A compromised target can read authorized private content during the session.
+Keeping credentials local limits credential exposure; it does not make the
+target trustworthy. Use narrowly scoped repository allowlists.
+:::
+
+Relay support is initially limited to Linux/macOS clients and POSIX Linux/macOS
+targets running a compatible mise. Windows, GitHub Enterprise, remote `gh`, write
+operations, and unattended/persistent relay access are not supported.
+
 ```toml
 [bootstrap.remote]
 source = "."

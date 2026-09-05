@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+assert_fail "mise ssh devbox --github-relay-read-only"
+assert_fail "mise ssh devbox --github-relay-repo owner/repo"
+assert_fail "mise ssh devbox --github-relay-read-only --github-relay-all-repos --github-relay-repo owner/repo"
+assert_fail "mise bootstrap remote --host devbox --from-git owner/repo --source ."
+assert_fail "mise bootstrap remote --from-git owner/repo"
+assert_fail "mise bootstrap remote --host devbox --from-git not/a/repository --dry-run"
+assert_contains "mise bootstrap remote --host devbox --from-git owner/repo --dry-run" "https://github.com/owner/repo.git"
+
+mkdir -p fakebin
+cat >fakebin/ssh <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" >"$SSH_LOG"
+exit 23
+EOF
+chmod +x fakebin/ssh
+export SSH_LOG="$PWD/ssh.log"
+export PATH="$PWD/fakebin:$PATH"
+mise ssh alias -p 2222 -i key -o ServerAliveInterval=10 -- printf '%s' 'a b' && exit 1
+assert "cat '$SSH_LOG'" "-p
+2222
+-i
+key
+-o
+ServerAliveInterval=10
+--
+alias
+printf '%s' 'a b'"
+
+# Exercise real Git clone/fetch through the session's Unix-to-HTTP adapter.
+mkdir -p upstream/owner seed
+git -C seed init -b main
+git -C seed config user.email test@example.invalid
+git -C seed config user.name Test
+echo first >seed/value
+git -C seed add .
+git -C seed -c core.hooksPath=/dev/null commit -m first
+git clone --bare seed upstream/owner/repo.git
+relay_socket="$(mktemp -d /tmp/mise-relay-test.XXXXXXXX)/relay.sock"
+python3 "$ROOT/e2e/fixtures/github_relay.py" "$relay_socket" "$PWD/upstream" &
+relay_pid=$!
+trap 'kill "$relay_pid" 2>/dev/null || true' EXIT
+for _ in {1..100}; do
+  test -S "$relay_socket" && break
+  sleep 0.05
+done
+mise ssh --relay-session "$relay_socket" -- git clone https://github.com/owner/repo.git clone
+mise ssh --relay-session "$relay_socket" -- git clone git@github.com:owner/repo.git clone-ssh
+mise ssh --relay-session "$relay_socket" -- git clone ssh://git@github.com/owner/repo.git clone-ssh-url
+assert "mise ssh --relay-session '$relay_socket' -- mise ls-remote github:owner/repo" 1.2.3
+assert "cat clone/value" first
+assert "git -C clone config remote.origin.url" https://github.com/owner/repo.git
+# Omitting a command starts the user's login shell and preserves its status.
+shell_status=0
+printf 'exit 17\n' | SHELL=/bin/sh mise ssh --relay-session "$relay_socket" || shell_status=$?
+test "$shell_status" -eq 17
+
+# Cancelling the adapter also terminates its owned command.
+mise ssh --relay-session "$relay_socket" -- sh -c 'echo $$ > child.pid; exec sleep 60' &
+adapter_pid=$!
+wait_for_file child.pid 'relay child' 10 "$adapter_pid"
+child_pid=$(cat child.pid)
+kill -TERM "$adapter_pid"
+wait "$adapter_pid" && exit 1
+for _ in {1..50}; do
+  kill -0 "$child_pid" 2>/dev/null || break
+  sleep 0.1
+done
+assert_fail "kill -0 '$child_pid' 2>/dev/null"
+
+assert_fail "mise ssh --relay-session '$relay_socket' -- git -C clone push origin HEAD:write-test"
+assert_fail "mise ssh --relay-session '$relay_socket' -- git clone https://github.com/other/private.git denied"
+mise ssh --relay-session "$relay_socket" -- git -C clone fetch
+assert_fail "git -C clone config --get-regexp '^url\.'"
+kill "$relay_pid"
+wait "$relay_pid" || true
+assert_fail "mise ssh --relay-session '$relay_socket' -- git -C clone fetch"

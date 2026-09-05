@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+mkdir -p seed fakebin remotes
+git -C seed init -b main
+git -C seed config user.email test@example.invalid
+git -C seed config user.name Test
+echo '[tools]' >seed/config.toml
+git -C seed add .
+git -C seed -c core.hooksPath=/dev/null commit -m first
+first_revision=$(git -C seed rev-parse HEAD)
+source_repo="$PWD/seed"
+binary=$(command -v mise)
+export FAKE_REMOTE_BASE="$PWD/remotes"
+export SSH_LOG="$PWD/ssh.log"
+cat >fakebin/ssh <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$SSH_LOG"
+while test "$#" -gt 0; do
+  case "$1" in
+    -o|-p|-i|-S) shift 2 ;;
+    -tt) shift ;;
+    -O)
+      if test "$2" = forward; then exit 1; fi
+      exit 0
+      ;;
+    *)
+      destination=$1
+      shift
+      export HOME="$FAKE_REMOTE_BASE/$destination"
+      export MISE_CONFIG_DIR="$HOME/.config/mise"
+      export MISE_GLOBAL_CONFIG_FILE="$MISE_CONFIG_DIR/config.toml"
+      export MISE_DATA_DIR="$HOME/.local/share/mise"
+      export MISE_CACHE_DIR="$HOME/.cache/mise"
+      unset MISE_GITHUB_TOKEN MISE_GITHUB_API_TOKEN GITHUB_TOKEN GH_TOKEN
+      mkdir -p "$MISE_CONFIG_DIR"
+      exec sh -c "$1"
+      ;;
+  esac
+done
+EOF
+chmod +x fakebin/ssh
+export PATH="$PWD/fakebin:$PATH"
+
+mkdir -p remotes/one/.config/mise
+echo '# machine local' >remotes/one/.config/mise/config.local.toml
+mise bootstrap remote --host one --host two --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes
+assert "git -C remotes/one/.config/mise rev-parse HEAD" "$first_revision"
+assert "git -C remotes/two/.config/mise rev-parse HEAD" "$first_revision"
+assert "git -C remotes/one/.config/mise config remote.origin.url" "$source_repo"
+assert "cat remotes/one/.config/mise/config.local.toml" '# machine local'
+assert_contains "cat '$SSH_LOG'" '/.config/mise bootstrap'
+test ! -d "$HOME/.config/mise/.git"
+
+echo '# second' >>seed/config.toml
+git -C seed add .
+git -C seed -c core.hooksPath=/dev/null commit -m second
+second_revision=$(git -C seed rev-parse HEAD)
+mise bootstrap remote --host one --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes
+assert "git -C remotes/one/.config/mise rev-parse HEAD" "$first_revision"
+mise bootstrap remote --host one --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes --update
+assert "git -C remotes/one/.config/mise rev-parse HEAD" "$second_revision"
+assert "cat remotes/one/.config/mise/config.local.toml" '# machine local'
+echo '# dirty' >>remotes/one/.config/mise/config.toml
+assert_fail "mise bootstrap remote --host one --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --update" 'uncommitted changes'
+
+# A failed forwarding request must prevent bootstrap and close the owned master.
+assert_fail "MISE_GITHUB_TOKEN=fake-local-relay-token mise bootstrap remote --host two --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --github-relay-read-only --github-relay-repo owner/repo" 'forwarding failed'
+assert_contains "cat '$SSH_LOG'" '-O exit'
+assert_not_contains "cat '$SSH_LOG'" 'fake-local-relay-token'

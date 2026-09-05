@@ -191,6 +191,7 @@
 - [`mise settings set [-l --local] <SETTING> [VALUE]`](/cli/settings/set.md)
 - [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.md)
 - [`mise shell [FLAGS] <TOOL@VERSION>…`](/cli/shell.md)
+- [`mise ssh [FLAGS] [DESTINATION] [COMMAND]…`](/cli/ssh.md)
 - [`mise shell-alias [--no-header] <SUBCOMMAND>`](/cli/shell-alias.md)
 - [`mise shell-alias get <shell_alias>`](/cli/shell-alias/get.md)
 - [`mise shell-alias ls [--no-header]`](/cli/shell-alias/ls.md)

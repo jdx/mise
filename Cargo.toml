@@ -132,6 +132,10 @@ ignore = { version = "0.4", features = [] }
 heck = "0.5"
 hex = "0.4"
 http = "1"
+axum = { version = "0.8", default-features = false, features = [
+  "http1",
+  "tokio",
+] }
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 ipnet = { version = "2", features = ["serde"] }
@@ -232,7 +236,7 @@ tera-contrib = { version = "0.2", features = [
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.7", features = ["io"] }
+tokio-util = { version = "0.7", features = ["io", "rt"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.12", default-features = false }

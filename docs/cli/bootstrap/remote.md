@@ -11,6 +11,10 @@ Bootstrap one or more machines over OpenSSH
 - **`[TARGET]…`** — Inventory host names from `[bootstrap.remote.hosts]`
 
 ## Flags
+- **`--from-git <GIT_URL|OWNER/REPO>`** — Install a Git repository as persistent global configuration on each target
+- **`--github-relay-read-only`** — Borrow read-only GitHub access for this invocation
+- **`--github-relay-repo <OWNER/REPO>`** — Approved GitHub repository; repeat for multiple repositories
+- **`--github-relay-all-repos`** — Explicitly authorize all repositories accessible locally
 - **`--all`** — Select every configured inventory host
 - **`--bootstrap-command <COMMAND>`** — Explicit remote shell command that installs mise and places it on PATH
 - **`--connect-timeout <CONNECT_TIMEOUT>`** — SSH connection timeout in seconds

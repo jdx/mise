@@ -1276,6 +1276,18 @@ impl Client {
         options: SendOnceOptions,
     ) -> Result<Response> {
         let original_url = url.clone();
+        #[cfg(unix)]
+        if matches!(url.host_str(), Some("github.com" | "api.github.com"))
+            && let Some(socket) = std::env::var_os("MISE_GITHUB_RELAY_SOCKET")
+        {
+            return crate::github_relay::unix::request(
+                std::path::Path::new(&socket),
+                method,
+                &url,
+                headers,
+            )
+            .await;
+        }
         apply_url_replacements(&mut url);
         let host_key = http_host_key(&url);
         if Settings::get().prefer_offline()

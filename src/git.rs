@@ -201,7 +201,9 @@ impl Git {
             .branch
             .as_deref()
             .filter(|b| !looks_like_sha(b) && revision.is_none());
-        if Settings::get().libgit2 || Settings::get().gix {
+        if (Settings::get().libgit2 || Settings::get().gix)
+            && std::env::var_os("MISE_GITHUB_RELAY_SOCKET").is_none()
+        {
             debug!("cloning {} to {} with gix", url, self.dir.display());
             let mut prepare_clone = gix::prepare_clone(url, &self.dir)?;
 

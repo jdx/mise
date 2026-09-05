@@ -113,6 +113,7 @@ pub(crate) struct RemoteOverrides {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RemoteRunOptions {
+    pub relay: Option<crate::github_relay::Scope>,
     pub dry_run: bool,
     pub yes: bool,
     pub update: bool,
@@ -405,17 +406,39 @@ pub(crate) async fn run(
     host: &RemoteHost,
     options: &RemoteRunOptions,
     artifacts: &mut RemoteArtifactResolver,
+    repository: Option<&super::remote_repository::Source>,
+) -> Result<()> {
+    #[cfg(unix)]
+    {
+        crate::github_relay::unix::lifecycle(run_inner(host, options, artifacts, repository)).await
+    }
+    #[cfg(not(unix))]
+    {
+        run_inner(host, options, artifacts, repository).await
+    }
+}
+
+async fn run_inner(
+    host: &RemoteHost,
+    options: &RemoteRunOptions,
+    artifacts: &mut RemoteArtifactResolver,
+    repository: Option<&super::remote_repository::Source>,
 ) -> Result<()> {
     let ssh = crate::file::which("ssh").ok_or_else(|| eyre!("required command 'ssh' not found"))?;
     let tar = crate::file::which("tar").ok_or_else(|| eyre!("required command 'tar' not found"))?;
     let control_directory = if cfg!(unix) {
-        Some(tempfile::tempdir()?)
+        Some(
+            tempfile::Builder::new()
+                .prefix("mise-ssh-")
+                .tempdir_in("/tmp")?,
+        )
     } else {
         None
     };
     let session = SshSession {
         ssh,
         host,
+        relay: options.relay.is_some(),
         connect_timeout: options.connect_timeout,
         control_path: control_directory
             .as_ref()
@@ -427,7 +450,12 @@ pub(crate) async fn run(
         .trim()
         .to_string();
     validate_staging_path(&staging)?;
-    let mut result = run_staged(&session, &tar, &staging, options, artifacts).await;
+    let mut staging_guard = StagingGuard {
+        session: &session,
+        path: &staging,
+        retain: options.keep_staging,
+    };
+    let mut result = run_staged(&session, &tar, &staging, options, artifacts, repository).await;
     if options.keep_staging {
         warn!("remote staging retained on {}: {staging}", host.name);
     } else if let Err(cleanup_error) = session.status(&["rm", "-rf", "--", &staging], false) {
@@ -440,7 +468,23 @@ pub(crate) async fn run(
             );
         }
     }
+    staging_guard.retain = true;
     result
+}
+
+// Unwinding an interrupted async operation must also clean its staging area.
+// The owned control connection is closed after this guard drops.
+struct StagingGuard<'a, 'host> {
+    session: &'a SshSession<'host>,
+    path: &'a str,
+    retain: bool,
+}
+impl Drop for StagingGuard<'_, '_> {
+    fn drop(&mut self) {
+        if !self.retain {
+            let _ = self.session.status(&["rm", "-rf", "--", self.path], false);
+        }
+    }
 }
 
 fn staging_creation_script() -> &'static str {
@@ -465,16 +509,70 @@ async fn run_staged(
     staging: &str,
     options: &RemoteRunOptions,
     artifacts: &mut RemoteArtifactResolver,
+    repository: Option<&super::remote_repository::Source>,
 ) -> Result<()> {
     let project = format!("{staging}/project");
     session.status(&["mkdir", "-p", &project], false)?;
-    upload_source(session, tar, &project)?;
+    if repository.is_none() {
+        upload_source(session, tar, &project)?;
+    }
     let mise = provision_mise(session, staging, &project, options.dry_run, artifacts).await?;
+    #[cfg(unix)]
+    let relay = match &options.relay {
+        Some(scope) => Some(start_relay(session, staging, scope.clone()).await?),
+        None => None,
+    };
+    let project = if let Some(repository) = repository {
+        let bundle = format!("{staging}/repository.bundle");
+        session.status_with_stdin(
+            &["sh", "-c", &format!("cat > {}", shell_quote(&bundle))],
+            File::open(&repository.bundle)?,
+        )?;
+        let mut install = vec![
+            mise.as_str(),
+            "ssh",
+            "--repository-bundle",
+            bundle.as_str(),
+            "--repository-origin",
+            &repository.origin,
+            "--repository-revision",
+            &repository.revision,
+        ];
+        if options.update {
+            install.push("--repository-update");
+        }
+        if options.yes {
+            install.push("--repository-yes");
+        }
+        // The helper uses the target's XDG/global-config environment. Only its
+        // absolute result, never the staging directory, becomes trusted config.
+        let path = session
+            .output(&[&mise, "ssh", "--global-config-directory"])?
+            .trim()
+            .to_string();
+        if !path.starts_with('/') || path.contains(['\n', '\r']) {
+            bail!("invalid remote global configuration path");
+        }
+        session.status_async(&install, true).await?;
+        path
+    } else {
+        project
+    };
     let mut argv = vec![
         "env".to_string(),
         format!("MISE_TRUSTED_CONFIG_PATHS={project}"),
     ];
     argv.push(format!("MISE_ENV={}", session.host.mise_env.join(",")));
+    #[cfg(unix)]
+    if relay.is_some() {
+        argv.extend([
+            mise.clone(),
+            "ssh".into(),
+            "--relay-session".into(),
+            format!("{staging}/github.sock"),
+            "--".into(),
+        ]);
+    }
     argv.extend([mise, "--cd".to_string(), project, "bootstrap".to_string()]);
     if options.dry_run {
         argv.push("--dry-run".to_string());
@@ -498,7 +596,99 @@ async fn run_staged(
         argv.extend(["--only".to_string(), part.clone()]);
     }
     let argv = argv.iter().map(String::as_str).collect::<Vec<_>>();
-    session.status(&argv, true)
+    let result = session.status_async(&argv, true).await;
+    if options.relay.is_some() {
+        info!(
+            "borrowed GitHub access has ended; future private updates require remote credentials or another relay-enabled session"
+        );
+    }
+    result
+}
+
+#[cfg(unix)]
+async fn start_relay(
+    session: &SshSession<'_>,
+    staging: &str,
+    scope: crate::github_relay::Scope,
+) -> Result<crate::github_relay::unix::Relay> {
+    let relay = crate::github_relay::unix::Relay::start(scope).await?;
+    let control = session
+        .control_path
+        .as_ref()
+        .ok_or_else(|| eyre!("relay requires an owned SSH control connection"))?;
+    let status = Command::new(&session.ssh)
+        .arg("-S")
+        .arg(control)
+        .args(["-O", "forward", "-o", "ExitOnForwardFailure=yes", "-R"])
+        .arg(format!(
+            "{staging}/github.sock:{}",
+            relay.socket().display()
+        ))
+        .arg(session.host.destination())
+        .status()?;
+    if !status.success() {
+        bail!("GitHub relay socket forwarding failed");
+    }
+    Ok(relay)
+}
+
+#[cfg(unix)]
+pub(crate) async fn ssh(
+    host: &RemoteHost,
+    scope: crate::github_relay::Scope,
+    command: &[String],
+) -> Result<()> {
+    let directory = tempfile::Builder::new()
+        .prefix("mise-ssh-")
+        .tempdir_in("/tmp")?;
+    let session = SshSession {
+        ssh: crate::file::which("ssh").ok_or_else(|| eyre!("ssh not found"))?,
+        host,
+        relay: true,
+        connect_timeout: 10,
+        control_path: Some(directory.path().join("control")),
+    };
+    let staging = session
+        .output(&["sh", "-c", staging_creation_script()])?
+        .trim()
+        .to_string();
+    validate_staging_path(&staging)?;
+    let mut staging_guard = StagingGuard {
+        session: &session,
+        path: &staging,
+        retain: false,
+    };
+    let result = async {
+        let project = format!("{staging}/project");
+        session.status(&["mkdir", "-p", &project], false)?;
+        let mise = provision_mise(
+            &session,
+            &staging,
+            &project,
+            false,
+            &mut RemoteArtifactResolver::default(),
+        )
+        .await?;
+        let _relay = start_relay(&session, &staging, scope).await?;
+        let mut argv = vec![
+            mise,
+            "ssh".into(),
+            "--relay-session".into(),
+            format!("{staging}/github.sock"),
+            "--".into(),
+        ];
+        argv.extend_from_slice(command);
+        session
+            .status_async(&argv.iter().map(String::as_str).collect::<Vec<_>>(), true)
+            .await
+    }
+    .await;
+    let cleanup = session.status(&["rm", "-rf", "--", &staging], false);
+    staging_guard.retain = true;
+    info!(
+        "borrowed GitHub access has ended; future private updates require remote credentials or another relay-enabled session"
+    );
+    result.and(cleanup)
 }
 
 fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<()> {
@@ -1675,6 +1865,7 @@ fn parse_libc_flavor(output: &str) -> Option<LibcFlavor> {
 }
 
 struct SshSession<'a> {
+    relay: bool,
     ssh: PathBuf,
     host: &'a RemoteHost,
     connect_timeout: u16,
@@ -1682,11 +1873,31 @@ struct SshSession<'a> {
 }
 
 impl SshSession<'_> {
+    async fn status_async(&self, remote_argv: &[&str], tty: bool) -> Result<()> {
+        let mut command = tokio::process::Command::new(&self.ssh);
+        command.args(self.args(tty, remote_argv)).kill_on_drop(true);
+        #[cfg(unix)]
+        let status = crate::github_relay::unix::wait_command(&mut command, None).await?;
+        #[cfg(not(unix))]
+        let status = command.status().await?;
+        if !status.success() {
+            return Err(crate::request_exit(status.code().unwrap_or(255)));
+        }
+        Ok(())
+    }
     fn args(&self, tty: bool, remote_argv: &[&str]) -> Vec<String> {
         let mut args = vec![
             "-o".to_string(),
             format!("ConnectTimeout={}", self.connect_timeout),
         ];
+        if self.relay {
+            args.extend([
+                "-o".into(),
+                "ServerAliveInterval=15".into(),
+                "-o".into(),
+                "ServerAliveCountMax=2".into(),
+            ]);
+        }
         if let Some(control_path) = &self.control_path {
             args.extend([
                 "-o".to_string(),

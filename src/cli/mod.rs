@@ -66,6 +66,7 @@ mod settings;
 mod shell;
 mod shell_alias;
 mod sponsors;
+mod ssh;
 mod sync;
 pub(crate) mod system;
 mod tasks;
@@ -270,6 +271,7 @@ pub(crate) enum Commands {
     Set(set::Set),
     Settings(settings::Settings),
     Shell(shell::Shell),
+    Ssh(ssh::Ssh),
     ShellAlias(shell_alias::ShellAlias),
     Sponsors(sponsors::Sponsors),
     Sync(sync::Sync),
@@ -326,6 +328,7 @@ impl Commands {
                 | Self::SelfUpdate(_)
                 | Self::Settings(_)
                 | Self::Shell(_)
+                | Self::Ssh(_)
                 | Self::Usage(_)
                 | Self::Version(_)
         )
@@ -337,7 +340,11 @@ impl Commands {
     fn allows_tool_purgatory_auto_prune(&self) -> bool {
         !matches!(
             self,
-            Self::Activate(_) | Self::Deactivate(_) | Self::HookEnv(_) | Self::HookNotFound(_)
+            Self::Activate(_)
+                | Self::Deactivate(_)
+                | Self::HookEnv(_)
+                | Self::HookNotFound(_)
+                | Self::Ssh(_)
         )
     }
 
@@ -400,6 +407,7 @@ impl Commands {
             Self::Set(cmd) => cmd.run().await,
             Self::Settings(cmd) => cmd.run().await,
             Self::Shell(cmd) => cmd.run().await,
+            Self::Ssh(cmd) => cmd.run().await,
             Self::ShellAlias(cmd) => cmd.run().await,
             Self::Sponsors(cmd) => cmd.run(),
             Self::Sync(cmd) => cmd.run().await,

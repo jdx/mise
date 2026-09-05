@@ -607,6 +607,18 @@ struct BootstrapComposeStatus {
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapRemote {
+    /// Install a Git repository as persistent global configuration on each target
+    #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = "source")]
+    from_git: Option<String>,
+    /// Borrow read-only GitHub access for this invocation
+    #[usage(long)]
+    github_relay_read_only: bool,
+    /// Approved GitHub repository; repeat for multiple repositories
+    #[usage(long, value_name = "OWNER/REPO")]
+    github_relay_repo: Vec<String>,
+    /// Explicitly authorize all repositories accessible locally
+    #[usage(long)]
+    github_relay_all_repos: bool,
     /// Inventory host names from `[bootstrap.remote.hosts]`
     #[usage(value_name = "TARGET")]
     targets: Vec<String>,
@@ -1701,7 +1713,12 @@ impl Bootstrap {
     }
 
     fn run_from(&self) -> Result<()> {
-        let (url, checkout) = if let Some(url) = self.from_git.as_deref() {
+        let expanded = self
+            .from_git
+            .as_deref()
+            .map(crate::github_relay::expand_repository)
+            .transpose()?;
+        let (url, checkout) = if let Some(url) = expanded.as_deref() {
             let checkout = crate::env::MISE_GLOBAL_CONFIG_FILE
                 .as_deref()
                 .map(|path| {
@@ -2681,6 +2698,14 @@ impl BootstrapSecrets {
 
 impl BootstrapRemote {
     async fn run(self) -> Result<()> {
+        let relay = crate::github_relay::Scope::from_flags(
+            self.github_relay_read_only,
+            &self.github_relay_repo,
+            self.github_relay_all_repos,
+        )?;
+        if relay.is_some() && !cfg!(unix) {
+            bail!("GitHub relay requires Linux or macOS");
+        }
         if self.connect_timeout == 0 {
             bail!("--connect-timeout must be greater than zero");
         }
@@ -2724,6 +2749,7 @@ impl BootstrapRemote {
             bootstrap_command: self.bootstrap_command,
         };
         let options = system::remote::RemoteRunOptions {
+            relay,
             dry_run: self.dry_run,
             yes: self.yes,
             update: self.update,
@@ -2748,9 +2774,31 @@ impl BootstrapRemote {
             );
         }
         let mut failures = vec![];
+        let repository = self
+            .from_git
+            .as_deref()
+            .map(crate::github_relay::expand_repository)
+            .transpose()?;
+        if let Some(origin) = &repository {
+            system::remote_repository::validate_origin(origin)?;
+            if self.dry_run {
+                for host in selected.values() {
+                    miseprintln!(
+                        "Would fetch one revision of {origin} locally, transfer it to {}, preview adoption/update of the persistent global configuration, and bootstrap there",
+                        host.name
+                    );
+                }
+                return Ok(());
+            }
+        }
+        let repository = repository
+            .map(system::remote_repository::Source::fetch)
+            .transpose()?;
         let mut artifacts = system::remote::RemoteArtifactResolver::default();
         for host in selected.values() {
-            if let Err(error) = system::remote::run(host, &options, &mut artifacts).await {
+            if let Err(error) =
+                system::remote::run(host, &options, &mut artifacts, repository.as_ref()).await
+            {
                 error!("remote bootstrap failed on {}: {error:#}", host.name);
                 failures.push(format!("{}: {error:#}", host.name));
                 if self.fail_fast {
@@ -4541,6 +4589,37 @@ mod tests {
     use super::{bootstrap_from_child_args, select_remote_inventory};
     use crate::cli::{Cli, Commands};
     use crate::system::remote;
+
+    #[test]
+    fn remote_from_git_parses_and_conflicts_with_source() {
+        let argv = [
+            "mise",
+            "bootstrap",
+            "remote",
+            "--host",
+            "devbox",
+            "--from-git",
+            "jdx/dotfiles",
+            "--github-relay-read-only",
+            "--github-relay-repo",
+            "jdx/dotfiles",
+        ]
+        .map(OsStr::new);
+        assert!(Cli::parse_from_argv(&argv).is_ok());
+        let conflict = [
+            "mise",
+            "bootstrap",
+            "remote",
+            "--host",
+            "devbox",
+            "--from-git",
+            "jdx/dotfiles",
+            "--source",
+            ".",
+        ]
+        .map(OsStr::new);
+        assert!(Cli::parse_from_argv(&conflict).is_err());
+    }
 
     #[test]
     fn bootstrap_preserves_dry_run_and_yes_flags() {
