@@ -86,6 +86,29 @@ export const commands: { [key: string]: Command } = {
           edit: {
             hide: false,
           },
+          history: {
+            hide: false,
+            subcommands: {
+              describe: {
+                hide: false,
+              },
+              diff: {
+                hide: false,
+              },
+              ls: {
+                hide: false,
+              },
+              show: {
+                hide: false,
+              },
+            },
+          },
+          paths: {
+            hide: false,
+          },
+          save: {
+            hide: false,
+          },
           status: {
             hide: false,
           },
@@ -118,20 +141,6 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
           status: {
-            hide: false,
-          },
-        },
-      },
-      generations: {
-        hide: false,
-        subcommands: {
-          diff: {
-            hide: false,
-          },
-          ls: {
-            hide: false,
-          },
-          show: {
             hide: false,
           },
         },
@@ -482,43 +491,6 @@ export const commands: { [key: string]: Command } = {
   },
   global: {
     hide: true,
-  },
-  history: {
-    hide: false,
-    subcommands: {
-      describe: {
-        hide: false,
-      },
-      diff: {
-        hide: false,
-      },
-      ls: {
-        hide: false,
-      },
-      paths: {
-        hide: false,
-        subcommands: {
-          add: {
-            hide: false,
-          },
-          remove: {
-            hide: false,
-          },
-          set: {
-            hide: false,
-          },
-        },
-      },
-      save: {
-        hide: false,
-      },
-      show: {
-        hide: false,
-      },
-      status: {
-        hide: false,
-      },
-    },
   },
   "hook-env": {
     hide: true,

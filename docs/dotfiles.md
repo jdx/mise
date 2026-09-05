@@ -14,7 +14,7 @@ change it sees.
 ```sh
 mise bootstrap dotfiles track ~/.zshrc ~/.config/hypr
 mise bootstrap                                  # packages, tools, shell activation, …
-mise history status                             # what is protected, and how
+mise bootstrap dotfiles status                             # what is protected, and how
 ```
 
 ```toml
@@ -64,17 +64,17 @@ future captures; the file and its existing checkpoints stay exactly as they
 are, and nothing re-enrolls the path later.
 
 A track entry takes no `source`, `content`, `exclude`, or `manifest`: a
-declaration combining them is reported by `mise history paths` as invalid and
+declaration combining them is reported by `mise bootstrap dotfiles paths` as invalid and
 never counted as protection, and `track` exits non-zero when the entry it
 wrote is not active.
 
 ### Policies
 
-| Field      | Default | Meaning                                                                                                               |
-| ---------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
-| `autosave` | `true`  | Save edits automatically. `false` makes a manual-save file: only `mise history save <path>` promotes what is on disk. |
-| `share`    | `true`  | Publish the saved version to the shared setup (a later release).                                                      |
-| `backup`   | `true`  | Include the file in remote backups (a later release).                                                                 |
+| Field      | Default | Meaning                                                                                                                          |
+| ---------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `autosave` | `true`  | Save edits automatically. `false` makes a manual-save file: only `mise bootstrap dotfiles save <path>` promotes what is on disk. |
+| `share`    | `true`  | Publish the saved version to the shared setup (a later release).                                                                 |
+| `backup`   | `true`  | Include the file in remote backups (a later release).                                                                            |
 
 `mise bootstrap dotfiles track --no-autosave|--no-share|--no-backup` sets them;
 `--local` writes the entry to `config.local.toml` (this machine only). A local
@@ -127,7 +127,7 @@ up; a per-file declaration is the only override.
 
 `mise bootstrap dotfiles status` reports tracked entries as `tracked` and
 source-managed ones as `applied`, `missing`, `differs`, or `source missing`
-— deployment drift. History and sync state live in `mise history status`.
+— deployment drift. History and sync state live in `mise bootstrap dotfiles status`.
 
 ## Whole-file entries
 
@@ -384,14 +384,20 @@ mise bootstrap dotfiles add ~/.zshrc       # capture a live file into dotfiles.r
 mise bootstrap dotfiles add --changed      # capture all changed copy-mode files
 mise bootstrap dotfiles edit ~/.zshrc      # edit the managed source or owning config
 mise bootstrap dotfiles edit --apply ~/.zshrc
+
+mise bootstrap dotfiles save                    # checkpoint the tracked files now
+mise bootstrap dotfiles history                 # browse checkpoints; `history show`, `history diff`
+mise bootstrap dotfiles paths                   # what history tracks, under which policies
 ```
 
 `mise bootstrap dotfiles status` reports each entry as `tracked`, `applied`,
-`missing`, `differs` with a reason, or `source missing`.
+`missing`, `differs` with a reason, or `source missing`, followed by the
+history state: what is tracked, the latest checkpoint, unfinished
+operations, and whether edits are saved automatically.
 
 Every `apply`, `add`, `unapply`, and `edit --apply` records a pair of
 [history checkpoints](/history.html) — the tracked files before and after the
-change, with a journal of every path it touched — and `mise history` lists
+change, with a journal of every path it touched — and `mise bootstrap dotfiles history` lists
 them.
 
 ## Capturing changes

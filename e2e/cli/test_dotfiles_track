@@ -5,7 +5,7 @@
 
 require_cmd git
 
-count="mise history --json -n 0 | jq length"
+count="mise bootstrap dotfiles history --json -n 0 | jq length"
 config="$MISE_CONFIG_DIR/config.toml"
 local_config="$MISE_CONFIG_DIR/config.local.toml"
 
@@ -29,13 +29,13 @@ assert_fail "test -L ~/.zshrc"
 assert_directory_not_exists "$HOME/.dotfiles"
 assert "grep -c 'mode = \"track\"' '$config'" "2"
 assert "$count" "1"
-assert "mise history --json | jq -r '.[0].trigger, .[0].description'" $'baseline\ntracked ~/.zshrc, ~/.config/hypr'
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].trigger, .[0].description'" $'baseline\ntracked ~/.zshrc, ~/.config/hypr'
 assert_contains "mise bootstrap dotfiles track ~/.zshrc 2>&1" "automatic capture is inactive"
-assert_contains "mise history paths" "~/.zshrc"
-assert "mise history paths --json | jq -r '.entries[] | select(.path == \"~/.config/hypr\") | \"\\(.mode) \\(.autosave) \\(.share) \\(.backup) \\(.files)\"'" "track true true true 1"
+assert_contains "mise bootstrap dotfiles paths" "~/.zshrc"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.config/hypr\") | \"\\(.mode) \\(.autosave) \\(.share) \\(.backup) \\(.files)\"'" "track true true true 1"
 # the template's source is enrolled automatically; its output is local only
-assert "mise history paths --json | jq -r '.entries[] | select(.path == \"~/.gitconfig\") | \"\\(.mode) \\(.share) \\(.backup) \\(.source)\"'" "template false false ~/.config/mise/templates/gitconfig.tera"
-assert "mise history paths --json | jq -r '.entries[] | select(.path == \"~/.config/mise/templates/gitconfig.tera\") | .mode'" "source"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.gitconfig\") | \"\\(.mode) \\(.share) \\(.backup) \\(.source)\"'" "template false false ~/.config/mise/templates/gitconfig.tera"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.config/mise/templates/gitconfig.tera\") | .mode'" "source"
 
 # tracked files coexist with shell activation and managed blocks on the same file
 cat <<'EOF2' >>"$config"
@@ -45,7 +45,7 @@ assert_succeed "mise bootstrap dotfiles apply --yes"
 assert_contains "cat ~/.zshrc" "mise activate zsh"
 assert_contains "cat ~/.zshrc" "export A=1"
 assert_fail "test -L ~/.zshrc"
-assert "mise history --json | jq -r '.[0].trigger'" "bootstrap"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].trigger'" "bootstrap"
 # the other modes behaved as before
 assert "cat ~/.copied" "one"
 assert "cat ~/.gitconfig" 'name = "test"'
@@ -63,9 +63,9 @@ assert "cat ~/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
 
 # an edit is saved and browsable by path
 echo 'bind = SUPER, Q, exec, alacritty' >~/.config/hypr/bindings.lua
-assert_succeed "mise history save"
-assert "mise history --json --path ~/.config/hypr/bindings.lua | jq -r '.[0].description'" "edited hypr/bindings.lua"
-assert_contains "mise history diff 'latest~1' latest --patch --path ~/.config/hypr" "+bind = SUPER, Q, exec, alacritty"
+assert_succeed "mise bootstrap dotfiles save"
+assert "mise bootstrap dotfiles history --json --path ~/.config/hypr/bindings.lua | jq -r '.[0].description'" "edited hypr/bindings.lua"
+assert_contains "mise bootstrap dotfiles history diff 'latest~1' latest --patch --path ~/.config/hypr" "+bind = SUPER, Q, exec, alacritty"
 
 # variants: two streams under one destination key, selected by os
 this_os="$(mise version --json 2>/dev/null | jq -r .os 2>/dev/null || true)"
@@ -76,50 +76,50 @@ esac
 assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $this_os"
 assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $other_os"
 assert "grep -c 'variants = \[{ os = \"$this_os\" }, { os = \"$other_os\" }\]' '$config'" "1"
-assert "mise history paths --json | jq -r '.entries[] | select(.path == \"~/.zshrc\") | .variant'" "$this_os"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.zshrc\") | .variant'" "$this_os"
 # a machine matching no variant keeps local protection but has no shared stream
 cat <<EOF2 >>"$config"
 "~/.only-elsewhere" = { mode = "track", variants = [{ os = "$other_os" }] }
 EOF2
 echo x >~/.only-elsewhere
-assert "mise history paths --json | jq -r '.entries[] | select(.path == \"~/.only-elsewhere\") | \"\\(.share) \\(.note)\"'" 'false no variant matches this machine; add `--os …` or a default variant to share it'
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.only-elsewhere\") | \"\\(.share) \\(.note)\"'" 'false no variant matches this machine; add `--os …` or a default variant to share it'
 # a default variant is the explicit fallback
 cat <<EOF2 >>"$config"
 "~/.fallback" = { mode = "track", variants = [{ os = "$other_os" }, { default = true }] }
 EOF2
-assert "mise history paths --json | jq -r '.entries[] | select(.path == \"~/.fallback\") | \"\\(.share) \\(.variant)\"'" "true default"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.fallback\") | \"\\(.share) \\(.variant)\"'" "true default"
 # two variants matching equally are ambiguous and reported, never silently picked
 cat <<EOF2 >>"$config"
 "~/.ambiguous" = { mode = "track", variants = [{ os = "$this_os" }, { os = "$this_os" }] }
 EOF2
-assert_contains "mise history paths" "invalid: ~/.ambiguous (ambiguous variant"
+assert_contains "mise bootstrap dotfiles paths" "invalid: ~/.ambiguous (ambiguous variant"
 
 # a local policy override restates the effective entry with only the changed field
 assert_succeed "mise bootstrap dotfiles track ~/.zshrc --local --no-share"
 assert "grep -c 'variants = \[{ os = \"$this_os\" }, { os = \"$other_os\" }\]' '$local_config'" "1"
 assert "grep -c 'share = false' '$local_config'" "1"
-assert "mise history paths --json | jq -r '.entries[] | select(.path == \"~/.zshrc\") | \"\\(.share) \\(.variant) \\(.declared_in)\"'" "false $this_os ~/.config/mise/config.local.toml"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.zshrc\") | \"\\(.share) \\(.variant) \\(.declared_in)\"'" "false $this_os ~/.config/mise/config.local.toml"
 # untracking through a local override removes the user's own declaration underneath too
 assert_succeed "mise bootstrap dotfiles untrack ~/.zshrc"
 assert_not_contains "cat '$config'" '"~/.zshrc" = { mode = "track"'
 assert_not_contains "cat '$local_config'" '"~/.zshrc"'
-assert "mise history paths --json | jq -r '[.entries[] | select(.path == \"~/.zshrc\")] | length'" "0"
+assert "mise bootstrap dotfiles paths --json | jq -r '[.entries[] | select(.path == \"~/.zshrc\")] | length'" "0"
 assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $this_os"
 
 # private by default: .local.toml anywhere, credential stores under the config dir;
 # an explicit per-file declaration is the only override
 echo '[settings]' >"$local_config.tmp" && mv "$local_config.tmp" "$MISE_CONFIG_DIR/other.local.toml"
 echo 'token = "x"' >"$MISE_CONFIG_DIR/github_tokens.toml"
-assert "mise history paths --json | jq -r '.private[] | select(.path == \"~/.config/mise/other.local.toml\") | \"\\(.share) \\(.backup)\"'" "false true"
-assert "mise history paths --json | jq -r '.private[] | select(.path == \"~/.config/mise/github_tokens.toml\") | \"\\(.share) \\(.backup)\"'" "false false"
+assert "mise bootstrap dotfiles paths --json | jq -r '.private[] | select(.path == \"~/.config/mise/other.local.toml\") | \"\\(.share) \\(.backup)\"'" "false true"
+assert "mise bootstrap dotfiles paths --json | jq -r '.private[] | select(.path == \"~/.config/mise/github_tokens.toml\") | \"\\(.share) \\(.backup)\"'" "false false"
 cat <<'EOF2' >>"$config"
 "~/.config/mise/other.local.toml" = { mode = "track", share = true }
 EOF2
-assert "mise history paths --json | jq -r '[.private[] | select(.path == \"~/.config/mise/other.local.toml\")] | length'" "0"
-assert "mise history paths --json | jq -r '.entries[] | select(.path == \"~/.config/mise/other.local.toml\") | .share'" "true"
+assert "mise bootstrap dotfiles paths --json | jq -r '[.private[] | select(.path == \"~/.config/mise/other.local.toml\")] | length'" "0"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.config/mise/other.local.toml\") | .share'" "true"
 
 # a save of a path capture skips is rejected, not silently accepted
-assert_fail "mise history save ~/.config/mise/nope" "is not captured"
+assert_fail "mise bootstrap dotfiles save ~/.config/mise/nope" "is not captured"
 
 # an enrollment that cannot save its baseline leaves the configuration unchanged
 bindir="$PWD/stub-bin"
@@ -134,50 +134,50 @@ assert_not_contains "cat '$config'" "tracked-without-git"
 cat <<'EOF2' >>"$config"
 "~/.bad" = { mode = "track", source = "dotfiles/bad" }
 EOF2
-assert_contains "mise history paths 2>&1" "invalid: ~/.bad"
-assert "mise history paths --json | jq -r '[.entries[] | select(.path == \"~/.bad\")] | length'" "0"
+assert_contains "mise bootstrap dotfiles paths 2>&1" "invalid: ~/.bad"
+assert "mise bootstrap dotfiles paths --json | jq -r '[.entries[] | select(.path == \"~/.bad\")] | length'" "0"
 # tracking it again rewrites the declaration into a valid one
 echo bad >~/.bad
 assert_succeed "mise bootstrap dotfiles track ~/.bad"
 assert_not_contains "cat '$config'" "dotfiles/bad"
-assert "mise history paths --json | jq -r '[.entries[] | select(.path == \"~/.bad\")] | length'" "1"
+assert "mise bootstrap dotfiles paths --json | jq -r '[.entries[] | select(.path == \"~/.bad\")] | length'" "1"
 sed -i.bak '/"~\/.ambiguous"/d' "$config" && rm -f "$config.bak"
 
 # tracking is enrolled from the global configuration only
 mkdir -p ~/proj
 printf '[dotfiles]\n"~/.bashrc" = { mode = "track" }\n' >~/proj/mise.toml
 echo b >~/.bashrc
-assert_contains "cd ~/proj && mise trust -q && mise history paths 2>&1" "ignored: project config"
-assert "cd ~/proj && mise history paths --json | jq -r '[.entries[] | select(.path == \"~/.bashrc\")] | length'" "0"
+assert_contains "cd ~/proj && mise trust -q && mise bootstrap dotfiles paths 2>&1" "ignored: project config"
+assert "cd ~/proj && mise bootstrap dotfiles paths --json | jq -r '[.entries[] | select(.path == \"~/.bashrc\")] | length'" "0"
 
 # untracking persists, leaves the file and its checkpoints, and cannot be undone by
 # reconciliation; an inherited entry is switched off locally
 assert_succeed "mise bootstrap dotfiles untrack ~/.config/hypr"
 assert "cat ~/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, alacritty"
 assert_not_contains "cat '$config'" "hypr"
-assert "mise history paths --json | jq -r '[.entries[] | select(.path == \"~/.config/hypr\")] | length'" "0"
-assert_contains "mise history --path ~/.config/hypr/bindings.lua" "edited hypr/bindings.lua"
-assert_succeed "mise history save --description after-untrack"
-assert "mise history paths --json | jq -r '[.entries[] | select(.path == \"~/.config/hypr\")] | length'" "0"
+assert "mise bootstrap dotfiles paths --json | jq -r '[.entries[] | select(.path == \"~/.config/hypr\")] | length'" "0"
+assert_contains "mise bootstrap dotfiles history --path ~/.config/hypr/bindings.lua" "edited hypr/bindings.lua"
+assert_succeed "mise bootstrap dotfiles save --description after-untrack"
+assert "mise bootstrap dotfiles paths --json | jq -r '[.entries[] | select(.path == \"~/.config/hypr\")] | length'" "0"
 mkdir -p "${MISE_SYSTEM_CONFIG_DIR:-}" 2>/dev/null || true
 if [[ -n ${MISE_SYSTEM_CONFIG_DIR:-} && -w $MISE_SYSTEM_CONFIG_DIR ]]; then
   printf '[dotfiles]\n"~/.inherited" = { mode = "track" }\n' >"$MISE_SYSTEM_CONFIG_DIR/config.toml"
   echo i >~/.inherited
-  assert "mise history paths --json | jq -r '.entries[] | select(.path == \"~/.inherited\") | .declared_in'" "$MISE_SYSTEM_CONFIG_DIR/config.toml"
+  assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.inherited\") | .declared_in'" "$MISE_SYSTEM_CONFIG_DIR/config.toml"
   assert_succeed "mise bootstrap dotfiles untrack ~/.inherited"
   assert "grep -c 'enabled = false' '$local_config'" "1"
-  assert "mise history paths --json | jq -r '[.entries[] | select(.path == \"~/.inherited\")] | length'" "0"
+  assert "mise bootstrap dotfiles paths --json | jq -r '[.entries[] | select(.path == \"~/.inherited\")] | length'" "0"
   rm "$MISE_SYSTEM_CONFIG_DIR/config.toml"
 fi
 # a child of an always-tracked directory is excluded instead, and saving it is refused
 assert_succeed "mise bootstrap dotfiles untrack ~/.config/mise/templates"
 assert_contains "cat '$config'" 'exclude = ["~/.config/mise/templates/**"]'
-assert "mise history paths --json | jq -r '.exclude | join(\",\")'" "~/.config/mise/templates/**"
+assert "mise bootstrap dotfiles paths --json | jq -r '.exclude | join(\",\")'" "~/.config/mise/templates/**"
 # (a source a declaration references stays captured; an unreferenced child does not)
 mkdir -p "$MISE_CONFIG_DIR/scratch"
 echo n >"$MISE_CONFIG_DIR/scratch/notes.txt"
 assert_succeed "mise bootstrap dotfiles untrack ~/.config/mise/scratch"
-assert_fail "mise history save ~/.config/mise/scratch/notes.txt" "excluded, missing, or omitted"
+assert_fail "mise bootstrap dotfiles save ~/.config/mise/scratch/notes.txt" "excluded, missing, or omitted"
 assert_fail "mise bootstrap dotfiles untrack ~/.copied" 'managed by a `copy` entry'
 
 # `add --mode track` is not a thing: tracking takes no source

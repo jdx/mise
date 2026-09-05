@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use eyre::{Result, bail};
@@ -20,23 +20,18 @@ use eyre::{Result, bail};
 use super::checkpoint::{Draft, Outcome, Store};
 use super::journal::JournalEntry;
 use super::store::{
-    self, Changes, Checkpoint, DescriptionSource, LockfileSnapshot, Operation, OperationKind,
-    OperationMarker, OperationStatus, Pending, Summary, TreeInfo, Trigger,
+    self, Changes, Checkpoint, DescriptionSource, Operation, OperationKind, OperationMarker,
+    OperationStatus, Pending, Summary, TreeInfo, Trigger,
 };
 use super::tracked::TrackedSet;
 use crate::config::Settings;
 use crate::dirs;
 use crate::env;
-use crate::file::display_path;
 use crate::lock_file::LockFile;
 
 /// Set in the environment while an operation is open; a child mise that
 /// sees it records nothing of its own.
 pub(crate) const ENV_VAR: &str = "__MISE_HISTORY_OPERATION";
-
-/// Bootstrap parts whose changes always leave journal entries, so a run
-/// covering only these with an empty journal really did nothing.
-const JOURNALED_PARTS: &[&str] = &["dotfiles", "mise-shell-activate", "config-checkout"];
 
 struct Writer {
     store: Store,
@@ -155,10 +150,8 @@ impl OperationScope {
         let scope = Self::begin(command, dry_run).await?;
         let result = f.await;
         scope.refresh_tracked().await;
-        let summary = Summary {
-            parts: vec![part.to_string()],
-            message: None,
-        };
+        let _ = part;
+        let summary = Summary { message: None };
         scope.finish(
             result.as_ref().err().map(|err| format!("{err:#}")),
             Some(summary),
@@ -245,10 +238,8 @@ impl Writer {
             undoes: None,
             applied: None,
             affected: vec![],
-            parts: vec![],
             message: None,
             journal: vec![],
-            lockfile: None,
         };
         let pending = Pending {
             id: outcome_id,
@@ -368,17 +359,14 @@ impl Writer {
         } else {
             OperationStatus::Completed
         };
-        let lockfile = read_lockfile();
         {
             let operation = self.operation_mut();
             operation.status = status;
             operation.finished_at = Some(store::now_rfc3339());
             operation.error = error;
             if let Some(summary) = summary {
-                operation.parts = summary.parts;
                 operation.message = summary.message;
             }
-            operation.lockfile = lockfile;
         }
         self.write_outcome()
     }
@@ -412,18 +400,11 @@ impl Writer {
         let Outcome::Created(entry) = outcome else {
             return Ok(());
         };
-        // A run is a no-op only when every part it covered journals its
-        // changes; a part that does not journal yet may have changed the
-        // machine without leaving a trace here.
-        let journaled_parts = !operation.parts.is_empty()
-            && operation
-                .parts
-                .iter()
-                .all(|part| JOURNALED_PARTS.contains(&part.as_str()));
-        // the outcome's changes are relative to the protective checkpoint,
-        // with carried-forward manual-save entries already discounted
+        // A completed run that journaled no file change and whose outcome
+        // equals its protective checkpoint left no trace worth keeping. The
+        // outcome's changes are relative to the protective checkpoint, with
+        // carried-forward manual-save entries already discounted.
         let noop = operation.status == OperationStatus::Completed
-            && journaled_parts
             && operation.journal.is_empty()
             && entry.checkpoint.tree.snapshot.is_some()
             && self.before.is_some()
@@ -522,28 +503,4 @@ fn outcome_trigger(kind: OperationKind) -> Trigger {
         OperationKind::Undo => Trigger::Undo,
         OperationKind::Apply => Trigger::Apply,
     }
-}
-
-fn read_lockfile() -> Option<LockfileSnapshot> {
-    let path = global_lockfile_path();
-    match std::fs::read(&path) {
-        Ok(bytes) => Some(LockfileSnapshot {
-            path,
-            sha256: sha256_hex(&bytes),
-        }),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-        Err(err) => {
-            warn!("history: could not read {}: {err}", display_path(&path));
-            None
-        }
-    }
-}
-
-pub(crate) fn global_lockfile_path() -> PathBuf {
-    crate::lockfile::lockfile_path_for_config(&crate::config::global_config_path(), None).0
-}
-
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::Digest;
-    hex::encode(sha2::Sha256::digest(bytes))
 }

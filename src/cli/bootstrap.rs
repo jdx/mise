@@ -10,8 +10,8 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::dotfiles::{
-    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesStatus, DotfilesTrack,
-    DotfilesUnapply, DotfilesUntrack,
+    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesHistory, DotfilesPaths,
+    DotfilesSave, DotfilesStatus, DotfilesTrack, DotfilesUnapply, DotfilesUntrack,
 };
 use super::install::Install;
 use super::plugins::install::install_plugin;
@@ -36,9 +36,6 @@ use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
 use crate::ui::table::MiseTable;
 
-mod generations;
-
-use generations::BootstrapGenerations;
 /// Set up a machine for the current config in one command
 ///
 /// Runs the bootstrap steps for the current config in order:
@@ -289,7 +286,6 @@ enum Commands {
     Dotfiles(BootstrapDotfiles),
     Files(BootstrapFiles),
     Firewall(BootstrapFirewall),
-    Generations(BootstrapGenerations),
     #[usage(hide = true)]
     Launchd(BootstrapLaunchd),
     Linux(BootstrapLinux),
@@ -809,6 +805,9 @@ enum BootstrapDotfilesCommands {
     Apply(BootstrapDotfilesApply),
     Diff(DotfilesDiff),
     Edit(DotfilesEdit),
+    History(DotfilesHistory),
+    Paths(DotfilesPaths),
+    Save(DotfilesSave),
     Status(BootstrapDotfilesStatus),
     Track(DotfilesTrack),
     Unapply(DotfilesUnapply),
@@ -1259,14 +1258,7 @@ impl Bootstrap {
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
-        let summary = Summary {
-            parts: BootstrapPart::ALL
-                .iter()
-                .filter(|part| !skip.contains(part))
-                .map(bootstrap_part_name)
-                .collect(),
-            message: None,
-        };
+        let summary = Summary { message: None };
         let accounts_enabled = !skip.contains(&BootstrapPart::Accounts);
         let files_enabled = !skip.contains(&BootstrapPart::Files);
         let configured_accounts =
@@ -1537,7 +1529,7 @@ impl Bootstrap {
                     yes: self.yes,
                 };
                 if !system::files::apply(&config, &files, &opts)? {
-                    return Ok(declined(summary));
+                    return Ok(declined());
                 }
             }
 
@@ -1553,7 +1545,7 @@ impl Bootstrap {
                     yes: self.yes,
                 };
                 if !system::edits::apply(&config, &edits, &opts)? {
-                    return Ok(declined(summary));
+                    return Ok(declined());
                 }
             }
             if self.dry_run {
@@ -1738,9 +1730,6 @@ impl Bootstrap {
             let tasks = config.tasks().await?;
             if tasks.iter().any(|(_, t)| t.is_match("bootstrap")) {
                 info!("bootstrap: running `bootstrap` task");
-                if !self.dry_run {
-                    journal::unrecorded("task", "bootstrap", "task effects are not journaled");
-                }
                 self.run_task("bootstrap", skip.contains(&BootstrapPart::Tools))
                     .await?;
             } else {
@@ -1835,7 +1824,6 @@ impl Bootstrap {
             generation.finish(
                 None,
                 Some(Summary {
-                    parts: vec!["config-checkout".into()],
                     message: Some(format!("checkout of {url}")),
                 }),
             );
@@ -1885,12 +1873,6 @@ impl Bootstrap {
     ) -> Result<()> {
         // Recorded before the hooks run: a hook that fails may still have
         // changed the machine.
-        if bootstrap_hooks_enabled()
-            && !self.dry_run
-            && hooks.iter().any(|hook| hook.phase == phase)
-        {
-            journal::unrecorded("hooks", phase.as_str(), "hook commands are not journaled");
-        }
         run_bootstrap_hooks(config, hooks, phase, self.dry_run).await
     }
 
@@ -2230,10 +2212,9 @@ fn is_mise_config_target(path: &std::path::Path) -> bool {
                 .is_some_and(|parent| parent.ends_with(".config/mise/conf.d")))
 }
 
-fn declined(summary: Summary) -> Summary {
+fn declined() -> Summary {
     Summary {
         message: Some("dotfiles apply declined".into()),
-        ..summary
     }
 }
 
@@ -2252,7 +2233,6 @@ impl Commands {
             Self::Dotfiles(cmd) => cmd.run().await,
             Self::Files(cmd) => cmd.run().await,
             Self::Firewall(cmd) => cmd.run().await,
-            Self::Generations(cmd) => cmd.run().await,
             Self::Launchd(cmd) => cmd.run().await,
             Self::Linux(cmd) => cmd.run().await,
             Self::Macos(cmd) => cmd.run().await,
@@ -3941,6 +3921,9 @@ impl BootstrapDotfiles {
             BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Diff(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::History(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Paths(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Save(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Track(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Unapply(cmd) => cmd.run().await,

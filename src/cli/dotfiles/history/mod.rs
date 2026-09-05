@@ -1,4 +1,5 @@
-//! `mise history`: the checkpoints of the tracked configuration files.
+//! `mise bootstrap dotfiles history`: the checkpoint browser for the tracked
+//! configuration files, and the helpers every history command shares.
 
 use eyre::Result;
 
@@ -6,24 +7,21 @@ use crate::system::history::checkpoint::Store;
 use crate::system::history::store::{self, Entry};
 use crate::system::history::tracked::TrackedSet;
 
-pub(crate) mod capture_health;
 mod describe;
 mod diff;
 mod ls;
-mod paths;
-mod save;
-mod show;
-mod status;
+pub(crate) mod show;
 
-/// Browse and save checkpoints of your configuration files
+/// Browse the checkpoints of your dotfiles
 ///
-/// Every mutating bootstrap command and every `mise history save` records a
+/// Every save, every mutating bootstrap command, and the watcher record a
 /// checkpoint of the tracked files: the global mise config directory, the
-/// dotfiles root, and every `[dotfiles]` entry. Without a subcommand this
-/// lists them, newest first.
+/// dotfiles root, and every `[dotfiles]` entry. A checkpoint holds files,
+/// never package or service state: restoring one restores files. Without a
+/// subcommand this lists them, newest first.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct History {
+pub(crate) struct DotfilesHistory {
     #[usage(subcommand)]
     command: Option<HistoryCommands>,
 
@@ -36,22 +34,16 @@ enum HistoryCommands {
     Describe(describe::HistoryDescribe),
     Diff(diff::HistoryDiff),
     Ls(ls::HistoryLs),
-    Paths(paths::HistoryPaths),
-    Save(save::HistorySave),
     Show(show::HistoryShow),
-    Status(status::HistoryStatus),
 }
 
-impl History {
+impl DotfilesHistory {
     pub(crate) async fn run(self) -> Result<()> {
         match self.command {
             Some(HistoryCommands::Describe(cmd)) => cmd.run().await,
             Some(HistoryCommands::Diff(cmd)) => cmd.run().await,
             Some(HistoryCommands::Ls(cmd)) => cmd.run().await,
-            Some(HistoryCommands::Paths(cmd)) => cmd.run().await,
-            Some(HistoryCommands::Save(cmd)) => cmd.run().await,
             Some(HistoryCommands::Show(cmd)) => cmd.run().await,
-            Some(HistoryCommands::Status(cmd)) => cmd.run().await,
             None => self.ls.run().await,
         }
     }
@@ -114,11 +106,11 @@ pub(crate) fn short(oid: &str) -> String {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise history</bold>
-    $ <bold>mise history --path ~/.config/hypr/bindings.lua</bold>
-    $ <bold>mise history show latest</bold>
-    $ <bold>mise history diff</bold>                    # the working tree against the latest checkpoint
-    $ <bold>mise history diff 11 12 --patch</bold>
-    $ <bold>mise history save --description "before the theme change"</bold>
+    $ <bold>mise bootstrap dotfiles history</bold>
+    $ <bold>mise bootstrap dotfiles history --path ~/.config/hypr/bindings.lua</bold>
+    $ <bold>mise bootstrap dotfiles history show latest</bold>
+    $ <bold>mise bootstrap dotfiles history diff</bold>          # the working tree against the latest checkpoint
+    $ <bold>mise bootstrap dotfiles history diff 11 12 --patch</bold>
+    $ <bold>mise bootstrap dotfiles save --description "before the theme change"</bold>
 "#
 );

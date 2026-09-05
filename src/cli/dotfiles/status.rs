@@ -8,6 +8,11 @@ use crate::system::files::FileState;
 use crate::ui::table::MiseTable;
 
 /// Show the status of dotfiles from `[dotfiles]`
+///
+/// The management state of every declaration (applied, missing, differs,
+/// tracked) followed by the history state: what is tracked, the latest
+/// checkpoint, unfinished operations, and whether edits are saved
+/// automatically.
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesStatus {
@@ -143,12 +148,14 @@ impl DotfilesStatus {
         if files.is_empty() && edits.is_empty() {
             super::warn_if_dotfiles_ignored();
         }
+        let history = super::history_status::report().await?;
         if self.json {
             miseprintln!(
                 "{}",
                 serde_json::to_string_pretty(&json!({
                     "files": json_files,
                     "edits": json_edits,
+                    "history": history,
                 }))?
             );
         } else {
@@ -170,6 +177,7 @@ impl DotfilesStatus {
                 }
                 table.print()?;
             }
+            super::history_status::print(&history)?;
         }
         if self.missing && any_missing {
             return Err(crate::request_exit(1));

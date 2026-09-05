@@ -188,7 +188,7 @@ impl Trigger {
     }
 
     /// A capture with no metadata of its own: recorded only when something
-    /// changed. A bare `mise history save` counts; one with a description,
+    /// changed. A bare `mise bootstrap dotfiles save` counts; one with a description,
     /// a label, or a task always records.
     pub(crate) fn is_automatic(self) -> bool {
         matches!(self, Self::Edit | Self::Save)
@@ -416,27 +416,15 @@ pub(crate) struct Operation {
     pub applied: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub affected: Vec<String>,
-    /// Bootstrap parts the run executed.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub parts: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// The file changes the operation made, with their preimages.
     #[serde(default)]
     pub journal: Vec<JournalEntry>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lockfile: Option<LockfileSnapshot>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct LockfileSnapshot {
-    pub path: PathBuf,
-    pub sha256: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct Summary {
-    /// Bootstrap parts the run executed.
-    pub parts: Vec<String>,
     pub message: Option<String>,
 }
 

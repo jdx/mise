@@ -8,7 +8,7 @@ Describe 'dotfiles' {
         # an inherited value would leave the next suite without it.
         $script:OriginalTrusted = [Environment]::GetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', 'Process')
         $env:MISE_TRUSTED_CONFIG_PATHS = $script:TestRoot
-        # Applies record bootstrap generations under the state dir; keep them out of the runner's.
+        # Applies record file checkpoints under the state dir; keep them out of the runner's.
         $script:OriginalStateDir = [Environment]::GetEnvironmentVariable('MISE_STATE_DIR', 'Process')
         $env:MISE_STATE_DIR = Join-Path $script:TestRoot "state"
 
@@ -90,23 +90,23 @@ Describe 'dotfiles' {
         mise bootstrap dotfiles apply 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0
 
-        $json = mise bootstrap generations --json 2>&1 | Out-String
+        $json = mise bootstrap dotfiles history --json 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
-        $generations = $json | ConvertFrom-Json
-        @($generations).Count | Should -BeGreaterOrEqual 1
-        $latest = @($generations)[0]
+        $checkpoints = $json | ConvertFrom-Json
+        @($checkpoints).Count | Should -BeGreaterOrEqual 1
+        $latest = @($checkpoints)[0]
         $latest.operation.status | Should -Be 'completed'
         $latest.operation.command | Should -BeLike 'bootstrap dotfiles apply*'
         $latest.trigger | Should -Be 'bootstrap'
-        $status = mise history status --json 2>&1 | Out-String | ConvertFrom-Json
+        $status = mise bootstrap dotfiles status --json 2>&1 | Out-String | ConvertFrom-Json
         $status.unavailable | Should -BeNullOrEmpty
         Test-Path (Join-Path $env:MISE_STATE_DIR 'history\repo.git') | Should -BeTrue
 
-        $out = mise bootstrap generations show latest 2>&1 | Out-String
+        $out = mise bootstrap dotfiles history show latest 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
-        $out | Should -BeLike '*Generation*completed*'
+        $out | Should -BeLike '*Operation:*bootstrap (completed)*'
 
-        $history = mise history --json 2>&1 | Out-String
+        $history = mise bootstrap dotfiles history --json 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
         $checkpoints = $history | ConvertFrom-Json
         @($checkpoints)[1].trigger | Should -Be 'bootstrap-before'
