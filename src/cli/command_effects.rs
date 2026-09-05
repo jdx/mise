@@ -65,6 +65,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap firewall apply", Destructive),
     ("bootstrap firewall status", Read),
     ("bootstrap generations", Read),
+    ("bootstrap generations diff", Read),
     ("bootstrap generations ls", Read),
     ("bootstrap generations show", Read),
     ("bootstrap services", Read),

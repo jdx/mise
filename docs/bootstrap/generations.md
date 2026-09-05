@@ -9,6 +9,7 @@ after the run, the global lockfile, and a journal of what the run changed.
 mise bootstrap generations               # newest first
 mise bootstrap generations show latest   # one generation in detail
 mise bootstrap generations show 12 --files
+mise bootstrap generations diff 11 12    # what changed between two runs
 ```
 
 Generations are what make a bootstrap run a known transition rather than an
@@ -100,6 +101,27 @@ ID  Status     When              Command                          Parts     Snap
 generations whose run did not finish. `show` prints one generation with its
 roots, warnings, and journal; `show --files` lists every file in its snapshot.
 Ids accept `latest` and `latest~N`.
+
+## Comparing generations
+
+`mise bootstrap generations diff` compares snapshots. With one id it shows what
+that generation's run changed inside the roots — its snapshot before the run
+against the one after. With two ids it compares the states the two runs left
+behind, which is how to see what changed by hand between runs:
+
+```sh
+mise bootstrap generations diff 12          # what run 12 changed
+mise bootstrap generations diff 11 12       # from the state after 11 to the state after 12
+mise bootstrap generations diff 11 12 --patch
+mise bootstrap generations diff 11 12 --root config/hypr
+mise bootstrap generations diff 11 12 --exit-code   # exit 1 when they differ
+```
+
+Paths are prefixed by their root (`config/…`, `dotfiles/…`, and `mise.lock`).
+The default output is a per-file summary; `--patch` prints the full patch, and
+`--root LABEL[/PATH]` narrows it to one root or a path inside it. Journal
+entries for the generations covered are printed after the diff unless
+`--no-journal` is given.
 
 A generation left `pending` means the run died before finishing. Its `before`
 snapshot is intact, so the state prior to that run is still recorded.

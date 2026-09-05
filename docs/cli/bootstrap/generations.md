@@ -22,6 +22,7 @@ Without a subcommand this lists them, newest first.
 
 ## Subcommands
 
+- [`mise bootstrap generations diff [FLAGS] <A> [B]`](/cli/bootstrap/generations/diff.md)
 - [`mise bootstrap generations ls [FLAGS]`](/cli/bootstrap/generations/ls.md)
 - [`mise bootstrap generations show [-J --json] [--files] [ID]`](/cli/bootstrap/generations/show.md)
 
@@ -32,4 +33,5 @@ mise bootstrap generations
 mise bootstrap generations --json | jq '.[0]'
 mise bootstrap generations show latest
 mise bootstrap generations show 12 --files
+mise bootstrap generations diff 11 12 --patch
 ```
