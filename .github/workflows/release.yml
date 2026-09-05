@@ -634,7 +634,7 @@ jobs:
       # writing it under packslip/, and an artifact holding files at two
       # depths keeps the directory, which the flat `sha256sum ./*` below
       # would then choke on.
-      - uses: jdx/packslip@a6eddff2d884891faa2efbec374b48e7053df2c4 # v1.0.1
+      - uses: jdx/packslip@5c1cced7cfa661140dbc972a0de55b2b6bd81522 # v1.0.2
         with:
           artifacts: release-assets/mise-*
           bin: mise
