@@ -1,195 +1,105 @@
 #!/usr/bin/env bash
-# Every mutating bootstrap command records a generation: a snapshot of the
-# global config directory and dotfiles root plus a journal of what changed.
+# `mise bootstrap generations`: the operations bootstrap recorded, as a view
+# over `mise history`. Every mutating bootstrap command records a pair of
+# checkpoints (before and after) with a journal of what the run changed.
 
 require_cmd git
 
-store="$MISE_STATE_DIR/bootstrap"
-shadow="$store/generations.git"
-records="$store/generations"
-
-# assertions run in a subshell, so these are commands rather than functions
-if [[ "$(uname -s)" == "Darwin" ]]; then
-  mode_of="stat -f %Lp"
-else
-  mode_of="stat -c %a"
-fi
-count_records="find '$records' -name '*.json' | wc -l | tr -d ' '"
+count="mise history --json -n 0 | jq length"
 
 mkdir -p "$MISE_CONFIG_DIR/dotfiles"
 echo "alias ll='ls -l'" >"$MISE_CONFIG_DIR/dotfiles/zshrc"
 echo one >"$MISE_CONFIG_DIR/dotfiles/copied"
-cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
 [dotfiles]
 "~/.zshrc" = "dotfiles/zshrc"
 "~/.copied" = { source = "dotfiles/copied", mode = "copy" }
-EOF
+EOF2
 
 # dry runs record nothing
 assert_succeed "mise bootstrap dotfiles apply --dry-run"
-assert_directory_not_exists "$records"
-assert_contains "mise bootstrap generations 2>&1" "no bootstrap generations recorded"
+assert_contains "mise bootstrap generations 2>&1" "no bootstrap operations recorded"
 
-# the first apply records generation 1 with a before/after snapshot of the config dir
+# the first apply records a before/outcome pair
 assert_succeed "mise bootstrap dotfiles apply --yes"
 assert "readlink ~/.zshrc" "$MISE_CONFIG_DIR/dotfiles/zshrc"
-assert "$count_records" "1"
-assert "$mode_of '$store'" "700"
-assert "mise bootstrap generations --json | jq -r '.[0] | \"\\(.id) \\(.status) \\(.command) \\(.snapshot.available)\"'" \
-  "1 completed bootstrap dotfiles apply --yes true"
-assert "mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[] | select(.label == \"config\") | .tree | length'" "40"
-assert "mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[] | select(.label == \"dotfiles\") | .skipped'" "missing"
-# targets live outside the snapshot roots, so the first apply changes nothing inside them
-assert "mise bootstrap generations --json | jq -r '.[0].snapshot.unchanged'" "true"
+assert "$count" "2"
+assert "mise bootstrap generations --json | jq -r '.[0] | \"\\(.id) \\(.operation.status) \\(.operation.command) \\(.tree.available)\"'" \
+  "2 completed bootstrap dotfiles apply --yes true"
+assert "mise bootstrap generations --json | jq length" "1"
 # the journal records every path the run touched: prior state before, resulting state after
-assert "mise bootstrap generations --json | jq -r '[.[0].journal[] | select(.kind == \"path_changed\") | .path] | join(\" \")'" "$HOME/.zshrc $HOME/.copied"
-assert "mise bootstrap generations --json | jq -r '.[0].journal[0].prior.state, .[0].journal[1].after.state, .[0].journal[3].after.state'" $'missing\nsymlink\nfile'
-assert_contains "mise bootstrap generations show 1" "dotfiles: ~/.zshrc: ~/.zshrc missing -> a symlink to"
-tree="$(mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[0].tree')"
-assert_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "dotfiles/zshrc"
-assert_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "config.toml"
-assert_succeed "git --git-dir='$shadow' rev-parse --verify -q refs/generations/1/after"
+assert "mise bootstrap generations --json | jq -r '[.[0].operation.journal[] | select(.kind == \"path_changed\") | .path] | join(\" \")'" "$HOME/.zshrc $HOME/.copied"
+assert "mise bootstrap generations --json | jq -r '.[0].operation.journal[0].prior.state, .[0].operation.journal[1].after.state, .[0].operation.journal[3].after.state'" $'missing\nsymlink\nfile'
+assert_contains "mise bootstrap generations show 2" "dotfiles: ~/.zshrc: ~/.zshrc missing -> a symlink to"
+assert_contains "mise bootstrap generations show latest" "before checkpoint 1"
+assert_contains "mise bootstrap generations show latest --files" "~/.config/mise/dotfiles/copied"
+assert_fail "mise bootstrap generations show 99" "no history checkpoint 99"
+assert_fail "mise bootstrap generations show 1" "not a bootstrap operation"
 
-# a run that changes nothing leaves no generation behind
+# a run that changes nothing leaves nothing behind
 assert_succeed "mise bootstrap dotfiles apply --yes"
-assert "$count_records" "1"
+assert "$count" "2"
 
-# show
-assert_contains "mise bootstrap generations show 1" "Generation 1 (completed)"
-assert_contains "mise bootstrap generations show latest" "mise bootstrap dotfiles apply --yes"
-assert_contains "mise bootstrap generations show latest --files" "dotfiles/copied"
-assert_fail "mise bootstrap generations show 99" "no bootstrap generation 99"
-assert_contains "mise bootstrap generations" "completed"
-
-# a change to a source is a new generation whose snapshot differs
+# a change to a source is a new pair; the edit happened before the run, so it
+# shows between the pairs rather than within the run
 echo two >"$MISE_CONFIG_DIR/dotfiles/copied"
 echo added >"$MISE_CONFIG_DIR/dotfiles/added"
 assert_succeed "mise bootstrap dotfiles apply --yes"
 assert "cat ~/.copied" "two"
-assert "$count_records" "2"
-assert "mise bootstrap generations --json | jq -r '.[0].id, .[0].parent'" $'2\n1'
-# the edit happened before the run, so it shows between 1.after and 2.before, not within 2
-assert "mise bootstrap generations --json | jq -r '.[1].snapshot.after.tree == .[0].snapshot.before.tree'" "false"
-assert "mise bootstrap generations --json | jq -r '.[0].snapshot.unchanged'" "true"
-assert "mise bootstrap generations show latest~1 --json | jq -r .id" "1"
+assert "$count" "4"
+# ids reserved by the no-op run are never reused
+assert "mise bootstrap generations --json | jq -r '[.[].id] | join(\",\")'" "6,2"
+assert "mise bootstrap generations show latest~1 --json | jq -r .id" "2"
+assert_contains "mise bootstrap generations diff 2 6" "dotfiles/copied"
+assert_contains "mise bootstrap generations diff 2 6 --patch" "+two"
+assert_contains "mise bootstrap generations diff 2 6 --root config/dotfiles/copied --patch" "-one"
+assert_contains "mise bootstrap generations diff 2 6 --root ~/.config/mise/dotfiles/copied --patch" "-one"
+assert_contains "mise bootstrap generations diff 2 6 2>&1" "dotfiles: ~/.copied: ~/.copied a file (4 bytes) -> a file"
+assert_not_contains "mise bootstrap generations diff 2 6 --no-journal 2>&1" "dotfiles: ~/.copied"
+# within the run only the copied output changed
+assert_contains "mise bootstrap generations diff 6" "home/.copied"
+assert_fail "mise bootstrap generations diff 2 6 --exit-code"
+assert_succeed "mise bootstrap generations diff 2 --exit-code --root config"
+assert_fail "mise bootstrap generations diff 99" "no history checkpoint 99"
+assert_fail "mise bootstrap generations diff 2 6 --root config/missing" "not in either snapshot"
+assert_contains "mise bootstrap generations diff 2 6 --root config/dotfiles/added --patch" "+added"
 
-# diff: one id compares a run's before/after; two ids compare the states they left behind
-assert_contains "mise bootstrap generations diff 1 2" "config/dotfiles/copied"
-assert_contains "mise bootstrap generations diff 1 2 --patch" "+two"
-assert_contains "mise bootstrap generations diff 1 2 --root config/dotfiles/copied --patch" "-one"
-assert_contains "mise bootstrap generations diff 1 2 2>&1" "dotfiles: ~/.copied: ~/.copied a file (4 bytes) -> a file"
-assert_not_contains "mise bootstrap generations diff 1 2 --no-journal 2>&1" "dotfiles: ~/.copied"
-assert_contains "mise bootstrap generations diff 2 2>&1" "no differences"
-assert_fail "mise bootstrap generations diff 1 2 --exit-code"
-assert_succeed "mise bootstrap generations diff 2 --exit-code"
-assert_fail "mise bootstrap generations diff 99" "no bootstrap generation 99"
-assert_fail "mise bootstrap generations diff 1 2 --root nope" "no snapshot root named nope"
-assert_fail "mise bootstrap generations diff 1 2 --root config/missing" "config/missing is not in either snapshot"
-# a path on one side only is compared against nothing, so it shows whole
-assert_contains "mise bootstrap generations diff 1 2 --root config/dotfiles/added --patch" "+added"
-assert_contains "mise bootstrap generations diff 2 1 --root config/dotfiles/added --patch" "-added"
-assert_contains "mise bootstrap generations diff 1 2 --root config/dotfiles/added" "added"
-
-# a full bootstrap run records one generation, not one per part
+# a full bootstrap run records one pair, not one per part
 assert_succeed "mise bootstrap --yes --only dotfiles"
-assert "$count_records" "2" # nothing changed, so nothing recorded
+assert "$count" "4"
 echo three >"$MISE_CONFIG_DIR/dotfiles/copied"
 assert_succeed "mise bootstrap --yes --only dotfiles"
-assert "$count_records" "3"
-assert "mise bootstrap generations --json | jq -r '.[0].command'" "bootstrap --yes --only dotfiles"
-assert "mise bootstrap generations --json | jq -r '.[0].summary.parts | join(\",\")'" "dotfiles"
-
-# a generation whose run died shows as pending
-jq '.id = 4 | .status = "pending" | .finished_at = null' "$records/000003.json" >"$records/000004.json"
-assert_contains "mise bootstrap generations" "pending"
-assert "mise bootstrap generations --pending --json | jq length" "1"
-assert "mise bootstrap generations --json | jq -r '.[0].id'" "4"
-assert_fail "mise bootstrap generations diff 4" "did not finish"
-rm "$records/000004.json"
-
-# retention keeps the newest generations and leaves a consistent shadow repo
-for i in 4 5 6; do
-  echo "$i" >"$MISE_CONFIG_DIR/dotfiles/copied"
-  assert_succeed "mise bootstrap dotfiles apply --yes"
-done
-assert "$count_records" "6"
-echo seven >"$MISE_CONFIG_DIR/dotfiles/copied"
-assert_succeed "MISE_BOOTSTRAP_GENERATIONS_KEEP=2 mise bootstrap dotfiles apply --yes"
-assert "$count_records" "2"
-assert "mise bootstrap generations --json | jq -r '[.[].id] | join(\",\")'" "7,6"
-assert_fail "git --git-dir='$shadow' rev-parse --verify -q refs/generations/1/after"
-assert_succeed "git --git-dir='$shadow' fsck --no-progress"
-
-# recording can be turned off
-echo eight >"$MISE_CONFIG_DIR/dotfiles/copied"
-assert_succeed "MISE_BOOTSTRAP_GENERATIONS_ENABLED=0 mise bootstrap dotfiles apply --yes"
-assert "cat ~/.copied" "eight"
-assert "$count_records" "2"
-
-# without a usable git the generation is still recorded, just without content
-bindir="$PWD/stub-bin"
-mkdir -p "$bindir"
-printf '#!/bin/sh\nexit 127\n' >"$bindir/git"
-chmod +x "$bindir/git"
-echo nine >"$MISE_CONFIG_DIR/dotfiles/copied"
-assert_succeed "PATH='$bindir:$PATH' mise bootstrap dotfiles apply --yes"
-assert "cat ~/.copied" "nine"
-assert "mise bootstrap generations --json | jq -r '.[0].snapshot.available'" "false"
-assert_contains "mise bootstrap generations show latest" "Snapshot:   unavailable"
-assert_contains "mise bootstrap generations" "unavailable"
-
-# the user's own checkout of the config directory is never touched
-git -C "$MISE_CONFIG_DIR" init -q -b main
-git -C "$MISE_CONFIG_DIR" config user.email test@example.com
-git -C "$MISE_CONFIG_DIR" config user.name "mise test"
-git -C "$MISE_CONFIG_DIR" add .
-git -C "$MISE_CONFIG_DIR" commit -qm initial
-head="$(git -C "$MISE_CONFIG_DIR" rev-parse HEAD)"
-echo ten >"$MISE_CONFIG_DIR/dotfiles/copied"
-assert_succeed "mise bootstrap dotfiles apply --yes"
-assert "git -C '$MISE_CONFIG_DIR' rev-parse HEAD" "$head"
-assert "git -C '$MISE_CONFIG_DIR' status --porcelain" " M dotfiles/copied"
-assert "mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[0].vcs.head'" "$head"
-assert "mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[0].vcs.branch'" "main"
+assert "$count" "6"
+assert "mise bootstrap generations --json | jq -r '.[0].operation.command'" "bootstrap --yes --only dotfiles"
+assert "mise bootstrap generations --json | jq -r '.[0].operation.parts | join(\",\")'" "dotfiles"
 
 # edits, unapply, and add journal the files they touch, with the prior content kept
-cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+cat <<'EOF2' >>"$MISE_CONFIG_DIR/config.toml"
 "~/.bashrc/activate" = { block = 'eval "$(mise activate bash)"' }
-EOF
+EOF2
 echo 'export PS1=x' >~/.bashrc
 assert_succeed "mise bootstrap dotfiles apply --yes"
-assert "mise bootstrap generations --json | jq -r '[.[0].journal[] | select(.kind == \"path_changed\") | .path] | join(\" \")'" "$HOME/.bashrc"
-assert "mise bootstrap generations --json | jq -r '.[0].journal[0].prior.state, .[0].journal[0].prior.content.size, .[0].journal[1].after.state'" $'file\n13\nfile'
-assert "mise bootstrap generations --json | jq -r '.[0].journal[0].prior.content.inline' | base64 -d" "export PS1=x"
+assert "mise bootstrap generations --json | jq -r '[.[0].operation.journal[] | select(.kind == \"path_changed\") | .path] | join(\" \")'" "$HOME/.bashrc"
+assert "mise bootstrap generations --json | jq -r '.[0].operation.journal[0].prior.state, .[0].operation.journal[0].prior.content.size, .[0].operation.journal[1].after.state'" $'file\n13\nfile'
+assert "mise bootstrap generations --json | jq -r '.[0].operation.journal[0].prior.content.inline' | base64 -d" "export PS1=x"
 assert_contains "mise bootstrap generations show latest" "dotfiles: ~/.bashrc: ~/.bashrc a file (13 bytes) -> a file"
 
 assert_succeed "mise bootstrap dotfiles unapply --yes ~/.bashrc"
 assert "cat ~/.bashrc" "export PS1=x"
-assert "mise bootstrap generations --json | jq -r '.[0].journal[0].kind, .[0].journal[0].path, .[0].journal[1].after.state'" $'path_changed\n'"$HOME/.bashrc"$'\nfile'
+assert "mise bootstrap generations --json | jq -r '.[0].operation.journal[0].kind, .[0].operation.journal[0].path, .[0].operation.journal[1].after.state'" $'path_changed\n'"$HOME/.bashrc"$'\nfile'
 
 echo 'real file' >~/.newrc
 assert_succeed "mise bootstrap dotfiles add --yes ~/.newrc"
 assert "readlink ~/.newrc" "$HOME/.dotfiles/.newrc"
-assert "mise bootstrap generations --json | jq -r '[.[0].journal[] | select(.kind == \"path_changed\") | .prior.state] | .[0:2] | join(\" \")'" "file missing"
-assert "mise bootstrap generations --json | jq -r '.[0].journal[0].prior.content.inline' | base64 -d" "real file"
-assert "mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[] | select(.label == \"dotfiles\") | .tree | length'" "40"
+assert "mise bootstrap generations --json | jq -r '[.[0].operation.journal[] | select(.kind == \"path_changed\") | .prior.state] | .[0:2] | join(\" \")'" "file missing"
+assert "mise bootstrap generations --json | jq -r '.[0].operation.journal[0].prior.content.inline' | base64 -d" "real file"
 
 # a symlink-each entry journals every link and its ownership state file
 mkdir -p "$MISE_CONFIG_DIR/dotfiles/bin"
 echo one >"$MISE_CONFIG_DIR/dotfiles/bin/one"
-cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+cat <<'EOF2' >>"$MISE_CONFIG_DIR/config.toml"
 "~/.local/mybin" = { source = "dotfiles/bin", mode = "symlink-each" }
-EOF
+EOF2
 assert_succeed "mise bootstrap dotfiles apply --yes"
 assert "readlink ~/.local/mybin/one" "$MISE_CONFIG_DIR/dotfiles/bin/one"
-assert "mise bootstrap generations --json | jq -r '[.[0].journal[] | select(.kind == \"path_changed\") | .path | select(endswith(\"/one\") or endswith(\".toml\") or endswith(\"/mybin\"))] | length'" "3"
-
-# mise's own state, cache, and data directories under a root are never captured
-mkdir -p ~/.local/other
-echo hi >~/.local/other/file
-echo eleven >"$MISE_CONFIG_DIR/dotfiles/copied"
-assert_succeed "MISE_DOTFILES_ROOT=$HOME/.local mise bootstrap dotfiles apply --yes ~/.copied"
-tree="$(mise bootstrap generations --json | jq -r '.[0].snapshot.after.roots[] | select(.label == "dotfiles") | .tree')"
-assert_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "other/file"
-assert_not_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "state/mise"
-assert_not_contains "git --git-dir='$shadow' ls-tree -r --name-only '$tree'" "share/mise"
+assert "mise bootstrap generations --json | jq -r '[.[0].operation.journal[] | select(.kind == \"path_changed\") | .path | select(endswith(\"/one\") or endswith(\".toml\") or endswith(\"/mybin\"))] | length'" "3"

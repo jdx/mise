@@ -644,28 +644,6 @@
           "description": "How often to check for a new mise release when auto-update is enabled.",
           "type": "string"
         },
-        "bootstrap": {
-          "type": "object",
-          "unevaluatedProperties": false,
-          "properties": {
-            "generations": {
-              "type": "object",
-              "unevaluatedProperties": false,
-              "properties": {
-                "enabled": {
-                  "default": true,
-                  "description": "Record a bootstrap generation (a snapshot of the config directory and dotfiles root plus a journal of changes) on every mutating bootstrap command.",
-                  "type": "boolean"
-                },
-                "keep": {
-                  "default": 20,
-                  "description": "How many bootstrap generations to retain. Older finished generations and their snapshots are pruned after each run; `0` keeps all of them.",
-                  "type": "integer"
-                }
-              }
-            }
-          }
-        },
         "cache_prune_age": {
           "default": "30d",
           "description": "Delete files in cache that have not been accessed in this duration",
@@ -1138,6 +1116,33 @@
         "gpg_verify": {
           "description": "Verify OpenPGP signatures for all tools (built-in, no external gpg required). Set to false to disable.",
           "type": "boolean"
+        },
+        "history": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Record configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save.",
+              "type": "boolean"
+            },
+            "keep": {
+              "type": "object",
+              "unevaluatedProperties": false,
+              "properties": {
+                "age": {
+                  "default": "90d",
+                  "description": "Checkpoints older than this are pruned after each capture. `0` keeps them regardless of age.",
+                  "type": "string"
+                },
+                "count": {
+                  "default": 500,
+                  "description": "How many checkpoints to retain. The oldest are pruned after each capture, automatic captures before explicit saves and operations; `0` keeps all of them.",
+                  "type": "integer"
+                }
+              }
+            }
+          }
         },
         "hook_env": {
           "type": "object",

@@ -34,7 +34,7 @@ use crate::config::{Config, ConfigMap};
 use crate::file;
 use crate::path::PathExt;
 use crate::system::files::FileState;
-use crate::system::generations::journal::{self, Capture};
+use crate::system::history::journal::{self, Capture};
 use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
 
@@ -980,7 +980,7 @@ pub(crate) fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> R
         unapply_one(plan.req)?;
         journal::commit_changes(pending);
     }
-    crate::system::generations::journal::note(format!(
+    crate::system::history::journal::note(format!(
         "edits: unapplied {}",
         todo.iter()
             .map(|plan| format!("{} ({})", plan.req.path_raw, plan.req.describe_op()))

@@ -17,4 +17,6 @@ Manage dotfiles from `[dotfiles]`
 - [`mise bootstrap dotfiles diff [TARGET]…`](/cli/bootstrap/dotfiles/diff.md)
 - [`mise bootstrap dotfiles edit [FLAGS] <TARGET>`](/cli/bootstrap/dotfiles/edit.md)
 - [`mise bootstrap dotfiles status [-J --json] [--missing] [TARGET]…`](/cli/bootstrap/dotfiles/status.md)
+- [`mise bootstrap dotfiles track [FLAGS] <PATH>…`](/cli/bootstrap/dotfiles/track.md)
 - [`mise bootstrap dotfiles unapply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/unapply.md)
+- [`mise bootstrap dotfiles untrack <PATH>…`](/cli/bootstrap/dotfiles/untrack.md)

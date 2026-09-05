@@ -5,10 +5,10 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap/generations.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/generations.rs)
 
-Show one generation: what ran, its snapshot, and its journal
+Show one operation: what ran, its snapshots, and its journal
 
 ## Arguments
-- **`[ID]`** — Generation id, `latest` (the default), or `latest~N`
+- **`[ID]`** — Checkpoint id, `latest` (the default), or `latest~N` (among operations)
 
 ## Flags
 - **`-J --json`** — Output in JSON format

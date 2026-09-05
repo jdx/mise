@@ -2,7 +2,7 @@ use eyre::Result;
 
 use crate::config::{Config, Settings};
 use crate::system;
-use crate::system::generations::GenerationScope;
+use crate::system::history::OperationScope;
 use crate::ui::prompt;
 
 /// Remove dotfiles applied from `[dotfiles]`
@@ -32,7 +32,7 @@ pub(crate) struct DotfilesUnapply {
 
 impl DotfilesUnapply {
     pub(crate) async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap dotfiles unapply",
             "dotfiles",
             self.dry_run,

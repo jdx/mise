@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::file;
 use crate::system;
 use crate::system::edits::{BlockSource, EditOp};
-use crate::system::generations::GenerationScope;
+use crate::system::history::OperationScope;
 use crate::ui::prompt;
 
 /// Edit a managed dotfile source
@@ -40,7 +40,7 @@ impl DotfilesEdit {
     pub(crate) async fn run(self) -> Result<()> {
         // The editor itself changes the managed source, so the whole command
         // is one generation, not just the optional apply.
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap dotfiles edit",
             "dotfiles",
             false,

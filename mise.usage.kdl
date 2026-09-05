@@ -645,6 +645,34 @@ state (missing, source missing, differs)
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
         }
+        cmd track help="Track a file or directory where it is" effect=write {
+            long_help #"""
+Track a file or directory where it is
+
+Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
+is, nothing is copied or linked, and history saves a checkpoint of it
+right away. With the history watcher service running, later edits are
+saved automatically; without it, `mise history save` saves them.
+
+`--os` and `--profile` declare a variant: a separate shared stream for
+machines matching that platform or mise environment, so a Mac and a
+Linux box can share the same live path with different contents.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.config/app/state.json --no-autosave\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.ssh/config --no-share\u{1b}[22m\n"
+            flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
+                arg <OS>
+            }
+            flag --profile help="Declare a variant for this mise environment" {
+                arg <PROFILE>
+            }
+            flag --no-autosave help="Save only on `mise history save <path>`, never automatically"
+            flag --no-share help="Keep the file out of the shared setup (still backed up)"
+            flag --no-backup help="Keep the file out of remote backups (still protected locally)"
+            flag --local help="Write to config.local.toml (this machine only) instead of config.toml"
+            flag "-y --yes" help="Accept without prompting"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
+        }
         cmd unapply help="Remove dotfiles applied from `[dotfiles]`" effect=destructive {
             long_help #"""
 Remove dotfiles applied from `[dotfiles]`
@@ -659,6 +687,18 @@ edits require `--force`.
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only unapply these targets" required=#false var=#true
+        }
+        cmd untrack help="Stop tracking a file or directory" effect=write {
+            long_help #"""
+Stop tracking a file or directory
+
+Removes the `[dotfiles]` track entry (or switches an inherited one off in
+config.local.toml) and stops future captures. The file itself and its
+existing checkpoints are left exactly as they are.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles untrack ~/.zshrc\u{1b}[22m\n"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <PATH>… help="Paths to stop tracking" var=#true
         }
     }
     cmd files subcommand_required=#true help="Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`" effect=read {
@@ -689,56 +729,55 @@ edits require `--force`.
             flag "-h --help" help="Print help" action=help builtin=#true
         }
     }
-    cmd generations help="Inspect recorded bootstrap generations" effect=read {
+    cmd generations help="Inspect the operations bootstrap recorded" effect=read {
         long_help #"""
-Inspect recorded bootstrap generations
+Inspect the operations bootstrap recorded
 
-Every mutating bootstrap command records a generation: what ran, a
-snapshot of the global config directory and dotfiles root taken before
-and after the run, the global lockfile, and a journal of what changed.
-Without a subcommand this lists them, newest first.
+Every mutating bootstrap command records a pair of history checkpoints:
+the tracked files before the run and after it, with a journal of what
+the run changed. This lists those operations, newest first; `mise
+history` lists every checkpoint.
 """#
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap generations\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations --json | jq '.[0]'\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations show latest\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations show 12 --files\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations diff 11 12 --patch\u{1b}[22m\n"
         flag "-J --json" help="Output in JSON format"
-        flag "-n --limit" help="Show at most this many generations (0 for all)" default="20" {
+        flag "-n --limit" help="Show at most this many operations (0 for all)" default="20" {
             arg <LIMIT>
         }
-        flag --pending help="Only list generations whose run did not finish"
+        flag --pending help="Only list operations whose run did not finish"
         flag "-h --help" help="Print help" action=help builtin=#true
-        cmd diff help="Diff the snapshotted config and dotfiles between generations" effect=read {
+        cmd diff help="Diff the tracked files between operations" effect=read {
             long_help #"""
-Diff the snapshotted config and dotfiles between generations
+Diff the tracked files between operations
 
-With one id, shows what that generation's run changed inside the
-snapshot roots: its snapshot before the run against the one after.
-With two ids, compares the states the two runs left behind, which is
-how to see what changed by hand between runs. Paths are prefixed by
-their root (`config/`, `dotfiles/`, `mise.lock`).
+With one id, shows what that operation's run changed: the checkpoint
+before the run against the one after. With two ids, compares the states
+the two runs left behind, which is how to see what changed by hand
+between runs.
 """#
             flag "-p --patch" help="Print the full patch instead of a per-file summary"
-            flag --root help="Restrict to one snapshot root or a path inside it" {
+            flag --root help="Restrict to `config` or `dotfiles` (the config directory or dotfiles root), a path inside one (`config/dotfiles/zshrc`), or any tracked path" {
                 arg "<LABEL[/PATH]>"
             }
             flag --exit-code help="Exit 1 when the snapshots differ"
-            flag --no-journal help="Skip the journal entries of the generations covered"
+            flag --no-journal help="Skip the journal entries of the operations covered"
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg <A> help="Generation id, `latest`, or `latest~N`"
-            arg "[B]" help="Compare the state after `A` with the state after this generation" required=#false
+            arg <A> help="Checkpoint id, `latest`, or `latest~N` (among operations)"
+            arg "[B]" help="Compare the state after `A` with the state after this operation" required=#false
         }
-        cmd ls help="List recorded generations, newest first" effect=read {
+        cmd ls help="List recorded operations, newest first" effect=read {
             alias list
             flag "-J --json" help="Output in JSON format"
-            flag "-n --limit" help="Show at most this many generations (0 for all)" default="20" {
+            flag "-n --limit" help="Show at most this many operations (0 for all)" default="20" {
                 arg <LIMIT>
             }
-            flag --pending help="Only list generations whose run did not finish"
+            flag --pending help="Only list operations whose run did not finish"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
-        cmd show help="Show one generation: what ran, its snapshot, and its journal" effect=read {
+        cmd show help="Show one operation: what ran, its snapshots, and its journal" effect=read {
             flag "-J --json" help="Output in JSON format"
             flag --files help="List every file in the snapshot taken after the run"
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg "[ID]" help="Generation id, `latest` (the default), or `latest~N`" required=#false
+            arg "[ID]" help="Checkpoint id, `latest` (the default), or `latest~N` (among operations)" required=#false
         }
     }
     cmd launchd hide=#true subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" effect=read {
@@ -2107,6 +2146,189 @@ e.g.: node@20
 If this is a single tool with no version, the current value of the global
 .tool-versions will be displayed
 """# required=#false var=#true
+}
+cmd history help="Browse and save checkpoints of your configuration files" effect=read {
+    long_help #"""
+Browse and save checkpoints of your configuration files
+
+Every mutating bootstrap command and every `mise history save` records a
+checkpoint of the tracked files: the global mise config directory, the
+dotfiles root, and every `[dotfiles]` entry. Without a subcommand this
+lists them, newest first.
+"""#
+    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise history\u{1b}[22m\n    $ \u{1b}[1mmise history --path ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise history show latest\u{1b}[22m\n    $ \u{1b}[1mmise history diff\u{1b}[22m                    # the working tree against the latest checkpoint\n    $ \u{1b}[1mmise history diff 11 12 --patch\u{1b}[22m\n    $ \u{1b}[1mmise history save --description \"before the theme change\"\u{1b}[22m\n"
+    flag "-J --json" help="Output in JSON format"
+    flag "-n --limit" help="Show at most this many checkpoints (0 for all)" default="20" {
+        arg <LIMIT>
+    }
+    flag --path help="Only checkpoints where this path (or something under it) changed" {
+        arg <PATH>
+    }
+    flag --trigger help="Only checkpoints with this trigger (edit, save, bootstrap, …)" {
+        arg <TRIGGER>
+    }
+    flag --pending help="Only checkpoints recorded by operations that did not finish"
+    flag "-h --help" help="Print help" action=help builtin=#true
+    cmd describe help="Set the description of a checkpoint" effect=write {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <REF> help="Checkpoint id, `latest`, `latest~N`, or a uuid prefix"
+        arg <TEXT> help="The new description"
+    }
+    cmd diff help="Compare checkpoints, or the working tree against one" effect=read {
+        long_help #"""
+Compare checkpoints, or the working tree against one
+
+Without arguments, shows what changed by hand since the latest
+checkpoint. With one reference, shows what that checkpoint changed
+against the one before it. With two, compares the two states.
+"""#
+        flag "-p --patch" help="Print the full patch instead of a per-file summary"
+        flag --path help="Restrict to one path (a file or a directory)" {
+            arg <PATH>
+        }
+        flag --exit-code help="Exit 1 when the two sides differ"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[A]" help="Checkpoint id, `latest`, `latest~N`, or a uuid prefix" required=#false
+        arg "[B]" help="Compare `A` with this checkpoint instead of its predecessor" required=#false
+    }
+    cmd ls help="List checkpoints, newest first" effect=read {
+        alias list
+        flag "-J --json" help="Output in JSON format"
+        flag "-n --limit" help="Show at most this many checkpoints (0 for all)" default="20" {
+            arg <LIMIT>
+        }
+        flag --path help="Only checkpoints where this path (or something under it) changed" {
+            arg <PATH>
+        }
+        flag --trigger help="Only checkpoints with this trigger (edit, save, bootstrap, …)" {
+            arg <TRIGGER>
+        }
+        flag --pending help="Only checkpoints recorded by operations that did not finish"
+        flag "-h --help" help="Print help" action=help builtin=#true
+    }
+    cmd paths help="Show what history tracks and under which policies" effect=read {
+        long_help #"""
+Show what history tracks and under which policies
+
+Every entry is listed with the file that declared it, its policies, and
+how many files it currently covers. Declarations history could not
+honour are listed as invalid so a failed enrollment is never mistaken
+for protection.
+"""#
+        flag "-J --json" help="Output in JSON format"
+        flag --preview help="Show what tracking this path would capture" {
+            arg <PATH>
+        }
+        flag "-h --help" help="Print help" action=help builtin=#true
+        cmd add help="Track a path where it is (alias of `mise bootstrap dotfiles track`)" effect=write {
+            long_help #"""
+Track a file or directory where it is
+
+Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
+is, nothing is copied or linked, and history saves a checkpoint of it
+right away. With the history watcher service running, later edits are
+saved automatically; without it, `mise history save` saves them.
+
+`--os` and `--profile` declare a variant: a separate shared stream for
+machines matching that platform or mise environment, so a Mac and a
+Linux box can share the same live path with different contents.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.config/app/state.json --no-autosave\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.ssh/config --no-share\u{1b}[22m\n"
+            flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
+                arg <OS>
+            }
+            flag --profile help="Declare a variant for this mise environment" {
+                arg <PROFILE>
+            }
+            flag --no-autosave help="Save only on `mise history save <path>`, never automatically"
+            flag --no-share help="Keep the file out of the shared setup (still backed up)"
+            flag --no-backup help="Keep the file out of remote backups (still protected locally)"
+            flag --local help="Write to config.local.toml (this machine only) instead of config.toml"
+            flag "-y --yes" help="Accept without prompting"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
+        }
+        cmd set help="Change a tracked path's policies or variants (alias of `track`)" effect=write {
+            long_help #"""
+Track a file or directory where it is
+
+Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
+is, nothing is copied or linked, and history saves a checkpoint of it
+right away. With the history watcher service running, later edits are
+saved automatically; without it, `mise history save` saves them.
+
+`--os` and `--profile` declare a variant: a separate shared stream for
+machines matching that platform or mise environment, so a Mac and a
+Linux box can share the same live path with different contents.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.config/app/state.json --no-autosave\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.ssh/config --no-share\u{1b}[22m\n"
+            flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
+                arg <OS>
+            }
+            flag --profile help="Declare a variant for this mise environment" {
+                arg <PROFILE>
+            }
+            flag --no-autosave help="Save only on `mise history save <path>`, never automatically"
+            flag --no-share help="Keep the file out of the shared setup (still backed up)"
+            flag --no-backup help="Keep the file out of remote backups (still protected locally)"
+            flag --local help="Write to config.local.toml (this machine only) instead of config.toml"
+            flag "-y --yes" help="Accept without prompting"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
+        }
+        cmd remove help="Stop tracking a path (alias of `mise bootstrap dotfiles untrack`)" effect=write {
+            long_help #"""
+Stop tracking a file or directory
+
+Removes the `[dotfiles]` track entry (or switches an inherited one off in
+config.local.toml) and stops future captures. The file itself and its
+existing checkpoints are left exactly as they are.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles untrack ~/.zshrc\u{1b}[22m\n"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <PATH>… help="Paths to stop tracking" var=#true
+        }
+    }
+    cmd save help="Save a checkpoint of the tracked files now" effect=write {
+        long_help #"""
+Save a checkpoint of the tracked files now
+
+Fails when nothing could be saved, so a script or an agent gets a
+trustworthy result; `--best-effort` turns that into a warning for
+`set -e` update scripts.
+"""#
+        flag "-d --description" help="A description for the checkpoint" {
+            arg <TEXT>
+        }
+        flag --trigger help="What is saving: save (the default), agent, or update" default=save {
+            arg <TRIGGER>
+        }
+        flag --task help="The task an agent is working on" {
+            arg <ID>
+        }
+        flag --label help="A label to find the checkpoint by later" var=#true {
+            arg <LABEL>
+        }
+        flag --best-effort help="Warn instead of failing when nothing could be saved"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[PATH]…" help="Paths to save; every one must be tracked" required=#false var=#true
+    }
+    cmd show help="Show one checkpoint: what triggered it, what changed, and its journal" effect=read {
+        flag "-J --json" help="Output in JSON format"
+        flag --files help="List every file in the snapshot"
+        flag --path help="Resolve `latest~N` among the checkpoints where this path changed" {
+            arg <PATH>
+        }
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[REF]" help="Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix" required=#false
+    }
+    cmd status help=#"""
+Report capture health: what is tracked, the latest checkpoint, and
+whether anything is saving automatically
+"""# effect=read {
+        flag "-J --json" help="Output in JSON format"
+        flag "-h --help" help="Print help" action=help builtin=#true
+    }
 }
 cmd hook-env hide=#true help="[internal] called by activate hook to update env vars directory change" effect=read {
     flag "-f --force" help="Skip early exit check"

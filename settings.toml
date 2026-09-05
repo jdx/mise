@@ -291,25 +291,6 @@ env = "MISE_AUTO_UPDATE_CHECK_DURATION"
 global_only = true
 type = "Duration"
 
-[bootstrap.generations.enabled]
-default = true
-description = "Record a bootstrap generation (a snapshot of the config directory and dotfiles root plus a journal of changes) on every mutating bootstrap command."
-docs = """
-Every `mise bootstrap` run and every `mise bootstrap <part> apply` records a generation under
-`$MISE_STATE_DIR/bootstrap/` so `mise bootstrap generations` can list and show machine
-states. Dry runs never record. Set to `false` to turn recording off; delete that directory to
-discard what was recorded.
-"""
-env = "MISE_BOOTSTRAP_GENERATIONS_ENABLED"
-type = "Bool"
-
-[bootstrap.generations.keep]
-default = 20
-description = "How many bootstrap generations to retain. Older finished generations and their snapshots are pruned after each run; `0` keeps all of them."
-env = "MISE_BOOTSTRAP_GENERATIONS_KEEP"
-rust_type = "usize"
-type = "Integer"
-
 [cache_prune_age]
 default = "30d"
 description = "Delete files in cache that have not been accessed in this duration"
@@ -1266,6 +1247,31 @@ description = "Verify OpenPGP signatures for all tools (built-in, no external gp
 env = "MISE_GPG_VERIFY"
 optional = true
 type = "Bool"
+
+[history.enabled]
+default = true
+description = "Record configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save."
+docs = """
+Every `mise bootstrap` run, every `mise bootstrap <part> apply`, and every `mise history save`
+records a checkpoint under `$MISE_STATE_DIR/history/` so `mise history` can list, compare, and
+recover file versions. Dry runs never record. Set to `false` to turn recording off; delete that
+directory to discard what was recorded.
+"""
+env = "MISE_HISTORY_ENABLED"
+type = "Bool"
+
+[history.keep.age]
+default = "90d"
+description = "Checkpoints older than this are pruned after each capture. `0` keeps them regardless of age."
+env = "MISE_HISTORY_KEEP_AGE"
+type = "Duration"
+
+[history.keep.count]
+default = 500
+description = "How many checkpoints to retain. The oldest are pruned after each capture, automatic captures before explicit saves and operations; `0` keeps all of them."
+env = "MISE_HISTORY_KEEP_COUNT"
+rust_type = "usize"
+type = "Integer"
 
 [hook_env.cache_ttl]
 default = "0s"

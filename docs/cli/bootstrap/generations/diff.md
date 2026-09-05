@@ -5,21 +5,20 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap/generations.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/generations.rs)
 
-Diff the snapshotted config and dotfiles between generations
+Diff the tracked files between operations
 
-With one id, shows what that generation's run changed inside the
-snapshot roots: its snapshot before the run against the one after.
-With two ids, compares the states the two runs left behind, which is
-how to see what changed by hand between runs. Paths are prefixed by
-their root (`config/`, `dotfiles/`, `mise.lock`).
+With one id, shows what that operation's run changed: the checkpoint
+before the run against the one after. With two ids, compares the states
+the two runs left behind, which is how to see what changed by hand
+between runs.
 
 ## Arguments
-- **`<A>`** — Generation id, `latest`, or `latest~N`
-- **`[B]`** — Compare the state after `A` with the state after this generation
+- **`<A>`** — Checkpoint id, `latest`, or `latest~N` (among operations)
+- **`[B]`** — Compare the state after `A` with the state after this operation
 
 ## Flags
 - **`-p --patch`** — Print the full patch instead of a per-file summary
-- **`--root <LABEL[/PATH]>`** — Restrict to one snapshot root or a path inside it
+- **`--root <LABEL[/PATH]>`** — Restrict to `config` or `dotfiles` (the config directory or dotfiles root), a path inside one (`config/dotfiles/zshrc`), or any tracked path
 - **`--exit-code`** — Exit 1 when the snapshots differ
-- **`--no-journal`** — Skip the journal entries of the generations covered
+- **`--no-journal`** — Skip the journal entries of the operations covered
 - **`-h --help`** — Print help
