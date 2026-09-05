@@ -13,6 +13,7 @@ use crate::path::PathExt;
 use crate::system;
 use crate::system::files::{FileManifest, FileMode, FileRequest};
 use crate::system::generations::GenerationScope;
+use crate::system::generations::journal;
 use crate::ui::prompt;
 
 /// Add or update dotfiles in `[dotfiles]`
@@ -285,6 +286,11 @@ impl DotfilesAdd {
                     let move_before_apply = item.mode == FileMode::Symlink
                         || (item.mode == FileMode::SymlinkEach && item.already_managed.is_none());
                     if !self.no_apply && move_before_apply && !item.target.is_symlink() {
+                        let pending = journal::begin_changes(
+                            "dotfiles",
+                            &item.target_raw,
+                            [item.target.clone(), item.source.clone()],
+                        )?;
                         remove_path(&item.source)?;
                         if let Some(parent) = item.source.parent() {
                             file::create_dir_all(parent)?;
@@ -326,6 +332,7 @@ impl DotfilesAdd {
                                 item.source.display_user()
                             ),
                         }
+                        journal::commit_changes(pending);
                         info!(
                             "dotfiles: moved {} to {}",
                             item.target.display_user(),
