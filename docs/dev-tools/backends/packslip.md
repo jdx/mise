@@ -5,10 +5,13 @@ The manifest names the release files, their digests, supported platforms, and
 executable paths. mise verifies the signer and downloaded bytes, then installs
 the artifact that fits your host.
 
-::: warning
+The backend is stable and is the preferred [Tier 1 backend](/registry.html#backends)
+for registry entries when the project publishes packslips.
+
+::: info
 A project must publish packslips for its releases; this backend cannot install
-arbitrary GitHub release assets. The [packslip format](https://packslip.dev) is
-young, and its own version is what says what a manifest may contain.
+arbitrary GitHub release assets. The [packslip format](https://packslip.dev)
+version defines what a manifest may contain.
 :::
 
 ## Usage

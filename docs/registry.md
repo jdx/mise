@@ -55,28 +55,32 @@ Backends fall into the following acceptance tiers for new registry entries:
 
 **Tier 1 — preferred, routinely accepted:**
 
-- [aqua](./dev-tools/backends/aqua.html) - offers the most features and security while not requiring plugins
+- [packslip](./dev-tools/backends/packslip.html) - preferred when the project publishes signed release manifests; verifies the signer and artifact digests without a plugin or separate package manager
+
+**Tier 2 — routinely accepted:**
+
+- [aqua](./dev-tools/backends/aqua.html) - curated registry metadata, SLSA verification, and per-version logic for tools without packslips
 - [github](./dev-tools/backends/github.html) - for tools that are not available in the aqua registry, but are available on GitHub
 - [gitlab](./dev-tools/backends/gitlab.html) - for tools that are not available in the aqua registry, but are available on GitLab
 
-**Tier 2 — high bar, but lower than tier 3:**
+**Tier 3 — high bar, but lower than tier 4:**
 
-- [conda](./dev-tools/backends/conda.html) - potentially accepted for tools that can't reasonably be supported via aqua/github. The bar is lower than tier 3 because mise's conda backend does not require a separately-installed package manager — packages are fetched and extracted directly from anaconda.org with no `conda`/`mamba`/`micromamba` needed on PATH.
+- [conda](./dev-tools/backends/conda.html) - potentially accepted for tools that can't reasonably be supported via packslip/aqua/github/gitlab. The bar is lower than tier 4 because mise's conda backend does not require a separately-installed package manager — packages are fetched and extracted directly from anaconda.org with no `conda`/`mamba`/`micromamba` needed on PATH.
 
-**Tier 3 — very high bar, rarely accepted:**
+**Tier 4 — very high bar, rarely accepted:**
 
 - [pipx](./dev-tools/backends/pipx.html) - only for python tools, requires `python` on PATH
 - [npm](./dev-tools/backends/npm.html) - only for node tools, requires `node` on PATH
 - [gem](./dev-tools/backends/gem.html) - only for ruby tools, requires `ruby` on PATH
-- [go](./dev-tools/backends/go.html) - only for go tools, requires `go` to be installed to compile. Because go tools can be distributed as a single binary, aqua/github are definitely preferred.
-- [cargo](./dev-tools/backends/cargo.html) - only for rust tools, requires `cargo` to be installed to compile. Because rust tools can be distributed as a single binary, aqua/github are definitely preferred.
-- [dotnet](./dev-tools/backends/dotnet.html) - only for dotnet tools, requires `dotnet` to be installed to compile. Because dotnet tools can be distributed as a single binary, aqua/github are definitely preferred.
+- [go](./dev-tools/backends/go.html) - only for go tools, requires `go` to be installed to compile. Because go tools can be distributed as a single binary, packslip/aqua/github/gitlab are preferred.
+- [cargo](./dev-tools/backends/cargo.html) - only for rust tools, requires `cargo` to be installed to compile. Because rust tools can be distributed as a single binary, packslip/aqua/github/gitlab are preferred.
+- [dotnet](./dev-tools/backends/dotnet.html) - only for dotnet tools, requires `dotnet` to be installed to compile. Because dotnet tools can be distributed as a single binary, packslip/aqua/github/gitlab are preferred.
 
 These all depend on a separately-installed runtime/toolchain on PATH, which is fragile — `npm`/`pipx`/`gem` in particular silently bind tools to whichever `node`/`python`/`ruby` happened to be on PATH at install time.
 
 **Not accepted:**
 
-- New `vfox` and `asdf` tools are not accepted for supply-chain security reasons — use [`aqua`](./dev-tools/backends/aqua.html) (preferred) or [`github`](./dev-tools/backends/github.html) instead.
+- New `vfox` and `asdf` tools are not accepted for supply-chain security reasons — use [`packslip`](./dev-tools/backends/packslip.html) (preferred), [`aqua`](./dev-tools/backends/aqua.html), [`github`](./dev-tools/backends/github.html), or [`gitlab`](./dev-tools/backends/gitlab.html) instead.
 - The `ubi` backend is deprecated and is not accepted for new registry entries.
 
 Users can still install via any backend themselves with explicit syntax (`mise use vfox:owner/repo`, `mise use cargo:name`, etc.) — they just don't get a registry shorthand for it.

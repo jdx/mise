@@ -1,7 +1,7 @@
 # Aqua Backend
 
-[Aqua](https://aquaproj.github.io/) tools can be used natively in mise. aqua is the ideal backend
-for new tools: it does not require plugins, it works on Windows, and it offers security features
+[Aqua](https://aquaproj.github.io/) tools can be used natively in mise. aqua is a Tier 2 backend
+for tools without [packslip manifests](/dev-tools/backends/packslip.html): it does not require plugins, it works on Windows, and it offers security features
 beyond checksums. aqua installs also show more progress bars, which is nice.
 
 You do not need to install aqua separately. mise does not use the aqua CLI at all; it uses the

@@ -47,8 +47,8 @@
 - [Swift](https://mise.jdx.dev/lang/swift.html): mise can be used to manage multiple versions of swift on the same system. Swift is supported on macOS and Linux.
 - [Zig](https://mise.jdx.dev/lang/zig.html): mise can be used to install and manage multiple versions of zig on the same system.
 - [Backends](https://mise.jdx.dev/dev-tools/backends/): Backends are package managers or ecosystems that mise uses to install tools and plugins. Each backend can install and manage multiple tools from its ecosystem.
-- [aqua](https://mise.jdx.dev/dev-tools/backends/aqua.html): Aqua tools can be used natively in mise. aqua is the ideal backend for new tools: it does not require plugins, it works on Windows, and it offers security features beyond checksums.
-- [asdf](https://mise.jdx.dev/dev-tools/backends/asdf.html): asdf plugins are considered legacy. New asdf and vfox plugins are not accepted into the mise registry for supply-chain security reasons — for registry submissions use the aqua (preferred) or github…
+- [aqua](https://mise.jdx.dev/dev-tools/backends/aqua.html): Aqua tools can be used natively in mise. aqua is a Tier 2 backend for tools without packslip manifests: it does not require plugins, it works on Windows, and it offers security features beyond…
+- [asdf](https://mise.jdx.dev/dev-tools/backends/asdf.html): asdf plugins are considered legacy. New asdf and vfox plugins are not accepted into the mise registry for supply-chain security reasons — for registry submissions use packslip (preferred when the…
 - [cargo](https://mise.jdx.dev/dev-tools/backends/cargo.html): You can install packages directly from Cargo Crates even if there isn't an asdf plugin for them.
 - [conda](https://mise.jdx.dev/dev-tools/backends/conda.html): You may install packages directly from conda-forge and other Anaconda channels without needing conda or mamba installed.
 - [dotnet](https://mise.jdx.dev/dev-tools/backends/dotnet.html): The code for this is inside the mise repository at ./src/backend/dotnet.rs.
@@ -126,7 +126,7 @@
 - [Package Plugin Development](https://mise.jdx.dev/package-plugin-development.html): A package plugin is a Lua-based vfox plugin that implements a machine-global manager for [bootstrap.packages].
 - [Plugin Lua Modules](https://mise.jdx.dev/plugin-lua-modules.html): mise plugins have access to a comprehensive set of built-in Lua modules. These modules are available in both backend plugins and tool plugins, making it easy to perform common operations like HTTP…
 - [Plugin Publishing](https://mise.jdx.dev/plugin-publishing.html): This guide shows how to publish and distribute backend plugins and tool plugins. Publishing makes your plugins available to other users and keeps them easy to install and maintain.
-- [asdf (Legacy) Plugins](https://mise.jdx.dev/asdf-legacy-plugins.html): asdf plugins are considered legacy. New asdf and vfox plugins are not accepted into the mise registry for supply-chain security reasons — for registry submissions use the aqua (preferred) or github…
+- [asdf (Legacy) Plugins](https://mise.jdx.dev/asdf-legacy-plugins.html): asdf plugins are considered legacy. New asdf and vfox plugins are not accepted into the mise registry for supply-chain security reasons — for registry submissions use packslip (preferred when the…
 
 ## About
 

@@ -12,8 +12,10 @@ aqua/github is not an option for some reason.
 
 The exception is a tool that needs to set env vars or has a complex installation process: plugins can provide functionality like [setting env vars globally](/environments/#plugin-provided-env-directives) without relying on a tool being installed. They can also provide [aliases for versions](/dev-tools/aliases.html#aliased-versions).
 
-To integrate a new tool into mise, either get it into the [aqua registry](https://mise.jdx.dev/dev-tools/backends/aqua.html)
-or check whether it can be installed with [github](https://mise.jdx.dev/dev-tools/backends/github.html).
+To integrate a new tool into mise, prefer [packslip](/dev-tools/backends/packslip.html)
+when the project publishes signed release manifests. Otherwise, get it into the
+[aqua registry](/dev-tools/backends/aqua.html) or check whether it can be installed
+with [github](/dev-tools/backends/github.html) or [gitlab](/dev-tools/backends/gitlab.html).
 Aqua is preferred over github: it has better UX and more features, such as SLSA verification and the ability to use different logic for older versions.
 
 You can manage all installed plugins in `mise` with [`mise plugins`](/cli/plugins.html).
