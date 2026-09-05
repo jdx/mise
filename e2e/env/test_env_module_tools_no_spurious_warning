@@ -11,12 +11,15 @@
 # The fix changes dependency_env to use full_env_without_tools so it
 # skips tools=true module resolution entirely.
 
+# Pin this fixture so release timing and backend migrations do not affect
+# the dependency_env regression being tested.
+
 # 1. Install fnox tool and fnox-env plugin
 mise plugins install fnox-env https://github.com/jdx/mise-env-fnox
 
 cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 [tools]
-fnox = "latest"
+fnox = "1.35.0"
 
 [env]
 _.fnox-env = { tools = true }
@@ -71,7 +74,7 @@ chmod +x "$INSTALL_DIR/bin/dummy-vfox-trigger"
 # 4. Add the vfox tool to config alongside fnox + fnox-env
 cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
 [tools]
-fnox = "latest"
+fnox = "1.35.0"
 "vfox:$PLUGIN_NAME" = "1.0.0"
 
 [env]
