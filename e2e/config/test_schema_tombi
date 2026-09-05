@@ -143,8 +143,9 @@ TOML
 # placeholder values while running tombi through `mise x`.
 cat >"$HOME/workdir/mise-age.toml" <<'TOML'
 [env]
-VALUE_OBJECT = { value = 123, tools = true, redact = true, required = "set VALUE_OBJECT" }
+VALUE_OBJECT = { value = 123, tools = true, redact = true, required = false }
 VALUE_DEFAULT = { default = 123, tools = true, redact = true }
+REQUIRED_HELP = { required = "set REQUIRED_HELP", tools = true }
 SECRET_SIMPLE = { age = "AGE-SECRET", tools = true }
 SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", tools = true, redact = true } }
 TOML
@@ -229,7 +230,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-required.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -362,6 +363,15 @@ TOOLS_FILTERED = { value = "not actually resolved as a var", tools = true }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-vars.toml"
+
+# A concrete value may opt out of required validation, but it cannot also be
+# marked as required.
+cat >"$HOME/workdir/mise-bad-env-required.toml" <<'TOML'
+[env]
+VALUE_AND_REQUIRED = { value = "x", required = true }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-env-required.toml"
 
 # Verify that extends is rejected on task_templates (not supported at runtime)
 cat >"$HOME/workdir/mise-bad-tmpl.toml" <<'TOML'
