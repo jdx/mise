@@ -13,20 +13,22 @@ mise supports tool completions for zsh, bash, fish, and PowerShell. The installe
 completion file follows the tool version active in each project, so you do not
 need to reinstall completions after changing versions.
 
-### Set up hk completions
+### Use completions
 
-hk has its own completion installer, available however hk was installed:
+With [mise activated](/getting-started.html#activate-mise), completions become
+available when an installed tool is active in your project. For example:
 
 ```sh
-hk completion zsh --install
+mise use hk
 ```
 
-Follow the setup instructions it prints, then start a new shell. Replace `zsh`
-with `bash`, `fish`, or `powershell` for another shell. Its scripts ask the active
-hk binary for suggestions and need no separate `usage` installation. See
-[hk's completion reference](https://hk.jdx.dev/cli/completion.html).
+Type `hk` and press Tab. hk publishes native completion scripts for bash, zsh,
+fish, and PowerShell, so no extra setup command or `usage` installation is
+needed. mise registers a loader in the shell; it reads the publisher's script
+only when you complete a command. Switching projects or tool versions selects
+the matching completion, and leaving the project removes its registration.
 
-### Completions from a Packslip manifest
+### Manual setup without shell activation
 
 For tools that declare completions in their Packslip manifest, mise can install
 a completion file that loads those resources. Replace `TOOL` below with the
@@ -59,8 +61,8 @@ Without `--tool`, `mise completion` generates completions for mise itself.
 
 A publisher can provide a completion file, a static usage CLI specification,
 or a command that generates either one. mise prefers static sources. A
-usage-derived completion requires `usage` both when generating the script and
-when completing commands in the shell.
+usage-derived completion uses the engine embedded in mise; you do not need to
+install `usage` separately.
 
 If a completion needs a publisher's generator command, mise runs it on demand
 and caches successful output for the installed version, executable, and shell.
@@ -217,7 +219,7 @@ next completion uses that directory's active version.
 | No completion declared                         | Confirm the release supports your shell and executable. If it does not, the publisher must add a completion or CLI spec.                                                               |
 | `--install` rejects a tool identifier          | Pass the executable name, such as `hk`, rather than `packslip:github.com/jdx/hk`.                                                                                                      |
 | A completion file already exists               | Inspect the existing file before choosing to replace it with `--force`.                                                                                                                |
-| Script prints but tab completion does not work | Follow the shell setup printed by `--install`; check that the completion file is loaded and `usage` is on PATH if required.                                                            |
+| Script prints but tab completion does not work | Check that mise is activated and the tool is active in this project. With manual setup, follow the instructions printed by `--install`. Mise handles usage-derived completions itself. |
 | Completion generation fails                    | Check that the publisher's command produces nonempty output within the time and size limits. Report a failing generator to the publisher.                                              |
 | No skills listed                               | Check `mise skills ls`, the active version, and whether its manifest declares skills. Check `skills.fetch`; an exec-only skill also needs `packslip.exec` enabled during installation. |
 | A skill link is skipped                        | Inspect the conflicting path; mise preserves user-owned files and directories.                                                                                                         |
