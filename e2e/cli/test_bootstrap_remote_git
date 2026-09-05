@@ -156,7 +156,7 @@ export REAL_GIT
 REAL_GIT=$(command -v git)
 cat >fakebin/git <<'EOF'
 #!/bin/sh
-if test "$1" = clone && test "${BLOCK_FETCH:-}" = 1; then
+if test "$1" = -c && test "$2" = http.followRedirects=false && test "$3" = clone && test "${BLOCK_FETCH:-}" = 1; then
   echo $$ >"$FAKE_REMOTE_BASE/fetch.pid"
   exec sleep 60
 fi
@@ -174,3 +174,16 @@ for _ in {1..50}; do
   sleep 0.1
 done
 assert_fail "kill -0 '$fetch_pid' 2>/dev/null"
+
+# Even an authenticated HTTPS origin must not redirect Git onto plaintext HTTP.
+openssl req -x509 -newkey rsa:2048 -nodes -keyout redirect.key -out redirect.crt -days 1 -subj /CN=localhost >/dev/null 2>&1
+python3 "$ROOT/e2e/fixtures/git_redirect.py" redirect.crt redirect.key &
+redirect_pid=$!
+trap 'kill "$redirect_pid" 2>/dev/null || true' EXIT
+wait_for_file redirect-port 'HTTPS redirect fixture' 10 "$redirect_pid"
+# This test certificate is self-signed; disable verification only for this fixture.
+assert_fail "GIT_SSL_NO_VERIFY=1 mise bootstrap remote --host redirect --from-git 'https://127.0.0.1:$(cat redirect-port)/repo' --remote-mise '$binary' --yes" 'could not fetch setup repository'
+test -f redirect-requested
+test ! -e redirect-followed
+kill "$redirect_pid"
+wait "$redirect_pid" || true

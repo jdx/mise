@@ -20,8 +20,9 @@ mise bootstrap remote --host devbox --from-git jdx/dotfiles \
 ```
 
 `OWNER/REPO` expands to `https://github.com/OWNER/REPO.git`. Explicit Git URLs,
-SSH syntax, and local paths also work. Plaintext `http://` and `git://` origins
-are rejected before fetching; use HTTPS or SSH for network repositories.
+SSH syntax, and local paths also work. Network repositories must use HTTPS or
+SSH; other transports and custom Git helpers are rejected. Source clones do not
+follow HTTP redirects, so use the repository's canonical URL.
 `--from-git` conflicts with `--source`.
 Targets still come from explicit `--host` or inventory selectors, never from the
 downloaded repository's inventory.

@@ -1,5 +1,5 @@
 //! Transfer a pinned repository without copying its configuration or credentials.
-use eyre::{Result, bail};
+use eyre::{Context, Result, bail};
 use std::{
     path::{Path, PathBuf},
     process::Command,
@@ -45,13 +45,22 @@ pub(crate) fn validate_origin(origin: &str) -> Result<()> {
     if origin.starts_with('-') || origin.chars().any(char::is_control) {
         bail!("invalid repository origin");
     }
-    if let Ok(url) = url::Url::parse(origin)
-        && origin.contains("://")
-        && matches!(url.scheme(), "http" | "git")
+    // Explicit local paths may contain colons; otherwise :: selects a Git helper.
+    let explicit_local = std::path::Path::new(origin).is_absolute()
+        || origin.starts_with("./")
+        || origin.starts_with("../");
+    if !explicit_local
+        && origin.split_once("::").is_some_and(|(prefix, _)| {
+            !prefix.is_empty() && !prefix.contains(['/', '\\', '[', ']', '@', ':'])
+        })
     {
-        bail!(
-            "remote bootstrap requires an encrypted repository transport (HTTPS or SSH) or a local path"
-        );
+        bail!("Git remote helpers are not supported for remote onboarding");
+    }
+    if !explicit_local && origin.contains("://") {
+        let url = url::Url::parse(origin).wrap_err("invalid repository URL")?;
+        if !matches!(url.scheme(), "https" | "ssh" | "file") {
+            bail!("remote bootstrap requires HTTPS, SSH, or a local path");
+        }
     }
     if let Ok(url) = url::Url::parse(origin)
         && (url.password().is_some()
@@ -73,6 +82,8 @@ impl Source {
         crate::git::sanitize_git_command(&mut command);
         // No checkout: source templates and hooks are never evaluated locally.
         command
+            .env("GIT_ALLOW_PROTOCOL", "https:ssh:file")
+            .args(["-c", "http.followRedirects=false"])
             .args(["clone", "--no-checkout", "--no-local", "--"])
             .arg(&origin)
             .arg(&repo);
@@ -406,6 +417,12 @@ mod tests {
             "http://github.com/jdx/mise",
             "git://github.com/jdx/mise",
             "HTTP://example.com/repo",
+            "ftp://example.com/repo",
+            "ftps://example.com/repo",
+            "helper://example.com/repo",
+            "helper::repo",
+            "custom_helper::repo",
+            "https::https://example.com/repo",
         ] {
             assert!(validate_origin(origin).is_err());
         }
@@ -413,6 +430,8 @@ mod tests {
             "https://github.com/jdx/mise",
             "ssh://git@github.com/jdx/mise.git",
             "git:repo",
+            "git@[::1]:repo",
+            "./local::repo",
             "file:///tmp/repo",
             "./repo",
         ] {
