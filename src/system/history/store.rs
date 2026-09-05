@@ -486,11 +486,29 @@ pub(crate) struct Operation {
     pub applied: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub affected: Vec<String>,
+    /// Every checkpoint a rollback took content from, with the paths taken
+    /// from each (a path-first rollback may resolve paths to different
+    /// checkpoints; `to` names only the first).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<OperationSource>,
+    /// Paths that were directories before this operation replaced or removed
+    /// them; an empty directory leaves no trace in a snapshot, so undo
+    /// recreates these explicitly.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub directories: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     /// The file changes the operation made, with their preimages.
     #[serde(default)]
     pub journal: Vec<JournalEntry>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct OperationSource {
+    pub checkpoint: String,
+    pub paths: Vec<String>,
+}
+
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

@@ -25,7 +25,7 @@ use super::checkpoint::Store;
 use super::journal;
 use super::scope::OperationScope;
 use super::shadow::HistoryRepo;
-use super::store::{Checkpoint, Entry, OperationKind, OperationStatus, Summary};
+use super::store::{Checkpoint, Entry, OperationKind, OperationSource, OperationStatus, Summary};
 use super::tracked::{TrackedSet, display_to_tree_path, normalize, tree_path_to_display};
 use crate::file::{self, display_path};
 use crate::ui::prompt;
@@ -178,6 +178,7 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
     let to = targets
         .first()
         .map(|target| target.entry.checkpoint.uuid.clone());
+    let sources = sources_of(&targets);
     execute(
         Execution {
             kind: OperationKind::Rollback,
@@ -185,7 +186,9 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
             targets,
             message,
             to,
+            sources,
             undoes: None,
+            restore_dirs: BTreeSet::new(),
             dry_run: req.dry_run,
             yes: req.yes,
             force: req.force,
@@ -204,9 +207,15 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
         .repo()
         .ok_or_else(|| eyre::eyre!("undoing requires git"))?;
     let live = live_tree(repo, &tracked)?;
+    // an operation counts as undone only when an undo actually changed
+    // something for it: a declined or failed undo that touched nothing
+    // leaves the original next in line
     let undone: BTreeSet<String> = entries
         .iter()
-        .filter_map(|entry| entry.checkpoint.operation.as_ref()?.undoes.clone())
+        .filter_map(|entry| {
+            let op = entry.checkpoint.operation.as_ref()?;
+            (!op.affected.is_empty()).then(|| op.undoes.clone())?
+        })
         .collect();
     let operation = match &req.reference {
         Some(reference) => crate::cli::dotfiles::history::resolve(reference, &entries, None)?,
@@ -218,7 +227,7 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
                     matches!(
                         op.kind,
                         OperationKind::Rollback | OperationKind::Undo | OperationKind::Apply
-                    ) && op.status == OperationStatus::Completed
+                    ) && op.status != OperationStatus::Pending
                         && op.before.is_some()
                         && !op.affected.is_empty()
                 }) && !undone.contains(&entry.checkpoint.uuid)
@@ -239,10 +248,17 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
             op.kind.as_str()
         );
     }
-    if op.status != OperationStatus::Completed {
+    if op.status == OperationStatus::Pending {
         bail!(
-            "checkpoint {} did not finish; nothing to undo",
+            "checkpoint {} is still running or was interrupted; nothing to undo",
             operation.id
+        );
+    }
+    if op.status == OperationStatus::Failed && !op.affected.is_empty() {
+        info!(
+            "history: operation {} failed midway; reversing the {} path(s) it changed",
+            operation.id,
+            op.affected.len()
         );
     }
     let Some(before_uuid) = &op.before else {
@@ -277,20 +293,32 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
         operation.id,
         op.affected.join(", ")
     );
+    let restore_dirs: BTreeSet<PathBuf> = op
+        .directories
+        .iter()
+        .map(|path| normalize(Path::new(path)))
+        .collect();
+    let targets = vec![Target {
+        entry: before.clone(),
+        paths,
+    }];
+    let sources = sources_of(&targets);
     execute(
         Execution {
             kind: OperationKind::Undo,
             command: format!("bootstrap dotfiles undo {}", operation.id),
-            targets: vec![Target {
-                entry: before.clone(),
-                paths,
-            }],
+            targets,
             message,
             to: Some(before.checkpoint.uuid.clone()),
+            sources,
             undoes: Some(operation.checkpoint.uuid.clone()),
+            restore_dirs,
             dry_run: req.dry_run,
             yes: req.yes,
-            force: false,
+            // the protective checkpoint is authoritative: whatever the
+            // operation replaced, including a type change it forced, is
+            // restored exactly
+            force: true,
         },
         &store,
         &tracked,
@@ -306,10 +334,24 @@ struct Execution {
     targets: Vec<Target>,
     message: String,
     to: Option<String>,
+    sources: Vec<OperationSource>,
     undoes: Option<String>,
+    /// Directories to recreate after the plan is applied (an empty directory
+    /// an operation replaced leaves no trace in a snapshot).
+    restore_dirs: BTreeSet<PathBuf>,
     dry_run: bool,
     yes: bool,
     force: bool,
+}
+
+fn sources_of(targets: &[Target]) -> Vec<OperationSource> {
+    targets
+        .iter()
+        .map(|target| OperationSource {
+            checkpoint: target.entry.checkpoint.uuid.clone(),
+            paths: target.paths.iter().map(display_path).collect(),
+        })
+        .collect()
 }
 
 async fn execute(
@@ -349,13 +391,12 @@ async fn execute(
     let scope = OperationScope::begin_kind(exec.kind, &exec.command, false).await?;
     scope.with_operation(|op| {
         op.to = exec.to.clone();
+        op.sources = exec.sources.clone();
         op.undoes = exec.undoes.clone();
     });
     let result = apply_steps(&scope, repo, store, tracked, &exec, entries, &mut steps).await;
     let (error, summary) = match &result {
         Ok(touched) => {
-            let affected: Vec<String> = touched.iter().map(display_path).collect();
-            scope.with_operation(|op| op.affected = affected.clone());
             scope.promote(touched);
             (
                 None,
@@ -394,10 +435,11 @@ async fn apply_steps(
 ) -> Result<Vec<PathBuf>> {
     let _ = (store, entries);
     let mut round = 0;
+    let mut live;
     loop {
         round += 1;
         // editors may have written while the prompt was open: re-plan
-        let live = live_tree(repo, tracked)?;
+        live = live_tree(repo, tracked)?;
         let fresh = plan(repo, &exec.targets, &live, exec.force)?;
         let changed = actionable(&fresh) != actionable(steps);
         if changed {
@@ -455,7 +497,36 @@ async fn apply_steps(
         scope.recapture_before()?;
     }
     let mut touched = vec![];
-    for step in steps.iter().filter(|step| step.action.mutates()) {
+    // deletions deepest first, then writes shallowest first: a directory is
+    // emptied before the file that replaces it is written, and a directory
+    // that replaces a file exists before its files are written
+    let mut ordered: Vec<&Step> = steps.iter().filter(|step| step.action.mutates()).collect();
+    ordered.sort_by(|a, b| {
+        let rank = |step: &Step| matches!(step.action, Action::Write { .. });
+        rank(a).cmp(&rank(b)).then_with(|| {
+            if rank(a) {
+                a.path.cmp(&b.path)
+            } else {
+                b.path
+                    .components()
+                    .count()
+                    .cmp(&a.path.components().count())
+                    .then_with(|| b.path.cmp(&a.path))
+            }
+        })
+    });
+    for step in ordered {
+        // a file created or changed since the verified sample was never
+        // protected: stop here; what was already written is recorded below
+        // and undo can reverse it
+        let expected = repo.object_at(&live, &step.tree_path)?;
+        if !same_object(&expected, &current_object(repo, &step.path)?) {
+            bail!(
+                "{} changed after it was protected; nothing more was changed",
+                display_path(&step.path)
+            );
+        }
+        let was_directory = step.path.is_dir() && !step.path.is_symlink();
         let pending =
             journal::begin_changes("history", &display_path(&step.path), [step.path.clone()])?;
         match &step.action {
@@ -465,8 +536,55 @@ async fn apply_steps(
         }
         journal::commit_changes(pending);
         touched.push(step.path.clone());
+        let affected = display_path(&step.path);
+        scope.with_operation(|op| {
+            op.affected.push(affected.clone());
+            if was_directory {
+                op.directories.push(affected.clone());
+            }
+        });
+    }
+    for dir in &exec.restore_dirs {
+        if !dir.exists() && !dir.is_symlink() {
+            file::create_dir_all(dir)?;
+            touched.push(dir.clone());
+            let affected = display_path(dir);
+            scope.with_operation(|op| op.affected.push(affected.clone()));
+        }
     }
     Ok(touched)
+}
+
+/// What is on disk at `path` right now, as the (mode, object id) the
+/// working tree sample would hold for it.
+fn current_object(repo: &HistoryRepo, path: &Path) -> Result<Option<(String, String)>> {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return Ok(None);
+    };
+    if meta.file_type().is_symlink() {
+        let target = std::fs::read_link(path)?;
+        let oid = repo.hash_blob(target.to_string_lossy().as_bytes())?;
+        return Ok(Some(("120000".into(), oid)));
+    }
+    if meta.is_dir() {
+        return Ok(Some(("040000".into(), String::new())));
+    }
+    let oid = repo.hash_blob(&std::fs::read(path)?)?;
+    Ok(Some(("100644".into(), oid)))
+}
+
+/// Same kind and content; a directory's tree id is not compared because its
+/// files are verified as their own steps.
+fn same_object(expected: &Option<(String, String)>, current: &Option<(String, String)>) -> bool {
+    match (expected, current) {
+        (None, None) => true,
+        // an empty directory is invisible to the sample, as it is to the plan
+        (None, Some((cmode, _))) if cmode == "040000" => true,
+        (Some((emode, eoid)), Some((cmode, coid))) => {
+            kind_of(emode) == kind_of(cmode) && (emode == "040000" || eoid == coid)
+        }
+        _ => false,
+    }
 }
 
 fn actionable(steps: &[Step]) -> Vec<(PathBuf, Action)> {
@@ -723,7 +841,17 @@ fn newest_differing(
             continue;
         }
         let saved = repo.object_at(snapshot, &tree_path)?;
-        if saved.is_some() && saved != current {
+        if saved == current {
+            continue;
+        }
+        // held content that differs, or a known absence while the path now
+        // exists, are both versions to return to
+        let differs = saved.is_some()
+            || matches!(
+                classify(&entry.checkpoint, &tree_path_to_display(&tree_path)),
+                PathState::Absent
+            );
+        if differs {
             return Ok(Some(entry.clone()));
         }
     }
@@ -763,10 +891,18 @@ fn covered_paths(checkpoint: &Checkpoint) -> Vec<PathBuf> {
 }
 
 fn write_object(repo: &HistoryRepo, path: &Path, mode: &str, oid: &str) -> Result<()> {
-    let bytes = repo.cat_object(oid)?;
     if let Some(parent) = path.parent() {
         file::create_dir_all(parent)?;
     }
+    if mode == "040000" {
+        // a directory replaces a file or link; its files are their own steps
+        if path.is_symlink() || path.is_file() {
+            std::fs::remove_file(path)?;
+        }
+        file::create_dir_all(path)?;
+        return Ok(());
+    }
+    let bytes = repo.cat_object(oid)?;
     if path.is_dir() && !path.is_symlink() {
         std::fs::remove_dir_all(path)?;
     } else if path.exists() || path.is_symlink() {

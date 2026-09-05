@@ -194,14 +194,14 @@ impl OperationScope {
             return Ok(());
         };
         let mut writer = lock_unpoisoned(shared);
+        // held across the reservation, the capture, and the removal: the
+        // capture writes the index and a checkpoint ref, which a concurrent
+        // `mise history save` must not interleave with
+        let _store_lock = writer.store.lock()?;
         let previous = writer.before.take();
-        let id = {
-            let _store_lock = writer.store.lock()?;
-            writer.store.reserve_id()?
-        };
+        let id = writer.store.reserve_id()?;
         writer.capture_before(id);
         if let Some((old_id, _)) = previous {
-            let _store_lock = writer.store.lock()?;
             writer.store.remove(old_id)?;
         }
         Ok(())
@@ -295,6 +295,8 @@ impl Writer {
             undoes: None,
             applied: None,
             affected: vec![],
+            sources: vec![],
+            directories: vec![],
             message: None,
             journal: vec![],
         };

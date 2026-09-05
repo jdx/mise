@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# `mise bootstrap dotfiles rollback` and `undo` across type changes: known absences,
+# directories replacing files (and back), empty directories, and the sources
+# a multi-path rollback records.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+mkdir -p ~/.config/hypr
+echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
+echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+
+# a known absence is a version to return to: a file created after a checkpoint
+# rolls back to "missing" without naming that checkpoint
+echo 'new' >~/.config/hypr/new.conf
+assert_succeed "mise bootstrap dotfiles save"
+assert "mise bootstrap dotfiles rollback ~/.config/hypr/new.conf --dry-run | grep -c 'new.conf *delete'" "1"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/new.conf --yes"
+assert_fail "test -e ~/.config/hypr/new.conf"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.affected | join(\",\")'" "~/.config/hypr/new.conf"
+
+# --force replaces a file with the directory a checkpoint holds, and undo
+# reverses that type change exactly
+mkdir -p ~/.config/hypr/sub
+echo 'a' >~/.config/hypr/sub/a.conf
+assert_succeed "mise bootstrap dotfiles save"
+dir_id="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+rm -rf ~/.config/hypr/sub
+echo 'file now' >~/.config/hypr/sub
+assert_succeed "mise bootstrap dotfiles save"
+assert_fail "mise bootstrap dotfiles rollback ~/.config/hypr/sub --to $dir_id --yes" "conflict"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/sub --to $dir_id --yes --force"
+assert "cat ~/.config/hypr/sub/a.conf" "a"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.config/hypr/sub" "file now"
+
+# an empty directory an operation replaced is recreated by undo, although no
+# snapshot can hold it
+rm ~/.config/hypr/sub
+echo 'was a file' >~/.config/hypr/empty
+assert_succeed "mise bootstrap dotfiles save"
+file_id="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+rm ~/.config/hypr/empty
+mkdir ~/.config/hypr/empty
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/empty --to $file_id --yes --force"
+assert "cat ~/.config/hypr/empty" "was a file"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.directories | join(\",\")'" "~/.config/hypr/empty"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "test -d ~/.config/hypr/empty && echo dir" "dir"
+
+# paths that resolve to different checkpoints are all recorded as sources
+rmdir ~/.config/hypr/empty
+echo 'm1' >~/.config/hypr/monitors.lua
+assert_succeed "mise bootstrap dotfiles save"
+echo 'b1' >~/.config/hypr/bindings.lua
+assert_succeed "mise bootstrap dotfiles save"
+echo 'm2' >~/.config/hypr/monitors.lua
+assert_succeed "mise bootstrap dotfiles save"
+echo 'b2' >~/.config/hypr/bindings.lua
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/monitors.lua ~/.config/hypr/bindings.lua --yes"
+assert "cat ~/.config/hypr/monitors.lua" "m1"
+assert "cat ~/.config/hypr/bindings.lua" "b1"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.sources | length'" "2"
+assert "mise bootstrap dotfiles history show latest | grep -c 'Source:'" "2"
