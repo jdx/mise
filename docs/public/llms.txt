@@ -29,6 +29,7 @@
 - [GitHub Tokens](https://mise.jdx.dev/dev-tools/github-tokens.html): Many tools in mise are hosted on GitHub. For public releases, mise uses mise-versions by default as a shared cache for version lists, release metadata, and GitHub artifact attestations.
 - [mise.lock Lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html): mise.lock is a lockfile that pins exact versions and checksums of tools for reproducible environments.
 - [Security](https://mise.jdx.dev/security.html): mise includes several supply-chain controls for installing and managing tools. These controls have different coverage depending on the backend and the metadata available from upstream.
+- [Packslip Completions and Skills](https://mise.jdx.dev/dev-tools/packslip-resources.html): Tools installed with the packslip backend can provide completions and agent skills for the version active in your project.
 - [OCI Images (experimental)](https://mise.jdx.dev/dev-tools/mise-oci.html): mise oci build turns a mise.toml into a container image, with one OCI layer per installed tool.
 - [Deps](https://mise.jdx.dev/dev-tools/deps.html): The mise deps command manages project dependencies by hashing source files (e.g., package-lock.json) and running install commands when changes are detected.
 - [Backend Architecture](https://mise.jdx.dev/dev-tools/backend_architecture.html): Understanding how mise's backend system works can help you choose the right backend for your tools and troubleshoot issues when they arise.
@@ -58,7 +59,7 @@
 - [go](https://mise.jdx.dev/dev-tools/backends/go.html): You can install packages directly via go install even if there isn't an asdf plugin for them.
 - [http](https://mise.jdx.dev/dev-tools/backends/http.html): You may install tools directly from HTTP URLs using the http backend. This backend downloads files from any HTTP/HTTPS URL and is ideal for tools that distribute pre-built binaries or archives through…
 - [npm](https://mise.jdx.dev/dev-tools/backends/npm.html): You can install packages directly from npmjs.org even if there isn't an asdf plugin for them.
-- [packslip](https://mise.jdx.dev/dev-tools/backends/packslip.html): The packslip backend installs a release from the vendor's own signed release manifest, a packslip. One file per release, packslip.sigstore.json, says what shipped and how to verify it: checksums,…
+- [packslip](https://mise.jdx.dev/dev-tools/backends/packslip.html): The packslip backend installs tools from a vendor's signed release manifest. The manifest names the release files, their digests, supported platforms, and executable paths.
 - [pipx](https://mise.jdx.dev/dev-tools/backends/pipx.html): pipx is a tool for running Python CLIs in isolated virtualenvs. This isolation helps prevent dependency conflicts between CLIs, or between a CLI and your Python projects.
 - [pkgx](https://mise.jdx.dev/dev-tools/backends/pkgx.html): The pkgx backend installs packages from the pkgx pantry without shelling out to the pkgx CLI. mise resolves pantry metadata, downloads pkgx bottles from dist.pkgx.dev, verifies bottle checksums when…
 - [spm](https://mise.jdx.dev/dev-tools/backends/spm.html): You may install executables managed by Swift Package Manager directly from GitHub or GitLab releases.

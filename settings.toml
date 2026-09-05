@@ -2117,13 +2117,17 @@ type = "ListString"
 default = false
 description = "Run a tool's own command at install time to produce a resource its packslip offers only as an exec entry, such as an agent skill."
 docs = """
-A packslip may say that a resource is produced by running the tool itself,
-such as an agent skill printed by `tool skill`. That runs a freshly
-installed binary at install time, before you have run the tool yourself,
-and writes the result to disk, so mise does it only when this is on.
-Shell completions are the exception and need no setting: mise runs an exec
-completion when your shell first asks for one, which is when you were going
-to run the tool anyway, and caches the script beside the install.
+Allow resource generation that runs the installed vendor executable during
+installation, such as a command that prints an agent skill's `SKILL.md`.
+Fetched files do not need this setting.
+
+On-demand shell completions are separate: mise may run a declared completion
+command when the shell requests it, or when you run `mise completion --tool`,
+and caches successful output per version, executable, and shell. Disabling
+this setting does not disable on-demand completion generation.
+
+See [completions and skills](/dev-tools/packslip-resources.html) for setup,
+source selection, and execution limits.
 """
 env = "MISE_PACKSLIP_EXEC"
 type = "Bool"
@@ -2137,8 +2141,10 @@ signed release list per vendor project at
 checked and what it checked. When this setting names hosts, mise installs a
 packslip tool only at a version one of them lists: a version no trusted host
 stamped is not offered and not installed, however valid the vendor's own
-manifest is, and a version a host withdrew is refused. Any one host's stamp
-suffices.
+manifest is. Any one host's non-yanked approval suffices: one host withdrawing
+its approval does not veto another's. A vendor withdrawal still excludes the
+version regardless of stamps. Each accepted list must remain available,
+unexpired, and at or above its highest previously accepted sequence.
 
 Each entry is `host=PIN`, where the pin is the minisign-format public key the
 host signs with, the path of that `.pub` file, or, for a host that signs
@@ -2148,7 +2154,7 @@ keylessly from GitHub, an identity prefix such as
 ```toml
 [settings.packslip]
 stampers = [
-  "registry.mise.jdx.dev=RWQ...",
+  "registry.example.com=/path/to/stamper.pub",
   "stamps.example.com=https://github.com/example/stamps/",
 ]
 ```
@@ -2161,8 +2167,9 @@ under the vendor's pin, with no stamp:
 "packslip:github.com/jdx/mise" = { version = "latest", trust = "vendor" }
 ```
 
-Unset, no stamps are required. mise's own registry host will become the
-default once it publishes stamps.
+Unset, no stamps are required. The example hosts and key path are placeholders;
+configure a real service and a pin you trust. A stamp never replaces verification
+of the vendor signature. See [stamps](/dev-tools/backends/packslip.html#stamps).
 """
 env = "MISE_PACKSLIP_STAMPERS"
 optional = true
@@ -2760,10 +2767,10 @@ description = "Link the active tools' agent skills into the project after `mise 
 docs = """
 When on, mise runs the equivalent of `mise skills sync` after every install
 and after `mise use` changes a version, so the links under
-[`skills.dir`](#skills-dir) always point at the versions that are active in
+[`skills.dir`](#skills.dir) always point at the versions that are active in
 the project. Only projects with a mise config get links; nothing is written
 outside a project root. Links mise made are the only ones it touches, and
-stale ones are removed only when [`skills.prune`](#skills-prune) is on.
+stale ones are removed only when [`skills.prune`](#skills.prune) is on.
 """
 env = "MISE_SKILLS_AUTO_SYNC"
 type = "Bool"
@@ -2786,8 +2793,10 @@ description = "Fetch the agent skills a tool's packslip declares when installing
 docs = """
 A packslip may declare agent skills beside the tool's executables. mise
 fetches them at install time so every installed version carries its own
-copy. Turn this off to install tools without their skills; `mise skills ls`
-then lists nothing for them.
+copy. Turn this off to skip fetching skills during installation. This does not
+delete previously fetched skills or existing links. See
+[agent skills](/dev-tools/packslip-resources.html#skills) for synchronization
+and pruning.
 """
 env = "MISE_SKILLS_FETCH"
 type = "Bool"
@@ -2798,7 +2807,7 @@ description = "Remove links mise made for skills that are no longer active when 
 docs = """
 `mise skills sync` leaves links for skills of versions that are no longer
 active unless told to prune them. This makes pruning the default, for the
-command and for [`skills.auto_sync`](#skills-auto-sync). Only links mise
+command and for [`skills.auto_sync`](#skills.auto_sync). Only links mise
 made, recorded beside them and pointing into its installs directory, are
 ever removed.
 """
