@@ -23,7 +23,7 @@ impl CmdLineRunner<'_> {
         }
         let mut child = self.spawn_async_with_etxtbsy_retry().await?;
         let _running = RunningPidGuard::new(child.id());
-        let _tree = ChildTree::new(&child)?;
+        let tree = ChildTree::new(&mut child)?;
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
         // One budget for both pipes: judging them only once both reach EOF
@@ -41,13 +41,11 @@ impl CmdLineRunner<'_> {
         let (status, stdout, _stderr) = match result {
             Ok(Ok(output)) => output,
             Ok(Err(err)) => {
-                drop(_tree);
-                let _ = child.wait().await;
+                end(&mut child, tree).await;
                 return Err(err.into());
             }
             Err(_) => {
-                drop(_tree);
-                let _ = child.wait().await;
+                end(&mut child, tree).await;
                 bail!("timed out after {timeout:?}");
             }
         };
@@ -55,6 +53,25 @@ impl CmdLineRunner<'_> {
             bail!("command exited with non-zero status: {status}");
         }
         Ok(String::from_utf8(stdout)?.trim_end().to_string())
+    }
+}
+
+/// How long reaping a killed command may take before it is left to the
+/// operating system. A process that has been killed is normally gone at
+/// once; one that is not is no reason to outlive the deadline.
+const REAP: Duration = Duration::from_secs(1);
+
+/// End the command and account for it, without waiting on a process that
+/// may not be listening. Closing the tree kills the group, but the direct
+/// child can be outside it — on Windows it may never have joined the job,
+/// and on unix it can have left the group — and `kill_on_drop` cannot run
+/// while this is the task awaiting the child. So kill it here, and bound
+/// the wait: a deadline anything can extend is not a deadline.
+async fn end(child: &mut tokio::process::Child, tree: ChildTree) {
+    drop(tree);
+    let _ = child.start_kill();
+    if tokio::time::timeout(REAP, child.wait()).await.is_err() {
+        debug!("gave up reaping a killed command after {REAP:?}");
     }
 }
 
@@ -91,7 +108,7 @@ async fn capture(
 struct ChildTree(nix::unistd::Pid);
 #[cfg(unix)]
 impl ChildTree {
-    fn new(child: &tokio::process::Child) -> Result<Self> {
+    fn new(child: &mut tokio::process::Child) -> Result<Self> {
         Ok(Self(nix::unistd::Pid::from_raw(
             child.id().ok_or_else(|| eyre!("child has no pid"))? as i32,
         )))
@@ -118,7 +135,7 @@ impl Drop for ChildTree {
 struct ChildTree(Option<usize>);
 #[cfg(windows)]
 impl ChildTree {
-    fn new(child: &tokio::process::Child) -> Result<Self> {
+    fn new(child: &mut tokio::process::Child) -> Result<Self> {
         use windows_sys::Win32::System::JobObjects::*;
         unsafe {
             let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
@@ -141,13 +158,20 @@ impl ChildTree {
                 .raw_handle()
                 .ok_or_else(|| eyre!("child has no handle"))?;
             if AssignProcessToJobObject(handle, process as _) == 0 {
-                // A command short enough to have exited already cannot be
-                // joined, and has no tree left to close. Failing here would
-                // turn the quickest generators into errors, so close the job
-                // and let `kill_on_drop` stand for the child.
                 let err = std::io::Error::last_os_error();
-                debug!("could not put the child in a job object: {err}");
-                job.close();
+                // A command short enough to have exited already cannot be
+                // joined, and has no tree left to close: failing there would
+                // turn the quickest generators into errors. A child that is
+                // still running is the other thing entirely — nothing would
+                // close its tree — so say so rather than proceed unbounded.
+                return match child.try_wait() {
+                    Ok(Some(_)) => {
+                        debug!("child exited before it could join a job object: {err}");
+                        job.close();
+                        Ok(job)
+                    }
+                    _ => Err(err.into()),
+                };
             }
             Ok(job)
         }
