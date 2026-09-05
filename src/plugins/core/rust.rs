@@ -347,6 +347,7 @@ impl Backend for RustPlugin {
             Some(profile) => profile,
             None => self.rustup_default_profile(tv, &runtime)?,
         };
+        let effective_profile = normalize_rustup_profile(&effective_profile)?;
 
         // Query components even when none were explicitly requested. This
         // verifies that rustup still has the toolchain represented by mise's
@@ -523,6 +524,7 @@ impl Backend for RustPlugin {
             Some(profile) => profile.to_string(),
             None => self.rustup_default_profile(&tv, &runtime)?,
         };
+        let effective_profile = normalize_rustup_profile(&effective_profile)?;
         let mut components = components.unwrap_or_default();
         if effective_profile == "default" {
             components.extend(
@@ -1088,6 +1090,17 @@ fn rustup_path_env(runtime: &RustRuntime) -> Result<OsString> {
     )?)
 }
 
+fn normalize_rustup_profile(profile: &str) -> Result<&'static str> {
+    match profile {
+        "minimal" | "m" => Ok("minimal"),
+        "default" | "d" | "" => Ok("default"),
+        "complete" | "c" => Ok("complete"),
+        _ => bail!(
+            "unknown rustup profile name: {profile}; valid profile names are: minimal, default, complete"
+        ),
+    }
+}
+
 fn rustup_component_installed(installed: &BTreeSet<String>, component: &str) -> bool {
     installed.iter().any(|item| {
         item == component
@@ -1287,6 +1300,18 @@ mod tests {
         assert!(!rustup_component_installed(&installed, "rustfmt"));
         assert!(!rustup_component_installed(&installed, "rust"));
         assert!(!rustup_component_installed(&installed, "llvm"));
+    }
+
+    #[test]
+    fn profile_aliases_match_rustup() {
+        assert_eq!(normalize_rustup_profile("minimal").unwrap(), "minimal");
+        assert_eq!(normalize_rustup_profile("m").unwrap(), "minimal");
+        assert_eq!(normalize_rustup_profile("default").unwrap(), "default");
+        assert_eq!(normalize_rustup_profile("d").unwrap(), "default");
+        assert_eq!(normalize_rustup_profile("").unwrap(), "default");
+        assert_eq!(normalize_rustup_profile("complete").unwrap(), "complete");
+        assert_eq!(normalize_rustup_profile("c").unwrap(), "complete");
+        assert!(normalize_rustup_profile("custom").is_err());
     }
 
     #[test]
