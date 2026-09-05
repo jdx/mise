@@ -80,6 +80,7 @@ assert_fail "mise bootstrap generations diff 1 2 --exit-code"
 assert_succeed "mise bootstrap generations diff 2 --exit-code"
 assert_fail "mise bootstrap generations diff 99" "no bootstrap generation 99"
 assert_fail "mise bootstrap generations diff 1 2 --root nope" "no snapshot root named nope"
+assert_fail "mise bootstrap generations diff 1 2 --root config/missing" "config/missing is not in both snapshots"
 
 # a full bootstrap run records one generation, not one per part
 assert_succeed "mise bootstrap --yes --only dotfiles"
@@ -95,6 +96,7 @@ jq '.id = 4 | .status = "pending" | .finished_at = null' "$records/000003.json" 
 assert_contains "mise bootstrap generations" "pending"
 assert "mise bootstrap generations --pending --json | jq length" "1"
 assert "mise bootstrap generations --json | jq -r '.[0].id'" "4"
+assert_fail "mise bootstrap generations diff 4" "did not finish"
 rm "$records/000004.json"
 
 # retention keeps the newest generations and leaves a consistent shadow repo
