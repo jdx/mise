@@ -1465,9 +1465,8 @@ fn referenced_cache_entries(
         if metadata.is_dir() && walked.insert(root.clone()) {
             // A root holds tool directories, and a tool directory holds version
             // entries. The version entry is where an ordinary install's link
-            // lives, so the walk reads that level everywhere; it only opens a
-            // version directory for a tool that installs through the http
-            // backend, which is the only one that puts a link deeper.
+            // lives, so the walk reads that level everywhere; below it, only a
+            // tool positively identified as some other backend is left closed.
             collect_referenced_entries(
                 canonical_tarballs,
                 &root,
@@ -1491,8 +1490,8 @@ enum Descend {
     /// Everything below here is small and may hold a link: an http tool's own
     /// install directory.
     Always,
-    /// Read this level for links, but only open a subdirectory when the tool it
-    /// belongs to installs through the http backend.
+    /// Read this level for links, but do not open a subdirectory belonging to a
+    /// tool that is positively known to install through some other backend.
     OnlyHttpTools,
     /// Read this level for links and open nothing.
     Never,
@@ -1531,19 +1530,28 @@ fn collect_referenced_entries(
         let below = match depth {
             Descend::Always => Some(Descend::Always),
             Descend::OnlyHttpTools => {
-                let is_http = entry
-                    .file_name()
-                    .to_str()
-                    .and_then(|short| {
-                        crate::toolset::install_state::backend_type(short)
-                            .ok()
-                            .flatten()
-                    })
-                    .is_some_and(|backend| backend == BackendType::Http);
-                Some(if is_http {
-                    Descend::Always
-                } else {
+                // A tool's payload is skipped only when it can be *positively*
+                // identified as something other than an http install. Install
+                // state names the backend for anything installed through one,
+                // and `CORE_PLUGINS` names the rest — between them they cover
+                // the large trees this bound exists to avoid.
+                //
+                // Everything else is walked, including a tool whose install
+                // state is missing or unreadable. That is the direction this
+                // sweep has to err in: "cannot tell" is not "holds no links",
+                // and treating it as such would record no reference for a live
+                // install and delete the entry underneath it.
+                let known_not_http = entry.file_name().to_str().is_some_and(|short| {
+                    crate::toolset::install_state::backend_type(short)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|backend| backend != BackendType::Http)
+                        || crate::plugins::core::CORE_PLUGINS.contains_key(short)
+                });
+                Some(if known_not_http {
                     Descend::Never
+                } else {
+                    Descend::Always
                 })
             }
             Descend::Never => None,
@@ -2136,16 +2144,19 @@ mod tests {
     /// The walk must not open a tool's payload. A Node or Python installation
     /// has thousands of directories under its version, and none of them can hold
     /// a cache link — only the http backend puts one below the version level.
+    ///
+    /// The bound applies to a tool that can be *positively* identified as
+    /// something else, so this uses a core plugin's name. A tool the walk cannot
+    /// place is covered by the test below, which asserts the opposite.
     #[test]
-    fn a_payload_tool_has_its_versions_left_unopened() {
+    fn a_core_tool_has_its_versions_left_unopened() {
         let fx = tarball_fixture();
         let orphan = fx.entry("orphan");
-        // Shaped like a payload install: a version directory with a tree under
-        // it. `install_state` knows nothing about "payload", so it is not http.
+        // Shaped like a Node install: a version directory with a tree under it.
         let deep = fx
             .installs
-            .join("payload")
-            .join("1.0.0")
+            .join("node")
+            .join("22.0.0")
             .join("lib")
             .join("nested");
         std::fs::create_dir_all(&deep).unwrap();
@@ -2157,8 +2168,30 @@ mod tests {
         let results = fx.sweep(false).unwrap();
         assert_eq!(
             results.count, 1,
-            "the walk opened a payload directory it had no reason to read"
+            "the walk opened a core tool's payload it had no reason to read"
         );
+    }
+
+    /// The bound is allowed to skip a tool only when it is known not to be an
+    /// http install. A tool with no install state and no core plugin cannot be
+    /// placed, and the walk has to read it: stopping would record no reference
+    /// and take a live install's entry with it.
+    #[test]
+    fn an_unidentifiable_tool_is_walked_rather_than_assumed_empty() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        // `install_state` knows nothing about "mystery", and neither does
+        // `CORE_PLUGINS` — exactly the case where guessing is not allowed.
+        let deep = fx.installs.join("mystery").join("1.0.0").join("bin");
+        std::fs::create_dir_all(&deep).unwrap();
+        file::make_symlink(&live, &deep.join("link")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(
+            results.count, 0,
+            "a tool the walk could not place had its entry swept anyway"
+        );
+        assert!(live.exists());
     }
 
     #[test]
