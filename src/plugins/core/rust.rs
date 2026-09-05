@@ -1221,6 +1221,8 @@ const RUST_TARGET_ARCHES: &[&str] = &[
     "powerpc64le",
     "riscv32",
     "riscv64",
+    "riscv64a23",
+    "riscv64gc",
     "s390x",
     "sparc",
     "sparc64",
@@ -1374,6 +1376,29 @@ mod tests {
         assert!(!rustup_component_installed(&installed, "rustfmt", host));
         installed.insert("rust-std-x86_64-unknown-linux-gnu".to_string());
         assert!(rustup_component_installed(&installed, "rust-std", host));
+    }
+
+    #[test]
+    fn rustup_required_components_recognize_riscv_hosts() {
+        let plugin = RustPlugin::new();
+        for host in [
+            "riscv64gc-unknown-linux-gnu",
+            "riscv64a23-unknown-linux-gnu",
+        ] {
+            let toolchain = format!("nightly-2026-09-01-{host}");
+            let selected_host = rustup_toolchain_host(&toolchain);
+            assert_eq!(selected_host, Some(host));
+            let required = fallback_rustup_profile_components("minimal", selected_host);
+            let installed = required
+                .iter()
+                .map(|component| format!("{component}-{host}"))
+                .collect();
+            assert!(
+                plugin
+                    .missing_components(&required, &installed, selected_host)
+                    .is_empty()
+            );
+        }
     }
 
     #[test]
