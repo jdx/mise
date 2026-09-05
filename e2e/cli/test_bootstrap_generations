@@ -69,6 +69,18 @@ assert "mise bootstrap generations --json | jq -r '.[1].snapshot.after.tree == .
 assert "mise bootstrap generations --json | jq -r '.[0].snapshot.unchanged'" "true"
 assert "mise bootstrap generations show latest~1 --json | jq -r .id" "1"
 
+# diff: one id compares a run's before/after; two ids compare the states they left behind
+assert_contains "mise bootstrap generations diff 1 2" "config/dotfiles/copied"
+assert_contains "mise bootstrap generations diff 1 2 --patch" "+two"
+assert_contains "mise bootstrap generations diff 1 2 --root config/dotfiles/copied --patch" "-one"
+assert_contains "mise bootstrap generations diff 1 2 2>&1" "dotfiles: applied ~/.copied"
+assert_not_contains "mise bootstrap generations diff 1 2 --no-journal 2>&1" "dotfiles: applied"
+assert_contains "mise bootstrap generations diff 2 2>&1" "no differences"
+assert_fail "mise bootstrap generations diff 1 2 --exit-code"
+assert_succeed "mise bootstrap generations diff 2 --exit-code"
+assert_fail "mise bootstrap generations diff 99" "no bootstrap generation 99"
+assert_fail "mise bootstrap generations diff 1 2 --root nope" "no snapshot root named nope"
+
 # a full bootstrap run records one generation, not one per part
 assert_succeed "mise bootstrap --yes --only dotfiles"
 assert "$count_records" "2" # nothing changed, so nothing recorded

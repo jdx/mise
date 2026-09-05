@@ -17,7 +17,7 @@
 
 use std::path::{Path, PathBuf};
 
-use eyre::{Result, WrapErr};
+use eyre::{Result, WrapErr, bail};
 use walkdir::WalkDir;
 
 use super::store::{RootRecord, VcsInfo, store_dir_in};
@@ -68,6 +68,22 @@ pub(crate) struct TreeEntry {
     pub oid: String,
     pub size: Option<u64>,
     pub path: String,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct DiffOpts {
+    /// Full patch instead of a per-file summary.
+    pub patch: bool,
+    pub color: bool,
+    /// Restrict the comparison to `<label>` or `<label>/<path>` inside the
+    /// snapshot trees.
+    pub path: Option<String>,
+}
+
+#[derive(Debug)]
+pub(crate) struct DiffResult {
+    pub output: Vec<u8>,
+    pub changed: bool,
 }
 
 #[derive(Debug)]
@@ -238,6 +254,46 @@ impl ShadowRepo {
             });
         }
         Ok(entries)
+    }
+
+    /// Compares two snapshot trees, from `a` to `b`.
+    pub(crate) fn diff(&self, a: &str, b: &str, opts: &DiffOpts) -> Result<DiffResult> {
+        let (from, to) = match &opts.path {
+            Some(path) => (format!("{a}:{path}"), format!("{b}:{path}")),
+            None => (a.to_string(), b.to_string()),
+        };
+        let output = self.git.output_unchecked(PlumbingCall::new([
+            "diff",
+            "--no-ext-diff",
+            "--exit-code",
+            if opts.patch { "--patch" } else { "--stat" },
+            if opts.color {
+                "--color=always"
+            } else {
+                "--color=never"
+            },
+            &from,
+            &to,
+        ]))?;
+        match output.status.code() {
+            Some(0) => Ok(DiffResult {
+                output: output.stdout,
+                changed: false,
+            }),
+            Some(1) => Ok(DiffResult {
+                output: output.stdout,
+                changed: true,
+            }),
+            _ => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if let Some(path) = &opts.path
+                    && stderr.contains("invalid object name")
+                {
+                    bail!("{path} is not in both snapshots");
+                }
+                bail!("git diff failed ({}): {}", output.status, stderr.trim())
+            }
+        }
     }
 
     /// Drops a generation's refs. Missing refs are not an error.
@@ -700,6 +756,64 @@ mod tests {
             result.warnings
         );
         assert_eq!(result.roots[0].files, 1);
+    }
+
+    #[test]
+    fn diff_between_snapshots() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("config");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(config.join("zshrc"), "one\n").unwrap();
+        let repo = shadow(tmp.path());
+        let a = repo
+            .snapshot(
+                &[root("config", &config)],
+                None,
+                5,
+                SnapshotPhase::Before,
+                "a",
+            )
+            .unwrap();
+        std::fs::write(config.join("zshrc"), "two\n").unwrap();
+        let b = repo
+            .snapshot(
+                &[root("config", &config)],
+                None,
+                5,
+                SnapshotPhase::After,
+                "b",
+            )
+            .unwrap();
+        let same = repo.diff(&a.tree, &a.tree, &DiffOpts::default()).unwrap();
+        assert!(!same.changed && same.output.is_empty());
+        let stat = repo.diff(&a.tree, &b.tree, &DiffOpts::default()).unwrap();
+        assert!(stat.changed);
+        assert!(String::from_utf8_lossy(&stat.output).contains("config/zshrc"));
+        let patch = repo
+            .diff(
+                &a.tree,
+                &b.tree,
+                &DiffOpts {
+                    patch: true,
+                    path: Some("config/zshrc".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let text = String::from_utf8_lossy(&patch.output);
+        assert!(text.contains("-one") && text.contains("+two"), "{text}");
+        let missing = repo.diff(
+            &a.tree,
+            &b.tree,
+            &DiffOpts {
+                path: Some("config/nope".into()),
+                ..Default::default()
+            },
+        );
+        assert!(missing.is_err());
     }
 
     #[test]

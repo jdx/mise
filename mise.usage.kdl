@@ -698,13 +698,33 @@ snapshot of the global config directory and dotfiles root taken before
 and after the run, the global lockfile, and a journal of what changed.
 Without a subcommand this lists them, newest first.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap generations\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations --json | jq '.[0]'\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations show latest\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations show 12 --files\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap generations\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations --json | jq '.[0]'\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations show latest\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations show 12 --files\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap generations diff 11 12 --patch\u{1b}[22m\n"
         flag "-J --json" help="Output in JSON format"
         flag "-n --limit" help="Show at most this many generations (0 for all)" default="20" {
             arg <LIMIT>
         }
         flag --pending help="Only list generations whose run did not finish"
         flag "-h --help" help="Print help" action=help builtin=#true
+        cmd diff help="Diff the snapshotted config and dotfiles between generations" effect=read {
+            long_help #"""
+Diff the snapshotted config and dotfiles between generations
+
+With one id, shows what that generation's run changed inside the
+snapshot roots: its snapshot before the run against the one after.
+With two ids, compares the states the two runs left behind, which is
+how to see what changed by hand between runs. Paths are prefixed by
+their root (`config/`, `dotfiles/`, `mise.lock`).
+"""#
+            flag "-p --patch" help="Print the full patch instead of a per-file summary"
+            flag --root help="Restrict to one snapshot root or a path inside it" {
+                arg "<LABEL[/PATH]>"
+            }
+            flag --exit-code help="Exit 1 when the snapshots differ"
+            flag --no-journal help="Skip the journal entries of the generations covered"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <A> help="Generation id, `latest`, or `latest~N`"
+            arg "[B]" help="Compare the state after `A` with the state after this generation" required=#false
+        }
         cmd ls help="List recorded generations, newest first" effect=read {
             alias list
             flag "-J --json" help="Output in JSON format"

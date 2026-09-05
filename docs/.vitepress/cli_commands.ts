@@ -119,6 +119,9 @@ export const commands: { [key: string]: Command } = {
       generations: {
         hide: false,
         subcommands: {
+          diff: {
+            hide: false,
+          },
           ls: {
             hide: false,
           },
