@@ -294,6 +294,11 @@ mise bootstrap dotfiles edit --apply ~/.zshrc
 `mise bootstrap dotfiles status` reports each entry as `applied`, `missing`,
 `differs` with a reason, or `source missing`.
 
+Every `apply`, `add`, `unapply`, and `edit --apply` records a
+[bootstrap generation](/bootstrap/generations.html) with a snapshot of the
+config directory and `dotfiles.root` before and after the change;
+`mise bootstrap generations` lists them.
+
 ## Capturing changes
 
 If you edit a copied dotfile in place and want to store those changes back

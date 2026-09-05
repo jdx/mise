@@ -178,6 +178,10 @@ export const sidebar: SidebarItem[] = [
         text: "User Login Shell",
         link: "/bootstrap/user",
       },
+      {
+        text: "Generations",
+        link: "/bootstrap/generations",
+      },
     ],
   },
   {
