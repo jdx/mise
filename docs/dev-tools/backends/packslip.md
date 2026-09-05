@@ -10,6 +10,9 @@ whose publishers provide these manifests. For other tools, use
 [aqua](/dev-tools/backends/aqua.html), [github](/dev-tools/backends/github.html),
 or another supported backend. You do not need to install the Packslip CLI.
 
+For the background and examples of version-matched completions and agent skills,
+read [Introducing packslip](https://jdx.dev/posts/2026-09-05-introducing-packslip/).
+
 ## Quick start {#usage}
 
 With [mise activated](/getting-started.html), install [hk](https://hk.jdx.dev),
