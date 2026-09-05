@@ -621,15 +621,22 @@ jobs:
       # uploading it are separate steps so that the release token is only in
       # the environment of the step that publishes, not of the binary that was
       # just built.
-      - name: Generate the CLI specification
+      - name: Generate the CLI specification and completions
         run: |
           mkdir -p bin
           tar -xzf "release-assets/mise-$GITHUB_REF_NAME-linux-x64.tar.gz" -C bin
           bin/mise/bin/mise usage > mise.usage.kdl
-      - name: Publish the CLI specification
+          for shell in bash zsh fish powershell; do
+            bin/mise/bin/mise completion "$shell" > "mise.$shell"
+            test -s "mise.$shell"
+            grep -Fq '__complete_word__' "mise.$shell"
+            bin/mise/bin/mise __complete_word__ --shell "$shell" --line 'mise ins' | grep -Fq -- 'install'
+          done
+          bash -n mise.bash
+      - name: Publish the CLI specification and completions
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" mise.usage.kdl --clobber
+        run: gh release upload "$GITHUB_REF_NAME" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
       # `out: .` keeps the bundle beside mise.usage.kdl. The action defaults to
       # writing it under packslip/, and an artifact holding files at two
       # depths keeps the directory, which the flat `sha256sum ./*` below
@@ -646,17 +653,25 @@ jobs:
             man@linux=archive:mise/man/man1/mise.1
             man@darwin=archive:mise/man/man1/mise.1
             cli-spec/usage=asset:mise.usage.kdl
+            completion/bash=asset:mise.bash
+            completion/zsh=asset:mise.zsh
+            completion/fish=asset:mise.fish
+            completion/powershell=asset:mise.powershell
           attest: "false"
           out: "."
           token: ${{ secrets.MISE_GH_TOKEN }}
       # publish-release compares the draft's assets against what this workflow
-      # built, so the two files added here have to reach it or the diff fails.
+      # built, so the metadata files added here have to reach it or the diff fails.
       - name: Stage the packslip for the asset check
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-extras
           path: |
             mise.usage.kdl
+            mise.bash
+            mise.zsh
+            mise.fish
+            mise.powershell
             packslip.sigstore.json
           if-no-files-found: error
           retention-days: 1
