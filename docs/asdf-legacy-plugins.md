@@ -1,7 +1,7 @@
 # asdf (Legacy) Plugins
 
 ::: warning
-asdf plugins are considered legacy. **New asdf and vfox plugins are not accepted into the [mise registry](https://github.com/jdx/mise/blob/main/registry/) for supply-chain security reasons** — for registry submissions use the [aqua](/dev-tools/backends/aqua.html) (preferred) or [github](/dev-tools/backends/github.html) backend instead.
+asdf plugins are considered legacy. **New asdf and vfox plugins are not accepted into the [mise registry](https://github.com/jdx/mise/blob/main/registry/) for supply-chain security reasons** — for registry submissions use [packslip](/dev-tools/backends/packslip.html) (preferred when the project publishes packslips), [aqua](/dev-tools/backends/aqua.html), [github](/dev-tools/backends/github.html), or [gitlab](/dev-tools/backends/gitlab.html) instead.
 
 If you are writing a private/custom plugin (not for registry submission), prefer [vfox plugins](/dev-tools/backends/vfox.html) over asdf — they're written in Lua, work cross-platform (including Windows), and have access to built-in modules. See the [feature comparison](/dev-tools/backends/asdf.html#feature-comparison-asdf-vs-vfox) and [hook migration table](/dev-tools/backends/asdf.html#hook-migration-asdf-to-vfox) for details.
 :::
@@ -32,11 +32,13 @@ Only use asdf plugins when:
 
 **For new tools, consider these alternatives first:**
 
-1. [aqua backend](dev-tools/backends/aqua.md) - Preferred for GitHub releases
-2. [github backend](dev-tools/backends/github.md) - Simple GitHub releases
-3. [Language package managers](dev-tools/backends/) - npm, pipx, cargo, gem, etc.
-4. [backend plugins](backend-plugin-development.md) - Enhanced plugins with backend methods
-5. [tool plugins](tool-plugin-development.md) - Hook-based cross-platform plugins
+1. [packslip backend](dev-tools/backends/packslip.md) - Preferred for signed release manifests
+2. [aqua backend](dev-tools/backends/aqua.md) - Curated metadata for tools without packslips
+3. [github backend](dev-tools/backends/github.md) - Simple GitHub releases
+4. [gitlab backend](dev-tools/backends/gitlab.md) - Tools released through GitLab
+5. [Language package managers](dev-tools/backends/) - npm, pipx, cargo, gem, etc.
+6. [backend plugins](backend-plugin-development.md) - Enhanced plugins with backend methods
+7. [tool plugins](tool-plugin-development.md) - Hook-based cross-platform plugins
 
 ## Installing asdf (Legacy) Plugins
 

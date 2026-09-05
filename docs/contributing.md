@@ -655,10 +655,13 @@ of the full backend specification.
 
 1. **Choose the right backend** for your tool:
 
-   - **[aqua](dev-tools/backends/aqua.md)** - Preferred for GitHub releases with security
-     features
+   - **[packslip](dev-tools/backends/packslip.md)** - Preferred when the project
+     publishes signed release manifests
+   - **[aqua](dev-tools/backends/aqua.md)** - Curated metadata and security
+     features for tools without packslips
    - **[github](dev-tools/backends/github.md)** - Simple GitHub releases following
      standard conventions
+   - **[gitlab](dev-tools/backends/gitlab.md)** - Tools released through GitLab
    - **Language package managers** - `npm`, `pipx`, `cargo`, `gem`, etc. for
      ecosystem-specific tools
    - **[Core tools](core-tools.md)** - Built-in support for major languages
@@ -669,7 +672,8 @@ of the full backend specification.
    ```toml
    version_order = "semver"
    description = "Brief description of the tool"
-   backends = ["aqua:owner/repo", "github:owner/repo"]
+   backends = ["packslip:github.com/owner/repo", "aqua:owner/repo", "github:owner/repo"]
+   bins = ["your-tool"]
    test = { cmd = "your-tool --version", expected = "{{version}}" }
    ```
 
@@ -695,36 +699,41 @@ When adding a new tool, the following requirements apply:
 Which backend you choose for a registry entry matters as much as which tool you
 add. Backends fall into the following tiers:
 
-**Tier 1 — preferred, routinely accepted:** [`aqua`](/dev-tools/backends/aqua.html),
+**Tier 1 — preferred, routinely accepted:** [`packslip`](/dev-tools/backends/packslip.html).
+
+Use `packslip` when the project publishes signed release manifests. mise verifies
+the signer and artifact digests without a plugin or separate package manager.
+
+**Tier 2 — routinely accepted:** [`aqua`](/dev-tools/backends/aqua.html),
 [`github`](/dev-tools/backends/github.html), and [`gitlab`](/dev-tools/backends/gitlab.html).
 
-- Prefer `aqua` when the tool is in the [aqua registry](https://github.com/aquaproj/aqua-registry) —
+- When the project does not publish packslips, prefer `aqua` if the tool is in the [aqua registry](https://github.com/aquaproj/aqua-registry) —
   it has better UX, SLSA verification, and per-version logic.
 - Use `github` when the tool isn't in aqua but ships GitHub releases.
 - Use `gitlab` for tools released through GitLab.
 
-**Tier 2 — high bar, but lower than tier 3:** [`conda`](/dev-tools/backends/conda.html).
+**Tier 3 — high bar, but lower than tier 4:** [`conda`](/dev-tools/backends/conda.html).
 
-Potentially accepted for tools that can't reasonably be supported via aqua/github.
-The bar is lower than tier 3 because **mise's conda backend does not require a
+Potentially accepted for tools that can't reasonably be supported via packslip/aqua/github/gitlab.
+The bar is lower than tier 4 because **mise's conda backend does not require a
 separately-installed package manager** — packages are downloaded and extracted
 directly from anaconda.org, with no `conda`/`mamba`/`micromamba` needed on the
 user's PATH. The tool still needs to be popular and well-maintained.
 
-**Tier 3 — very high bar, rarely accepted:** `npm`, `pipx`, `gem`, `cargo`, `go`, `dotnet`.
+**Tier 4 — very high bar, rarely accepted:** `npm`, `pipx`, `gem`, `cargo`, `go`, `dotnet`.
 
 These all depend on a separately installed runtime or toolchain being present on
 the user's PATH (`node`, `python`, `ruby`, `cargo`, `go`, `dotnet`), which is
 fragile. `npm`/`pipx`/`gem` in particular silently bind tools to whichever
 `node`/`python`/`ruby` happened to be on PATH at install time, which breaks when
 versions change or the runtime isn't installed. These backends are accepted only
-when no aqua/github option exists and the tool is widely used. Discuss with @jdx
+when no packslip/aqua/github/gitlab option exists and the tool is widely used. Discuss with @jdx
 before submitting.
 
 **Not accepted:** `asdf`, `vfox`, `ubi`.
 
-- **New `asdf` plugins** — rejected for supply-chain security reasons. Use [aqua](/dev-tools/backends/aqua.html) or [github](/dev-tools/backends/github.html) instead.
-- **New `vfox` plugins** — same reason. Use aqua/github instead.
+- **New `asdf` plugins** — rejected for supply-chain security reasons. Use [packslip](/dev-tools/backends/packslip.html), [aqua](/dev-tools/backends/aqua.html), [github](/dev-tools/backends/github.html), or [gitlab](/dev-tools/backends/gitlab.html) instead.
+- **New `vfox` plugins** — same reason. Use packslip/aqua/github/gitlab instead.
 - **`ubi`** is deprecated and is not accepted for new registry entries.
 
 Users can still install via any backend themselves with explicit syntax
@@ -740,13 +749,18 @@ Each `registry/<tool>.toml` file uses this format:
 version_order = "semver"
 description = "Tool description"
 backends = [
-    "aqua:owner/repo",           # Preferred backend first
-    "github:owner/repo",         # Fallback backend
+    "packslip:github.com/owner/repo", # Preferred when the project publishes packslips
+    "aqua:owner/repo",               # Fallback backend
+    "github:owner/repo",             # Fallback backend
 ]
+bins = ["your-tool"]
 test = { cmd = "your-tool --version", expected = "{{version}}" }
 aliases = ["alt-name"] # Optional alternative names
 os = ["linux", "macos"] # Optional OS restrictions
 ```
+
+Only list backends that support the tool: `packslip` requires signed release
+manifests, and `aqua` requires an entry in the aqua registry.
 
 Every registry entry must explicitly set `version_order` to `semver` or
 `source`. Use `semver` only when the tool's stable releases consistently use
@@ -756,11 +770,15 @@ or whenever the convention is uncertain. Semantic ordering currently affects
 the Aqua, GitHub, GitLab, Forgejo, and HTTP backends; the field still documents
 the policy for tools whose current backend owns version ordering itself.
 
-When `aqua` is the preferred backend, mise derives the tool's command names from
-the Aqua registry's file metadata. Do not add `bins` when that inferred list is
-correct. Set `bins` explicitly only when the registry shorthand needs a different
-backend-independent command set, such as commands bundled by a fallback backend
-that Aqua does not describe.
+Set `bins` to the tool's executable names so mise can create shims for
+[lazy installation](/dev-tools/shims.html#lazy-tools) before downloading the tool. When
+`packslip` or another non-Aqua backend is first, mise cannot infer these names
+from the registry entry; list them explicitly as in the examples above.
+
+When `aqua` is the first backend, mise derives the command names from the Aqua
+registry's file metadata. Omit `bins` when that inferred list is correct. Set it
+explicitly when the shorthand needs a different backend-independent command set,
+such as commands bundled by a fallback backend that Aqua does not describe.
 
 #### Idiomatic version files
 

@@ -1,7 +1,7 @@
 # asdf Backend
 
 ::: warning
-asdf plugins are considered legacy. **New asdf and vfox plugins are not accepted into the [mise registry](https://github.com/jdx/mise/blob/main/registry/) for supply-chain security reasons** — for registry submissions use the [aqua](/dev-tools/backends/aqua.html) (preferred) or [github](/dev-tools/backends/github.html) backend instead.
+asdf plugins are considered legacy. **New asdf and vfox plugins are not accepted into the [mise registry](https://github.com/jdx/mise/blob/main/registry/) for supply-chain security reasons** — for registry submissions use [packslip](/dev-tools/backends/packslip.html) (preferred when the project publishes packslips), [aqua](/dev-tools/backends/aqua.html), [github](/dev-tools/backends/github.html), or [gitlab](/dev-tools/backends/gitlab.html) instead.
 
 If you are writing a private/custom plugin (not for registry submission), prefer [vfox plugins](/dev-tools/backends/vfox.html) over asdf — they're written in Lua, work cross-platform (including Windows), and have access to built-in modules for HTTP, JSON, HTML parsing, and more.
 :::
