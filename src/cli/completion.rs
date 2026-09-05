@@ -17,37 +17,71 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
     }
 
     let spec = super::usage::completion_spec();
+    complete_spec(&spec, &request)
+        .ok()
+        .or_else(|| Cli::completion_request(argv))
+}
+
+/// The same native protocol for a verified Packslip resource, without loading
+/// project configuration or requiring a separate usage executable.
+pub(crate) fn usage_spec_request(argv: &[OsString]) -> Option<Result<String>> {
+    if argv
+        .first()
+        .is_none_or(|arg| arg != "__usage_complete_word")
+    {
+        return None;
+    }
+    Some((|| {
+        use base64::Engine;
+        let path = argv
+            .get(1)
+            .and_then(|arg| arg.to_str())
+            .ok_or_else(|| eyre::eyre!("missing completion specification"))?;
+        let path = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(path)?;
+        let path = String::from_utf8(path)?;
+        let spec = crate::file::read_to_string(path)?
+            .parse::<usage::Spec>()
+            .map_err(|err| eyre::eyre!("invalid usage specification: {err}"))?;
+        let request_argv: Vec<_> = std::iter::once(OsString::from("__complete_word__"))
+            .chain(argv.iter().skip(2).cloned())
+            .collect();
+        let request = usage_rs::complete::CompletionRequest::parse(&request_argv)
+            .ok_or_else(|| eyre::eyre!("invalid completion request"))?;
+        complete_spec(&spec, &request)
+    })())
+}
+
+fn complete_spec(
+    spec: &usage::Spec,
+    request: &usage_rs::complete::CompletionRequest,
+) -> Result<String> {
     let answer = usage_cli::complete_answer(
-        &spec,
+        spec,
         &request.split.words,
         request.split.cword,
         request.shell.as_str(),
-    );
-    match answer {
-        Ok(answer) => {
-            let candidates = if answer.files {
-                vec![]
-            } else {
-                answer
-                    .candidates
-                    .into_iter()
-                    .map(|(value, description)| {
-                        if description.is_empty() {
-                            usage_rs::complete::Candidate::new(value)
-                        } else {
-                            usage_rs::complete::Candidate::described(value, description)
-                        }
-                    })
-                    .collect()
-            };
-            let answer = usage_rs::complete::Completions {
-                candidates,
-                files: answer.files.then_some(usage_rs::complete::Files::Any),
-            };
-            Some(usage_rs::complete::render(&answer, request.shell))
-        }
-        _ => Cli::completion_request(argv),
-    }
+    )
+    .map_err(|err| eyre::eyre!("{err}"))?;
+    let candidates = if answer.files {
+        vec![]
+    } else {
+        answer
+            .candidates
+            .into_iter()
+            .map(|(value, description)| {
+                if description.is_empty() {
+                    usage_rs::complete::Candidate::new(value)
+                } else {
+                    usage_rs::complete::Candidate::described(value, description)
+                }
+            })
+            .collect()
+    };
+    let answer = usage_rs::complete::Completions {
+        candidates,
+        files: answer.files.then_some(usage_rs::complete::Files::Any),
+    };
+    Ok(usage_rs::complete::render(&answer, request.shell))
 }
 
 /// Generate shell completions

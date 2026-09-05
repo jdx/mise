@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+
+export MISE_OFFLINE=1
+python3 <<'PY'
+import json
+from pathlib import Path
+for version in ('1.0.0', '2.0.0', '3.0.0'):
+    root = Path(version)
+    (root / 'bin').mkdir(parents=True)
+    program = root / 'bin/probe'
+    program.write_text('#!/bin/sh\necho executed >> "${CALL_LOG}"\n')
+    program.chmod(0o755)
+    scripts = {
+        'bash': "complete -W 'version%s' probe\n" % version,
+        'zsh': "_probe() { compadd 'version%s'; }\ncompdef _probe probe\n" % version,
+        'fish': "complete -c probe -f -a 'version%s'\n" % version,
+        'powershell': "Register-ArgumentCompleter -Native -CommandName probe -ScriptBlock { 'version%s' }\n" % version,
+    }
+    for shell, script in scripts.items():
+        (root / ('probe.' + shell)).write_text(script)
+    statement = {
+        '_type': 'https://in-toto.io/Statement/v1',
+        'subject': [{'name': 'probe.tar.gz', 'digest': {'sha256': 'a' * 64}}],
+        'predicateType': 'https://packslip.dev/release/v1',
+        'predicate': {
+            'project': 'github.com/test/probe', 'version': version,
+            'published_at': '2026-09-01T00:00:00Z',
+            'artifacts': [{'name': 'probe.tar.gz', 'size': 1, 'format': 'tar.gz', 'bin': ['bin/probe']}],
+            'resources': [{'kind': 'completion', 'bin': 'probe', 'shell': shell, 'archive': 'probe.' + shell} for shell in scripts],
+            'identity': {'scheme': 'sigstore-oidc', 'key_id': 'https://github.com/test/probe/.github/workflows/release.yml@refs/tags/v' + version, 'issuer': 'https://token.actions.githubusercontent.com'},
+        },
+    }
+    if version == '3.0.0':
+        (root / 'probe.usage.kdl').write_text('name "probe"\nflag "--from-spec"\n')
+        statement['predicate']['resources'] = [{'kind': 'cli-spec', 'bin': 'probe', 'format': 'usage', 'archive': 'probe.usage.kdl'}]
+    (root / '.mise-packslip.json').write_text(json.dumps(statement))
+PY
+for version in 1.0.0 2.0.0 3.0.0; do
+  mise link "packslip:test/probe@$version" "$PWD/$version"
+  mkdir "project-$version"
+  printf '[tools]\n"packslip:test/probe" = "%s"\n' "$version" >"project-$version/mise.toml"
+done
+mkdir empty
+export CALL_LOG="$PWD/calls"
+export FIXTURE_ROOT="$PWD"
+
+# Activation registers loaders without an install-completion command. Existing
+# completions return when the tool leaves the active toolset or mise deactivates.
+bash --noprofile --norc <<'BASH' >bash.out
+set -eu
+cd "$FIXTURE_ROOT/project-1.0.0"
+complete -W original probe
+eval "$(mise activate bash)"
+eval "$(mise hook-env -s bash --force)"
+complete -p probe
+# Simulate Readline calling its loader and retrying after status 124.
+__mise_complete_probe || test "$?" = 124
+complete -p probe
+cd ../project-2.0.0
+eval "$(mise hook-env -s bash --force)"
+__mise_complete_probe || test "$?" = 124
+complete -p probe
+cd ../empty
+eval "$(mise hook-env -s bash --force)"
+complete -p probe
+cd ../project-1.0.0
+eval "$(mise hook-env -s bash --force)"
+eval "$(command mise deactivate)"
+complete -p probe
+BASH
+assert_contains 'cat bash.out' '__mise_complete_probe'
+assert_contains 'cat bash.out' 'version1.0.0'
+assert_contains 'cat bash.out' 'version2.0.0'
+assert 'grep -c original bash.out' '2'
+
+zsh -f <<'ZSH' >zsh.out
+set -eu
+cd "$FIXTURE_ROOT/project-1.0.0"
+autoload -Uz compinit
+compinit -i
+_original_probe() { :; }
+compdef _original_probe probe
+eval "$(mise activate zsh)"
+eval "$(mise hook-env -s zsh --force)"
+print -r -- "${_comps[probe]}"
+# Exercise the loader with a stand-in for zsh's completion context.
+typeset -A compstate
+compstate[nmatches]=0
+compadd() { print -r -- "$@"; }
+_probe
+cd ../project-2.0.0
+eval "$(mise hook-env -s zsh --force)"
+_probe
+cd ../empty
+eval "$(mise hook-env -s zsh --force)"
+print -r -- "${_comps[probe]}"
+cd ../project-1.0.0
+eval "$(mise hook-env -s zsh --force)"
+eval "$(command mise deactivate)"
+print -r -- "${_comps[probe]}"
+ZSH
+assert_contains 'cat zsh.out' 'version1.0.0'
+assert_contains 'cat zsh.out' 'version2.0.0'
+assert 'grep -c _original_probe zsh.out' '2'
+
+if command -v fish >/dev/null; then
+  fish --no-config <<'FISH' >fish.out
+cd "$FIXTURE_ROOT/project-1.0.0"
+complete -c probe -f -a original
+mise activate fish | source
+mise hook-env -s fish --force | source
+complete -C 'probe '
+cd ../project-2.0.0
+mise hook-env -s fish --force | source
+complete -C 'probe '
+cd ../project-3.0.0
+mise hook-env -s fish --force | source
+complete -C 'probe --from'
+cd ../empty
+mise hook-env -s fish --force | source
+complete -C 'probe '
+cd ../project-1.0.0
+mise hook-env -s fish --force | source
+command mise deactivate | source
+complete -C 'probe '
+FISH
+  assert_contains 'cat fish.out' 'version1.0.0'
+  assert_contains 'cat fish.out' 'version2.0.0'
+  assert_contains 'cat fish.out' '--from-spec'
+  assert 'grep -c original fish.out' '2'
+fi
+if command -v pwsh >/dev/null; then
+  cat >check.ps1 <<'PWSH'
+$ErrorActionPreference = 'Stop'
+$mise = (Get-Command mise -CommandType Application | Select-Object -First 1).Source
+Set-Location "$env:FIXTURE_ROOT/project-1.0.0"
+Register-ArgumentCompleter -Native -CommandName probe -ScriptBlock { 'original' }
+& $mise activate pwsh | Out-String | Invoke-Expression
+& $mise hook-env -s pwsh --force | Out-String | Invoke-Expression
+(TabExpansion2 -inputScript 'probe ' -cursorColumn 6).CompletionMatches.CompletionText
+Set-Location ../project-2.0.0
+& $mise hook-env -s pwsh --force | Out-String | Invoke-Expression
+(TabExpansion2 -inputScript 'probe ' -cursorColumn 6).CompletionMatches.CompletionText
+Set-Location ../project-3.0.0
+& $mise hook-env -s pwsh --force | Out-String | Invoke-Expression
+(TabExpansion2 -inputScript 'probe --from' -cursorColumn 12).CompletionMatches.CompletionText
+Set-Location ../empty
+& $mise hook-env -s pwsh --force | Out-String | Invoke-Expression
+# The inactive executable is no longer on PATH; its prior registration still exists.
+$env:PATH = "$env:FIXTURE_ROOT/1.0.0/bin" + [IO.Path]::PathSeparator + $env:PATH
+(TabExpansion2 -inputScript 'probe ' -cursorColumn 6).CompletionMatches.CompletionText
+Set-Location ../project-1.0.0
+& $mise hook-env -s pwsh --force | Out-String | Invoke-Expression
+& $mise deactivate | Out-String | Invoke-Expression
+(TabExpansion2 -inputScript 'probe ' -cursorColumn 6).CompletionMatches.CompletionText
+PWSH
+  pwsh -NoProfile -File check.ps1 >pwsh.out
+  assert_contains 'cat pwsh.out' 'version1.0.0'
+  assert_contains 'cat pwsh.out' 'version2.0.0'
+  assert_contains 'cat pwsh.out' '--from-spec'
+  assert 'grep -c original pwsh.out' '2'
+fi
+assert "test ! -e '$CALL_LOG' && echo no-execution" 'no-execution'

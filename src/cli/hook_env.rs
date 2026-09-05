@@ -231,6 +231,11 @@ impl HookEnv {
             hook_env::build_alias_commands(&*shell, &PREV_SESSION.aliases, &new_aliases);
         miseprint!("{alias_output}")?;
 
+        miseprint!(
+            "{}",
+            crate::packslip::completions::activate(&config, &ts, &shell.to_string())
+        )?;
+
         hooks::run_all_hooks(&config, &ts, &*shell).await;
         hooks::run_enter_hooks_for_newly_loaded_configs(&config, &ts, &*shell).await;
         watch_files::execute_runs(&config, &ts).await;
