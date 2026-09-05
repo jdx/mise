@@ -29,7 +29,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_error(500, "remote adapter must not send credentials")
             return
         if self.command == "GET" and url.path == "/api/repos/owner/repo/releases":
-            content = b'[{"tag_name":"v1.2.3","draft":false,"prerelease":false,"created_at":"2026-01-01T00:00:00Z","assets":[]}]'
+            content = b'[{"tag_name":"v1.2.3","draft":false,"prerelease":false,"created_at":"2026-01-01T00:00:00Z","assets":[{"name":"tool.tar.gz","url":"https://api.github.com/repos/owner/repo/releases/assets/1","browser_download_url":"https://github.com/owner/repo/releases/download/v1.2.3/tool.tar.gz","size":1}]}]'
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(content)))
