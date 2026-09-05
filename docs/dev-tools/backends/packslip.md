@@ -1,84 +1,262 @@
 # packslip Backend <Badge type="warning" text="experimental" />
 
-The `packslip` backend installs a release from the vendor's own signed release manifest, a [packslip](https://packslip.dev). One file per release, `packslip.sigstore.json`, says what shipped and how to verify it: checksums, platforms, executables, and provenance links, in a standard sigstore bundle. mise verifies it against the identity the project name implies and installs exactly what it lists, so nothing is guessed from file names and no registry entry is needed.
-
-The code for this is inside of the mise repository at [`./src/backend/packslip.rs`](https://github.com/jdx/mise/blob/main/src/backend/packslip.rs).
+The `packslip` backend installs tools from a vendor's signed release manifest.
+The manifest names the release files, their digests, supported platforms, and
+executable paths. mise verifies the signer and downloaded bytes, then installs
+the artifact that fits your host.
 
 ::: warning
-packslip is a work-in-progress proposal and this backend is experimental: enable it with `mise settings experimental=true`. The format still changes between releases, and few projects publish one yet.
+The backend and the [packslip format](https://packslip.dev) are experimental.
+Enable `experimental` to use the backend. A project must publish packslips for
+its releases; this backend cannot install arbitrary GitHub release assets.
 :::
-
-## Why publish one
-
-The backends most people use today work from the outside of a release:
-
-- `github:owner/repo` picks an asset by scoring file names against the host (OS, arch, libc, format). That holds until a project renames its assets, ships two builds for one platform, or puts the executable somewhere unexpected; then every user needs `asset_pattern` or `bin` in their config. Nothing ties the file to the project unless the project also publishes checksums or provenance in a form mise recognises.
-- `aqua:owner/repo` reads a registry entry that volunteers maintain for the project, with checksums and, for some packages, cosign or SLSA checks. When a project changes its asset names the entry is wrong until someone sends a fix ([pnpm v11](https://github.com/aquaproj/aqua-registry/pull/52822), [doggo v1.2.0](https://github.com/aquaproj/aqua-registry/pull/55890), [go-jsonnet v0.22.0](https://github.com/aquaproj/aqua-registry/pull/50942), [wrkflw v0.8.0](https://github.com/aquaproj/aqua-registry/pull/59777)), and the snapshot built into mise picks it up a release later.
-- `packslip:owner/repo` reads what the project itself published with the release, signed by the project. Nothing to guess, nobody to wait for.
-
-For a vendor:
-
-- **A direct line to your users.** You say which file is for which platform, which executables it holds and what they are called on PATH, and what the host needs. Your users get that with the release itself, not after someone updates a registry, and when you change a layout or a naming scheme the next packslip says so and no install breaks.
-- **You ship more than binaries.** Shell completions, man pages, a [usage](https://usage.jdx.dev) spec of the CLI, and [agent skills](https://packslip.dev/release/v1/#resources), each declared once and installed in the version the user actually has.
-- **On GitHub, one step in the release job.** `uses: jdx/packslip@v1` with the artifact glob signs the manifest keylessly with the workflow's own identity, attests build provenance, and uploads it. There is no key to create, store, or rotate. On another forge, or a plain web server, `packslip create` signs with a key you hold and you publish a signed release list at a well-known URL on your domain; users pin the key in their config.
-- **Nothing between you and the user can swap the bytes.** A mirror, a proxy, or a compromised download host cannot pass off other bytes as your release, because the signer is your workflow or your key.
-
-For a user asking a vendor for one:
-
-- **The name says who may sign, the way `~/.ssh/known_hosts` says which key a host must present.** `packslip:github.com/owner/repo` accepts only a packslip signed by that repository's release workflow through GitHub's issuer; the signature, its transparency log entry, the statement, and the artifact's digest and size are all checked before anything is unpacked. mise then remembers the signer it accepted, as [Pinned signers](#pinned-signers) describes, and refuses a later release from anyone else.
-- **The right artifact, with no registry to update first.** musl and gnu, universal binaries, a `fips` or `baseline` variant, the executable's path inside the archive: all from the manifest the vendor wrote when it cut the release, so nobody plays catch-up after a rename.
-- **Completions and skills that match the version in use**, from the vendor, with no per-tool setup in mise or in your shell config.
-- **Upgrades are checked the way first installs are.** A checksum in `mise.lock` proves one download is the same file it was the first time. A packslip proves the next version came from the same signer as well, so an upgrade on a teammate's machine or in CI is checked against the project's identity rather than against a hash nobody could verify when it was first recorded. `mise.lock` records that signer next to the URL and digest, so a machine with the lockfile refuses a release signed by anyone else even on its first install.
-
-The specification and the `packslip` CLI are at [packslip.dev](https://packslip.dev).
 
 ## Usage
 
-A project is named the way Go names a module: a host, then a path. On github.com the name is also the pin: the packslip must be signed by a workflow of that repository, through GitHub's OIDC issuer.
+With [mise activated](/getting-started.html), enable the backend and install
+packslip itself:
 
 ```sh
-$ mise use -g packslip:github.com/jdx/packslip
-$ packslip version
-packslip 0.2.0
+mise settings experimental=true
+mise use -g packslip:github.com/jdx/packslip
+packslip version
 ```
 
-`packslip:owner/repo` means the same as `packslip:github.com/owner/repo`. A tool in a monorepo adds its subpath, `packslip:github.com/oxc-project/oxc/oxlint`, and mise reads that tool's own `packslip.oxlint.sigstore.json` from the shared release.
+Omit `-g` to manage the tool in the current project's `mise.toml` instead.
+For a project configuration:
 
-A project on its own domain publishes a signed release list at `https://<host>/.well-known/packslip/<path>.json`. Nothing implies its signer, so pin it yourself:
+```toml
+[settings]
+experimental = true
+
+[tools]
+"packslip:github.com/jdx/packslip" = "latest"
+```
+
+### Project names and discovery
+
+A project name is a host followed by an optional path, without `https://`.
+`packslip:owner/repo` is shorthand for `packslip:github.com/owner/repo`.
+
+| Project form                         | Where mise looks                                                             |
+| ------------------------------------ | ---------------------------------------------------------------------------- |
+| `github.com/owner/repo`              | GitHub releases carrying `packslip.sigstore.json`.                           |
+| `github.com/owner/repo/tools/mytool` | The same repository's releases, using `packslip.tools-mytool.sigstore.json`. |
+| `tool.example.com`                   | `https://tool.example.com/.well-known/packslip.json`.                        |
+| `example.com/tools/mytool`           | `https://example.com/.well-known/packslip/tools/mytool.json`.                |
+
+A GitHub monorepo subpath identifies one tool, but the signing identity is
+still pinned to the repository. The signed project and version must match
+the requested tool and release, regardless of the bundle's filename.
+
+For a domain project, obtain the vendor's public key through a trusted channel
+and configure it explicitly. This example assumes the key file already exists:
 
 ```toml
 [tools]
-"packslip:tool.example.com" = { version = "latest", pubkey = "RWQ..." }
+"packslip:tool.example.com" = { version = "latest", pubkey = "/path/to/vendor.pub" }
 ```
+
+The domain's signed list points to release bundles; their artifacts can live
+on a different download host. A domain project without a signed list cannot
+be installed. Recognizing a forge's signing issuer does not provide discovery:
+GitHub has a release-API integration; other hosts need the signed-list location.
+
+## Versions
+
+List the project's available versions with:
+
+```sh
+mise ls-remote packslip:github.com/jdx/packslip
+```
+
+Packslip versions use semver, including compatible date versions such as
+`2026.9.1`. mise uses that version to order releases and identify prereleases;
+GitHub's release order and editable prerelease flag do not decide either.
+Prereleases are excluded unless the `prerelease` tool option is enabled.
+
+For GitHub discovery, mise reads versions from tags such as `v1.2.3`,
+`mytool-v1.2.3`, or `v4.1` (normalized to `4.1.0`). Tags that do not map to a
+version need an explicit mapping in a signed list. At installation, the
+manifest's version must agree with the tag or list entry.
+
+### Signed release lists
+
+A GitHub repository can publish a supplementary signed list on its default
+branch at `.well-known/packslip.json`, or `.well-known/packslip/<tool>.json`
+for a monorepo tool. The list can withdraw a version, supply a bundle URL and
+digest, or add a version that the release API does not expose.
+
+Omitted versions can still come from GitHub releases: omission does not withdraw
+them. For a domain project, the signed list supplies the entire release index.
+A vendor withdrawal excludes a version even if a trusted stamper approved it.
+
+### Release-list continuity and minimum age
+
+mise rejects expired signed lists and sequences below the highest it has
+accepted for the project. Once it has accepted a supplementary GitHub list,
+that list disappearing is an error. A missing list cannot silently undo a
+withdrawal. This continuity state is stored alongside the [signer pin](#pinned-signers).
+
+If a [minimum release age](/configuration/settings.html#minimum_release_age)
+is configured, discovery timestamps help filter candidates. Before downloading
+an artifact, mise checks the verified transparency-log timestamp against the
+effective cutoff. Only an explicitly allowed unlogged bundle uses the signed
+publication timestamp instead.
+
+## Latest
+
+An unconstrained `latest` request considers recommendations in this order:
+
+1. The vendor's `latest` pointer in an accepted signed release list.
+2. GitHub's latest release, if there is no signed pointer.
+3. The highest eligible semver, if there is no eligible recommendation.
+
+The vendor can recommend an older supported release while a newer major
+version exists. Prefix and channel requests keep their normal matching rules;
+the recommendation does not reorder them.
+
+A recommendation must still pass signature, identity, digest, release-age,
+stamping, and host checks. A policy exclusion warns and tries another candidate.
+An ineligible signed recommendation falls directly back to semver selection,
+without consulting GitHub's pointer. Signature or digest failures and invalid,
+expired, rolled-back, or unexpectedly missing lists stop resolution.
+
+Version listing and `latest` resolution perform online policy checks and bypass
+mise's remote-version cache so withdrawals and trust changes take effect.
 
 ## What is verified
 
-1. The bundle's signature, certificate chain, and transparency log entry, as sigstore defines them, against the pinned identity or key.
-2. The statement's structure, and that it is for the project you asked for at the version you asked for.
-3. The digest and size of the one artifact selected for this host, from the signed statement, before it is unpacked.
+Before unpacking a release, mise checks:
 
-Only after that does mise unpack the artifact and put the executables the packslip names on PATH. The verified statement is kept in the install directory as `.mise-packslip.json`.
+1. The bundle's signature and applicable certificate and transparency-log
+   evidence against the expected repository identity or configured key.
+2. The statement's structure, requested project and version, and any bundle
+   digest recorded by a vendor list or trusted stamper.
+3. Signer continuity, lockfile commitments, and applicable release-age policy.
+4. The selected artifact's digest and size, plus any existing lockfile checksum.
 
-The artifact is chosen as the specification's consumer rules say. An artifact fits when each of its `os`, `arch`, and `libc` is absent or equal to the host's, so a universal macOS binary, a jar, or a script fits everywhere; among those that fit, the one naming the most of those three wins, so a build for the host beats a portable one; then mise's format preference decides, archives first (`tar.xz`, `tar.zst`, `tar.gz`, `tar.bz2`, `tar`, `zip`, `7z`), then a single compressed executable (`xz`, `zst`, `gz`, `bz2`), then a bare one. Installer formats such as `deb`, `dmg`, and `msi` are never chosen. When two artifacts still tie, mise refuses to guess; set `variant` to say which one you mean. A glibc host with no gnu build takes a musl build, which is static, and says so in the debug log.
+The verified statement is retained as `.mise-packslip.json` in the install
+directory. It supplies executable paths and metadata for resources.
+
+Verification authenticates the signer's statement and the downloaded bytes.
+It does not establish that the software is safe. A provenance link in the
+manifest is separate evidence: this backend records its presence for continuity
+checks but does not fetch and verify the linked build provenance.
+
+### Artifact selection
+
+mise uses signed metadata to select one artifact:
+
+1. Match OS, architecture, and libc. An absent field leaves only that dimension
+   unrestricted: a universal macOS build still requires macOS.
+2. With a `variant`, consider only that variant. Without one, consider only
+   artifacts that have no variant.
+3. Keep formats mise can install, preferring the most specific platform match,
+   then its archive/compression format preference over a bare executable.
+4. Refuse an unresolved tie rather than guessing between builds.
+
+Installer formats such as `deb`, `dmg`, and `msi` are not selected. A glibc host
+with no matching GNU artifact may use a musl artifact; mise reports that
+fallback in the debug log. The vendor must distinguish alternative builds with
+variants; a client-side option cannot repair two identically described artifacts.
+
+## Host requirements
+
+After selecting an artifact, mise checks its declared requirements before
+downloading it. Requirements do not break a selection tie or select another build.
+
+| Requirement result                                                        | mise behavior                                      |
+| ------------------------------------------------------------------------- | -------------------------------------------------- |
+| Confirmed missing library, insufficient glibc, or insufficient OS version | Refuse installation.                               |
+| Missing or outdated required command                                      | Warn and continue.                                 |
+| A check cannot be completed                                               | Warn instead of assuming the host is incompatible. |
+
+Command checks prefer active mise tools over ambient PATH. Library detection is
+platform-dependent; for example, an absent macOS library file may still exist
+in the dyld shared cache, so mise reports that absence as unknown.
+
+`ignore_requirements = true` allows a tool to install despite confirmed failures.
+It does not supply the missing libraries or make an incompatible executable run.
 
 ## Pinned signers
 
-mise remembers which signer it accepted a project's packslips from, the way SSH remembers hosts, in `packslip/pins.toml` under its state directory: the scheme, the workflow path (without its ref, since a new tag of the same workflow is the same signer) or key id, who attested, whether every artifact linked provenance, and the highest release-list sequence seen. A later release that comes from another signer, is a repackager's where the vendor's own was accepted before, or drops the provenance every artifact linked before is refused, as the specification's no-downgrade rule says; anything that got stronger is remembered as the new floor.
+mise preserves trust in two places:
+
+| State                                                                                | What it protects                                                                                                                                |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packslip/pins.toml` under the [state directory](/directories.html#local-state-mise) | Previously accepted signers, signing scheme, vendor versus repackager status, provenance-link presence, and release-list continuity.            |
+| `mise.lock`                                                                          | The project's signer and attestor commitment alongside each platform's artifact URL and checksum, including on another machine's first install. |
+
+For a keyless signer, continuity compares the workflow path without its tag or
+branch ref. A new release tag of the same workflow is the same signer. A new
+workflow path or key requires an explicit trust decision. A signing-scheme change,
+a vendor-to-repackager change, or lost provenance links can also be refused.
+
+Inspect the local pins before investigating a trust failure:
 
 ```sh
-mise packslip pins                     # what is pinned, and from what
-mise packslip forget github.com/o/r    # the vendor rotated a key: let the next release set the pin
+mise packslip pins
+mise packslip pins --json
 ```
 
-A lockfile carries the project's commitment as well: each platform entry records the `signer` (as `scheme:signer`) and, for a repackager's document, `attested_by = "repackager"`, next to the URL and digest. A release signed by anyone else is refused on every machine that has the lockfile, whether or not that machine has seen the project before; removing the entry from `mise.lock` accepts the change for the project.
+After confirming a vendor's announced signer change, reset its local pin:
+
+```sh
+mise packslip forget github.com/owner/repo
+```
+
+This also resets remembered vendor-list continuity. It does not change an
+explicit `pubkey` or identity option, erase stamper-list state, or remove the
+signer commitment in `mise.lock`. Review those separately when accepting a
+rotation. A conflicting lockfile entry must be removed and regenerated after
+the new policy is configured; commit the reviewed change for other machines.
+
+## Stamps
+
+A stamper is a registry, mirror, or review service that publishes a signed list
+of releases it admits. Configure the hosts you trust and the key or identity
+allowed to sign each host's lists:
+
+```toml
+[settings.packslip]
+stampers = [
+  "stamps.example.com=/path/to/stamper.pub",
+  "reviews.example.com=https://github.com/example/reviews/",
+]
+```
+
+Each entry is `host=PIN`. The pin may be a minisign-format public key line,
+a public-key file path, or a GitHub identity prefix. The example hosts and key
+path are placeholders; replace them with a service and pin you trust.
+
+A host publishes one list per project at
+`https://<host>/.well-known/packslip/<project>.json`. With stampers configured:
+
+- A version needs a non-yanked approval from at least one trusted host to be
+  listed or installed. One host's withdrawal does not veto another's approval.
+- A vendor withdrawal still excludes the release, regardless of stamps.
+- mise checks the stamped bundle digest and the vendor-list digest, when present,
+  then verifies the vendor signature. A stamp never replaces that signature.
+- Expired, rolled-back, invalid, or previously accepted but now missing stamper
+  lists cause errors. Silently ignoring one would weaken the configured policy.
+
+A stamper can mirror the exact vendor-signed bundle. Re-signed repackager
+bundles requiring a separate identity policy are not supported here.
+
+No stamps are required when the setting is unset. To exempt one tool from
+configured stampers, set `trust = "vendor"` as described below.
 
 ## Tool Options
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `packslip` backend—these go in `[tools]` in `mise.toml`.
+These [tool options](/dev-tools/#tool-options) go in `[tools]` in `mise.toml`.
+They apply to one tool; `packslip.exec`, `packslip.stampers`, and `skills.*`
+are settings and belong under `[settings]`.
 
 ### `variant`
 
-Selects one of several builds the vendor publishes for one platform, such as `fips` or `baseline`. Without it, only artifacts with no variant are considered.
+Choose a vendor-declared alternative build, such as `fips` or `baseline`.
+Without this option, only unvarianted builds are considered.
 
 ```toml
 [tools]
@@ -87,118 +265,92 @@ Selects one of several builds the vendor publishes for one platform, such as `fi
 
 ### `pubkey`
 
-For a project on its own domain: the vendor's public key, as the minisign-format line from its `.pub` file or the path of that file. The release list and every packslip must be signed with it.
+Pin a key-signed release using the minisign-format public-key line or a path to
+its `.pub` file. The vendor list and release bundles must verify against it.
 
 ### `identity`, `identity_prefix`, `issuer`
 
-For a project on its own domain signed keylessly, or to override the identity a forge name implies: the exact certificate identity, or a prefix it must start with, and the OIDC issuer.
+Pin a keyless signer using an exact certificate identity or an identity prefix,
+plus its OIDC issuer. These options can replace the policy derived from a forge
+name. Keep the trailing slash when pinning a repository prefix.
 
 ### `allow_unlogged`
 
-Accept a key-signed bundle that carries no transparency log entry, which a vendor produces for an air-gapped release. Off by default; turn it on only for a vendor you have agreed to accept that from.
+Defaults to `false`. Set to `true` only when your policy accepts a vendor's
+key-signed bundles without transparency-log evidence. This does not bypass
+signature or artifact verification.
 
 ### `trust`
 
-`trust = "vendor"` takes the vendor's own manifest under the vendor's pin, with no stamp from the hosts [`packslip.stampers`](/configuration/settings#packslip-stampers) names. See Stamps below. The choice is recorded in the lockfile, so an install from the lock does not quietly relax it later.
+`trust = "vendor"` exempts the tool from configured stampers while retaining
+vendor signature verification. The choice is recorded in lockfile options.
 
 ```toml
 [tools]
-"packslip:github.com/jdx/mise" = { version = "latest", trust = "vendor" }
+"packslip:github.com/jdx/packslip" = { version = "latest", trust = "vendor" }
 ```
 
-## Stamps
+### `prerelease`
 
-A vendor's packslip proves what the vendor shipped. It does not say whether anyone else looked at it. A stamping host, a registry, a mirror, or a scanning service, publishes its own signed release list per vendor project at `https://<host>/.well-known/packslip/<project>.json`, naming the versions it checked, pinning the digest of each packslip it looked at, and saying what it checked. The [`packslip.stampers`](/configuration/settings#packslip-stampers) setting names the hosts you trust, each with its pin:
+Set to `true` to include prerelease versions in selection.
 
-```toml
-[settings.packslip]
-stampers = ["registry.mise.jdx.dev=RWQ..."]
-```
+### `ignore_requirements`
 
-With hosts named, mise offers and installs a packslip tool only at versions one of them lists. A version no trusted host stamped is not shown by `mise ls-remote` and is refused by `mise install`, however valid the vendor's own manifest is; a host withdrawing its stamp does not veto another host’s non-yanked approval. Any one host’s non-yanked stamp suffices; vendor withdrawals still veto every stamp. The stamp points at the manifest it admitted, so mise fetches that exact file, checks it against the digest the host recorded, and then verifies it against the vendor's pin as always: the stamp never stands in for the vendor's signature. A stamp that records no digest is refused — the digest is what ties the host's review to a file, and without one the entry admits a URL rather than a manifest.
-
-Each host's list carries an expiry and a sequence number. mise refuses a list that has expired, and remembers the highest sequence it accepted per host and project so a replayed older list is refused as a rollback.
-
-A stamper may mirror the exact vendor-signed manifest. Mise checks both the stamper digest and any digest in the vendor’s list. Because the stamp already names the manifest, mise asks the vendor only for what the vendor decides — a withdrawal, and the digest they pinned — so a release asset deleted from GitHub does not veto a mirror of a release that was never withdrawn. Re-signed repackager manifests need a separate identity policy and are not supported by this backend yet.
-
-Unset, no stamps are required and every version the vendor published is offered. mise's own registry host will become the default once it publishes stamps.
+Set to `true` to override confirmed [host requirement](#host-requirements)
+failures for this tool. Other verification checks still apply.
 
 ## Completions
 
-A packslip may list what the release ships besides its executables: shell completions, a spec of the CLI, an agent skill. mise reads those `resources` for tools it installed this way.
-
-```sh
-mise completion zsh --tool rg           # print the script
-mise completion zsh --tool rg --install # put a stub where zsh looks
-```
-
-The script comes from whichever version of the tool is active in the current directory. A vendor whose layouts differ by platform scopes an entry with `os`, `arch`, or `libc`; mise keeps the entries that apply to the artifact it installed and, of those, the most specific. It then takes the most verifiable source the vendor offered, in the order the specification gives: a file inside the artifact or a separate signed asset, a file from the source repository at the release's commit, a script derived from the tool's [usage](https://usage.jdx.dev) spec with the `usage` command, and only then a command of the tool's own. That last kind is how cobra, clap, and oclif tools ship completions, so mise runs it: the stub calls mise the first time your shell completes the command, which is when you were going to run the tool anyway, and mise caches the script beside the install so the command runs once per version rather than at every tab. No setting is needed. The [`packslip.exec`](/configuration/settings#packslip-exec) setting governs only exec resources mise would run at install time and write to disk, such as an agent skill.
-
-`--install` writes a stub, not the script. Completions are global shell state while the active version depends on the directory, so the stub asks mise for the script when the shell completes the tool. In zsh and bash the vendor's script takes over for one completion and the stub is put back afterwards, so a version switch in another directory is followed on the next tab. fish reads the script in a child shell of its own, and PowerShell puts mise's completer back after handing one completion to the vendor's, for the same reason: neither keeps the registrations of a version that is no longer active. The file goes where the shell loads completions by name, the same place `mise completion zsh --install` puts mise's own, and the command prints any one-time line your shell still needs.
-
-Files the vendor keeps outside the artifact (a separate release asset, or a path in the repository) are fetched at install time. An asset must match the digest the packslip signed; a repository file is pinned by the release's commit. Completions derived from a usage spec call `usage complete-word` at shell runtime, so install `usage` alongside such tools (`mise use -g usage`).
+For a command installed through this backend, `mise completion zsh --tool mytool
+--install` installs a shell stub that follows the active version. See
+[tool completions](/dev-tools/packslip-resources.html#completions) for shell
+support, setup, and generated-script behavior.
 
 ## Skills
 
-A packslip may also declare an agent skill: a directory holding `SKILL.md` and whatever it references, in the Agent Skills format. mise fetches it at install time, from inside the artifact, from a separate signed asset, or from the source repository at the release's commit, so every installed version carries its own copy.
-
-```sh
-mise skills ls              # the skills of the tools active here
-mise skills sync            # link them into .claude/skills
-mise skills sync --prune    # and drop links for versions no longer active
-```
-
-Since a project pins its tool versions in `mise.toml`, mise knows exactly which version of each skill an agent working in that project should see. `mise skills sync` writes one symlink per skill into the project's `.claude/skills` (or `--dir` for another agent's location, `--global` for `~/.claude/skills`), pointing at the installed version's directory. Run it again after `mise use` changes a version and the links follow. Only links mise made are ever replaced or pruned; a directory or link of your own at a skill's name is left alone and reported.
-
-Four settings shape this:
-
-- [`skills.dir`](/configuration/settings#skills-dir) is where the links go, relative to the project root (or the home directory with `--global`): `.claude/skills` by default, `.agents/skills` for agents that look there.
-- [`skills.auto_sync`](/configuration/settings#skills-auto-sync) runs the sync after every `mise install` and `mise use`, so the links never lag the versions in `mise.toml`.
-- [`skills.prune`](/configuration/settings#skills-prune) makes removing links for versions no longer active the default, for the command and for auto sync.
-- [`skills.fetch`](/configuration/settings#skills-fetch) turned off installs tools without their skills.
-
-A skill the packslip offers only as a command of the tool's own (`tool skill`, printing `SKILL.md`) is generated at install time only when [`packslip.exec`](/configuration/settings#packslip-exec) is on, for the same reason as completions.
-
-Several sources for one skill are alternatives, not a set to collect: mise takes the most verifiable one that is on disk and does not fetch or run the ones below it, so a skill the release ships never runs the tool. A directory is that skill only once it holds `SKILL.md`; what an interrupted fetch or unpack left behind is not a skill, and the source below it is still tried.
-
-## Versions
-
-A packslip version is semver, so mise ranks a project's versions by semver precedence whatever order GitHub lists its releases in, and treats a version with a prerelease part (`1.3.0-rc.1`, `1.4.0-nightly.20260904`) as a prerelease whatever the GitHub release's own flag says. Prereleases are skipped unless the `prerelease` tool option is set.
-
-For a project on github.com, the versions are the repository's releases that carry a packslip, named by their tags as the specification reads them: the version itself, optionally after a `v`, and optionally after the tool's subpath, its last segment, or the repository name plus a separator (`v1.2.3`, `jq-1.7.1`, `oxlint_v1.0.0`), with loose spellings such as `v4.1` normalized to `4.1.0`. A tag that names no version is skipped. At install time mise checks that the packslip inside the release agrees with the version the tag named and refuses the release if it does not.
-
-The repository may also keep a signed list at `.well-known/packslip.json` (or `.well-known/packslip/<tool>.json` for a monorepo tool) on its default branch, signed by the same identity as its packslips. When it does, a version the list marks withdrawn is dropped, a version it names has its packslip fetched from the URL the list gives and checked against the digest it signed, and a version it lists that the releases endpoint lacks is added.
-
-For a project on its own domain, the versions are the entries of its signed release list, minus any the vendor has withdrawn. For either kind of list mise refuses one that has expired, and refuses one whose sequence is below the highest it has accepted for the project, which it remembers under its state directory.
-
-Lockfiles record the artifact URL and its sha256 from the signed statement.
+`mise skills ls` lists skills provided by active installed tools; `mise skills
+sync` links them into an agent's skill directory. See
+[agent skills](/dev-tools/packslip-resources.html#skills) for project setup,
+automatic synchronization, and pruning.
 
 ### Resource selection and command execution
 
-Resources may name one exact `artifact` when layouts differ between archive formats or variants. Completions are selected for the command being completed; when a release has several executables, pass its command name to `--tool`. Generated scripts are cached separately for each installed version, executable, and shell.
+See [resource selection](/dev-tools/packslip-resources.html#resource-selection-and-command-execution)
+for source priority, caching, and when mise runs a vendor executable.
 
-Exec resources receive the manifest’s environment variables, with `{shell}` expanded for completions. They run in a temporary directory with the installed executables on PATH, no stdin, discarded stderr, and a five-second timeout. The same execution rules apply to skills when `packslip.exec` permits generating them.
+## Troubleshooting
 
-A script that comes back empty is a failed source, not a completion: mise moves on to the next source and caches nothing. Shells completing the same command at once take turns, so the tool runs once between them rather than once each, and no shell reads a half-written entry. Only generation takes turns: a completion the release ships is read straight out of the install, so a read-only system or shared install still completes. A CLI spec generated for one shell, as `{shell}` in the command allows, is kept under that shell's name and written whole.
+| Symptom                                      | What to check                                                                                                                    |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Experimental backend refused                 | Enable `experimental` in settings.                                                                                               |
+| No release or bundle found                   | Confirm that the project publishes packslips, the subpath is correct, and the tag maps to a version or appears in a signed list. |
+| Nothing pins the signer                      | Supply `pubkey`, or a certificate identity/prefix and issuer, for a domain project.                                              |
+| Signer or trust downgrade refused            | Inspect `mise packslip pins`, explicit tool options, and `mise.lock`; confirm the publisher's change before resetting trust.     |
+| No eligible artifact or ambiguous artifacts  | Check the host and requested variant against the signed manifest. The publisher must fix an unresolved metadata tie.             |
+| Signed list expired, rolled back, or missing | Obtain a current valid list from its publisher; removing an accepted list does not remove its policy.                            |
+| Version excluded by stamp policy             | Check trusted hosts' non-yanked approvals and any vendor withdrawal.                                                             |
+| Digest or size mismatch                      | Confirm the release and downloaded file; the bytes must match the signed statement.                                              |
 
-Static `cli-spec` entries are ranked like a shipped script's: the release's own archive, then a signed asset, then the source repository, with the order they are written in breaking ties.
+Use `MISE_DEBUG=1` for selection and verification details. For resource-specific
+failures, see [completions and skills troubleshooting](/dev-tools/packslip-resources.html#troubleshooting).
 
-### Release-list continuity and minimum age
+## Why publish one
 
-Once mise has accepted a supplementary signed list, a missing list is an error: a 404 cannot silently restore releases the vendor withdrew. `mise packslip forget <project>` explicitly resets that remembered policy along with the signer pin.
+A packslip lets a vendor describe each release's platforms and executable paths
+with the release itself. Users can install through `packslip:` without a new
+registry shorthand or a separate filename-matching recipe. It can also supply
+versioned completions, CLI specifications, and agent skills.
 
-The release API or list timestamp helps select candidates. Before downloading an artifact, mise checks the verified transparency-log timestamp against the effective `minimum_release_age` cutoff. Only a permitted unlogged bundle uses its signed publication timestamp instead.
+The `github:` backend remains useful for releases without packslips, while
+`aqua:` uses curated registry metadata. Publishing a packslip adds a signed
+vendor description; it does not require replacing an existing release layout.
 
-## Latest
+For GitHub releases, the `jdx/packslip@v0` action can sign and upload a bundle
+after your workflow has built and uploaded the final artifacts. Follow the
+[Packslip publishing guide](https://packslip.dev/docs/publishing/) for permissions,
+inputs, version pinning, and monorepo setup. For domain hosting, also publish a
+[signed release list](https://packslip.dev/docs/release-lists/).
 
-An unconstrained `latest` request uses the vendor’s signed release-list `latest` pointer first. On GitHub, absent a signed pointer, mise consults GitHub’s latest release. Without an eligible recommendation it falls back to highest eligible semver. Prefix and channel requests keep their existing matching rules and never use the default pointer.
-
-Mise verifies each candidate manifest before accepting it, including its identity and digest pins, reaching for the vendor exactly as installation does: a stamped candidate is fetched from the stamp's URL and the vendor is asked only for a withdrawal and a digest, so resolution accepts every version installation would. Minimum release age uses the verified log time (or signed publication time for explicitly allowed unlogged bundles), and stamping and host requirements still apply. A policy exclusion warns and tries the next candidate; a signature, digest, identity, or list freshness failure stops resolution. A signed pointer that is ineligible falls straight back to semver, not to GitHub’s pointer. Resolution and version listing read policy afresh rather than trusting mise’s remote-version cache, so changed stamper trust, withdrawals, expired lists, or missing accepted lists take effect; what they read is written back to that cache. Offline, there is no policy to consult and no network to consult it over, so both serve that cache like every other backend, or nothing when it is empty; installing still rechecks.
-
-## Host requirements
-
-After selecting the artifact, mise checks its declared minimum OS/glibc and host libraries before downloading it. Confirmed failures refuse installation; `ignore_requirements = true` overrides this for one tool. Missing or old commands warn, and unknown checks warn instead of refusing. Active mise command paths take precedence over ambient PATH. Requirements never break an artifact-selection tie or select a different build.
-
-On Linux the OS version is the kernel release from `uname -r`, read up to the distribution's suffix: `6.8.0-31-generic` is compared as `6.8.0`. OS and glibc probes and command version probes have bounded execution and output. Linux library checks use `LD_LIBRARY_PATH`, standard directories, and `ldconfig -p`; Windows uses PATH and the system directory. macOS checks common library directories but reports unknown absence because the dyld shared cache can contain libraries with no filesystem entry.
-
-Resource generators have a five-second deadline including inherited output pipes and a 4 MiB output limit. Their child processes are cleaned up on completion, failure, timeout, and cancellation.
+The [Packslip specification](https://packslip.dev/release/v1/) defines the format.
+The mise implementation is in
+[`src/backend/packslip.rs`](https://github.com/jdx/mise/blob/main/src/backend/packslip.rs).
