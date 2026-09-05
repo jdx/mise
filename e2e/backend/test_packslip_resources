@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+
+# What a consumer does with the resources a packslip declares, against two
+# linked installs. Signing, discovery, and downloading are test_packslip's;
+# these fixtures start after verification, with the statement and the
+# resources already in the install.
+
+export MISE_EXPERIMENTAL=1
+# These installs are linked, not downloaded, and the project they name has no
+# releases to discover: discovery and verification are test_packslip's. Offline
+# keeps resolution to what is installed here.
+export MISE_OFFLINE=1
+
+python3 <<'PY'
+import json
+from pathlib import Path
+
+PROBE = '''#!/usr/bin/env python3
+import pathlib, sys, time
+root = pathlib.Path(__file__).resolve().parent.parent
+shell = sys.argv[1]
+with (root / ("calls-" + shell)).open("a") as log:
+    log.write("call\\n")
+# Long enough that shells completing at once overlap on the lock below.
+time.sleep(0.2)
+if shell == "fish":
+    print("complete -c probe -f -a 'version" + root.name + "'")
+elif shell == "powershell":
+    print("Register-ArgumentCompleter -Native -CommandName probe -ScriptBlock {")
+    print("  param($wordToComplete, $commandAst, $cursorPosition)")
+    text = "version" + root.name
+    print("  [System.Management.Automation.CompletionResult]::new('%s', '%s', 'ParameterValue', '%s')" % (text, text, text))
+    print("}")
+else:
+    print('name "probe"')
+    print("# " + shell + " " + root.name)
+'''
+
+RESOURCES = [
+    {"kind": "skill", "name": "probe", "archive": "skill"},
+    # An empty shipped script is no completion, and the sources below it
+    # are still there to be tried.
+    {"kind": "completion", "bin": "probe", "shell": "fish", "archive": "empty.fish"},
+    {"kind": "completion", "bin": "probe", "shells": ["fish", "powershell"], "exec": ["probe", "{shell}"]},
+    {"kind": "cli-spec", "bin": "probe", "format": "usage", "exec": ["probe", "{shell}"]},
+]
+
+for version in ("1.0.0", "2.0.0"):
+    root = Path(version)
+    (root / "bin").mkdir(parents=True)
+    (root / "skill").mkdir()
+    (root / "skill/SKILL.md").write_text("# probe %s\n" % version)
+    (root / "empty.fish").write_text("  \n")
+    program = root / "bin/probe"
+    program.write_text(PROBE)
+    program.chmod(0o755)
+    statement = {
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": [{"name": "probe.tar.gz", "digest": {"sha256": "a" * 64}}],
+        "predicateType": "https://packslip.dev/release/v1",
+        "predicate": {
+            "project": "github.com/test/probe",
+            "version": version,
+            "published_at": "2026-09-01T00:00:00Z",
+            "artifacts": [{
+                "name": "probe.tar.gz", "size": 1, "format": "tar.gz",
+                "bin": ["bin/probe"],
+            }],
+            "resources": RESOURCES,
+            "identity": {
+                "scheme": "sigstore-oidc",
+                "key_id": "https://github.com/test/probe/.github/workflows/release.yml@refs/tags/v" + version,
+                "issuer": "https://token.actions.githubusercontent.com",
+            },
+        },
+    }
+    (root / ".mise-packslip.json").write_text(json.dumps(statement))
+
+# An install whose only completion is a file it ships, for the read-only
+# system and shared installs mise is expected to serve completions from.
+static = Path("3.0.0")
+(static / "bin").mkdir(parents=True)
+(static / "_probe.bash").write_text("complete -W 'shipped' probe\n")
+# Nothing should run it: the completion this install ships is a file.
+program = static / "bin/probe"
+program.write_text("#!/usr/bin/env sh\nexit 1\n")
+program.chmod(0o755)
+(static / ".mise-packslip.json").write_text(json.dumps({
+    "_type": "https://in-toto.io/Statement/v1",
+    "subject": [{"name": "probe.tar.gz", "digest": {"sha256": "a" * 64}}],
+    "predicateType": "https://packslip.dev/release/v1",
+    "predicate": {
+        "project": "github.com/test/probe",
+        "version": "3.0.0",
+        "published_at": "2026-09-01T00:00:00Z",
+        "artifacts": [{
+            "name": "probe.tar.gz", "size": 1, "format": "tar.gz", "bin": ["bin/probe"],
+        }],
+        "resources": [
+            {"kind": "completion", "bin": "probe", "shell": "bash", "archive": "_probe.bash"},
+        ],
+        "identity": {
+            "scheme": "sigstore-oidc",
+            "key_id": "https://github.com/test/probe/.github/workflows/release.yml@refs/tags/v3.0.0",
+            "issuer": "https://token.actions.githubusercontent.com",
+        },
+    },
+}))
+PY
+
+for version in 1.0.0 2.0.0 3.0.0; do
+  mise link "packslip:test/probe@$version" "$PWD/$version"
+  mkdir "project-$version"
+  printf '[tools]\n"packslip:test/probe" = "%s"\n' "$version" >"project-$version/mise.toml"
+done
+
+# A stand-in for the usage command, which turns a CLI spec into a script.
+# It says which spec file it read, so the assertions can name it.
+cat >"$HOME/bin/usage" <<'EOF'
+#!/usr/bin/env sh
+printf '# spec: %s\n' "$6"
+cat "$6"
+EOF
+chmod +x "$HOME/bin/usage"
+
+cd project-1.0.0
+
+# What an interrupted generation leaves is not a completion, and the shells
+# asking at once run the tool once between them rather than once each.
+cache="../1.0.0/.mise-packslip/completions/probe"
+mkdir -p "$cache"
+printf ' \n' >"$cache/fish.completion"
+for i in 1 2 3 4; do
+  mise completion fish --tool probe >"completion-$i" &
+done
+wait
+for i in 1 2 3 4; do
+  assert_contains "cat completion-$i" "version1.0.0"
+done
+assert "wc -l <../1.0.0/calls-fish | tr -d ' '" "1"
+
+# A spec generated for one shell is not the spec for another, and neither
+# generation reads the other's half-written file.
+mise completion bash --tool probe >bash.completion &
+mise completion zsh --tool probe >zsh.completion
+wait
+assert_contains "cat bash.completion" "specs/bash/probe.usage"
+assert_contains "cat zsh.completion" "specs/zsh/probe.usage"
+assert_contains "cat ../1.0.0/.mise-packslip/specs/bash/probe.usage" "# bash 1.0.0"
+assert_contains "cat ../1.0.0/.mise-packslip/specs/zsh/probe.usage" "# zsh 1.0.0"
+
+# The skill the release ships is the skill, and the link follows the
+# version that is active here.
+assert_contains "mise skills ls" "probe"
+assert_contains "mise skills ls --json" "1.0.0"
+mise skills sync --dir ../skills
+assert_contains "cat ../skills/probe/SKILL.md" "# probe 1.0.0"
+
+if command -v fish >/dev/null; then
+  mise completion fish --tool probe --install
+  stub="$HOME/.config/fish/completions/probe.fish"
+  assert_contains "cat $stub" "complete -c 'probe'"
+  rm -f ../2.0.0/calls-fish
+  # One shell, one sourced stub, two directories: the stub is loaded once
+  # and each completion follows the version that is active where it happens.
+  fish --no-config -c "
+    source $stub
+    test ! -e ../2.0.0/calls-fish; or exit 1
+    complete -C 'probe '
+    cd ../project-2.0.0
+    complete -C 'probe '
+  " >fish.completions
+  assert_contains "cat fish.completions" "version1.0.0"
+  assert_contains "cat fish.completions" "version2.0.0"
+fi
+
+if command -v pwsh >/dev/null; then
+  mise completion powershell --tool probe --install 2>pwsh.install
+  stub="$(sed -n 's/^installing to //p' pwsh.install)"
+  rm -f ../2.0.0/calls-powershell
+  # shellcheck disable=SC2016 # the $ names below are PowerShell's, not bash's
+  PACKSLIP_STUB="$stub" pwsh -NoProfile -NonInteractive -Command '
+    . $env:PACKSLIP_STUB
+    if (Test-Path ../2.0.0/calls-powershell) { throw "the stub ran the tool when it was loaded" }
+    (TabExpansion2 "probe " 6).CompletionMatches.CompletionText
+    Set-Location ../project-2.0.0
+    (TabExpansion2 "probe " 6).CompletionMatches.CompletionText
+  ' >pwsh.completions
+  assert_contains "cat pwsh.completions" "version1.0.0"
+  assert_contains "cat pwsh.completions" "version2.0.0"
+fi
+
+# A version switch is a different install, with its own cache and skill.
+cd ../project-2.0.0
+assert_contains "mise completion fish --tool probe" "version2.0.0"
+mise skills sync --dir ../skills
+assert_contains "cat ../skills/probe/SKILL.md" "# probe 2.0.0"
+cd ../project-1.0.0
+mise skills sync --dir ../skills
+assert_contains "cat ../skills/probe/SKILL.md" "# probe 1.0.0"
+
+# A completion the release ships is read, not generated, so it asks nothing
+# of the install: no lock, no directory, and no write. That is what lets a
+# system or shared install, which is read-only, complete at all.
+cd ../project-3.0.0
+assert_contains "mise completion bash --tool probe" "complete -W 'shipped' probe"
+assert "test ! -e ../3.0.0/.mise-packslip/completions && echo clean" "clean"
+if [ "$(id -u)" != 0 ]; then
+  chmod -R a-w ../3.0.0
+  assert_contains "mise completion bash --tool probe" "complete -W 'shipped' probe"
+  chmod -R u+w ../3.0.0
+fi

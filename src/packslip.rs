@@ -87,13 +87,17 @@ pub(crate) fn resource_dir(install_path: &Path, resource: &Resource) -> Option<P
     let fetched = |sub: &str, rel: &str| {
         Some(install_path.join(RESOURCES_DIR).join(sub).join(rel)).filter(|p| p.is_dir())
     };
-    match resource.source()? {
+    let dir = match resource.source()? {
         ResourceSource::Archive => {
             locate_dir_in_install(install_path, resource.archive.as_deref()?)
         }
         ResourceSource::Asset | ResourceSource::Exec => fetched("skills", skill_name(resource)?),
         ResourceSource::Repo => fetched("repo", repo_path(resource)?),
-    }
+    }?;
+    // A directory without SKILL.md is not a skill. Fetching already treats
+    // one as unfinished, and a directory an interrupted attempt left behind
+    // must not pass for the skill and hide the sources below it.
+    dir.join("SKILL.md").is_file().then_some(dir)
 }
 
 /// The `owner/repo` of a release built from a github.com repository.
@@ -176,7 +180,19 @@ pub(crate) async fn fetch_files(
         Some(ResourceSource::Exec) => 3,
         None => 4,
     });
-    for resource in resources {
+    for (index, resource) in resources.iter().copied().enumerate() {
+        // Sources are alternatives, not a set to collect: once a higher
+        // source has the skill on disk, the ones below it are not fetched
+        // and, in particular, a shipped skill never runs the tool.
+        if resource.kind == "skill"
+            && resources[..index].iter().any(|higher| {
+                higher.kind == "skill"
+                    && skill_name(higher) == skill_name(resource)
+                    && resource_dir(&tv.install_path(), higher).is_some()
+            })
+        {
+            continue;
+        }
         // An entry scoped to another platform is not for this install.
         if let Some(artifact) = artifact
             && !resource_fits(resource, artifact)
@@ -936,12 +952,21 @@ pub(crate) fn completion_sources(
         }),
         artifact,
     );
-    let spec_entries: Vec<_> = selected
+    let mut spec_entries: Vec<_> = selected
         .iter()
         .copied()
         .filter(describes)
         .filter(|r| r.kind == "cli-spec")
         .collect();
+    // The specification ranks the static sources of a spec as it ranks a
+    // shipped script's: the archive the release signed, then a signed asset,
+    // then the source repository. Document order breaks ties within a rank.
+    spec_entries.sort_by_key(|r| match r.source() {
+        Some(ResourceSource::Archive) => 0,
+        Some(ResourceSource::Asset) => 1,
+        Some(ResourceSource::Repo) => 2,
+        _ => 3,
+    });
     let completions = || completion_entries.iter().copied();
     let for_shell =
         |r: &Resource| r.shell.as_deref() == Some(shell) || r.shells.iter().any(|s| s == shell);
@@ -1170,15 +1195,29 @@ pub(crate) async fn completion_script(
         )
     })?;
     let cache = completion_cache_path(&install_path, bin, shell)?;
-    if let Ok(cached) = file::read_to_string(&cache) {
-        return Ok(cached);
-    }
+    // Nothing below happens until a source that runs the tool comes up. A
+    // system or shared install is read-only, and a completion that is simply
+    // a file in it has to stay readable there: taking the lock first would
+    // ask to write to the install before reading anything from it.
+    // `None` until the first source that runs the tool, and `Some(None)`
+    // where the install cannot be written to and so cannot be locked.
+    let mut generating: Option<Option<fslock::LockFile>> = None;
     let mut skipped = Vec::new();
     for source in sources {
         let ran_tool = matches!(
             source,
             CompletionSource::Exec(..) | CompletionSource::SpecExec { .. }
         );
+        if ran_tool && generating.is_none() {
+            generating = Some(lock_generation(&cache).await);
+            // An empty entry is what an interrupted generation leaves behind,
+            // not a completion; reading it back would hide every source below.
+            if let Ok(cached) = file::read_to_string(&cache)
+                && !cached.trim().is_empty()
+            {
+                return Ok(cached);
+            }
+        }
         let attempt = match source {
             CompletionSource::File(path) => file::read_to_string(&path),
             CompletionSource::Spec { format, bin, path } => {
@@ -1200,16 +1239,24 @@ pub(crate) async fn completion_script(
                         bail!("cli-spec entry names {bin:?} in format {format:?}");
                     }
                     let spec = run_tool(config, &backend, &tv, &argv, &env).await?;
-                    let dir = install_path.join(RESOURCES_DIR).join("specs");
+                    // A spec generated for one shell, as `{shell}` in the
+                    // command allows, is not the spec for another, and two
+                    // shells generating at once must not read each other's
+                    // half-written file. `shell` is a plain file name: the
+                    // cache path above refuses anything else.
+                    let dir = install_path.join(RESOURCES_DIR).join("specs").join(shell);
                     file::create_dir_all(&dir)?;
                     let path = dir.join(format!("{bin}.{format}"));
-                    file::write(&path, &spec)?;
+                    file::write_atomic(&path, &spec)?;
                     derive_from_spec(config, ts, &format, &bin, &path, shell).await
                 }
                 .await
             }
         };
         match attempt {
+            Ok(script) if script.trim().is_empty() => {
+                skipped.push("nothing was printed".to_string())
+            }
             Ok(script) => {
                 if ran_tool
                     && let Some(dir) = cache.parent()
@@ -1229,6 +1276,38 @@ pub(crate) async fn completion_script(
     )
 }
 
+/// Take turns generating, so that of the shells completing one command at
+/// once the first runs the tool and the rest read what it cached. The lock
+/// lives beside the cache, shared by every process that shares the install,
+/// and is taken off the runtime's threads.
+///
+/// A read-only install cannot be locked and does not need to be: nothing
+/// will be cached there either, so each shell generates its own script
+/// rather than being refused a completion.
+async fn lock_generation(cache: &Path) -> Option<fslock::LockFile> {
+    let lock_path = cache.with_extension("lock");
+    let taken = tokio::task::spawn_blocking(move || -> Result<fslock::LockFile> {
+        if let Some(dir) = lock_path.parent() {
+            file::create_dir_all(dir)?;
+        }
+        let mut lock = fslock::LockFile::open(&lock_path)?;
+        lock.lock()?;
+        Ok(lock)
+    })
+    .await;
+    match taken {
+        Ok(Ok(lock)) => Some(lock),
+        Ok(Err(err)) => {
+            debug!("generating a completion without a lock: {err}");
+            None
+        }
+        Err(err) => {
+            debug!("generating a completion without a lock: {err}");
+            None
+        }
+    }
+}
+
 /// A stub the shell loads by name, which asks mise for the real script at
 /// completion time, so it follows whichever version of the tool is active.
 /// It carries the marker usage's installer looks for, so re-installing
@@ -1237,7 +1316,9 @@ pub(crate) async fn completion_script(
 /// In zsh and bash the vendor's script replaces the stub while it completes
 /// and the stub is put back afterwards, so the next completion asks mise
 /// again and a version switch in another directory is followed on the next
-/// tab. fish and PowerShell load the script once per shell session.
+/// tab. fish reads the script in a child shell of its own, and PowerShell
+/// puts this completer back after delegating, for the same reason: neither
+/// keeps the registrations of a version that is no longer the active one.
 pub(crate) fn stub(tool: &str, shell: usage_rs::complete::Shell) -> Result<String> {
     use usage_rs::complete::Shell;
     let note = format!("mise completes {tool} from the packslip of whichever version is active");
@@ -1326,10 +1407,51 @@ complete -F {func} '{tool}'
             )
         }
         Shell::Fish => format!(
-            "# {note}.\n# {by}\ncommand mise completion fish --tool '{tool}' 2>/dev/null | source\n"
+            r#"# {note}.
+# {by}
+# The vendor's script is read in a child shell, once per completion, so its
+# registrations and helper functions never outlive the version they came
+# from and a version switch in another directory is followed at the next tab.
+function {loader}
+    set -l __mise_fish (status fish-path)
+    set -l __mise_line (commandline --current-process --cut-at-cursor | string collect --allow-empty)
+    # An empty completion path keeps the child from autoloading this stub.
+    $__mise_fish --no-config -c '
+        set fish_complete_path
+        command mise completion fish --tool $argv[1] 2>/dev/null | source
+        complete --do-complete "$argv[2]"
+    ' -- '{tool}' $__mise_line
+end
+complete -c '{tool}' -f -a '({loader})'
+"#
         ),
         Shell::PowerShell => format!(
-            "# {note}.\n# {by}\n$__mise_script = @(& mise completion powershell --tool '{tool}' 2>$null) -join \"`n\"\nif ($__mise_script) {{ Invoke-Expression $__mise_script }}\n"
+            r#"# {note}.
+# {by}
+# The vendor's script registers its own completer, which handles this
+# completion; this one is put back afterwards, so the next completion asks
+# mise again and a version switch in another directory is followed.
+function global:{loader} {{
+    param($wordToComplete, $commandAst, $cursorPosition)
+    # A script that registers nothing for this command would otherwise reach
+    # this completer again through TabExpansion2, without end.
+    if ($global:{loader}_busy) {{ return }}
+    $global:{loader}_busy = $true
+    try {{
+        $__mise_script = @(& mise completion powershell --tool '{tool}' 2>$null) -join "`n"
+        if ($__mise_script) {{
+            Invoke-Expression $__mise_script
+            $__mise_cursor = $cursorPosition - $commandAst.Extent.StartOffset
+            $__mise_line = $commandAst.Extent.Text.PadRight([Math]::Max($commandAst.Extent.Text.Length, $__mise_cursor))
+            (TabExpansion2 -inputScript $__mise_line -cursorColumn $__mise_cursor).CompletionMatches
+        }}
+    }} finally {{
+        Register-ArgumentCompleter -Native -CommandName '{tool}' -ScriptBlock $function:{loader}
+        $global:{loader}_busy = $false
+    }}
+}}
+Register-ArgumentCompleter -Native -CommandName '{tool}' -ScriptBlock $function:{loader}
+"#
         ),
         _ => bail!(
             "{} loads completions eagerly, so mise cannot leave it a stub; redirect `mise completion {} --tool {tool}` yourself",
@@ -1538,6 +1660,49 @@ mod tests {
     }
 
     #[test]
+    fn static_specs_follow_source_priority_then_document_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for rel in [
+            "first.kdl",
+            "second.kdl",
+            &format!("{RESOURCES_DIR}/repo/t.kdl"),
+            &format!("{RESOURCES_DIR}/assets/t-skill.tar.gz"),
+        ] {
+            let path = root.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "name t").unwrap();
+        }
+        let s = statement_with(
+            r#"[
+            {"kind":"cli-spec","bin":"t","format":"usage","repo":"t.kdl"},
+            {"kind":"cli-spec","bin":"t","format":"usage","asset":"t-skill.tar.gz"},
+            {"kind":"cli-spec","bin":"t","format":"usage","archive":"first.kdl"},
+            {"kind":"cli-spec","bin":"t","format":"usage","archive":"second.kdl"}
+        ]"#,
+        );
+        let paths: Vec<_> =
+            completion_sources(&s, root, "fish", Some(&s.predicate.artifacts[0]), Some("t"))
+                .into_iter()
+                .map(|source| match source {
+                    CompletionSource::Spec { path, .. } => path,
+                    other => panic!("unexpected source {other:?}"),
+                })
+                .collect();
+        assert_eq!(
+            paths,
+            [
+                "first.kdl",
+                "second.kdl",
+                &format!("{RESOURCES_DIR}/assets/t-skill.tar.gz"),
+                &format!("{RESOURCES_DIR}/repo/t.kdl"),
+            ]
+            .map(|rel| root.join(rel)),
+            "the release's own archive first, the source repository last"
+        );
+    }
+
+    #[test]
     fn a_declared_completion_is_not_an_absent_one() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -1560,6 +1725,31 @@ mod tests {
         assert!(!declares_completion(&s, "fish"));
         let none = statement_with(r#"[{"kind":"skill","name":"t","asset":"t-skill.tar.gz"}]"#);
         assert!(!declares_completion(&none, "zsh"));
+    }
+
+    #[test]
+    fn an_unfinished_skill_directory_does_not_hide_the_source_below_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let s = statement_with(
+            r#"[
+            {"kind":"skill","name":"t","archive":"empty"},
+            {"kind":"skill","name":"t","repo":"skills/t"},
+            {"kind":"skill","name":"other","asset":"t-skill.tar.gz"}
+        ]"#,
+        );
+        // What an interrupted unpack leaves: the directory, and no SKILL.md.
+        std::fs::create_dir_all(root.join("empty")).unwrap();
+        let fallback = root.join(RESOURCES_DIR).join("repo/skills/t");
+        std::fs::create_dir_all(&fallback).unwrap();
+        assert!(
+            skills_of(&s, root, "tool", "1", Some(&s.predicate.artifacts[0])).is_empty(),
+            "neither directory holds a skill yet"
+        );
+        std::fs::write(fallback.join("SKILL.md"), "# t").unwrap();
+        let skills = skills_of(&s, root, "tool", "1", Some(&s.predicate.artifacts[0]));
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].path, fallback);
     }
 
     #[test]
@@ -1662,6 +1852,48 @@ mod tests {
     }
 
     #[test]
+    fn a_shipped_skill_never_shadows_a_scoped_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // The unscoped source is the one on disk, so it would win a race the
+        // fetch loop's "a higher source already has it" skip could start.
+        let shipped = root.join("share/skills/t");
+        std::fs::create_dir_all(&shipped).unwrap();
+        std::fs::write(shipped.join("SKILL.md"), "# shipped").unwrap();
+        let s = statement_with(
+            r#"[
+            {"kind":"skill","name":"t","archive":"top/share/skills/t"},
+            {"kind":"skill","name":"t","os":"linux","asset":"t-skill.tar.gz"}
+        ]"#,
+        );
+        let linux = s.predicate.artifacts[0].clone();
+        // Fetching and reading agree because both narrow to the most specific
+        // entry per skill name first: the unscoped entry is not a "higher
+        // source" for the scoped one, it is a different platform's answer to
+        // the same question and is gone before either looks.
+        let selected: Vec<_> = selected_resources(&s, Some(&linux))
+            .into_iter()
+            .map(|r| r.asset.as_deref().or(r.archive.as_deref()))
+            .collect();
+        assert_eq!(selected, [Some("t-skill.tar.gz")]);
+        assert!(
+            skills_of(&s, root, "tool", "1", Some(&linux)).is_empty(),
+            "the scoped skill is the skill, and it is not on disk yet"
+        );
+        // With nothing scoped fitting, the shipped one applies as it always did.
+        let mut windows = linux.clone();
+        windows.os = Some("windows".into());
+        windows.libc = None;
+        assert_eq!(
+            skills_of(&s, root, "tool", "1", Some(&windows))
+                .iter()
+                .map(|s| s.path.clone())
+                .collect::<Vec<_>>(),
+            [shipped]
+        );
+    }
+
+    #[test]
     fn specs_rank_by_specificity_within_one_identity() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -1743,11 +1975,16 @@ mod tests {
     fn skills_are_found_where_the_install_holds_them() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        std::fs::create_dir_all(root.join("share/skills/t")).unwrap();
-        std::fs::create_dir_all(root.join("share/skills/here")).unwrap();
-        std::fs::create_dir_all(root.join("share/skills/elsewhere")).unwrap();
-        std::fs::create_dir_all(root.join(RESOURCES_DIR).join("skills/packed")).unwrap();
-        std::fs::create_dir_all(root.join(RESOURCES_DIR).join("repo/skills/fromrepo")).unwrap();
+        for rel in [
+            "share/skills/t",
+            "share/skills/here",
+            "share/skills/elsewhere",
+            &format!("{RESOURCES_DIR}/skills/packed"),
+            &format!("{RESOURCES_DIR}/repo/skills/fromrepo"),
+        ] {
+            std::fs::create_dir_all(root.join(rel)).unwrap();
+            std::fs::write(root.join(rel).join("SKILL.md"), "# skill").unwrap();
+        }
         let s = statement_with(
             r#"[
             {"kind":"skill","name":"t","archive":"top/share/skills/t"},
@@ -1963,9 +2200,10 @@ mod tests {
             let stub = stub("rg", shell).unwrap();
             assert!(stub.contains("@generated by usage"), "{stub}");
             assert!(
-                stub.contains(&format!("mise completion {} --tool 'rg'", shell.as_str())),
+                stub.contains(&format!("mise completion {} --tool", shell.as_str())),
                 "{stub}"
             );
+            assert!(stub.contains("'rg'"), "the stub names the tool: {stub}");
         }
         let zsh = stub("rg", Shell::Zsh).unwrap();
         assert!(zsh.starts_with("#compdef rg\n"), "{zsh}");
@@ -1975,6 +2213,25 @@ mod tests {
         );
         let pwsh = stub("rg", Shell::PowerShell).unwrap();
         assert!(pwsh.contains("if ($__mise_script)"), "{pwsh}");
+        assert!(
+            pwsh.contains("if ($global:__mise_load_rg_busy) { return }"),
+            "a script registering nothing must not recurse: {pwsh}"
+        );
+        assert!(
+            pwsh.matches("Register-ArgumentCompleter -Native -CommandName 'rg'")
+                .count()
+                == 2,
+            "registered once, and put back after delegating: {pwsh}"
+        );
+        let fish = stub("rg", Shell::Fish).unwrap();
+        assert!(
+            fish.contains("complete -c 'rg' -f -a '(__mise_load_rg)'"),
+            "asked for at completion time, not sourced at load: {fish}"
+        );
+        assert!(
+            fish.contains("set fish_complete_path"),
+            "the child cannot autoload this stub: {fish}"
+        );
         assert!(
             zsh.contains("compstate[nmatches]"),
             "a script that completes on its own is not called again: {zsh}"
