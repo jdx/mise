@@ -650,18 +650,6 @@ fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Nearest ancestor of `path` (inclusive) that is the root of a git checkout,
-/// i.e. holds a `.git` directory (main checkout) or `.git` file (linked
-/// worktree, submodule). Filesystem-only; never runs git.
-pub(crate) fn root_of(path: &Path) -> Option<PathBuf> {
-    path.ancestors()
-        .find(|dir| {
-            let dotgit = dir.join(".git");
-            dotgit.is_dir() || dotgit.is_file()
-        })
-        .map(Path::to_path_buf)
-}
-
 /// A git binary mise can run unattended for its own plumbing, or None.
 ///
 /// On macOS `/usr/bin/git` is a shim that opens the Xcode Command Line Tools
@@ -1454,17 +1442,5 @@ mod plumbing_tests {
             ]))
             .unwrap();
         assert!(!global.status.success() || global.stdout.is_empty());
-    }
-
-    #[test]
-    fn root_of_finds_checkout_roots() {
-        let tmp = tempfile::tempdir().unwrap();
-        let nested = tmp.path().join("a/b/c");
-        std::fs::create_dir_all(&nested).unwrap();
-        assert_eq!(root_of(&nested), None);
-        std::fs::create_dir_all(tmp.path().join("a/.git")).unwrap();
-        assert_eq!(root_of(&nested).unwrap(), tmp.path().join("a"));
-        std::fs::write(tmp.path().join("a/b/.git"), "gitdir: elsewhere").unwrap();
-        assert_eq!(root_of(&nested).unwrap(), tmp.path().join("a/b"));
     }
 }

@@ -140,9 +140,9 @@ preflight prevents a missing input from leaving a partially provisioned host.
 Every mutating run — the full `mise bootstrap`, each `mise bootstrap <part>
 apply`, and the commands that change dotfiles or bootstrap config in place
 (`dotfiles add`, `unapply`, `edit`, `packages use`, `import`, brew `tap`) —
-records a [generation](/bootstrap/generations.html): a snapshot of the config
-directory and dotfiles root before and after, plus a journal of what changed.
-Dry runs record nothing.
+records a pair of [history checkpoints](/history.html): the tracked files
+before and after the run, plus a journal of what the run changed. Dry runs
+record nothing.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
 `accounts`, `plugins`, `packages`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`,
@@ -347,14 +347,15 @@ mise bootstrap firewall status
 mise bootstrap user status
 ```
 
-Use `mise bootstrap generations` to see the machine states bootstrap has
-recorded — one per mutating run, with a snapshot of the config directory and
-dotfiles root before and after. See [Generations](/bootstrap/generations.html).
+Use `mise history` to see the checkpoints bootstrap has recorded — a pair per
+mutating run, with the tracked files before and after — and
+`mise bootstrap generations` for the operations alone. See
+[History](/history.html).
 
 ```sh
+mise history
+mise history show latest
 mise bootstrap generations
-mise bootstrap generations show latest
-mise bootstrap generations show 12 --files
 mise bootstrap generations diff 11 12
 ```
 

@@ -84,9 +84,9 @@ Describe 'dotfiles' {
         Test-Path $script:Target | Should -BeFalse
     }
 
-    It 'records a bootstrap generation for an apply' {
+    It 'records a history checkpoint pair for an apply' {
         # The previous test left the target unapplied, so this apply changes something and
-        # must leave a generation behind; a no-op apply would record nothing.
+        # must leave a pair of checkpoints behind; a no-op apply would record nothing.
         mise bootstrap dotfiles apply 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0
 
@@ -95,12 +95,18 @@ Describe 'dotfiles' {
         $generations = $json | ConvertFrom-Json
         @($generations).Count | Should -BeGreaterOrEqual 1
         $latest = @($generations)[0]
-        $latest.status | Should -Be 'completed'
-        $latest.command | Should -BeLike 'bootstrap dotfiles apply*'
-        Test-Path (Join-Path $env:MISE_STATE_DIR 'bootstrap\generations') | Should -BeTrue
+        $latest.operation.status | Should -Be 'completed'
+        $latest.operation.command | Should -BeLike 'bootstrap dotfiles apply*'
+        $latest.trigger | Should -Be 'bootstrap'
+        Test-Path (Join-Path $env:MISE_STATE_DIR 'history\repo.git') | Should -BeTrue
 
         $out = mise bootstrap generations show latest 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
         $out | Should -BeLike '*Generation*completed*'
+
+        $history = mise history --json 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $checkpoints = $history | ConvertFrom-Json
+        @($checkpoints)[1].trigger | Should -Be 'bootstrap-before'
     }
 }

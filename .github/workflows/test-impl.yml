@@ -155,6 +155,9 @@ jobs:
       # Generation snapshots shell out to git and need the Xcode Command
       # Line Tools guard exercised on a real macOS runner.
       - run: mise run test:e2e e2e/cli/test_bootstrap_generations
+      - run: mise run test:e2e e2e/cli/test_history
+      - run: mise run test:e2e e2e/cli/test_dotfiles_track
+      - run: mise run test:e2e e2e/cli/test_history_policies
 
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}

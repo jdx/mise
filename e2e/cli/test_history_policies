@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Saved versus live: a manual-save file is carried forward from its promoted
+# version by every automatic and protective capture, and only an explicit
+# save (or an operation naming it) promotes what is on disk.
+
+require_cmd git
+
+repo="$MISE_STATE_DIR/history/repo.git"
+count="mise history --json -n 0 | jq length"
+# the content of a path inside a checkpoint's snapshot (a script, since
+# assertions run in a subshell where shell functions are not available)
+snapshot_of="$PWD/snapshot_of"
+cat <<EOF2 >"$snapshot_of"
+#!/usr/bin/env bash
+git --git-dir="$repo" show "refs/checkpoints/\$(mise history show "\$1" --json | jq -r .uuid):snapshot/home/\$2"
+EOF2
+chmod +x "$snapshot_of"
+
+mkdir -p ~/.config/app "$MISE_CONFIG_DIR/templates"
+echo v1 >~/.config/app/state.json
+printf 'name = "{{ vars.name }}"\n' >"$MISE_CONFIG_DIR/templates/gitconfig.tera"
+cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
+[vars]
+name = "test"
+[dotfiles]
+"~/.gitconfig" = { source = "templates/gitconfig.tera", mode = "template" }
+EOF2
+
+# tracking with --no-autosave promotes the baseline
+assert_succeed "mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave"
+assert "grep -c 'autosave = false' '$MISE_CONFIG_DIR/config.toml'" "1"
+assert "$count" "1"
+assert "mise history show 1 --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.config/app/state.json\") | \"\\(.state) \\(.autosave)\"'" "live false"
+assert_succeed "git --git-dir='$repo' rev-parse --verify -q refs/promoted"
+assert "jq -r '.[\"~/.config/app/state.json\"].trigger' '$MISE_STATE_DIR/history/index/saved.json'" "baseline"
+
+# a rewrite of the live file survives unrelated saves unpromoted
+echo v2-live >~/.config/app/state.json
+echo 'extra = 1' >>"$MISE_CONFIG_DIR/config.toml"
+assert_succeed "mise history save"
+assert "mise history --json | jq -r '.[0].description'" "edited mise/config.toml"
+assert "$snapshot_of latest .config/app/state.json" "v1"
+assert "mise history show latest --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.config/app/state.json\") | .state'" "saved"
+assert_contains "mise history diff --patch --path ~/.config/app/state.json" "+v2-live"
+assert "git --git-dir='$repo' rev-list --count refs/promoted" "1"
+
+# an explicit save of the path promotes it
+assert_succeed "mise history save ~/.config/app/state.json"
+assert "mise history --json | jq -r '.[0].description'" "edited app/state.json"
+assert "$snapshot_of latest .config/app/state.json" "v2-live"
+assert "mise history show latest --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.config/app/state.json\") | .state'" "live"
+assert "git --git-dir='$repo' rev-list --count refs/promoted" "2"
+assert "jq -r '.[\"~/.config/app/state.json\"] | \"\\(.trigger) \\(.checkpoint | length)\"' '$MISE_STATE_DIR/history/index/saved.json'" "save 36"
+assert_fail "mise history save ~/.untracked" "is not tracked"
+
+# a protective capture records the live contents but never promotes them; the
+# outcome carries the saved version forward, and a no-op run still records nothing
+echo v3-live >~/.config/app/state.json
+cat <<'EOF2' >>"$MISE_CONFIG_DIR/config.toml"
+"~/.x" = { content = "x\n" }
+EOF2
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "mise history --json | jq -r '.[1].trigger'" "bootstrap-before"
+assert "$snapshot_of 'latest~1' .config/app/state.json" "v3-live"
+assert "mise history show 'latest~1' --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.config/app/state.json\") | .state'" "protective"
+assert "$snapshot_of latest .config/app/state.json" "v2-live"
+assert "git --git-dir='$repo' rev-list --count refs/promoted" "2"
+n="$(eval "$count")"
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "$count" "$n"
+
+# the saved index is derived from the promotion chain
+rm "$MISE_STATE_DIR/history/index/saved.json"
+assert_succeed "mise history save --description rebuild"
+assert "jq -r '.[\"~/.config/app/state.json\"].trigger' '$MISE_STATE_DIR/history/index/saved.json'" "save"
+
+# a template's rendered output is tracked locally and never shared
+assert "mise history show latest --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.gitconfig\") | \"\\(.mode) \\(.share) \\(.backup)\"'" "template false false"
+assert_contains "mise history show latest --files" "~/.gitconfig"

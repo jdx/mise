@@ -3,7 +3,7 @@ use eyre::Result;
 use super::driver::{self, Action, DriverOpts};
 use crate::config::Config;
 use crate::system;
-use crate::system::generations::GenerationScope;
+use crate::system::history::OperationScope;
 
 /// Upgrade installed bootstrap packages from `[bootstrap.packages]`
 ///
@@ -40,7 +40,7 @@ pub(crate) struct SystemUpgrade {
 
 impl SystemUpgrade {
     pub(crate) async fn run(self) -> Result<()> {
-        GenerationScope::wrap(
+        OperationScope::wrap(
             "bootstrap packages upgrade",
             "packages",
             self.dry_run,

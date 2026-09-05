@@ -1,0 +1,131 @@
+# History
+
+`mise history` keeps checkpoints of your configuration files: the global mise
+config directory, the dotfiles root, every `[dotfiles]` entry, and any file
+you [track](/dotfiles.html#tracking-files-in-place) where it is. A checkpoint
+is recorded by every mutating bootstrap command (before and after the run)
+and by `mise history save`. From there you can browse what changed, compare
+versions, and find the version of a file you want.
+
+```sh
+mise bootstrap dotfiles track ~/.zshrc ~/.config/hypr   # adopt files where they are
+mise history                                            # newest first
+mise history --path ~/.config/hypr/bindings.lua        # only where that file changed
+mise history diff                                       # what changed by hand since the latest checkpoint
+mise history save --description "before the theme change"
+```
+
+Nothing leaves the machine: checkpoints live under `$MISE_STATE_DIR/history/`,
+readable only by you.
+
+## What a checkpoint records
+
+Every checkpoint carries:
+
+- **The snapshot**: the tracked files as they were, rooted at your home
+  directory (`~/.zshrc`, `~/.config/mise/config.toml`). Symlinks are stored
+  as links, nested git repositories as pointers, and files over 16 MiB,
+  special files, and unreadable paths are listed as omitted with the reason.
+- **The coverage**: which paths were tracked, under which policies, and which
+  were excluded, so a later command can tell a file that was _absent_ from one
+  that was never covered.
+- **What changed** since the previous checkpoint, and a description computed
+  from it (`edited hypr/bindings.lua; added omarchy/hooks/post-theme`).
+  `mise history describe <ref> "…"` replaces the description.
+- **The trigger**: `save`, `baseline` (a newly tracked path), or the two halves
+  of an operation: `bootstrap-before` (the protective checkpoint taken before
+  a bootstrap command changes anything) and `bootstrap` (the outcome, with a
+  journal of every path the run touched and its prior state).
+
+`mise history show <ref>` prints all of it; `--files` lists the snapshot,
+`--json` gives the record.
+
+## Referring to checkpoints
+
+Commands take a numeric id, `latest`, `latest~N`, or a uuid prefix. With
+`--path`, `latest~N` counts only the checkpoints where that path changed, so
+`mise history show latest~1 --path ~/.zshrc` is the state before its most
+recent change however many other checkpoints came in between.
+
+Numeric ids are local handles: they can have gaps (a run that changed nothing
+gives its ids back) and start over if the index is rebuilt from the
+repository. Uuids are stable.
+
+## Comparing
+
+```sh
+mise history diff                        # working tree against the latest checkpoint
+mise history diff 12                     # what checkpoint 12 changed
+mise history diff 11 12 --patch --path ~/.config/hypr
+mise history diff --exit-code            # exit 1 when something differs
+```
+
+## Saving
+
+`mise history save` records a checkpoint now. It fails when nothing could be
+saved — git missing, history disabled, a path that is not tracked — so a
+script or an agent gets a trustworthy answer; `--best-effort` turns that into
+a warning for `set -e` update scripts. Saving again without changes records
+nothing, while a save with `--description`, `--label`, or `--task` always does.
+
+A file tracked with `autosave = false` is a **manual-save** file: automatic
+checkpoints carry its last saved version forward, and only
+`mise history save <path>` (or an operation that names it) promotes what is on
+disk. `mise history diff --path <file>` shows saved against live. Promotions
+are recorded in the repository (`refs/promoted`), never only in an index.
+
+## What is tracked
+
+`mise history paths` lists every entry with its mode, policies, the file that
+declared it, and how many files it covers, followed by exclusions, derived
+symlink targets, private files, and any declaration history could not honour.
+
+- The global config directory and `dotfiles.root` are always tracked.
+- `[dotfiles]` entries with `mode = "track"` are tracked where they are; every
+  other mode enrolls the source it references (and, for `copy`, `template`, and
+  `content`, the destination it produces, for local recovery only).
+- A tracked symlink whose target lies inside your home directory tracks the
+  target too, reported as `derived`.
+- `[history] exclude` globs are never captured; `!glob` re-includes.
+
+### Policies
+
+Each entry carries three policies, set on the `[dotfiles]` entry or with
+`mise bootstrap dotfiles track --no-autosave|--no-share|--no-backup`:
+
+| Policy     | Meaning                                                               |
+| ---------- | --------------------------------------------------------------------- |
+| `autosave` | Save edits automatically (default `true`); `false` = manual-save      |
+| `share`    | Publish the saved version to the shared setup (default `true`)        |
+| `backup`   | Include the file in remote backups (default `true` for tracked files) |
+
+Sharing and backups arrive with a later release; the policies are recorded in
+every checkpoint from the start so nothing needs migrating.
+
+`*.local.toml` files are private by default (`share = false`) wherever they
+are found, and credential stores under the config directory
+(`github_tokens.toml`, `age.txt`, `*.key`, …) are neither shared nor backed
+up. A per-file `[dotfiles]` declaration is the only override, and
+`mise history paths` lists every private file so the choice stays visible.
+
+## Retention
+
+`history.keep.count` (500) caps the number of checkpoints and
+`history.keep.age` (`90d`) their age. Pruning drops the oldest first,
+automatic captures before explicit saves before operation pairs; a pair is
+kept or dropped together, and pinned checkpoints survive regardless. `0`
+disables a cap. Pruned content is freed from the repository.
+
+## Requirements and settings
+
+History needs a `git` binary (on macOS, the Xcode Command Line Tools). Without
+one, `mise history save` fails and bootstrap commands still run, recording
+their journals without content; `mise history status` says so.
+
+| Setting              | Default | Env                       |
+| -------------------- | ------- | ------------------------- |
+| `history.enabled`    | `true`  | `MISE_HISTORY_ENABLED`    |
+| `history.keep.count` | `500`   | `MISE_HISTORY_KEEP_COUNT` |
+| `history.keep.age`   | `90d`   | `MISE_HISTORY_KEEP_AGE`   |
+
+Deleting `$MISE_STATE_DIR/history/` discards everything recorded.

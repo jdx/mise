@@ -51,8 +51,9 @@ impl DotfilesStatus {
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
                 FileState::Differs(reason) => format!("differs ({reason})"),
+                FileState::Tracked => "tracked".to_string(),
             };
-            any_missing |= state != FileState::Applied;
+            any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
                 json_files.push(json!({
                     "target": req.target_raw,
@@ -65,6 +66,7 @@ impl DotfilesStatus {
                         FileState::Missing => "missing",
                         FileState::SourceMissing => "source_missing",
                         FileState::Differs(_) => "differs",
+                        FileState::Tracked => "tracked",
                     },
                 }));
             } else {
@@ -110,8 +112,9 @@ impl DotfilesStatus {
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
                 FileState::Differs(reason) => format!("differs ({reason})"),
+                FileState::Tracked => "tracked".to_string(),
             };
-            any_missing |= state != FileState::Applied;
+            any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
                 json_edits.push(json!({
                     "path": req.path_raw,
@@ -122,6 +125,7 @@ impl DotfilesStatus {
                         FileState::Missing => "missing",
                         FileState::SourceMissing => "source_missing",
                         FileState::Differs(_) => "differs",
+                        FileState::Tracked => "tracked",
                     },
                 }));
             } else {

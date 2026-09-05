@@ -5,19 +5,19 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap/generations.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap/generations.rs)
 
-Inspect recorded bootstrap generations
+Inspect the operations bootstrap recorded
 
-Every mutating bootstrap command records a generation: what ran, a
-snapshot of the global config directory and dotfiles root taken before
-and after the run, the global lockfile, and a journal of what changed.
-Without a subcommand this lists them, newest first.
+Every mutating bootstrap command records a pair of history checkpoints:
+the tracked files before the run and after it, with a journal of what
+the run changed. This lists those operations, newest first; `mise
+history` lists every checkpoint.
 
 ## Flags
 - **`-J --json`** — Output in JSON format
-- **`-n --limit <LIMIT>`** — Show at most this many generations (0 for all)
+- **`-n --limit <LIMIT>`** — Show at most this many operations (0 for all)
 
   **Default:** `20`
-- **`--pending`** — Only list generations whose run did not finish
+- **`--pending`** — Only list operations whose run did not finish
 - **`-h --help`** — Print help
 
 ## Subcommands
