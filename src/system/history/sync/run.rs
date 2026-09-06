@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use serde::{Deserialize, Serialize};
 
 use super::SyncMode;
@@ -104,15 +104,52 @@ pub(crate) fn status_path(state_dir: &Path) -> PathBuf {
     hstore::store_dir_in(state_dir).join("sync.json")
 }
 
-pub(crate) fn read_status(state_dir: &Path) -> SyncStatus {
-    std::fs::read_to_string(status_path(state_dir))
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+pub(crate) fn read_status(state_dir: &Path) -> Result<SyncStatus> {
+    let path = status_path(state_dir);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(SyncStatus::default()),
+        Err(err) => return Err(err).wrap_err_with(|| format!("cannot read sync state {}; repair its permissions or restore it from a backup before syncing", display_path(&path))),
+    };
+    serde_json::from_str(&text).wrap_err_with(|| format!("invalid sync state {}; restore a valid copy before syncing; the existing state has been preserved", display_path(&path)))
 }
 
 pub(crate) fn write_status(state_dir: &Path, status: &SyncStatus) -> Result<()> {
     hstore::write_json(&status_path(state_dir), status)
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    #[test]
+    fn missing_sync_status_is_empty_but_invalid_state_is_preserved() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(read_status(dir.path()).unwrap().uploaded.is_empty());
+        let path = status_path(dir.path());
+        crate::file::create_dir_all(path.parent().unwrap()).unwrap();
+        let invalid = b"{\"resolutions\": broken";
+        std::fs::write(&path, invalid).unwrap();
+        assert!(
+            read_status(dir.path())
+                .unwrap_err()
+                .to_string()
+                .contains("invalid sync state")
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), invalid);
+    }
+
+    #[test]
+    fn unreadable_sync_status_is_not_treated_as_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::file::create_dir_all(status_path(dir.path())).unwrap();
+        assert!(
+            read_status(dir.path())
+                .unwrap_err()
+                .to_string()
+                .contains("cannot read sync state")
+        );
+    }
 }
 
 #[derive(Debug, Default)]
@@ -156,7 +193,7 @@ pub(crate) fn sync(
         .ok_or_else(|| eyre::eyre!("synchronizing requires git"))?;
     let mode = SyncMode::current()?;
     let state_dir = store.state_dir();
-    let mut status = read_status(state_dir);
+    let mut status = read_status(state_dir)?;
     let machine = store.machine().clone();
     let remote = Remote::new(repo, &origin.url);
     let mut outcome = SyncOutcome::default();
@@ -587,7 +624,13 @@ pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -
 /// applied now, so `status` stops asking for one.
 pub(crate) fn bootstrap_completed() {
     let state_dir: &Path = &crate::dirs::STATE;
-    let mut status = read_status(state_dir);
+    let mut status = match read_status(state_dir) {
+        Ok(status) => status,
+        Err(err) => {
+            warn!("history: could not record that the bootstrap ran: {err:#}");
+            return;
+        }
+    };
     if status.declarations_changed {
         status.declarations_changed = false;
         if let Err(err) = write_status(state_dir, &status) {

@@ -806,7 +806,7 @@ recovers a machine's backed-up files; their journals are data only.
             flag "-J --json" help="Output in JSON format"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
-        cmd origin help="Connect, disconnect, or purge the setup repository" effect=read {
+        cmd origin help="Connect, disconnect, or purge the setup repository" effect=destructive {
             long_help #"""
 Connect, disconnect, or purge the setup repository
 
@@ -820,8 +820,8 @@ to `[history.origin]` in the global config; the mode to
 `settings.history.sync`.
 """#
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles origin set https://github.com/you/setup.git\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin set git@github.com:you/setup.git --name laptop --sync manual\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin\u{1b}[22m              # what is connected\n    $ \u{1b}[1mmise bootstrap dotfiles origin --remove\u{1b}[22m\n"
-            flag --remove help="Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)"
-            flag --purge help="Delete this machine's recovery refs from the origin, then disconnect"
+            flag --remove help="Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)" effect=destructive
+            flag --purge help="Delete this machine's recovery refs from the origin, then disconnect" effect=destructive
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
             cmd set help="Connect a setup repository" effect=write {

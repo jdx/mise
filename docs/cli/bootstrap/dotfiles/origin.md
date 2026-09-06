@@ -2,7 +2,7 @@
 # `mise bootstrap dotfiles origin`
 
 - **Usage:** `mise bootstrap dotfiles origin [FLAGS] [SUBCOMMAND]`
-- **Effect:** read-only
+- **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/dotfiles/origin.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/origin.rs)
 
 Connect, disconnect, or purge the setup repository
@@ -18,7 +18,11 @@ to `[history.origin]` in the global config; the mode to
 
 ## Flags
 - **`--remove`** — Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)
+
+  **Effect:** destructive — may delete or irreversibly overwrite
 - **`--purge`** — Delete this machine's recovery refs from the origin, then disconnect
+
+  **Effect:** destructive — may delete or irreversibly overwrite
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
 

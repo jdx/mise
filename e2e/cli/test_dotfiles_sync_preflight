@@ -121,3 +121,12 @@ override="$PWD/config.local.toml"
 echo '' >"$override"
 assert_succeed "MISE_GLOBAL_CONFIG_FILE=$override mise bootstrap dotfiles exclude '~/.noise'"
 assert_contains "cat $override" "~/.noise"
+
+# Damaged status must block sync/pull rather than discard decisions or backups.
+state_file="$B/.local/state/mise/history/sync.json"
+assert_succeed "test -f $state_file"
+printf '{"resolutions": broken' >"$state_file"
+assert_fail "$b bootstrap dotfiles sync 2>&1" "invalid sync state"
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "invalid sync state"
+assert_contains "$b doctor 2>&1 || true" "invalid sync state"
+assert "cat $state_file" '{"resolutions": broken'

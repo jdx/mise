@@ -558,6 +558,10 @@ mod tests {
         assert_eq!(find(&commands, "ls")["effect"], "read");
         assert_eq!(find(&commands, "install")["effect"], "write");
         assert_eq!(find(&commands, "prune")["effect"], "destructive");
+        assert_eq!(
+            find(&commands, "bootstrap dotfiles origin")["effect"],
+            "destructive"
+        );
     }
 
     #[tokio::test]

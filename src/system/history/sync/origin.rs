@@ -257,6 +257,7 @@ async fn set_inner(
             display_path(&config_dir)
         );
     }
+    let mut status = run::read_status(state_dir)?;
     if !confirmed(opts.yes, "Connect this setup repository?")? {
         bail!("not connected");
     }
@@ -267,7 +268,6 @@ async fn set_inner(
         hstore::write_json(&hstore::machine_file_in(state_dir), &machine)?;
     }
     write_config(&opts.url, &opts.branch, opts.mode)?;
-    let mut status = run::read_status(state_dir);
     // another repository or branch starts from a clean slate: the previous
     // one's per-path state, pending changes, and conflicts would read its
     // absence of a file as a deletion
@@ -481,6 +481,9 @@ pub(crate) fn remove() -> Result<()> {
 
 /// Deletes this machine's recovery refs from the origin, then disconnects.
 pub(crate) fn purge(store: &Store, yes: bool) -> Result<()> {
+    let _sync_lock = run::lock(store)?;
+    let state_dir = store.state_dir();
+    let mut status = run::read_status(state_dir)?;
     let origin = run::origin()?;
     let repo = store
         .repo()
@@ -499,8 +502,6 @@ pub(crate) fn purge(store: &Store, yes: bool) -> Result<()> {
         bail!("not purged");
     }
     remote.delete(&refs)?;
-    let state_dir = store.state_dir();
-    let mut status = run::read_status(state_dir);
     status.uploaded.clear();
     run::write_status(state_dir, &status)?;
     info!("history: deleted {} ref(s) from {}", refs.len(), origin.url);

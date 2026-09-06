@@ -45,6 +45,17 @@ impl Roots {
         local: &Path,
         variant: Option<&str>,
     ) -> Option<String> {
+        local.to_str()?;
+        let path = self.unchecked_branch_path(kind, local, variant)?;
+        is_safe_branch_path(&path).then_some(path)
+    }
+
+    fn unchecked_branch_path(
+        &self,
+        kind: EntryKind,
+        local: &Path,
+        variant: Option<&str>,
+    ) -> Option<String> {
         if kind == EntryKind::Output {
             return None;
         }
@@ -205,6 +216,29 @@ mod tests {
             config_dir: PathBuf::from("/home/u/.config/mise"),
             dotfiles_root: PathBuf::from("/home/u/.dotfiles"),
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn publication_rejects_paths_that_cannot_be_located() {
+        let roots = roots();
+        for name in ["notes:2024", "notes\\2024", "line\nbreak"] {
+            for (kind, root) in [
+                (EntryKind::Track, &roots.home),
+                (EntryKind::Source, &roots.dotfiles_root),
+                (EntryKind::Implicit, &roots.config_dir),
+            ] {
+                assert_eq!(roots.branch_path(kind, &root.join(name), None), None);
+            }
+        }
+        assert_eq!(
+            roots.branch_path(
+                EntryKind::Track,
+                &roots.home.join("safe"),
+                Some("bad:variant")
+            ),
+            None
+        );
     }
 
     #[test]

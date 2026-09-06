@@ -20,11 +20,11 @@ pub(crate) struct DotfilesOrigin {
     command: Option<DotfilesOriginCommands>,
 
     /// Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)
-    #[usage(long)]
+    #[usage(long, effect = "destructive")]
     remove: bool,
 
     /// Delete this machine's recovery refs from the origin, then disconnect
-    #[usage(long)]
+    #[usage(long, effect = "destructive")]
     purge: bool,
 
     /// Skip the confirmation prompt

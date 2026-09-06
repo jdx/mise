@@ -59,7 +59,7 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
         .repo()
         .ok_or_else(|| eyre::eyre!("applying requires git"))?;
     let state_dir = store.state_dir();
-    let mut status = run::read_status(state_dir);
+    let mut status = run::read_status(state_dir)?;
     run::refresh(store, tracked, &mut status)?;
     let roots = Roots::current();
     let filter: BTreeSet<PathBuf> = req

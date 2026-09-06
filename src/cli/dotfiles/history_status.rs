@@ -50,7 +50,7 @@ pub(crate) fn sync_report(
     let Some((_, origin)) = crate::system::history::config::origin()? else {
         return Ok(None);
     };
-    let status = run::read_status(store.state_dir());
+    let status = run::read_status(store.state_dir())?;
     let roots = crate::system::history::sync::layout::Roots::current();
     let pending_upload = if SyncMode::current()?.publishes() {
         entries
