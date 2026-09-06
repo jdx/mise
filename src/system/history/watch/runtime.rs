@@ -274,7 +274,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                                 if state.plan.pending.iter().any(|pending| pending.starts_with(&path)) {
                                     pending_appeared = true;
                                 }
-                                if installed.iter().any(|anchor| anchor.path == path) {
+                                if anchor_replaced(&capture.anchor_ids, &path) {
                                     anchor_changed = true;
                                 }
                                 // a link that appeared or changed may point
@@ -988,7 +988,23 @@ fn install(
     if current.is_empty() && !wanted.is_empty() {
         bail!("no watch could be installed for the tracked set");
     }
+    capture.anchor_ids = current
+        .iter()
+        .filter_map(|anchor| {
+            file_id::get_file_id(&anchor.path)
+                .ok()
+                .map(|id| (anchor.path.clone(), id))
+        })
+        .collect();
     Ok(current)
+}
+
+fn anchor_replaced(
+    ids: &std::collections::BTreeMap<PathBuf, file_id::FileId>,
+    path: &Path,
+) -> bool {
+    ids.get(path)
+        .is_some_and(|before| file_id::get_file_id(path).ok().as_ref() != Some(before))
 }
 
 /// Captures with the operation lock respected, failures backed off, the
@@ -1002,6 +1018,7 @@ struct Capture {
     retry_at: Option<Instant>,
     /// Why the last attempt did not run, while a retry is pending.
     retry_kind: Option<Attempt>,
+    anchor_ids: std::collections::BTreeMap<PathBuf, file_id::FileId>,
 }
 
 impl Capture {
@@ -1043,6 +1060,7 @@ impl Capture {
             backoff: BACKOFF_MIN,
             retry_at: None,
             retry_kind: None,
+            anchor_ids: Default::default(),
         }
     }
 
@@ -1327,6 +1345,22 @@ mod tests {
     use super::*;
     use crate::system::files::{FileMode, FilePolicy};
     use crate::system::history::tracked::{EntryKind, TrackedEntry};
+
+    #[test]
+    fn parent_activity_is_not_an_anchor_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let anchor = dir.path().join("anchor");
+        std::fs::create_dir(&anchor).unwrap();
+        let ids = [(anchor.clone(), file_id::get_file_id(&anchor).unwrap())]
+            .into_iter()
+            .collect();
+        std::fs::write(anchor.join("unrelated"), "activity").unwrap();
+        assert!(!anchor_replaced(&ids, &anchor));
+        std::fs::rename(&anchor, dir.path().join("old")).unwrap();
+        assert!(anchor_replaced(&ids, &anchor));
+        std::fs::create_dir(&anchor).unwrap();
+        assert!(anchor_replaced(&ids, &anchor));
+    }
 
     fn state_of(tracked: TrackedSet, config_dir: PathBuf) -> State {
         State {

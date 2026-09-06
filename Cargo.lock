@@ -6480,6 +6480,7 @@ dependencies = [
  "exec",
  "expr-lang",
  "eyre",
+ "file-id",
  "filetime",
  "flate2",
  "fslock",
