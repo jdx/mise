@@ -5,15 +5,17 @@ page is organized by symptom instead.
 
 ## `mise activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`
 
-`mise activate` should only be used in `rc` files. These are the interactive ones used when
-a real user is at the terminal, as opposed to a shell executed by an IDE or a script. The prompt
-isn't displayed in non-interactive environments, so PATH won't be modified.
+Normal `mise activate` installs shell hooks that refresh the environment around prompts and,
+for supported shells, directory changes. Put it in your interactive shell's rc file, such as
+`~/.bashrc` or `~/.zshrc`. A profile or noninteractive script may never run those hooks.
 
-For non-interactive setups, consider using shims instead, which route calls to the correct
-directory by looking at `PWD` every time they're executed. You can also call `mise exec` instead of
-expecting things to be directly on PATH. Running `mise env` in a non-interactive shell also works,
-but it only sets up the global tools; it won't update the environment variables when you enter a
-different project.
+For scripts, use `mise exec -- command` to compute the project environment for that command.
+For editors, [shims](/dev-tools/shims.html) resolve a tool using the process's working
+directory. `mise activate --shims` can go in a login profile that your editor reads.
+
+`mise env` also computes tools and variables for the **current project**, not just global
+tools. Evaluating its output updates the current shell once; it does not keep updating after
+you change directories. See [IDE integration](/ide-integration.html) and [CI setup](/continuous-integration.html).
 
 ::: warning
 `mise activate --shims` does not support all the features of `mise activate`.<br>
@@ -27,7 +29,8 @@ the tool they need, another way to use mise without activation.
 
 `mise activate` runs a hook on every prompt to check if tools or env vars need updating. This typically takes only a few milliseconds, but if your prompts feel sluggish you can profile it with `MISE_TIMINGS`.
 
-First, deactivate mise so the prompt hook doesn't interfere with your measurement, then run `hook-env` manually with timings:
+In an activated Bash or Zsh session, temporarily deactivate mise, then time `hook-env`
+manually. This measures one environment calculation; repeat only when comparing a change:
 
 ```sh
 mise deactivate
@@ -39,73 +42,94 @@ MISE_TIMINGS=1 mise hook-env -s bash 2>&1 >/dev/null
 MISE_TIMINGS=2 mise hook-env -s bash 2>&1 >/dev/null
 ```
 
-Replace `bash` with your shell. Common causes of slow prompts:
+Replace `bash` with your shell. Open a new terminal afterward to restore normal activation.
+Common causes of slow environment calculations:
 
-- Expensive `_.source` scripts in `mise.toml` — these re-run on every prompt
+- Expensive `_.source` scripts when the environment needs recomputing
 - Large numbers of tools or plugins
 - Network-dependent operations in env directives
+
+Use the timing output to identify the slow step before changing settings.
+[Environment caching](/cache-behavior.html#environment-caching) and watched files can reduce
+repeated work for environment providers.
 
 [`mise activate --shims`](/dev-tools/shims) moves the cost from every prompt to every tool invocation, which may or may not be faster depending on your workflow. See [Shims vs PATH](/dev-tools/shims.html#shims-vs-path) for tradeoffs.
 
 ## mise is failing or not working right
 
-First, try setting `MISE_DEBUG=1` or `MISE_TRACE=1` to see if that gives you more information.
-You can also set `MISE_LOG_FILE_LEVEL=debug MISE_LOG_FILE=/path/to/logfile` to write logs to a file.
+Run diagnostics from the directory where the problem occurs:
 
-If the problem involves the activate hook, try disabling it and
-calling `eval "$(mise hook-env)"` manually.
-`mise env`, which only prints the environment variables that would be set, can also help.
-Also consider using [shims](/dev-tools/shims.md), which can be more compatible.
+```sh
+mise --version
+mise doctor
+```
 
-If tool installation isn't working right, try the `--raw` flag, which installs tools in
-series and connects stdin/stdout/stderr directly to the terminal. If a plugin is trying to interact
-with you for some reason, this will let it.
+Then rerun the failing command with `--verbose`, `MISE_DEBUG=1`, or `MISE_TRACE=1`.
+To keep a debug log, set `MISE_LOG_FILE_LEVEL=debug MISE_LOG_FILE=/path/to/logfile`.
+Review diagnostic output before sharing it; environment values and private paths may appear.
 
-Check the version of mise with `mise --version` and make sure it is the latest;
-use `mise self-update`
-to update it. `mise cache clear` wipes the internal cache, and `mise implode` removes
-everything except config.
+For an activation issue, compare `mise exec -- command` with the same command in your shell.
+`mise env` shows the computed shell assignments, but computing them can run environment
+directives and the output may include secrets. Do not paste it into a public issue unchanged.
 
-Lastly, `mise doctor` shows diagnostic information and warnings about any issues
-detected with your setup. If you submit a bug report, please include the output of `mise doctor`.
+For installation failures, `mise install --raw` installs serially and connects the installer's
+input/output directly to the terminal. This can reveal an interactive prompt or a nested
+build error that was obscured in grouped output.
+
+Update mise through the package manager that installed it, or use `mise self-update` for a
+standalone installation. Clear the relevant [cache](/cache-behavior.html) if the symptom is
+stale metadata. Reinstalling everything or deleting mise's state should not be the first
+step in diagnosing a version-selection or shell problem.
+
+If the problem remains, include the command, relevant configuration, operating system,
+shell, mise version, and reviewed `mise doctor` output in a bug report. See [Errors](/errors.html)
+for common messages and their underlying causes.
 
 ## The wrong version of a tool is being used
 
-This likely means that mise isn't first in PATH, whether via shims or `mise activate`. You can verify
-this with `which -a`. For example, if node@20.0.0 is being used but mise specifies
-node@24.0.0, first make sure that mise has this version installed and active by running `mise ls node`.
-It should not say missing, and it should show the correct "Requested" version:
+Compare the project's selection with the command your shell runs. For Node.js:
 
-```bash
-$ mise ls node
-Plugin  Version  Config Source       Requested
-node    24.0.0  ~/.mise/config.toml  24.0.0
+```sh
+mise ls --current node
+mise which node
+mise exec -- node --version
+node --version
+type -a node
 ```
 
-If `node -v` isn't showing the right version, make sure mise is activated by running `mise doctor`.
-It should not have a "problem" listed about mise not being activated. Lastly, run `which -a node`.
-If the first directory listed is not a mise directory, then mise is not first in PATH: the node that
-runs first has its directory earlier in PATH than mise's. Typically, the fix is to set PATH for
-mise shims at the end of bashrc/zshrc.
+If `mise ls` shows a missing version, install it with `mise install`. If it shows the wrong
+request or configuration source, check the current directory, environment selection, and
+[configuration precedence](/configuration.html).
 
-If you use `mise activate`, another option is to set `MISE_ACTIVATE_AGGRESSIVE=1`, which makes
-mise always prepend its tools so they are first in PATH. If something else also modifies
-PATH dynamically, as `mise activate` does, this may not work because the other tool may modify
-PATH after mise does.
+If `mise exec` uses the expected version but `node` does not, inspect `type -a node` for a
+shell alias, function, or executable that takes precedence. Remove conflicting activation
+from another version manager, or correct the order of `PATH` setup in your shell startup
+files. Open a new shell after editing them. For editor-only failures, check the
+[editor's process environment](/ide-integration.html).
 
-If nothing else, you can run things with [`mise x --`](/cli/exec) to ensure that the correct version is being used.
+[`activate_aggressive`](/configuration/settings.html#activate_aggressive) makes activation
+prepend tools ahead of other `PATH` entries. It can help with competing PATH updates, but
+another hook that runs afterward can still change the order. `mise exec -- command` remains
+an explicit way to select the project environment.
 
 ## New version of a tool is not available
 
 Versions are cached in two places, so a brand new release might not appear right away.
 
-The first is the mise CLI's own version cache, which can be cleared with `mise cache clear`.
+The first is the mise CLI's own version cache, which can be cleared for Node with `mise cache clear node` (substitute your tool).
 
 The second is the <https://mise-versions.jdx.dev> host, a centralized
 place that lists all versions of most tools. It speeds up mise and
 avoids GitHub rate limits when querying for new versions. Check that site for your tool to
 see if it has the updated version. This service can be disabled by
-setting `MISE_USE_VERSIONS_HOST=0`.
+setting `MISE_USE_VERSIONS_HOST=0`. For a one-command check:
+
+```sh
+mise cache clear node
+MISE_USE_VERSIONS_HOST=0 mise ls-remote node
+```
+
+This queries the backend directly and may require its authentication credentials.
 
 mise also uses the versions host as a shared cache for public GitHub release metadata and
 GitHub artifact attestations. This means normal installs of public `github:` and many
@@ -171,13 +195,16 @@ found` rather than recursing endlessly or erroring with `mise: not found`.
 The default `exe` mode is not affected: it writes only native `<tool>.exe`
 files, which WSL ignores, so nothing leaks into Linux.
 
-To keep the Windows shims out of WSL entirely, either install/manage the tool
-with mise inside WSL, or disable the Windows-PATH interop in `/etc/wsl.conf`:
+Manage Linux tools with a Linux installation of mise inside WSL. To keep Windows PATH entries
+out of WSL entirely, disable Windows-PATH interop in `/etc/wsl.conf`:
 
 ```ini
 [interop]
 appendWindowsPath = false
 ```
+
+Save work in WSL, then run `wsl --shutdown` from PowerShell to stop all running WSL
+distributions. Reopen WSL before checking the updated `PATH`.
 
 ### `shell = "bash -c"` task fails with `command not found` from PowerShell
 
@@ -261,13 +288,13 @@ not intend; `MSYS_NO_PATHCONV=1` suppresses that for a single command.
 
 ## mise isn't working when calling from tmux or another shell initialization script
 
-`mise activate` does not update PATH until the shell prompt is displayed. If you need a
-tool provided by mise before then, you can either
+Shell initialization can run before mise's first environment hook. If you need a tool at that
+point, use `mise exec -- python --version`, or
 [add the shims to your PATH](/dev-tools/shims.html#how-to-add-mise-shims-to-path), e.g.
 
 ```bash
 export PATH="$HOME/.local/share/mise/shims:$PATH"
-python --version # will work after adding shims to PATH
+python --version # assumes Python is configured and installed
 ```
 
 or call `hook-env` manually:
@@ -275,19 +302,17 @@ or call `hook-env` manually:
 ```bash
 eval "$(mise activate bash)"
 eval "$(mise hook-env)"
-python --version # will work only after calling hook-env explicitly
+python --version # assumes Python is configured and installed
 ```
 
 For more information, see [What does `mise activate` do?](/faq#what-does-mise-activate-do)
 
 ## Is mise secure?
 
-Providing a secure supply chain is incredibly important. mise already provides a more secure
-experience than asdf. Security-oriented evaluations and contributions are welcome.
-We also urge users to look after the plugins they use, and urge plugin authors to look after
-the users they serve.
-
-For more details see [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md).
+mise can verify downloads and restrict untrusted configuration, but the guarantees depend
+on the backend and settings in use. Read [Security](/security.html) for verification methods,
+safe mode, and configuration trust, and [Paranoid mode](/paranoid.html) for stricter checks.
+Report vulnerabilities through [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md).
 
 ## 403 Forbidden when installing a tool
 
@@ -307,31 +332,23 @@ means the metadata was not available from the versions host yet, `MISE_USE_VERSI
 is set, the tool uses a private repository, or the tool uses GitHub Enterprise/custom API
 settings.
 
-See [GitHub Tokens](/dev-tools/github-tokens.html) for how to configure authentication and avoid rate limits.
+A 403 can also indicate missing repository access or an organization policy. Check the
+response and authentication diagnostics before treating it as a rate limit. See
+[GitHub Tokens](/dev-tools/github-tokens.html) and [403 errors](/errors.html).
 
 ## Tool not found after `mise install` or `mise use` in a script
 
-If you run `mise use` or `mise install` inside a script and then immediately try to use the
-tool, it may not be found. This is because `mise activate` updates PATH at the next prompt,
-which never happens in a script.
+Installing a tool changes files on disk; it cannot change the parent script's environment.
+Use `mise exec` for the next command. For a project that declares Node.js:
 
-**Solutions:**
-
-```bash
-# Option 1: Use mise exec (recommended)
+```sh
 mise install
-mise exec -- my-tool --version
-
-# Option 2: Re-evaluate the environment after install
-mise install
-eval "$(mise hook-env)"
-my-tool --version
-
-# Option 3: Use shims (they always resolve dynamically)
-export PATH="$HOME/.local/share/mise/shims:$PATH"
-mise install
-my-tool --version
+mise exec -- node --version
 ```
+
+If many later commands need the same environment, evaluate `mise env` for your shell after
+installation, or put [shims](/dev-tools/shims.html) on `PATH`. Keep the script in the intended
+project directory so mise finds its configuration.
 
 ## Creating `~/.bash_profile` breaks existing `~/.profile` on Ubuntu/Debian
 
@@ -349,35 +366,23 @@ If you followed setup instructions that created `~/.bash_profile` for mise, your
 [[ -f ~/.profile ]] && source ~/.profile
 ```
 
-## Tasks with `redact` env vars break `raw` output
+## Tasks with `redact` env vars and `raw` output {#tasks-with-redact-env-vars-break-raw-output}
 
-If you have `redact = true` on any env var in your config, tasks with `raw = true` will appear
-to produce no output. This is because mise intercepts stdout/stderr to perform redaction, which
-conflicts with raw mode.
+Raw and interactive tasks inherit the terminal's input/output. mise cannot redact output
+that bypasses its output processing, and it emits a hint when redactions are configured.
+Use normal task output when redaction is required; removing `redact` is not a fix for secret
+handling. See [task output](/tasks/task-configuration.html#raw).
 
-**Workaround**: Remove `redact` from env vars that don't need it, or accept that raw tasks
-won't produce visible output when redactions are active.
+If an older mise release produces no output for a raw task with redactions, update mise and
+retry with a harmless test value. Current raw mode passes output through directly.
 
 ## `mise activate` in CI / non-interactive shells
 
-`mise activate` hooks into the shell prompt to update PATH, so historically it didn't work
-in non-interactive shells. With `chpwd` support it now works in more
-situations, but we still recommend these approaches for CI and scripts:
-
-```bash
-# Option 1: Use shims (recommended for CI)
-export PATH="$HOME/.local/share/mise/shims:$PATH"
-# In GitHub Actions, use: echo "$HOME/.local/share/mise/shims" >> $GITHUB_PATH
-
-# Option 2: Use mise exec
-mise exec -- npm test
-
-# Option 3: Manually call hook-env after activate
-eval "$(mise activate bash)"
-eval "$(mise hook-env)"
-```
-
-See also the [CI/CD section](/tips-and-tricks.html#ci-cd) in Tips & Tricks.
+Use `mise exec -- command` or `mise run task` in CI. They select the environment without
+requiring a shell prompt. Shims are another option when commands need to resolve tools
+through `PATH`. See [Continuous integration](/continuous-integration.html) for complete
+provider examples and [script installation](#tool-not-found-after-mise-install-or-mise-use-in-a-script)
+for the install-then-execute pattern.
 
 ## Auto-install on command not found does not trigger
 
@@ -385,12 +390,12 @@ When you run a command that is not found, mise can install the tool that provide
 
 If nothing happens, the cause is usually one of these:
 
-- **The tool is configured by a raw backend spec.** `"cargo:some-crate" = "1.0.0"` or `"ubi:owner/repo" = "1.0.0"` is not a registry entry, so it carries no bin metadata and nothing connects the command you typed to it.
+- **The tool is configured by a raw backend spec.** `"cargo:some-crate" = "1.0.0"` or `"github:owner/repo" = "1.0.0"` is not a registry entry, so it carries no bin metadata and nothing connects the command you typed to it.
 - **The tool is not configured at all.** The handler only installs tools your config already asks for in the current directory; it will not pick a tool for a command you have never declared.
 - **The feature is off for that tool** — either [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) is `false`, or the tool is listed in [`auto_install_disable_tools`](/configuration/settings.html#auto_install_disable_tools).
 
 **Workarounds:**
 
-- Where a registry entry exists, refer to the tool by its registry name (`ripgrep`) rather than by a raw backend spec (`ubi:BurntSushi/ripgrep`), so the handler can map the command to it.
+- Where a registry entry exists, refer to the tool by its registry name (`ripgrep`) rather than by a raw backend spec (`github:BurntSushi/ripgrep`), so the handler can map the command to it.
 - Otherwise, install it explicitly instead of on demand: `mise install`, or [`mise x|exec`](/cli/exec) to install and then run something in one step. Both materialise the whole configured toolset, so the backend does not matter. [`mise r|run`](/cli/run) does the same, but only as part of running a task.
 - Installing once by hand is enough to make the handler work from then on: with a version present, mise can also discover the mapping from the installed executables.

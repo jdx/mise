@@ -1,68 +1,113 @@
 # Cache Behavior
 
-mise uses caching in many places to be efficient. How long each cache is kept should eventually
-be fully configurable. There may be gaps in the current behavior where things are hardcoded, but
-I'm happy to add more settings to cover whatever config is needed.
+mise caches version metadata, computed environments, and task results separately. Start with
+the cache related to the symptom: clearing a version list does not reinstall a tool, and
+clearing an environment cache does not change your configuration.
 
-Below I explain mise's caching behavior. If things don't appear to be updating, this is a good place
-to start.
+```sh
+mise cache path                 # show the actual cache directory
+mise cache clear node           # clear Node's tool metadata
+mise cache prune --dry-run      # preview stale cache files
+```
 
 ## Tool Cache
 
-Each tool/backend has a cache that's stored in `$MISE_CACHE_DIR/<TOOL>` (by default `~/.cache/mise/<TOOL>`). It stores
-the list of versions available for that tool (`mise ls-remote <TOOL>`), the idiomatic filenames,
-the list of aliases, the bin directories within each tool installation, and the result of
-running `exec-env` after the tool was installed.
+Backends store metadata below [`MISE_CACHE_DIR`](/directories.html#cache-mise), including
+remote version lists and, where applicable, aliases, executable directories, and plugin
+`exec-env` results. The exact files depend on the backend. Inspect values through mise's
+commands, such as `mise ls-remote node`, rather than depending on internal cache formats.
 
-Remote versions are refreshed after 1 hour by default, as configured by
-[`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache). The file
-is zlib-compressed MessagePack; to view it, run the following (requires
-[msgpack-cli](https://github.com/msgpack/msgpack-cli)):
+Remote version lists are fresh for one hour by default, controlled by
+[`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache).
+To check again before that period expires:
 
 ```sh
-cat "${MISE_CACHE_DIR:-$HOME/.cache/mise}"/node/remote_versions.msgpack.z | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
+mise cache clear node
+mise ls-remote node
 ```
 
-Caching `exec-env` may be problematic if the script does more than export static values, but
-the vast majority of `exec-env` scripts only export static values.
+Some metadata also comes from the [versions host](/troubleshooting.html#new-version-of-a-tool-is-not-available).
+Clearing the local cache does not refresh that remote service. A lockfile or explicit version
+pin can also keep an install on an older version even after the metadata has been refreshed.
 
-Caching `exec-env` massively improved mise's performance, since running it requires calling bash
-every time mise is initialized.
+asdf plugins' `exec-env` output is cached to avoid starting Bash for every environment
+calculation. Plugin authors should use it for environment values tied to the installation;
+dynamic project configuration belongs in [environment directives](/environments/).
 
 ## Environment Caching
 
-For more advanced caching needs (including dynamic environment providers like secret managers),
-mise provides the [`env_cache`](/configuration/settings.html#env_cache) setting. When enabled,
-mise caches the computed environment to disk with encryption.
+The experimental [`env_cache`](/configuration/settings.html#env_cache) setting caches computed
+environments on disk. It can help with expensive environment providers and nested mise calls:
 
 ```toml
 # ~/.config/mise/config.toml
 [settings]
 env_cache = true
-env_cache_ttl = "1h"  # optional, default is 1h
+env_cache_ttl = "1h" # optional; the default is one hour
 ```
 
-Cache invalidation happens automatically when:
+The cache lives under the state directory's `env-cache/`, not the tool metadata cache.
+`mise activate` and `mise exec` establish an encryption key inherited by nested commands.
+Cache reuse requires the same key; starting an unrelated session does not guarantee a cache
+hit. The cache is encrypted on disk, but a process that inherits the session key can read it.
 
-- Any config file changes (mise.toml, .tool-versions, etc.)
-- Tool versions change
-- Settings change
-- mise version changes
-- TTL expires (configurable via `env_cache_ttl`)
-- Any watched files change (from modules or `_.source` directives)
+The cache key includes config paths and modification times, resolved tool versions, relevant
+settings, the base `PATH`, and the mise version. Entries also expire after `env_cache_ttl`,
+and plugin-declared watched files can invalidate them. File-watch coverage depends on the
+directive: edits to dotenv files or `_.source` scripts can still leave a nested command using
+a cached environment. Clear or disable the cache if those edits are not reflected.
+Changes in an external service, such as a
+rotated secret, are not file changes: choose a suitable TTL or disable environment caching.
 
-Env plugins (vfox modules) can declare themselves cacheable by returning `{cacheable = true, watch_files = [...]}`
-from their `MiseEnv` hook. See [Env Plugin Development](/env-plugin-development.html) for details.
+For a command that must recompute environment values, set `MISE_ENV_CACHE=0` before starting
+mise. For example, in a Node.js project with a `test` script:
 
-Directives can opt out of caching by setting `cacheable = false`:
-
-```toml
-[env]
-TIMESTAMP = { value = "{{ now() }}", cacheable = false }
-_.source = { path = "dynamic.sh", cacheable = false }
+```sh
+MISE_ENV_CACHE=0 mise exec -- npm test
 ```
+
+To disable the cache for all commands, set `env_cache = false`. Ordinary environment
+directives do not currently support a per-value `cacheable = false` option. A timestamp template can
+therefore be reused while an environment cache is valid.
+
+Env plugins declare cacheability and watched files in their `MiseEnv` return value.
+See [Env Plugin Development](/env-plugin-development.html)
+for the Lua return format.
+
+To refresh cached environments and metadata together, run `mise cache clear`. There is no
+need to remove installed tools or trust records to refresh an environment.
+
+## Task caches
+
+Tasks can skip work based on source/output freshness or restore previously cached outputs.
+These are separate from version and environment caches. For a task named `build`:
+
+```sh
+mise cache task build
+mise cache clear --task build
+```
+
+See [task caching](/tasks/caching.html) for configuration, cache keys, and rerun behavior.
+`--task` resolves task names in the current configuration and removes entries whose ownership
+can be verified. It skips legacy entries without verifiable task ownership. A full
+`mise cache clear` removes all entries under the cache roots, including other projects
+and those legacy entries, as well as the environment cache.
 
 ## Cache auto-pruning
 
-mise automatically deletes old files in its cache directory (configured with [`cache_prune_age`](https://mise.jdx.dev/configuration/settings.html#cache_prune_age)). mise also
-ignores much of the contents once they are more than 24 hours (or, for some entries, a few days) old. For this reason, storing this directory in CI jobs is likely wasteful.
+mise occasionally prunes files that have not been accessed within
+[`cache_prune_age`](/configuration/settings.html#cache_prune_age), which defaults to 30 days.
+This is different from a cache entry's freshness period: an expired version list may be
+refetched long before the file becomes old enough to prune.
+
+```sh
+mise cache prune --dry-run
+mise cache prune
+```
+
+Environment entries use their own TTL during pruning. Set `cache_prune_age = "0s"` to disable
+automatic age-based pruning. Preview an explicit prune command before relying on its effect.
+
+For [CI](/continuous-integration.html), caching installed tools usually saves the most work.
+Metadata caches can still help repeated jobs; choose cache keys for the runner platform and
+project configuration, and make sure the pipeline also works with no restored cache.

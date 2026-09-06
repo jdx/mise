@@ -657,34 +657,29 @@ type = "ListString"
 default = false
 description = "[experimental] Enable environment caching for nested mise invocations"
 docs = """
-When enabled, mise will cache the computed environment (env vars and PATH) to disk.
-This dramatically speeds up nested mise invocations (e.g., `mise x -- mise env`).
+Cache computed environments (variables and PATH) to disk. This can reduce repeated work
+in nested commands such as `mise x -- mise env`.
 
-The cache is encrypted using a session-scoped key (`__MISE_ENV_CACHE_KEY`) that is
-generated when you run `mise activate` or `mise exec`. This means:
-- Cache files are encrypted and unreadable by other processes
-- When your shell session ends, the key is lost
-- Old cache files become unreadable and will be regenerated
+`mise activate` and `mise exec` establish a session key (`__MISE_ENV_CACHE_KEY`) inherited
+by child processes. Cache files are encrypted on disk; a process with the key can decrypt
+them. An unrelated session may have a different key and will recompute the environment.
 
-Cache invalidation happens when:
-- Any config file changes (mise.toml, .tool-versions, etc.)
-- Tool versions change
-- Settings change
-- mise version changes
-- TTL expires (configurable via `env_cache_ttl`)
-- Any watched files change (from modules or _.source directives)
+The cache key includes configuration paths and modification times, resolved tool versions,
+relevant settings, the base PATH, and the mise version. Entries also expire after
+`env_cache_ttl`, and plugin-declared watched files can invalidate them. Changes to dotenv files or sourced
+scripts may still leave a nested command using a cached environment; clear or disable the
+cache when those changes are not reflected.
 
-Modules (vfox plugins) can declare themselves cacheable by returning
-`{cacheable = true, watch_files = [...], env = [...]}` from their mise_env hook.
-Modules that don't declare cacheability are treated as dynamic and will be
-re-executed on each cache hit.
+Env plugins can return `cacheable = true` and `watch_files` from their `MiseEnv` hook.
+See [Env Plugin Development](/env-plugin-development.html) for the Lua return format.
 
-Directives can opt out of caching by setting `cacheable = false`:
-```toml
-[env]
-TIMESTAMP = { value = "{{ now() }}", cacheable = false }
-_.source = { file = "dynamic.sh", cacheable = false }
-```
+Ordinary environment directives do not currently support a per-value `cacheable = false`
+option. Set `MISE_ENV_CACHE=0` before starting mise when a command must recompute values.
+Changes in an external service do not invalidate the cache by themselves; choose a suitable
+TTL or disable caching for those workflows.
+
+See [Environment caching](/cache-behavior.html#environment-caching) for cache location
+and refresh behavior.
 """
 env = "MISE_ENV_CACHE"
 type = "Bool"

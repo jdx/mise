@@ -1,18 +1,31 @@
 # Directory Structure
 
-mise uses the following directories.
+mise separates configuration, installed tools, disposable metadata, and machine-local state.
+Use the table to locate files, then see the sections below for what is safe to share or remove.
+These are defaults when no `MISE_*` or `XDG_*` directory overrides are set.
 
-::: tip
-If you often find yourself using these directories (as I do), I suggest setting all of them to `~/.mise` for easy access.
-:::
+| Purpose                     | Linux                 | macOS                   | Windows                           | Override                                                 |
+| --------------------------- | --------------------- | ----------------------- | --------------------------------- | -------------------------------------------------------- |
+| Global configuration        | `~/.config/mise`      | `~/.config/mise`        | `%USERPROFILE%\.config\mise`      | `MISE_CONFIG_DIR`; otherwise `XDG_CONFIG_HOME` + `/mise` |
+| Cache                       | `~/.cache/mise`       | `~/Library/Caches/mise` | `%TEMP%\mise`                     | `MISE_CACHE_DIR`; otherwise `XDG_CACHE_HOME` + `/mise`   |
+| Local state                 | `~/.local/state/mise` | `~/.local/state/mise`   | `%USERPROFILE%\.local\state\mise` | `MISE_STATE_DIR`; otherwise `XDG_STATE_HOME` + `/mise`   |
+| Installed tools and plugins | `~/.local/share/mise` | `~/.local/share/mise`   | `%LOCALAPPDATA%\mise`             | `MISE_DATA_DIR`; otherwise `XDG_DATA_HOME` + `/mise`     |
+
+`mise cache path` prints the cache path in use. `mise doctor` reports the resolved mise
+directories. Set directory overrides in the environment that starts mise, and keep them
+consistent between shells, editors, and CI jobs.
+
+Keep these directories separate. In particular, do not point `MISE_CACHE_DIR` at a directory
+containing configuration or installed tools: cache cleanup removes its contents.
 
 ## `~/.config/mise`
 
 - Override: `$MISE_CONFIG_DIR`
 - Default: `${XDG_CONFIG_HOME:-$HOME/.config}/mise`
 
-This directory stores the global config file `~/.config/mise/config.toml`. It is intended to go into your
-dotfiles repo so it can be shared across machines.
+Stores global configuration, normally `config.toml`. You can version portable configuration
+in a dotfiles repository, but keep credentials and machine-specific values out of shared files.
+Project configuration lives alongside the project; see [configuration](/configuration.html).
 
 ## `~/.cache/mise`
 
@@ -20,8 +33,8 @@ dotfiles repo so it can be shared across machines.
 - Default: `${XDG_CACHE_HOME:-$HOME/.cache}/mise`, _macOS: `~/Library/Caches/mise`._
 
 Stores the internal cache mise uses for things like the list of all available versions of a
-tool. Do not share this across machines. You may delete this directory any time mise isn't actively installing something;
-do so with `mise cache clear`.
+tool. Use `mise cache clear` to clear metadata while no installs are in progress. This does
+not uninstall tools when the cache and install directories are separate.
 See [Cache Behavior](/cache-behavior) for more information.
 
 ## `~/.local/state/mise`
@@ -29,21 +42,22 @@ See [Cache Behavior](/cache-behavior) for more information.
 - Override: `$MISE_STATE_DIR`
 - Default: `${XDG_STATE_HOME:-$HOME/.local/state}/mise`
 
-Stores state local to the machine, such as which config files are trusted. This should not be shared across
-machines.
+Stores trust records, tracked configuration paths, and the encrypted environment cache.
+Keep this local to the machine. Removing it loses trust decisions and other state; use
+`mise cache clear` when you only need to refresh cached values.
 
 ## `~/.local/share/mise`
 
 - Override: `$MISE_DATA_DIR`
 - Default: `${XDG_DATA_HOME:-$HOME/.local/share}/mise`
 
-This is the main directory mise uses; plugins and tools are installed here.
-It is nearly identical to asdf's `~/.asdf`, so much so that you may be able to get by
-symlinking the two together and using asdf and mise simultaneously. (Supporting this isn't a
-project goal, however.)
+Contains tool installations, plugins, shims, and command wrappers. Do not have asdf and mise
+manage the same installation directory. Some filesystem layouts are similar, but the tools
+do not coordinate changes to shared state.
 
-This directory _could_ be shared across machines, but only if they run the same OS/arch. In general I wouldn't advise
-doing so.
+For CI, installed-tool caches must match the OS, architecture, configuration, and any native
+library requirements. Copying this directory between arbitrary machines is not a portable
+installation method.
 
 ### `~/.local/share/mise/downloads`
 
@@ -56,28 +70,19 @@ avoid reinstalling tools in CI or offline workflows.
 ### `~/.local/share/mise/plugins`
 
 mise installs plugins to this directory when running `mise plugins install`. If you are working on a
-plugin, I suggest symlinking it manually by running:
+plugin, use a symlink to your checkout when no plugin is already installed at that path:
 
 ```sh
+mkdir -p ~/.local/share/mise/plugins
 ln -s ~/src/mise-my-tool ~/.local/share/mise/plugins/my-tool
 ```
 
 ### `~/.local/share/mise/installs`
 
-This is where tools are installed when running `mise install`. For example,
-`mise install node@20.0.0` installs to `~/.local/share/mise/installs/node/20.0.0`.
-
-mise also creates symlinks in this directory for version prefixes ("20" and "20.15")
-and matching aliases ("lts", "latest").
-For example:
-
-```sh
-$ tree ~/.local/share/mise/installs/node
-20 -> ./20.15.0
-20.15 -> ./20.15.0
-lts -> ./20.15.0
-latest -> ./20.15.0
-```
+Stores installed tool versions. For example, `mise install node@24.0.0` installs into
+`installs/node/24.0.0` under the data directory. mise may also create version-prefix and alias
+symlinks that point at concrete installations. Use `mise where node` or `mise which node` to
+find the selected installation or executable, rather than constructing a path from an alias.
 
 You can set the `MISE_INSTALLS_DIR` environment variable to override this location.
 
@@ -101,6 +106,11 @@ The setting is global-only, expands `~`, and must resolve to an absolute path.
 features still filter shim directories as whole `PATH` entries, so use a dedicated directory when
 using `mise activate`, hook-env, or internal dependency lookups.
 
+### `~/.local/share/mise/command-wrappers/bin`
+
+This is where mise places dispatch shims configured by `[wrappers]`. mise manages
+this directory; use `mise reshim` after adding or removing a command wrapper.
+
 ## System installs and shims
 
 System installs default to `/usr/local/share/mise/installs` and system shims
@@ -110,7 +120,7 @@ the global-only `system_installs_dir` and `system_shims_dir` settings or the
 Both paths expand `~` and must resolve to absolute paths.
 
 `mise install --system` writes to the system install root and
-`mise reshim --system` rebuilds the system farm. mise never elevates privileges
+`mise reshim --system` rebuilds system shims. mise never elevates privileges
 automatically. Preinstall with the necessary privileges or redirect these
 settings when the defaults are not writable.
 
@@ -125,11 +135,6 @@ shims_dir = "~/.local/share/mise/shims"
 system_shims_dir = "~/.local/share/mise/shims"
 ```
 
-When the shim paths are equal, mise manages one union farm with one lock. When
+When the shim paths are equal, mise manages one combined set of shims with one lock. When
 the install roots are equal, the root is treated as local storage rather than
 being scanned and classified twice.
-
-### `~/.local/share/mise/command-wrappers/bin`
-
-This is where mise places dispatch shims configured by `[wrappers]`. mise manages
-this directory; use `mise reshim` after adding or removing a command wrapper.
