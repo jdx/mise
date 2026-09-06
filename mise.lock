@@ -719,6 +719,7 @@ checksum = "sha256:62d122a4103ca286ef86a5c8429d21404f60e795345b8c853a9da0a18ef6d
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.8.3/mbx-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/546079720"
 provenance = "github-attestations"
+provenance_verified = true
 
 [tools.mr-boxington."platforms.linux-x64-baseline"]
 checksum = "sha256:62d122a4103ca286ef86a5c8429d21404f60e795345b8c853a9da0a18ef6dbde"
