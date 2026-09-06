@@ -1762,10 +1762,18 @@ fn ensure_secure_replacement_credentials(
     url: &Url,
     headers: &HeaderMap,
 ) -> Result<()> {
-    let downgraded = original_url.scheme() == "https" && url.scheme() == "http";
     let has_credentials = headers.contains_key(AUTHORIZATION)
         || !url.username().is_empty()
         || url.password().is_some();
+    ensure_secure_url_replacement(original_url, url, has_credentials)
+}
+
+pub(crate) fn ensure_secure_url_replacement(
+    original_url: &Url,
+    url: &Url,
+    has_credentials: bool,
+) -> Result<()> {
+    let downgraded = original_url.scheme() == "https" && url.scheme() == "http";
     ensure!(
         !downgraded || !has_credentials,
         "refusing to send credentials over an HTTPS-to-HTTP URL replacement"
