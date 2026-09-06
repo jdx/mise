@@ -39,6 +39,9 @@ pub(crate) struct Outcome {
     /// The repository can be reached without this session's borrowed
     /// GitHub access.
     pub durable_access: bool,
+    /// The shared configuration was not written: it waits for a decision
+    /// (a differing configuration is here already), so no bootstrap ran.
+    pub configuration_held: bool,
 }
 
 /// `mise bootstrap --from-git <url>`: `Some` when the repository is
@@ -74,9 +77,13 @@ pub(crate) async fn from_git(url: &str, yes: bool, dry_run: bool) -> Result<Opti
     Ok(Some(outcome))
 }
 
-/// The branch a fresh machine takes: `main`, else `master`, else the first
-/// head; `None` when the repository lists none (unreachable, empty).
+/// The branch a fresh machine takes: the repository's default branch (its
+/// `HEAD`), else `main`, else `master`, else the first head; `None` when the
+/// repository lists none (unreachable, empty).
 fn default_branch(remote: &Remote<'_>) -> Result<Option<String>> {
+    if let Ok(Some(head)) = remote.symbolic_head() {
+        return Ok(Some(head));
+    }
     let Ok(refs) = remote.ls_remote() else {
         return Ok(None);
     };
@@ -160,18 +167,43 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         encrypt_backups: false,
     });
     request.capture = !onboarding.dry_run;
+    request.dry_run = onboarding.dry_run;
+    // a dry run records what is pending only for the plan below and puts
+    // everything back afterwards: the previous sync state, and no fetched
+    // branch on a machine that was not connected
+    let recorded = run::status_path(state_dir);
+    let recorded_before = onboarding
+        .dry_run
+        .then(|| std::fs::read(&recorded).ok())
+        .flatten();
+    let connected_before = {
+        let status = run::read_status(state_dir);
+        status.origin_url.is_some() && !status.disconnected
+    };
     let synced = run::sync(store, &tracked, &request)?;
     let mut preview = ApplyRequest::automatic();
     preview.automatic = false;
     preview.dry_run = true;
     preview.plan_only = true;
-    apply::apply(store, &tracked, &preview).await?;
+    let previewed = apply::apply(store, &tracked, &preview).await;
     if onboarding.dry_run {
+        match recorded_before {
+            Some(bytes) => crate::file::write(&recorded, bytes)?,
+            None => {
+                let _ = std::fs::remove_file(&recorded);
+            }
+        }
+        if !connected_before && let Some(repo) = store.repo() {
+            repo.delete_ref(UPSTREAM_REF)?;
+        }
+        previewed?;
         miseprintln!("Dry run: nothing was changed.");
         return Ok(Outcome {
             durable_access: true,
+            configuration_held: false,
         });
     }
+    previewed?;
     if !super::origin::confirmed(onboarding.yes, "Set this machine up from the repository?")? {
         bail!("not set up");
     }
@@ -196,6 +228,18 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     // a conflict (a file that exists here and differs) is not pending: it
     // waits for a decision, like a path held with its group
     let undecided = applied.held + synced.conflicts;
+    // configuration among them: nothing to bootstrap from yet
+    let configuration_held = {
+        let status = run::read_status(state_dir);
+        status
+            .pending_applications
+            .iter()
+            .any(|pending| pending.configuration)
+            || status
+                .conflicts
+                .iter()
+                .any(|conflict| super::layout::is_configuration(&conflict.branch_path))
+    };
     miseprintln!(
         "Wrote {} file(s) from {}{}.",
         applied.written,
@@ -214,7 +258,10 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
             "setup complete, but ongoing synchronization needs credentials on this host: the borrowed GitHub access ends with this session. Run `mise x gh -- gh auth login` and `mise x gh -- gh auth setup-git` here, or connect an SSH url with `mise bootstrap dotfiles origin set <url>`"
         );
     }
-    Ok(Outcome { durable_access })
+    Ok(Outcome {
+        durable_access,
+        configuration_held,
+    })
 }
 
 /// Whether this host reaches the repository on its own: with the

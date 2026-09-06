@@ -178,6 +178,30 @@ impl<'a> Remote<'a> {
     }
 
     /// The remote's refs: `(oid, name)`.
+    /// The branch the repository's `HEAD` points at, when it says.
+    pub(crate) fn symbolic_head(&self) -> Result<Option<String>> {
+        let output = self
+            .repo
+            .network(["ls-remote", "--quiet", "--symref", &self.url, "HEAD"])?;
+        if !output.status.success() {
+            bail!(
+                "listing {}: {}",
+                self.url,
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .find_map(|line| {
+                let rest = line.strip_prefix("ref: ")?;
+                let (target, name) = rest.split_once('\t')?;
+                (name == "HEAD")
+                    .then(|| target.strip_prefix("refs/heads/"))
+                    .flatten()
+                    .map(str::to_string)
+            }))
+    }
+
     pub(crate) fn ls_remote(&self) -> Result<Vec<(String, String)>> {
         let output = self.repo.network(["ls-remote", "--quiet", &self.url])?;
         if !output.status.success() {

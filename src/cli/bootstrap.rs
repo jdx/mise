@@ -1876,6 +1876,14 @@ impl Bootstrap {
             if self.dry_run {
                 return Ok(());
             }
+            // the configuration that arrived is what to bootstrap from; one
+            // held for a decision leaves the existing one, whose tasks and
+            // installations are not what was asked for
+            if outcome.configuration_held {
+                bail!(
+                    "the configuration from {url} waits for a decision (a differing one is here already); nothing was bootstrapped. `mise bootstrap dotfiles status` lists it, `mise bootstrap dotfiles pull --take-remote|--keep-local <path>` decides, then run `mise bootstrap`"
+                );
+            }
             let config_dir = system::history::tracked::global_config_dir();
             self.run_child_bootstrap(config_dir).await?;
             if !outcome.durable_access {

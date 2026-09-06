@@ -51,6 +51,9 @@ assert_contains "echo \"$out\"" "is a mise setup repository"
 assert_contains "echo \"$out\"" "config.toml"
 assert_contains "echo \"$out\"" "Dry run: nothing was changed"
 assert_fail "test -e $C/.config/mise/config.toml"
+# a preview leaves no connection, pending changes, or fetched branch behind
+assert "find $C -name sync.json | wc -l | tr -d ' '" "0"
+assert "find $C -path '*/refs/setup/*' | wc -l | tr -d ' '" "0"
 assert_succeed "$c bootstrap --from-git file://$origin --yes --only dotfiles"
 assert_fail "test -e $C/.config/mise/.git"
 assert "cat $C/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
@@ -76,7 +79,10 @@ wrapper "$D" "$PWD/d"
 d="$PWD/d"
 mkdir -p "$D/.config/mise"
 printf '[env]\nD_ONLY = "1"\n' >"$D/.config/mise/config.toml"
-assert_contains "$d bootstrap --from-git file://$origin --yes --only dotfiles 2>&1" "need a decision"
+# the differing configuration is held, so nothing is bootstrapped from the
+# old one: the command says what to decide and fails
+assert_fail "$d bootstrap --from-git file://$origin --yes --only dotfiles 2>&1" "need a decision"
+assert_fail "$d bootstrap --from-git file://$origin --yes --only dotfiles 2>&1" "nothing was bootstrapped"
 assert "cat $D/.config/mise/config.toml" $'[env]\nD_ONLY = "1"'
 assert_contains "$d bootstrap dotfiles status" "needs adoption"
 assert_succeed "$d bootstrap dotfiles pull --take-remote $D/.config/mise/config.toml --yes"
@@ -99,3 +105,15 @@ assert_succeed "$e bootstrap --from-git file://$plain --yes --only task"
 assert_succeed "test -d $E/.config/mise/.git"
 assert_contains "cat $E/.config/mise/config.toml" 'PLAIN = "1"'
 assert_contains "$e bootstrap dotfiles status" "Setup repository: none"
+
+# ---- the repository's default branch is followed, not `main` by its name
+other="$PWD/other.git"
+git clone -q --bare "file://$origin" "$other"
+git --git-dir="$other" branch -q setup main
+git --git-dir="$other" symbolic-ref HEAD refs/heads/setup
+# a stale `main` left behind at the first commit
+git --git-dir="$other" update-ref refs/heads/main "$(git --git-dir="$other" rev-list --max-parents=0 setup | tail -1)"
+F="$(dirname "$HOME")/f-home"
+wrapper "$F" "$PWD/f"
+f="$PWD/f"
+assert_contains "$f bootstrap --from-git file://$other --dry-run 2>&1" "branch setup"

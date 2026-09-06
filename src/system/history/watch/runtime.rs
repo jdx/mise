@@ -52,6 +52,10 @@ enum Restart {
 const WATCH_LOCK_TRIES: u32 = 5;
 const WATCH_LOCK_RETRY: Duration = Duration::from_millis(200);
 
+/// How many checkpoints may wait for `history.describe_command` before the
+/// oldest keeps its computed description.
+const DESCRIBE_QUEUE: usize = 8;
+
 /// How often, and how many times, the shutdown capture waits for a running
 /// history operation to finish before giving up.
 const SHUTDOWN_RETRY_EVERY: Duration = Duration::from_secs(1);
@@ -695,7 +699,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
 fn start_describe(
     capture: &mut Capture,
 ) -> Option<tokio::task::JoinHandle<(u64, Result<Option<String>>)>> {
-    let entry = capture.describe_next.take()?;
+    let entry = capture.describe_next.pop_front()?;
     let command = describe_command::configured()?;
     let state_dir = capture.store.state_dir().to_path_buf();
     Some(tokio::task::spawn_blocking(move || {
@@ -1018,6 +1022,9 @@ async fn finish(capture: &mut Capture, tracked: &TrackedSet, restart: Restart) -
         );
     }
     capture.persist_schedule();
+    // a description command still running is not waited for: its
+    // checkpoint keeps the computed description
+    describe_command::abort_running();
     capture.out.emit("stopped", "stopping", json!({}));
     capture.write_health();
     outcome
@@ -1427,9 +1434,9 @@ struct Capture {
     /// Automatic synchronization, when an origin is connected and the mode
     /// allows any.
     sync: Option<SyncPlan>,
-    /// Checkpoints waiting for `history.describe_command`: at most one,
-    /// the newest (a name for an older one is not worth a queue).
-    describe_next: Option<store::Entry>,
+    /// Checkpoints waiting for `history.describe_command`, oldest first;
+    /// past the bound the oldest is skipped, and said so.
+    describe_next: std::collections::VecDeque<store::Entry>,
     backoff: Duration,
     retry_at: Option<Instant>,
     /// Why the last attempt did not run, while a retry is pending.
@@ -1478,7 +1485,7 @@ impl Capture {
             retry_kind: None,
             anchor_ids: Default::default(),
             sync: SyncPlan::from_settings(&Settings::get(), Instant::now()),
-            describe_next: None,
+            describe_next: std::collections::VecDeque::new(),
         }
     }
 
@@ -1553,7 +1560,19 @@ impl Capture {
                     plan.saved(Instant::now());
                 }
                 if describe_command::configured().is_some() {
-                    self.describe_next = Some((*entry).clone());
+                    self.describe_next.push_back((*entry).clone());
+                    if self.describe_next.len() > DESCRIBE_QUEUE
+                        && let Some(skipped) = self.describe_next.pop_front()
+                    {
+                        self.out.emit(
+                            "describe-skipped",
+                            &format!(
+                                "history.describe_command is behind; checkpoint {} keeps its computed description",
+                                skipped.id
+                            ),
+                            json!({ "id": skipped.id }),
+                        );
+                    }
                 }
                 self.health.watcher.last_capture = Some(store::now_rfc3339());
                 self.out.emit(

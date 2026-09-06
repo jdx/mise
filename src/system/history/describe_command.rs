@@ -10,6 +10,7 @@
 use std::collections::BTreeSet;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use eyre::{Result, bail};
@@ -22,6 +23,8 @@ use super::store::{self, Annotation, Changes, DescriptionSource, Entry};
 /// How long the command may take, how much diff it is given, and how long a
 /// description it may print.
 pub(crate) const TIMEOUT: Duration = Duration::from_secs(30);
+/// How long the output is waited for after the shell exited.
+const OUTPUT_GRACE: Duration = Duration::from_secs(2);
 const DIFF_LIMIT: usize = 64 * 1024;
 const DESCRIPTION_LIMIT: usize = 200;
 
@@ -40,6 +43,38 @@ struct Input<'a> {
     diff_truncated: bool,
 }
 
+/// The command running right now, so a shutdown can end it.
+static RUNNING: Mutex<Option<u32>> = Mutex::new(None);
+
+/// Ends the running command and everything it started, if any.
+pub(crate) fn abort_running() {
+    let pid = RUNNING.lock().ok().and_then(|mut running| running.take());
+    if let Some(pid) = pid {
+        kill_tree(pid);
+    }
+}
+
+/// Ends the command's whole process tree: the shell is its own process
+/// group on Unix, and Task Scheduler's tree kill covers Windows.
+fn kill_tree(pid: u32) {
+    #[cfg(unix)]
+    {
+        let _ = nix::sys::signal::killpg(
+            nix::unistd::Pid::from_raw(pid as i32),
+            nix::sys::signal::Signal::SIGKILL,
+        );
+    }
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
 /// The configured command, if any.
 pub(crate) fn configured() -> Option<String> {
     let command = crate::config::Settings::get()
@@ -55,11 +90,21 @@ pub(crate) fn configured() -> Option<String> {
 /// out, or failed. The checkpoint is unchanged in every case but success.
 pub(crate) fn run(store: &Store, entry: &Entry, command: &str) -> Result<Option<String>> {
     let input = serde_json::to_vec(&input(store, entry)?)?;
-    let mut child = shell(command)
+    let mut shell = shell(command);
+    shell
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // its own process group: a timeout ends what the shell started too
+        shell.process_group(0);
+    }
+    let mut child = shell.spawn()?;
+    if let Ok(mut running) = RUNNING.lock() {
+        *running = Some(child.id());
+    }
     // stdin is written and closed on its own thread: a command that answers
     // before reading everything must not block us
     let mut stdin = child.stdin.take().expect("piped");
@@ -67,10 +112,11 @@ pub(crate) fn run(store: &Store, entry: &Entry, command: &str) -> Result<Option<
         let _ = stdin.write_all(&input);
     });
     let mut stdout = child.stdout.take().expect("piped");
-    let reader = std::thread::spawn(move || {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
         let mut out = Vec::new();
         let _ = stdout.read_to_end(&mut out);
-        out
+        let _ = sender.send(out);
     });
     let started = Instant::now();
     let status = loop {
@@ -78,13 +124,26 @@ pub(crate) fn run(store: &Store, entry: &Entry, command: &str) -> Result<Option<
             break status;
         }
         if started.elapsed() >= TIMEOUT {
+            // the shell and whatever it started; the reader thread ends
+            // with the last writer of the pipe, so it is not waited for
+            kill_tree(child.id());
             let _ = child.kill();
             let _ = child.wait();
+            if let Ok(mut running) = RUNNING.lock() {
+                *running = None;
+            }
             bail!("took longer than {}s", TIMEOUT.as_secs());
         }
         std::thread::sleep(Duration::from_millis(100));
     };
-    let output = reader.join().unwrap_or_default();
+    if let Ok(mut running) = RUNNING.lock() {
+        *running = None;
+    }
+    // a descendant that outlived the shell and kept the pipe is not the
+    // shell's answer: the output is waited for a moment, not forever
+    let Ok(output) = receiver.recv_timeout(OUTPUT_GRACE) else {
+        bail!("a process it started kept its output open");
+    };
     if !status.success() {
         bail!("exited with {status}");
     }
