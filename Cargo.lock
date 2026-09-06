@@ -5407,7 +5407,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -7757,6 +7757,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.4",
+]
+
+[[package]]
+name = "pulldown-cmark"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
+dependencies = [
+ "bitflags 2.13.1",
+ "memchr",
+ "unicase",
 ]
 
 [[package]]
@@ -10270,7 +10281,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -11160,14 +11171,15 @@ dependencies = [
 
 [[package]]
 name = "usage-lib"
-version = "6.7.1"
+version = "6.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99c8cc45cd9014fdedce0790f49499bf6af8967ae3a87ec8eb58185d2e7248b7"
+checksum = "f8ea1e705ea3b3bd5198d1e31110df5bc5465078421c57f6a312c2ffda59cff3"
 dependencies = [
  "indexmap 2.14.1",
  "itertools 0.15.0",
  "log",
  "num-traits",
+ "pulldown-cmark",
  "regex",
  "roff",
  "semver",
@@ -11202,9 +11214,9 @@ dependencies = [
 
 [[package]]
 name = "usage-validation"
-version = "6.7.1"
+version = "6.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb5bbb1880e6172ea673806410bce683d5df0a3661bda387fb56f078ec4b5ddb"
+checksum = "9ebdffbd14e4c6c8267340f697842c6cd30b6cd56a8c4f83154e6f6ecace9ad9"
 dependencies = [
  "expr-lang",
 ]
