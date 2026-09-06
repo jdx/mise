@@ -281,10 +281,13 @@ impl Toolset {
             opts.reason.clone()
         };
         mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
-        let mut text_progress =
-            (mpr.use_text_install_output() && !opts.raw && !opts.dry_run).then(|| {
-                TextInstallProgress::new(versions.iter().map(|tr| (tool_key(tr), tr.to_string())))
-            });
+        let mut text_progress = (mpr.use_text_install_output()
+            && !opts.raw
+            && !opts.dry_run
+            && !versions.is_empty())
+        .then(|| {
+            TextInstallProgress::new(versions.iter().map(|tr| (tool_key(tr), tr.to_string())))
+        });
 
         hooks::run_one_hook_with_context(
             config,

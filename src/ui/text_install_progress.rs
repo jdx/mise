@@ -51,6 +51,15 @@ struct Transfer {
 }
 
 impl Transfer {
+    fn new(total: u64) -> Self {
+        Self {
+            done: 0,
+            total,
+            started: Instant::now(),
+            resumed_at: 0,
+        }
+    }
+
     fn fraction(&self) -> Option<f64> {
         (self.total > 0).then(|| (self.done as f64 / self.total as f64).clamp(0.0, 1.0))
     }
@@ -183,15 +192,27 @@ impl State {
     fn bar(&self) -> String {
         let total = self.tools.len();
         let complete = self.tools.iter().filter(|t| t.outcome.is_some()).count();
-        let progress = if total == 0 {
-            1.0
+        let (progress, failed_share) = if total == 0 {
+            (1.0, 0.0)
         } else {
-            self.tools.iter().map(|t| t.fraction).sum::<f64>() / total as f64
+            let failed = self
+                .tools
+                .iter()
+                .filter(|t| t.outcome == Some(Outcome::Failed))
+                .count();
+            (
+                self.tools.iter().map(|t| t.fraction).sum::<f64>() / total as f64,
+                failed as f64 / total as f64,
+            )
         };
         let filled = ((progress * BAR_WIDTH as f64).round() as usize).min(BAR_WIDTH);
+        // A failed tool still counts as finished work, but a fully cyan bar over
+        // "installed 0 tools · 1 failed" reads as success. Its share is red.
+        let failed = ((failed_share * BAR_WIDTH as f64).round() as usize).min(filled);
         format!(
-            "{}{} {complete}/{total}",
-            style::ecyan("█".repeat(filled)),
+            "{}{}{} {complete}/{total}",
+            style::ecyan("█".repeat(filled - failed)),
+            style::ered("█".repeat(failed)),
             style::edim("░".repeat(BAR_WIDTH - filled))
         )
     }
@@ -488,21 +509,19 @@ impl SingleReport for TextToolProgress {
         let message = message.replace(['\r', '\n'], " ");
         let mut words = message.split_whitespace();
         let mut reused = false;
+        let mut operations_done = false;
         let (phase, artifact) = match words.next() {
             Some("download") => ("downloading", words.next()),
             Some("cached") => {
                 reused = true;
                 ("reusing download", words.next())
             }
-            // The http backend's older wording for the same thing.
-            Some("using") if message == "using cached tarball" => {
-                reused = true;
-                ("reusing download", None)
-            }
+
             Some("checksum") => ("verifying checksum", None),
             Some("extract") => ("extracting", None),
             Some("install") => ("installing", None),
             Some("running") if message == "running custom postinstall hook" => {
+                operations_done = true;
                 ("running postinstall hook", None)
             }
             _ => (message.as_str(), None),
@@ -512,6 +531,10 @@ impl SingleReport for TextToolProgress {
         self.with_tool(|tool| {
             tool.message = phase;
             tool.reused |= reused;
+            if operations_done {
+                tool.completed_ops = tool.weights.len();
+                tool.transfer = None;
+            }
             if let Some(artifact) = artifact {
                 tool.artifact = Some(artifact);
             }
@@ -564,46 +587,30 @@ impl SingleReport for TextToolProgress {
     }
 
     fn set_length(&self, length: u64) {
-        self.with_tool(|tool| match tool.transfer.as_mut() {
-            // A second length on the same operation is a new transfer, not a
-            // resize: verification and extraction reuse the same reporter.
-            Some(transfer) if transfer.total != length => {
-                *transfer = Transfer {
-                    done: 0,
-                    total: length,
-                    started: Instant::now(),
-                    resumed_at: 0,
-                };
-            }
-            Some(transfer) => transfer.total = length,
-            None => {
-                tool.transfer = Some(Transfer {
-                    done: 0,
-                    total: length,
-                    started: Instant::now(),
-                    resumed_at: 0,
-                })
-            }
-        });
+        // A length always opens a new transfer, even when it equals the last
+        // one: the downloader announces it once per attempt, and a retry that
+        // kept the previous state would fold the failed attempt's bytes and
+        // time into this one's rate.
+        self.with_tool(|tool| tool.transfer = Some(Transfer::new(length)));
     }
 
     fn set_position(&self, position: u64) {
         self.with_tool(|tool| {
-            if let Some(transfer) = tool.transfer.as_mut() {
-                // A resumed download reports its starting offset here.
-                if transfer.done == 0 && position > 0 {
-                    transfer.resumed_at = position;
-                }
-                transfer.done = position;
+            // A server that sends no content-length never calls set_length, so
+            // the first bytes open a transfer with an unknown total.
+            let transfer = tool.transfer.get_or_insert_with(|| Transfer::new(0));
+            // A resumed download reports its starting offset here.
+            if transfer.done == 0 && position > 0 {
+                transfer.resumed_at = position;
             }
+            transfer.done = position;
         });
     }
 
     fn inc(&self, delta: u64) {
         self.with_tool(|tool| {
-            if let Some(transfer) = tool.transfer.as_mut() {
-                transfer.done = transfer.done.saturating_add(delta);
-            }
+            let transfer = tool.transfer.get_or_insert_with(|| Transfer::new(0));
+            transfer.done = transfer.done.saturating_add(delta);
         });
     }
 
@@ -889,6 +896,75 @@ mod tests {
             line,
             "✓ tool0@1  300ms · cached  node-v24.20.0-linux-x64.tar.xz"
         );
+    }
+
+    #[test]
+    fn failures_take_their_share_of_the_bar_in_red() {
+        let start = Instant::now();
+        let mut state = state(start);
+        state.finish_tool(0, Outcome::Installed, start);
+        state.finish_tool(1, Outcome::Failed, start);
+        state.finish_tool(2, Outcome::Failed, start);
+        let bar = state.bar();
+        let plain = console::strip_ansi_codes(&bar).into_owned();
+        assert_eq!(plain, "████████████████ 3/3");
+        // Two of three tools failed: eleven red cells follow five cyan ones.
+        let red = format!("{}", style::ered("█".repeat(11)));
+        let cyan = format!("{}", style::ecyan("█".repeat(5)));
+        assert!(
+            !console::colors_enabled_stderr() || (bar.contains(&red) && bar.contains(&cyan)),
+            "{bar:?}"
+        );
+    }
+
+    #[test]
+    fn the_postinstall_hook_completes_every_declared_operation() {
+        let start = Instant::now();
+        let shared = Arc::new(Mutex::new(state(start)));
+        let progress = TextToolProgress {
+            state: shared.clone(),
+            index: 0,
+        };
+        // A plugin backend that never calls next_operation.
+        progress.start_operations(3);
+        assert_eq!(shared.lock().unwrap().tools[0].fraction, 0.0);
+        progress.set_message("running custom postinstall hook".into());
+        let state = shared.lock().unwrap();
+        assert_eq!(state.tools[0].completed_ops, 3);
+        assert_eq!(state.tools[0].fraction, 0.99);
+    }
+
+    #[test]
+    fn a_retried_attempt_starts_its_rate_from_zero() {
+        let start = Instant::now();
+        let shared = Arc::new(Mutex::new(state(start)));
+        let progress = TextToolProgress {
+            state: shared.clone(),
+            index: 0,
+        };
+        progress.set_length(100);
+        progress.inc(60);
+        // Same total announced again: a new attempt, resuming at 60.
+        progress.set_length(100);
+        progress.set_position(60);
+        progress.inc(10);
+        let transfer = shared.lock().unwrap().tools[0].transfer.unwrap();
+        assert_eq!((transfer.done, transfer.resumed_at), (70, 60));
+    }
+
+    #[test]
+    fn bytes_without_a_length_still_show_a_running_count() {
+        let start = Instant::now();
+        let shared = Arc::new(Mutex::new(state(start)));
+        let progress = TextToolProgress {
+            state: shared.clone(),
+            index: 0,
+        };
+        progress.inc(1_500_000);
+        let state = shared.lock().unwrap();
+        assert_eq!(state.tools[0].transfer_detail(start), "1.5 MB");
+        // No total, so no fraction: the bar must not pretend to know.
+        assert_eq!(state.tools[0].transfer.unwrap().fraction(), None);
     }
 
     #[test]

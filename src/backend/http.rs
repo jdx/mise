@@ -1267,7 +1267,9 @@ impl Backend for HttpBackend {
             let cache_path = Self::cache_path(&cache_dir, &cache_plan.key);
             let _lock = crate::lock_file::get(&cache_path, ctx.force)?;
             let extraction_type = if Self::is_cached(&cache_dir, &cache_plan.key) {
-                ctx.pr.set_message("using cached tarball".into());
+                // The download happened; it is the unpacked tree that is reused.
+                // Not "cached <file>", which reporters read as a skipped fetch.
+                ctx.pr.set_message("extracting from cache".into());
                 ctx.pr.set_length(1);
                 ctx.pr.set_position(1);
                 self.extraction_type_from_cache(&cache_dir, &cache_plan.key, &cache_plan.file_info)
