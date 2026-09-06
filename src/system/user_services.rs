@@ -286,9 +286,16 @@ pub(crate) fn durable_mise_executable() -> Option<PathBuf> {
     if let Some(current) = current.filter(|path| is_durable(path)) {
         return Some(current);
     }
-    crate::file::which("mise")
-        .and_then(|path| std::fs::canonicalize(path).ok())
-        .filter(|path| is_durable(path))
+    // every `mise` on PATH, not only the first: a staged binary earlier on
+    // PATH (a remote bootstrap) must not hide a durable one behind it; on
+    // Windows that is `mise.exe`
+    let names = crate::file::executable_names("mise");
+    crate::env::PATH
+        .iter()
+        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
+        .filter(|candidate| candidate.is_file())
+        .filter_map(|candidate| std::fs::canonicalize(candidate).ok())
+        .find(|path| is_durable(path))
 }
 
 fn is_durable(path: &Path) -> bool {
