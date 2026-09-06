@@ -6,6 +6,7 @@
   "checkpoints_count": 5,
   "files_touched": [
     "e2e/cli/test_dotfiles_experimental",
+    "e2e/cli/test_dotfiles_track_experimental",
     "src/cli/dotfiles/paths.rs"
   ],
   "sessions": [
@@ -18,10 +19,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 1792,
+    "input_tokens": 797,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 208896,
-    "output_tokens": 171,
+    "cache_read_tokens": 210560,
+    "output_tokens": 953,
     "api_call_count": 1
   }
 }
