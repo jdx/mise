@@ -50,8 +50,8 @@ The URL prefix `/v1` is the protocol's major version. Compatible additions are a
 capabilities and do not require a new URL prefix. An incompatible wire or integrity change requires
 a new major protocol; version 1 must not be used as an alias for an incompatible implementation.
 
-Clients must ignore unknown JSON response fields. Clients must not send unknown request fields
-unless a negotiated capability permits them.
+Servers must not send unknown JSON response fields, and clients must not send unknown request
+fields, unless a negotiated capability permits them.
 
 GitHub Actions protected-branch `push` jobs and GitLab protected-branch push pipelines may use the
 configured write mode. Pull requests, tags/releases, unprotected branches, unknown CI systems, and

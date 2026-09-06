@@ -650,10 +650,14 @@ usage = '''
 arg "<profile>" default="dev"
 flag "-v --verbose"
 '''
-run = [
-  'cargo build --profile "${usage_profile?}"',
-  './package.sh ${usage_verbose:-false}'
-]
+run = '''
+args=()
+if [ "${usage_verbose:-false}" = "true" ]; then
+  args+=(--verbose)
+fi
+cargo build --profile "${usage_profile?}"
+./package.sh "${args[@]}"
+'''
 ```
 
 ```mise-toml [Deprecated]
