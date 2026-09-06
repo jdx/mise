@@ -223,13 +223,26 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
     // an operation counts as undone only when an undo actually changed
     // something for it: a declined or failed undo that touched nothing
     // leaves the original next in line
-    let undone: BTreeSet<String> = entries
-        .iter()
-        .filter_map(|entry| {
-            let op = entry.checkpoint.operation.as_ref()?;
-            (!op.affected.is_empty()).then(|| op.undoes.clone())?
-        })
-        .collect();
+    // an operation counts as undone while an undo that changed something
+    // points at it; undoing that undo puts its target back in line
+    let mut undone: BTreeSet<String> = BTreeSet::new();
+    let mut undoes_of: BTreeMap<String, String> = BTreeMap::new();
+    for entry in &entries {
+        let Some(op) = entry.checkpoint.operation.as_ref() else {
+            continue;
+        };
+        let Some(target) = op.undoes.clone() else {
+            continue;
+        };
+        if op.affected.is_empty() {
+            continue;
+        }
+        undone.insert(target.clone());
+        if let Some(reinstated) = undoes_of.get(&target) {
+            undone.remove(reinstated);
+        }
+        undoes_of.insert(entry.checkpoint.uuid.clone(), target);
+    }
     let operation = match &req.reference {
         Some(reference) => crate::cli::dotfiles::history::resolve(reference, &entries, None)?,
         None => entries
@@ -770,7 +783,21 @@ fn plan(repo: &HistoryRepo, targets: &[Target], live: &str, force: bool) -> Resu
                 if current.is_none() && abs.is_dir() && !abs.is_symlink() {
                     current = Some(("040000".into(), String::new()));
                 }
-                let (action, from, to) = decide(checkpoint, &file, saved, current, force);
+                // a file that exists but the live walk omitted (excluded,
+                // over the size limit, an incomplete scan) is not missing:
+                // it is not touched
+                let present_uncaptured = current.is_none()
+                    && std::fs::symlink_metadata(&abs).is_ok()
+                    && !(abs.is_dir() && !abs.is_symlink());
+                let (action, from, to) = if present_uncaptured {
+                    (
+                        Action::Skip("present but not captured (excluded or omitted)".into()),
+                        "present".into(),
+                        "?".into(),
+                    )
+                } else {
+                    decide(checkpoint, &file, saved, current, force)
+                };
                 let bits = checkpoint
                     .tree
                     .modes
@@ -918,14 +945,10 @@ fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
     if !covered {
         return PathState::Uncovered;
     }
-    for glob in &coverage.exclude {
-        let expanded = file::replace_path(Path::new(glob));
-        if let Ok(pattern) = globset::Glob::new(&expanded.to_string_lossy()) {
-            let expanded_path = file::replace_path(Path::new(display));
-            if pattern.compile_matcher().is_match(&expanded_path) {
-                return PathState::Uncovered;
-            }
-        }
+    if let Ok(exclude) = super::tracked::ExcludeSet::new(&coverage.exclude)
+        && exclude.is_match(&file::replace_path(Path::new(display)))
+    {
+        return PathState::Uncovered;
     }
     PathState::Absent
 }
@@ -1084,6 +1107,12 @@ fn write_object(repo: &HistoryRepo, step: &Step, mode: &str, oid: &str) -> Resul
             std::fs::remove_file(path)?;
         }
         file::create_dir_all(path)?;
+        // its own recorded mode, now, not once a child is written
+        #[cfg(unix)]
+        if let Some(bits) = step.bits {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(bits))?;
+        }
         return Ok(());
     }
     let bytes = repo.cat_object(oid)?;
