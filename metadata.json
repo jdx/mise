@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TJDM28JDTD0P7CCAA1V9JZ",
+  "strategy": "manual-commit",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/mise-lock.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 29083,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1770496,
+    "output_tokens": 2371,
+    "api_call_count": 15
+  }
+}
