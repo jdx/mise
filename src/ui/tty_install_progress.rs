@@ -23,15 +23,46 @@ use crate::cli::version::VERSION_PLAIN;
 /// own; this only needs to keep the numbers from looking stuck.
 const REFRESH: Duration = Duration::from_millis(250);
 const HEADER_BAR_WIDTH: usize = 24;
+const MIN_HEADER_BAR_WIDTH: usize = 10;
 const ROW_BAR_WIDTH: usize = 10;
 /// Fine enough that a 24-cell bar never jumps more than one cell per update,
 /// and the terminal's OSC progress indicator moves in percent.
 const OSC_SCALE: usize = 10_000;
 
-/// Columns below which the artifact name, then the transfer detail, are
-/// dropped so the bar and the elapsed time keep their place.
-const ARTIFACT_MIN_COLUMNS: usize = 110;
-const DETAIL_MIN_COLUMNS: usize = 80;
+/// What fits on one line at this terminal width. Decided from the two widths
+/// that hold still during an install — the terminal and the prefix column — so
+/// a row does not gain and lose its bar as its message changes. Each cell goes
+/// in order of how much it says: the artifact name first, then the transfer
+/// figures, then the row bar; the header gives up its version, then bar cells.
+#[derive(Debug, PartialEq)]
+struct Layout {
+    version: bool,
+    header_bar: usize,
+    row_bar: bool,
+    bytes: bool,
+    artifact: bool,
+}
+
+impl Layout {
+    fn fit(columns: usize, prefix_width: usize, version_width: usize) -> Self {
+        // `mise`, the gaps, and a status as long as "5/7 · 12.3 MB/s · 2 queued · 3.0s".
+        const HEADER_FIXED: usize = 4 + 2 + 2 + 36;
+        let version = columns >= HEADER_FIXED + HEADER_BAR_WIDTH + 1 + version_width;
+        let header_bar = columns
+            .saturating_sub(HEADER_FIXED)
+            .clamp(MIN_HEADER_BAR_WIDTH, HEADER_BAR_WIDTH);
+        // What a row has after its prefix: the phase, then the optional cells,
+        // then the elapsed time and the spinner.
+        let free = columns.saturating_sub(prefix_width);
+        Self {
+            version,
+            header_bar,
+            row_bar: free >= 46,
+            bytes: free >= 70,
+            artifact: free >= 100,
+        }
+    }
+}
 
 struct Rows {
     /// One entry per tool, present while the tool has a row on screen.
@@ -52,12 +83,17 @@ impl TtyInstallProgress {
     pub(super) fn new(state: State) -> Self {
         let count = state.tools.len();
         let mise_text = format!("{}", style::emagenta("mise").bold());
-        let version_text = format!("{}", style::edim(&*VERSION_PLAIN));
+        // The first frame is drawn before the first refresh; it fits too.
+        let layout = Layout::fit(
+            columns(),
+            state.width(),
+            console::measure_text_width(&VERSION_PLAIN),
+        );
         let header = ProgressJobBuilder::new()
-            .body("{{ mise }} {{ version }}  {{ bar }}  {{ status }}")
+            .body("{{ mise }}{{ version }}  {{ bar }}  {{ status }}")
             .prop("mise", &mise_text)
-            .prop("version", &version_text)
-            .prop("bar", &state.bar_only(HEADER_BAR_WIDTH))
+            .prop("version", &version_text(layout.version))
+            .prop("bar", &state.bar_only(layout.header_bar))
             .prop("status", &format!("0/{count}"))
             .progress_total(OSC_SCALE)
             .progress_current(0)
@@ -120,13 +156,33 @@ impl TtyInstallProgress {
     }
 }
 
+fn columns() -> usize {
+    console::Term::stderr().size().1 as usize
+}
+
+/// The version with its separating space, or nothing: the header body has no
+/// gap of its own to leave behind when the version goes.
+fn version_text(shown: bool) -> String {
+    if shown {
+        format!(" {}", style::edim(&*VERSION_PLAIN))
+    } else {
+        String::new()
+    }
+}
+
 /// Repaint every prop from the model. Cheap enough to run several times a
 /// second: it formats a handful of short strings and clx coalesces redraws.
 fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) {
-    let columns = console::Term::stderr().size().1 as usize;
+    let width = state.width();
+    let layout = Layout::fit(
+        columns(),
+        width,
+        console::measure_text_width(&VERSION_PLAIN),
+    );
     let (progress, _) = state.progress();
     header.progress_current(((progress * OSC_SCALE as f64).round() as usize).min(OSC_SCALE));
-    header.prop("bar", &state.bar_only(HEADER_BAR_WIDTH));
+    header.prop("version", &version_text(layout.version));
+    header.prop("bar", &state.bar_only(layout.header_bar));
     let mut status = state.count_label();
     if let Some(rate) = state.aggregate_rate(now) {
         status.push_str(&format!(" · {}/s", format_bytes(rate.round() as u64)));
@@ -138,7 +194,6 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
     status.push_str(&format!(" · {}", elapsed(state.started, now)));
     header.prop("status", &status);
 
-    let width = state.width();
     for (index, tool) in state.tools.iter().enumerate() {
         let Some(job) = rows.jobs.get(index).and_then(|j| j.as_ref()) else {
             continue;
@@ -160,13 +215,13 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
         let mut left = tool.message.clone();
         // Bytes only: detail and item counts have their own child row.
         if let Some(bytes) = tool.transfer_bytes(now)
-            && columns >= DETAIL_MIN_COLUMNS
+            && layout.bytes
         {
             left.push_str(&format!("  {bytes}"));
         }
         job.prop("left", &left);
         let mut right = String::new();
-        if !tool.weights.is_empty() {
+        if !tool.weights.is_empty() && layout.row_bar {
             let filled = filled_cells(tool.fraction, ROW_BAR_WIDTH, tool.outcome.is_some());
             right.push_str(&format!(
                 "{}{}  ",
@@ -176,7 +231,7 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
         }
         right.push_str(&elapsed(started, now));
         if let Some(artifact) = &tool.artifact
-            && columns >= ARTIFACT_MIN_COLUMNS
+            && layout.artifact
         {
             right.push_str(&format!("  {}", style::edim(artifact)));
         }
@@ -215,7 +270,7 @@ impl InstallProgress for TtyInstallProgress {
         self.stop();
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
-        let lines = state.fail_unstarted(failures, now);
+        let lines = state.fail_unstarted(failures, now, Some(columns()));
         let mut rows = self.rows.lock().unwrap();
         let Rows { jobs, children } = &mut *rows;
         for job in jobs.iter_mut().chain(children.iter_mut()) {
@@ -275,14 +330,7 @@ impl TtyToolProgress {
     /// Sub-progress gets its own indented row under the tool, so a package
     /// manager's count does not fight the tool's phase for the same cell.
     fn sync_child(&self) {
-        let detail = {
-            let state = self.state.lock().unwrap();
-            let tool = &state.tools[self.index];
-            tool.transfer
-                .is_none()
-                .then(|| tool.detail.clone())
-                .flatten()
-        };
+        let detail = self.state.lock().unwrap().tools[self.index].child_detail(Instant::now());
         let mut rows = self.rows.lock().unwrap();
         match (detail, rows.children[self.index].clone()) {
             (Some(detail), Some(child)) => child.prop("detail", &detail),
@@ -323,7 +371,7 @@ impl ToolProgress for TtyToolProgress {
             if let Some(error) = error {
                 state.tools[self.index].message = first_line(error);
             }
-            state.finish_tool(self.index, outcome, Instant::now())
+            state.finish_tool(self.index, outcome, Instant::now(), Some(columns()))
         };
         let Some(line) = line else {
             return;
@@ -401,5 +449,50 @@ impl SingleReport for TtyToolProgress {
 
     fn finish_with_icon(&self, _message: String, icon: ProgressIcon) {
         self.with_tool(|tool| tool.set_skipped(matches!(icon, ProgressIcon::Skipped)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_wide_terminal_shows_everything() {
+        let layout = Layout::fit(140, 27, 8);
+        assert_eq!(
+            layout,
+            Layout {
+                version: true,
+                header_bar: HEADER_BAR_WIDTH,
+                row_bar: true,
+                bytes: true,
+                artifact: true,
+            }
+        );
+    }
+
+    #[test]
+    fn a_narrow_terminal_gives_up_the_cells_that_say_the_least_first() {
+        // The artifact goes first, then the transfer figures, then the row bar.
+        assert!(!Layout::fit(100, 12, 8).artifact);
+        assert!(Layout::fit(100, 12, 8).bytes);
+        assert!(!Layout::fit(80, 12, 8).bytes);
+        assert!(Layout::fit(80, 12, 8).row_bar);
+        assert!(!Layout::fit(52, 12, 8).row_bar);
+        // The header drops the version before it shrinks the bar, and the
+        // bar never shrinks past ten cells.
+        assert!(Layout::fit(52, 12, 8).header_bar >= MIN_HEADER_BAR_WIDTH);
+        assert_eq!(Layout::fit(52, 12, 8).header_bar, MIN_HEADER_BAR_WIDTH);
+        assert!(!Layout::fit(52, 12, 8).version);
+        assert_eq!(Layout::fit(70, 12, 8).header_bar, HEADER_BAR_WIDTH);
+        assert!(!Layout::fit(70, 12, 8).version);
+        assert!(Layout::fit(78, 12, 8).version);
+    }
+
+    #[test]
+    fn a_long_prefix_column_costs_the_rows_their_optional_cells() {
+        // The same terminal: a short prefix keeps the bytes, a long one loses them.
+        assert!(Layout::fit(90, 12, 8).bytes);
+        assert!(!Layout::fit(90, 27, 8).bytes);
     }
 }

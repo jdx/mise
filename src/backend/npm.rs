@@ -1107,6 +1107,12 @@ impl NPMBackend {
         };
         opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
 
+        // Before aube reports its first phase it vets the package — the
+        // typosquat, download-count and age gates — and looks up the version
+        // the request resolves to, both against the registry. Without a name
+        // for that the row sits on the wrapper's "installing" for however long
+        // the registry takes.
+        ctx.pr.set_message("checking package".into());
         let package = package.to_string();
         let install = aube::embed::add_with_overrides(
             &install_path,
@@ -1555,12 +1561,15 @@ const AUBE_OPERATION_WEIGHTS: [f64; 3] = [0.15, 0.80, 0.05];
 
 /// Turns aube's event stream into the reporter's phase and progress calls.
 ///
-/// Aube reports the phase on every snapshot rather than as transitions, so
-/// this remembers the last phase seen and advances the reporter's operation
-/// when it changes. One instance per install.
+/// The plan itself — these three weights, plus the removal a forced reinstall
+/// puts in front of them — is declared by the install wrapper through
+/// [`Backend::install_operation_weights`] before the worker starts; this only
+/// walks through it. Aube reports the phase on every snapshot rather than as
+/// transitions, so this remembers the last phase seen and advances the
+/// reporter's operation when it changes. One instance per install.
 #[derive(Default)]
 struct AubeProgress {
-    operation: Option<usize>,
+    operation: usize,
 }
 
 impl AubeProgress {
@@ -1576,17 +1585,16 @@ impl AubeProgress {
                 Some(InstallPhase::Linking) => 2,
                 Some(InstallPhase::Complete) => AUBE_OPERATION_WEIGHTS.len(),
             };
-            let current = match self.operation {
-                Some(current) => current,
-                None => {
-                    pr.start_operations_weighted(&AUBE_OPERATION_WEIGHTS);
-                    0
-                }
-            };
-            for _ in current..operation {
+            // A snapshot from a phase already left would paint that phase's
+            // label and counts over the current one. Neither the operation nor
+            // the row goes backwards.
+            if operation < self.operation {
+                return;
+            }
+            for _ in self.operation..operation {
                 pr.next_operation();
             }
-            self.operation = Some(operation.max(current));
+            self.operation = operation;
         }
         apply_aube_event(event, pr);
     }
@@ -3257,8 +3265,7 @@ pkg@1.2.0 '1.2.0'
         let report = ProgressRecorder::default();
         let mut progress = AubeProgress::default();
 
-        // The first snapshot declares the plan; resolving counts against a
-        // frontier that can still grow.
+        // Resolving counts against a frontier that can still grow.
         progress.apply(snapshot(Some(InstallPhase::Resolving), 3, 10, 0), &report);
         progress.apply(snapshot(Some(InstallPhase::Resolving), 12, 10, 0), &report);
         // Fetching is the next operation; the tally is packages in place.
@@ -3272,7 +3279,6 @@ pkg@1.2.0 '1.2.0'
         assert_eq!(
             *report.0.lock().unwrap(),
             [
-                "start [0.15, 0.8, 0.05]",
                 "items 3/10",
                 "items 12/12",
                 "next",
@@ -3290,18 +3296,10 @@ pkg@1.2.0 '1.2.0'
         let report = ProgressRecorder::default();
         let mut progress = AubeProgress::default();
         progress.apply(snapshot(Some(InstallPhase::Linking), 4, 4, 4), &report);
-        // A late resolving snapshot must not rewind the operation.
-        progress.apply(snapshot(Some(InstallPhase::Resolving), 4, 4, 4), &report);
-        assert_eq!(
-            *report.0.lock().unwrap(),
-            [
-                "start [0.15, 0.8, 0.05]",
-                "next",
-                "next",
-                "items 4/4",
-                "items 4/4"
-            ]
-        );
+        // A late resolving snapshot must neither rewind the operation nor
+        // repaint the row with the old phase's counts.
+        progress.apply(snapshot(Some(InstallPhase::Resolving), 2, 4, 0), &report);
+        assert_eq!(*report.0.lock().unwrap(), ["next", "next", "items 4/4"]);
     }
 
     #[test]

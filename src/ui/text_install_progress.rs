@@ -315,8 +315,25 @@ impl Tool {
         })
     }
 
-    /// The permanent line for a finished tool, padded to `width`.
-    pub(super) fn completion_line(&self, width: usize, now: Instant) -> String {
+    /// What the interactive display's indented child row shows: an explicit
+    /// detail, or the item tally a package manager drives the bar with. A byte
+    /// transfer belongs to the parent row and is not repeated underneath it.
+    pub(super) fn child_detail(&self, now: Instant) -> Option<String> {
+        match self.transfer {
+            Some(transfer) if transfer.bytes && self.detail.is_none() => None,
+            _ => Some(self.transfer_detail(now)).filter(|detail| !detail.is_empty()),
+        }
+    }
+
+    /// The permanent line for a finished tool, padded to `width`. Given the
+    /// terminal's `columns`, the artifact name is dropped rather than wrapped:
+    /// the line is a record, and a wrapped record reads as two.
+    pub(super) fn completion_line(
+        &self,
+        width: usize,
+        now: Instant,
+        columns: Option<usize>,
+    ) -> String {
         let outcome = self
             .outcome
             .expect("only finished tools have a completion line");
@@ -331,11 +348,17 @@ impl Tool {
             Outcome::Skipped => (ProgressIcon::Skipped, " · already installed".into()),
             Outcome::Failed => (ProgressIcon::Error, format!(" · failed: {}", self.message)),
         };
-        let artifact = match (&self.artifact, outcome) {
-            (Some(artifact), Outcome::Installed) => format!("  {}", style::edim(artifact)),
-            _ => String::new(),
-        };
-        format!("{icon} {prefix}{duration}{detail}{artifact}")
+        let line = format!("{icon} {prefix}{duration}{detail}");
+        match (&self.artifact, outcome) {
+            (Some(artifact), Outcome::Installed) => {
+                let with_artifact = format!("{line}  {}", style::edim(artifact));
+                match columns {
+                    Some(columns) if console::measure_text_width(&with_artifact) > columns => line,
+                    _ => with_artifact,
+                }
+            }
+            _ => line,
+        }
     }
 }
 
@@ -604,6 +627,7 @@ impl State {
         index: usize,
         outcome: Outcome,
         now: Instant,
+        columns: Option<usize>,
     ) -> Option<String> {
         let width = self.width();
         if self.tools[index].outcome.is_some() {
@@ -620,7 +644,7 @@ impl State {
         for tool in &mut self.tools {
             tool.waiting_on.retain(|dep| dep != &key);
         }
-        Some(self.tools[index].completion_line(width, now))
+        Some(self.tools[index].completion_line(width, now, columns))
     }
 
     /// Fail every listed tool that never reached a worker, returning their lines.
@@ -628,6 +652,7 @@ impl State {
         &mut self,
         failures: Vec<(String, String)>,
         now: Instant,
+        columns: Option<usize>,
     ) -> Vec<String> {
         let mut lines = vec![];
         for (key, error) in failures {
@@ -635,7 +660,7 @@ impl State {
                 && self.tools[index].outcome.is_none()
             {
                 self.tools[index].message = first_line(&error);
-                lines.extend(self.finish_tool(index, Outcome::Failed, now));
+                lines.extend(self.finish_tool(index, Outcome::Failed, now, columns));
             }
         }
         lines
@@ -761,7 +786,7 @@ impl InstallProgress for TextInstallProgress {
         self.stop();
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
-        for line in state.fail_unstarted(failures, now) {
+        for line in state.fail_unstarted(failures, now, None) {
             info!("{line}");
         }
         info!("{}", state.summary(now));
@@ -800,7 +825,7 @@ impl ToolProgress for TextToolProgress {
         if let Some(error) = error {
             state.tools[self.index].message = first_line(error);
         }
-        if let Some(line) = state.finish_tool(self.index, outcome, Instant::now()) {
+        if let Some(line) = state.finish_tool(self.index, outcome, Instant::now(), None) {
             info!("{line}");
         }
     }
@@ -908,7 +933,7 @@ mod tests {
         let start = Instant::now();
         let mut state = state(start);
         state.tools[0].started = Some(start);
-        state.finish_tool(0, Outcome::Installed, start + Duration::from_secs(1));
+        state.finish_tool(0, Outcome::Installed, start + Duration::from_secs(1), None);
         state.tools[1].started = Some(start + Duration::from_secs(2));
         state.tools[1].message = "extracting".into();
         let snapshot =
@@ -966,8 +991,13 @@ mod tests {
         assert_eq!(state.tools[0].message, "removing");
         state.tools[0].apply_message("remove ~/.local/share/mise/installs/tool0/1".into());
         assert_eq!(state.tools[0].message, "removing");
-        state.finish_tool(0, Outcome::Installed, start + Duration::from_millis(40));
-        state.finish_tool(1, Outcome::Installed, start);
+        state.finish_tool(
+            0,
+            Outcome::Installed,
+            start + Duration::from_millis(40),
+            None,
+        );
+        state.finish_tool(1, Outcome::Installed, start, None);
         let summary = console::strip_ansi_codes(&state.summary(start)).into_owned();
         assert_eq!(summary, "████████████████ 2/2 · removed 2 tools in 0ms");
     }
@@ -983,7 +1013,7 @@ mod tests {
         // Only the slot-bound tool is counted as merely queued.
         assert!(snapshot.ends_with("1 queued"), "{snapshot}");
         // Finishing a dependency drops it from the wait.
-        state.finish_tool(0, Outcome::Installed, start);
+        state.finish_tool(0, Outcome::Installed, start, None);
         assert_eq!(state.tools[2].waiting_on, vec!["1".to_string()]);
     }
 
@@ -993,12 +1023,17 @@ mod tests {
         let mut state = state(start);
         state.tools[0].started = Some(start);
         let finished = state
-            .finish_tool(0, Outcome::Installed, start + Duration::from_millis(250))
+            .finish_tool(
+                0,
+                Outcome::Installed,
+                start + Duration::from_millis(250),
+                None,
+            )
             .unwrap();
         assert!(finished.contains("250ms"));
-        assert!(state.finish_tool(0, Outcome::Failed, start).is_none());
-        state.finish_tool(1, Outcome::Skipped, start);
-        state.finish_tool(2, Outcome::Failed, start);
+        assert!(state.finish_tool(0, Outcome::Failed, start, None).is_none());
+        state.finish_tool(1, Outcome::Skipped, start, None);
+        state.finish_tool(2, Outcome::Failed, start, None);
         let summary = console::strip_ansi_codes(&state.summary(start)).into_owned();
         assert_eq!(
             summary,
@@ -1045,7 +1080,7 @@ mod tests {
         let mut state = state(start);
         // One finished, one exactly halfway through a single-operation install.
         state.tools[0].started = Some(start);
-        state.finish_tool(0, Outcome::Installed, start);
+        state.finish_tool(0, Outcome::Installed, start, None);
         state.tools[1].started = Some(start);
         state.tools[1].weights = vec![1.0];
         state.tools[1].transfer = Some(transfer(50, 100, start));
@@ -1116,7 +1151,7 @@ mod tests {
         // tool0 and tool1 wait for a slot; tool2 waits for tool0.
         assert_eq!(state.queued_count(), 2);
         state.tools[0].started = Some(start);
-        state.finish_tool(0, Outcome::Installed, start);
+        state.finish_tool(0, Outcome::Installed, start, None);
         // tool2's wait drained: it is a plain queued tool now.
         assert!(state.tools[2].waiting_message().is_none());
         assert_eq!(state.queued_count(), 2);
@@ -1220,13 +1255,71 @@ mod tests {
         let line = shared
             .lock()
             .unwrap()
-            .finish_tool(0, Outcome::Installed, start + Duration::from_millis(300))
+            .finish_tool(
+                0,
+                Outcome::Installed,
+                start + Duration::from_millis(300),
+                None,
+            )
             .unwrap();
         let line = console::strip_ansi_codes(&line).into_owned();
         assert_eq!(
             line,
             "✓ tool0@1  300ms · cached  node-v24.20.0-linux-x64.tar.xz"
         );
+    }
+
+    #[test]
+    fn the_child_row_keeps_item_tallies_and_leaves_bytes_to_the_parent() {
+        let start = Instant::now();
+        let mut state = state(start);
+        state.tools[0].started = Some(start);
+        let tool = &mut state.tools[0];
+        // A package manager's count is the child's, with or without a detail.
+        tool.set_items(3, 10);
+        assert_eq!(tool.child_detail(start).as_deref(), Some("3/10"));
+        tool.set_detail("3/10 pkgs · 1.2 MiB".into());
+        assert_eq!(
+            tool.child_detail(start).as_deref(),
+            Some("3/10 pkgs · 1.2 MiB")
+        );
+        // A download is the parent row's figure; without a detail there is
+        // nothing left for a child row to say.
+        tool.set_detail(String::new());
+        tool.set_length(1_000);
+        tool.inc(500);
+        assert_eq!(tool.child_detail(start), None);
+        tool.set_detail("verifying checksum".into());
+        assert_eq!(
+            tool.child_detail(start).as_deref(),
+            Some("verifying checksum")
+        );
+    }
+
+    #[test]
+    fn a_narrow_terminal_drops_the_artifact_rather_than_wrapping_the_line() {
+        let start = Instant::now();
+        let mut state = state(start);
+        state.tools[0].started = Some(start);
+        state.tools[0].artifact = Some("node-v24.20.0-linux-x64.tar.xz".into());
+        state.tools[0].outcome = Some(Outcome::Installed);
+        let line = |columns| {
+            let line = state.tools[0].completion_line(
+                state.width(),
+                start + Duration::from_millis(300),
+                columns,
+            );
+            console::strip_ansi_codes(&line).into_owned()
+        };
+        // Unbounded (the append-only reporter) and roomy terminals keep it.
+        assert_eq!(
+            line(None),
+            "✓ tool0@1  300ms  node-v24.20.0-linux-x64.tar.xz"
+        );
+        assert_eq!(line(Some(80)), line(None));
+        // At 40 columns the full line would wrap; the artifact is the part
+        // that goes, and the line is not padded out to the width it gave up.
+        assert_eq!(line(Some(40)), "✓ tool0@1  300ms");
     }
 
     #[test]
@@ -1240,7 +1333,7 @@ mod tests {
         assert_eq!(state.tools[0].fraction, 0.99);
         let bar = console::strip_ansi_codes(&state.bar_only(24)).into_owned();
         assert_eq!(bar, "███████████████████████░");
-        state.finish_tool(0, Outcome::Installed, start);
+        state.finish_tool(0, Outcome::Installed, start, None);
         let bar = console::strip_ansi_codes(&state.bar_only(24)).into_owned();
         assert_eq!(bar, "████████████████████████");
     }
@@ -1249,9 +1342,9 @@ mod tests {
     fn failures_take_their_share_of_the_bar_in_red() {
         let start = Instant::now();
         let mut state = state(start);
-        state.finish_tool(0, Outcome::Installed, start);
-        state.finish_tool(1, Outcome::Failed, start);
-        state.finish_tool(2, Outcome::Failed, start);
+        state.finish_tool(0, Outcome::Installed, start, None);
+        state.finish_tool(1, Outcome::Failed, start, None);
+        state.finish_tool(2, Outcome::Failed, start, None);
         let bar = state.bar();
         let plain = console::strip_ansi_codes(&bar).into_owned();
         assert_eq!(plain, "████████████████ 3/3");

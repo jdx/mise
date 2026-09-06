@@ -1134,6 +1134,7 @@ mod tests {
         assert_eq!(count(), 0);
         // Contended from another thread: exactly one notice, then it acquires
         // once the first holder lets go.
+        let (noticed_tx, noticed_rx) = mpsc::channel();
         let (acquired_tx, acquired_rx) = mpsc::channel();
         let waiter = {
             let short = short.clone();
@@ -1141,14 +1142,17 @@ mod tests {
             std::thread::spawn(move || {
                 let lock = super::lock_tool_version_with_notice(&short, "1.0.0", &|| {
                     noticed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    noticed_tx.send(()).unwrap();
                 })
                 .unwrap();
                 acquired_tx.send(()).unwrap();
                 drop(lock);
             })
         };
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        assert_eq!(count(), 1, "the waiter should have reported the wait");
+        noticed_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the waiter should have reported the wait");
+        assert_eq!(count(), 1);
         assert!(
             acquired_rx.try_recv().is_err(),
             "must not acquire while held"

@@ -14,13 +14,18 @@ TOML
 
 python3 - <<'PY'
 import errno
+import fcntl
 import os
 import pty
 import re
+import struct
 import subprocess
+import termios
 
-def run(args, env):
+def run(args, env, columns=120):
     master, slave = pty.openpty()
+    # A fresh PTY has no size; mise reads the window size, not $COLUMNS.
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, columns, 0, 0))
     proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=slave, env=env)
     os.close(slave)
     output = bytearray()
@@ -46,9 +51,10 @@ code, raw = run(["mise", "install"], env)
 assert code == 0, raw
 plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
 
-# The live region was drawn: cursor controls appear, and the header carries
-# the install-wide bar with its whole-tool count.
-assert "\x1b[" in raw, raw
+# The live region was drawn: cursor movement or line erasure appears (colors
+# alone would not prove a redraw), and the header carries the install-wide bar
+# with its whole-tool count.
+assert re.search(r"\x1b\[[0-9;]*[ABCDEFGHJKST]|\x1b\[\?25[lh]", raw), raw
 assert "░" in plain or "█" in plain, plain
 assert re.search(r"[01]/1", plain), plain
 
@@ -77,6 +83,18 @@ code, raw = run(["mise", "install", "dummy@1.0.0"], env)
 assert code == 0, raw
 plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
 assert "already installed" in plain, plain
+
+# A narrow terminal gets a layout that fits it rather than wrapped lines: the
+# header drops its version and shrinks the bar, rows drop their bar, and the
+# permanent lines stay within the width. Every line of the recorded output is
+# checked, so a live-region frame that overflowed would fail too.
+code, raw = run(["mise", "install", "--force", "dummy@1.0.0"], env, columns=50)
+assert code == 0, raw
+plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
+assert re.search(r"✓ dummy@1\.0\.0\s+\d+(\.\d+)?(ms|s)", plain), plain
+for line in plain.replace("\r", "\n").splitlines():
+    assert len(line.rstrip()) <= 50, f"{len(line)} cells at 50 columns: {line!r}\n{plain}"
+assert "█" * 11 not in plain, plain
 
 # An AI agent's terminal is a PTY that records frames instead of redrawing
 # them. It must get the append-only output CI gets, or every tick reprints
