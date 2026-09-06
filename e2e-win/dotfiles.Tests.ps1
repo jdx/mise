@@ -1,5 +1,7 @@
 Describe 'dotfiles' {
     BeforeAll {
+        $script:OriginalExperimental = [Environment]::GetEnvironmentVariable('MISE_EXPERIMENTAL', 'Process')
+        $env:MISE_EXPERIMENTAL = '1'
         $script:OriginalDir = Get-Location
         $script:TestRoot = Join-Path $TestDrive ([System.Guid]::NewGuid().ToString())
         New-Item -ItemType Directory -Path $script:TestRoot | Out-Null
@@ -27,6 +29,7 @@ Describe 'dotfiles' {
     }
 
     AfterAll {
+        [Environment]::SetEnvironmentVariable('MISE_EXPERIMENTAL', $script:OriginalExperimental, 'Process')
         Set-Location $script:OriginalDir
         Remove-Item -Path $script:TestRoot -Recurse -Force -ErrorAction Ignore
         if ($null -eq $script:OriginalTrusted) {
