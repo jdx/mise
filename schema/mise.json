@@ -5132,6 +5132,61 @@
             }
           },
           "additionalProperties": false
+        },
+        "services": {
+          "type": "object",
+          "description": "Linux systemd system unit lifecycles managed with `mise bootstrap services apply`, keyed by unit name (`.service` is appended only when the name contains no `.` at all)",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_.@:][A-Za-z0-9_.@:-]{0,254}$",
+            "description": "systemd unit name: at most 255 ASCII letters, digits, '.', '_', '@', ':' or '-', not starting with '-'"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["running", "stopped"],
+                "default": "running",
+                "description": "desired service state"
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "whether the unit starts at boot"
+              },
+              "masked": {
+                "type": "boolean",
+                "default": false,
+                "description": "whether systemd must prevent the unit from starting"
+              },
+              "on_change": {
+                "type": "string",
+                "enum": ["reload", "restart", "reload_or_restart", "none"],
+                "default": "reload_or_restart",
+                "description": "action to take when a changed managed file or directory notifies the service"
+              }
+            },
+            "if": {
+              "properties": {
+                "masked": {
+                  "const": true
+                }
+              },
+              "required": ["masked"]
+            },
+            "then": {
+              "title": "masked service (state and enabled default to conflicting values, so both must be set explicitly)",
+              "properties": {
+                "state": {
+                  "const": "stopped"
+                },
+                "enabled": {
+                  "const": false
+                }
+              },
+              "required": ["state", "enabled"]
+            }
+          }
         }
       }
     },
