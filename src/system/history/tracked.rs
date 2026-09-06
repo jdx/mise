@@ -51,7 +51,7 @@ const CREDENTIAL_GLOBS: &[&str] = &[
 
 pub(crate) type Policy = FilePolicy;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum EntryKind {
     /// The global config directory and `dotfiles.root`: always tracked.
     Implicit,
@@ -65,7 +65,7 @@ pub(crate) enum EntryKind {
     Derived,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TrackedEntry {
     /// Absolute, `~` expanded, lexically normalized.
     pub path: PathBuf,

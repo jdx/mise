@@ -649,6 +649,9 @@ pub(crate) fn pending_path_in(state_dir: &Path, uuid: &str) -> PathBuf {
 pub(crate) struct Pending {
     pub id: u64,
     pub checkpoint: Checkpoint,
+    /// Start-time coverage for external commands that remove declarations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capture_entries: Vec<super::tracked::TrackedEntry>,
     /// sha256 -> blob oid for journal content already written to the
     /// repository (unreferenced until the wrapper commit exists).
     #[serde(default)]

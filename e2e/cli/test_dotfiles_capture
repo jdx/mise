@@ -56,6 +56,15 @@ result=$?
 set -e
 assert "echo $result" '143'
 
+# An interrupt delivered to the wrapper must not cancel outcome finalization.
+set +e
+mise bootstrap dotfiles capture --label ctrl-c -- bash -c 'echo interrupted-by-user >~/.captured; kill -INT "$PPID"; exit 130'
+result=$?
+set -e
+assert "echo $result" '130'
+assert "mise bootstrap dotfiles history --label ctrl-c --json | jq -r '.[0].operation.status'" 'failed'
+assert_contains 'mise bootstrap dotfiles history diff --operation --patch' '+interrupted-by-user'
+
 # Crash recovery retains the label and the live manual-save file.
 pidfile="$PWD/capture.pid"
 cat <<WRAPPER >"$PWD/interrupted-capture"
@@ -76,3 +85,17 @@ assert_succeed 'mise bootstrap dotfiles track ~/.removed-during-command --no-aut
 assert_succeed "mise bootstrap dotfiles capture --label untrack-edit -- sh -c 'echo after-removal >~/.removed-during-command; mise bootstrap dotfiles untrack ~/.removed-during-command'"
 assert_contains 'mise bootstrap dotfiles history diff --operation --patch' '-before removal'
 assert_contains 'mise bootstrap dotfiles history diff --operation --patch' '+after-removal'
+
+# Recovery retains start-time coverage even after the declaration is gone.
+printf 'before crash\n' >~/.removed-before-crash
+assert_succeed 'mise bootstrap dotfiles track ~/.removed-before-crash --no-autosave'
+cat <<WRAPPER >"$PWD/interrupted-capture"
+#!/usr/bin/env bash
+echo \$\$ >"$pidfile"
+exec mise bootstrap dotfiles capture --label untrack-crash -- sh -c 'echo after-crash >~/.removed-before-crash; mise bootstrap dotfiles untrack ~/.removed-before-crash; kill -KILL "\$(cat "$pidfile")"'
+WRAPPER
+assert_fail "$PWD/interrupted-capture"
+assert_succeed 'mise bootstrap dotfiles save ~/.captured'
+recovered=$(mise bootstrap dotfiles history --label untrack-crash --json | jq -r '.[0].uuid')
+assert_contains "mise bootstrap dotfiles history diff $recovered --operation --patch" '-before crash'
+assert_contains "mise bootstrap dotfiles history diff $recovered --operation --patch" '+after-crash'

@@ -27,6 +27,9 @@ pub(crate) struct DotfilesCapture {
 impl DotfilesCapture {
     pub(crate) async fn run(self) -> Result<()> {
         crate::system::history::ensure_experimental()?;
+        // Let the child observe terminal signals and preserve its exit status
+        // while the outcome checkpoint finishes, like `mise run` does.
+        crate::ui::ctrlc::exit_on_ctrl_c(false);
         let (program, args) = self
             .command
             .split_first()
