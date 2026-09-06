@@ -125,13 +125,27 @@ Choose one declaration for the virtualenv. A string such as `_.python.venv =
 | `python_create_args` | Arguments for `python -m venv`, such as `["--without-pip"]`                     |
 | `uv_create_args`     | Arguments for `uv venv`, such as `["--seed"]` or `["--system-site-packages"]`   |
 
-For example, when uv is installed and you need pip inside the virtualenv:
+For example, pass arguments to Python's `venv` module with a multiline inline
+table:
 
 ```toml
-[env._.python.venv]
-path = ".venv"
-create = true
-uv_create_args = ["--seed"]
+[env]
+_.python.venv = {
+  path = ".venv",
+  create = true,
+  python_create_args = ["--without-pip"],
+}
+```
+
+Alternatively, when uv is installed and you need pip inside the virtualenv:
+
+```toml
+[env]
+_.python.venv = {
+  path = ".venv",
+  create = true,
+  uv_create_args = ["--seed"],
+}
 ```
 
 Unless `create=true` is set, you need to create the venv manually with `python -m venv /path/to/venv`.

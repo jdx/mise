@@ -167,7 +167,10 @@ be given as an array or as a comma-separated string.
 
 ```toml
 [tools]
-rust = { version = "1.83.0", targets = ["wasm32-unknown-unknown", "thumbv7em-none-eabi"] }
+rust = {
+  version = "1.83.0",
+  targets = ["wasm32-unknown-unknown", "thumbv7em-none-eabi"],
+}
 ```
 
 If the Rust toolchain is already installed, `mise install` will still add any missing configured targets.
