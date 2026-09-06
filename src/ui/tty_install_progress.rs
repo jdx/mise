@@ -37,6 +37,7 @@ const OSC_SCALE: usize = 10_000;
 #[derive(Debug, PartialEq)]
 struct Layout {
     version: bool,
+    byline: bool,
     header_bar: usize,
     row_bar: bool,
     bytes: bool,
@@ -47,15 +48,20 @@ impl Layout {
     fn fit(columns: usize, prefix_width: usize, version_width: usize) -> Self {
         // `mise`, the gaps, and a status as long as "5/7 · 12.3 MB/s · 2 queued · 3.0s".
         const HEADER_FIXED: usize = 4 + 2 + 2 + 36;
-        let version = columns >= HEADER_FIXED + HEADER_BAR_WIDTH + 1 + version_width;
+        const BYLINE_WIDTH: usize = " by @jdx".len();
+        // The byline is the last thing the header gives up: it goes only when
+        // even a ten-cell bar would not fit beside it.
+        let byline = columns >= HEADER_FIXED + BYLINE_WIDTH + MIN_HEADER_BAR_WIDTH;
+        let version = columns >= HEADER_FIXED + BYLINE_WIDTH + HEADER_BAR_WIDTH + 1 + version_width;
         let header_bar = columns
-            .saturating_sub(HEADER_FIXED)
+            .saturating_sub(HEADER_FIXED + if byline { BYLINE_WIDTH } else { 0 })
             .clamp(MIN_HEADER_BAR_WIDTH, HEADER_BAR_WIDTH);
         // What a row has after its prefix: the phase, then the optional cells,
         // then the elapsed time and the spinner.
         let free = columns.saturating_sub(prefix_width);
         Self {
             version,
+            byline,
             header_bar,
             row_bar: free >= 46,
             bytes: free >= 70,
@@ -77,6 +83,7 @@ pub(crate) struct TtyInstallProgress {
     rows: Arc<Mutex<Rows>>,
     stop: mpsc::Sender<()>,
     thread: Option<JoinHandle<()>>,
+    finished: bool,
 }
 
 impl TtyInstallProgress {
@@ -90,9 +97,10 @@ impl TtyInstallProgress {
             console::measure_text_width(&VERSION_PLAIN),
         );
         let header = ProgressJobBuilder::new()
-            .body("{{ mise }}{{ version }}  {{ bar }}  {{ status }}")
+            .body("{{ mise }}{{ version }}{{ byline }}  {{ bar }}  {{ status }}")
             .prop("mise", &mise_text)
             .prop("version", &version_text(layout.version))
+            .prop("byline", &byline_text(layout.byline))
             .prop("bar", &state.bar_only(layout.header_bar))
             .prop("status", &format!("0/{count}"))
             .progress_total(OSC_SCALE)
@@ -125,6 +133,7 @@ impl TtyInstallProgress {
             rows,
             stop,
             thread: Some(thread),
+            finished: false,
         }
     }
 
@@ -170,6 +179,15 @@ fn version_text(shown: bool) -> String {
     }
 }
 
+/// `mise VERSION by @jdx`, as the header always read.
+fn byline_text(shown: bool) -> String {
+    if shown {
+        format!(" {}", style::edim("by @jdx"))
+    } else {
+        String::new()
+    }
+}
+
 /// Repaint every prop from the model. Cheap enough to run several times a
 /// second: it formats a handful of short strings and clx coalesces redraws.
 fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) {
@@ -182,6 +200,7 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
     let (progress, _) = state.progress();
     header.progress_current(((progress * OSC_SCALE as f64).round() as usize).min(OSC_SCALE));
     header.prop("version", &version_text(layout.version));
+    header.prop("byline", &byline_text(layout.byline));
     header.prop("bar", &state.bar_only(layout.header_bar));
     let mut status = state.count_label();
     if let Some(rate) = state.aggregate_rate(now) {
@@ -267,6 +286,7 @@ impl InstallProgress for TtyInstallProgress {
     }
 
     fn finish(&mut self, failures: Vec<(String, String)>) {
+        self.finished = true;
         self.stop();
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
@@ -298,6 +318,11 @@ impl InstallProgress for TtyInstallProgress {
 
 impl Drop for TtyInstallProgress {
     fn drop(&mut self) {
+        // A session dropped on an error path still closes its live region and
+        // leaves its summary; otherwise the header sits there under the error.
+        if !self.finished {
+            InstallProgress::finish(self, vec![]);
+        }
         self.stop();
     }
 }
@@ -463,6 +488,7 @@ mod tests {
             layout,
             Layout {
                 version: true,
+                byline: true,
                 header_bar: HEADER_BAR_WIDTH,
                 row_bar: true,
                 bytes: true,
@@ -479,14 +505,13 @@ mod tests {
         assert!(!Layout::fit(80, 12, 8).bytes);
         assert!(Layout::fit(80, 12, 8).row_bar);
         assert!(!Layout::fit(52, 12, 8).row_bar);
-        // The header drops the version before it shrinks the bar, and the
-        // bar never shrinks past ten cells.
-        assert!(Layout::fit(52, 12, 8).header_bar >= MIN_HEADER_BAR_WIDTH);
-        assert_eq!(Layout::fit(52, 12, 8).header_bar, MIN_HEADER_BAR_WIDTH);
-        assert!(!Layout::fit(52, 12, 8).version);
-        assert_eq!(Layout::fit(70, 12, 8).header_bar, HEADER_BAR_WIDTH);
-        assert!(!Layout::fit(70, 12, 8).version);
-        assert!(Layout::fit(78, 12, 8).version);
+        // The header drops the version first, then bar cells down to ten, and
+        // only then the byline.
+        let at = |columns| Layout::fit(columns, 12, 8);
+        assert!(at(90).version && at(90).byline && at(90).header_bar == HEADER_BAR_WIDTH);
+        assert!(!at(70).version && at(70).byline && at(70).header_bar == 18);
+        assert!(!at(62).version && at(62).byline && at(62).header_bar == MIN_HEADER_BAR_WIDTH);
+        assert!(!at(52).version && !at(52).byline && at(52).header_bar == MIN_HEADER_BAR_WIDTH);
     }
 
     #[test]

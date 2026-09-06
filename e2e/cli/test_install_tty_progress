@@ -57,6 +57,7 @@ plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
 assert re.search(r"\x1b\[[0-9;]*[ABCDEFGHJKST]|\x1b\[\?25[lh]", raw), raw
 assert "░" in plain or "█" in plain, plain
 assert re.search(r"[01]/1", plain), plain
+assert "by @jdx" in plain, plain
 
 # The row named the phase. (A hook's stdout is a transient status line in the
 # interactive display, as it always was; the append-only reporter is what
@@ -95,6 +96,8 @@ assert re.search(r"✓ dummy@1\.0\.0\s+\d+(\.\d+)?(ms|s)", plain), plain
 for line in plain.replace("\r", "\n").splitlines():
     assert len(line.rstrip()) <= 50, f"{len(line)} cells at 50 columns: {line!r}\n{plain}"
 assert "█" * 11 not in plain, plain
+# The byline is the last thing the header gives up, and at 50 columns it goes.
+assert "by @jdx" not in plain, plain
 
 # An AI agent's terminal is a PTY that records frames instead of redrawing
 # them. It must get the append-only output CI gets, or every tick reprints

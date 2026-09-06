@@ -7,6 +7,7 @@ export MISE_FORCE_PROGRESS=0
 output=$(mise install dummy@1.0.0 2>&1)
 printf '%s\n' "$output" >output.log
 assert_contains 'cat output.log' 'installing 1 tool'
+assert_contains 'cat output.log' 'by @jdx – installing 1 tool'
 assert_contains 'cat output.log' '✓ dummy@1.0.0'
 assert_contains 'cat output.log' '████████████████ 1/1 · installed 1 tool in'
 if [[ $output == *'[1/'* || $output == *$'\033['* ]]; then

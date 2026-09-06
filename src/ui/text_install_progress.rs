@@ -480,7 +480,11 @@ impl State {
         let index = self.index_of(key)?;
         let tool = &mut self.tools[index];
         tool.started = Some(Instant::now());
-        tool.message = "resolving".into();
+        // A removal has nothing to resolve; its one phase is the verb itself.
+        tool.message = match self.action {
+            Action::Install => "resolving".into(),
+            Action::Remove => "removing".into(),
+        };
         Some(index)
     }
 
@@ -729,12 +733,18 @@ pub(crate) struct TextInstallProgress {
     state: Arc<Mutex<State>>,
     stop: mpsc::Sender<()>,
     thread: Option<JoinHandle<()>>,
+    finished: bool,
 }
 
 impl TextInstallProgress {
     pub(super) fn new(state: State) -> Self {
         let total = state.tools.len();
-        info!("{} {total} {}", state.action.present(), tool_noun(total));
+        info!(
+            "{} – {} {total} {}",
+            style::edim("by @jdx"),
+            state.action.present(),
+            tool_noun(total)
+        );
         let state = Arc::new(Mutex::new(state));
         let (stop, rx) = mpsc::channel();
         let shared = state.clone();
@@ -758,6 +768,7 @@ impl TextInstallProgress {
             state,
             stop,
             thread: Some(thread),
+            finished: false,
         }
     }
 
@@ -783,6 +794,7 @@ impl InstallProgress for TextInstallProgress {
     }
 
     fn finish(&mut self, failures: Vec<(String, String)>) {
+        self.finished = true;
         self.stop();
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
@@ -795,6 +807,11 @@ impl InstallProgress for TextInstallProgress {
 
 impl Drop for TextInstallProgress {
     fn drop(&mut self) {
+        // A session dropped on an error path still closes with its summary,
+        // so the record says how far it got before the error that follows.
+        if !self.finished {
+            InstallProgress::finish(self, vec![]);
+        }
         self.stop();
     }
 }
@@ -986,6 +1003,9 @@ mod tests {
             (0..2).map(|i| (i.to_string(), format!("tool{i}@1"))),
         );
         state.started = start;
+        // Starting a removal names the verb; there is nothing to resolve.
+        assert_eq!(state.start_tool("0"), Some(0));
+        assert_eq!(state.tools[0].message, "removing");
         state.tools[0].started = Some(start);
         state.tools[0].apply_message("uninstall".into());
         assert_eq!(state.tools[0].message, "removing");
