@@ -83,6 +83,14 @@ impl InstallInto {
             (Some(parent), Some(name)) => crate::file::desymlink_path(parent).join(name),
             _ => crate::file::desymlink_path(&install_path),
         };
+        let lock_dir = crate::dirs::CACHE.join("lockfiles");
+        if crate::file::path_starts_with_resolved(&lock_dir, &install_path) {
+            bail!(
+                "install-into destination {} contains mise's lock directory {}; choose a different destination",
+                display_path(&install_path),
+                display_path(&lock_dir)
+            );
+        }
         let lock_display_path = install_path.clone();
         let _destination_lock = tokio::task::spawn_blocking(move || {
             crate::lock_file::LockFile::new(&lock_path)

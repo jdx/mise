@@ -27,6 +27,15 @@ echo "$ASDF_INSTALL_VERSION" >"$ASDF_INSTALL_PATH/installed-version"
 EOF
 chmod +x "$plugin_dir/bin/list-all" "$plugin_dir/bin/install"
 
+# Force-replacing the cache must not unlink the lock protecting the destination.
+mkdir -p "$MISE_CACHE_DIR/lockfiles"
+echo preserved >"$MISE_CACHE_DIR/lockfiles/keep.txt"
+ln -s "$MISE_CACHE_DIR" cache-alias
+for destination in "$MISE_CACHE_DIR" "$MISE_CACHE_DIR/lockfiles" "$PWD/cache-alias/lockfiles"; do
+  assert_fail_contains "mise install-into asdf:install-into-race@1.0.0 '$destination' --yes" "contains mise's lock directory"
+  assert "cat '$MISE_CACHE_DIR/lockfiles/keep.txt'" preserved
+done
+
 python3 - <<'PY'
 import os
 from pathlib import Path
