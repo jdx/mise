@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1TFXVACVFJKD90564RTFWDZ",
   "strategy": "manual-commit",
   "branch": "codex/docs-cookbook-recipes",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "docs/mise-cookbook/cpp.md",
     "docs/mise-cookbook/docker.md",
@@ -23,13 +23,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 53579,
+    "input_tokens": 77607,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 3062400,
-    "output_tokens": 16558,
-    "api_call_count": 19
+    "cache_read_tokens": 3671936,
+    "output_tokens": 17240,
+    "api_call_count": 26
   }
 }

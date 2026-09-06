@@ -1,0 +1,58 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TFXVACVFJKD90564RTFWDZ",
+  "session_id": "01a074f4-23f2-7d41-98ca-e9ba653bbb90",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T04:34:20.389384Z",
+  "branch": "codex/docs-cookbook-recipes",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/mise-cookbook/cpp.md",
+    "docs/mise-cookbook/docker.md",
+    "docs/mise-cookbook/index.md",
+    "docs/mise-cookbook/neovim.md",
+    "docs/mise-cookbook/nodejs.md",
+    "docs/mise-cookbook/presets.md",
+    "docs/mise-cookbook/python.md",
+    "docs/mise-cookbook/ruby.md",
+    "docs/mise-cookbook/shell-tricks.md",
+    "docs/mise-cookbook/terraform.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "107d67bee39b",
+  "checkpoint_transcript_start": 275,
+  "transcript_lines_at_start": 275,
+  "compact_transcript_start": 39,
+  "token_usage": {
+    "input_tokens": 24028,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 609536,
+    "output_tokens": 682,
+    "api_call_count": 7
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T04:34:20.35213Z",
+    "agent_lines": 364,
+    "agent_removed": 232,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 364,
+    "total_lines_changed": 596,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
