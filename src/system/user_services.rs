@@ -85,6 +85,9 @@ impl UserServiceRequest {
         if config.masked {
             bail!("user service '{name}' cannot be masked; use `state = \"absent\"` to remove it");
         }
+        if config.on_change != super::services_common::ServiceChangeAction::default() {
+            bail!("user service '{name}': `on_change` only applies to system services");
+        }
         let mut description = config.description;
         let mut restart = config.restart;
         let mut nice = None;
@@ -721,6 +724,12 @@ mod tests {
         })
         .unwrap_err();
         assert!(err.to_string().contains("cannot be masked"));
+        let err = request_result(ServiceTomlConfig {
+            on_change: super::super::services_common::ServiceChangeAction::Restart,
+            ..user_config("agent")
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("only applies to system services"));
     }
 
     fn request_result(config: ServiceTomlConfig) -> Result<UserServiceRequest> {

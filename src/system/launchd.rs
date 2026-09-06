@@ -120,6 +120,9 @@ impl LaunchdRequest {
         if config.keep_alive && config.keep_alive_on_failure {
             bail!("agent '{name}' cannot set both `keep_alive` and `keep_alive_on_failure`");
         }
+        if config.nice.is_some_and(|nice| !(-20..=20).contains(&nice)) {
+            bail!("agent '{name}' `nice` must be between -20 and 20");
+        }
         if let Some(interval) = &config.start_calendar_interval {
             interval.validate(&name)?;
         }
@@ -642,6 +645,17 @@ mod tests {
 
     #[test]
     fn test_launchd_request_validation() {
+        for nice in [-21, -20, 20, 21] {
+            let result = LaunchdRequest::from_toml(
+                "priority".into(),
+                LaunchdTomlConfig {
+                    program: Some("/bin/echo".into()),
+                    nice: Some(nice),
+                    ..Default::default()
+                },
+            );
+            assert_eq!(result.is_ok(), (-20..=20).contains(&nice));
+        }
         let request = LaunchdRequest::from_toml(
             "my-agent".to_string(),
             LaunchdTomlConfig {
