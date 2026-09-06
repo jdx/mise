@@ -456,6 +456,7 @@ grep -qxF "$activation" ~/.bashrc 2>/dev/null || printf '%s\n' "$activation" >> 
 ```sh
 zshrc="${ZDOTDIR:-$HOME}/.zshrc"
 activation='eval "$(mise activate zsh)"'
+mkdir -p "$(dirname "$zshrc")"
 grep -qxF "$activation" "$zshrc" 2>/dev/null || printf '%s\n' "$activation" >> "$zshrc"
 ```
 
@@ -584,9 +585,18 @@ mise completion bash > ~/.local/share/bash-completion/completions/mise
 # Generate into a directory owned by your user:
 mkdir -p ~/.zfunc
 mise completion zsh > ~/.zfunc/_mise
+```
 
-# Add these to .zshrc, with fpath before your existing compinit call:
+Add the `fpath` update to `.zshrc` before its existing `compinit` call (including
+one made by a shell framework):
+
+```sh
 fpath=(~/.zfunc $fpath)
+```
+
+If `.zshrc` does not already initialize completions, also add:
+
+```sh
 autoload -Uz compinit
 compinit
 ```
