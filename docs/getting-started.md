@@ -171,7 +171,7 @@ Review configuration from other people before running it: tasks, hooks, and some
 environment directives can execute code. Use `mise trust` to explicitly trust a
 config you've reviewed.
 
-In normal mode, commands that execute project behavior, including `mise install`,
+In normal mode outside CI, commands that execute project behavior, including `mise install`,
 `mise exec`, and `mise run`, automatically trust the active config. With
 [paranoid mode](/paranoid.html), non-global configs require explicit trust.
 See [`mise trust`](/cli/trust.html) for details.
