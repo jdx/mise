@@ -266,3 +266,16 @@ assert_succeed "mise bootstrap dotfiles track ~/.config/withlink"
 assert_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "120000"
 assert_contains "mise bootstrap dotfiles paths" "derived: ~/target-dir (target of ~/.config/withlink/sub)"
 assert_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "~/target-dir/file.conf"
+
+# a nested repository inside a tracked directory is captured as a pointer
+# to its commit, never descended into
+mkdir -p ~/.config/nested/sub
+git -C ~/.config/nested/sub init -q
+echo inner >~/.config/nested/sub/inner.txt
+git -C ~/.config/nested/sub add inner.txt
+git -C ~/.config/nested/sub -c user.name=t -c user.email=t@t commit -q -m inner
+echo outer >~/.config/nested/outer.txt
+assert_succeed "mise bootstrap dotfiles track ~/.config/nested"
+assert_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "160000"
+assert_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "~/.config/nested/outer.txt"
+assert_not_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "inner.txt"

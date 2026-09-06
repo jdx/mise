@@ -235,16 +235,28 @@ impl Store {
                     .retain(|rel| !dropped.contains(&root.path.join(rel)));
             }
         }
-        // the modes of the files read live, plus those the previous
-        // checkpoint recorded for entries carried forward unread
+        // the modes of the files read live, plus those recorded for entries
+        // carried forward unread: from the newest checkpoint that is not
+        // protective, since a protective one holds the live bits of a
+        // manual-save file, not its saved ones
         let mut modes = file_modes(&walk);
-        if let Some((previous_checkpoint, _)) = &previous_tree {
+        let saved_modes = if manual.carry.is_empty() {
+            None
+        } else {
+            index.entries.iter().rev().find_map(|entry| {
+                let checkpoint = store::read_meta_cache_in(&self.state_dir, &entry.uuid)
+                    .ok()
+                    .flatten()?;
+                (!checkpoint.trigger.as_str().ends_with("-before")).then_some(checkpoint.tree.modes)
+            })
+        };
+        if let Some(saved_modes) = saved_modes {
             let carried: Vec<String> = manual
                 .carry
                 .iter()
                 .map(|index| walk.entries[*index].display())
                 .collect();
-            for (path, bits) in &previous_checkpoint.tree.modes {
+            for (path, bits) in &saved_modes {
                 let under = carried.iter().any(|entry| {
                     path == entry
                         || path

@@ -554,7 +554,8 @@ fn walk_entry(
         });
     let mut files = 0u64;
     let mut bytes = 0u64;
-    for candidate in walker {
+    let mut walker = walker;
+    while let Some(candidate) = walker.next() {
         let candidate = match candidate {
             Ok(candidate) => candidate,
             Err(err) => {
@@ -589,6 +590,7 @@ fn walk_entry(
                 // captured as a gitlink; never descended into
                 walk.files.insert(path.to_path_buf(), (index, entry.policy));
                 files += 1;
+                walker.skip_current_dir();
             }
             continue;
         }
