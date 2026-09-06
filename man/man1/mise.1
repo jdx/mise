@@ -239,7 +239,7 @@ Connect a setup repository
 Show what history tracks and under which policies
 .TP
 \fBbootstrap dotfiles pull\fR
-Pull incoming shared changes into the live files
+Pull incoming shared changes into the live files (experimental)
 .TP
 \fBbootstrap dotfiles rollback\fR
 Return files to the version a checkpoint holds (experimental)
@@ -254,7 +254,7 @@ Show the status of dotfiles from `[dotfiles]`
 .RE
 .TP
 \fBbootstrap dotfiles sync\fR
-Publish, fetch, and record what is pending now
+Publish, fetch, and record what is pending now (experimental)
 .TP
 \fBbootstrap dotfiles track\fR
 Track a file or directory where it is (experimental)
@@ -1820,7 +1820,7 @@ List the paths the watcher found changing constantly
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP DOTFILES PULL"
-Pull incoming shared changes into the live files
+Pull incoming shared changes into the live files (experimental)
 
 Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
 (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
@@ -1830,8 +1830,11 @@ file written and journaled one at a time, reload hooks only afterwards,
 and `mise bootstrap dotfiles undo` to reverse it. Configuration and the sources it
 references apply together; an incoming configuration file that does not
 parse, a path with unsaved local edits, staged git changes in your own
-checkout, or a genuine local edit is held with its group. Conflicts
-are decided per path with `\-\-take\-remote` or `\-\-keep\-local`.
+checkout, or a genuine local edit pauses the complete application.
+Conflicts pause both publication and application for the whole setup;
+local history and fetching continue. Decisions are recorded per path
+with `\-\-take\-remote` or `\-\-keep\-local`; sharing resumes only after all
+conflicts are resolved and the plan has been recomputed.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles pull [OPTIONS] [<PATH>] ...
 .PP
@@ -1856,7 +1859,7 @@ Print help
 .PP
 .TP
 \fB<PATH>\fR
-Only these paths (files or directories)
+Paths must cover the complete pending setup; partial pulls are rejected
 .SH "MISE BOOTSTRAP DOTFILES ROLLBACK"
 Return files to the version a checkpoint holds (experimental)
 
@@ -1956,8 +1959,17 @@ Print help
 .TP
 \fB<TARGET>\fR
 Only show these targets
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap dotfiles status
+mise bootstrap dotfiles status ~/.zshrc
+mise bootstrap dotfiles status \-\-json
+mise bootstrap dotfiles status \-\-missing # exit 1 if anything is out of sync
+.RE
 .SH "MISE BOOTSTRAP DOTFILES SYNC"
-Publish, fetch, and record what is pending now
+Publish, fetch, and record what is pending now (experimental)
 
 Fetches the setup branch and other machines' recovery refs, publishes
 this machine's shared files and configuration (leased on the branch

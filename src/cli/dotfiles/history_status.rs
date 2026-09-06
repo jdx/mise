@@ -114,6 +114,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
             latest: None,
             pending_operations: 0,
             health: None,
+            sync: None,
             watcher: super::capture_health::watcher().await?,
             unavailable: Some("dotfile tracking requires experimental = true".into()),
         });

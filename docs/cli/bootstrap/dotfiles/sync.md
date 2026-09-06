@@ -5,7 +5,7 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/dotfiles/sync.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/sync.rs)
 
-Publish, fetch, and record what is pending now
+Publish, fetch, and record what is pending now (experimental)
 
 Fetches the setup branch and other machines' recovery refs, publishes
 this machine's shared files and configuration (leased on the branch

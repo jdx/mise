@@ -24,7 +24,7 @@ to `[history.origin]` in the global config; the mode to
 
 ## Subcommands
 
-- [`mise bootstrap dotfiles origin set [FLAGS] <URL>`](/cli/bootstrap/dotfiles/origin/set.md)
+- [`mise bootstrap dotfiles origin set [FLAGS] <URL>`](/cli/bootstrap/dotfiles/origin/set.html)
 
 Examples:
 

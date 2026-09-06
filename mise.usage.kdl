@@ -858,9 +858,9 @@ enrollment is never mistaken for protection.
             flag --noisy help="List the paths the watcher found changing constantly"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
-        cmd pull help="Pull incoming shared changes into the live files" effect=destructive {
+        cmd pull help="Pull incoming shared changes into the live files (experimental)" effect=destructive {
             long_help #"""
-Pull incoming shared changes into the live files
+Pull incoming shared changes into the live files (experimental)
 
 Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
 (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
@@ -956,9 +956,9 @@ mise bootstrap dotfiles status --json
 mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
 """#
         }
-        cmd sync help="Publish, fetch, and record what is pending now" effect=write {
+        cmd sync help="Publish, fetch, and record what is pending now (experimental)" effect=write {
             long_help #"""
-Publish, fetch, and record what is pending now
+Publish, fetch, and record what is pending now (experimental)
 
 Fetches the setup branch and other machines' recovery refs, publishes
 this machine's shared files and configuration (leased on the branch
@@ -971,7 +971,7 @@ that. In `fetch-only` mode nothing is published.
             flag --best-effort help="Warn instead of failing when the origin is unreachable"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
-        cmd track help="Track a file or directory where it is" effect=write {
+        cmd track help="Track a file or directory where it is (experimental)" effect=write {
             long_help #"""
 Track a file or directory where it is (experimental)
 

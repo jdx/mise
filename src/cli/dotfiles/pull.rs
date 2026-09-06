@@ -4,7 +4,7 @@ use eyre::{Result, bail};
 
 use crate::system::history::sync::apply::{self, ApplyRequest};
 
-/// Pull incoming shared changes into the live files
+/// Pull incoming shared changes into the live files (experimental)
 ///
 /// Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
 /// (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes

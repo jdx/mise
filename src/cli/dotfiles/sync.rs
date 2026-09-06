@@ -2,7 +2,7 @@ use eyre::{Result, bail};
 
 use crate::system::history::sync::run::{self, SyncRequest};
 
-/// Publish, fetch, and record what is pending now
+/// Publish, fetch, and record what is pending now (experimental)
 ///
 /// Fetches the setup branch and other machines' recovery refs, publishes
 /// this machine's shared files and configuration (leased on the branch
