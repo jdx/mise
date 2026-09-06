@@ -340,7 +340,12 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
             staging.display().to_string(),
             "/f".to_string(),
         ];
-        let end = ["/end".to_string(), "/tn".to_string(), req.task.clone()];
+        let end = [
+            "/end".to_string(),
+            "/tn".to_string(),
+            req.task.clone(),
+            "/HRESULT".to_string(),
+        ];
         let run = ["/run".to_string(), "/tn".to_string(), req.task.clone()];
         // what is registered now: a running instance keeps its old process
         // (`IgnoreNew`), so a changed definition or a stop ends it first, and
@@ -376,11 +381,14 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         std::fs::write(&path, &rendered)?;
         let _ = std::fs::remove_file(&staging);
         if end_first {
-            match schtasks(&end).await {
-                Ok(()) => {}
-                // it exited between the query and now
-                Err(err) if end_error_is_noop(&err.to_string()) => {}
-                Err(err) => return Err(err),
+            // it may have exited between the query and now: the HRESULT
+            // says so in every locale; the message is matched as a fallback
+            let (status, printed) = schtasks_output(&end).await?;
+            if !status.success()
+                && status.code() != Some(SCHED_E_TASK_NOT_RUNNING)
+                && !end_error_is_noop(&printed)
+            {
+                bail!("`schtasks {}` failed: {printed}", shell_words::join(&end));
             }
         }
         if start {
@@ -484,12 +492,26 @@ fn parse_query(output: &str) -> Option<Query> {
     })
 }
 
+/// `SCHED_E_TASK_NOT_RUNNING`: the HRESULT `schtasks /end /HRESULT` exits
+/// with when the task has no running instance.
+const SCHED_E_TASK_NOT_RUNNING: i32 = 0x8004130Bu32 as i32;
+
 fn end_error_is_noop(error: &str) -> bool {
     let error = error.to_ascii_lowercase();
     error.contains("not running") || error.contains("no running instance")
 }
 
 async fn schtasks(args: &[String]) -> Result<()> {
+    let (status, printed) = schtasks_output(args).await?;
+    if !status.success() {
+        bail!("`schtasks {}` failed: {printed}", shell_words::join(args));
+    }
+    Ok(())
+}
+
+/// Runs schtasks; its exit status and what it printed (schtasks writes its
+/// SUCCESS and ERROR lines to stdout).
+async fn schtasks_output(args: &[String]) -> Result<(std::process::ExitStatus, String)> {
     debug!("$ schtasks {}", shell_words::join(args));
     let mut cmd = tokio::process::Command::new("schtasks");
     cmd.args(args)
@@ -500,20 +522,16 @@ async fn schtasks(args: &[String]) -> Result<()> {
     let output = tokio::time::timeout(SCHTASKS_TIMEOUT, cmd.output())
         .await
         .map_err(|_| eyre!("`schtasks {}` timed out", shell_words::join(args)))??;
-    if !output.status.success() {
-        // schtasks writes its SUCCESS and ERROR lines to stdout
-        let printed = [
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        ]
-        .iter()
-        .map(|text| text.trim().to_string())
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join("; ");
-        bail!("`schtasks {}` failed: {printed}", shell_words::join(args));
-    }
-    Ok(())
+    let printed = [
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    ]
+    .iter()
+    .map(|text| text.trim().to_string())
+    .filter(|text| !text.is_empty())
+    .collect::<Vec<_>>()
+    .join("; ");
+    Ok((output.status, printed))
 }
 
 #[cfg(test)]
