@@ -27,6 +27,9 @@ pub(crate) struct SharedFile {
 pub(crate) struct Unshared {
     pub local: PathBuf,
     pub reason: String,
+    /// Where the file would land in the setup branch, so a copy committed
+    /// there counts as private content (`None` when it has no place there).
+    pub branch_path: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -84,6 +87,7 @@ pub(crate) fn current(
             report.unshared.push(Unshared {
                 local: path.clone(),
                 reason,
+                branch_path: roots.branch_path(entry.kind, path, entry.variant.as_deref()),
             });
             continue;
         }
@@ -91,6 +95,7 @@ pub(crate) fn current(
             report.unshared.push(Unshared {
                 local: path.clone(),
                 reason: note.clone(),
+                branch_path: roots.branch_path(entry.kind, path, entry.variant.as_deref()),
             });
             continue;
         }
@@ -104,6 +109,7 @@ pub(crate) fn current(
             report.unshared.push(Unshared {
                 local: path.clone(),
                 reason: reason.to_string(),
+                branch_path: None,
             });
             continue;
         };

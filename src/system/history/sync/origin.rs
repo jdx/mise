@@ -333,17 +333,15 @@ fn unshared_destinations(shared: &share::ShareReport, tracked: &TrackedSet) -> V
             out.push(path);
         }
     }
-    for unshared in &shared.unshared {
-        // under the entry's own kind: a source or a configuration file
-        // lives elsewhere in the branch than a tracked file
-        let Some(entry) = tracked.entry_for(&unshared.local) else {
-            continue;
-        };
-        if let Some(path) = roots.branch_path(entry.kind, &unshared.local, entry.variant.as_deref())
-        {
-            out.push(path);
-        }
-    }
+    // the walked files, under the entry that owns each (a derived symlink
+    // target too, which no declared entry covers): a source or a
+    // configuration file lives elsewhere in the branch than a tracked file
+    out.extend(
+        shared
+            .unshared
+            .iter()
+            .filter_map(|unshared| unshared.branch_path.clone()),
+    );
     out.sort();
     out.dedup();
     out

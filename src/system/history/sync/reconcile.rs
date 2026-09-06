@@ -198,7 +198,12 @@ pub(crate) fn reconcile(
         }
 
         let local_changed = s_oid != a;
-        let remote_changed = t_oid != u;
+        // an upstream version reconciled but never written here (the merge
+        // this machine published, or a version recorded while applying
+        // waited) is still incoming: a local change made meanwhile merges
+        // with it instead of publishing over it
+        let pending = record.reconciled != record.applied && t_oid != s_oid;
+        let remote_changed = t_oid != u || pending;
         match (local_changed, remote_changed) {
             (false, false) => {
                 // reconciled but never written here: the merge this
@@ -255,6 +260,13 @@ pub(crate) fn reconcile(
                                 base: a,
                             });
                             plan.publish = None;
+                        } else if object_oid == s_oid {
+                            // the merge is what is saved here already
+                            // (upstream's change was a subset): nothing to
+                            // write
+                            plan.next.acknowledged = s_oid.clone();
+                            plan.next.reconciled = s_oid.clone();
+                            plan.next.applied = s_oid;
                         } else {
                             plan.apply = Some(object);
                             plan.next.acknowledged = s_oid;
@@ -353,6 +365,15 @@ mod tests {
     ) -> Vec<PathPlan> {
         let tmp = tempfile::tempdir().unwrap();
         let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        run_in(&repo, shared, upstream, state)
+    }
+
+    fn run_in(
+        repo: &HistoryRepo,
+        shared: &[(&str, &str)],
+        upstream: &[(&str, &str)],
+        state: &[(&str, SyncRecord)],
+    ) -> Vec<PathPlan> {
         let shared: BTreeMap<String, Object> = shared
             .iter()
             .map(|(p, o)| (p.to_string(), obj(o)))
@@ -368,7 +389,49 @@ mod tests {
             .iter()
             .map(|(p, r)| (p.to_string(), r.clone()))
             .collect();
-        reconcile(&repo, &shared, &upstream, &state, &BTreeSet::new()).unwrap()
+        reconcile(repo, &shared, &upstream, &state, &BTreeSet::new()).unwrap()
+    }
+
+    #[test]
+    fn a_local_edit_over_a_pending_merge_merges_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let base = repo.hash_blob(b"a\nb\nc\n").unwrap();
+        let local = repo.hash_blob(b"a\nb\nc\nlocal\n").unwrap();
+        let merged = repo.hash_blob(b"remote\na\nb\nc\nlocal\n").unwrap();
+        let edited = repo.hash_blob(b"a\nb\nc\nlocal\nmore\n").unwrap();
+        // this machine published the merge of its edit with the other
+        // side's; the merge waits to be pulled (applied is still the base)
+        let record = rec(Some(&local), Some(&merged), Some(&base));
+        // a further local edit meanwhile: the other side's line must reach
+        // the branch again, not be published over
+        let plans = run_in(
+            &repo,
+            &[("tracked/home/.zshrc", &edited)],
+            &[("tracked/home/.zshrc", &merged)],
+            &[("tracked/home/.zshrc", record.clone())],
+        );
+        let plan = &plans[0];
+        assert!(plan.conflict.is_none(), "{:?}", plan.conflict);
+        let published = plan.publish.clone().flatten().expect("published");
+        let bytes = repo.cat_object(&published.1).unwrap();
+        assert_eq!(bytes, b"remote\na\nb\nc\nlocal\nmore\n");
+        assert_eq!(plan.apply, Some(Some(published.clone())));
+        assert_eq!(plan.next.acknowledged.as_deref(), Some(edited.as_str()));
+        assert_eq!(plan.next.reconciled.as_deref(), Some(published.1.as_str()));
+
+        // an upstream deletion waiting to be pulled, edited meanwhile: a
+        // decision, not a resurrection
+        let plans = run_in(
+            &repo,
+            &[("tracked/home/.zshrc", &edited)],
+            &[],
+            &[("tracked/home/.zshrc", rec(Some(&local), None, Some(&local)))],
+        );
+        assert_eq!(
+            plans[0].conflict.as_ref().map(|c| c.kind),
+            Some(ConflictKind::DeleteModify)
+        );
     }
 
     #[test]

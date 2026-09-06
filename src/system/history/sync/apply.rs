@@ -109,9 +109,11 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
                 },
             });
         } else if keep_local.contains(&local) {
-            // the local version is published by the next sync: upstream is
-            // reconciled at its current version, local stays unacknowledged
+            // the local version is published by the next sync: upstream's
+            // version is the base it supersedes (acknowledged and
+            // reconciled), and the local one is what differs from it
             let record = sync_state.entry(conflict.branch_path.clone()).or_default();
+            record.acknowledged = conflict.remote.clone();
             record.reconciled = conflict.remote.clone();
             record.upstream_commit = status.upstream_commit.clone();
             state_changed = true;
