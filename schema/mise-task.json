@@ -421,7 +421,8 @@
                 "$ref": "#/$defs/env_redact"
               },
               "required": {
-                "$ref": "#/$defs/env_required"
+                "const": false,
+                "description": "cannot be required when a value is provided; only `required = false` is accepted"
               }
             },
             "required": ["value"],
@@ -453,7 +454,15 @@
                 "$ref": "#/$defs/env_redact"
               },
               "required": {
-                "$ref": "#/$defs/env_required"
+                "oneOf": [
+                  {
+                    "const": true
+                  },
+                  {
+                    "type": "string"
+                  }
+                ],
+                "description": "a variable without a value must be required: `true` or a help string on how to set it"
               }
             },
             "required": ["required"],
@@ -1049,19 +1058,6 @@
       "type": "boolean",
       "description": "redact the value from logs"
     },
-    "env_required": {
-      "oneOf": [
-        {
-          "type": "boolean",
-          "description": "require this environment variable to be defined before mise runs or in a later config file"
-        },
-        {
-          "type": "string",
-          "description": "require this environment variable with user help text on how to set it"
-        }
-      ],
-      "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
-    },
     "env_default": {
       "oneOf": [
         {
@@ -1078,6 +1074,19 @@
     "env_age": {
       "type": "string",
       "description": "[experimental] age-encrypted value (simplified format)"
+    },
+    "env_required": {
+      "oneOf": [
+        {
+          "type": "boolean",
+          "description": "require this environment variable to be defined before mise runs or in a later config file"
+        },
+        {
+          "type": "string",
+          "description": "require this environment variable with user help text on how to set it"
+        }
+      ],
+      "description": "require this environment variable to be defined before mise runs or in a later config file. Can be a boolean or a help string. A variable that carries its own `value` cannot also be `required = true`."
     },
     "tool_options": {
       "properties": {
