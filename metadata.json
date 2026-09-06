@@ -4,8 +4,9 @@
   "strategy": "manual-commit",
   "checkpoints_count": 12,
   "files_touched": [
-    "src/github/sigstore.rs",
-    "src/http.rs"
+    "docs/url-replacements.md",
+    "src/backend/conda.rs",
+    "src/github/sigstore.rs"
   ],
   "sessions": [
     {
@@ -13,7 +14,7 @@
       "transcript": "/0/full.jsonl",
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
-      "prompt": "/0/prompt.txt"
+      "prompt": ""
     },
     {
       "metadata": "/1/metadata.json",
@@ -31,10 +32,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 608212,
+    "input_tokens": 648460,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 28501632,
-    "output_tokens": 64193,
-    "api_call_count": 526
+    "cache_read_tokens": 34517248,
+    "output_tokens": 69004,
+    "api_call_count": 560
   }
 }

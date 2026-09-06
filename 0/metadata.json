@@ -3,47 +3,39 @@
   "checkpoint_id": "01M1VQPA8JB2DM867V3DE7F80D",
   "session_id": "01a0751c-803c-71c3-8477-fa566f432cfe",
   "strategy": "manual-commit",
-  "created_at": "2026-09-06T16:35:26.906878Z",
+  "created_at": "2026-09-06T16:46:53.803341Z",
   "checkpoints_count": 1,
   "files_touched": [
-    "src/github/sigstore.rs",
-    "src/http.rs"
+    "docs/url-replacements.md",
+    "src/backend/conda.rs",
+    "src/github/sigstore.rs"
   ],
   "agent": "Codex",
   "model": "gpt-5.6-sol",
   "turn_id": "f95ab1d4f476",
-  "checkpoint_transcript_start": 3938,
-  "transcript_lines_at_start": 3938,
-  "compact_transcript_start": 607,
+  "checkpoint_transcript_start": 3949,
+  "transcript_lines_at_start": 3949,
+  "compact_transcript_start": 609,
   "token_usage": {
-    "input_tokens": 1111,
+    "input_tokens": 41359,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 317056,
-    "output_tokens": 92,
-    "api_call_count": 2
+    "cache_read_tokens": 6332672,
+    "output_tokens": 4903,
+    "api_call_count": 36
   },
   "session_metrics": {
     "turn_count": 9
   },
   "initial_attribution": {
-    "calculated_at": "2026-09-06T16:35:26.631468Z",
-    "agent_lines": 31,
-    "agent_removed": 13,
-    "human_added": 9,
+    "calculated_at": "2026-09-06T16:46:53.454823Z",
+    "agent_lines": 23,
+    "agent_removed": 25,
+    "human_added": 56,
     "human_modified": 0,
     "human_removed": 0,
-    "total_committed": 40,
-    "total_lines_changed": 62,
-    "agent_percentage": 70.96774193548387,
+    "total_committed": 79,
+    "total_lines_changed": 112,
+    "agent_percentage": 42.857142857142854,
     "metric_version": 2
-  },
-  "prompt_attributions": [
-    {
-      "checkpoint_number": 1,
-      "user_lines_added": 0,
-      "user_lines_removed": 0,
-      "agent_lines_added": 0,
-      "agent_lines_removed": 0
-    }
-  ]
+  }
 }
