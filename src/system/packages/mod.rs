@@ -48,37 +48,6 @@ pub(crate) enum PackageDesiredState {
     Absent,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageUpgradeResult {
-    pub request: PackageRequest,
-    pub outcome: PackageUpgradeOutcome,
-}
-
-impl PackageUpgradeResult {
-    pub(crate) fn log(&self, manager: &str) {
-        info!("{manager}:{}: {}", self.request, self.outcome);
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PackageUpgradeOutcome {
-    Upgraded { from: String, to: String },
-    WouldUpgrade { from: String, to: String },
-    UpToDate { version: String },
-    Skipped { reason: String },
-}
-
-impl std::fmt::Display for PackageUpgradeOutcome {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Upgraded { from, to } => write!(f, "upgraded {from} -> {to}"),
-            Self::WouldUpgrade { from, to } => write!(f, "would upgrade {from} -> {to}"),
-            Self::UpToDate { version } => write!(f, "already up to date ({version})"),
-            Self::Skipped { reason } => write!(f, "skipped: {reason}"),
-        }
-    }
-}
-
 impl std::fmt::Display for PackageRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.version {
@@ -251,15 +220,6 @@ pub(crate) trait SystemPackageManager: Send + Sync {
     /// upgrade invocation.
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         self.install(pkgs, opts).await
-    }
-
-    async fn upgrade_with_report(
-        &self,
-        pkgs: &[PackageRequest],
-        opts: &InstallOpts,
-    ) -> Result<Option<Vec<PackageUpgradeResult>>> {
-        self.upgrade(pkgs, opts).await?;
-        Ok(None)
     }
 
     /// Can `install` satisfy a version pin? pacman (Arch repos only carry

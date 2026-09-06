@@ -6,9 +6,7 @@ use eyre::{Result, bail};
 
 use crate::config::Settings;
 use crate::system::ManagerPackages;
-use crate::system::packages::{
-    InstallOpts, PackageDesiredState, PackageState, PackageStatus, PackageUpgradeOutcome,
-};
+use crate::system::packages::{InstallOpts, PackageDesiredState, PackageState, PackageStatus};
 use crate::ui::prompt;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -233,37 +231,6 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                 }
             }
             Action::Upgrade => {
-                if let Some(results) = mp.manager.upgrade_with_report(&targets, &opts).await? {
-                    if results.len() != targets.len()
-                        || results
-                            .iter()
-                            .zip(&targets)
-                            .any(|(result, target)| &result.request != target)
-                    {
-                        bail!(
-                            "{name}: upgrade report must contain one result per request in input order"
-                        );
-                    }
-                    let mut upgraded = 0;
-                    let mut current = 0;
-                    let mut skipped = 0;
-                    for result in results {
-                        result.log(name);
-                        match result.outcome {
-                            PackageUpgradeOutcome::Upgraded { .. }
-                            | PackageUpgradeOutcome::WouldUpgrade { .. } => upgraded += 1,
-                            PackageUpgradeOutcome::UpToDate { .. } => current += 1,
-                            PackageUpgradeOutcome::Skipped { .. } => skipped += 1,
-                        }
-                    }
-                    let verb = if d.dry_run {
-                        "would upgrade"
-                    } else {
-                        "upgraded"
-                    };
-                    info!("{name}: {upgraded} {verb}, {current} up to date, {skipped} skipped");
-                    continue;
-                }
                 // managers no-op packages that are already current, so
                 // re-query afterwards and report only what actually changed
                 let prior: HashMap<String, String> = statuses
@@ -283,6 +250,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                         PackageState::Unavailable { .. } => None,
                     })
                     .collect();
+                mp.manager.upgrade(&targets, &opts).await?;
                 if !d.dry_run {
                     let after = mp.manager.installed(&targets).await?;
                     let changed: Vec<String> = after
@@ -363,7 +331,3 @@ mod tests {
         assert_eq!(unavailable_package_reason(&manager_opts, &statuses), None);
     }
 }
-
-#[cfg(test)]
-#[path = "driver_upgrade_tests.rs"]
-mod upgrade_tests;

@@ -7399,9 +7399,25 @@ fn git_only_path_rejects_symlink_escape() -> Result<()> {
     Ok(())
 }
 
-#[path = "upgrade_tests.rs"]
-mod upgrade_tests;
-
-#[cfg(target_os = "macos")]
-#[path = "upgrade_transaction_tests.rs"]
-mod upgrade_transaction_tests;
+#[test]
+fn installed_cask_skip_depends_on_mode_and_receipt_equality() {
+    let mut cask = test_cask("example", "release,build");
+    for (auto_updates, recorded, mode, expected) in [
+        (true, "release", InstallMode::Install, true),
+        (true, "release", InstallMode::Upgrade, false),
+        (true, "release,build", InstallMode::Install, true),
+        (true, "release,build", InstallMode::Upgrade, true),
+        (false, "release", InstallMode::Install, false),
+        (false, "release", InstallMode::Upgrade, false),
+        (false, "release,build", InstallMode::Install, true),
+        (false, "release,build", InstallMode::Upgrade, true),
+    ] {
+        cask.auto_updates = auto_updates;
+        assert_eq!(
+            should_skip_installed(&cask, recorded, mode),
+            expected,
+            "auto_updates={auto_updates}, recorded={recorded}, upgrade={}",
+            mode == InstallMode::Upgrade,
+        );
+    }
+}
