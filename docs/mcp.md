@@ -1,106 +1,38 @@
 # Model Context Protocol (MCP)
 
-The Model Context Protocol (MCP) is a standard protocol that enables AI assistants to interact with development tools and access project context. mise provides an MCP server that allows AI assistants to query information about your development environment.
+The mise MCP server lets an AI assistant inspect a project's tools, tasks, environment, and
+configuration, and run mise tasks. It uses the [Model Context Protocol](https://modelcontextprotocol.io/docs/getting-started/intro)
+over stdin/stdout. The client launches a local `mise mcp` process; no HTTP server or listening
+port is required.
 
-## Overview
-
-When you run `mise mcp`, it starts a server that AI assistants can connect to for information about your mise-managed development environment. The server communicates over stdin/stdout using the JSON-RPC protocol.
-
-::: warning
-The MCP server is experimental and requires enabling experimental features with `MISE_EXPERIMENTAL=1`.
+::: warning Experimental
+The server requires `MISE_EXPERIMENTAL=1`. Its resources and tools may change.
 :::
 
 ## Usage
 
-AI assistants typically launch the MCP server automatically, but you can also run it manually for testing:
+Select the project directory when starting the server. Otherwise it uses the client's working
+directory, which may be your home directory or an unrelated workspace:
 
-```bash
-# Enable experimental features
-export MISE_EXPERIMENTAL=1
-
-# Start the MCP server (it will wait for JSON-RPC input on stdin)
-mise mcp
+```sh
+MISE_EXPERIMENTAL=1 mise --cd /absolute/path/to/project mcp
 ```
 
-## Available Resources
-
-The MCP server exposes the following read-only resources that AI assistants can query:
-
-### `mise://tools`
-
-Lists all tools managed by mise in your project, including:
-
-- Tool names and versions
-- Installation status
-- Configuration source
-
-### `mise://tasks`
-
-Shows all available mise tasks with:
-
-- Task names and descriptions
-- Task dependencies
-- Command definitions
-
-### `mise://env`
-
-Displays environment variables defined in your mise configuration:
-
-- Variable names and values
-- Environment-specific overrides
-
-### `mise://config`
-
-Provides information about mise configuration:
-
-- Active configuration files
-- Project root directory
-- Settings and preferences
-
-## Available Tools
-
-The following tools are available for AI assistants to call:
-
-### `install_tool`
-
-Install a specific tool version (not yet implemented).
-
-### `run_task`
-
-Execute a mise task with optional arguments.
-
-**Parameters:**
-
-- `task` (required, string): Name of the task to run
-- `args` (optional, array of strings): Arguments to pass to the task
-
-**Example:**
-
-```json
-{
-  "task": "build",
-  "args": ["--verbose"]
-}
-```
-
-When an AI assistant calls this tool, mise executes the specified task and returns the output, including stdout, stderr, and the exit status.
+Replace the path with your project. This command waits for MCP input; it does not open an
+interactive prompt. Usually you configure an MCP client to start it rather than running it
+in a terminal yourself.
 
 ## Integration with AI Assistants
 
-### Claude Desktop
-
-To use mise with Claude Desktop, add the following to your Claude configuration file:
-
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-**Linux**: `~/.config/claude/claude_desktop_config.json`
+Configure your client with the mise executable, the project directory, and the experimental
+environment variable. For clients that use a `mcpServers` JSON configuration:
 
 ```json
 {
   "mcpServers": {
     "mise": {
-      "command": "mise",
-      "args": ["mcp"],
+      "command": "/absolute/path/to/mise",
+      "args": ["--cd", "/absolute/path/to/project", "mcp"],
       "env": {
         "MISE_EXPERIMENTAL": "1"
       }
@@ -109,37 +41,102 @@ To use mise with Claude Desktop, add the following to your Claude configuration 
 }
 ```
 
-After adding this configuration and restarting Claude Desktop, the assistant can:
+Replace both paths. On Windows, use the path to `mise.exe` and escape backslashes in JSON.
+An absolute executable path is useful for GUI clients that do not inherit your shell's `PATH`.
+The configuration file location and key names depend on the client; use its MCP setup guide.
+Restart or reconnect the server after changing its configuration or switching projects.
 
-- Query your installed tools and versions
-- List available tasks in your project
-- Execute tasks directly (e.g., "run the build task")
-- Access environment variables from your mise configuration
-- View your mise configuration structure
+### Access and execution
 
-### Other AI Assistants
+Connect the server only to a project and client you trust. Reading `mise://env` evaluates the
+project's environment configuration and returns its values, which can include secrets.
+Resource reads can also evaluate configuration templates and environment directives; a
+read-only query is not a sandbox for untrusted project configuration.
 
-The MCP server uses standard JSON-RPC 2.0 over stdio, making it compatible with any AI assistant that supports the Model Context Protocol. Consult your AI assistant's documentation for specific integration instructions.
+`run_task` executes the project's commands with your account's access. It runs without
+interactive stdin and sets `MISE_YES=1`, so use your client's tool approval controls to decide
+which tasks may run. Review task definitions before allowing an assistant to execute them.
+See [security](/security.html) for mise's configuration trust model.
+
+## Available Resources
+
+Resources return JSON text. They describe the project selected when the server starts.
+Restart the server after editing configuration if the client continues to show cached results.
+
+| URI                                  | Contents                                                                                        |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `mise://tools`                       | Active tool versions, requested versions, installation paths/status, and configuration sources. |
+| `mise://tools?include_inactive=true` | Active tools plus other installed versions.                                                     |
+| `mise://tasks`                       | Task definitions, commands, descriptions, dependencies, source files, and execution options.    |
+| `mise://env`                         | Resolved mise environment variable names and values.                                            |
+| `mise://config`                      | Active configuration file paths and the project root.                                           |
+
+`mise://config` does not return a full settings dump. In `mise://tasks`, the `env` field is
+currently an empty object; it does not expose task-specific environment values. Use the
+source configuration when you need details that a resource does not provide.
+
+## Available Tools
+
+### `list_commands`
+
+Lists mise commands with their help text and declared effect: `read`, `write`, or `destructive`.
+An absent effect means the command is unclassified. These declarations describe commands;
+they do not execute them or enforce client approval policy.
+
+The optional boolean `include_hidden` defaults to `false`. For example:
+
+```json
+{
+  "include_hidden": false
+}
+```
+
+### `run_task`
+
+Runs a task, including its normal mise dependencies and environment:
+
+| Parameter | Type             | Required | Meaning                                                           |
+| --------- | ---------------- | -------- | ----------------------------------------------------------------- |
+| `task`    | string           | Yes      | Task name, such as `build`.                                       |
+| `args`    | array of strings | No       | Arguments passed after the task name. Defaults to an empty array. |
+
+For a task that accepts a `--verbose` flag, pass:
+
+```json
+{
+  "task": "build",
+  "args": ["--verbose"]
+}
+```
+
+These are tool arguments, not a complete JSON-RPC request. `--verbose` is passed to the task;
+it does not enable mise's own verbose logging.
+
+The response contains captured stdout and stderr after the task finishes. A nonzero exit
+status produces a tool error with the exit code and output. Output is not streamed, and tasks
+that require terminal input cannot prompt through this tool. The
+[`task.timeout`](/configuration/settings.html#task.timeout) setting limits execution time.
+
+### `install_tool`
+
+The server advertises `install_tool`, but calling it currently returns a “not yet implemented”
+error. Install required tools with `mise install` outside this MCP tool before running tasks,
+or use a client's separate command execution facility if it provides one.
 
 ## Examples
 
-When integrated with an AI assistant, you can ask questions like:
+Once connected to the intended project, ask the assistant to:
 
-- "What version of Node.js is this project using?"
-- "List all the tasks available in this project"
-- "Run the build task"
-- "Execute the test task with verbose output"
-- "What environment variables are set by mise?"
-- "Show me the mise configuration for this project"
+- Show the active Node.js version and whether it is installed.
+- List available tasks and inspect the dependencies of `build`.
+- Run a named task you have reviewed.
+- Show which configuration files are active.
 
-The AI assistant queries the MCP server for accurate, up-to-date information about your development environment and can execute tasks on your behalf.
+If the tool list or project root is unexpected, check the server's `--cd` argument. If it
+cannot start, verify the absolute mise path and `MISE_EXPERIMENTAL=1` in the client logs.
 
 ## Technical Details
 
-The MCP server is implemented in [`src/cli/mcp.rs`](https://github.com/jdx/mise/blob/main/src/cli/mcp.rs). It implements the ServerHandler trait from the rmcp crate to handle:
-
-- Resource listing and reading
-- Tool invocation (task execution)
-- JSON-RPC communication over stdio
-
-For more information about the Model Context Protocol, visit the [official MCP documentation](https://modelcontextprotocol.io/docs/getting-started/intro).
+The implementation is in [`src/cli/mcp.rs`](https://github.com/jdx/mise/blob/main/src/cli/mcp.rs).
+It uses the `rmcp` crate for MCP resource listing, resource reads, and tool calls over stdio.
+Clients need to support MCP; raw JSON-RPC support alone does not establish an MCP session.
