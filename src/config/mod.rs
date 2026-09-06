@@ -2871,17 +2871,25 @@ pub(crate) fn global_config_path() -> PathBuf {
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
 
-/// The shared global config file (`config.toml`, or `MISE_GLOBAL_CONFIG_FILE`):
-/// where declarations meant for every machine go. Never a `.local.toml`,
-/// even when that is the only global file that exists.
+/// The shared global config file: where declarations meant for every
+/// machine go. `MISE_GLOBAL_CONFIG_FILE`, else the global TOML file that
+/// already exists (`mise.toml` when that is what the user keeps), else
+/// `config.toml`. Never a `.local.toml`, even when that is the only global
+/// file that exists.
 pub(crate) fn global_shared_config_path() -> PathBuf {
-    env::MISE_GLOBAL_CONFIG_FILE
-        .clone()
-        .filter(|path| {
-            !path
+    let shared = |path: &PathBuf| {
+        path.extension().is_some_and(|ext| ext == "toml")
+            && !path
                 .file_name()
                 .is_some_and(|name| name.to_string_lossy().ends_with(".local.toml"))
-        })
+    };
+    if let Some(path) = env::MISE_GLOBAL_CONFIG_FILE.clone().filter(shared) {
+        return path;
+    }
+    let files = global_config_files();
+    first_config_file(&files)
+        .filter(|path| shared(path))
+        .cloned()
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
 

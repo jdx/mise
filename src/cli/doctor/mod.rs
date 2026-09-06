@@ -798,7 +798,7 @@ impl Doctor {
                 });
                 // a single failed attempt is transient; a repository that has
                 // not answered for a few fetch intervals is a problem
-                if failing_for.is_none_or(|secs| secs > fetch_interval.saturating_mul(3)) {
+                if failing_for.is_some_and(|secs| secs > fetch_interval.saturating_mul(3)) {
                     diagnosis.sync_failing_for_secs = failing_for;
                     self.warnings.push(format!(
                         "dotfiles: syncing with the setup repository keeps failing ({error}).\n     Local checkpoints continue; nothing is published or pulled until it succeeds.\n     Inspect with: mise bootstrap dotfiles status"

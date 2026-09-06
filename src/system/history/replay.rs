@@ -257,24 +257,29 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
             .rev()
             .find(|entry| {
                 entry.checkpoint.operation.as_ref().is_some_and(|op| {
-                    matches!(op.kind, OperationKind::Rollback | OperationKind::Undo)
-                        && op.status != OperationStatus::Pending
+                    matches!(
+                        op.kind,
+                        OperationKind::Rollback | OperationKind::Undo | OperationKind::Apply
+                    ) && op.status != OperationStatus::Pending
                         && op.before.is_some()
                         && !op.affected.is_empty()
                 }) && !undone.contains(&entry.checkpoint.uuid)
             })
             .cloned()
-            .ok_or_else(|| eyre::eyre!("nothing to undo: no rollback or undo is left"))?,
+            .ok_or_else(|| eyre::eyre!("nothing to undo: no rollback, undo, or pull is left"))?,
     };
     let Some(op) = operation.checkpoint.operation.clone() else {
         bail!("checkpoint {} is not an operation", operation.id);
     };
     // an operation records the paths it changed (`affected`) only when it
-    // writes them itself; a bootstrap or a dotfiles apply journals its
-    // changes instead and is not reversed here
-    if !matches!(op.kind, OperationKind::Rollback | OperationKind::Undo) {
+    // writes them itself (a rollback, an undo, a pull); a bootstrap or a
+    // dotfiles apply journals its changes instead and is not reversed here
+    if !matches!(
+        op.kind,
+        OperationKind::Rollback | OperationKind::Undo | OperationKind::Apply
+    ) {
         bail!(
-            "checkpoint {} is a {} operation; only rollback and undo can be undone",
+            "checkpoint {} is a {} operation; only rollback, undo, and pull can be undone",
             operation.id,
             op.kind.as_str()
         );

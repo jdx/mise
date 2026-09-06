@@ -81,6 +81,19 @@ assert_succeed "mise bootstrap dotfiles pull --yes"
 assert "cat ~/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, alacritty"
 assert_contains "mise bootstrap dotfiles sync 2>&1" "nothing new to publish"
 
+# ---- both edit different lines: whoever syncs second publishes the merge, and
+# the merge is written on both machines (never left only upstream)
+printf 'bind = SUPER, Q, exec, alacritty\n# from A\n' >~/.config/hypr/bindings.lua
+printf '# from B\nbind = SUPER, Q, exec, alacritty\n' >"$B/.config/hypr/bindings.lua"
+assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "published"
+assert_contains "$b bootstrap dotfiles status" "incoming change(s) pending"
+assert_succeed "$b bootstrap dotfiles pull --yes"
+assert "cat $B/.config/hypr/bindings.lua" $'# from B\nbind = SUPER, Q, exec, alacritty\n# from A'
+assert_succeed "mise bootstrap dotfiles sync && mise bootstrap dotfiles pull --yes"
+assert "cat ~/.config/hypr/bindings.lua" $'# from B\nbind = SUPER, Q, exec, alacritty\n# from A'
+assert_contains "$b bootstrap dotfiles sync 2>&1" "nothing new to publish"
+
 # ---- both edit the same line: a conflict decided with --keep-local
 echo 'bind = SUPER, Q, exec, foot' >~/.config/hypr/bindings.lua
 assert_contains "mise bootstrap dotfiles sync 2>&1" "published"

@@ -264,7 +264,15 @@ pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) 
     crate::config::Config::reset().await?;
     let tracked = TrackedSet::effective().await?;
     let store = Store::open_in(state_dir)?;
-    let outcome = run::sync(&store, &tracked, &SyncRequest { fetch_only: false })?;
+    // the mode just chosen decides, not the settings loaded before it was
+    // written: fetch-only connects without publishing anything
+    let outcome = run::sync(
+        &store,
+        &tracked,
+        &SyncRequest {
+            fetch_only: !opts.mode.publishes(),
+        },
+    )?;
     report(&outcome);
     Ok(())
 }

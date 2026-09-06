@@ -200,7 +200,24 @@ pub(crate) fn reconcile(
         let local_changed = s_oid != a;
         let remote_changed = t_oid != u;
         match (local_changed, remote_changed) {
-            (false, false) => {}
+            (false, false) => {
+                // reconciled but never written here: the merge this
+                // machine published, or an upstream version recorded while
+                // applying waited; it stays pending until it is applied
+                if t.is_some() && record.reconciled != record.applied {
+                    if unsaved.contains(branch_path) {
+                        plan.conflict = Some(Conflict {
+                            branch_path: branch_path.clone(),
+                            kind: ConflictKind::UnsavedEdits,
+                            local: s_oid,
+                            remote: t_oid,
+                            base: a,
+                        });
+                    } else {
+                        plan.apply = Some(t.cloned());
+                    }
+                }
+            }
             (true, false) => {
                 plan.publish = Some(s.cloned());
                 plan.next.acknowledged = s_oid.clone();
