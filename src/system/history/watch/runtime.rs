@@ -297,8 +297,15 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                             // autosaves (excluded, untracked, switched to
                             // manual saving) leaves the schedule: no capture
                             // from now on holds it or carries its old
-                            // version forward as if it were still eligible
-                            capture.schedule.retain(|path| state.relevant(path));
+                            // version forward as if it were still eligible.
+                            // A path that is missing right now (a symlink
+                            // target between two versions, say) is not
+                            // judged: it keeps its throttling until it is
+                            // back and the next reload can tell
+                            capture.schedule.retain(|path| {
+                                state.relevant(path)
+                                    || (!path.exists() && !state.exclude.is_match(path))
+                            });
                             capture.persist_schedule();
                             // the configuration that changed is what this
                             // capture is for: never held back
