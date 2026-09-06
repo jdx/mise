@@ -46,7 +46,8 @@ command = "dockerd"
 "@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
         $out = mise bootstrap services status 2>&1 | Out-String
         $LASTEXITCODE | Should -Not -Be 0
-        $out | Should -BeLike '*only applies to `scope = "user"` services*'
+        # a regex: the backtick escapes wildcard characters in -BeLike patterns
+        $out | Should -Match 'only applies to `scope = "user"` services'
     }
 
     It 'installs, runs, and removes a scheduled task' {
