@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Every mutating entry point must reject use before experimental opt-in.
+export MISE_EXPERIMENTAL=0
+
+assert_fail "mise bootstrap dotfiles rollback latest" 'dotfile tracking is experimental'
+assert_fail "mise bootstrap dotfiles undo" 'dotfile tracking is experimental'
+assert_fail "mise bootstrap dotfiles watch --once" 'dotfile tracking is experimental'
+assert_fail "mise bootstrap dotfiles sync" 'dotfile tracking is experimental'
+assert_fail "mise bootstrap dotfiles pull" 'dotfile tracking is experimental'
+assert_fail "mise bootstrap dotfiles origin set /nonexistent" 'dotfile tracking is experimental'
+assert_fail "mise bootstrap dotfiles origin --remove" 'dotfile tracking is experimental'
+assert_fail "mise bootstrap dotfiles exclude ~/.cache" 'dotfile tracking is experimental'
+assert_directory_not_exists "$MISE_STATE_DIR/history"
+
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[bootstrap.services.history]
+scope = "user"
+builtin = "history-watch"
+EOF
+assert_fail "mise bootstrap services apply --yes" 'dotfile tracking is experimental'
+assert_contains "mise doctor 2>&1" 'tracking is experimental and disabled'

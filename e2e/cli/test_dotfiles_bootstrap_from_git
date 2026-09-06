@@ -46,6 +46,9 @@ EOF2
 C="$(dirname "$HOME")/c-home"
 wrapper "$C" "$PWD/c"
 c="$PWD/c"
+assert_fail "MISE_EXPERIMENTAL=0 $c bootstrap --from-git file://$origin --yes --only dotfiles" 'dotfile tracking is experimental'
+assert_directory_not_exists "$C/.local/state/mise/history"
+assert_fail "test -e $C/.config/mise/config.toml"
 out="$($c bootstrap --from-git "file://$origin" --dry-run 2>&1)"
 assert_contains "echo \"$out\"" "is a mise setup repository"
 assert_contains "echo \"$out\"" "config.toml"
