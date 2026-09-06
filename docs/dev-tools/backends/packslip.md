@@ -15,12 +15,12 @@ read [Introducing packslip](https://jdx.dev/posts/2026-09-05-introducing-packsli
 
 ## Quick start {#usage}
 
-With [mise activated](/getting-started.html), install [hk](https://hk.jdx.dev),
+Install [hk](https://hk.jdx.dev),
 a git hook and lint manager, in your project:
 
 ```sh
 mise use packslip:github.com/jdx/hk
-hk --version
+mise exec -- hk --version
 ```
 
 This records hk in the project's `mise.toml`. The equivalent configuration is:
@@ -93,13 +93,28 @@ if the cache is empty. Installation still performs verification. See
 [version resolution](/dev-tools/packslip-verification.html#version-resolution)
 for signed lists, withdrawals, and fallback behavior.
 
+### Reproduce an installation
+
+A `latest` request can resolve differently after the publisher recommends a new
+release. Keep the request in `mise.toml` and commit a generated lockfile when your
+team needs to install the same version:
+
+```sh
+mise lock
+mise install --locked
+```
+
+The lockfile carries version, signer, and artifact commitments. Installation still
+needs the artifacts or usable cached copies and must satisfy current verification
+policy. See [mise.lock](/dev-tools/mise-lock.html) for target platforms and updates.
+
 ## Completions and skills {#completions}
 
 With [mise activated](/getting-started.html#activate-mise), installing hk also
 makes its completions available:
 
 ```sh
-mise use hk
+mise use packslip:github.com/jdx/hk
 ```
 
 Type `hk` and press Tab. mise loads the completion script declared by hk's

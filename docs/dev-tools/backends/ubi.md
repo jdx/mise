@@ -3,37 +3,38 @@
 ::: warning
 The ubi backend is **deprecated**. Use the [GitHub backend](/dev-tools/backends/github) instead.
 
-The GitHub backend offers several advantages over ubi, including provenance verification, download progress reports, and fewer dependencies. To migrate, replace `ubi:owner/repo` with `github:owner/repo` in your configuration files. The [`matching`](/dev-tools/backends/github.html#matching) and [`matching_regex`](/dev-tools/backends/github.html#matching_regex) options carry over. One behavioral difference is worth noting: ubi applies the substring `matching` only as a tiebreaker among assets that already match your OS/arch, and skips it when a single asset matches the platform. The GitHub backend applies `matching` as a pre-filter before autodetection, so for multi-binary releases you get the binary your filter names, or a clear error naming the filter if it isn't published for your platform.
+The GitHub backend offers several advantages over ubi, including provenance verification, download progress reports, and fewer dependencies. To migrate, replace `ubi:owner/repo` with `github:owner/repo` in your configuration files. The [`matching`](/dev-tools/backends/github.html#matching) and [`matching_regex`](/dev-tools/backends/github.html#matching-regex) options carry over. One behavioral difference is worth noting: ubi applies the substring `matching` only as a tiebreaker among assets that already match your OS/arch, and skips it when a single asset matches the platform. The GitHub backend applies `matching` as a pre-filter before autodetection, so for multi-binary releases you get the binary your filter names, or a clear error naming the filter if it isn't published for your platform.
 
 One migration gotcha: ubi folds `matching` into the install path, so you can install several binaries from one repo via separate `matching` values on the same `ubi:owner/repo` string. The GitHub backend keeps the install path keyed by tool name + version only, so two `github:owner/repo` entries with different `matching` values resolve to the **same** directory and the second overwrites the first. If you rely on that ubi pattern, give each binary its own [`tool_alias`](/dev-tools/backends/github.html#multiple-assets-from-the-same-release) on GitHub so each gets its own install directory.
 :::
 
-You may install GitHub releases and URL packages directly using the [ubi](https://github.com/houseabsolute/ubi) backend. ubi is compiled into
-mise, so it does not need to be installed separately.
-
-ubi doesn't require plugins or any per-tool configuration. It deduces the proper binary or tarball
-from the GitHub release assets and downloads the right one. As long as the vendor uses a reasonably
-standard naming scheme for their releases, ubi should be able to figure it out.
-
-The code for this is inside of the mise repository at [`./src/backend/ubi.rs`](https://github.com/jdx/mise/blob/main/src/backend/ubi.rs).
+This page documents existing ubi configurations. For new installations, use the
+[GitHub](/dev-tools/backends/github.html), [GitLab](/dev-tools/backends/gitlab.html),
+or [HTTP](/dev-tools/backends/http.html) backend as appropriate.
 
 ## Usage
 
-The following installs the latest version of goreleaser
-and sets it as the active version on PATH:
-
-```sh
-$ mise use -g ubi:goreleaser/goreleaser
-$ goreleaser --version
-1.25.1
-```
-
-The version will be set in `~/.config/mise/config.toml` with the following format:
+Migrate one tool at a time. For a simple release install, change:
 
 ```toml
 [tools]
-"ubi:goreleaser/goreleaser" = "latest"
+"ubi:BurntSushi/ripgrep" = "14.1.1"
 ```
+
+To:
+
+```toml
+[tools]
+"github:BurntSushi/ripgrep" = "14.1.1"
+```
+
+Then run `mise install` and `mise exec -- rg --version`. Check custom options
+against the destination backend: for example, `exe` and `extract_all` are ubi
+options and should not be copied blindly. Regenerate and review any lockfile.
+Keep the old installation until the replacement works.
+
+For multiple binaries, follow the alias migration described above. A direct
+`ubi:https://...` download belongs in an [HTTP tool entry](/dev-tools/backends/http.html#usage).
 
 ## Tool Options
 
@@ -125,10 +126,10 @@ and it only makes sense when `extract_all` is set to `true`.
 
 ```toml
 [tools]
-"ubi:BurntSushi/ripgrep" = {
+"ubi:owner/repo" = {
   version = "latest",
   extract_all = true,
-  bin_path = "target/release",
+  bin_path = "target/release", # match the archive's actual layout
 }
 ```
 
@@ -170,11 +171,12 @@ Sometimes vendors name their releases in ways ubi can't figure out, possibly onl
 OS/arch combination. For example, in [this ticket](https://github.com/houseabsolute/ubi/issues/79) a vendor used
 "mac" instead of the more common "macos" or "darwin" tags.
 
-Try using ubi by itself to see if the issue is related to mise or ubi:
+For an existing ubi install, compare with a separately installed ubi CLI
+if you need to isolate its resolver. Run this in an empty scratch directory:
 
 ```sh
 ubi -p jdx/mise
-./bin/mise -v # yes this technically means you could do `mise use ubi:jdx/mise` though I don't know why you would
+./bin/mise --version
 ```
 
 ### `ubi` picks the wrong tarball
@@ -183,7 +185,7 @@ A GitHub release may have many tarballs, some of which don't contain the CLI you
 `matching` field to specify a string to match against the release filenames.
 
 ```sh
-mise use ubi:tamasfe/taplo[matching=full]
+mise use 'ubi:tamasfe/taplo[matching=full]'
 # or with ubi directly
 ubi -p tamasfe/taplo -m full
 ```
@@ -195,7 +197,7 @@ For example, BurntSushi/ripgrep provides a binary named `rg`, not `ripgrep`. In 
 the binary name with the `exe` field:
 
 ```sh
-mise use ubi:BurntSushi/ripgrep[exe=rg]
+mise use 'ubi:BurntSushi/ripgrep[exe=rg]'
 # or with ubi directly
 ubi -p BurntSushi/ripgrep -e rg
 ```

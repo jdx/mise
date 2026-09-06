@@ -2,7 +2,7 @@
 
 [Aqua](https://aquaproj.github.io/) tools can be used natively in mise. aqua is a Tier 2 backend
 for tools without [packslip manifests](/dev-tools/backends/packslip.html): it does not require plugins, it works on Windows, and it offers security features
-beyond checksums. aqua installs also show more progress bars, which is nice.
+beyond checksums. Verification depends on the metadata provided for each package.
 
 You do not need to install aqua separately. mise does not use the aqua CLI at all; it uses the
 [aqua registry](https://github.com/aquaproj/aqua-registry), which is compiled into the mise binary on release.
@@ -15,21 +15,18 @@ official aqua registry first while retaining the bundled snapshot as a fallback.
 mise's shorthand registry; see [Floating registries](/registry.html#floating-registries) for the
 tradeoffs and cache behavior.
 
-Some aqua tool configurations may need tightening up. Common issues are listed below;
-if you notice problems, I strongly recommend contributing fixes back to the aqua registry. The
-maintainer is very responsive and great to work with.
+If an entry has incorrect platform names, URLs, or verification metadata, report
+it to the aqua registry or contribute a correction. A mise release contains a
+snapshot, so a fix upstream may require a newer mise release or a custom registry.
 
-If all else fails, you can disable aqua entirely with [`MISE_DISABLE_BACKENDS=aqua`](/configuration/settings.html#disable_backends).
-
-Currently, aqua tools cannot set environment variables or do more than download binaries (and I'm
-not sure this functionality will ever be added), so some tools will likely always require asdf or
-vfox plugins.
+Aqua recipes primarily download and extract published artifacts. Tools that need
+custom installation steps or environment setup may require another backend.
 
 The code for this backend is in the mise repository at [`./src/backend/aqua.rs`](https://github.com/jdx/mise/blob/main/src/backend/aqua.rs).
 
 ## Custom Registry
 
-Set [`aqua.registries`](/configuration/settings.html#aqua-registries) to check custom aqua
+Set [`aqua.registries`](/configuration/settings.html#aqua.registries) to check custom aqua
 registry sources before the baked-in registry:
 
 ```toml
@@ -61,7 +58,7 @@ aqua.registries = [
 
 For repository and directory sources, mise loads `registry.yaml` from the source root, falling back
 to `registry.yml` if needed. Remote registry sources are cached under `MISE_CACHE_DIR` for
-[`aqua.registry_cache_ttl`](/configuration/settings.html#aqua-registry_cache_ttl), which defaults
+[`aqua.registry_cache_ttl`](/configuration/settings.html#aqua.registry_cache_ttl), which defaults
 to one week. Local `file://` sources bypass the downloaded source cache, so changes are read the
 next time the registry is loaded. In `MISE_AQUA_REGISTRIES`, separate multiple registry URLs with
 commas.
@@ -76,28 +73,28 @@ registries. Aqua registry aliases are local to the registry that defines them; u
 [`[tool_alias]`](/dev-tools/aliases) when you want a mise shorthand or alias to point at an aqua
 package from another registry.
 
-The legacy [`aqua.registry_url`](/configuration/settings.html#aqua-registry_url) setting is still
+The legacy [`aqua.registry_url`](/configuration/settings.html#aqua.registry_url) setting is still
 supported for a single registry URL, but `aqua.registries` takes precedence when both are set.
 
 ## Usage
 
-The following installs the latest version of ripgrep and sets it as the active version on PATH:
+Install ripgrep in your project and verify the executable without requiring shell
+activation:
 
 ```sh
-$ mise use -g aqua:BurntSushi/ripgrep
-$ rg --version
-ripgrep 14.1.1
+mise use aqua:BurntSushi/ripgrep
+mise exec -- rg --version
 ```
 
-The version is set in `~/.config/mise/config.toml` with the following format:
+This writes the following to `mise.toml`. Add `-g` to `mise use` for a global tool.
 
 ```toml
 [tools]
 "aqua:BurntSushi/ripgrep" = "latest"
 ```
 
-Some tools default to aqua because they are configured in [registry/](https://github.com/jdx/mise/blob/main/registry/)
-to use the aqua backend. To see these tools, run `mise registry | grep aqua:`.
+Use `mise ls-remote aqua:BurntSushi/ripgrep` to inspect available versions.
+`mise registry ripgrep` shows the backends configured for its shorthand.
 
 ## Tool Options
 
@@ -155,127 +152,70 @@ import Settings from '/components/settings.vue';
 
 ## Security Verification
 
-The aqua backend supports multiple verification methods to ensure the integrity and authenticity of downloaded tools. mise provides a **native Rust implementation** of every method, so no external CLI tools such as `cosign`, `slsa-verifier`, or `gh` are needed.
+<span id="github-artifact-attestations"></span>
+<span id="cosign-verification"></span>
+<span id="slsa-provenance-verification"></span>
+<span id="other-security-methods"></span>
+<span id="verification-process"></span>
 
-### GitHub Artifact Attestations
+mise implements checksum, GitHub artifact attestation, Cosign, SLSA, and Minisign
+verification natively. You do not need their separate CLI tools. **Support in the
+backend does not mean that every package supplies all of these checks.**
 
-GitHub Artifact Attestations provide cryptographic proof that artifacts were built by specific GitHub Actions workflows. mise verifies these attestations natively to ensure the authenticity and integrity of downloaded tools.
+| Method                       | Required publisher or registry metadata                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Checksums                    | An expected digest from registry metadata, a checksum file, the release API, or a lockfile.                |
+| GitHub artifact attestations | A registry attestation configuration identifying the expected workflow.                                    |
+| Cosign                       | A supported public-key or signature-bundle configuration; arbitrary Cosign CLI arguments are not executed. |
+| SLSA                         | A registry provenance configuration and the publisher's provenance artifact.                               |
+| Minisign                     | A signature and the expected public key.                                                                   |
 
-**Requirements:**
+The corresponding `aqua.*` verification settings are enabled by default. Some
+checks also have a global setting, such as `github_attestations` or `slsa`.
+See [Settings](#settings) for the complete configuration.
 
-- The tool must have a `github_artifact_attestations` entry in the aqua registry for attestations to be verified
-- No external tools are required - verification is handled natively by mise
-
-**Configuration:**
-
-```bash
-# Enable/disable GitHub artifact attestations verification (default: true)
-export MISE_AQUA_GITHUB_ATTESTATIONS=true
-```
-
-**Registry Configuration Example:**
-
-```yaml
-packages:
-  - type: github_release
-    repo_owner: cli
-    repo_name: cli
-    github_artifact_attestations:
-      signer_workflow: cli/cli/.github/workflows/deployment.yml
-```
-
-### Cosign Verification
-
-mise natively verifies Cosign signatures without requiring the `cosign` CLI tool to be installed.
-
-**Configuration:**
-
-```bash
-# Enable/disable Cosign verification (default: true)
-export MISE_AQUA_COSIGN=true
-```
-
-### SLSA Provenance Verification
-
-mise natively verifies SLSA (Supply-chain Levels for Software Artifacts) provenance without requiring the `slsa-verifier` CLI tool.
-
-**Configuration:**
-
-```bash
-# Enable/disable SLSA verification (default: true)
-export MISE_AQUA_SLSA=true
-```
-
-### Other Security Methods
-
-aqua also supports:
-
-- **Minisign verification**: Uses minisign for signature verification
-- **Checksum verification**: Verifies SHA256/SHA512/SHA1/MD5 checksums (always enabled)
-
-### Verification Process
-
-During tool installation, mise will:
-
-1. Download the tool and any signature/attestation files
-2. Perform native verification using the configured methods
-3. Display verification status with progress indicators
-4. Abort installation if any verification fails
-
-**Example output during installation:**
-
-```
-✓ Downloaded cli/cli v2.50.0
-✓ GitHub artifact attestations verified
-✓ Tool installed successfully
-```
+A verified [lockfile](/dev-tools/mise-lock.html) can reuse a previous provenance
+result while checking the artifact digest. Set
+[`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
+to require provenance verification again during locked installation.
 
 ### Troubleshooting
 
-If verification fails:
+Start with the failing command and its verification error:
 
-1. **Check network connectivity**: Verification requires downloading attestation data
-2. **Verify tool configuration**: Ensure the aqua registry has correct verification settings
-3. **Disable specific verification**: Temporarily disable problematic verification methods
-4. **Enable debug logging**: Use `MISE_DEBUG=1` to see detailed verification logs
-
-**Common issues:**
-
-- **No attestations found**: The tool may not have attestations configured in the registry
-- **Verification timeout**: Network issues or slow attestation services
-- **Certificate validation**: Clock skew or certificate chain issues
-
-To disable all verification temporarily:
-
-```bash
-export MISE_AQUA_GITHUB_ATTESTATIONS=false
-export MISE_AQUA_COSIGN=false
-export MISE_AQUA_SLSA=false
-export MISE_AQUA_MINISIGN=false
+```sh
+MISE_DEBUG=1 mise install aqua:cli/cli
 ```
+
+Check that the release publishes the expected signature or attestation, that the
+registry names the correct artifact and signer, and that your clock and network
+allow certificate and transparency-log verification. For private assets or API
+limits, check [GitHub authentication](/dev-tools/github-tokens.html).
+
+A digest mismatch requires investigating the artifact or expected digest. A
+missing or invalid signature requires checking the publisher and registry
+metadata. Disabling verification changes which artifacts you trust; it does not
+repair either problem. Report the affected version, platform, and verifier error
+with credentials removed.
 
 ## Common aqua issues
 
-Here are some common issues I've seen when working with aqua tools.
+These problems usually require a correction to the package entry in the aqua registry.
 
 ### Supported env missing
 
-The aqua registry defines the supported os/arch envs for each tool. I've noticed that some of these
-are missing os/arch combos that are in fact supported—possibly because support was added after
-the tool's registry entry was created.
-
-The fix is simple: edit the `supported_envs` section of `registry.yaml` for the tool in question.
+Compare the registry entry's `supported_envs` with the publisher's release assets.
+If a matching artifact exists but its platform is absent from the registry, update
+that entry. Adding a platform name alone cannot make an incompatible binary run.
 
 ### Using `version_filter` instead of `version_prefix`
 
-This is a weird one that causes odd issues in mise. In general, mise prefers versions like `1.2.3`
-without decoration such as `v1.2.3` or `cli-v1.2.3`. This consistency not only keeps `mise.toml`
-cleaner, it also helps commands like `mise up` work correctly, because the version can be parsed as
-semver without a bunch of edge cases.
+Use `version_prefix` to remove a known tag prefix from the versions shown to
+users, and `version_filter` to exclude unrelated releases. Preserve the
+publisher's meaningful version identifiers; a version does not need to be a
+three-part semantic version.
 
-If you notice aqua tools giving you versions that aren't simple triplets, it's worth fixing.
-
-One common issue I've seen is registries using a `version_filter` expression like `Version startsWith "atlascli/"`.
+For example, an entry may use a `version_filter` expression like `Version startsWith "atlascli/"`.
 
 This causes the version to be `atlascli/1.2.3`, which is not what we want. The fix is to use
 `version_prefix` instead of `version_filter` and put the prefix (`atlascli/` in this example) in the

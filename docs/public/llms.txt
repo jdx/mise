@@ -47,7 +47,7 @@
 - [Rust](https://mise.jdx.dev/lang/rust.html): mise can install Rust/cargo using rustup under the hood. It installs rustup if it is not already installed, then installs the requested toolchain, components, and targets.
 - [Swift](https://mise.jdx.dev/lang/swift.html): mise can be used to manage multiple versions of swift on the same system. Swift is supported on macOS and Linux.
 - [Zig](https://mise.jdx.dev/lang/zig.html): mise can be used to install and manage multiple versions of zig on the same system.
-- [Backends](https://mise.jdx.dev/dev-tools/backends/): Backends are package managers or ecosystems that mise uses to install tools and plugins. Each backend can install and manage multiple tools from its ecosystem.
+- [Backends](https://mise.jdx.dev/dev-tools/backends/): A backend tells mise where to find a tool's versions and how to install them. Use a registry shorthand such as ripgrep for the default selection, or specify a backend explicitly, such as…
 - [aqua](https://mise.jdx.dev/dev-tools/backends/aqua.html): Aqua tools can be used natively in mise. aqua is a Tier 2 backend for tools without packslip manifests: it does not require plugins, it works on Windows, and it offers security features beyond…
 - [asdf](https://mise.jdx.dev/dev-tools/backends/asdf.html): asdf plugins are considered legacy. New asdf and vfox plugins are not accepted into the mise registry for supply-chain security reasons — for registry submissions use packslip (preferred when the…
 - [cargo](https://mise.jdx.dev/dev-tools/backends/cargo.html): You can install packages directly from Cargo Crates even if there isn't an asdf plugin for them.
@@ -58,7 +58,7 @@
 - [github](https://mise.jdx.dev/dev-tools/backends/github.html): You may install GitHub release assets directly using the github backend. This backend downloads release assets from GitHub repositories and is ideal for tools that distribute pre-built binaries…
 - [gitlab](https://mise.jdx.dev/dev-tools/backends/gitlab.html): The gitlab backend installs release assets directly from GitLab repositories. It is ideal for tools that distribute pre-built binaries through GitLab releases.
 - [go](https://mise.jdx.dev/dev-tools/backends/go.html): You can install packages directly via go install even if there isn't an asdf plugin for them.
-- [http](https://mise.jdx.dev/dev-tools/backends/http.html): You may install tools directly from HTTP URLs using the http backend. This backend downloads files from any HTTP/HTTPS URL and is ideal for tools that distribute pre-built binaries or archives through…
+- [http](https://mise.jdx.dev/dev-tools/backends/http.html): The http backend installs a binary, script, or archive from a direct download URL. Use it when the publisher has no supported release backend or when you host your own artifacts.
 - [npm](https://mise.jdx.dev/dev-tools/backends/npm.html): You can install packages directly from npmjs.org even if there isn't an asdf plugin for them.
 - [packslip](https://mise.jdx.dev/dev-tools/backends/packslip.html): The Packslip backend installs tools using signed release manifests published by their maintainers. mise verifies the release, selects the build for your platform, and installs its executables.
 - [pipx](https://mise.jdx.dev/dev-tools/backends/pipx.html): pipx is a tool for running Python CLIs in isolated virtualenvs. This isolation helps prevent dependency conflicts between CLIs, or between a CLI and your Python projects.
