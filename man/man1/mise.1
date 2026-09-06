@@ -1495,6 +1495,13 @@ Print help
 .TP
 \fB<TARGET>\fR
 Target to edit
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap dotfiles edit ~/.zshrc
+mise bootstrap dotfiles edit \-\-apply ~/.config/starship.toml
+.RE
 .SH "MISE BOOTSTRAP DOTFILES HISTORY"
 Browse the checkpoints of your dotfiles (experimental)
 
@@ -3912,6 +3919,38 @@ Print help
 .TP
 \fB<OUTPUT>\fR
 Output file path for the tool stub
+\fBExamples:\fR
+.PP
+Download and inspect a real archive to detect its binary and checksum
+.PP
+.RS 4
+mise generate tool\-stub ./bin/node \-\-platform\-url https://nodejs.org/dist/v22.17.1/node\-v22.17.1\-darwin\-arm64.tar.gz
+.RE
+.PP
+Add a Linux artifact to the same stub
+.PP
+.RS 4
+mise generate tool\-stub ./bin/node \-\-platform\-url linux\-x64:https://nodejs.org/dist/v22.17.1/node\-v22.17.1\-linux\-x64.tar.gz
+.RE
+.PP
+Create a draft for your own artifact without fetching the placeholder URL
+.PP
+.RS 4
+mise generate tool\-stub ./bin/my\-tool \-\-url https://example.com/my\-tool.tar.gz \-\-skip\-download
+# Replace the URL with a real artifact before fetching metadata or executing it
+.RE
+.PP
+Fill missing checksums and sizes in an existing stub
+.PP
+.RS 4
+mise generate tool\-stub ./bin/node \-\-fetch
+.RE
+.PP
+For an existing registry\-backed stub, resolve and embed version/platform lock data
+.PP
+.RS 4
+mise generate tool\-stub ./bin/registry\-node \-\-lock \-\-version 22
+.RE
 .SH "MISE IMPLODE"
 Remove the mise CLI and all related data
 

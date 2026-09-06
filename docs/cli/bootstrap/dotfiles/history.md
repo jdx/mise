@@ -25,10 +25,10 @@ subcommand this lists them, newest first.
 
 ## Subcommands
 
-- [`mise bootstrap dotfiles history describe <REF> <TEXT>`](/cli/bootstrap/dotfiles/history/describe.md)
-- [`mise bootstrap dotfiles history diff [FLAGS] [A] [B]`](/cli/bootstrap/dotfiles/history/diff.md)
-- [`mise bootstrap dotfiles history ls [FLAGS]`](/cli/bootstrap/dotfiles/history/ls.md)
-- [`mise bootstrap dotfiles history show [FLAGS] [REF]`](/cli/bootstrap/dotfiles/history/show.md)
+- [`mise bootstrap dotfiles history describe <REF> <TEXT>`](/cli/bootstrap/dotfiles/history/describe.html)
+- [`mise bootstrap dotfiles history diff [FLAGS] [A] [B]`](/cli/bootstrap/dotfiles/history/diff.html)
+- [`mise bootstrap dotfiles history ls [FLAGS]`](/cli/bootstrap/dotfiles/history/ls.html)
+- [`mise bootstrap dotfiles history show [FLAGS] [REF]`](/cli/bootstrap/dotfiles/history/show.html)
 
 Examples:
 
