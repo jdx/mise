@@ -76,13 +76,6 @@ impl InstallInto {
         // locks would not overlap. Keep the lock through confirmation and the
         // backend replacement so no cooperating writer can populate the path
         // between the occupancy check and deletion.
-        // Resolve parent aliases, including an existing prefix when the rest
-        // of the destination does not exist yet. Do not resolve the final
-        // component: installation replaces that entry, even if it is a symlink.
-        let lock_path = match (install_path.parent(), install_path.file_name()) {
-            (Some(parent), Some(name)) => crate::file::desymlink_path(parent).join(name),
-            _ => crate::file::desymlink_path(&install_path),
-        };
         let lock_dir = crate::dirs::CACHE.join("lockfiles");
         if crate::file::path_starts_with_resolved(&lock_dir, &install_path) {
             bail!(
@@ -91,6 +84,21 @@ impl InstallInto {
                 display_path(&lock_dir)
             );
         }
+        // Resolve parent aliases so every writer derives the same lock key.
+        // Create the parent first: resolving a missing path can spell the same
+        // directory differently than canonicalizing it once it exists (an
+        // unresolved `..`, or a verbatim `\\?\` prefix on Windows), so two
+        // invocations straddling the parent's creation would otherwise take
+        // two different locks for one destination. The install creates this
+        // parent regardless. Do not resolve the final component: installation
+        // replaces that entry, even if it is a symlink.
+        let lock_path = match (install_path.parent(), install_path.file_name()) {
+            (Some(parent), Some(name)) => {
+                crate::file::create_dir_all(parent)?;
+                crate::file::desymlink_path(parent).join(name)
+            }
+            _ => crate::file::desymlink_path(&install_path),
+        };
         let lock_display_path = install_path.clone();
         let _destination_lock = tokio::task::spawn_blocking(move || {
             crate::lock_file::LockFile::new(&lock_path)
