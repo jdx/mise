@@ -742,7 +742,7 @@ impl State {
     /// Reloads the configuration; `Ok(false)` when history was disabled.
     async fn reload(&mut self) -> Result<bool> {
         Config::reset().await?;
-        if !Settings::get().history.enabled {
+        if !Settings::get().experimental || !Settings::get().history.enabled {
             return Ok(false);
         }
         let tracked = TrackedSet::effective().await?;
