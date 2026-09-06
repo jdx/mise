@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1TKXG80A093DYZXKXCB83JZ",
   "strategy": "manual-commit",
   "branch": "codex/docs-download-backends",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "docs/dev-tools/backends/aqua.md",
     "docs/dev-tools/backends/forgejo.md",
@@ -23,13 +23,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 173924,
+    "input_tokens": 202686,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 6481536,
-    "output_tokens": 19867,
-    "api_call_count": 46
+    "cache_read_tokens": 7158016,
+    "output_tokens": 21460,
+    "api_call_count": 60
   }
 }

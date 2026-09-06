@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TKXG80A093DYZXKXCB83JZ",
+  "session_id": "01a0751c-803c-71c3-8477-fa566f432cfe",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T05:44:03.755716Z",
+  "branch": "codex/docs-download-backends",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/backends/aqua.md",
+    "docs/dev-tools/backends/forgejo.md",
+    "docs/dev-tools/backends/github.md",
+    "docs/dev-tools/backends/gitlab.md",
+    "docs/dev-tools/backends/http.md",
+    "docs/dev-tools/backends/index.md",
+    "docs/dev-tools/backends/packslip.md",
+    "docs/dev-tools/backends/s3.md",
+    "docs/dev-tools/backends/ubi.md",
+    "docs/public/llms.txt"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "9abf8291549d",
+  "checkpoint_transcript_start": 764,
+  "transcript_lines_at_start": 764,
+  "compact_transcript_start": 112,
+  "token_usage": {
+    "input_tokens": 28762,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 676480,
+    "output_tokens": 1593,
+    "api_call_count": 14
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T05:44:03.667052Z",
+    "agent_lines": 422,
+    "agent_removed": 316,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 422,
+    "total_lines_changed": 738,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
