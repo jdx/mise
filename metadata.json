@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1TFAKWNAXZAV4VS6M1S6TT4",
   "strategy": "manual-commit",
   "branch": "codex/docs-environment-guides",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "docs/configuration.md",
     "docs/configuration/environments.md",
@@ -25,13 +25,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 99592,
+    "input_tokens": 146106,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 2122368,
-    "output_tokens": 15539,
-    "api_call_count": 25
+    "cache_read_tokens": 2484096,
+    "output_tokens": 17660,
+    "api_call_count": 35
   }
 }
