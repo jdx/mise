@@ -66,10 +66,10 @@ wait_until "grep -q '\"event\":\"started\"' a.log && grep -q '\"event\":\"starte
 
 # ---- B's watcher applies what A shared without a command on either side: the
 # configuration first, then the tracked files it declares
-wait_until "grep -q '\"event\":\"applied\"' b.log"
+wait_until "grep -q '\"event\":\"replan\"' b.log"
 assert "cat $B/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
 assert_contains "cat $B/.config/mise/config.toml" '"~/.config/hypr" = { mode = "track" }'
-assert_contains "cat b.log" '"event":"replan"'
+assert_contains "cat b.log" '"event":"applied"'
 
 # ---- an edit on A is published by its watcher and applied by B's
 echo 'bind = SUPER, Q, exec, alacritty' >~/.config/hypr/bindings.lua
