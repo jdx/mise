@@ -1160,7 +1160,7 @@
             },
             "sync": {
               "default": "sync",
-              "description": "What the history watcher does with a connected setup repository on its own: `sync` publishes after saves, fetches periodically, and applies nonconflicting incoming changes; `fetch-only` only fetches; `manual` does nothing automatically. `mise bootstrap dotfiles sync` and `pull` work on request in every mode.",
+              "description": "What the history watcher does with a connected setup repository on its own: `sync` publishes after saves, fetches periodically, and applies incoming changes. Any conflict pauses publication and incoming application for the entire setup; local history, fetching, and eligible backups continue. `fetch-only` only fetches; `manual` does nothing automatically. `mise bootstrap dotfiles sync` and `pull` work on request in every mode.",
               "type": "string",
               "enum": ["sync", "fetch-only", "manual"]
             },
