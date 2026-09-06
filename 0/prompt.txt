@@ -1,5 +1,1 @@
-why is this failing? [https://github.com/jdx/mise/pull/12854#issuecomment-5555865885](https://github.com/jdx/mise/pull/12854#issuecomment-5555865885)
-
----
-
 fix it directly
