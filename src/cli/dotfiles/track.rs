@@ -298,9 +298,20 @@ pub(crate) fn read_document(path: &Path) -> Result<DocumentMut> {
     }
 }
 
+/// The `[dotfiles]` key of a path: `~/…` with forward slashes on every
+/// platform, so it matches a hand-written key and the one `untrack` looks
+/// for.
 pub(crate) fn normalized_target(target: &Path) -> String {
     match target.strip_prefix(*crate::dirs::HOME) {
-        Ok(rel) if !rel.as_os_str().is_empty() => format!("~/{}", rel.display()),
+        Ok(rel) if !rel.as_os_str().is_empty() => {
+            let rel = rel.to_string_lossy();
+            let rel = if cfg!(windows) {
+                rel.replace('\\', "/")
+            } else {
+                rel.into_owned()
+            };
+            format!("~/{rel}")
+        }
         Ok(_) => "~".to_string(),
         Err(_) => target.to_string_lossy().to_string(),
     }

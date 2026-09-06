@@ -6,7 +6,6 @@ use eyre::Result;
 use serde::Serialize;
 
 use super::history::local_time;
-use crate::system::history::store::OperationStatus;
 
 #[derive(Serialize)]
 pub(crate) struct HistoryReport {
@@ -33,10 +32,10 @@ pub(crate) async fn report() -> Result<HistoryReport> {
     let (store, tracked, entries) = super::history::open().await?;
     let walk = tracked.walk()?;
     let tracked_files = walk.roots.iter().map(|root| root.files.len() as u64).sum();
-    let pending_operations = entries
-        .iter()
-        .filter(|entry| entry.checkpoint.status() == Some(OperationStatus::Pending))
-        .count();
+    // an operation still running, or one that crashed: its record is in
+    // the index only once it is closed
+    let pending_operations =
+        crate::system::history::store::list_pending_in(store.state_dir())?.len();
     let latest = entries.last().map(|entry| LatestReport {
         id: entry.id,
         created_at: entry.checkpoint.created_at.clone(),

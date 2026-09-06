@@ -31,7 +31,19 @@ pub(crate) struct HistoryLs {
 
 impl HistoryLs {
     pub(crate) async fn run(self) -> Result<()> {
-        let (_store, _tracked, mut entries) = super::open().await?;
+        let (store, _tracked, mut entries) = super::open().await?;
+        if self.pending {
+            // an operation still running, or one that crashed: its record
+            // is in the index only once it is closed
+            entries = crate::system::history::store::list_pending_in(store.state_dir())?
+                .into_iter()
+                .map(|(_, pending)| crate::system::history::store::Entry {
+                    id: pending.id,
+                    commit: String::new(),
+                    checkpoint: pending.checkpoint,
+                })
+                .collect();
+        }
         entries.reverse();
         if let Some(path) = &self.path {
             let path = display_arg(path);
@@ -42,12 +54,6 @@ impl HistoryLs {
                 eyre::bail!("unknown trigger {trigger:?}");
             };
             entries.retain(|entry| entry.checkpoint.trigger == trigger);
-        }
-        if self.pending {
-            entries.retain(|entry| {
-                entry.checkpoint.status()
-                    == Some(crate::system::history::store::OperationStatus::Pending)
-            });
         }
         if self.limit > 0 {
             entries.truncate(self.limit);
