@@ -42,6 +42,7 @@ impl Github {
                     host: self.host.clone(),
                     allow_device_flow: true,
                     force_refresh: self.refresh,
+                    ..Default::default()
                 })?,
                 github::TokenSource::GithubOauth,
             ))
