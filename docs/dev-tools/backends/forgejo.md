@@ -8,16 +8,17 @@ The code for this is inside the mise repository at [`src/backend/github.rs`](htt
 
 ## Usage
 
-The following installs the latest version of a tool from Forgejo releases
-and sets it as the active version on PATH:
+On Linux, install Forgejo Runner from its own Forgejo instance and check the
+executable. Its releases publish Linux binaries; choose a project with matching
+assets if you are installing on another operating system:
 
 ```sh
-$ mise use -g forgejo:forgejo/runner[api_url=https://code.forgejo.org/api/v1,bin=forgejo-runner]
-$ forgejo-runner -v
-forgejo-runner version v12.4.0
+mise use 'forgejo:forgejo/runner[api_url=https://code.forgejo.org/api/v1,bin=forgejo-runner]'
+mise exec -- forgejo-runner --version
 ```
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+Quote the complete tool argument so shell globbing does not interpret its square
+brackets. This writes the following project configuration:
 
 ```toml
 [tools]
@@ -27,6 +28,10 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
   bin = "forgejo-runner",
 }
 ```
+
+Add `-g` to `mise use` for a global tool. This installs the runner executable;
+registering it with a server and running it as a service are separate steps.
+For Codeberg repositories, omit `api_url`.
 
 ## Authentication
 
@@ -69,7 +74,8 @@ token = "forgejo-enterprise-token"
 
 ### `credential_command`
 
-You can provide a shell command that prints a token to stdout:
+Set this in your **global** `~/.config/mise/config.toml`. Project configuration
+cannot set `credential_command`. The command must print only the token to stdout:
 
 ```toml
 [settings.forgejo]
@@ -114,9 +120,11 @@ Use `mise token forgejo` to see which token mise would use for a given host:
 
 ```sh
 mise token forgejo
-mise token forgejo --unmask
 mise token forgejo forgejo.mycompany.com
 ```
+
+Token diagnostics are masked by default. `--unmask` prints the actual credential;
+use it only when you need the secret itself, and keep it out of shared logs.
 
 ## Tool Options
 
@@ -154,7 +162,7 @@ Specifies the pattern to match against release asset names. This is useful when 
 
 ### `matching`
 
-Narrows asset selection to names containing the given substring, **while keeping platform autodetection**. Unlike [`asset_pattern`](#asset_pattern) (which replaces autodetection entirely), `matching` only refines the candidate set — autodetection still chooses the correct OS/arch from the narrowed list, so a single config stays portable across platforms.
+Narrows asset selection to names containing the given substring, **while keeping platform autodetection**. Unlike [`asset_pattern`](/dev-tools/backends/forgejo.html#asset-pattern) (which replaces autodetection entirely), `matching` only refines the candidate set — autodetection still chooses the correct OS/arch from the narrowed list, so a single config stays portable across platforms.
 
 This is the option to reach for when a repository ships **multiple binaries as separate per-platform assets** and autodetection can't tell which one you want.
 
@@ -172,9 +180,9 @@ Tool options can also be passed inline on the command line using `[key=value]` s
 mise use "forgejo:user/repo[matching=mytool-cli]"
 ```
 
-`matching` is a case-sensitive substring test, so a value that is also a substring of another asset's name (e.g. `matching = "tool"` when both `tool-*` and `tool-extras-*` are published) won't uniquely select your binary. Use [`matching_regex`](#matching_regex) with an anchor when you need a precise match.
+`matching` is a case-sensitive substring test, so a value that is also a substring of another asset's name (e.g. `matching = "tool"` when both `tool-*` and `tool-extras-*` are published) won't uniquely select your binary. Use [`matching_regex`](/dev-tools/backends/forgejo.html#matching-regex) with an anchor when you need a precise match.
 
-If [`asset_pattern`](#asset_pattern) is also set, it takes precedence and `matching`/`matching_regex` are ignored — `asset_pattern` replaces autodetection entirely, so there is no candidate set left for them to narrow. They are ignored silently: when `asset_pattern` is set, a `matching_regex` is never consulted and an invalid one is not reported, since mise does not error on a superseded option.
+If [`asset_pattern`](/dev-tools/backends/forgejo.html#asset-pattern) is also set, it takes precedence and `matching`/`matching_regex` are ignored — `asset_pattern` replaces autodetection entirely, so there is no candidate set left for them to narrow. They are ignored silently: when `asset_pattern` is set, a `matching_regex` is never consulted and an invalid one is not reported, since mise does not error on a superseded option.
 
 ### `matching_regex`
 
@@ -253,41 +261,47 @@ macos-arm64 = { asset_pattern = "tool_*_macOS_arm64.tar.gz" }
 
 ### `checksum`
 
-Verify the downloaded file with a checksum:
+Set an expected digest for a **specific version and artifact**. Replace the
+placeholder below with the full SHA-256 digest obtained from a trusted source:
 
 ```toml
 [tools."forgejo:owner/repo"]
 version = "1.0.0"
 asset_pattern = "tool-1.0.0-x64.tar.gz"
-checksum = "sha256:a1b2c3d4e5f6789..."
+checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST"
 ```
 
 _Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums._
 
 ### Platform-specific Checksums
 
+Each platform needs its own digest. These values are placeholders; fill them
+from the publisher before installing, or generate [mise.lock](/dev-tools/mise-lock.html).
+
 ```toml
 [tools."forgejo:user/repo"]
-version = "latest"
+version = "1.0.0"
 
 [tools."forgejo:user/repo".platforms]
 linux-x64 = {
   asset_pattern = "tool_*_linux_x64.tar.gz",
-  checksum = "sha256:a1b2c3d4e5f6789...",
+  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
 }
 macos-arm64 = {
   asset_pattern = "tool_*_macOS_arm64.tar.gz",
-  checksum = "sha256:b2c3d4e5f6789...",
+  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
 }
 ```
 
 ### `size`
 
-Verify the downloaded asset size:
+Optionally check the expected byte count. The number below is illustrative;
+use the selected artifact's actual size and pin its version. A size check does
+not authenticate the publisher or replace a checksum:
 
 ```toml
 [tools]
-"forgejo:user/repo" = { version = "latest", size = "12345678" }
+"forgejo:user/repo" = { version = "1.0.0", size = "12345678" }
 ```
 
 ### `strip_components`
@@ -300,7 +314,7 @@ Number of directory components to strip when extracting archives:
 ```
 
 ::: info
-If `strip_components` is not set, mise automatically applies `strip_components = 1` when the extracted archive contains exactly one directory at the root and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `mytool-14.1.0-x86_64-unknown-linux-musl/mytool`). The autodetection ensures the binary is placed directly in the install path where mise expects it.
+When both `strip_components` and `bin_path` are unset, mise automatically applies `strip_components = 1` when the extracted archive contains exactly one directory at the root and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `mytool-14.1.0-x86_64-unknown-linux-musl/mytool`). The autodetection ensures the binary is placed directly in the install path where mise expects it.
 :::
 
 ### `bin`
@@ -351,6 +365,12 @@ When `no_app = true`:
 
 ### `bin_path`
 
+Paths are relative to the install directory **after** `strip_components` is
+applied. Setting `bin_path` disables automatic root stripping. For an archive
+shaped like `tool-VERSION/bin/tool`, either retain the outer directory and use
+`bin_path = "tool-{{ version }}/bin"`, or set both `strip_components = 1` and
+`bin_path = "bin"`.
+
 ::: v-pre
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with `{{ version }}` and the `{{ os() }}` / `{{ arch() }}` functions:
 :::
@@ -358,7 +378,8 @@ Specify the directory containing binaries within the extracted archive, or where
 ```toml
 [tools."forgejo:user/repo"]
 version = "latest"
-bin_path = "tool-{{ version }}/bin" # expands to tool-1.0.0/bin
+strip_components = 0
+bin_path = "tool-{{ version }}/bin" # retain the outer tool-1.0.0 directory
 ```
 
 Both functions take keyword arguments that remap the value mise would emit (`linux`, `macos`,
@@ -369,6 +390,7 @@ differently:
 [tools."forgejo:user/repo"]
 version = "latest"
 # expands to tool-1.0.0-linux-x86_64/bin
+strip_components = 0
 bin_path = 'tool-{{ version }}-{{ os() }}-{{ arch(x64="x86_64", arm64="aarch64") }}/bin'
 ```
 

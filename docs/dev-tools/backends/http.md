@@ -1,23 +1,32 @@
 # HTTP Backend
 
-You may install tools directly from HTTP URLs using the `http` backend. This backend downloads files from any HTTP/HTTPS URL and is ideal for tools that distribute pre-built binaries or archives through direct download links.
+The `http` backend installs a binary, script, or archive from a direct download
+URL. Use it when the publisher has no supported release backend or when you host
+your own artifacts. Prefer HTTPS URLs and record an expected checksum.
 
 The code for this is inside the mise repository at [`./src/backend/http.rs`](https://github.com/jdx/mise/blob/main/src/backend/http.rs).
 
 ## Usage
 
-The following installs a tool from a direct HTTP URL:
+Replace the example URL with an artifact for your platform, then install it in
+the current project:
 
 ```sh
-mise use -g http:my-tool[url=https://example.com/releases/my-tool-v1.0.0.tar.gz]@1.0.0
+mise use 'http:my-tool[url=https://example.com/releases/my-tool-v1.0.0.tar.gz]@1.0.0'
+mise exec -- my-tool --version
 ```
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+This records the URL and version in `mise.toml`. Add `-g` for a global tool:
 
 ```toml
 [tools]
 "http:my-tool" = { version = "1.0.0", url = "https://example.com/releases/my-tool-v1.0.0.tar.gz" }
 ```
+
+A fixed URL needs a concrete version label. `latest` does not discover releases
+from a download URL: add [`version_list_url`](/dev-tools/backends/http.html#version-list-url) to enable
+`mise ls-remote` and automatic version selection. Updating the version alone does
+not change a static URL; use a URL template for versioned artifacts.
 
 ## Supported HTTP Syntax
 
@@ -59,7 +68,7 @@ The `os()` and `arch()` functions support remapping for tools that use different
 [tools]
 # HashiCorp tools use "darwin" instead of "macos" and "amd64" instead of "x64"
 "http:sentinel" = {
-  version = "latest",
+  version = "0.26.3",
   url = 'https://releases.hashicorp.com/sentinel/{{version}}/sentinel_{{version}}_{{os(macos="darwin")}}_{{arch(x64="amd64")}}.zip',
 }
 ```
@@ -95,18 +104,21 @@ you meant and do the right thing anyway.
 
 ### `checksum`
 
-Verify the downloaded file with a checksum:
+Provide the full expected digest from a trusted source. The following value
+is a placeholder and must be replaced before installation:
 
 ```toml
 [tools."http:my-tool"]
 version = "1.0.0"
 url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
-checksum = "sha256:a1b2c3d4e5f6789..."
+checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST"
 ```
 
 _Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums._
 
 ### Platform-specific Checksums
+
+Replace each placeholder with the digest for that platform's artifact:
 
 ```toml
 [tools."http:my-tool"]
@@ -115,15 +127,15 @@ version = "1.0.0"
 [tools."http:my-tool".platforms]
 macos-x64 = {
   url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz",
-  checksum = "sha256:a1b2c3d4e5f6789...",
+  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
 }
 macos-arm64 = {
   url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz",
-  checksum = "sha256:b2c3d4e5f6789...",
+  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
 }
 linux-x64 = {
   url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz",
-  checksum = "sha256:c3d4e5f6789...",
+  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
 }
 ```
 
@@ -195,7 +207,8 @@ the literal key `"version"`.
 
 ### `size`
 
-Verify the downloaded file size:
+Check the expected byte count. These numbers illustrate the syntax; use the
+actual artifact sizes. A size check does not replace a checksum:
 
 ```toml
 [tools."http:my-tool"]
@@ -239,7 +252,7 @@ strip_components = 1
 ```
 
 ::: info
-If `strip_components` is not set, mise automatically applies `strip_components = 1` when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). Auto-detection ensures the binary is placed directly in the install path where mise expects it.
+When both `strip_components` and `bin_path` are unset, mise automatically applies `strip_components = 1` when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). Auto-detection ensures the binary is placed directly in the install path where mise expects it.
 :::
 
 ### `bin`
@@ -403,13 +416,19 @@ Examples:
 ```toml
 # GitHub releases API format
 version_json_path = ".[].tag_name"
+```
 
+```toml
 # Nested versions array
 version_json_path = ".data.versions[]"
+```
 
+```toml
 # Release info objects
 version_json_path = ".releases[].info.version"
+```
 
+```toml
 # Filter for stable releases only (e.g., Flutter)
 version_json_path = ".releases[?channel=stable].version"
 ```
@@ -438,14 +457,20 @@ Example expressions:
 ```toml
 # Split newline-separated versions
 version_expr = 'split(body, "\n")'
+```
 
+```toml
 # Split and filter empty lines
 version_expr = 'filter(split(body, "\n"), # != "")'
+```
 
+```toml
 # Parse JSON and extract object keys (useful for HashiCorp-style JSON)
 # e.g., {"versions": {"1.0.0": {}, "2.0.0": {}}}
 version_expr = 'keys(fromJSON(body).versions)'
+```
 
+```toml
 # Sort versions with mise's version-aware comparator
 version_expr = 'fromJSON(body) | map({ trimPrefix(#.tag_name, "v") }) | sortVersions()'
 ```
@@ -475,13 +500,19 @@ list. Use the `versions` variable to post-process values produced by
 
 ### `bin_path`
 
+Use paths relative to the extracted install root. Setting `bin_path` disables
+automatic root stripping. For an archive shaped like
+`my-tool-1.0.0/bin/my-tool`, explicitly strip the outer directory as below, or
+leave it in place and use `bin_path = "my-tool-{{ version }}/bin"`.
+
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with <code v-pre>{{version}}</code>:
 
 ```toml
 [tools."http:my-tool"]
 version = "1.0.0"
 url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
-bin_path = "my-tool-{{version}}/bin" # expands to my-tool-1.0.0/bin
+strip_components = 1
+bin_path = "bin"
 ```
 
 **Binary path lookup order:**
@@ -513,8 +544,8 @@ is self-contained and does not link to the installing user's home directory.
 
 Cache keys are derived from the file content so that identical downloads are shared across tools:
 
-1. **Blake3 hash of file content**: When no checksum is provided, mise calculates a Blake3 hash of the downloaded file
-2. **Extraction options**: `strip_components` is included in the cache key since it affects the extracted structure
+1. **File content**: mise calculates a Blake3 hash of the downloaded file, independently of its expected verification checksum.
+2. **Extraction options**: options that change the extracted result, including root stripping, renaming, and relevant format or launcher choices, also affect the key.
 
 Example cache directory structure:
 
@@ -539,8 +570,8 @@ Normal user installations are symlinks to the cached extracted content:
 This approach provides several benefits:
 
 - **Space efficiency**: Normal user installs share identical tarballs across tools
-- **Faster installations**: Cache hits avoid re-downloading and re-extracting files
-- **Consistency**: Identical file content always uses the same cache entry
+- **Faster installations**: Reusing extracted content avoids repeated extraction; a download may still be needed to identify its content
+- **Consistency**: The same file and extraction options reuse the same cached content
 
 System, shared, and install-into destinations contain real files rather than
 these symlinks. This avoids leaving hidden cache entries behind after an
@@ -554,7 +585,7 @@ Each cache entry includes a `metadata.json` file with information about the cach
 ```json
 {
   "url": "https://example.com/releases/my-tool-v1.0.0.tar.gz",
-  "checksum": "sha256:a1b2c3d4e5f6789...",
+  "checksum": "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
   "size": 1024000,
   "extracted_at": 1703001234,
   "platform": "macos-arm64"

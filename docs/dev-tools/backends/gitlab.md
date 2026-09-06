@@ -6,21 +6,31 @@ The code for this backend is in the mise repository at [`./src/backend/github.rs
 
 ## Usage
 
-The following installs the latest version of gitlab-runner from GitLab releases
-and sets it as the active version on PATH:
+GitLab release links have a display name as well as a download URL.
+`asset_pattern` matches the **display name**, which may differ from the filename.
+For example, GitLab Runner calls its Linux binary `binary: Linux amd64`.
 
-```sh
-$ mise use -g gitlab:gitlab-org/gitlab-runner
-$ gitlab-runner --version
-gitlab-runner 16.8.0
-```
-
-The version is set in `~/.config/mise/config.toml` with the following format:
+Add this to a project's `mise.toml` for Linux x64 or macOS arm64:
 
 ```toml
-[tools]
-"gitlab:gitlab-org/gitlab-runner" = { version = "latest", asset_pattern = "gitlab-runner-linux-x64" }
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "19.3.1"
+bin = "gitlab-runner"
+
+[tools."gitlab:gitlab-org/gitlab-runner".platforms]
+linux-x64 = { asset_pattern = "binary: Linux amd64" }
+macos-arm64 = { asset_pattern = "binary: macOS arm64" }
 ```
+
+```sh
+mise install
+mise exec -- gitlab-runner --version
+```
+
+This installs the executable; it does not register a runner or create a service.
+For another platform or release, inspect the project's release links and adjust
+the pattern. Version listing uses releases with attached links, not arbitrary
+Git tags or GitLab's generated source archives.
 
 ## Authentication
 
@@ -63,7 +73,8 @@ token = "glpat-yyyyyyyy"
 
 ### `credential_command`
 
-You can provide a shell command that prints a token to stdout:
+Set this in your **global** `~/.config/mise/config.toml`. Project configuration
+cannot set `credential_command`. The command must print only the token to stdout:
 
 ```toml
 [settings.gitlab]
@@ -112,9 +123,11 @@ Use `mise token gitlab` to see which token mise would use for a given host:
 
 ```sh
 mise token gitlab
-mise token gitlab --unmask
 mise token gitlab gitlab.mycompany.com
 ```
+
+Token diagnostics are masked by default. `--unmask` prints the actual credential;
+use it only when you need the secret itself, and keep it out of shared logs.
 
 ## Tool Options
 
@@ -143,17 +156,18 @@ The autodetection logic is implemented in [`src/backend/asset_matcher.rs`](https
 
 ### `asset_pattern`
 
-Specifies the pattern to match against release asset names. This is useful when there are multiple assets for your OS/arch combination or when you need to override autodetection.
+Specifies a glob matched against the release link's display name. This is useful when there are multiple assets for your OS/arch combination or when you need to override autodetection.
 
 ```toml
 [tools."gitlab:gitlab-org/gitlab-runner"]
 version = "latest"
-asset_pattern = "gitlab-runner-linux-x64"
+bin = "gitlab-runner"
+asset_pattern = "binary: Linux amd64"
 ```
 
 ### `matching`
 
-Narrows asset selection to names containing the given substring, **while keeping platform autodetection**. Unlike [`asset_pattern`](#asset_pattern) (which replaces autodetection entirely), `matching` only refines the candidate set — autodetection still chooses the correct OS/arch from the narrowed list, so a single config stays portable across platforms.
+Narrows asset selection to names containing the given substring, **while keeping platform autodetection**. Unlike [`asset_pattern`](/dev-tools/backends/gitlab.html#asset-pattern) (which replaces autodetection entirely), `matching` only refines the candidate set — autodetection still chooses the correct OS/arch from the narrowed list, so a single config stays portable across platforms.
 
 This is the option to reach for when a repository ships **multiple binaries as separate per-platform assets** and autodetection can't tell which one you want.
 
@@ -171,9 +185,9 @@ Tool options can also be passed inline on the command line using `[key=value]` s
 mise use "gitlab:owner/repo[matching=mytool-cli]"
 ```
 
-`matching` is a case-sensitive substring test, so a value that is also a substring of another asset's name (e.g. `matching = "tool"` when both `tool-*` and `tool-extras-*` are published) won't uniquely select your binary. Use [`matching_regex`](#matching_regex) with an anchor when you need a precise match.
+`matching` is a case-sensitive substring test, so a value that is also a substring of another asset's name (e.g. `matching = "tool"` when both `tool-*` and `tool-extras-*` are published) won't uniquely select your binary. Use [`matching_regex`](/dev-tools/backends/gitlab.html#matching-regex) with an anchor when you need a precise match.
 
-If [`asset_pattern`](#asset_pattern) is also set, it takes precedence and `matching`/`matching_regex` are ignored — `asset_pattern` replaces autodetection entirely, so there is no candidate set left for them to narrow. They are ignored silently: when `asset_pattern` is set, a `matching_regex` is never consulted and an invalid one is not reported, since mise does not error on a superseded option.
+If [`asset_pattern`](/dev-tools/backends/gitlab.html#asset-pattern) is also set, it takes precedence and `matching`/`matching_regex` are ignored — `asset_pattern` replaces autodetection entirely, so there is no candidate set left for them to narrow. They are ignored silently: when `asset_pattern` is set, a `matching_regex` is never consulted and an invalid one is not reported, since mise does not error on a superseded option.
 
 ### `matching_regex`
 
@@ -227,62 +241,71 @@ To use different asset patterns per platform:
 ```toml
 [tools."gitlab:gitlab-org/gitlab-runner"]
 version = "latest"
+bin = "gitlab-runner"
 
 [tools."gitlab:gitlab-org/gitlab-runner".platforms]
-linux-x64 = { asset_pattern = "gitlab-runner-linux-x64" }
-macos-arm64 = { asset_pattern = "gitlab-runner-macos-arm64" }
+linux-x64 = { asset_pattern = "binary: Linux amd64" }
+macos-arm64 = { asset_pattern = "binary: macOS arm64" }
 ```
 
 ### `checksum`
 
-Verify the downloaded file with a checksum:
+Set an expected digest for a **specific version and artifact**. Replace the
+placeholder below with the full SHA-256 digest obtained from a trusted source:
 
 ```toml
 [tools."gitlab:owner/repo"]
 version = "1.0.0"
 asset_pattern = "tool-1.0.0-x64.tar.gz"
-checksum = "sha256:a1b2c3d4e5f6789..."
+checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST"
 ```
 
 _Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums._
 
 ### Platform-specific Checksums
 
+Each platform needs its own digest. These values are placeholders; fill them
+from the publisher before installing, or generate [mise.lock](/dev-tools/mise-lock.html).
+
 ```toml
 [tools."gitlab:gitlab-org/gitlab-runner"]
-version = "latest"
+version = "19.3.1"
+bin = "gitlab-runner"
 
 [tools."gitlab:gitlab-org/gitlab-runner".platforms]
 linux-x64 = {
-  asset_pattern = "gitlab-runner-linux-x64",
-  checksum = "sha256:a1b2c3d4e5f6789...",
+  asset_pattern = "binary: Linux amd64",
+  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
 }
 macos-arm64 = {
-  asset_pattern = "gitlab-runner-macos-arm64",
-  checksum = "sha256:b2c3d4e5f6789...",
+  asset_pattern = "binary: macOS arm64",
+  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
 }
 ```
 
 ### `size`
 
-Verify the downloaded asset size:
+Optionally check the expected byte count. The number below is illustrative;
+use the selected artifact's actual size and pin its version. A size check does
+not authenticate the publisher or replace a checksum:
 
 ```toml
 [tools]
-"gitlab:gitlab-org/gitlab-runner" = { version = "latest", size = "12345678" }
+"gitlab:owner/repo" = { version = "1.0.0", size = "12345678" }
 ```
 
 ### Platform-specific Size
 
-You can specify different sizes for different platforms:
+Use each artifact's actual byte count; the following numbers illustrate the syntax:
 
 ```toml
 [tools."gitlab:gitlab-org/gitlab-runner"]
-version = "latest"
+version = "19.3.1"
+bin = "gitlab-runner"
 
 [tools."gitlab:gitlab-org/gitlab-runner".platforms]
-linux-x64 = { size = "12345678" }
-macos-arm64 = { size = "9876543" }
+linux-x64 = { asset_pattern = "binary: Linux amd64", size = "12345678" }
+macos-arm64 = { asset_pattern = "binary: macOS arm64", size = "9876543" }
 ```
 
 ### `strip_components`
@@ -291,11 +314,11 @@ Number of directory components to strip when extracting archives:
 
 ```toml
 [tools]
-"gitlab:gitlab-org/gitlab-runner" = { version = "latest", strip_components = 1 }
+"gitlab:owner/repo" = { version = "1.0.0", strip_components = 1 }
 ```
 
 ::: info
-If `strip_components` is not set, mise automatically applies `strip_components = 1` when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). Auto-detection places the binary directly in the install path where mise expects it.
+When both `strip_components` and `bin_path` are unset, mise automatically applies `strip_components = 1` when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). Auto-detection places the binary directly in the install path where mise expects it.
 :::
 
 ### `bin`
@@ -347,14 +370,21 @@ When `no_app = true`:
 
 ### `bin_path`
 
+Paths are relative to the install directory **after** `strip_components` is
+applied. Setting `bin_path` disables automatic root stripping. For an archive
+shaped like `tool-VERSION/bin/tool`, either retain the outer directory and use
+`bin_path = "tool-{{ version }}/bin"`, or set both `strip_components = 1` and
+`bin_path = "bin"`.
+
 ::: v-pre
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with `{{ version }}` and the `{{ os() }}` / `{{ arch() }}` functions:
 :::
 
 ```toml
-[tools."gitlab:gitlab-org/gitlab-runner"]
-version = "latest"
-bin_path = "gitlab-runner-{{ version }}/bin" # expands to gitlab-runner-1.0.0/bin
+[tools."gitlab:owner/repo"]
+version = "1.0.0"
+strip_components = 1
+bin_path = "bin" # for an archive shaped like tool-VERSION/bin/tool
 ```
 
 Both take keyword arguments that remap the value mise would emit (`linux`, `macos`,
@@ -365,6 +395,7 @@ differently:
 [tools."gitlab:owner/repo"]
 version = "latest"
 # expands to tool-1.0.0-linux-x86_64/bin
+strip_components = 0
 bin_path = 'tool-{{ version }}-{{ os() }}-{{ arch(x64="x86_64", arm64="aarch64") }}/bin'
 ```
 
