@@ -83,7 +83,8 @@ their precedence by hand.
 
 Use `content` to declare a literal whole file inline instead of keeping a
 separate source file. Inline content is written as a private regular file
-(`0600` on Unix) and cannot be combined with `source`, `mode`, `exclude`, or `manifest`:
+(`0600` on Unix). Use `content` on its own, without `source`, `mode`, `exclude`, `manifest`,
+or the edit options `block`, `line`, `template`, and `comment`:
 
 ```toml
 [dotfiles]
