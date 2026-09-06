@@ -271,7 +271,14 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 if config_changed {
                     match state.reload().await {
                         Ok(true) => {
-                            installed = install(&mut debouncer, &installed, &state.plan.anchors, &mut capture)?;
+                            installed = match install(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
+                        Ok(installed) => installed,
+                        Err(err) => {
+                            stop_after_install_failure(&mut capture, &state.tracked, &err).await;
+                            debouncer.stop();
+                            return Ok(1);
+                        }
+                    };
                             // the timing settings may have changed with it
                             let fresh = Intervals::from_settings(&Settings::get());
                             if fresh.limits != *capture.schedule.limits() {
@@ -305,6 +312,8 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                                 ) {
                                     capture.schedule.saved(&path, now);
                                 }
+                                capture.schedule.prune(now);
+                                capture.persist_schedule();
                             }
                             capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
                             capture.write_health();
@@ -321,10 +330,19 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                     }
                 } else if rescan {
                     capture.reconcile(&state.tracked, "rescan");
+                    capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
+                    capture.write_health();
                 } else if pending_appeared
                     && let Ok(true) = state.reload().await
                 {
-                    installed = install(&mut debouncer, &installed, &state.plan.anchors, &mut capture)?;
+                    installed = match install(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
+                        Ok(installed) => installed,
+                        Err(err) => {
+                            stop_after_install_failure(&mut capture, &state.tracked, &err).await;
+                            debouncer.stop();
+                            return Ok(1);
+                        }
+                    };
                     capture.out.emit(
                         "replan",
                         &format!("a tracked path appeared; watching {} anchor(s)", installed.len()),
@@ -383,7 +401,14 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 if state.plan.pending.iter().any(|path| path.exists())
                     && let Ok(true) = state.reload().await
                 {
-                    installed = install(&mut debouncer, &installed, &state.plan.anchors, &mut capture)?;
+                    installed = match install(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
+                        Ok(installed) => installed,
+                        Err(err) => {
+                            stop_after_install_failure(&mut capture, &state.tracked, &err).await;
+                            debouncer.stop();
+                            return Ok(1);
+                        }
+                    };
                 }
                 capture.reconcile(&state.tracked, "reconcile");
                 capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
@@ -403,6 +428,30 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
 /// due paths (a change still inside the coalescing window has not reached
 /// the scheduler yet, and a throttled file's final state is saved now). The
 /// backoff does not apply, and a running operation is given a moment.
+/// The watches could not be re-installed after a replan: what is pending is
+/// saved and the failure recorded before the process exits, so the service
+/// restarts it and status says why.
+async fn stop_after_install_failure(
+    capture: &mut Capture,
+    tracked: &TrackedSet,
+    err: &eyre::Report,
+) {
+    capture.out.emit(
+        "error",
+        &format!(
+            "the watches could not be re-installed; stopping so the service restarts it: {err:#}"
+        ),
+        json!({ "message": format!("{err:#}") }),
+    );
+    finish(capture, tracked).await;
+    // recorded after the final capture, which would clear it
+    capture.health.watcher.last_error =
+        Some(format!("the watches could not be re-installed: {err:#}"));
+    capture.health.watcher.last_error_at = Some(store::now_rfc3339());
+    capture.health.watcher.consecutive_failures += 1;
+    capture.write_health();
+}
+
 async fn finish(capture: &mut Capture, tracked: &TrackedSet) {
     // a full capture, not only the due paths: a change still
     // inside the coalescing window has not reached the scheduler

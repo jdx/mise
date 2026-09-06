@@ -150,7 +150,7 @@ wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | t
 cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
 
 [bootstrap.hooks.pre-dotfiles]
-run = "sleep 4"
+run = "touch $HOME/applying && sleep 4"
 EOF
 wait_until "grep -q 'configuration changed' watch.log"
 mise bootstrap dotfiles apply --yes >apply.log 2>&1 &
@@ -166,8 +166,11 @@ wait "$watcher" || true
 assert "cat ~/.config/hypr/state.json" "$final"
 
 # `--once` reports that nothing was saved while an operation holds the lock
+# (the hook's marker says the lock is held; a slow start would let `--once`
+# run first)
+rm -f ~/applying
 mise bootstrap dotfiles apply --yes >apply.log 2>&1 &
 applying=$!
-sleep 1
+wait_until "test -e ~/applying"
 assert_fail "mise bootstrap dotfiles watch --once --json 2>&1" '"reason":"deferred"'
 wait "$applying" || true
