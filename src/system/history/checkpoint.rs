@@ -249,16 +249,13 @@ impl Store {
                 .iter()
                 .map(|index| walk.entries[*index].display())
                 .collect();
-            let under = |path: &str| {
-                carried.iter().any(|entry| {
-                    path == entry
-                        || path
-                            .strip_prefix(entry.as_str())
-                            .is_some_and(|rest| rest.starts_with('/'))
-                })
-            };
-            // newest first, the first record of a path wins; the walk goes
-            // back past checkpoints that did not carry the entry (it may
+            // newest first, the first record of a path wins. A checkpoint
+            // contributes an entry's modes only where it recorded that
+            // entry as a manual-save entry with its saved bits (carried
+            // forward, or promoted by an explicit save): a protective
+            // record holds the live bits, and a checkpoint that tracked
+            // the path as autosaved, or not at all, says nothing about its
+            // saved version. The walk goes back past those (the entry may
             // have been untracked for a while) until every carried entry
             // has been seen, within a bound
             let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -272,19 +269,28 @@ impl Store {
                 else {
                     continue;
                 };
-                if checkpoint.trigger.as_str().ends_with("-before") {
+                let contributing: Vec<&str> = checkpoint
+                    .tree
+                    .coverage
+                    .entries
+                    .iter()
+                    .filter(|record| {
+                        carried.contains(&record.path)
+                            && !seen.contains(&record.path)
+                            && !record.autosave
+                            && record.state != "protective"
+                    })
+                    .map(|record| record.path.as_str())
+                    .collect();
+                if contributing.is_empty() {
                     continue;
                 }
-                for coverage in &checkpoint.tree.coverage.entries {
-                    if carried.contains(&coverage.path) {
-                        seen.insert(coverage.path.clone());
-                    }
-                }
                 for (path, bits) in &checkpoint.tree.modes {
-                    if under(path) {
+                    if contributing.iter().any(|entry| under_entry(path, entry)) {
                         modes.entry(path.clone()).or_insert(*bits);
                     }
                 }
+                seen.extend(contributing.into_iter().map(str::to_string));
             }
         }
         let mut coverage = tracked.coverage(&walk);
@@ -754,6 +760,14 @@ fn manual_plan(
         }
     }
     plan
+}
+
+/// Whether `path` is the entry itself or below it.
+fn under_entry(path: &str, entry: &str) -> bool {
+    path == entry
+        || path
+            .strip_prefix(entry)
+            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// The permission bits of captured regular files that git cannot record
