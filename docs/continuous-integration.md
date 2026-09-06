@@ -10,7 +10,8 @@ control updates to mise itself.
 
 ## Any CI provider
 
-The following shell commands run from the checked-out repository. They assume a Node.js
+The following shell commands use the [committed wrapper](#bootstrapping) and run from the
+checked-out repository. They assume a Node.js
 project with Node declared in `mise.toml`, a committed `package-lock.json`, and a `test`
 script in `package.json`. Replace the npm commands with your project's build or test commands.
 The runner needs `curl`, CA certificates, `tar`, and either `sha256sum` or `shasum`
@@ -18,18 +19,13 @@ to download, verify, and extract mise.
 
 ```sh
 set -eu
-curl -fsSL https://mise.run -o /tmp/install-mise.sh
-sh /tmp/install-mise.sh
-export PATH="$HOME/.local/bin:$PATH"
-mise install
-mise exec -- npm ci
-mise exec -- npm test
+./bin/mise install
+./bin/mise exec -- npm ci
+./bin/mise exec -- npm test
 ```
 
-Set `MISE_VERSION` when running the installer to select a mise release. Use
-`mise install --locked` instead of `mise install` when the repository has a lockfile.
-If your CI provider runs each command in a separate process, use its mechanism for persisting
-`PATH`, or invoke `"$HOME/.local/bin/mise"` by absolute path in later steps.
+Set `MISE_VERSION` when running the wrapper to select a mise release. Use
+`./bin/mise install --locked` instead of `./bin/mise install` when the repository has a lockfile.
 
 ### Bootstrapping
 
@@ -111,71 +107,47 @@ when a workflow intentionally supplies its own configuration. See the
 
 ## GitLab CI
 
-This `.gitlab-ci.yml` uses a Debian image and installs mise before each job. It assumes the
-same Node.js project as the generic example above. Add any OS packages required by your tools
-to `before_script`, or build a CI image with those packages and mise already installed.
+This `.gitlab-ci.yml` uses a Debian image and the [committed wrapper](#bootstrapping). It assumes
+the same Node.js project as the generic example above. Add any OS packages required by your
+tools to `before_script`, or build a CI image with those packages already installed.
 
 ```yaml
 build-job:
   stage: build
   image: debian:13-slim
-  variables:
-    MISE_DATA_DIR: "$CI_PROJECT_DIR/.mise/data"
-    MISE_CACHE_DIR: "$CI_PROJECT_DIR/.mise/cache"
   cache:
     key:
       prefix: mise-debian13-amd64
-      files: [mise.toml, mise.lock]
+      files: [bin/mise, mise.toml, mise.lock]
     paths:
-      - .mise/data/installs/
+      - .mise/installs/
       - .mise/cache/
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
-    - curl -fsSL https://mise.run -o /tmp/install-mise.sh
-    - sh /tmp/install-mise.sh
-    - export PATH="$HOME/.local/bin:$PATH"
+    - apt-get update && apt-get install -y --no-install-recommends curl ca-certificates tar
   script:
-    - mise install
-    - mise exec -- npm ci
-    - mise exec -- npm run build
+    - ./bin/mise install
+    - ./bin/mise exec -- npm ci
+    - ./bin/mise exec -- npm run build
 ```
 
 This example's cache prefix assumes an amd64 runner; choose a distinct prefix for another
 architecture. Remove `mise.lock` from the key if the project does not have one, or switch the
 install command to `mise install --locked` if it does. The example also requires a `build`
-script in `package.json`.
-
-### Example with the bootstrap script
-
-With the [committed wrapper](#bootstrapping), use the same base image and `before_script`
-package installation, omit the mise download and `PATH` steps, and replace the commands with:
-
-```yaml
-script:
-  - ./bin/mise install
-  - ./bin/mise exec -- npm ci
-  - ./bin/mise exec -- npm run build
-```
-
-Remove `MISE_DATA_DIR` and `MISE_CACHE_DIR` from the job: the localized wrapper sets them.
-Cache `.mise/installs/` and `.mise/cache/`, and include `bin/mise` in your cache key or prefix
-when changing the wrapper version. The wrapper downloads its own mise binary when needed;
-you do not need to hardcode that binary's version in a cache path.
+script in `package.json`. The localized wrapper sets the mise directories used by the cache.
 
 ## Xcode Cloud
 
 Use an Xcode Cloud [post-clone script](https://developer.apple.com/documentation/xcode/writing-custom-build-scripts)
-at `ci_scripts/ci_post_clone.sh` to install and run tools before the build. This example assumes
-SwiftLint is declared in the repository's `mise.toml`:
+at `ci_scripts/ci_post_clone.sh` to install and run tools before the build. Commit the
+[generated wrapper](#bootstrapping) at `bin/mise`. This example assumes SwiftLint is declared
+in the repository's `mise.toml`:
 
 ```sh
 #!/bin/sh
 set -eu
 cd "$CI_PRIMARY_REPOSITORY_PATH"
-curl -fsSL https://mise.run -o /tmp/install-mise.sh
-sh /tmp/install-mise.sh
-"$HOME/.local/bin/mise" install
-"$HOME/.local/bin/mise" exec -- swiftlint lint
+./bin/mise install
+./bin/mise exec -- swiftlint lint
 ```
 
 Make the script executable before committing it. Environment changes in this script do not

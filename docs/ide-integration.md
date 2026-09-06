@@ -114,7 +114,7 @@ For better Treesitter and LSP integration, see the [neovim cookbook](./mise-cook
 
 ```lisp
 (let ((mise-shims (expand-file-name "~/.local/share/mise/shims")))
-  (setenv "PATH" (concat mise-shims path-separator (getenv "PATH")))
+  (setenv "PATH" (concat mise-shims (char-to-string path-separator) (getenv "PATH")))
   (add-to-list 'exec-path mise-shims))
 ```
 
