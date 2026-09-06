@@ -1,0 +1,9 @@
+have a look at the stack for dotfile tracking, how well does this solve for the dotfile thing dhh made in the omarchy repo a few weeks ago?
+
+---
+
+what should we improve on the mise side before launching?
+
+---
+
+ok, make a pr or set of PRs on top of the existing stack for these
