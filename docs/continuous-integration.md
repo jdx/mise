@@ -13,7 +13,8 @@ control updates to mise itself.
 The following shell commands run from the checked-out repository. They assume a Node.js
 project with Node declared in `mise.toml`, a committed `package-lock.json`, and a `test`
 script in `package.json`. Replace the npm commands with your project's build or test commands.
-The runner needs `curl` and CA certificates to download mise.
+The runner needs `curl`, CA certificates, `tar`, and either `sha256sum` or `shasum`
+to download, verify, and extract mise.
 
 ```sh
 set -eu
@@ -97,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
       - run: mise exec -- npm ci
       - run: mise exec -- npm test
 ```
@@ -106,7 +107,7 @@ For a repository with `mise.lock`, add `install_args: --locked` under the action
 Use the `version` input to pin mise and `working_directory` to select a subproject. Keep tool
 versions in the repository configuration; the `mise_toml` and `tool_versions` inputs are useful
 when a workflow intentionally supplies its own configuration. See the
-[action inputs](https://github.com/jdx/mise-action/tree/v3#inputs) for cache and authentication options.
+[action inputs](https://github.com/jdx/mise-action/tree/v4#inputs) for cache and authentication options.
 
 ## GitLab CI
 
