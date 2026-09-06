@@ -98,6 +98,22 @@ assert_succeed "$b bootstrap dotfiles sync"
 assert_contains "$b bootstrap dotfiles status" "inline content does not support"
 assert "cat $B/.config/mise/config.toml" "$before"
 
+# A misspelled sharing policy must not silently fall back to share=true.
+cp valid-config.toml editor/config.toml
+cat <<'EOF' >>editor/config.toml
+
+[dotfiles."~/.private"]
+source = "private-config"
+shrae = false
+EOF
+git -C editor add config.toml
+git -C editor -c user.name=test -c user.email=test@example.com commit -qm misspelled-sharing-policy
+git -C editor push -q origin main
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" 'unknown dotfile key "shrae"'
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "sync paused"
+assert "cat $B/.config/mise/config.toml" "$before"
+
 # An explicit global file must not hide invalid incoming conf.d bodies.
 cp valid-config.toml editor/config.toml
 mkdir -p editor/conf.d

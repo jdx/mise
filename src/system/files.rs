@@ -559,6 +559,28 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 }
                 bail!("invalid dotfile declaration {target} in {}", path.display());
             };
+            if let Some(table) = value.as_table() {
+                for key in table.keys() {
+                    if !matches!(
+                        key.as_str(),
+                        "source"
+                            | "content"
+                            | "mode"
+                            | "exclude"
+                            | "manifest"
+                            | "autosave"
+                            | "share"
+                            | "backup"
+                            | "variants"
+                            | "enabled"
+                    ) {
+                        bail!(
+                            "unknown dotfile key {key:?} for {target} in {}",
+                            path.display()
+                        );
+                    }
+                }
+            }
             if resolve_target_arg(&target).is_relative() {
                 bail!("dotfile target must be absolute or start with ~/: {target}");
             }
