@@ -154,7 +154,7 @@
 
 ## Advanced
 
-- [Architecture](https://mise.jdx.dev/architecture.html): This document gives an overview of mise's architecture. It is aimed at contributors and anyone interested in how mise works internally.
+- [Architecture](https://mise.jdx.dev/architecture.html): This map is for contributors deciding where a behavior belongs. Start with the command that exposes the behavior, then follow configuration, tool resolution, or task execution into the owning…
 - [Paranoid](https://mise.jdx.dev/paranoid.html): Paranoid mode is an optional behavior that locks mise down further to make it harder for a bad actor to compromise your system.
 - [Templates](https://mise.jdx.dev/templates.html): Use Tera expressions to derive configuration values from the project directory, environment, or [vars]. mise renders those expressions when it resolves configuration or prepares a task.
 - [URL Replacements](https://mise.jdx.dev/url-replacements.html): mise does not include a built-in registry for downloading artifacts. Instead, it retrieves remote registry manifests, which specify the URLs for downloading tools.

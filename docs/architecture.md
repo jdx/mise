@@ -1,405 +1,224 @@
 ---
-outline: [1, 3]
+outline: [2, 3]
 ---
 
 # mise Architecture
 
-This document gives an overview of mise's architecture. It is aimed at contributors and anyone interested in how mise works internally.
-
-For practical development guidance, see the [Contributing Guide](contributing.md).
+This map is for contributors deciding where a behavior belongs. Start with the command
+that exposes the behavior, then follow configuration, tool resolution, or task execution
+into the owning subsystem. The [contributing guide](/contributing.html) covers setup,
+checks, and generated files.
 
 ## System Overview
 
-mise is a Rust-based tool with a modular architecture centered on three core concepts:
+mise combines versioned development tools, environment construction, task execution, and
+explicit machine setup through [bootstrap](/bootstrap.html). These features share configuration
+and execution helpers, but have different state and side effects. Installing a versioned
+tool is not the same operation as applying a host package or dotfile declaration.
 
-1. **Tool Version Management** - Installing and managing different versions of [development tools](dev-tools/)
-2. **Environment Management** - Setting up [environment variables](environments/) and project contexts
-3. **Task Running** - Executing [project tasks](tasks/) with dependency management
-
-These three pillars work together to provide unified development environment management.
+```mermaid
+flowchart TD
+    CLI[CLI command] --> Config[Configuration and settings]
+    Config --> Tools[Tool requests and backend resolution]
+    Tools --> Env[Environment and PATH]
+    Env --> Exec[Child command or shell output]
+    Config --> Tasks[Task discovery and dependency graph]
+    Tasks --> Env
+    Config --> Bootstrap[Bootstrap plan and explicit apply]
+```
 
 ## Core Architecture Components
 
-### Command Layer ([`src/cli/`](https://github.com/jdx/mise/tree/main/src/cli/))
+### Command Layer
 
-The CLI layer provides the user interface and delegates to core functionality:
+[`src/cli`](https://github.com/jdx/mise/tree/main/src/cli) defines commands with `usage_rs`
+derives and dispatches them from `src/cli/mod.rs`. The same usage specification feeds
+help, completions, and generated CLI documentation. Change command descriptions at their
+source and regenerate the outputs; do not edit generated reference pages by hand.
 
-- **Modular Commands**: Each command is a separate module ([`install.rs`](https://github.com/jdx/mise/blob/main/src/cli/install.rs), [`use.rs`](https://github.com/jdx/mise/blob/main/src/cli/use.rs), [`run.rs`](https://github.com/jdx/mise/blob/main/src/cli/run.rs), etc.)
-- **Argument Parsing**: Uses [`clap`](https://docs.rs/clap) for CLI parsing and validation
-- **Async Command Execution**: All commands support concurrent operations
-- **Unified Error Handling**: Consistent error reporting across all commands
+Commands delegate to subsystem code. Some are synchronous local queries; others perform
+asynchronous requests or coordinate concurrent work. Avoid adding installation or network
+side effects to a path intended to inspect local state.
 
-**Key Commands Architecture:**
+Useful entry points are `use.rs` for install-and-select behavior, `install.rs` for installation,
+`exec.rs` for a child environment, `run.rs` for tasks, and `bootstrap.rs` for machine setup.
+`activate.rs` emits shell integration, while `shell.rs` sets session-specific tool requests.
 
-- [`install`](cli/install.md) - Tool installation coordination
-- [`use`](cli/use.md) - Tool activation and configuration management
-- [`run`](cli/run.md) - Task execution with dependency resolution
-- [`env`](cli/env.md) - Environment variable management
-- [`shell`](cli/shell.md) - Shell integration and activation
+### Backend System
 
-### Backend System ([`src/backend/`](https://github.com/jdx/mise/tree/main/src/backend/))
+The [`Backend` trait](https://github.com/jdx/mise/blob/main/src/backend/mod.rs) separates
+shared policy from backend-specific metadata, installation, and environment logic. Public
+wrapper methods handle common work such as caching and resolution; implementation hooks
+such as `_list_remote_versions` and `install_version_` supply backend behavior.
 
-The backend system is mise's core abstraction for tool management, built on a trait-based architecture:
+Choose the implementation family that matches the source:
 
-```rust
-pub trait Backend: Debug + Send + Sync {
-    async fn list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>>;
-    async fn install_version(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
-    async fn uninstall_version(&self, tv: &ToolVersion) -> Result<()>;
-    // ... additional methods for lifecycle management
-}
-```
+- Native core runtimes live under `src/plugins/core`.
+- Release and registry integrations, including packslip, Aqua, GitHub, GitLab, and HTTP,
+  live under `src/backend`.
+- Language package integrations include npm, pipx, cargo, gem, and Go.
+- asdf and vfox adapters bridge external plugin interfaces.
 
-**Backend Categories:**
+Backend choice can depend on registry metadata, explicit overrides, the requested version,
+and a matching lock entry. It is not a one-time choice made after a generic version sorter.
+Versions are opaque requests: use backend resolution methods rather than assuming SemVer
+or sorting arbitrary installed versions at a new call site.
 
-- **Core Backends**: Native Rust implementations for maximum performance
-- **Language Package Managers**: npm, pipx, cargo, gem, go modules
-- **Universal Installers**: github (GitHub releases), aqua (comprehensive package management)
-- **Plugin Systems**: [backend plugins](backend-plugin-development.md) (enhanced methods), [tool plugins](tool-plugin-development.md) (hook-based), [asdf plugins](asdf-legacy-plugins.md) (legacy)
+See [Backend Architecture](/dev-tools/backend_architecture.html) and
+[Adding Backends](/contributing.html#adding-backends).
 
-For guidance on implementing new backends, see the [Contributing Guide](contributing.md#adding-backends). For detailed backend system design, see [Backend Architecture](dev-tools/backend_architecture.md).
+### Configuration System
 
-### Configuration System ([`src/config/`](https://github.com/jdx/mise/tree/main/src/config/))
+[`src/config`](https://github.com/jdx/mise/tree/main/src/config) discovers, loads, and merges
+configuration. `ConfigFile` implementations include `MiseToml`, `ToolVersions`, and
+`IdiomaticVersionFile`. The full precedence rules belong in [Configuration](/configuration.html).
 
-A hierarchical configuration system that merges settings from multiple config files:
+Keep three decisions distinct: which files are discovered, whether they may be trusted or
+executed, and how each field merges. Settings, tools, environment directives, tasks, and
+bootstrap entries do not all use the same merge strategy. A write command also has its own
+[target-file selection](/configuration.html#target-file-for-write-operations).
 
-**Config Trait Architecture:**
+`settings.toml` defines setting metadata and documentation. TOML examples use TOML 1.1,
+including multiline inline tables; a TOML 1.0-only validator will reject valid examples.
 
-```rust
-pub trait ConfigFile: Debug + Send + Sync {
-    fn get_path(&self) -> &Path;
-    fn to_tool_request_set(&self) -> Result<ToolRequestSet>;
-    fn env_entries(&self) -> Result<Vec<EnvDirective>>;
-    fn tasks(&self) -> Vec<&Task>;
-    // ... additional configuration methods
-}
-```
+### Toolset Management
 
-**Concrete Implementations:**
+[`src/toolset`](https://github.com/jdx/mise/tree/main/src/toolset) connects requests to selected
+versions and installation state:
 
-- `MiseToml` - Primary configuration format with full feature support
-- `ToolVersions` - asdf compatibility layer
-- `IdiomaticVersion` - Language-specific version files (`.node-version`, etc.)
+| Type             | Role                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| `ToolRequest`    | A request such as `node@24`, a channel, or a ref, with backend/options context        |
+| `ToolVersion`    | A resolved version and its installation metadata                                      |
+| `Toolset`        | Requests and resolved versions for the current context                                |
+| `ToolsetBuilder` | Combines config, runtime environment overrides, and explicit arguments, then resolves |
 
-**Configuration Hierarchy:** See [Configuration Documentation](configuration.md) for the complete hierarchy and precedence rules.
+Resolution, dependency ordering, installation, and environment construction are related but
+separate operations. A read-only listing need not install missing tools. An execution command
+may install them according to its settings. Preserve lockfile backend and checksum information
+when a request is resolved from a lock entry.
 
-### Toolset Management ([`src/toolset/`](https://github.com/jdx/mise/tree/main/src/toolset/))
+### Task System
 
-Coordinates tool resolution, installation, and environment setup:
+[`src/task`](https://github.com/jdx/mise/tree/main/src/task) handles discovery, dependencies,
+freshness/cache decisions, and execution. `Task` stores the definition; task file providers
+load local and remote sources; `Deps` represents the dependency graph; the executor runs
+ready tasks under the configured concurrency and output policy.
 
-**Core Components:**
+`depends` selects prerequisites, `depends_post` selects follow-up tasks, and `wait_for`
+orders tasks only when they are already part of the selected graph. Task identity also
+includes arguments, environment, and execution phase. Check [Task Architecture](/tasks/architecture.html)
+before changing graph construction, duplicate handling, or completion propagation.
 
-- `Toolset` - Immutable collection of resolved tools for a context
-- `ToolVersion` - Represents a specific, resolved tool version (e.g., `node@latest` becomes `node@18.17.0`)
-- `ToolRequest` - User's tool specification (e.g., `node@18`, `python@latest`)
-- `ToolsetBuilder` - Constructs toolsets from configuration with dependency resolution
+### Plugin System
 
-**Tool Resolution Pipeline:**
+[`src/plugins`](https://github.com/jdx/mise/tree/main/src/plugins) manages plugin sources and
+installation metadata. [`crates/vfox`](https://github.com/jdx/mise/tree/main/crates/vfox)
+provides the embedded Lua runtime and hook/module interfaces.
 
-1. **Configuration Parsing**: Extract tool requirements from config files
-2. **Version Resolution**: Resolve version specifications (`latest`, `prefix:1.2`, `sub-1:latest`, etc.) to concrete versions
-3. **Backend Selection**: Choose the appropriate backend for each tool
-4. **Dependency Analysis**: Resolve tool dependencies (e.g., npm requires Node.js)
-5. **Installation Coordination**: Install missing tools in dependency order
-6. **Environment Configuration**: Set up PATH and environment variables
+Tool hooks manage one SDK, backend hooks manage `plugin:tool` requests, environment hooks
+return variables/PATH, and package hooks manage host package batches. asdf adapters execute
+legacy shell scripts. Plugin source installation and tool-version installation have separate
+state and update operations. See [Plugins](/plugins.html).
 
-### Task System ([`src/task/`](https://github.com/jdx/mise/tree/main/src/task/))
+### Shell Integration
 
-Task execution with dependency graph management:
+[`src/shell`](https://github.com/jdx/mise/tree/main/src/shell) emits shell-specific activation
+and environment assignments. `mise activate` registers prompt/directory hooks; hook execution
+computes an environment diff so mise can undo its previous changes before applying a new
+context. `mise exec` constructs a child environment directly and does not need activation.
 
-**Architecture Components:**
+Preserve native Windows PATH inside mise and child processes. Translation belongs only at
+a positively identified shell-output boundary; see the repository's
+[agent guide](https://github.com/jdx/mise/blob/main/AGENTS.md) for implementation constraints.
 
-- `Task` - Task definition with metadata, dependencies, and execution configuration
-- `Deps` - Dependency graph manager using `petgraph` for DAG operations
-- `TaskFileProvider` - Discovers tasks from files and configuration
-- Parallel execution engine with configurable concurrency
+### Environment Management
 
-**Task Discovery:**
+`src/config/env_directive` evaluates environment directives, `EnvDiff` tracks changes, and
+`PathEnv` handles PATH entries. Tool-independent and tool-aware directives run at different
+stages. Use the mise-constructed environment when invoking subprocesses; inheriting a stale
+process environment can lose preceding directives or use the wrong runtime.
 
-1. [File-based tasks](tasks/file-tasks.md) from configured directories
-2. [TOML-defined tasks](tasks/toml-tasks.md) in configuration files
-3. Inherited tasks from parent directories
+See [Environment Variables](/environments/) and [Templates](/templates.html).
 
-**Dependency Resolution:**
+### Bootstrap and host state
 
-- Uses a directed acyclic graph (DAG) to model dependencies
-- Supports multiple dependency types: `depends`, `depends_post`, `wait_for`
-- Parallel execution within dependency constraints
-- Circular dependency detection and prevention
+`src/cli/bootstrap.rs` coordinates plans and selected phases. Implementations under
+`src/system` handle packages, files, edits, repositories, and platform-specific resources.
+Status, preview, apply, and prune have distinct contracts. For example, package status must
+not install anything, and a selected package batch is not a complete desired-state snapshot.
 
-See the [Task Documentation](tasks/) for complete usage details and configuration options, and [Task Architecture](tasks/architecture.md) for detailed system design.
+Read the relevant [bootstrap resource guide](/bootstrap.html) before changing ownership,
+confirmation, rollback, or removal behavior. Host-managed state is not generally contained
+in a versioned tool's installation directory.
 
-### Plugin System ([`src/plugins/`](https://github.com/jdx/mise/tree/main/src/plugins/))
+### Caching System
 
-Extensibility layer supporting multiple plugin architectures:
+[`src/cache.rs`](https://github.com/jdx/mise/blob/main/src/cache.rs) provides `CacheManager<T>`
+with freshness policies and atomic writes. Its serialized cache uses MessagePack with zlib
+compression. Other subsystems have their own formats and invalidation rules, including
+session-keyed environment caching and local/remote task caches.
 
-**Plugin Trait:**
-
-```rust
-pub trait Plugin: Debug + Send {
-    fn name(&self) -> &str;
-    fn path(&self) -> PathBuf;
-    async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> Result<()>;
-    async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()>;
-    // ... lifecycle management methods
-}
-```
-
-**Plugin Types:**
-
-- **Backend Plugins**: Enhanced plugins with backend methods for managing multiple tools
-- **Tool Plugins**: Hook-based plugins using the traditional vfox format
-- **asdf Plugins**: Legacy plugins compatible with the asdf plugin ecosystem (Linux/macOS only)
-
-For complete plugin documentation, see [Plugin Guide](plugins.md).
-
-### Shell Integration ([`src/shell/`](https://github.com/jdx/mise/tree/main/src/shell/))
-
-Shell-specific code generation that abstracts commands like `mise env` and contains all shell differences in one place:
-
-**Shell Trait:**
-
-```rust
-pub trait Shell: Display {
-    fn activate(&self, opts: ActivateOptions) -> String;
-    fn set_env(&self, k: &str, v: &str) -> String;
-    fn unset_env(&self, k: &str) -> String;
-    // ... shell-specific methods
-}
-```
-
-**Supported Shells:** See [`mise activate`](cli/activate.md) documentation for the complete list
-
-**Shell Abstractions:** Environment variable setting, PATH modification, command execution
-
-### Environment Management ([`src/env*.rs`](https://github.com/jdx/mise/tree/main/src/))
-
-Helpers for working with environment variables:
-
-- `EnvDiff` - Tracks and applies environment changes
-- `EnvDirective` - Configuration-based environment variable management
-- `PathEnv` - PATH manipulation with precedence rules
-- Context-aware resolution with config layering
-
-For environment setup and configuration, see [Environment Documentation](environments/).
-
-### Caching System ([`src/cache.rs`](https://github.com/jdx/mise/blob/main/src/cache.rs))
-
-Generic caching backed by files, using msgpack serialization with zstd compression:
-
-- `CacheManager<T>` - Generic caching with TTL support
-- Data serialized with msgpack and compressed with zstd for efficient storage
-- Automatic cache invalidation based on file timestamps
-- Per-backend cache isolation for data integrity
+A cache key must include every input that changes the result, including relevant options,
+environment, and source metadata. See [cache behavior](/cache-behavior.html) for user-visible
+refresh controls and limitations.
 
 ## Test Architecture
 
-mise uses a multi-layered testing strategy that combines several approaches for thorough validation across its feature set.
+Use the smallest test layer that demonstrates the behavior. Pure resolution or parsing
+logic fits a unit test; shell boundaries, installation, and task execution often need an
+end-to-end test. Network and host-package tests have prerequisites beyond a Rust compiler.
 
-**Testing Strategy Overview:**
+### Unit Tests
 
-1. **Unit Tests** - Rust `#[test]` functions embedded in source files
-2. **End-to-End (E2E) Tests** - Bash-based integration tests with complete environment isolation
-3. **Snapshot Tests** - `insta`-based tests for complex output validation
+Tests live beside source modules and in workspace crates. The main binary's `src/test.rs`
+initializes shared fixture directories and process environment. Tests are configured to run
+single-threaded; this is not a fresh process or HOME per individual Rust test. Use existing
+guards for temporary environment/current-directory changes and restore them on failure.
 
-::: tip Testing Philosophy
-**Most tests in mise are end-to-end tests, and this is generally the preferred approach** for new functionality. E2E tests validate real-world usage and catch integration issues that unit tests might miss. However, **E2E tests can be challenging to run locally** because of environment dependencies and setup complexity. It is often easier to run them on GitHub Actions, where the environment is consistent and properly configured.
+### End-to-End Tests
 
-See the [Contributing Guide](contributing.md#testing) for detailed testing setup and guidelines.
-:::
+The `e2e` harness runs Bash tests with isolated mise configuration/data/state and temporary
+working directories. Start it through `mise run test:e2e`, which builds mise and selects
+files through the repository's task wrapper. Host programs and services are still external
+prerequisites; isolation does not install Docker, a JDK, or every shell for you.
 
-### Unit Tests ([`src/` modules](https://github.com/jdx/mise/tree/main/src/))
-
-**Structure and Characteristics:**
-
-- **Location**: Embedded within source files using `mod tests` blocks
-- **Test Runner**: Standard Rust `cargo test`
-- **Dependencies**: `pretty_assertions`, `insta`, `test-log`, `ctor`
-- **Coverage**: Over 50 test modules covering all major functionality
-
-```rust
-mod tests {
-    use insta::assert_snapshot;
-    use pretty_assertions::assert_eq;
-    use crate::config::Config;
-    use super::*;
-
-    #[tokio::test]
-    async fn test_hash_to_str() {
-        let _config = Config::get().await.unwrap();
-        assert_eq!(hash_to_str(&"foo"), "e1b19adfb2e348a2");
-    }
-}
+```sh
+mise run test:e2e e2e/cli/test_version
+mise run test:e2e '^test_task_'
+mise run test:e2e --all
 ```
 
-**Test Environment Setup:**
+The wrapper matches test **basenames**, not directory prefixes. Inspect its current source
+with `mise tasks info test:e2e` before changing test-selection instructions.
 
-- **Global Setup**: Uses `ctor::ctor` in [`src/test.rs`](https://github.com/jdx/mise/blob/main/src/test.rs) for test environment initialization
-- **Isolated Environment**: Each test gets a clean environment with custom `HOME`, cache, and config directories
-- **Async Support**: Extensive use of `#[tokio::test]` for async testing
-
-### End-to-End Tests ([`e2e/`](https://github.com/jdx/mise/tree/main/e2e/))
-
-**Architecture:**
-
-```
-e2e/
-├── run_test          # Single test executor with environment isolation
-├── run_all_tests     # Test orchestrator with parallel execution
-├── assert.sh         # Rich assertion library
-├── cli/              # CLI command tests
-│   ├── test_use      # Testing tool activation and configuration
-│   ├── test_install  # Testing tool installation
-│   ├── test_upgrade  # Testing tool upgrades
-│   ├── test_uninstall # Testing tool removal
-│   └── test_version  # Testing version commands
-├── backend/          # Backend-specific tests
-│   ├── test_aqua     # Testing aqua package manager
-│   ├── test_asdf     # Testing asdf plugin compatibility
-│   └── test_npm      # Testing npm backend
-├── tasks/            # Task system tests
-│   ├── test_task_deps # Testing task dependencies
-│   ├── test_task_run_depends # Testing task execution order
-│   ├── test_task_ls  # Testing task listing
-│   └── test_task_info # Testing task metadata
-├── config/           # Configuration tests
-│   ├── test_config_ls # Testing configuration listing
-│   └── test_config_set # Testing configuration updates
-└── [other domains]/  # Additional test categories
-```
-
-**Environment Isolation System:**
-
-Each test runs in complete isolation with temporary directories:
-
-```bash
-setup_isolated_env() {
-  TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
-  TEST_HOME="$TEST_ISOLATED_DIR/home"
-  MISE_DATA_DIR="$TEST_HOME/.local/share/mise"
-  MISE_CACHE_DIR="$TEST_HOME/.cache/mise"
-  # ... complete environment isolation
-}
-```
-
-**Rich Assertion Framework:**
-
-[`assert.sh`](https://github.com/jdx/mise/blob/main/e2e/assert.sh) provides rich test utilities:
-
-```bash
-# Basic assertions
-assert "command" "expected_output"
-assert_contains "command" "substring"
-assert_fail "command" "error_message"
-
-# JSON testing
-assert_json "command" '{"key": "value"}'
-assert_json_partial_object "command" "field1,field2" '{"field1": "value1"}'
-
-# File system assertions
-assert_directory_exists "path"
-assert_directory_empty "path"
-```
-
-**Test Categories:**
-
-- **CLI Tests**: Validate all command-line interfaces and argument parsing
-- **Backend Tests**: Test tool installation, version resolution, and backend integration
-- **Task Tests**: Validate task execution, dependency resolution, and parallel execution
-- **Configuration Tests**: Test configuration parsing, hierarchy, and environment variable handling
+Use helpers in `e2e/assert.sh` and let the harness manage cleanup. Do not execute test files
+directly or add executable permissions just to run them.
 
 ### Windows Testing
 
-**Windows-Specific Tests ([`e2e-win/`](https://github.com/jdx/mise/tree/main/e2e-win/)):**
+`e2e-win` uses PowerShell and Pester. Tests should run the emitted commands and check real
+child-process behavior, particularly for PATH and activation, rather than only comparing
+output strings. See [Windows E2E setup](/contributing.html#windows-e2e-tests).
 
-- **Language**: PowerShell scripts (`.ps1`)
-- **Focus**: Windows-specific functionality and cross-platform compatibility
-- **Coverage**: Core tools like Go, Java, Node.js, Python, Rust
+### Snapshot Testing
 
-```powershell
-Describe "go" {
-    It "installs go" {
-        mise install go@latest
-        go version | Should -Match "go version"
-    }
-}
-```
-
-### Snapshot Testing ([`src/snapshots/`](https://github.com/jdx/mise/tree/main/src/snapshots/))
-
-**Implementation:**
-
-- **Crate**: Uses `insta` for snapshot testing
-- **Format**: Stores expected outputs as `.snap` files
-- **Coverage**: Complex outputs like directory listings, configuration parsing, environment diffs
-
-```rust
-#[tokio::test]
-async fn test_parse() {
-    let diff = DirenvDiff::parse(input).unwrap();
-    assert_snapshot!(diff);  // Creates/validates snapshot
-}
-```
+`insta` snapshots record structured or user-visible output. Review each changed snapshot
+as part of the behavior change; accepting all snapshots is not evidence that the new output
+is correct. `mise run snapshots` updates snapshots using the project's task configuration.
 
 ### Test Infrastructure Features
 
-**Performance and Utility Tests ([`xtasks/test/`](https://github.com/jdx/mise/tree/main/xtasks/test/)):**
+The repository has file tasks under `xtasks/test` for E2E selection and performance work.
+Slow E2E files end in `_slow` and require `TEST_ALL=1`. The full runner can partition work
+with `TEST_TRANCHE` and `TEST_TRANCHE_COUNT`. CI supplies platform dependencies and instrumentation;
+a task named `coverage` does not by itself instrument a local binary.
 
-- **Performance Testing**: `perf` script for benchmarking
-- **Coverage Testing**: `coverage` script for test coverage analysis
-- **E2E Runner**: `e2e` script with filtering capabilities
-
-**Test Data Management ([`test/`](https://github.com/jdx/mise/tree/main/test/)):**
-
-```
-test/
-├── config/           # Test-specific configs
-├── cwd/              # Test working directories
-├── data/             # Test plugins and mock data
-├── fixtures/         # Sample configuration files
-├── plugins/          # Test plugin definitions
-└── state/            # Test state directory
-```
-
-**Test Execution Modes:**
-
-- **Fast Tests**: Regular tests that run in CI
-- **Slow Tests**: Marked with `_slow` suffix, skipped unless `TEST_ALL=1`
-- **Tranche Support**: Tests can be split across parallel runners using `TEST_TRANCHE_COUNT`
-
-**Developer Experience Features:**
-
-- **Environment Safety**: Complete isolation prevents tests from affecting the user's actual mise installation
-- **Parallel Execution**: E2E tests support parallel execution with proper isolation
-- **Rich Reporting**: Detailed test timing and environment preservation on failure for debugging
-- **Cross-Platform Validation**: Automated testing on multiple operating systems
-
-**Running Tests:**
-
-```bash
-# Run all unit tests
-cargo test
-
-# Run all E2E tests
-mise run test:e2e
-
-# Run specific E2E test
-mise run test:e2e '^test_install$'
-
-# Run with coverage
-./xtasks/test/coverage
-
-# Performance testing
-./xtasks/test/perf
-```
-
-For complete development setup and testing procedures, see the [Contributing Guide](contributing.md).
-
-This test architecture ensures mise's reliability across tool management, environment configuration, task execution, and multi-platform support.
+See [Testing](/contributing.html#testing) for exact commands and prerequisites.
 
 ## Related Architecture Documentation
 
-For deeper understanding of specific subsystems:
-
-- **[Task Architecture](tasks/architecture.md)** - Detailed design of the task dependency system, parallel execution engine, and task discovery mechanisms
-- **[Backend Architecture](dev-tools/backend_architecture.md)** - In-depth guide to backend types, the trait system, and how different installation methods work
+- [Task Architecture](/tasks/architecture.html).
+- [Backend Architecture](/dev-tools/backend_architecture.html).
+- [Configuration](/configuration.html).
+- [Contributing](/contributing.html).
