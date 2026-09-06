@@ -579,12 +579,6 @@ pub(crate) async fn apply(
     dry_run: bool,
     yes: bool,
 ) -> Result<Option<String>> {
-    if requests
-        .iter()
-        .any(|request| request.builtin.as_deref() == Some("history-watch"))
-    {
-        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
-    }
     if requests.is_empty() {
         return Ok(None);
     }
@@ -592,6 +586,12 @@ pub(crate) async fn apply(
         let reason = unavailable_reason();
         debug!("user services: skipping, {reason}");
         return Ok(Some(reason));
+    }
+    if requests
+        .iter()
+        .any(|request| request.builtin.as_deref() == Some("history-watch"))
+    {
+        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
     }
     let statuses = status(requests).await?;
     let mut targets = vec![];

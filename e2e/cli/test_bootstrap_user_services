@@ -56,7 +56,7 @@ fi
 if ! mise bootstrap services status --json | jq -e 'all(.action != "unknown")' >/dev/null; then
   assert_contains "mise bootstrap services status --json" '"action": "unknown"'
   assert_fail "mise bootstrap services status --missing"
-  assert_contains "mise bootstrap services apply --dry-run --yes 2>&1" "skipped"
+  assert_contains "MISE_EXPERIMENTAL=0 mise bootstrap services apply --dry-run --yes 2>&1" "skipped"
   assert_contains "mise bootstrap --only services --dry-run --yes 2>&1" "skipped"
   assert_fail "test -e $HOME/.config/systemd/user/dev.mise.agent.service"
   assert_fail "test -e $HOME/Library/LaunchAgents/dev.mise.agent.plist"

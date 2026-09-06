@@ -558,13 +558,13 @@ fn render_service(request: &SystemdRequest, out: &mut String) {
         out.push_str(&format!("Type={service_type}\n"));
     }
     if let Some(exec_start) = &request.exec_start {
-        out.push_str(&format!("ExecStart={}\n", expand_path_string(exec_start)));
+        out.push_str(&format!("ExecStart={}\n", expand_exec_string(exec_start)));
     }
     if let Some(remain_after_exit) = request.remain_after_exit {
         out.push_str(&format!("RemainAfterExit={}\n", yes_no(remain_after_exit)));
     }
     if let Some(exec_stop) = &request.exec_stop {
-        out.push_str(&format!("ExecStop={}\n", expand_path_string(exec_stop)));
+        out.push_str(&format!("ExecStop={}\n", expand_exec_string(exec_stop)));
     }
     if let Some(timeout_start_sec) = &request.timeout_start_sec {
         out.push_str(&format!("TimeoutStartSec={timeout_start_sec}\n"));
@@ -706,6 +706,21 @@ fn sibling_unit(request: &SystemdRequest) -> String {
 
 fn sibling_unit_path(request: &SystemdRequest) -> PathBuf {
     user_units_dir().join(sibling_unit(request))
+}
+
+/// Expand the home prefix of a quoted executable without re-tokenizing
+/// systemd's command syntax or changing the arguments that follow it.
+fn expand_exec_string(command: &str) -> String {
+    for quote in ['\'', '"'] {
+        if let Some(rest) = command.strip_prefix(quote)
+            && let Some((program, args)) = rest.split_once(quote)
+            && program.starts_with("~/")
+        {
+            let program = expand_path_string(program);
+            return format!("{}{args}", quote_environment(&program));
+        }
+    }
+    expand_path_string(command)
 }
 
 fn expand_path_string(path: &str) -> String {
@@ -878,6 +893,24 @@ fn unit_operation_error_is_noop(error: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn quoted_executable_home_expands_without_changing_arguments() {
+        for quote in ['\'', '"'] {
+            let command = format!("{quote}~/.local/my agent{quote} --serve '$VALUE' %i");
+            assert_eq!(
+                super::expand_exec_string(&command),
+                format!(
+                    "{} --serve '$VALUE' %i",
+                    super::quote_environment(&super::expand_path_string("~/.local/my agent"))
+                )
+            );
+        }
+        assert_eq!(
+            super::expand_exec_string("/bin/echo '~/literal'"),
+            "/bin/echo '~/literal'"
+        );
+    }
+
     use super::*;
 
     #[test]
