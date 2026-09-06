@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TN31ZP7YBQE215Y7WWHJVH",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T06:04:34.120993Z",
+  "branch": "codex/docs-bootstrap-guides",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/bootstrap.md",
+    "docs/bootstrap/accounts.md",
+    "docs/bootstrap/compose.md",
+    "docs/bootstrap/files.md",
+    "docs/bootstrap/firewall.md",
+    "docs/bootstrap/launchd.md",
+    "docs/bootstrap/macos-defaults.md",
+    "docs/bootstrap/remote.md",
+    "docs/bootstrap/repos.md",
+    "docs/bootstrap/secrets.md",
+    "docs/bootstrap/services.md",
+    "docs/bootstrap/shell.md",
+    "docs/bootstrap/systemd.md",
+    "docs/bootstrap/user.md",
+    "docs/public/llms.txt"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ed0ac62e3c6f",
+  "checkpoint_transcript_start": 2405,
+  "transcript_lines_at_start": 2405,
+  "compact_transcript_start": 296,
+  "token_usage": {
+    "input_tokens": 50564,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1456768,
+    "output_tokens": 9511,
+    "api_call_count": 13
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T06:04:33.679678Z",
+    "agent_lines": 468,
+    "agent_removed": 362,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 468,
+    "total_lines_changed": 830,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TN31ZP7YBQE215Y7WWHJVH",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-bootstrap-guides",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/bootstrap.md",
+    "docs/bootstrap/accounts.md",
+    "docs/bootstrap/compose.md",
+    "docs/bootstrap/files.md",
+    "docs/bootstrap/firewall.md",
+    "docs/bootstrap/launchd.md",
+    "docs/bootstrap/macos-defaults.md",
+    "docs/bootstrap/remote.md",
+    "docs/bootstrap/repos.md",
+    "docs/bootstrap/secrets.md",
+    "docs/bootstrap/services.md",
+    "docs/bootstrap/shell.md",
+    "docs/bootstrap/systemd.md",
+    "docs/bootstrap/user.md",
+    "docs/public/llms.txt"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 50564,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1456768,
+    "output_tokens": 9511,
+    "api_call_count": 13
+  }
+}
