@@ -28,7 +28,59 @@ pub(super) struct RustPlugin {
 
 const RUST_NIGHTLY_MANIFEST_URL: &str =
     "https://static.rust-lang.org/dist/channel-rust-nightly.toml";
+const RUST_DIST_ROOT: &str = "https://static.rust-lang.org/dist";
+const RUST_MINIMAL_PROFILE_COMPONENTS: &[&str] = &["cargo", "rust-std", "rustc"];
 const RUST_DEFAULT_PROFILE_COMPONENTS: &[&str] = &["clippy", "rust-docs", "rustfmt"];
+
+#[derive(Debug, serde::Deserialize)]
+struct RustupManifest {
+    #[serde(default)]
+    profiles: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    renames: BTreeMap<String, RustupManifestRename>,
+    pkg: RustupManifestPackages,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RustupManifestRename {
+    to: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RustupManifestPackages {
+    rust: RustupManifestPackage,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RustupManifestPackage {
+    target: BTreeMap<String, RustupManifestTarget>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RustupManifestTarget {
+    #[serde(default)]
+    components: Vec<RustupManifestComponent>,
+    #[serde(default)]
+    extensions: Vec<RustupManifestComponent>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RustupManifestComponent {
+    pkg: String,
+    target: Option<String>,
+}
+
+#[derive(Debug, PartialEq)]
+struct RustupProfileComponents {
+    components: Vec<String>,
+    host: String,
+}
+
+#[derive(Debug)]
+struct InstalledRustupManifest {
+    toolchain: String,
+    contents: Option<String>,
+}
 
 fn parse_nightly_manifest(manifest: &str) -> Result<String> {
     let manifest: toml::Value =
@@ -286,14 +338,149 @@ impl RustPlugin {
         Ok(profile)
     }
 
+    fn rustup_active_toolchain(
+        &self,
+        tv: &ToolVersion,
+        runtime: &RustRuntime,
+    ) -> Result<Option<String>> {
+        let args = vec!["show".to_string(), "active-toolchain".to_string()];
+        let mut cmd = cmd(runtime.bin_dir.join(RUSTUP_BIN), args)
+            .env("PATH", rustup_path_env(runtime)?)
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked();
+        for (key, value) in rustup_env(&runtime.homes, &tv.version) {
+            cmd = cmd.env(key, value);
+        }
+        let output = match cmd.run() {
+            Ok(output) if output.status.success() => output,
+            Ok(output) => {
+                debug!(
+                    "rustup show active-toolchain failed for {}: {}",
+                    tv.style(),
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
+                return Ok(None);
+            }
+            Err(err) => {
+                debug!(
+                    "rustup show active-toolchain failed for {}: {err:#}",
+                    tv.style()
+                );
+                return Ok(None);
+            }
+        };
+        let output = String::from_utf8_lossy(&output.stdout);
+        let Some(toolchain) = output.split_whitespace().next() else {
+            debug!(
+                "rustup show active-toolchain returned no toolchain for {}",
+                tv.style()
+            );
+            return Ok(None);
+        };
+        Ok(Some(toolchain.to_string()))
+    }
+
+    fn rustup_toolchain_manifest(
+        &self,
+        tv: &ToolVersion,
+        runtime: &RustRuntime,
+    ) -> Result<Option<InstalledRustupManifest>> {
+        let Some(toolchain) = self.rustup_active_toolchain(tv, runtime)? else {
+            return Ok(None);
+        };
+        let manifest = runtime
+            .homes
+            .rustup
+            .join("toolchains")
+            .join(&toolchain)
+            .join("lib")
+            .join("rustlib")
+            .join("multirust-channel-manifest.toml");
+        if !manifest.is_file() {
+            debug!(
+                "rustup manifest missing for {} at {}",
+                tv.style(),
+                manifest.display()
+            );
+            return Ok(Some(InstalledRustupManifest {
+                toolchain,
+                contents: None,
+            }));
+        }
+        let contents = match file::read_to_string(&manifest) {
+            Ok(contents) => Some(contents),
+            Err(err) => {
+                debug!(
+                    "failed to read rustup manifest for {} at {}: {err:#}",
+                    tv.style(),
+                    manifest.display()
+                );
+                None
+            }
+        };
+        Ok(Some(InstalledRustupManifest {
+            toolchain,
+            contents,
+        }))
+    }
+
+    async fn rustup_complete_profile_components(
+        &self,
+        tv: &ToolVersion,
+        runtime: &RustRuntime,
+    ) -> Result<Option<RustupProfileComponents>> {
+        let Some(installed) = self.rustup_toolchain_manifest(tv, runtime)? else {
+            if self
+                .rustup_installed_items(tv, "component", runtime)?
+                .is_some()
+            {
+                bail!(
+                    "cannot reconcile the rustup complete profile for {} because its active toolchain could not be determined",
+                    tv.style()
+                );
+            }
+            return Ok(None);
+        };
+        if let Some(manifest) = installed.contents {
+            match parse_rustup_profile_components(&manifest, &installed.toolchain, "complete") {
+                Ok(components) => return Ok(Some(components)),
+                Err(err) => debug!(
+                    "failed to resolve the rustup complete profile for {} from its installed manifest: {err:#}",
+                    tv.style()
+                ),
+            }
+        }
+        let url = rustup_channel_manifest_url(
+            &tv.version,
+            rustup_dist_var(tv, "RUSTUP_DIST_SERVER"),
+            rustup_dist_var(tv, "RUSTUP_DIST_ROOT"),
+        );
+        let manifest = read_rustup_channel_manifest(&url).await.wrap_err_with(|| {
+            format!(
+                "cannot reconcile the rustup complete profile for {} because its installed manifest is unusable and {url} could not be fetched",
+                tv.style()
+            )
+        })?;
+        parse_rustup_profile_components(&manifest, &installed.toolchain, "complete")
+            .map(Some)
+            .wrap_err_with(|| {
+                format!(
+                    "cannot reconcile the rustup complete profile for {} from {url}",
+                    tv.style()
+                )
+            })
+    }
+
     fn missing_components(
         &self,
         requested: &[String],
         installed: &BTreeSet<String>,
+        host: Option<&str>,
     ) -> Vec<String> {
         requested
             .iter()
-            .filter(|component| !rustup_component_installed(installed, component))
+            .filter(|component| !rustup_component_installed(installed, component, host))
             .cloned()
             .collect()
     }
@@ -347,6 +534,13 @@ impl Backend for RustPlugin {
             Some(profile) => profile,
             None => self.rustup_default_profile(tv, &runtime)?,
         };
+        let effective_profile = normalize_rustup_profile(&effective_profile)?;
+        let active_toolchain = if effective_profile == "complete" {
+            None
+        } else {
+            self.rustup_active_toolchain(tv, &runtime)?
+        };
+        let host = active_toolchain.as_deref().and_then(rustup_toolchain_host);
 
         // Query components even when none were explicitly requested. This
         // verifies that rustup still has the toolchain represented by mise's
@@ -357,18 +551,26 @@ impl Backend for RustPlugin {
         };
 
         let mut required_components = components.unwrap_or_default();
-        if effective_profile == "default" {
-            required_components.extend(
-                RUST_DEFAULT_PROFILE_COMPONENTS
-                    .iter()
-                    .map(|component| (*component).to_string()),
-            );
-        }
+        let manifest_host = if effective_profile == "complete" {
+            let Some(profile_components) = self
+                .rustup_complete_profile_components(tv, &runtime)
+                .await?
+            else {
+                return Ok(false);
+            };
+            required_components.extend(profile_components.components);
+            Some(profile_components.host)
+        } else {
+            required_components.extend(fallback_rustup_profile_components(effective_profile, host));
+            None
+        };
+        let host = manifest_host.as_deref().or(host);
         required_components.sort();
         required_components.dedup();
 
         if !required_components.is_empty() {
-            let missing = self.missing_components(&required_components, &installed_components);
+            let missing =
+                self.missing_components(&required_components, &installed_components, host);
             if !missing.is_empty() {
                 debug!(
                     "{} missing rustup component(s): {}",
@@ -523,16 +725,26 @@ impl Backend for RustPlugin {
             Some(profile) => profile.to_string(),
             None => self.rustup_default_profile(&tv, &runtime)?,
         };
+        let effective_profile = normalize_rustup_profile(&effective_profile)?;
+        let active_toolchain = if effective_profile == "complete" {
+            None
+        } else {
+            self.rustup_active_toolchain(&tv, &runtime)?
+        };
+        let host = active_toolchain.as_deref().and_then(rustup_toolchain_host);
         let mut components = components.unwrap_or_default();
-        if effective_profile == "default" {
-            components.extend(
-                RUST_DEFAULT_PROFILE_COMPONENTS
-                    .iter()
-                    .map(|component| (*component).to_string()),
-            );
-            components.sort();
-            components.dedup();
+        if effective_profile == "complete" {
+            if let Some(profile_components) = self
+                .rustup_complete_profile_components(&tv, &runtime)
+                .await?
+            {
+                components.extend(profile_components.components);
+            }
+        } else {
+            components.extend(fallback_rustup_profile_components(effective_profile, host));
         }
+        components.sort();
+        components.dedup();
 
         let mut cmd = CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
             .with_pr(ctx.pr.as_ref())
@@ -1088,13 +1300,171 @@ fn rustup_path_env(runtime: &RustRuntime) -> Result<OsString> {
     )?)
 }
 
-fn rustup_component_installed(installed: &BTreeSet<String>, component: &str) -> bool {
+fn normalize_rustup_profile(profile: &str) -> Result<&'static str> {
+    match profile {
+        "minimal" | "m" => Ok("minimal"),
+        "default" | "d" | "" => Ok("default"),
+        "complete" | "c" => Ok("complete"),
+        _ => bail!(
+            "unknown rustup profile name: {profile}; valid profile names are: minimal, default, complete"
+        ),
+    }
+}
+
+fn rustup_dist_var(tv: &ToolVersion, key: &str) -> Option<String> {
+    match tv.install_env().get(key).cloned() {
+        Some(value) => value.into_string(),
+        None => env::var(key).ok(),
+    }
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+}
+
+fn rustup_channel_manifest_url(
+    version: &str,
+    dist_server: Option<String>,
+    legacy_dist_root: Option<String>,
+) -> String {
+    let dist_root = if let Some(server) = dist_server {
+        format!("{}/dist", server.trim_end_matches('/'))
+    } else if let Some(root) = legacy_dist_root {
+        let root = root.trim_end_matches('/');
+        format!("{}/dist", root.strip_suffix("/dist").unwrap_or(root))
+    } else {
+        RUST_DIST_ROOT.to_string()
+    };
+    if let Some(date) = version
+        .strip_prefix("nightly-")
+        .filter(|date| date.parse::<jiff::civil::Date>().is_ok())
+    {
+        format!("{dist_root}/{date}/channel-rust-nightly.toml")
+    } else {
+        format!("{dist_root}/channel-rust-{version}.toml")
+    }
+}
+
+async fn read_rustup_channel_manifest(url: &str) -> Result<String> {
+    if let Ok(url) = url::Url::parse(url)
+        && url.scheme() == "file"
+    {
+        let path = url
+            .to_file_path()
+            .map_err(|_| eyre::eyre!("invalid rustup file URL: {url}"))?;
+        return file::read_to_string(&path).wrap_err_with(|| {
+            format!("failed to read Rust channel manifest at {}", path.display())
+        });
+    }
+    HTTP_FETCH.get_text_cached(url).await
+}
+
+fn fallback_rustup_profile_components(profile: &str, host: Option<&str>) -> Vec<String> {
+    let mut components = match profile {
+        "minimal" | "default" => RUST_MINIMAL_PROFILE_COMPONENTS
+            .iter()
+            .map(|component| (*component).to_string())
+            .collect::<Vec<_>>(),
+        "complete" => return Vec::new(),
+        _ => unreachable!("profile was normalized"),
+    };
+    if profile == "default" {
+        components.extend(
+            RUST_DEFAULT_PROFILE_COMPONENTS
+                .iter()
+                .map(|component| (*component).to_string()),
+        );
+    }
+    if profile != "complete" && host.is_some_and(|host| host.ends_with("-pc-windows-gnu")) {
+        components.push("rust-mingw".to_string());
+    }
+    components
+}
+
+fn rustup_toolchain_host(toolchain: &str) -> Option<&str> {
+    if rustup_component_suffix_is_host_triple(toolchain) {
+        return Some(toolchain);
+    }
+    toolchain.match_indices('-').find_map(|(index, _)| {
+        let suffix = &toolchain[index + 1..];
+        rustup_component_suffix_is_host_triple(suffix).then_some(suffix)
+    })
+}
+
+fn parse_rustup_profile_components(
+    manifest: &str,
+    toolchain: &str,
+    profile: &str,
+) -> Result<RustupProfileComponents> {
+    let manifest: RustupManifest =
+        toml::from_str(manifest).wrap_err("failed to parse the installed rustup manifest")?;
+    let host = manifest
+        .pkg
+        .rust
+        .target
+        .keys()
+        .filter(|target| {
+            target.as_str() != "*"
+                && (toolchain == target.as_str()
+                    || toolchain
+                        .strip_suffix(target.as_str())
+                        .is_some_and(|prefix| prefix.ends_with('-')))
+        })
+        .max_by_key(|target| target.len())
+        .cloned()
+        .ok_or_else(|| eyre::eyre!("unable to determine the host for toolchain {toolchain}"))?;
+    let target = manifest
+        .pkg
+        .rust
+        .target
+        .get(&host)
+        .ok_or_else(|| eyre::eyre!("rustup manifest is missing host target {host}"))?;
+    let all_components = || target.components.iter().chain(&target.extensions);
+    let selected: Vec<&RustupManifestComponent> = if manifest.profiles.is_empty() {
+        target.components.iter().collect()
+    } else {
+        manifest
+            .profiles
+            .get(profile)
+            .ok_or_else(|| eyre::eyre!("rustup manifest is missing the {profile} profile"))?
+            .iter()
+            .filter_map(|name| {
+                all_components().find(|component| {
+                    component.pkg == *name
+                        && component
+                            .target
+                            .as_deref()
+                            .is_none_or(|target| target == "*" || target == host)
+                })
+            })
+            .collect()
+    };
+    let mut components = selected
+        .into_iter()
+        .map(|component| {
+            manifest
+                .renames
+                .iter()
+                .rev()
+                .find_map(|(name, rename)| (rename.to == component.pkg).then(|| name.clone()))
+                .unwrap_or_else(|| component.pkg.clone())
+        })
+        .collect::<Vec<_>>();
+    components.sort();
+    components.dedup();
+    Ok(RustupProfileComponents { components, host })
+}
+
+fn rustup_component_installed(
+    installed: &BTreeSet<String>,
+    component: &str,
+    host: Option<&str>,
+) -> bool {
     installed.iter().any(|item| {
         item == component
-            || item
-                .strip_prefix(component)
-                .and_then(|suffix| suffix.strip_prefix('-'))
-                .is_some_and(rustup_component_suffix_is_host_triple)
+            || host.is_some_and(|host| {
+                item.strip_prefix(component)
+                    .and_then(|suffix| suffix.strip_prefix('-'))
+                    == Some(host)
+            })
     })
 }
 
@@ -1138,6 +1508,8 @@ const RUST_TARGET_ARCHES: &[&str] = &[
     "powerpc64le",
     "riscv32",
     "riscv64",
+    "riscv64a23",
+    "riscv64gc",
     "s390x",
     "sparc",
     "sparc64",
@@ -1276,17 +1648,223 @@ mod tests {
     }
 
     #[test]
-    fn rustup_component_matching_allows_host_suffixes() {
-        let installed = BTreeSet::from([
+    fn rustup_component_matching_requires_the_selected_host() {
+        let mut installed = BTreeSet::from([
             "rust-src".to_string(),
             "llvm-tools-x86_64-unknown-linux-gnu".to_string(),
+            "rust-std-wasm32-unknown-unknown".to_string(),
+            "rustc-x86_64-unknown-linux-gnu".to_string(),
         ]);
+        let host = rustup_toolchain_host("1.81.0-x86_64-unknown-linux-gnu");
 
-        assert!(rustup_component_installed(&installed, "rust-src"));
-        assert!(rustup_component_installed(&installed, "llvm-tools"));
-        assert!(!rustup_component_installed(&installed, "rustfmt"));
-        assert!(!rustup_component_installed(&installed, "rust"));
-        assert!(!rustup_component_installed(&installed, "llvm"));
+        assert_eq!(host, Some("x86_64-unknown-linux-gnu"));
+        assert!(rustup_component_installed(&installed, "rust-src", host));
+        assert!(rustup_component_installed(&installed, "llvm-tools", host));
+        assert!(!rustup_component_installed(&installed, "rust-std", host));
+        assert!(!rustup_component_installed(&installed, "rustfmt", host));
+        installed.insert("rust-std-x86_64-unknown-linux-gnu".to_string());
+        assert!(rustup_component_installed(&installed, "rust-std", host));
+    }
+
+    #[test]
+    fn rustup_required_components_recognize_riscv_hosts() {
+        let plugin = RustPlugin::new();
+        for host in [
+            "riscv64gc-unknown-linux-gnu",
+            "riscv64a23-unknown-linux-gnu",
+        ] {
+            let toolchain = format!("nightly-2026-09-01-{host}");
+            let selected_host = rustup_toolchain_host(&toolchain);
+            assert_eq!(selected_host, Some(host));
+            let required = fallback_rustup_profile_components("minimal", selected_host);
+            let installed = required
+                .iter()
+                .map(|component| format!("{component}-{host}"))
+                .collect();
+            assert!(
+                plugin
+                    .missing_components(&required, &installed, selected_host)
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn required_profile_components_match_rustup() {
+        assert_eq!(
+            fallback_rustup_profile_components("minimal", Some("x86_64-unknown-linux-gnu")),
+            ["cargo", "rust-std", "rustc"]
+        );
+        assert_eq!(
+            fallback_rustup_profile_components("default", Some("x86_64-unknown-linux-gnu")),
+            [
+                "cargo",
+                "rust-std",
+                "rustc",
+                "clippy",
+                "rust-docs",
+                "rustfmt"
+            ]
+        );
+        assert_eq!(
+            fallback_rustup_profile_components("minimal", Some("x86_64-pc-windows-gnu")),
+            ["cargo", "rust-std", "rustc", "rust-mingw"]
+        );
+        assert!(fallback_rustup_profile_components("complete", None).is_empty());
+        assert!(
+            fallback_rustup_profile_components("complete", Some("x86_64-pc-windows-gnu"))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn parses_profile_components_for_the_selected_host() {
+        let manifest = r#"
+[renames.a-clippy]
+to = "clippy-preview"
+
+[renames.clippy]
+to = "clippy-preview"
+
+[renames.rust-analyzer]
+to = "rust-analyzer-preview"
+
+[profiles]
+minimal = ["rustc", "cargo", "rust-std", "rust-mingw"]
+default = ["rustc", "cargo", "rust-std", "rust-mingw", "clippy-preview"]
+complete = ["rustc", "rust-mingw", "clippy-preview", "rust-analyzer-preview", "rust-src"]
+
+[pkg.rust.target.x86_64-unknown-linux-gnu]
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.components]]
+pkg = "rustc"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.components]]
+pkg = "cargo"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.components]]
+pkg = "rust-std"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.extensions]]
+pkg = "rust-std"
+target = "wasm32-unknown-unknown"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.extensions]]
+pkg = "clippy-preview"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.extensions]]
+pkg = "rust-analyzer-preview"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.extensions]]
+pkg = "rust-src"
+target = "*"
+"#;
+
+        assert_eq!(
+            parse_rustup_profile_components(
+                manifest,
+                "1.81.0-x86_64-unknown-linux-gnu",
+                "complete"
+            )
+            .unwrap(),
+            RustupProfileComponents {
+                components: vec![
+                    "clippy".to_string(),
+                    "rust-analyzer".to_string(),
+                    "rust-src".to_string(),
+                    "rustc".to_string()
+                ],
+                host: "x86_64-unknown-linux-gnu".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn profileless_manifests_use_legacy_components() {
+        let manifest = r#"
+[pkg.rust.target.x86_64-unknown-linux-gnu]
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.components]]
+pkg = "rustc"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.components]]
+pkg = "cargo"
+target = "x86_64-unknown-linux-gnu"
+
+[[pkg.rust.target.x86_64-unknown-linux-gnu.extensions]]
+pkg = "clippy-preview"
+target = "x86_64-unknown-linux-gnu"
+"#;
+
+        assert_eq!(
+            parse_rustup_profile_components(
+                manifest,
+                "1.19.0-x86_64-unknown-linux-gnu",
+                "complete"
+            )
+            .unwrap()
+            .components,
+            vec!["cargo", "rustc"]
+        );
+    }
+
+    #[test]
+    fn builds_rustup_channel_manifest_urls() {
+        assert_eq!(
+            rustup_channel_manifest_url("1.81.0", None, None),
+            "https://static.rust-lang.org/dist/channel-rust-1.81.0.toml"
+        );
+        assert_eq!(
+            rustup_channel_manifest_url("nightly-2026-08-12", None, None),
+            "https://static.rust-lang.org/dist/2026-08-12/channel-rust-nightly.toml"
+        );
+        assert_eq!(
+            rustup_channel_manifest_url(
+                "1.81.0",
+                Some("https://mirror.example.com/".to_string()),
+                Some("https://ignored.example.com/dist".to_string())
+            ),
+            "https://mirror.example.com/dist/channel-rust-1.81.0.toml"
+        );
+        assert_eq!(
+            rustup_channel_manifest_url(
+                "1.81.0",
+                None,
+                Some("https://legacy.example.com/dist".to_string())
+            ),
+            "https://legacy.example.com/dist/channel-rust-1.81.0.toml"
+        );
+    }
+
+    #[tokio::test]
+    async fn reads_rustup_channel_manifest_from_file_server() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("channel-rust-1.81.0.toml");
+        std::fs::write(&path, "manifest-version = '2'").unwrap();
+        let url = url::Url::from_file_path(path).unwrap();
+
+        assert_eq!(
+            read_rustup_channel_manifest(url.as_str()).await.unwrap(),
+            "manifest-version = '2'"
+        );
+    }
+
+    #[test]
+    fn profile_aliases_match_rustup() {
+        assert_eq!(normalize_rustup_profile("minimal").unwrap(), "minimal");
+        assert_eq!(normalize_rustup_profile("m").unwrap(), "minimal");
+        assert_eq!(normalize_rustup_profile("default").unwrap(), "default");
+        assert_eq!(normalize_rustup_profile("d").unwrap(), "default");
+        assert_eq!(normalize_rustup_profile("").unwrap(), "default");
+        assert_eq!(normalize_rustup_profile("complete").unwrap(), "complete");
+        assert_eq!(normalize_rustup_profile("c").unwrap(), "complete");
+        assert!(normalize_rustup_profile("custom").is_err());
     }
 
     #[test]
