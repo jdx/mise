@@ -43,6 +43,10 @@ impl FromStr for ToolArg {
             .as_ref()
             .map(|v| ToolRequest::new(ba.clone(), v, ToolSource::Argument))
             .transpose()?;
+        let ba = tvr
+            .as_ref()
+            .map(|request| request.ba().clone())
+            .unwrap_or(ba);
         Ok(Self {
             short: ba.short.clone(),
             tvr,
@@ -109,7 +113,7 @@ impl ToolArg {
                     &b.ba.tool_name,
                     ToolSource::Argument,
                 )?);
-                tools[1].ba = a.ba;
+                tools[1].ba = tools[1].tvr.as_ref().unwrap().ba().clone();
                 tools[1].version_type = b.ba.tool_name.parse()?;
                 tools[1].version = Some(b.ba.tool_name.clone());
                 tools.remove(0);
@@ -119,8 +123,10 @@ impl ToolArg {
     }
 
     pub(crate) fn with_version(self, version: &str) -> Self {
+        let request = ToolRequest::new(self.ba.clone(), version, ToolSource::Argument).unwrap();
         Self {
-            tvr: Some(ToolRequest::new(self.ba.clone(), version, ToolSource::Argument).unwrap()),
+            ba: request.ba().clone(),
+            tvr: Some(request),
             version: Some(version.into()),
             version_type: version.parse().unwrap(),
             ..self

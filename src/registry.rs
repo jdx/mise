@@ -168,7 +168,55 @@ pub(crate) struct RegistryToolTest {
 pub(crate) struct RegistryBackend {
     pub full: &'static str,
     pub platforms: &'static [&'static str],
+    pub min_version: Option<&'static str>,
     pub options: &'static [(&'static str, &'static str)],
+}
+
+impl RegistryBackend {
+    fn supports_version(&self, request: &str) -> bool {
+        let Some(minimum) = self.min_version else {
+            return true;
+        };
+        // Validated when loading both bundled and floating registries. This
+        // boundary is explicitly restricted to semver tools; it never orders
+        // backend version lists or interprets opaque lockfile versions.
+        let minimum = semver::Version::parse(minimum).expect("validated registry min_version");
+        let request = request.strip_prefix("prefix:").unwrap_or(request);
+        let request = request.trim_start_matches(['v', 'V']);
+        if let Ok(version) = semver::Version::parse(request) {
+            return !version.cmp_precedence(&minimum).is_lt();
+        }
+        // A numeric prefix is excluded only when the entire prefix is below
+        // the boundary. Let the backend resolve prefixes that overlap it.
+        let parts = request.split('.').collect::<Vec<_>>();
+        if !(1..=2).contains(&parts.len()) {
+            return true;
+        }
+        let Some(parts) = parts
+            .into_iter()
+            .map(|part| {
+                if part.is_empty()
+                    || !part.bytes().all(|c| c.is_ascii_digit())
+                    || (part.len() > 1 && part.starts_with('0'))
+                {
+                    return None;
+                }
+                part.parse::<u64>().ok()
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
+            return true;
+        };
+        let minimum_parts = [minimum.major, minimum.minor];
+        for (part, minimum) in parts.into_iter().zip(minimum_parts) {
+            match part.cmp(&minimum) {
+                std::cmp::Ordering::Less => return false,
+                std::cmp::Ordering::Greater => return true,
+                std::cmp::Ordering::Equal => {}
+            }
+        }
+        true
+    }
 }
 
 fn registry_cache_path() -> PathBuf {
@@ -377,6 +425,10 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool
         None => VersionOrder::Source,
     };
 
+    ensure!(
+        version_order == VersionOrder::Semver || backends.iter().all(|b| b.min_version.is_none()),
+        "backend min_version requires version_order = \"semver\""
+    );
     let aliases = string_array(table.get("aliases"), "aliases")?;
     let bins = if table.contains_key("bins") {
         string_array(table.get("bins"), "bins")?
@@ -488,6 +540,7 @@ fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
         toml::Value::String(full) => Ok(RegistryBackend {
             full: leak_string(full.clone()),
             platforms: &[],
+            min_version: None,
             options: &[],
         }),
         toml::Value::Table(table) => {
@@ -496,6 +549,17 @@ fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
                 .and_then(toml::Value::as_str)
                 .ok_or_else(|| eyre::eyre!("backend full must be a string"))?;
             let platforms = string_array(table.get("platforms"), "backend platforms")?;
+            let min_version = table
+                .get("min_version")
+                .map(|value| {
+                    let value = value
+                        .as_str()
+                        .ok_or_else(|| eyre::eyre!("backend min_version must be a string"))?;
+                    semver::Version::parse(value)
+                        .wrap_err("backend min_version must be a semantic version")?;
+                    Ok::<_, eyre::Report>(leak_string(value.to_string()))
+                })
+                .transpose()?;
             let options = table
                 .get("options")
                 .and_then(toml::Value::as_table)
@@ -514,6 +578,7 @@ fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
             Ok(RegistryBackend {
                 full: leak_string(full.to_string()),
                 platforms: leak_vec(platforms),
+                min_version,
                 options: leak_vec(options),
             })
         }
@@ -649,6 +714,20 @@ impl RegistryTool {
                 !backend_type.is_experimental()
             })
             .collect()
+    }
+
+    /// Filter only requests known to be older than a backend's introduction.
+    /// Channels and unresolved aliases retain the ordinary backend priority.
+    pub(crate) fn backends_for_version(&self, version: Option<&str>) -> Vec<&'static str> {
+        self.backends()
+            .into_iter()
+            .filter(|full| version.is_none_or(|v| self.backend_supports_version(full, v)))
+            .collect()
+    }
+
+    pub(crate) fn backend_supports_version(&self, full: &str, version: &str) -> bool {
+        self.get_backend(full)
+            .is_none_or(|backend| backend.supports_version(version))
     }
 
     pub(crate) fn is_supported_os(&self) -> bool {
@@ -826,6 +905,115 @@ pub(crate) fn tool_enabled<T: Ord>(
 mod tests {
     use super::{BTreeMap, baked_registry, registry_from_sources};
     use crate::config::Config;
+
+    #[test]
+    fn registry_min_version_boundaries() {
+        let backend = super::RegistryBackend {
+            full: "packslip:github.com/example/tool",
+            platforms: &[],
+            min_version: Some("1.58.1"),
+            options: &[],
+        };
+        for request in [
+            "0",
+            "1.5",
+            "1.57",
+            "prefix:1.57",
+            "1.58.0",
+            "v1.58.0",
+            "V1.58.0",
+            "prefix:V1.57",
+            "1.58.1-rc.1",
+        ] {
+            assert!(!backend.supports_version(request), "{request}");
+        }
+        for request in [
+            "1",
+            "1.58",
+            "prefix:1.58",
+            "1.58.1",
+            "V1.58.1",
+            "1.58.1+build.2",
+            "2.0.0",
+            "latest",
+            "nightly",
+            "ref:main",
+            "lts/iron",
+            "0.nightly",
+            "1.58.0.2",
+            "01.57",
+            "",
+        ] {
+            assert!(backend.supports_version(request), "{request}");
+        }
+    }
+
+    #[test]
+    fn registry_min_version_parsing_and_validation() {
+        use super::*;
+        let parse = |order: &str, minimum: &str| {
+            let source = format!(
+                r#"
+version_order = "{order}"
+backends = [
+  {{ full = "packslip:github.com/example/tool", min_version = {minimum} }},
+  "aqua:example/tool",
+]
+"#
+            );
+            parse_registry_tool("example", &toml::from_str::<toml::Value>(&source).unwrap())
+        };
+        let (tool, _) = parse("semver", r#""1.58.1""#).unwrap();
+        assert_eq!(tool.backends[0].min_version, Some("1.58.1"));
+        assert_eq!(tool.backends[1].min_version, None);
+        assert_eq!(
+            tool.backends_for_version(Some("1.57")),
+            ["aqua:example/tool"]
+        );
+        assert_eq!(
+            tool.backends_for_version(Some("latest")),
+            ["packslip:github.com/example/tool", "aqua:example/tool"]
+        );
+        for minimum in [
+            r#""latest""#,
+            r#""1.58""#,
+            r#""01.58.1""#,
+            r#""1.0.0-01""#,
+            r#""1.0.0-a..b""#,
+            r#""1.0.0+a..b""#,
+            "true",
+            "12",
+        ] {
+            assert!(parse("semver", minimum).is_err(), "{minimum}");
+        }
+        assert!(parse("source", r#""1.58.1""#).is_err());
+    }
+
+    #[test]
+    fn registry_min_version_schema_matches_semver_identifiers() {
+        let schema: serde_json::Value =
+            serde_json::from_str(include_str!("../schema/mise-registry-tool.json")).unwrap();
+        let pattern = schema["properties"]["backends"]["items"]["oneOf"][1]
+            ["properties"]["min_version"]["pattern"].as_str().unwrap();
+        let pattern = regex::Regex::new(pattern).unwrap();
+        for (version, valid) in [
+            ("1.58.1", true),
+            ("0.0.0", true),
+            ("1.0.0-0", true),
+            ("1.0.0-0alpha.1+build.01", true),
+            ("1.0.0+01", true),
+            ("1.0.0-a..b", false),
+            ("1.0.0-01", false),
+            ("1.0.0-alpha.01", false),
+            ("1.0.0+a..b", false),
+            ("1.0.0+", false),
+            ("1.0.0-", false),
+            ("01.0.0", false),
+        ] {
+            assert_eq!(pattern.is_match(version), valid, "{version}");
+            assert_eq!(semver::Version::parse(version).is_ok(), valid, "{version}");
+        }
+    }
 
     #[test]
     fn baked_registry_infers_bins_from_preferred_aqua_backend() {
@@ -1286,21 +1474,25 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
             RegistryBackend {
                 full: "aqua:first/tool",
                 platforms: &["macos"],
+                min_version: None,
                 options: &[],
             },
             RegistryBackend {
                 full: "github:second/tool",
                 platforms: &["macos-x64"],
+                min_version: None,
                 options: &[],
             },
             RegistryBackend {
                 full: "cargo:third-tool",
                 platforms: &[],
+                min_version: None,
                 options: &[],
             },
             RegistryBackend {
                 full: "npm:excluded-tool",
                 platforms: &["linux"],
+                min_version: None,
                 options: &[],
             },
         ];
@@ -1319,6 +1511,7 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         let alias_selector = RegistryBackend {
             full: "github:owner/repo",
             platforms: &["darwin-amd64"],
+            min_version: None,
             options: &[],
         };
         assert!(!backend_matches_platform(
@@ -1347,6 +1540,7 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         static BACKENDS: &[RegistryBackend] = &[RegistryBackend {
             full: "github:owner/repo",
             platforms: &[],
+            min_version: None,
             options: OPTIONS,
         }];
         let tool = RegistryTool {
@@ -1389,11 +1583,13 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
             RegistryBackend {
                 full: "aqua:owner/repo",
                 platforms: &[],
+                min_version: None,
                 options: &[],
             },
             RegistryBackend {
                 full: "npm:package",
                 platforms: &[],
+                min_version: None,
                 options: &[],
             },
         ];

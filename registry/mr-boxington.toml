@@ -1,4 +1,7 @@
-backends = ["github:jdx/mr-boxington"]
+backends = [
+  { full = "packslip:github.com/jdx/mr-boxington", min_version = "1.8.3" },
+  "github:jdx/mr-boxington",
+]
 bins = ["mbx"]
 description = "A Cargo wrapper with a shared, self-pruning compilation cache"
 test = { cmd = "mbx --version", expected = "mbx {{version}}" }

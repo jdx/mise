@@ -54,6 +54,7 @@ pub(crate) struct BackendArg {
     pub opts: Option<ToolVersionOptions>,
     opts_source: Option<ToolOptionSource>,
     resolution: BackendResolution,
+    registry_version: Option<String>,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
 }
@@ -296,6 +297,7 @@ impl BackendArg {
             opts,
             opts_source,
             resolution,
+            registry_version: None,
             // backend: Default::default(),
         }
     }
@@ -354,13 +356,19 @@ impl BackendArg {
         } else {
             // Check if the tool is in the registry but has no available backends
             if let Some(rt) = REGISTRY.get(self.registry_short().as_str())
-                && rt.backends().is_empty()
+                && rt
+                    .backends_for_version(self.registry_version.as_deref())
+                    .is_empty()
                 && !rt.backends.is_empty()
             {
                 let all_backends: Vec<&str> = rt.backends.iter().map(|rb| rb.full).collect();
                 bail!(
-                    "{self} is in the mise tool registry but none of its backends ({}) are supported in the current configuration",
-                    all_backends.join(", ")
+                    "{self} is in the mise tool registry but none of its backends ({}) are supported in the current configuration{}",
+                    all_backends.join(", "),
+                    self.registry_version
+                        .as_ref()
+                        .map(|v| format!(" for version {v}"))
+                        .unwrap_or_default()
                 );
             }
 
@@ -415,6 +423,12 @@ impl BackendArg {
         }
         if let Some(backend_type) = plugin_backend_type(&full) {
             return backend_type;
+        }
+
+        // A version-scoped registry lookup with no eligible backend must not
+        // revive the backend recorded by another installed version.
+        if self.has_registry_version() {
+            return BackendType::Core;
         }
 
         // Legacy install state may have a backend type without a full
@@ -522,7 +536,11 @@ impl BackendArg {
                 if let Some(registry_full) = self
                     .aliased_registry_short()
                     .and_then(|name| REGISTRY.get(name.as_str()))
-                    .and_then(|rt| rt.backends().first().cloned())
+                    .and_then(|rt| {
+                        rt.backends_for_version(self.registry_version.as_deref())
+                            .first()
+                            .cloned()
+                    })
                 {
                     return registry_full.to_string();
                 }
@@ -538,7 +556,12 @@ impl BackendArg {
             }
 
             let config = Config::get_();
-            if let Some(backend) = lockfile::get_locked_backend(&config, short) {
+            // With version-dependent backends, the first lockfile entry may
+            // belong to another version. ToolVersion restores the backend from
+            // the matching lock entry after resolving this request's binding.
+            if !self.has_registry_version()
+                && let Some(backend) = lockfile::get_locked_backend(&config, short)
+            {
                 return backend;
             }
         }
@@ -548,9 +571,11 @@ impl BackendArg {
         // the registry changes (e.g., when a tool moves from one maintainer to another).
         if !self.resolution.explicit
             && !plugin_overrides_registry(short)
-            && let Some(registry_full) = REGISTRY
-                .get(short)
-                .and_then(|rt| rt.backends().first().cloned())
+            && let Some(registry_full) = REGISTRY.get(short).and_then(|rt| {
+                rt.backends_for_version(self.registry_version.as_deref())
+                    .first()
+                    .cloned()
+            })
         {
             if let Some(stored_full) = &self.full
                 && stored_full != registry_full
@@ -560,6 +585,16 @@ impl BackendArg {
                 );
             }
             return registry_full.to_string();
+        }
+
+        if self.has_registry_version()
+            && !plugin_overrides_registry(short)
+            && self.registry_tool().is_some_and(|tool| {
+                tool.backends_for_version(self.registry_version.as_deref())
+                    .is_empty()
+            })
+        {
+            return short.to_string();
         }
 
         if let Some(full) = &self.full {
@@ -597,14 +632,36 @@ impl BackendArg {
                 PluginType::VfoxBackend => short.to_string(),
                 PluginType::Package => short.to_string(),
             }
-        } else if let Some(full) = REGISTRY
-            .get(short)
-            .and_then(|rt| rt.backends().first().cloned())
-        {
+        } else if let Some(full) = REGISTRY.get(short).and_then(|rt| {
+            rt.backends_for_version(self.registry_version.as_deref())
+                .first()
+                .cloned()
+        }) {
             full.to_string()
         } else {
             short.to_string()
         }
+    }
+
+    /// Carry a version boundary without making a registry choice user-explicit.
+    /// Keeping this separate from `full` lets installed shorthands migrate to a
+    /// newer backend while explicit identifiers, overrides, and locks stay pinned.
+    pub(crate) fn with_registry_version(&self, version: &str) -> Option<Self> {
+        if self.has_explicit_backend()
+            || self.has_env_backend_override()
+            || !self
+                .registry_tool()
+                .is_some_and(|tool| tool.backends.iter().any(|b| b.min_version.is_some()))
+        {
+            return None;
+        }
+        let mut backend = self.clone();
+        backend.registry_version = Some(version.to_string());
+        Some(backend)
+    }
+
+    pub(crate) fn has_registry_version(&self) -> bool {
+        self.registry_version.is_some()
     }
 
     pub(crate) fn full_without_opts(&self) -> String {
@@ -882,6 +939,34 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use pretty_assertions::{assert_eq, assert_str_eq};
+
+    #[tokio::test]
+    async fn registry_min_version_keeps_backend_instances_separate() {
+        use crate::cli::args::ToolArg;
+        let _config = Config::get().await.unwrap();
+        // Exercise both orders: a cache hit for the shorthand must not replace
+        // the backend selected for a different version in the same process.
+        for (query, expected) in [
+            ("hk@1.57.0", "aqua:jdx/hk"),
+            ("hk@V1.57.0", "aqua:jdx/hk"),
+            ("hk@1.58.1", "packslip:github.com/jdx/hk"),
+            ("hk@prefix:1.57", "aqua:jdx/hk"),
+            ("hk@latest", "packslip:github.com/jdx/hk"),
+        ] {
+            let tool: ToolArg = query.parse().unwrap();
+            assert_eq!(tool.ba.full(), expected);
+            assert_eq!(tool.ba.backend().unwrap().ba().full(), expected);
+            assert_eq!(tool.tvr.unwrap().backend().unwrap().ba().full(), expected);
+            assert!(!tool.ba.has_explicit_backend());
+        }
+        for full in ["packslip:github.com/jdx/hk", "aqua:jdx/hk"] {
+            let explicit: ToolArg = format!("{full}@1.57.0").parse().unwrap();
+            assert_eq!(explicit.ba.full(), full);
+            let locked = BackendArg::new("hk".to_string(), Some(full.to_string()));
+            assert!(locked.with_registry_version("1.57.0").is_none());
+            assert_eq!(locked.full(), full);
+        }
+    }
 
     #[test]
     fn test_matches_bin_name_uses_tool_identity() {

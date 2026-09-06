@@ -102,7 +102,7 @@ impl LsRemote {
     async fn run_single(
         self,
         config: &Arc<Config>,
-        plugin: Arc<dyn Backend>,
+        mut plugin: Arc<dyn Backend>,
         before_date: Option<Timestamp>,
     ) -> Result<()> {
         let before_date =
@@ -110,6 +110,7 @@ impl LsRemote {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
+                Some(ToolRequest::Prefix { prefix, .. }) => Some(prefix.clone()),
                 Some(ToolRequest::Sub {
                     sub, orig_version, ..
                 }) => Some(
@@ -120,6 +121,24 @@ impl LsRemote {
             },
             _ => self.prefix.clone(),
         };
+        let prefix = match prefix {
+            Some(prefix) => {
+                let prefix = config.resolve_alias(&plugin, &prefix).await?;
+                Some(
+                    prefix
+                        .strip_prefix("prefix:")
+                        .unwrap_or(&prefix)
+                        .to_string(),
+                )
+            }
+            None => None,
+        };
+        if let Some(ba) = prefix
+            .as_deref()
+            .and_then(|prefix| plugin.ba().with_registry_version(prefix))
+        {
+            plugin = ba.backend()?;
+        }
         let matches_prefix = |v: &str| prefix.as_ref().is_none_or(|p| v.starts_with(p));
 
         let versions_matching_prefix = plugin
@@ -181,11 +200,16 @@ impl LsRemote {
     async fn get_plugin(&self, config: &Arc<Config>) -> Result<Option<Arc<dyn Backend>>> {
         match &self.plugin {
             Some(tool_arg) => {
-                let mut backend = tool_arg.ba.backend()?;
+                let ba = self
+                    .prefix
+                    .as_deref()
+                    .and_then(|prefix| tool_arg.ba.with_registry_version(prefix));
+                let ba = ba.as_ref().unwrap_or(&tool_arg.ba);
+                let mut backend = ba.backend()?;
                 let mpr = MultiProgressReport::get();
                 if let Some(plugin) = backend.plugin() {
                     plugin.ensure_installed(config, &mpr, false, false).await?;
-                    backend = tool_arg.ba.backend()?;
+                    backend = ba.backend()?;
                 }
                 Ok(Some(backend))
             }

@@ -7,7 +7,7 @@ shell completions and agent skills.
 
 Packslip is the preferred [Tier 1 backend](/registry.html#backends) for tools
 whose publishers provide these manifests. For other tools, use
-[aqua](/dev-tools/backends/aqua.html), [github](/dev-tools/backends/github.html),
+[aqua](/dev-tools/backends/aqua.html), [GitHub](/dev-tools/backends/github.html),
 or another supported backend. You do not need to install the Packslip CLI.
 
 For the background and examples of version-matched completions and agent skills,
@@ -95,17 +95,18 @@ for signed lists, withdrawals, and fallback behavior.
 
 ## Completions and skills {#completions}
 
-hk publishes a [usage](https://usage.jdx.dev) CLI specification that mise can use
-for shell completions. Install `usage`, then set up completions for your shell:
+With [mise activated](/getting-started.html#activate-mise), installing hk also
+makes its completions available:
 
 ```sh
-mise use -g usage
-mise completion zsh --tool hk --install
+mise use hk
 ```
 
-Follow any shell setup instructions printed by the command. The installed
-completion file follows the hk version active in each project. Bash, fish, and
-PowerShell are also supported.
+Type `hk` and press Tab. mise loads the completion script declared by hk's
+release and follows the hk version active in each project. No separate
+completion installation or `usage` dependency is needed. Bash, zsh, fish, and
+PowerShell are supported. See [Packslip completions](/dev-tools/packslip-resources.html#completions)
+for details and manual setup without shell activation.
 
 <span id="skills"></span>
 

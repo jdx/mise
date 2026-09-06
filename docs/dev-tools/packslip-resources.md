@@ -13,24 +13,33 @@ mise supports tool completions for zsh, bash, fish, and PowerShell. The installe
 completion file follows the tool version active in each project, so you do not
 need to reinstall completions after changing versions.
 
-### Set up hk completions
+### Use completions
 
-hk publishes a [usage](https://usage.jdx.dev) CLI specification. Install hk
-through Packslip and install `usage` to generate and run its completions:
+With [mise activated](/getting-started.html#activate-mise), completions become
+available when an installed tool is active in your project. For example:
 
 ```sh
-mise use packslip:github.com/jdx/hk
-mise use -g usage
+mise use hk
 ```
 
-Install the completion file for your shell:
+Type `hk` and press Tab. hk publishes native completion scripts for bash, zsh,
+fish, and PowerShell, so no extra setup command or `usage` installation is
+needed. mise registers a loader in the shell; it reads the publisher's script
+only when you complete a command. Switching projects or tool versions selects
+the matching completion, and leaving the project removes its registration.
 
-| Shell      | Command                                          |
-| ---------- | ------------------------------------------------ |
-| zsh        | `mise completion zsh --tool hk --install`        |
-| bash       | `mise completion bash --tool hk --install`       |
-| fish       | `mise completion fish --tool hk --install`       |
-| PowerShell | `mise completion powershell --tool hk --install` |
+### Manual setup without shell activation
+
+For tools that declare completions in their Packslip manifest, mise can install
+a completion file that loads those resources. Replace `TOOL` below with the
+executable's name:
+
+| Shell      | Command                                            |
+| ---------- | -------------------------------------------------- |
+| zsh        | `mise completion zsh --tool TOOL --install`        |
+| bash       | `mise completion bash --tool TOOL --install`       |
+| fish       | `mise completion fish --tool TOOL --install`       |
+| PowerShell | `mise completion powershell --tool TOOL --install` |
 
 Follow any one-time setup instructions printed by the command, then load the
 completion file or start a new shell. mise writes the completion file but does
@@ -40,11 +49,11 @@ create unless you pass `--force`.
 To print a completion script without installing it, omit `--install`:
 
 ```sh
-mise completion zsh --tool hk
+mise completion zsh --tool TOOL
 ```
 
-For another tool, replace `hk` with its executable name. `--install` takes the
-command name, not a backend identifier such as `packslip:github.com/jdx/hk`.
+`--install` takes the command name, not a backend identifier such as
+`packslip:github.com/jdx/hk`.
 If a release contains several commands, choose the one you want to complete.
 Without `--tool`, `mise completion` generates completions for mise itself.
 
@@ -52,8 +61,8 @@ Without `--tool`, `mise completion` generates completions for mise itself.
 
 A publisher can provide a completion file, a static usage CLI specification,
 or a command that generates either one. mise prefers static sources. A
-usage-derived completion requires `usage` both when generating the script and
-when completing commands in the shell.
+usage-derived completion uses the engine embedded in mise; you do not need to
+install `usage` separately.
 
 If a completion needs a publisher's generator command, mise runs it on demand
 and caches successful output for the installed version, executable, and shell.
@@ -210,7 +219,7 @@ next completion uses that directory's active version.
 | No completion declared                         | Confirm the release supports your shell and executable. If it does not, the publisher must add a completion or CLI spec.                                                               |
 | `--install` rejects a tool identifier          | Pass the executable name, such as `hk`, rather than `packslip:github.com/jdx/hk`.                                                                                                      |
 | A completion file already exists               | Inspect the existing file before choosing to replace it with `--force`.                                                                                                                |
-| Script prints but tab completion does not work | Follow the shell setup printed by `--install`; check that the completion file is loaded and `usage` is on PATH if required.                                                            |
+| Script prints but tab completion does not work | Check that mise is activated and the tool is active in this project. With manual setup, follow the instructions printed by `--install`. Mise handles usage-derived completions itself. |
 | Completion generation fails                    | Check that the publisher's command produces nonempty output within the time and size limits. Report a failing generator to the publisher.                                              |
 | No skills listed                               | Check `mise skills ls`, the active version, and whether its manifest declares skills. Check `skills.fetch`; an exec-only skill also needs `packslip.exec` enabled during installation. |
 | A skill link is skipped                        | Inspect the conflicting path; mise preserves user-owned files and directories.                                                                                                         |

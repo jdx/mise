@@ -123,6 +123,11 @@
                 "additionalProperties": {
                   "$ref": "#/$defs/optionValue"
                 }
+              },
+              "min_version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+                "description": "Inclusive minimum tool version supported by this backend. Requires version_order = semver; older versions use the next eligible backend."
               }
             },
             "required": ["full"],
@@ -235,5 +240,29 @@
     }
   },
   "required": ["backends", "version_order"],
-  "unevaluatedProperties": false
+  "unevaluatedProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "backends": {
+            "contains": {
+              "type": "object",
+              "required": ["min_version"]
+            },
+            "type": "array"
+          }
+        },
+        "required": ["backends"]
+      },
+      "then": {
+        "properties": {
+          "version_order": {
+            "const": "semver"
+          }
+        },
+        "required": ["version_order"]
+      }
+    }
+  ]
 }

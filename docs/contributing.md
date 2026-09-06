@@ -780,6 +780,33 @@ registry's file metadata. Omit `bins` when that inferred list is correct. Set it
 explicitly when the shorthand needs a different backend-independent command set,
 such as commands bundled by a fallback backend that Aqua does not describe.
 
+#### Minimum backend versions
+
+When a backend supports only newer releases, set `min_version` on that backend.
+For example, hk publishes Packslip manifests starting at 1.58.1:
+
+```toml
+version_order = "semver"
+backends = [
+  { full = "packslip:github.com/jdx/hk", min_version = "1.58.1" },
+  "aqua:jdx/hk",
+]
+bins = ["hk"]
+```
+
+The minimum is inclusive and must be a complete semantic version. It is only
+supported for registry tools with `version_order = "semver"`; do not add it to
+tools with opaque or source-ordered versions. `mise use hk@1.57` and
+`mise use hk@1.58.0` select Aqua, while `mise use hk@1.58.1` selects Packslip.
+A prefix overlapping the boundary, such as `1.58`, keeps the preferred backend.
+`latest`, channels, and unresolved aliases retain normal backend priority;
+aliases are checked again after resolution.
+
+Selection still respects platform support and disabled backends. Explicit
+backend identifiers, backend overrides, and a matching lockfile's recorded
+backend remain authoritative. A failed download or signature verification does
+not trigger fallback. A backend without `min_version` has no lower bound.
+
 #### Idiomatic version files
 
 Registry tools can opt into [idiomatic version files](/configuration.html#idiomatic-version-files)

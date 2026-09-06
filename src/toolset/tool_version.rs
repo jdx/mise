@@ -77,6 +77,7 @@ impl ToolVersion {
     }
 
     pub(crate) fn new(request: ToolRequest, version: String) -> Self {
+        let request = request.with_registry_version(&version);
         ToolVersion {
             request,
             version,
@@ -364,6 +365,8 @@ impl ToolVersion {
     ) -> Result<ToolVersion> {
         let backend = request.backend()?;
         let v = config.resolve_alias(&backend, v).await?;
+        let request = request.with_registry_version(&v);
+        let backend = request.backend()?;
 
         // Re-check the lockfile after alias resolution (e.g., "lts" → "24")
         // The initial lockfile check in resolve() uses the unresolved alias which
@@ -670,6 +673,7 @@ impl ToolVersion {
         v: &str,
         opts: &ResolveOptions,
     ) -> Result<Self> {
+        let request = request.with_registry_version(v);
         let backend = request.backend()?;
         if v == "latest" && opts.offline {
             let pathname = request.version().replace([':', '/'], "-");
@@ -707,6 +711,7 @@ impl ToolVersion {
         prefix: &str,
         opts: &ResolveOptions,
     ) -> Result<Self> {
+        let request = request.with_registry_version(prefix);
         let backend = request.backend()?;
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
