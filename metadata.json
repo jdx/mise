@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TWYC6N9YTX9K1EK9EGWGZ7",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-diagnostics",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/cache-behavior.md",
+    "docs/directories.md",
+    "docs/errors.md",
+    "docs/troubleshooting.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 646,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 150656,
+    "output_tokens": 197,
+    "api_call_count": 1
+  }
+}
