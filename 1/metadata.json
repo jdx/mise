@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TMR39SZK2TENFHMXHZQ12X",
+  "session_id": "01a0751c-803c-71c3-8477-fa566f432cfe",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T05:58:35.459932Z",
+  "branch": "codex/docs-package-backends",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/backends/asdf.md",
+    "docs/dev-tools/backends/cargo.md",
+    "docs/dev-tools/backends/conda.md",
+    "docs/dev-tools/backends/dotnet.md",
+    "docs/dev-tools/backends/gem.md",
+    "docs/dev-tools/backends/go.md",
+    "docs/dev-tools/backends/npm.md",
+    "docs/dev-tools/backends/pipx.md",
+    "docs/dev-tools/backends/pkgx.md",
+    "docs/dev-tools/backends/spm.md",
+    "docs/dev-tools/backends/vfox.md",
+    "docs/public/llms.txt",
+    "schema/mise.json",
+    "settings.toml"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "dbae59535efe",
+  "checkpoint_transcript_start": 984,
+  "transcript_lines_at_start": 984,
+  "compact_transcript_start": 144,
+  "token_usage": {
+    "input_tokens": 20577,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1774848,
+    "output_tokens": 1726,
+    "api_call_count": 18
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T05:58:35.360086Z",
+    "agent_lines": 407,
+    "agent_removed": 369,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 407,
+    "total_lines_changed": 776,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
