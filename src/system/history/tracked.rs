@@ -34,8 +34,9 @@ const MAX_LINK_DEPTH: usize = 8;
 
 /// Names under the global config directory that hold credentials: private
 /// by default, in every outgoing representation.
-const CREDENTIAL_NAMES: &[&str] = &["github_tokens.toml", "hosts.yml", "age.txt", ".netrc"];
+const CREDENTIAL_NAMES: &[&str] = &["github_tokens.toml", "hosts.yml", "age.txt"];
 const CREDENTIAL_GLOBS: &[&str] = &[
+    ".netrc",
     "*.age",
     "*.key",
     "*.pem",

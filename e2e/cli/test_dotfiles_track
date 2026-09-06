@@ -114,6 +114,9 @@ assert "mise bootstrap dotfiles paths --json | jq -r '[.entries[] | select(.path
 assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $this_os"
 
 # private by default: .local.toml anywhere, credential stores under the config dir;
+printf 'machine example.invalid login demo password synthetic\n' >~/.netrc
+assert_succeed 'mise bootstrap dotfiles track ~/.netrc'
+assert "mise bootstrap dotfiles paths --json | jq -r '.private[] | select(.path == \"~/.netrc\") | \"\\(.share) \\(.backup)\"'" "false false"
 # an explicit per-file declaration is the only override
 echo '[settings]' >"$local_config.tmp" && mv "$local_config.tmp" "$MISE_CONFIG_DIR/other.local.toml"
 echo 'token = "x"' >"$MISE_CONFIG_DIR/github_tokens.toml"
