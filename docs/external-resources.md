@@ -2,8 +2,7 @@
 
 Articles, videos, and related tools from the mise community. Examples reflect the version
 available when they were published; check the current [configuration](/configuration.html)
-and [CLI reference](/cli/) when adapting older commands. Resources that mention rtx predate
-[the rename to mise](/rtx.html).
+and [CLI reference](/cli/) when adapting older commands.
 
 ## Articles and tutorials
 
@@ -17,8 +16,6 @@ and [CLI reference](/cli/) when adapting older commands. Resources that mention 
 - 2024-04-13 - [Shims: How they work in mise-en-place](https://jdx.dev/posts/2024-04-13-shims-how-they-work-in-mise-en-place/)
 - 2024-02-20 - [Can Mise replace Volta?](https://ricostacruz.com/posts/mise-vs-volta)
 - 2024-01-14 - [Manage all your runtime versions with one tool (asdf, mise)](https://blog.andreyfadeev.com/p/manage-all-your-runtime-versions)
-- 2023-12-30 - [You should be using mise](https://andrei-calazans.com/posts/you-should-be-using-rtx/)
-- 2023-03-04 - [Beginner's Guide to rtx (mise)](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4)
 
 ## Podcasts and videos
 

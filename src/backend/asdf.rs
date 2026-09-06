@@ -50,10 +50,7 @@ impl AsdfBackend {
         let name = ba.tool_name.clone();
         let plugin_path = dirs::PLUGINS.join(ba.short.to_kebab_case());
         let plugin = AsdfPlugin::new(name.clone(), plugin_path.clone());
-        let mut toml_path = plugin_path.join("mise.plugin.toml");
-        if plugin_path.join("rtx.plugin.toml").exists() {
-            toml_path = plugin_path.join("rtx.plugin.toml");
-        }
+        let toml_path = plugin_path.join("mise.plugin.toml");
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
         let plugin = Arc::new(plugin);
         let plugin_enum = PluginEnum::Asdf(plugin.clone());

@@ -1917,7 +1917,6 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
             ".mise/config.toml",
             "mise/conf.d/*.toml",
             "mise/config.toml",
-            ".rtx.toml",
             "mise.toml",
             &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
             ".mise.toml",
@@ -1926,7 +1925,6 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
             ".config/mise.local.toml",
             ".mise/config.local.toml",
             "mise/config.local.toml",
-            ".rtx.local.toml",
             "mise.local.toml",
             ".mise.local.toml",
         ]);
