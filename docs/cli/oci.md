@@ -20,6 +20,6 @@ in future releases.
 
 ## Subcommands
 
-- [`mise oci build [FLAGS]`](/cli/oci/build.md)
-- [`mise oci push [FLAGS] <REF>`](/cli/oci/push.md)
-- [`mise oci run [FLAGS] [-- CMD]…`](/cli/oci/run.md)
+- [`mise oci build [FLAGS]`](/cli/oci/build.html)
+- [`mise oci push [FLAGS] <REF>`](/cli/oci/push.html)
+- [`mise oci run [FLAGS] [-- CMD]…`](/cli/oci/run.html)

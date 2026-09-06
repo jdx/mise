@@ -1,4 +1,4 @@
-min_usage_version "6.6"
+min_usage_version "6.8"
 name mise
 bin mise
 author "Jeff Dickey <@jdx>"
@@ -3717,7 +3717,7 @@ Show the elapsed time after each task completes
 Set `MISE_TASK_TIMINGS=1` to show it by default
 """#
     }
-    mount run="mise tasks --usage"
+    mount run="mise tasks --usage" synopsis="[TASK] [ARGS]…"
     example "mise run lint" help="Run the \"lint\" task, defined either in mise.toml or as a standalone script."
     example "mise run --force build" help="Force the \"build\" task to run even if its sources are up to date."
     example "mise run --raw test" help="Run \"test\" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."
@@ -4593,7 +4593,7 @@ Show the elapsed time after each task completes
 Set `MISE_TASK_TIMINGS=1` to show it by default
 """#
         }
-        mount run="mise tasks --usage"
+        mount run="mise tasks --usage" synopsis="[TASK] [ARGS]…"
         example "mise run lint" help="Run the \"lint\" task, defined either in mise.toml or as a standalone script."
         example "mise run --force build" help="Force the \"build\" task to run even if its sources are up to date."
         example "mise run --raw test" help="Run \"test\" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."

@@ -12,6 +12,6 @@ Display git provider tokens mise will use
 
 ## Subcommands
 
-- [`mise token forgejo [--unmask] [HOST]`](/cli/token/forgejo.md)
-- [`mise token github [FLAGS] [HOST]`](/cli/token/github.md)
-- [`mise token gitlab [--unmask] [HOST]`](/cli/token/gitlab.md)
+- [`mise token forgejo [--unmask] [HOST]`](/cli/token/forgejo.html)
+- [`mise token github [FLAGS] [HOST]`](/cli/token/github.html)
+- [`mise token gitlab [--unmask] [HOST]`](/cli/token/gitlab.html)

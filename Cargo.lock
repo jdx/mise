@@ -604,7 +604,7 @@ dependencies = [
  "toml_edit 0.25.13+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
- "usage-rs",
+ "usage-rs 6.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "xx",
  "yaml_serde",
 ]
@@ -6515,7 +6515,7 @@ dependencies = [
  "urlencoding",
  "usage-cli",
  "usage-lib",
- "usage-rs",
+ "usage-rs 6.7.1 (git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342)",
  "versions",
  "vfox",
  "walkdir",
@@ -7757,6 +7757,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.4",
+]
+
+[[package]]
+name = "pulldown-cmark"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
+dependencies = [
+ "bitflags 2.13.1",
+ "memchr",
+ "unicase",
 ]
 
 [[package]]
@@ -11123,10 +11134,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64ab89a0a6974bb82b87d9b3dbdced288b934ac9a91ebe01f66304efd9214dbe"
 
 [[package]]
+name = "usage-argv"
+version = "6.7.1"
+source = "git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342#f4e22b0f5fedbb7bb4b2946be5893490bf2fe342"
+
+[[package]]
 name = "usage-cli"
 version = "6.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "047a55467ad7aab097334b623f6eda0104a26569b68b328e9df9367e5dd606d7"
+source = "git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342#f4e22b0f5fedbb7bb4b2946be5893490bf2fe342"
 dependencies = [
  "env_logger",
  "exec",
@@ -11144,7 +11159,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "usage-lib",
- "usage-rs",
+ "usage-rs 6.7.1 (git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342)",
 ]
 
 [[package]]
@@ -11159,15 +11174,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "usage-derive"
+version = "6.7.1"
+source = "git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342#f4e22b0f5fedbb7bb4b2946be5893490bf2fe342"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.4",
+]
+
+[[package]]
 name = "usage-lib"
 version = "6.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99c8cc45cd9014fdedce0790f49499bf6af8967ae3a87ec8eb58185d2e7248b7"
+source = "git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342#f4e22b0f5fedbb7bb4b2946be5893490bf2fe342"
 dependencies = [
  "indexmap 2.14.1",
  "itertools 0.15.0",
  "log",
  "num-traits",
+ "pulldown-cmark",
  "regex",
  "roff",
  "semver",
@@ -11175,7 +11200,7 @@ dependencies = [
  "tera 2.3.0",
  "thiserror 2.0.20",
  "unicode-width 0.2.2",
- "usage-validation",
+ "usage-validation 6.7.1 (git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342)",
  "winnow 1.0.4",
 ]
 
@@ -11185,10 +11210,21 @@ version = "6.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "794778bdd02b146ab233017d8ae8ad0093e599706d1611c44674bad63faf3357"
 dependencies = [
- "usage-argv",
- "usage-derive",
- "usage-test",
- "usage-validation",
+ "usage-argv 6.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "usage-derive 6.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "usage-test 6.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "usage-validation 6.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "usage-rs"
+version = "6.7.1"
+source = "git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342#f4e22b0f5fedbb7bb4b2946be5893490bf2fe342"
+dependencies = [
+ "usage-argv 6.7.1 (git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342)",
+ "usage-derive 6.7.1 (git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342)",
+ "usage-test 6.7.1 (git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342)",
+ "usage-validation 6.7.1 (git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342)",
 ]
 
 [[package]]
@@ -11197,7 +11233,15 @@ version = "6.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22dbf6dc9f3b971cf87b184b2e522e6f03b1a85662e0db324a1f2168be33aa30"
 dependencies = [
- "usage-argv",
+ "usage-argv 6.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "usage-test"
+version = "6.7.1"
+source = "git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342#f4e22b0f5fedbb7bb4b2946be5893490bf2fe342"
+dependencies = [
+ "usage-argv 6.7.1 (git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342)",
 ]
 
 [[package]]
@@ -11205,6 +11249,14 @@ name = "usage-validation"
 version = "6.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb5bbb1880e6172ea673806410bce683d5df0a3661bda387fb56f078ec4b5ddb"
+dependencies = [
+ "expr-lang",
+]
+
+[[package]]
+name = "usage-validation"
+version = "6.7.1"
+source = "git+https://github.com/jdx/usage?rev=f4e22b0f5fedbb7bb4b2946be5893490bf2fe342#f4e22b0f5fedbb7bb4b2946be5893490bf2fe342"
 dependencies = [
  "expr-lang",
 ]
@@ -11302,7 +11354,7 @@ dependencies = [
  "tokio",
  "toml 1.1.4+spec-1.1.0",
  "url",
- "usage-rs",
+ "usage-rs 6.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "wiremock",
  "xx",
 ]

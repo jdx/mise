@@ -10,11 +10,14 @@ Generate files for various tools/services
 
 ## Flags
 - **`-h --help`** — Print help
-- [`mise generate config [FLAGS] [PATH]`](/cli/generate/config.md)
-- [`mise generate devcontainer [FLAGS]`](/cli/generate/devcontainer.md)
-- [`mise generate git-pre-commit [FLAGS] [-- MISE_ARG]…`](/cli/generate/git-pre-commit.md)
-- [`mise generate github-action [FLAGS]`](/cli/generate/github-action.md)
-- [`mise generate install-script [FLAGS]`](/cli/generate/install-script.md)
-- [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)
-- [`mise generate task-stubs [FLAGS]`](/cli/generate/task-stubs.md)
-- [`mise generate tool-stub [FLAGS] <OUTPUT>`](/cli/generate/tool-stub.md)
+
+## Subcommands
+
+- [`mise generate config [FLAGS] [PATH]`](/cli/generate/config.html)
+- [`mise generate devcontainer [FLAGS]`](/cli/generate/devcontainer.html)
+- [`mise generate git-pre-commit [FLAGS] [-- MISE_ARG]…`](/cli/generate/git-pre-commit.html)
+- [`mise generate github-action [FLAGS]`](/cli/generate/github-action.html)
+- [`mise generate install-script [FLAGS]`](/cli/generate/install-script.html)
+- [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.html)
+- [`mise generate task-stubs [FLAGS]`](/cli/generate/task-stubs.html)
+- [`mise generate tool-stub [FLAGS] <OUTPUT>`](/cli/generate/tool-stub.html)

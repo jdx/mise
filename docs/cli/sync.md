@@ -12,6 +12,6 @@ Synchronize tools from other version managers with mise
 
 ## Subcommands
 
-- [`mise sync node [FLAGS]`](/cli/sync/node.md)
-- [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.md)
-- [`mise sync ruby <--brew>`](/cli/sync/ruby.md)
+- [`mise sync node [FLAGS]`](/cli/sync/node.html)
+- [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.html)
+- [`mise sync ruby <--brew>`](/cli/sync/ruby.html)

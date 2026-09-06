@@ -12,5 +12,5 @@ Manage macOS defaults from `[bootstrap.macos.defaults]`
 
 ## Subcommands
 
-- [`mise bootstrap macos defaults apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/macos/defaults/apply.md)
-- [`mise bootstrap macos defaults status [-J --json] [--missing]`](/cli/bootstrap/macos/defaults/status.md)
+- [`mise bootstrap macos defaults apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/macos/defaults/apply.html)
+- [`mise bootstrap macos defaults status [-J --json] [--missing]`](/cli/bootstrap/macos/defaults/status.html)

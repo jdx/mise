@@ -12,10 +12,10 @@ Manage bootstrap system packages from `[bootstrap.packages]`
 
 ## Subcommands
 
-- [`mise bootstrap packages apply [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/apply.md)
-- [`mise bootstrap packages brew <SUBCOMMAND>`](/cli/bootstrap/packages/brew.md)
-- [`mise bootstrap packages import [FLAGS]`](/cli/bootstrap/packages/import.md)
-- [`mise bootstrap packages prune [FLAGS]`](/cli/bootstrap/packages/prune.md)
-- [`mise bootstrap packages status [-J --json] [--missing]`](/cli/bootstrap/packages/status.md)
-- [`mise bootstrap packages upgrade [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/upgrade.md)
-- [`mise bootstrap packages use [FLAGS] <PACKAGE>…`](/cli/bootstrap/packages/use.md)
+- [`mise bootstrap packages apply [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/apply.html)
+- [`mise bootstrap packages brew <SUBCOMMAND>`](/cli/bootstrap/packages/brew.html)
+- [`mise bootstrap packages import [FLAGS]`](/cli/bootstrap/packages/import.html)
+- [`mise bootstrap packages prune [FLAGS]`](/cli/bootstrap/packages/prune.html)
+- [`mise bootstrap packages status [-J --json] [--missing]`](/cli/bootstrap/packages/status.html)
+- [`mise bootstrap packages upgrade [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/upgrade.html)
+- [`mise bootstrap packages use [FLAGS] <PACKAGE>…`](/cli/bootstrap/packages/use.html)

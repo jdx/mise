@@ -13,5 +13,5 @@ Manage systemd user services from `[bootstrap.linux.systemd.units]`
 
 ## Subcommands
 
-- [`mise bootstrap linux systemd-units apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/linux/systemd-units/apply.md)
-- [`mise bootstrap linux systemd-units status [-J --json] [--missing]`](/cli/bootstrap/linux/systemd-units/status.md)
+- [`mise bootstrap linux systemd-units apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/linux/systemd-units/apply.html)
+- [`mise bootstrap linux systemd-units status [-J --json] [--missing]`](/cli/bootstrap/linux/systemd-units/status.html)

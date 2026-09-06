@@ -12,5 +12,5 @@ Manage current-user bootstrap settings from `[bootstrap.user]`
 
 ## Subcommands
 
-- [`mise bootstrap user apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/user/apply.md)
-- [`mise bootstrap user status [-J --json] [--missing]`](/cli/bootstrap/user/status.md)
+- [`mise bootstrap user apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/user/apply.html)
+- [`mise bootstrap user status [-J --json] [--missing]`](/cli/bootstrap/user/status.html)

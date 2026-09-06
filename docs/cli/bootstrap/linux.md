@@ -12,4 +12,4 @@ Manage Linux bootstrap config from `[bootstrap.linux]`
 
 ## Subcommands
 
-- [`mise bootstrap linux systemd-units <SUBCOMMAND>`](/cli/bootstrap/linux/systemd-units.md)
+- [`mise bootstrap linux systemd-units <SUBCOMMAND>`](/cli/bootstrap/linux/systemd-units.html)

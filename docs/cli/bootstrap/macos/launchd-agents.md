@@ -13,5 +13,5 @@ Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
 
 ## Subcommands
 
-- [`mise bootstrap macos launchd-agents apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/macos/launchd-agents/apply.md)
-- [`mise bootstrap macos launchd-agents status [-J --json] [--missing]`](/cli/bootstrap/macos/launchd-agents/status.md)
+- [`mise bootstrap macos launchd-agents apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/macos/launchd-agents/apply.html)
+- [`mise bootstrap macos launchd-agents status [-J --json] [--missing]`](/cli/bootstrap/macos/launchd-agents/status.html)

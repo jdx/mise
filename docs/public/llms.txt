@@ -164,7 +164,7 @@
 
 ## CLI Reference
 
-- [CLI Overview](https://mise.jdx.dev/cli/): Usage: mise [FLAGS] [TASK] <SUBCOMMAND>
+- [CLI Overview](https://mise.jdx.dev/cli/): Author: Jeff Dickey
 - [mise activate](https://mise.jdx.dev/cli/activate.html): Initialize mise in the current shell session
 - [mise backends](https://mise.jdx.dev/cli/backends.html): Manage backends
 - [mise backends ls](https://mise.jdx.dev/cli/backends/ls.html): List built-in backends

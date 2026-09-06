@@ -12,4 +12,4 @@ Inspect bootstrap secret inputs without revealing their values
 
 ## Subcommands
 
-- [`mise bootstrap secrets status [-J --json] [--missing]`](/cli/bootstrap/secrets/status.md)
+- [`mise bootstrap secrets status [-J --json] [--missing]`](/cli/bootstrap/secrets/status.html)

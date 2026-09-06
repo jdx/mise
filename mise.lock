@@ -316,6 +316,14 @@ url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/44475786
 version = "0.6.14"
 backend = "cargo:flamegraph"
 
+[[tools."cargo:jdx/usage"]]
+version = "rev:f4e22b0f5fedbb7bb4b2946be5893490bf2fe342"
+backend = "cargo:jdx/usage"
+
+[tools."cargo:jdx/usage".options]
+crate = "usage-cli"
+locked = "true"
+
 [[tools.communique]]
 version = "1.3.3"
 backend = "github:jdx/communique"

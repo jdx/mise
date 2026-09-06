@@ -13,5 +13,5 @@ Manage mise shell activation from `[bootstrap.mise_shell_activate]`
 
 ## Subcommands
 
-- [`mise bootstrap mise-shell-activate apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/mise-shell-activate/apply.md)
-- [`mise bootstrap mise-shell-activate status [-J --json] [--missing]`](/cli/bootstrap/mise-shell-activate/status.md)
+- [`mise bootstrap mise-shell-activate apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/mise-shell-activate/apply.html)
+- [`mise bootstrap mise-shell-activate status [-J --json] [--missing]`](/cli/bootstrap/mise-shell-activate/status.html)
