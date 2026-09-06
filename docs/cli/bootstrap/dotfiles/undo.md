@@ -18,3 +18,11 @@ reference, the newest operation not yet undone is reversed.
 - **`-n --dry-run`** — Show the plan without changing anything
 - **`-y --yes`** — Apply without prompting
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

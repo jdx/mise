@@ -31,3 +31,11 @@ mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua
 mise bootstrap dotfiles rollback ~/.zshrc --to 42
 mise bootstrap dotfiles rollback --to latest~3 --all --dry-run
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).
