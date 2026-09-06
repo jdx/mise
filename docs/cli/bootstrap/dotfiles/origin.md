@@ -38,3 +38,11 @@ mise bootstrap dotfiles origin set git@github.com:you/setup.git --name laptop --
 mise bootstrap dotfiles origin              # what is connected
 mise bootstrap dotfiles origin --remove
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -23,3 +23,11 @@ Connect a setup repository
 - **`--encrypt-backups`** — Encrypt machine recovery refs (not supported yet)
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles origin [FLAGS] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/origin.html).
+- [Global flags and argument syntax](/cli/#global-flags).

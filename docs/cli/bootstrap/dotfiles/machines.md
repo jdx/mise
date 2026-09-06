@@ -15,3 +15,11 @@ recovers a machine's backed-up files; their journals are data only.
 ## Flags
 - **`-J --json`** — Output in JSON format
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

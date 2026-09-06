@@ -40,3 +40,11 @@ mise bootstrap dotfiles pull ~/.config/hypr
 mise bootstrap dotfiles pull --take-remote ~/.zshrc
 mise bootstrap dotfiles pull --keep-local ~/.zshrc
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

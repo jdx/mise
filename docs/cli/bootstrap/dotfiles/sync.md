@@ -18,3 +18,11 @@ that. In `fetch-only` mode nothing is published.
 - **`--fetch-only`** — Fetch without publishing
 - **`--best-effort`** — Warn instead of failing when the origin is unreachable
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).
