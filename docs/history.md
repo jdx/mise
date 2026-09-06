@@ -93,7 +93,7 @@ are recorded in the repository (`refs/promoted`), never only in an index.
 mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua        # its most recent saved version that differs from disk
 mise bootstrap dotfiles rollback ~/.zshrc --to 42                    # that checkpoint's version
 mise bootstrap dotfiles rollback --to latest~3 --all --dry-run       # everything the checkpoint covers
-mise bootstrap dotfiles undo                                         # reverse the newest rollback, undo, or apply
+mise bootstrap dotfiles undo                                         # reverse the newest rollback or undo
 ```
 
 A rollback is planned first: for every selected path, `write` when the

@@ -897,9 +897,9 @@ mise bootstrap dotfiles unapply --dry-run
 mise bootstrap dotfiles unapply --force --yes
 """#
         }
-        cmd undo help="Reverse a rollback, undo, or apply" effect=destructive {
+        cmd undo help="Reverse a rollback or undo" effect=destructive {
             long_help #"""
-Reverse a rollback, undo, or apply
+Reverse a rollback or undo
 
 Restores exactly the paths that operation changed from the protective
 checkpoint it took, leaving everything else as it is now. Without a
