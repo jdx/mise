@@ -287,10 +287,13 @@ pub(crate) fn requests_from_config(config: &Config) -> Result<Vec<UserServiceReq
 
 /// The mise executable a service definition may reference: the running
 /// binary unless it lives in a temporary or remote-bootstrap staging
-/// directory, else a `mise` on `PATH` outside those.
+/// directory, else a `mise` on `PATH` outside those. Durability is judged
+/// by where the binary really is, but the path kept is the one found: a
+/// Homebrew or package-manager symlink survives an upgrade, the versioned
+/// file behind it does not.
 pub(crate) fn durable_mise_executable() -> Option<PathBuf> {
-    let current = std::fs::canonicalize(&*crate::env::MISE_BIN).ok();
-    if let Some(current) = current.filter(|path| is_durable(path)) {
+    let current = crate::env::MISE_BIN.clone();
+    if durable_behind(&current) {
         return Some(current);
     }
     // every `mise` on PATH, not only the first: a staged binary earlier on
@@ -301,8 +304,12 @@ pub(crate) fn durable_mise_executable() -> Option<PathBuf> {
         .iter()
         .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
         .filter(|candidate| candidate.is_file() && crate::file::is_executable(candidate))
-        .filter_map(|candidate| std::fs::canonicalize(candidate).ok())
-        .find(|path| is_durable(path))
+        .find(|candidate| durable_behind(candidate))
+}
+
+/// Whether the file a path leads to (through any links) is durable.
+fn durable_behind(path: &Path) -> bool {
+    std::fs::canonicalize(path).is_ok_and(|real| is_durable(&real))
 }
 
 fn is_durable(path: &Path) -> bool {
