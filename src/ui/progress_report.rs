@@ -314,10 +314,11 @@ impl SingleReport for VerboseReport {
         *self.current_operation.lock().unwrap() = 1;
     }
     fn next_operation(&self) {
-        let total = *self.total_operations.lock().unwrap();
-        if total.is_some() {
+        if let Some(total) = *self.total_operations.lock().unwrap() {
             let mut current = self.current_operation.lock().unwrap();
-            *current += 1;
+            // A backend may step past its last declared operation to say "all
+            // declared work is done"; the counter stays at the last one.
+            *current = (*current + 1).min(total);
         }
     }
 }

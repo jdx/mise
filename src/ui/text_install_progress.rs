@@ -180,6 +180,7 @@ impl Tool {
             Some("verify") => ("verifying", None),
             Some("extract") => ("extracting", None),
             Some("install") => ("installing", None),
+            Some("uninstall") | Some("remove") => ("removing", None),
             // The postinstall hook means every declared operation is behind us.
             // Plugin backends (asdf, vfox) never call next_operation, so
             // without this their bar sits at zero until the worker returns.
@@ -376,6 +377,30 @@ fn format_bytes_in(bytes: u64, total: u64) -> String {
     format!("{:.*}", decimals, bytes as f64 / unit)
 }
 
+/// What a session is doing to its tools. The same model and renderers serve
+/// both; only the verbs differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Action {
+    Install,
+    Remove,
+}
+
+impl Action {
+    pub(super) fn present(self) -> &'static str {
+        match self {
+            Action::Install => "installing",
+            Action::Remove => "removing",
+        }
+    }
+
+    pub(super) fn past(self) -> &'static str {
+        match self {
+            Action::Install => "installed",
+            Action::Remove => "removed",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Outcome {
     Installed,
@@ -385,15 +410,25 @@ pub(super) enum Outcome {
 
 #[derive(Debug)]
 pub(super) struct State {
+    pub(super) action: Action,
     pub(super) tools: Vec<Tool>,
     pub(super) started: Instant,
 }
 
 impl State {
+    #[cfg(test)]
     pub(super) fn new(tools: impl Iterator<Item = (String, String)>) -> Self {
+        Self::for_action(Action::Install, tools)
+    }
+
+    pub(super) fn for_action(
+        action: Action,
+        tools: impl Iterator<Item = (String, String)>,
+    ) -> Self {
         // Match the dependency scheduler's deduplication of repeated requests.
         let mut seen = HashSet::new();
         Self {
+            action,
             started: Instant::now(),
             tools: tools
                 .filter(|(key, _)| seen.insert(key.clone()))
@@ -614,7 +649,11 @@ impl State {
         let installed = self.count(Outcome::Installed);
         let skipped = self.count(Outcome::Skipped);
         let failed = self.count(Outcome::Failed);
-        let mut result = format!("installed {installed} {}", tool_noun(installed));
+        let mut result = format!(
+            "{} {installed} {}",
+            self.action.past(),
+            tool_noun(installed)
+        );
         if skipped > 0 {
             result.push_str(&format!(" · {skipped} already installed"));
         }
@@ -670,7 +709,7 @@ pub(crate) struct TextInstallProgress {
 impl TextInstallProgress {
     pub(super) fn new(state: State) -> Self {
         let total = state.tools.len();
-        info!("installing {total} {}", tool_noun(total));
+        info!("{} {total} {}", state.action.present(), tool_noun(total));
         let state = Arc::new(Mutex::new(state));
         let (stop, rx) = mpsc::channel();
         let shared = state.clone();
@@ -912,6 +951,25 @@ mod tests {
                 "  tool2@1  verifying           3.0s",
             ]
         );
+    }
+
+    #[test]
+    fn a_removal_session_speaks_in_its_own_verbs() {
+        let start = Instant::now();
+        let mut state = State::for_action(
+            Action::Remove,
+            (0..2).map(|i| (i.to_string(), format!("tool{i}@1"))),
+        );
+        state.started = start;
+        state.tools[0].started = Some(start);
+        state.tools[0].apply_message("uninstall".into());
+        assert_eq!(state.tools[0].message, "removing");
+        state.tools[0].apply_message("remove ~/.local/share/mise/installs/tool0/1".into());
+        assert_eq!(state.tools[0].message, "removing");
+        state.finish_tool(0, Outcome::Installed, start + Duration::from_millis(40));
+        state.finish_tool(1, Outcome::Installed, start);
+        let summary = console::strip_ansi_codes(&state.summary(start)).into_owned();
+        assert_eq!(summary, "████████████████ 2/2 · removed 2 tools in 0ms");
     }
 
     #[test]

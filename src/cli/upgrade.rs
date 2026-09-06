@@ -20,6 +20,7 @@ use crate::toolset::{
     ToolsetBuilder, get_versions_needed_by_tracked_configs_excluding_locks,
     get_versions_needed_by_tracked_stubs,
 };
+use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{config, env, exit, runtime_symlinks, ui};
@@ -635,7 +636,10 @@ impl Upgrade {
         };
 
         // Only uninstall old versions of tools that were successfully upgraded
-        // and are not needed by any tracked config
+        // and are not needed by any tracked config. Immediate removals are
+        // collected and run as one session below, so each finished removal is
+        // a single permanent line rather than a kept row.
+        let mut immediate: Vec<ToolVersion> = Vec::new();
         for (o, old_version) in to_remove {
             if successful_versions
                 .iter()
@@ -657,19 +661,7 @@ impl Upgrade {
                 }
 
                 match prune_mode {
-                    PruneMode::Immediate => {
-                        let pr = mpr.add(&format!("uninstall {}@{}", o.name, old_version));
-                        if let Err(e) = self
-                            .uninstall_old_version(config, &old_tv, pr.as_ref())
-                            .await
-                        {
-                            warn!("Failed to uninstall old version of {}: {}", o.name, e);
-                        } else if let Err(err) =
-                            crate::tool_purgatory::forget_path(&old_tv.install_path())
-                        {
-                            warn!("failed to clear tool purgatory entry: {err:#}");
-                        }
-                    }
+                    PruneMode::Immediate => immediate.push(old_tv),
                     PruneMode::Deferred(after) => {
                         if let Err(err) = crate::tool_purgatory::schedule(&old_tv, after) {
                             warn!(
@@ -687,6 +679,47 @@ impl Upgrade {
                     }
                     PruneMode::None => unreachable!(),
                 }
+            }
+        }
+
+        if !immediate.is_empty() {
+            let mut progress = removal_progress(
+                &mpr,
+                immediate
+                    .iter()
+                    .map(|tv| (format!("{}@{}", tv.ba().short, tv.version), tv.style())),
+            );
+            for old_tv in immediate {
+                let key = format!("{}@{}", old_tv.ba().short, old_tv.version);
+                let tool = progress
+                    .as_ref()
+                    .and_then(|progress| progress.start_tool(&key));
+                let pr = match &tool {
+                    Some(tool) => tool.reporter(),
+                    None => mpr.add(&format!("uninstall {}", old_tv.style())),
+                };
+                let result = self
+                    .uninstall_old_version(config, &old_tv, pr.as_ref())
+                    .await;
+                if let Some(tool) = &tool {
+                    tool.complete(result.as_ref().err().map(|e| e.to_string()).as_deref());
+                }
+                match result {
+                    Err(e) => warn!(
+                        "Failed to uninstall old version of {}: {}",
+                        old_tv.ba().short,
+                        e
+                    ),
+                    Ok(()) => {
+                        if let Err(err) = crate::tool_purgatory::forget_path(&old_tv.install_path())
+                        {
+                            warn!("failed to clear tool purgatory entry: {err:#}");
+                        }
+                    }
+                }
+            }
+            if let Some(progress) = progress.as_mut() {
+                progress.finish(vec![]);
             }
         }
 

@@ -55,6 +55,18 @@ if [[ $output == *'failed: running postinstall hook'* ]]; then
   fail "failure line reported a phase as the reason: $output"
 fi
 
+# Removals get the same session: one permanent line per tool and a summary in
+# removal verbs, instead of a kept "remove <path>" row per version.
+output=$(mise uninstall dummy@1.0.0 dummy@1.0.1 2>&1)
+printf '%s\n' "$output" >output.log
+assert_contains 'cat output.log' 'removing 2 tools'
+assert_contains 'cat output.log' '✓ dummy@1.0.0'
+assert_contains 'cat output.log' '✓ dummy@1.0.1'
+assert_contains 'cat output.log' '2/2 · removed 2 tools in'
+if [[ $output == *'remove ~'* || $output == *'remove /'* ]]; then
+  fail "removal rows should not print the install path: $output"
+fi
+
 # Explicit output modes keep their existing behavior.
 echo '[tools]' >mise.toml
 for mode in '--quiet' '--verbose' '--raw' '--dry-run'; do

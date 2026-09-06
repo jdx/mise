@@ -11,6 +11,7 @@ use crate::toolset::{
     NeededVersions, ToolVersion, ToolsetBuilder, get_versions_needed_by_tracked_configs,
     get_versions_needed_by_tracked_stubs,
 };
+use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
 use crate::{backend::Backend, config, env, exit};
@@ -183,32 +184,68 @@ async fn delete(
     explain: Option<&NeededVersions>,
 ) -> Result<()> {
     let mpr = MultiProgressReport::get();
+    if dry_run {
+        for (p, tv) in to_delete {
+            if let Some(needed) = explain {
+                explain_removal(&tv, needed);
+            }
+            let prefix = format!("{} {} ", tv.style(), style("[dryrun]").bold());
+            let pr = mpr.add(&prefix);
+            p.uninstall_version(config, &tv, pr.as_ref(), true).await?;
+            pr.finish();
+        }
+        return Ok(());
+    }
+
+    // Ask about everything first, then remove. A prompt in the middle of a
+    // live region has to pause it, and the answers are the same either way.
+    let mut confirmed = Vec::with_capacity(to_delete.len());
     for (p, tv) in to_delete {
         if let Some(needed) = explain {
             explain_removal(&tv, needed);
         }
-        let mut prefix = tv.style();
-        if dry_run {
-            prefix = format!("{} {} ", prefix, style("[dryrun]").bold());
+        if Settings::get().yes || prompt::confirm_with_all(format!("remove {} ?", tv))?.is_yes() {
+            confirmed.push((p, tv));
         }
-        if !dry_run
-            && !Settings::get().yes
-            && !prompt::confirm_with_all(format!("remove {} ?", tv))?.is_yes()
-        {
-            continue;
+    }
+
+    let mut progress = removal_progress(
+        &mpr,
+        confirmed
+            .iter()
+            .map(|(_, tv)| (removal_key(tv), tv.style())),
+    );
+    for (p, tv) in confirmed {
+        let tool = progress
+            .as_ref()
+            .and_then(|progress| progress.start_tool(&removal_key(&tv)));
+        let pr = match &tool {
+            Some(tool) => tool.reporter(),
+            None => mpr.add(&tv.style()),
+        };
+        let result = p.uninstall_version(config, &tv, pr.as_ref(), false).await;
+        if let Some(tool) = &tool {
+            tool.complete(result.as_ref().err().map(|e| e.to_string()).as_deref());
         }
-        let pr = mpr.add(&prefix);
-        p.uninstall_version(config, &tv, pr.as_ref(), dry_run)
-            .await?;
-        if !dry_run {
-            if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
-                warn!("failed to clear tool purgatory entry: {err:#}");
-            }
-            runtime_symlinks::remove_missing_symlinks(p)?;
+        result?;
+        if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
+            warn!("failed to clear tool purgatory entry: {err:#}");
         }
-        pr.finish();
+        runtime_symlinks::remove_missing_symlinks(p)?;
+        if tool.is_none() {
+            pr.finish();
+        }
+    }
+    if let Some(progress) = progress.as_mut() {
+        progress.finish(vec![]);
     }
     Ok(())
+}
+
+/// The session key for a version being removed: the same `short@version`
+/// shape the install scheduler uses.
+fn removal_key(tv: &ToolVersion) -> String {
+    format!("{}@{}", tv.ba().short, tv.version)
 }
 
 /// Say why `tv` is up for removal.

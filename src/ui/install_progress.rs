@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use super::multi_progress_report::MultiProgressReport;
 use super::progress_report::SingleReport;
-use super::text_install_progress::{State, TextInstallProgress};
+use super::text_install_progress::{Action, State, TextInstallProgress};
 use super::tty_install_progress::TtyInstallProgress;
 
 /// One tool's reporter inside an install session.
@@ -45,7 +45,25 @@ pub(crate) fn install_progress(
     mpr: &Arc<MultiProgressReport>,
     tools: impl Iterator<Item = (String, String)>,
 ) -> Option<Box<dyn InstallProgress>> {
-    let state = State::new(tools);
+    progress_for(mpr, Action::Install, tools)
+}
+
+/// The same session for `prune`, `uninstall` and `upgrade`'s old versions.
+/// Hundreds of `remove …` rows kept in a live region were what made a large
+/// prune unreadable; here each finished removal is one permanent line.
+pub(crate) fn removal_progress(
+    mpr: &Arc<MultiProgressReport>,
+    tools: impl Iterator<Item = (String, String)>,
+) -> Option<Box<dyn InstallProgress>> {
+    progress_for(mpr, Action::Remove, tools)
+}
+
+fn progress_for(
+    mpr: &Arc<MultiProgressReport>,
+    action: Action,
+    tools: impl Iterator<Item = (String, String)>,
+) -> Option<Box<dyn InstallProgress>> {
+    let state = State::for_action(action, tools);
     if state.is_empty() {
         return None;
     }
