@@ -14,6 +14,7 @@ use crate::toolset::{
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
 use crate::{backend::Backend, config, env, exit};
+use bytesize::ByteSize;
 use console::style;
 use eyre::Result;
 
@@ -83,6 +84,13 @@ impl Prune {
             let has_work = !to_delete.is_empty();
             let explain = self.is_dry_run().then_some(&needed);
             delete(&config, self.is_dry_run(), to_delete, explain).await?;
+            // Not for a targeted prune. The sweep is global by construction — an
+            // entry is content two tools can share, and which tool put it there
+            // is not recorded — so running it for `mise prune node` would reclaim
+            // entries outside what the positional argument promised to touch.
+            if self.installed_tool.as_ref().is_none_or(|it| it.is_empty()) {
+                self.prune_http_tarballs();
+            }
             if self.dry_run_code && has_work {
                 return Err(exit::request(1));
             }
@@ -100,6 +108,42 @@ impl Prune {
             .await?;
         }
         Ok(())
+    }
+
+    /// Reclaim `http-tarballs` entries no install points at.
+    ///
+    /// Deliberately runs *after* `delete`, so an entry whose only referent was
+    /// just removed is reclaimed in the same invocation, and so every retention
+    /// decision made above — including the tracked stubs described in this
+    /// command's help — already holds by the time reachability is measured.
+    ///
+    /// Not called for a targeted `mise prune <tool>`: see the guard at the call
+    /// site. Two things it deliberately does not do. It does not feed `--dry-run-code`:
+    /// that gate is documented as "tools to prune", and leftover extractions
+    /// turning a passing CI check red would be a surprise. And under `--dry-run`
+    /// it reports only entries that are *already* unreferenced, since the
+    /// versions above have not actually been removed yet.
+    ///
+    /// A failure here is reported rather than propagated: the tools were pruned,
+    /// and a cache sweep that could not read a directory should not turn that
+    /// into a failed command.
+    fn prune_http_tarballs(&self) {
+        match crate::backend::http::prune_unreferenced_tarballs(self.is_dry_run()) {
+            Ok(results) if results.count > 0 => {
+                info!(
+                    "pruned {} unused http-tarball {}, {}",
+                    results.count,
+                    if results.count == 1 {
+                        "entry"
+                    } else {
+                        "entries"
+                    },
+                    ByteSize::b(results.size).display().iec()
+                );
+            }
+            Ok(_) => {}
+            Err(err) => warn!("failed to prune http-tarballs: {err:?}"),
+        }
     }
 
     fn prune_configs(&self) -> Result<()> {

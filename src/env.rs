@@ -255,9 +255,7 @@ pub(crate) fn shared_install_dirs() -> Vec<PathBuf> {
     } else {
         MISE_SHARED_INSTALL_DIRS_ENV.clone()
     };
-    let system = Settings::try_get()
-        .map(|settings| settings.system_installs_dir().to_path_buf())
-        .unwrap_or_else(|_| MISE_SYSTEM_INSTALLS_DIR.clone());
+    let system = system_installs_dir();
     // System dir first (if it exists and isn't the user's own install dir),
     // then user-configured dirs.
     let mut result = Vec::new();
@@ -266,6 +264,24 @@ pub(crate) fn shared_install_dirs() -> Vec<PathBuf> {
     }
     result.extend(user_dirs);
     result
+}
+
+/// The system installs dir as configured, falling back to the environment
+/// default when settings cannot be read.
+///
+/// Unfiltered on purpose: callers that want "and it exists" apply that test
+/// themselves. [`shared_install_dirs`] does; the prune sweep deliberately must
+/// not, because `is_dir()` answers false for an unreadable directory exactly as
+/// it does for an absent one, and a sweep that deletes things cannot treat
+/// "cannot tell" as "holds no references".
+///
+/// Resolved in one place because the configured value and
+/// `MISE_SYSTEM_INSTALLS_DIR` are not interchangeable: a caller that reaches for
+/// the constant silently ignores a configured dir.
+pub(crate) fn system_installs_dir() -> PathBuf {
+    crate::config::Settings::try_get()
+        .map(|settings| settings.system_installs_dir().to_path_buf())
+        .unwrap_or_else(|_| MISE_SYSTEM_INSTALLS_DIR.clone())
 }
 
 /// Early-boot variant used by install_state::init_tools() before Settings is loaded.
@@ -281,9 +297,7 @@ pub(crate) fn shared_install_dirs_early() -> Vec<PathBuf> {
 
 /// Categorize an install path as system, shared, or local.
 pub(crate) fn install_path_category(path: &Path) -> InstallPathCategory {
-    let system_installs = crate::config::Settings::try_get()
-        .map(|settings| settings.system_installs_dir().to_path_buf())
-        .unwrap_or_else(|_| MISE_SYSTEM_INSTALLS_DIR.clone());
+    let system_installs = system_installs_dir();
     if system_installs != *MISE_INSTALLS_DIR && path.starts_with(system_installs) {
         InstallPathCategory::System
     } else if shared_install_dirs().iter().any(|d| path.starts_with(d)) {

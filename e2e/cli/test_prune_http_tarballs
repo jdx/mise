@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# `mise prune` reclaims `http-tarballs` entries no install points at.
+#
+# The entries are shared: two tools declaring the same URL extract once and both
+# symlink into that one directory (see `e2e/backend/test_http_caching`). So the
+# interesting case is not "an unused entry is removed" but "a shared entry is
+# kept while either install remains" — getting that wrong deletes the contents
+# of a working tool.
+
+FIXTURES="$TMPDIR/prune-http-tarballs-fixtures"
+PORT_FILE="$TMPDIR/prune-http-tarballs-port"
+TARBALLS="$MISE_DATA_DIR/http-tarballs"
+
+# Start from a known cache, the way `test_http_caching` does.
+rm -rf "$TARBALLS"
+
+mkdir -p "$FIXTURES/shared/bin"
+cat >"$FIXTURES/shared/bin/shared-tool" <<'EOF'
+#!/usr/bin/env bash
+echo shared-tool-ok
+EOF
+chmod +x "$FIXTURES/shared/bin/shared-tool"
+tar czf "$FIXTURES/shared.tar.gz" -C "$FIXTURES" shared
+
+mkdir -p "$FIXTURES/solo/bin"
+cat >"$FIXTURES/solo/bin/solo-tool" <<'EOF'
+#!/usr/bin/env bash
+echo solo-tool-ok
+EOF
+chmod +x "$FIXTURES/solo/bin/solo-tool"
+tar czf "$FIXTURES/solo.tar.gz" -C "$FIXTURES" solo
+
+# A bare executable rather than an archive: with `bin_path` set, the install is
+# a real directory holding a link to one file *inside* the cache entry, which is
+# the shape a root-only reachability check misses.
+cat >"$FIXTURES/raw-tool" <<'EOF'
+#!/usr/bin/env bash
+echo raw-tool-ok
+EOF
+chmod +x "$FIXTURES/raw-tool"
+
+python3 -u - "$FIXTURES" "$PORT_FILE" <<'PY' >/dev/null 2>&1 &
+import functools
+import http.server
+import socketserver
+import sys
+from pathlib import Path
+
+root = sys.argv[1]
+port_file = Path(sys.argv[2])
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
+with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
+    port_file.write_text(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+wait_for_file "$PORT_FILE" "prune http-tarballs test server port file" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+entry_count() {
+  find "$TARBALLS" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' '
+}
+
+# Four tools over three URLs: `shared-a` and `shared-b` name the same tarball
+# and so share one entry, giving 4 installs but 3 entries.
+cat >mise.toml <<EOF
+[tools."http:shared-a"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/shared.tar.gz"
+bin_path = "shared/bin"
+
+[tools."http:shared-b"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/shared.tar.gz"
+bin_path = "shared/bin"
+
+[tools."http:solo"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/solo.tar.gz"
+bin_path = "solo/bin"
+
+[tools."http:raw"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/raw-tool"
+bin = "raw-tool"
+bin_path = "bin"
+EOF
+
+mise install
+assert_contains "mise x -- shared-tool" "shared-tool-ok"
+assert_contains "mise x -- solo-tool" "solo-tool-ok"
+assert_contains "mise x -- raw-tool" "raw-tool-ok"
+assert "test '$(entry_count)' = 3"
+
+# Nothing is unreferenced yet, so a prune must leave every entry alone.
+MISE_YES=1 assert "mise prune"
+assert "test '$(entry_count)' = 3"
+assert_contains "mise x -- shared-tool" "shared-tool-ok"
+
+# Drop one of the two tools sharing an entry. Its install goes, but the entry is
+# still reached through the other install and must survive.
+cat >mise.toml <<EOF
+[tools."http:shared-b"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/shared.tar.gz"
+bin_path = "shared/bin"
+
+[tools."http:solo"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/solo.tar.gz"
+bin_path = "solo/bin"
+
+[tools."http:raw"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/raw-tool"
+bin = "raw-tool"
+bin_path = "bin"
+EOF
+
+MISE_YES=1 assert "mise prune"
+assert_fail "ls $MISE_DATA_DIR/installs/http-shared-a/1.0.0"
+assert "test '$(entry_count)' = 3"
+assert_contains "mise x -- shared-tool" "shared-tool-ok"
+
+# Drop the second sharer too. Nothing points at the shared entry now, so this
+# time it is reclaimed — and the other two entries must not be.
+cat >mise.toml <<EOF
+[tools."http:solo"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/solo.tar.gz"
+bin_path = "solo/bin"
+
+[tools."http:raw"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/raw-tool"
+bin = "raw-tool"
+bin_path = "bin"
+EOF
+
+MISE_YES=1 assert "mise prune"
+assert_fail "ls $MISE_DATA_DIR/installs/http-shared-b/1.0.0"
+assert "test '$(entry_count)' = 2"
+assert_contains "mise x -- solo-tool" "solo-tool-ok"
+assert_contains "mise x -- raw-tool" "raw-tool-ok"
+
+# The raw-file install links a file *inside* its entry rather than the entry
+# itself. A dry run must leave it alone; a real prune must reclaim it without
+# disturbing the entry still in use.
+cat >mise.toml <<EOF
+[tools."http:solo"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/solo.tar.gz"
+bin_path = "solo/bin"
+EOF
+
+assert "mise prune --dry-run"
+assert "test '$(entry_count)' = 2"
+
+MISE_YES=1 assert "mise prune"
+assert "test '$(entry_count)' = 1"
+assert_contains "mise x -- solo-tool" "solo-tool-ok"
+
+# A targeted prune must not run the sweep. The positional argument promises to
+# touch only the tools named, and an entry is content two tools can share, so a
+# global reclaim would reach outside that promise.
+cat >mise.toml <<EOF
+[tools."http:orphan-me"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/shared.tar.gz"
+bin_path = "shared/bin"
+
+[tools."http:solo"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/solo.tar.gz"
+bin_path = "solo/bin"
+EOF
+
+mise install
+before="$(entry_count)"
+
+# Drop it from the config so its entry is genuinely orphaned, then prune a
+# different tool by name. The orphan must survive.
+cat >mise.toml <<EOF
+[tools."http:solo"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/solo.tar.gz"
+bin_path = "solo/bin"
+EOF
+
+MISE_YES=1 assert "mise prune solo"
+assert "test '$(entry_count)' = $before"
+
+# ...and an untargeted prune still reclaims it.
+MISE_YES=1 assert "mise prune"
+assert "test '$(entry_count)' = 1"
