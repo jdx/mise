@@ -30,6 +30,20 @@ assert_fail "test -d ~/.config/review/empty"
 assert_succeed "mise bootstrap dotfiles undo --yes"
 assert_succeed "test -d ~/.config/review/empty"
 
+# Cleanup must retain contents that no checkpoint can restore.
+before="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+mkdir -p ~/.config/review/with-excluded
+echo saved >~/.config/review/with-excluded/tracked
+echo keep >~/.config/review/with-excluded/private
+printf '\n[history]\nexclude = ["~/.config/review/with-excluded/private"]\n' >>"$MISE_CONFIG_DIR/config.toml"
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review --to $before --yes"
+assert "cat ~/.config/review/with-excluded/private" "keep"
+assert_fail "test -e ~/.config/review/with-excluded/tracked"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.config/review/with-excluded/private" "keep"
+assert "cat ~/.config/review/with-excluded/tracked" "saved"
+
 # Parent rollback preserves unrecorded empty descendants even when it
 # removes neighboring files and their otherwise-new parent directory.
 before="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"

@@ -60,6 +60,7 @@ pub(crate) struct UndoRequest {
 enum Action {
     Write { mode: String, oid: String },
     Delete,
+    RemoveEmptyDirectory,
     Unchanged,
     Skip(String),
     Conflict(String),
@@ -70,6 +71,7 @@ impl Action {
         match self {
             Self::Write { .. } => "write".into(),
             Self::Delete => "delete".into(),
+            Self::RemoveEmptyDirectory => "remove if empty".into(),
             Self::Unchanged => "unchanged".into(),
             Self::Skip(reason) => format!("skip: {reason}"),
             Self::Conflict(reason) => format!("conflict: {reason}"),
@@ -77,7 +79,10 @@ impl Action {
     }
 
     fn mutates(&self) -> bool {
-        matches!(self, Self::Write { .. } | Self::Delete)
+        matches!(
+            self,
+            Self::Write { .. } | Self::Delete | Self::RemoveEmptyDirectory
+        )
     }
 }
 
@@ -563,6 +568,43 @@ async fn apply_steps(
         })
     });
     for step in ordered {
+        if matches!(step.action, Action::RemoveEmptyDirectory) {
+            // Optional cleanup must never recursively remove contents that
+            // were excluded, untracked, or created since the plan was made.
+            if !step.path.is_dir() || step.path.is_symlink() {
+                continue;
+            }
+            let pending =
+                journal::begin_changes("history", &display_path(&step.path), [step.path.clone()])?;
+            let removed = match std::fs::remove_dir(&step.path) {
+                Ok(()) => true,
+                Err(err)
+                    if matches!(
+                        err.kind(),
+                        std::io::ErrorKind::DirectoryNotEmpty | std::io::ErrorKind::NotFound
+                    ) =>
+                {
+                    false
+                }
+                Err(err) => {
+                    debug!(
+                        "history: leaving optional directory cleanup {}: {err}",
+                        display_path(&step.path)
+                    );
+                    false
+                }
+            };
+            journal::commit_changes(pending);
+            if removed {
+                let affected = display_path(&step.path);
+                scope.with_operation(|op| {
+                    op.affected.push(affected.clone());
+                    op.directories.push(affected);
+                });
+                touched.push(step.path.clone());
+            }
+            continue;
+        }
         // a file created or changed since the verified sample was never
         // protected: stop here; what was already written is recorded below
         // and undo can reverse it
@@ -992,7 +1034,7 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                 steps.push(Step {
                     path: abs,
                     tree_path: dir,
-                    action: Action::Delete,
+                    action: Action::RemoveEmptyDirectory,
                     from: "a directory".into(),
                     to: "missing".into(),
                     bits: None,
