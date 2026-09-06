@@ -2708,19 +2708,31 @@ mod tests {
     }
 
     /// Create a file symlink, or return `false` when the platform refuses
-    /// (Windows without the symlink privilege) so the caller can skip itself.
+    /// (e.g. Windows without the symlink privilege) so the caller can skip
+    /// itself. Any other failure panics: swallowing it would silently turn the
+    /// new coverage into a no-op.
     fn try_symlink_file(target: &Path, link: &Path) -> bool {
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(target, link).is_ok()
-        }
-        #[cfg(windows)]
-        {
-            match std::os::windows::fs::symlink_file(target, link) {
-                Ok(()) => true,
-                Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => false,
-                Err(err) => panic!("failed to create file symlink: {err}"),
+        let result = {
+            #[cfg(unix)]
+            {
+                std::os::unix::fs::symlink(target, link)
             }
+            #[cfg(windows)]
+            {
+                std::os::windows::fs::symlink_file(target, link)
+            }
+        };
+        match result {
+            Ok(()) => true,
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::Unsupported
+                ) =>
+            {
+                false
+            }
+            Err(err) => panic!("failed to create file symlink: {err}"),
         }
     }
 
@@ -2824,9 +2836,14 @@ mod tests {
         fs::write(&mise, "mise").unwrap();
 
         // A mise-shim.exe on PATH happens in dev environments that build it, so
-        // the assertion is scoped to what this test controls.
+        // the assertion is scoped to what this test controls. `file::which` on
+        // Windows matches the extension only, so filter to existing files the
+        // same way the resolver does before deciding to skip.
         let found = find_mise_shim_bin(&mise);
-        if file::which("mise-shim.exe").is_none() {
+        if file::which("mise-shim.exe")
+            .filter(|p| p.is_file())
+            .is_none()
+        {
             assert_eq!(found, None);
         }
     }

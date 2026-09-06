@@ -20,7 +20,14 @@ Describe 'exe shim source lookup through a symlinked mise' {
         Copy-Item $miseOnPath (Join-Path $script:RealBin 'mise.exe')
         Copy-Item (Join-Path (Split-Path $miseOnPath) 'mise-shim.exe') (Join-Path $script:RealBin 'mise-shim.exe')
         $script:LinkedMise = Join-Path $script:Links 'mise.exe'
-        New-Item -ItemType SymbolicLink -Path $script:LinkedMise -Target (Join-Path $script:RealBin 'mise.exe') | Out-Null
+        # Hosts without Developer Mode / elevation cannot create file symlinks;
+        # record that so the tests can skip instead of failing the whole suite.
+        $script:SymlinkUnavailable = $false
+        try {
+            New-Item -ItemType SymbolicLink -Path $script:LinkedMise -Target (Join-Path $script:RealBin 'mise.exe') -ErrorAction Stop | Out-Null
+        } catch {
+            $script:SymlinkUnavailable = $true
+        }
 
         # Strip PATH of any directory that can reach a mise-shim.exe and prepend the
         # links directory: the linked mise is now the only mise on PATH.
@@ -40,8 +47,10 @@ jq = { version = "1.7.1", lazy = true, lazy_bins = ["jq.exe"] }
 '@ | Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM
 
         $env:MISE_WINDOWS_SHIM_MODE = 'exe'
-        & $script:LinkedMise reshim --force
-        $script:ReshimExit = $LASTEXITCODE
+        if (-not $script:SymlinkUnavailable) {
+            & $script:LinkedMise reshim --force
+            $script:ReshimExit = $LASTEXITCODE
+        }
     }
 
     AfterAll {
@@ -62,10 +71,18 @@ jq = { version = "1.7.1", lazy = true, lazy_bins = ["jq.exe"] }
     }
 
     It 'reshim succeeds with the symlinked mise as the only mise on PATH' {
+        if ($script:SymlinkUnavailable) {
+            Set-ItResult -Skipped -Because 'this host cannot create file symlinks (enable Developer Mode or run elevated)'
+            return
+        }
         $script:ReshimExit | Should -Be 0
     }
 
     It 'writes native exe shims from the mise-shim.exe beside the real binary' {
+        if ($script:SymlinkUnavailable) {
+            Set-ItResult -Skipped -Because 'this host cannot create file symlinks (enable Developer Mode or run elevated)'
+            return
+        }
         # Before the fix this was jq.cmd + an extension-less script (the "file" fallback).
         $shim = Join-Path $env:MISE_DATA_DIR 'shims\jq.exe'
         Test-Path $shim -PathType Leaf | Should -BeTrue
@@ -73,6 +90,10 @@ jq = { version = "1.7.1", lazy = true, lazy_bins = ["jq.exe"] }
     }
 
     It 'does not leave file-mode shims behind' {
+        if ($script:SymlinkUnavailable) {
+            Set-ItResult -Skipped -Because 'this host cannot create file symlinks (enable Developer Mode or run elevated)'
+            return
+        }
         Test-Path (Join-Path $env:MISE_DATA_DIR 'shims\jq.cmd') | Should -BeFalse
         Test-Path (Join-Path $env:MISE_DATA_DIR 'shims\jq') | Should -BeFalse
     }
