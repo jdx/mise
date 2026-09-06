@@ -55,8 +55,12 @@ pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) 
     }
     // what a previous repository left behind, before the fetch adds to it
     let previous_machine_refs = repo.list_refs(MACHINES_PREFIX)?;
+    // nothing is pruned before the confirmation: declining leaves the
+    // connected repository's recovery refs as they were
     let remote = Remote::new(repo, &opts.url);
-    remote.fetch(&opts.branch)?;
+    if !remote.fetch(&opts.branch)? && repo.ref_oid(UPSTREAM_REF)?.is_some() {
+        repo.delete_ref(UPSTREAM_REF)?;
+    }
     let upstream = repo.ref_oid(UPSTREAM_REF)?;
     let repo_state = format::detect(repo, upstream.as_deref())?;
     repo_state.check()?;
@@ -142,6 +146,7 @@ pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) 
         for branch_path in upstream_files.files.keys() {
             if !shared.files.contains_key(branch_path)
                 && roots.locate(branch_path).path().is_some()
+                && run::eligible(&roots, tracked, branch_path)
                 && !privacy::is_private_branch_path(branch_path)
             {
                 incoming += 1;

@@ -38,16 +38,26 @@ impl<'a> Remote<'a> {
 
     /// Fetches the setup branch into `refs/setup/upstream` and every
     /// machine recovery ref into `refs/machines/`. A branch that does not
-    /// exist yet is not an error (the repository may be empty).
-    pub(crate) fn fetch(&self, branch: &str) -> Result<()> {
-        let output = self.repo.network([
-            "fetch",
-            "--quiet",
-            "--no-tags",
-            "--prune",
-            &self.url,
-            &format!("+{REMOTE_MACHINES_PREFIX}*:{MACHINES_PREFIX}*"),
-        ])?;
+    /// exist is not an error (the repository may be empty): `false`, with
+    /// `refs/setup/upstream` left as it was.
+    pub(crate) fn fetch(&self, branch: &str) -> Result<bool> {
+        self.fetch_with(branch, false)
+    }
+
+    /// The same, dropping machine refs the repository no longer has: what
+    /// a sync with the connected repository does, never a look at another.
+    pub(crate) fn fetch_pruning(&self, branch: &str) -> Result<bool> {
+        self.fetch_with(branch, true)
+    }
+
+    fn fetch_with(&self, branch: &str, prune: bool) -> Result<bool> {
+        let mut args = vec!["fetch", "--quiet", "--no-tags"];
+        if prune {
+            args.push("--prune");
+        }
+        let machines = format!("+{REMOTE_MACHINES_PREFIX}*:{MACHINES_PREFIX}*");
+        args.extend([self.url.as_str(), machines.as_str()]);
+        let output = self.repo.network(args)?;
         if !output.status.success() {
             bail!(
                 "fetching {}: {}",
@@ -68,12 +78,11 @@ impl<'a> Remote<'a> {
                 || stderr.contains("Couldn't find remote ref")
             {
                 // an empty repository, or a branch not yet created
-                self.repo.delete_ref(UPSTREAM_REF)?;
-                return Ok(());
+                return Ok(false);
             }
             bail!("fetching {}: {}", self.url, stderr.trim());
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Pushes explicit refspecs. With `lease`, the remote branch must still

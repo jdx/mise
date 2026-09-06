@@ -115,6 +115,9 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
             let record = sync_state.entry(conflict.branch_path.clone()).or_default();
             record.acknowledged = conflict.remote.clone();
             record.reconciled = conflict.remote.clone();
+            // nothing of it waits to be written: the local version (a
+            // deletion too) is the change on top of it
+            record.applied = conflict.remote.clone();
             record.upstream_commit = status.upstream_commit.clone();
             state_changed = true;
             info!(

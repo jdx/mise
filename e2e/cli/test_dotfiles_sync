@@ -142,6 +142,39 @@ assert_succeed "$b bootstrap dotfiles pull --yes"
 assert "cat $B/.config/hypr/monitors.lua" "monitor=DP-1"
 assert_fail "test -e $B/.config/mise/README.md"
 
+# ---- a deletion kept over an upstream change is published as a deletion
+echo 'monitor=DP-3' >~/.config/hypr/monitors.lua
+assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
+rm "$B/.config/hypr/monitors.lua"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "conflict(s) need a decision"
+assert_contains "$b bootstrap dotfiles status" "deleted here, changed upstream"
+assert_succeed "$b bootstrap dotfiles pull --keep-local $B/.config/hypr/monitors.lua --yes"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "published"
+assert_fail "git --git-dir=$origin show main:tracked/home/.config/hypr/monitors.lua"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "nothing new to publish"
+echo 'monitor=DP-1' >"$B/.config/hypr/monitors.lua"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "published"
+assert_succeed "mise bootstrap dotfiles sync && mise bootstrap dotfiles pull --yes"
+assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
+
+# ---- another platform's stream is never applied here; a branch that
+# vanished is an error, not an upstream that deleted everything
+git clone -q -b main "file://$origin" "$PWD/clone2"
+mkdir -p "$PWD/clone2/tracked/home@macos/.config/hypr"
+echo 'monitor=Retina' >"$PWD/clone2/tracked/home@macos/.config/hypr/monitors.lua"
+git -C "$PWD/clone2" add -A
+git -C "$PWD/clone2" -c user.name=t -c user.email=t@t commit -q -m 'a mac stream'
+git -C "$PWD/clone2" push -q origin main
+assert_succeed "mise bootstrap dotfiles sync"
+assert_not_contains "mise bootstrap dotfiles status" "incoming change(s) pending"
+assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
+git --git-dir="$origin" branch -m main renamed
+assert_fail "mise bootstrap dotfiles sync 2>&1" "is not at"
+assert_not_contains "mise bootstrap dotfiles status" "incoming change(s) pending"
+git --git-dir="$origin" branch -m renamed main
+assert_succeed "mise bootstrap dotfiles sync"
+assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
+
 # ---- fetch-only publishes nothing; disconnecting keeps local history
 assert_succeed "mise settings set history.sync fetch-only"
 echo 'monitor=DP-2' >~/.config/hypr/monitors.lua

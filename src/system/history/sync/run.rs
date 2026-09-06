@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::SyncMode;
 use super::format::{self, RepoState};
-use super::layout::{Roots, is_configuration};
+use super::layout::{Located, Roots, is_configuration};
 use super::network::{PushOutcome, Remote, UPSTREAM_REF};
 use super::reconcile::{self, Conflict, Object, PathPlan};
 use super::{backup, publish, share, state};
@@ -139,7 +139,21 @@ pub(crate) fn sync(
     let mut outcome = SyncOutcome::default();
 
     let result = (|| -> Result<()> {
-        remote.fetch(&origin.branch)?;
+        // a branch that vanished from a repository this machine had synced
+        // with is not an empty upstream: reading it as one would queue the
+        // deletion of every file it held
+        let found = remote.fetch_pruning(&origin.branch)?;
+        if !found && status.upstream_commit.is_some() {
+            bail!(
+                "the setup branch `{}` is not at {} any more (renamed, or deleted?); nothing was changed. `mise bootstrap dotfiles origin set {} --branch <name>` follows a renamed branch",
+                origin.branch,
+                origin.url,
+                origin.url
+            );
+        }
+        if !found && repo.ref_oid(UPSTREAM_REF)?.is_some() {
+            repo.delete_ref(UPSTREAM_REF)?;
+        }
         status.last_fetch = Some(hstore::now_rfc3339());
         let mut upstream_commit = repo.ref_oid(UPSTREAM_REF)?;
         outcome.fetched_upstream = upstream_commit.clone();
@@ -163,7 +177,10 @@ pub(crate) fn sync(
         let mut attempts = 0;
         loop {
             attempts += 1;
-            let upstream = reconcile::upstream(repo, upstream_commit.as_deref())?;
+            let mut upstream = reconcile::upstream(repo, upstream_commit.as_deref())?;
+            upstream
+                .files
+                .retain(|branch_path, _| eligible(&Roots::current(), tracked, branch_path));
             let sync_state = state::load(repo)?;
             plans =
                 reconcile::reconcile(repo, &shared.objects(), &upstream, &sync_state, &unsaved)?;
@@ -209,7 +226,10 @@ pub(crate) fn sync(
                     }
                     state::save(repo, &next_state, "published")?;
                     // the applications and conflicts are relative to the new head
-                    let upstream = reconcile::upstream(repo, upstream_commit.as_deref())?;
+                    let mut upstream = reconcile::upstream(repo, upstream_commit.as_deref())?;
+                    upstream
+                        .files
+                        .retain(|branch_path, _| eligible(&Roots::current(), tracked, branch_path));
                     plans = reconcile::reconcile(
                         repo,
                         &shared.objects(),
@@ -303,6 +323,24 @@ fn record_pending(status: &mut SyncStatus, plans: &[PathPlan], roots: &Roots) {
             .pending_applications
             .iter()
             .any(|pending| pending.configuration);
+}
+
+/// Whether an upstream path belongs on this machine: configuration and
+/// sources always; a tracked entry's stream only when it is the one this
+/// machine selects (its variant, or the base stream when it has none), so
+/// another platform's version is never applied here and never read as a
+/// change. A path no entry covers yet (a fresh machine before its
+/// configuration arrived) takes the base stream, what a declaration
+/// without variants selects; a variant stream waits for the declaration.
+pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
+    match roots.locate(branch_path) {
+        Located::Tracked { path, variant } => match tracked.entry_for(&path) {
+            Some(entry) => entry.variant == variant,
+            None => variant.is_none(),
+        },
+        Located::Config(_) | Located::Source(_) | Located::Marker => true,
+        Located::Unmapped => false,
+    }
 }
 
 /// A bootstrap finished: the declarations that arrived through sync are
