@@ -147,18 +147,22 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
             "prefix",
             &console::pad_str(&tool.prefix, width, console::Alignment::Left, None).to_string(),
         );
-        if let Some(waiting) = tool.waiting_message() {
+        let Some(started) = tool.started else {
+            // A held tool names what it is behind; once that drains it is only
+            // waiting for a slot, and the row must not keep the stale reason.
+            let waiting = tool
+                .waiting_message()
+                .unwrap_or_else(|| "queued".to_string());
             job.prop("left", &style::edim(waiting).to_string());
             job.prop("right", "");
             continue;
-        }
-        let Some(started) = tool.started else {
-            continue;
         };
         let mut left = tool.message.clone();
-        let detail = tool.transfer_detail(now);
-        if !detail.is_empty() && columns >= DETAIL_MIN_COLUMNS {
-            left.push_str(&format!("  {detail}"));
+        // Bytes only: detail and item counts have their own child row.
+        if let Some(bytes) = tool.transfer_bytes(now)
+            && columns >= DETAIL_MIN_COLUMNS
+        {
+            left.push_str(&format!("  {bytes}"));
         }
         job.prop("left", &left);
         let mut right = String::new();
