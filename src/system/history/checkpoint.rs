@@ -23,7 +23,9 @@ use super::store::{
     self, Annotation, Changes, Checkpoint, DescriptionSource, Entry, Index, IndexEntry, Machine,
     Operation, SavedRecord, TreeInfo, Trigger,
 };
-use super::tracked::{TrackedEntry, TrackedSet, display_to_tree_path, tree_path_to_display};
+use super::tracked::{
+    TrackedEntry, TrackedSet, display_to_tree_path, normalize, tree_path_to_display,
+};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 
@@ -828,17 +830,42 @@ fn under_entry(path: &str, entry: &str) -> bool {
 #[cfg(unix)]
 fn file_modes(walk: &super::tracked::Walk) -> BTreeMap<String, u32> {
     use std::os::unix::fs::PermissionsExt;
-    walk.files
-        .keys()
-        .filter_map(|path| {
-            let meta = std::fs::symlink_metadata(path).ok()?;
-            if !meta.is_file() {
-                return None;
-            }
+    let home = normalize(&crate::dirs::HOME);
+    let mut modes = BTreeMap::new();
+    let mut dirs = BTreeSet::new();
+    for path in walk.files.keys() {
+        let Ok(meta) = std::fs::symlink_metadata(path) else {
+            continue;
+        };
+        if meta.is_file() {
             let mode = meta.permissions().mode() & 0o777;
-            (mode != 0o644 && mode != 0o755).then(|| (display_path(path), mode))
-        })
-        .collect()
+            if mode != 0o644 && mode != 0o755 {
+                modes.insert(display_path(path), mode);
+            }
+        }
+        // the directories above it, up to (not including) the home
+        // directory: a 0700 directory comes back 0700
+        for ancestor in path.ancestors().skip(1) {
+            if ancestor == home
+                || !ancestor.starts_with(&home)
+                || !dirs.insert(ancestor.to_path_buf())
+            {
+                break;
+            }
+        }
+    }
+    for dir in dirs {
+        let Ok(meta) = std::fs::symlink_metadata(&dir) else {
+            continue;
+        };
+        if meta.is_dir() {
+            let mode = meta.permissions().mode() & 0o777;
+            if mode != 0o755 {
+                modes.insert(display_path(&dir), mode);
+            }
+        }
+    }
+    modes
 }
 
 #[cfg(not(unix))]

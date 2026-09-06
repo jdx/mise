@@ -86,6 +86,11 @@ struct Step {
     action: Action,
     from: String,
     to: String,
+    /// The permission bits the checkpoint recorded for the file (only
+    /// modes git cannot express, `0600` say), and for the directories
+    /// above it.
+    bits: Option<u32>,
+    dir_bits: Vec<(PathBuf, u32)>,
 }
 
 /// One checkpoint and the paths to take from it.
@@ -363,7 +368,7 @@ async fn execute(
 ) -> Result<()> {
     let repo = store.repo().expect("checked by the caller");
     let mut steps = plan(repo, &exec.targets, &live, exec.force)?;
-    print_plan(&steps, &exec)?;
+    print_plan(&steps, &exec, tracked)?;
     if exec.dry_run {
         return Ok(());
     }
@@ -444,7 +449,7 @@ async fn apply_steps(
         if changed {
             *steps = fresh.clone();
             miseprintln!("history: the working tree changed since the plan was shown:");
-            print_plan(steps, exec)?;
+            print_plan(steps, exec, tracked)?;
             if steps
                 .iter()
                 .any(|step| matches!(step.action, Action::Conflict(_)))
@@ -558,15 +563,8 @@ async fn apply_steps(
             }
             empty_dirs = inside.empty_dirs;
         }
-        let pending =
-            journal::begin_changes("history", &display_path(&step.path), [step.path.clone()])?;
-        match &step.action {
-            Action::Write { mode, oid } => write_object(repo, &step.path, mode, oid)?,
-            Action::Delete => remove(&step.path)?,
-            _ => unreachable!("filtered to mutating steps"),
-        }
-        journal::commit_changes(pending);
-        touched.push(step.path.clone());
+        // recorded before anything is touched: a write that fails halfway
+        // (the old file removed, the new one not written) is still undone
         let affected = display_path(&step.path);
         scope.with_operation(|op| {
             op.affected.push(affected.clone());
@@ -575,6 +573,15 @@ async fn apply_steps(
                 op.directories.extend(empty_dirs.iter().map(display_path));
             }
         });
+        let pending =
+            journal::begin_changes("history", &display_path(&step.path), [step.path.clone()])?;
+        match &step.action {
+            Action::Write { mode, oid } => write_object(repo, step, mode, oid)?,
+            Action::Delete => remove(&step.path)?,
+            _ => unreachable!("filtered to mutating steps"),
+        }
+        journal::commit_changes(pending);
+        touched.push(step.path.clone());
     }
     for dir in &exec.restore_dirs {
         if dir.is_dir() && !dir.is_symlink() {
@@ -613,13 +620,28 @@ fn directory_contents(
     steps: &[Step],
     tracked: &TrackedSet,
 ) -> Result<DirectoryContents> {
-    let known: BTreeSet<&Path> = steps.iter().map(|step| step.path.as_path()).collect();
+    // only a step that writes or deletes the file accounts for it; a file
+    // the plan skips (omitted, not covered) goes with the directory and is
+    // said out loud rather than silently removed
+    let known: BTreeSet<&Path> = steps
+        .iter()
+        .filter(|step| step.action.mutates())
+        .map(|step| step.path.as_path())
+        .collect();
+    let skipped: BTreeSet<&Path> = steps
+        .iter()
+        .filter(|step| !step.action.mutates())
+        .map(|step| step.path.as_path())
+        .collect();
     let mut out = DirectoryContents::default();
     for entry in walkdir::WalkDir::new(dir).min_depth(1).follow_links(false) {
         let entry = entry?;
-        let path = normalize(entry.path());
+        // the walked path itself: a link is the link, never its target
+        let path = entry.path().to_path_buf();
         if entry.file_type().is_dir() {
-            if std::fs::read_dir(entry.path())?.next().is_none() {
+            // an empty directory history would look at is recorded for undo;
+            // one under an exclusion or a nested repository is not
+            if std::fs::read_dir(entry.path())?.next().is_none() && tracked.would_capture(&path)? {
                 out.empty_dirs.push(path);
             }
             continue;
@@ -628,7 +650,7 @@ fn directory_contents(
             continue;
         }
         let regular = entry.file_type().is_file() || entry.file_type().is_symlink();
-        if regular && tracked.would_capture(&path)? {
+        if regular && !skipped.contains(path.as_path()) && tracked.would_capture(&path)? {
             out.appeared.push(path);
         } else {
             out.uncovered.push(path);
@@ -732,12 +754,27 @@ fn plan(repo: &HistoryRepo, targets: &[Target], live: &str, force: bool) -> Resu
                     current = Some(("040000".into(), String::new()));
                 }
                 let (action, from, to) = decide(checkpoint, &file, saved, current, force);
+                let bits = checkpoint
+                    .tree
+                    .modes
+                    .get(&tree_path_to_display(&file))
+                    .copied();
+                let dir_bits = abs
+                    .ancestors()
+                    .skip(1)
+                    .filter_map(|dir| {
+                        let bits = checkpoint.tree.modes.get(&display_path(dir))?;
+                        Some((dir.to_path_buf(), *bits))
+                    })
+                    .collect();
                 steps.push(Step {
                     path: abs,
                     tree_path: file,
                     action,
                     from,
                     to,
+                    bits,
+                    dir_bits,
                 });
             }
         }
@@ -876,7 +913,7 @@ fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
     PathState::Absent
 }
 
-fn print_plan(steps: &[Step], exec: &Execution) -> Result<()> {
+fn print_plan(steps: &[Step], exec: &Execution, tracked: &TrackedSet) -> Result<()> {
     let mut table = MiseTable::new(false, &["Path", "Action", "From", "To"]);
     for step in steps {
         if matches!(step.action, Action::Unchanged) {
@@ -889,6 +926,20 @@ fn print_plan(steps: &[Step], exec: &Execution) -> Result<()> {
             step.to.clone(),
         ]);
     }
+    for dir in &exec.restore_dirs {
+        if !dir.is_dir() || dir.is_symlink() {
+            table.add_row(vec![
+                display_path(dir),
+                "recreate".into(),
+                if dir.exists() || dir.is_symlink() {
+                    "something else".into()
+                } else {
+                    "missing".into()
+                },
+                "an empty directory".into(),
+            ]);
+        }
+    }
     let unchanged = steps
         .iter()
         .filter(|step| matches!(step.action, Action::Unchanged))
@@ -896,6 +947,29 @@ fn print_plan(steps: &[Step], exec: &Execution) -> Result<()> {
     table.print()?;
     if unchanged > 0 {
         miseprintln!("  {unchanged} path(s) already match");
+    }
+    // a directory being replaced or removed takes files no checkpoint holds
+    // with it: said before the plan is accepted, not after
+    for step in steps.iter().filter(|step| step.action.mutates()) {
+        let replaces_dir = step.path.is_dir()
+            && !step.path.is_symlink()
+            && !matches!(&step.action, Action::Write { mode, .. } if mode == "040000");
+        if !replaces_dir {
+            continue;
+        }
+        let inside = directory_contents(&step.path, steps, tracked)?;
+        if !inside.uncovered.is_empty() {
+            miseprintln!(
+                "  {} contains files history does not cover; they are removed with it and cannot be undone: {}",
+                display_path(&step.path),
+                inside
+                    .uncovered
+                    .iter()
+                    .map(display_path)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
     }
     if exec.dry_run {
         miseprintln!("history: dry run; nothing was changed");
@@ -977,10 +1051,16 @@ fn covered_paths(checkpoint: &Checkpoint) -> Vec<PathBuf> {
         .collect()
 }
 
-fn write_object(repo: &HistoryRepo, path: &Path, mode: &str, oid: &str) -> Result<()> {
+/// Puts the object a step names at its path. Permissions: a regular file
+/// that is replaced keeps the bits it has (only the executable bit follows
+/// the checkpoint), a file the checkpoint recorded a mode for gets exactly
+/// that mode, and the bytes never exist under a wider mode in between.
+fn write_object(repo: &HistoryRepo, step: &Step, mode: &str, oid: &str) -> Result<()> {
+    let path = &step.path;
     if let Some(parent) = path.parent() {
         file::create_dir_all(parent)?;
     }
+    restore_dir_modes(step);
     if mode == "040000" {
         // a directory replaces a file or link; its files are their own steps
         if path.is_symlink() || path.is_file() {
@@ -992,7 +1072,7 @@ fn write_object(repo: &HistoryRepo, path: &Path, mode: &str, oid: &str) -> Resul
     let bytes = repo.cat_object(oid)?;
     if path.is_dir() && !path.is_symlink() {
         std::fs::remove_dir_all(path)?;
-    } else if path.exists() || path.is_symlink() {
+    } else if path.is_symlink() || (mode == "120000" && path.exists()) {
         std::fs::remove_file(path)?;
     }
     if mode == "120000" {
@@ -1000,15 +1080,57 @@ fn write_object(repo: &HistoryRepo, path: &Path, mode: &str, oid: &str) -> Resul
         file::make_symlink(Path::new(&target), path)?;
         return Ok(());
     }
+    #[cfg(unix)]
+    let bits = {
+        use std::os::unix::fs::PermissionsExt;
+        let existing = std::fs::symlink_metadata(path)
+            .ok()
+            .filter(|meta| meta.is_file())
+            .map(|meta| meta.permissions().mode() & 0o777);
+        let bits = match (step.bits, existing) {
+            (Some(bits), _) => bits,
+            (None, Some(bits)) if mode == "100755" => bits | ((bits & 0o444) >> 2),
+            (None, Some(bits)) => bits & !0o111,
+            (None, None) if mode == "100755" => 0o755,
+            (None, None) => 0o644,
+        };
+        // a private file restored from deletion is created private, so the
+        // atomic write (which keeps an existing file's mode) never leaves
+        // its bytes readable to others, however briefly
+        if existing.is_none() && bits & 0o077 != 0o044 {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(bits & 0o666)
+                .open(path)?;
+        }
+        bits
+    };
+    // a regular file is replaced in place: the atomic write keeps its mode
     file::write_atomic(path, &bytes)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let perm = if mode == "100755" { 0o755 } else { 0o644 };
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(perm))?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(bits))?;
     }
     Ok(())
 }
+
+/// Puts back the recorded mode of the directories above a restored file
+/// (a `0700` directory recreated by `create_dir_all` would be `0755`).
+#[cfg(unix)]
+fn restore_dir_modes(step: &Step) {
+    use std::os::unix::fs::PermissionsExt;
+    for (dir, bits) in &step.dir_bits {
+        if dir.is_dir() && !dir.is_symlink() {
+            let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(*bits));
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn restore_dir_modes(_step: &Step) {}
 
 fn remove(path: &Path) -> Result<()> {
     if path.is_symlink() || path.is_file() {

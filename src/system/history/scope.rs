@@ -201,8 +201,16 @@ impl OperationScope {
         let previous = writer.before.take();
         let id = writer.store.reserve_id()?;
         writer.capture_before(id);
-        if let Some((old_id, _)) = previous {
-            writer.store.remove(old_id)?;
+        match (writer.before.is_some(), previous) {
+            // the recapture succeeded: the checkpoint it replaces can go
+            (true, Some((old_id, _))) => writer.store.remove(old_id)?,
+            // it did not: keep the earlier protective checkpoint, which is
+            // still what the pending record points at
+            (false, Some(previous)) => {
+                writer.operation_mut().before = Some(previous.1.clone());
+                writer.before = Some(previous);
+            }
+            (_, None) => {}
         }
         Ok(())
     }
@@ -484,6 +492,7 @@ impl Writer {
         // rejected request with proven unchanged files is not useful history.
         let noop = (operation.status == OperationStatus::Completed || !retain_empty_failure)
             && operation.journal.is_empty()
+            && operation.affected.is_empty()
             && entry.checkpoint.tree.snapshot.is_some()
             && self.before.is_some()
             && entry.checkpoint.changes.is_empty();

@@ -101,3 +101,36 @@ assert_succeed "mise bootstrap dotfiles undo --yes"
 assert "cat ~/.config/hypr/pack/p.conf" "p"
 assert "test -d ~/.config/hypr/pack/empty-sub && echo dir" "dir"
 assert_fail "test -e ~/.config/hypr/pack/cache"
+
+# private files come back private: 0600 stays 0600 across rollback and undo,
+# and a deleted 0600 file (in a 0700 directory) is restored with the modes
+# the checkpoint recorded, never readable to others in between
+perm_of="$PWD/perm_of"
+cat <<'EOF2' >"$perm_of"
+#!/usr/bin/env bash
+stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
+EOF2
+chmod +x "$perm_of"
+mkdir -p ~/.config/hypr/private
+chmod 700 ~/.config/hypr/private
+echo 'token=1' >~/.config/hypr/secret.conf
+echo 'k1' >~/.config/hypr/private/key
+chmod 600 ~/.config/hypr/secret.conf ~/.config/hypr/private/key
+assert_succeed "mise bootstrap dotfiles save"
+echo 'token=2' >~/.config/hypr/secret.conf
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/secret.conf --yes"
+assert "cat ~/.config/hypr/secret.conf" "token=1"
+assert "$perm_of ~/.config/hypr/secret.conf" "600"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.config/hypr/secret.conf" "token=2"
+assert "$perm_of ~/.config/hypr/secret.conf" "600"
+rm -r ~/.config/hypr/secret.conf ~/.config/hypr/private
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/secret.conf ~/.config/hypr/private/key --yes"
+assert "cat ~/.config/hypr/secret.conf" "token=2"
+assert "$perm_of ~/.config/hypr/secret.conf" "600"
+assert "$perm_of ~/.config/hypr/private/key" "600"
+assert "$perm_of ~/.config/hypr/private" "700"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert_fail "test -e ~/.config/hypr/secret.conf"

@@ -301,9 +301,9 @@ impl TrackedSet {
     /// Whether a capture of this set would include `path`: under an entry,
     /// not excluded, not inside mise's own directories or a `.git`.
     pub(crate) fn would_capture(&self, path: &Path) -> Result<bool> {
-        if self.entry_for(path).is_none() {
+        let Some(owner) = self.entry_for(path) else {
             return Ok(false);
-        }
+        };
         if hard_exclusions().iter().any(|dir| path.starts_with(dir)) {
             return Ok(false);
         }
@@ -311,6 +311,23 @@ impl TrackedSet {
             .components()
             .any(|component| component.as_os_str() == ".git")
         {
+            return Ok(false);
+        }
+        // what the walker omits: special files, files over the size limit
+        if let Ok(meta) = std::fs::symlink_metadata(path)
+            && !meta.is_dir()
+            && classify_file(&meta).is_err()
+        {
+            return Ok(false);
+        }
+        // a nested repository below the entry is a gitlink: nothing under
+        // it is captured
+        let nested = path
+            .ancestors()
+            .skip(1)
+            .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
+            .any(|ancestor| ancestor.join(".git").exists());
+        if nested {
             return Ok(false);
         }
         Ok(!self.exclude_set()?.is_match(path))
