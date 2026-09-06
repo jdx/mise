@@ -695,6 +695,35 @@ fn directory_contents(
 
 /// What is on disk at `path` right now, as the (mode, object id) the
 /// working tree sample would hold for it.
+/// The permission bits git implies for a file mode; `None` for anything
+/// that is not a regular file.
+fn default_bits(git_mode: &str) -> Option<u32> {
+    match git_mode {
+        "100644" => Some(0o644),
+        "100755" => Some(0o755),
+        _ => None,
+    }
+}
+
+/// The permission bits of a regular file when they differ from `default`
+/// (the bits a checkpoint records), `None` when they are the default or
+/// the path is not a regular file.
+#[cfg(unix)]
+fn live_bits(path: &Path, default: u32) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    let bits = meta.permissions().mode() & 0o777;
+    (bits != default).then_some(bits)
+}
+
+#[cfg(not(unix))]
+fn live_bits(_path: &Path, _default: u32) -> Option<u32> {
+    None
+}
+
 fn current_object(repo: &HistoryRepo, path: &Path) -> Result<Option<(String, String)>> {
     let Ok(meta) = std::fs::symlink_metadata(path) else {
         return Ok(None);
@@ -794,20 +823,35 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                 // it is not touched
                 let present_uncaptured = current.is_none()
                     && std::fs::symlink_metadata(&abs).is_ok_and(|meta| !meta.is_dir());
-                let (action, from, to) = if present_uncaptured {
+                let (mut action, mut from, mut to) = if present_uncaptured {
                     (
                         Action::Skip("present but not captured (excluded or omitted)".into()),
                         "present".into(),
                         "?".into(),
                     )
                 } else {
-                    decide(checkpoint, &file, saved, current, force)
+                    decide(checkpoint, &file, saved.clone(), current, force)
                 };
-                let bits = checkpoint
+                let mut bits = checkpoint
                     .tree
                     .modes
                     .get(&tree_path_to_display(&file))
                     .copied();
+                // the same bytes under other permissions: a change too
+                if matches!(action, Action::Unchanged)
+                    && let Some((smode, soid)) = &saved
+                    && let Some(default) = default_bits(smode)
+                    && live_bits(&abs, default) != bits
+                {
+                    let recorded = bits.unwrap_or(default);
+                    from = format!("mode {:o}", live_bits(&abs, default).unwrap_or(default));
+                    to = format!("mode {recorded:o}");
+                    action = Action::Write {
+                        mode: smode.clone(),
+                        oid: soid.clone(),
+                    };
+                    bits = Some(recorded);
+                }
                 let dir_bits = abs
                     .ancestors()
                     .skip(1)
@@ -1106,7 +1150,21 @@ fn newest_differing(
         }
         let saved = repo.object_at(snapshot, &tree_path)?;
         if saved == current {
-            continue;
+            // the same bytes under other permissions differ too
+            let recorded = entry
+                .checkpoint
+                .tree
+                .modes
+                .get(&tree_path_to_display(&tree_path))
+                .copied();
+            let differs = saved
+                .as_ref()
+                .and_then(|(mode, _)| default_bits(mode))
+                .is_some_and(|default| live_bits(&normalize_target(path), default) != recorded);
+            if !differs {
+                continue;
+            }
+            return Ok(Some(entry.clone()));
         }
         // held content that differs, or a known absence while the path now
         // exists, are both versions to return to
@@ -1277,7 +1335,12 @@ fn remove(path: &Path) -> Result<()> {
 fn run_reload(reload: &IndexMap<String, String>, touched: &[PathBuf]) {
     let mut commands: Vec<&String> = vec![];
     for (glob, command) in reload {
-        let expanded = file::replace_path(Path::new(glob));
+        // touched paths are normalized (a symlinked `$HOME` resolved), so
+        // the glob's home is too
+        let expanded = match glob.strip_prefix("~/") {
+            Some(rest) => super::tracked::normalize(&crate::dirs::HOME).join(rest),
+            None => file::replace_path(Path::new(glob)),
+        };
         let Ok(pattern) = globset::Glob::new(&expanded.to_string_lossy()) else {
             warn!("history: invalid [history.reload] glob {glob:?}");
             continue;

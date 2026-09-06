@@ -111,6 +111,18 @@ cat <<'EOF2' >"$perm_of"
 stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
 EOF2
 chmod +x "$perm_of"
+
+# a permission change alone rolls back, in both directions
+echo 'mode=1' >~/.config/hypr/mode.conf
+assert_succeed "mise bootstrap dotfiles save"
+chmod 600 ~/.config/hypr/mode.conf
+assert_succeed "mise bootstrap dotfiles save"
+chmod 644 ~/.config/hypr/mode.conf
+assert_contains "mise bootstrap dotfiles rollback ~/.config/hypr/mode.conf --dry-run 2>&1" "mode 600"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/mode.conf --yes"
+assert "$perm_of ~/.config/hypr/mode.conf" "600"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/mode.conf --yes"
+assert "$perm_of ~/.config/hypr/mode.conf" "644"
 mkdir -p ~/.config/hypr/private
 chmod 700 ~/.config/hypr/private
 echo 'token=1' >~/.config/hypr/secret.conf
