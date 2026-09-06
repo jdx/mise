@@ -1488,7 +1488,12 @@ fn display_task_help(task: &Task) -> Result<()> {
 
 fn render_usage_help(spec: &usage::Spec, args: &[String]) -> String {
     let cmd = usage_command_for_args(spec, args);
-    usage::docs::cli::render_help(spec, cmd, true)
+    let style = if console::colors_enabled() {
+        usage::docs::cli::Style::COLOURED
+    } else {
+        usage::docs::cli::Style::PLAIN
+    };
+    usage::docs::cli::render_help_styled(spec, cmd, true, style)
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

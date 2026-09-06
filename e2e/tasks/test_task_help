@@ -16,6 +16,15 @@ Arguments:
 Flags:
   -h, --help  Print help"
 
+# Task help follows mise's stdout color policy, including explicit overrides.
+plain_help=$(mise run atask --help)
+[[ $plain_help != *$'\e['* ]] || fail "redirected task help contains ANSI escapes"
+colored_help=$(CLICOLOR_FORCE=1 mise run atask --help)
+[[ $colored_help == *$'\e['* ]] || fail "forced task help has no ANSI styling"
+assert "NO_COLOR=1 CLICOLOR_FORCE=1 mise run atask --help" "$plain_help"
+assert "MISE_COLOR=0 CLICOLOR_FORCE=1 mise run atask --help" "$plain_help"
+assert "CLICOLOR=0 mise run atask --help" "$plain_help"
+
 cat <<'EOF' >mise.toml
 [tasks.greet]
 usage = '''
