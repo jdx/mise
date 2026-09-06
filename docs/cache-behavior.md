@@ -88,7 +88,10 @@ mise cache clear --task build
 ```
 
 See [task caching](/tasks/caching.html) for configuration, cache keys, and rerun behavior.
-A full `mise cache clear` also clears task caches known to the current configuration.
+`--task` resolves task names in the current configuration and removes entries whose ownership
+can be verified. It skips legacy entries without verifiable task ownership. A full
+`mise cache clear` removes all entries under the cache roots, including other projects
+and those legacy entries, as well as the environment cache.
 
 ## Cache auto-pruning
 

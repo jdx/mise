@@ -4,12 +4,12 @@ mise separates configuration, installed tools, disposable metadata, and machine-
 Use the table to locate files, then see the sections below for what is safe to share or remove.
 These are defaults when no `MISE_*` or `XDG_*` directory overrides are set.
 
-| Purpose                     | Linux                 | macOS                   | Windows                           | Override          |
-| --------------------------- | --------------------- | ----------------------- | --------------------------------- | ----------------- |
-| Global configuration        | `~/.config/mise`      | `~/.config/mise`        | `%USERPROFILE%\.config\mise`      | `MISE_CONFIG_DIR` |
-| Cache                       | `~/.cache/mise`       | `~/Library/Caches/mise` | `%TEMP%\mise`                     | `MISE_CACHE_DIR`  |
-| Local state                 | `~/.local/state/mise` | `~/.local/state/mise`   | `%USERPROFILE%\.local\state\mise` | `MISE_STATE_DIR`  |
-| Installed tools and plugins | `~/.local/share/mise` | `~/.local/share/mise`   | `%LOCALAPPDATA%\mise`             | `MISE_DATA_DIR`   |
+| Purpose                     | Linux                 | macOS                   | Windows                           | Override                                                 |
+| --------------------------- | --------------------- | ----------------------- | --------------------------------- | -------------------------------------------------------- |
+| Global configuration        | `~/.config/mise`      | `~/.config/mise`        | `%USERPROFILE%\.config\mise`      | `MISE_CONFIG_DIR`; otherwise `XDG_CONFIG_HOME` + `/mise` |
+| Cache                       | `~/.cache/mise`       | `~/Library/Caches/mise` | `%TEMP%\mise`                     | `MISE_CACHE_DIR`; otherwise `XDG_CACHE_HOME` + `/mise`   |
+| Local state                 | `~/.local/state/mise` | `~/.local/state/mise`   | `%USERPROFILE%\.local\state\mise` | `MISE_STATE_DIR`; otherwise `XDG_STATE_HOME` + `/mise`   |
+| Installed tools and plugins | `~/.local/share/mise` | `~/.local/share/mise`   | `%LOCALAPPDATA%\mise`             | `MISE_DATA_DIR`; otherwise `XDG_DATA_HOME` + `/mise`     |
 
 `mise cache path` prints the cache path in use. `mise doctor` reports the resolved mise
 directories. Set directory overrides in the environment that starts mise, and keep them

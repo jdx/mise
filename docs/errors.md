@@ -25,10 +25,11 @@ run [`mise trust`](/cli/trust.html) in its directory if you accept its contents.
 `mise trust --show` displays the current trust status without changing it.
 
 In normal mode, simple tool-version/task configuration can be loaded without trust, and
-commands such as `mise run`, `mise install`, and `mise exec` implicitly trust their active
-configuration. Environment directives, templates, tool options, ignored configurations, and
-[paranoid mode](/paranoid.html) can change what requires explicit approval. Do not assume that
-all files are blocked until you have run `mise trust`.
+outside CI, commands such as `mise run`, `mise install`, and `mise exec` implicitly trust
+their active configuration. Environment directives, templates, tool options, and
+[paranoid mode](/paranoid.html) can require explicit approval. Paths listed in
+[`ignored_config_paths`](/configuration/settings.html#ignored_config_paths) are never loaded;
+`mise trust` does not override that setting.
 
 Use [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths) only for
 paths whose configuration you intend to trust, including future projects below those paths.

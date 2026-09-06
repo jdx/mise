@@ -203,6 +203,9 @@ out of WSL entirely, disable Windows-PATH interop in `/etc/wsl.conf`:
 appendWindowsPath = false
 ```
 
+Save work in WSL, then run `wsl --shutdown` from PowerShell to stop all running WSL
+distributions. Reopen WSL before checking the updated `PATH`.
+
 ### `shell = "bash -c"` task fails with `command not found` from PowerShell
 
 If a task pinned to `shell = "bash -c"` works from Git Bash but fails with
