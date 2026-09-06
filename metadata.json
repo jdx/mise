@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1W3FQNF69PVGP9B356MYKX7",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-auto-fixes",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/cli/bootstrap.md",
+    "docs/cli/bootstrap/dotfiles.md",
+    "docs/cli/bootstrap/dotfiles/history.md",
+    "docs/cli/bootstrap/dotfiles/origin.md",
+    "docs/cli/bootstrap/services.md",
+    "docs/cli/index.md",
+    "docs/public/llms.txt",
+    "e2e/cli/test_dotfiles_bootstrap_from_git",
+    "e2e/cli/test_dotfiles_experimental_stack",
+    "man/man1/mise.1",
+    "mise.usage.kdl",
+    "src/cli/dotfiles/history_status.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
