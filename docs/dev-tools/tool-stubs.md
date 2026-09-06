@@ -290,7 +290,7 @@ mise generate tool-stub ./bin/node --version 24
 mise generate tool-stub ./bin/node --lock
 ```
 
-This resolves the version, fetches URLs for all common platforms (linux-x64, linux-arm64, macos-x64, macos-arm64, windows-x64), and writes them into a `[lock]` section in the stub.
+By default, this resolves the version and fetches URLs for all common platforms (linux-x64, linux-x64-musl, linux-arm64, linux-arm64-musl, macos-x64, macos-arm64, and windows-x64). If `lockfile_platforms` is configured, it uses those platforms plus the current platform instead. The generated metadata is written into a `[lock]` section in the stub.
 
 #### Bumping a Locked Version
 
