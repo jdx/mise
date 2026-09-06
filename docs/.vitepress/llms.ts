@@ -84,7 +84,7 @@ function description(file: string): string | undefined {
       continue;
     }
     // Argument descriptions after a generated synopsis are not a page summary.
-    if (line === "## Usage" || line.startsWith("- **Usage:**")) break;
+    if (md.includes("**Author:**") && line.startsWith("## ")) break;
     if (paragraph.length === 0) {
       // Skip anything before the first prose block.
       if (
