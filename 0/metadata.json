@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1WEE14VW2P8T2WXQ2HN7N3F",
+  "session_id": "01a07177-9855-71a2-89cd-4a9a37cdbfcb",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T22:46:47.142779Z",
+  "branch": "codex/dotfiles-restack-7",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "6e0e543fa7b0",
+  "checkpoint_transcript_start": 10253,
+  "transcript_lines_at_start": 10253,
+  "compact_transcript_start": 1338,
+  "token_usage": {
+    "input_tokens": 83841,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1748864,
+    "output_tokens": 5268,
+    "api_call_count": 22
+  },
+  "session_metrics": {
+    "turn_count": 38
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
