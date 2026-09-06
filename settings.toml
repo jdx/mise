@@ -2490,7 +2490,7 @@ It can be useful on distributions whose mise package updates lag behind registry
 
 The downloaded mise registry is refreshed only for commands that allow network access and is cached
 according to [`registry_cache_ttl`](#registry_cache_ttl). Fast and offline commands never refresh it.
-The downloaded aqua registry uses [`aqua.registry_cache_ttl`](#aqua-registry_cache_ttl).
+The downloaded aqua registry uses [`aqua.registry_cache_ttl`](/configuration/settings.html#aqua.registry_cache_ttl).
 """
 env = "MISE_REGISTRY_FLOATING"
 type = "Bool"
@@ -3103,7 +3103,7 @@ type = "String"
 description = "[experimental] Namespace sent to the remote build cache."
 docs = """
 Opaque repository or organization namespace used to isolate remote build-cache entries. This
-setting is required when [`task.cache.remote_url`](#task-cache-remote-url) is configured.
+setting is required when [`task.cache.remote_url`](/configuration/settings.html#task.cache.remote_url) is configured.
 """
 env = "MISE_TASK_CACHE_REMOTE_NAMESPACE"
 optional = true
@@ -3149,7 +3149,7 @@ type = "Path"
 description = "[experimental] Base URL for the remote build-cache service."
 docs = """
 Enable the versioned HTTP remote build-cache protocol at this base URL. Remote access also requires
-[`task.cache.remote_namespace`](#task-cache-remote-namespace). Leave unset to use only local caches.
+[`task.cache.remote_namespace`](/configuration/settings.html#task.cache.remote_namespace). Leave unset to use only local caches.
 """
 env = "MISE_TASK_CACHE_REMOTE_URL"
 optional = true
@@ -3188,7 +3188,7 @@ description = "[experimental] Maximum age of task output cache entries since the
 docs = """
 Remove task output cache entries that have not been accessed within this duration after a new entry
 is stored. This limit applies only to the task output cache and is independent of
-[`cache_prune_age`](#cache_prune_age). Set to `0s` or leave unset to disable the age limit.
+[`cache_prune_age`](/configuration/settings.html#cache_prune_age). Set to `0s` or leave unset to disable the age limit.
 """
 env = "MISE_TASK_CACHE_MAX_AGE"
 optional = true
@@ -3601,7 +3601,7 @@ default = true
 description = "Schedule the version `mise upgrade` replaced for pruning once the new one has installed."
 docs = """
 `mise upgrade` schedules the version it upgraded away from for removal after
-[`upgrade.prune_after`](#upgrade-prune-after). The install directory stays in place during that
+[`upgrade.prune_after`](/configuration/settings.html#upgrade.prune_after). The install directory stays in place during that
 grace period so long-running processes can continue loading files from it. Set this to `false` when
 something outside of mise resolves through that path permanently — a virtualenv built from a
 mise-managed interpreter, for example — and the old version is left in place without a scheduled

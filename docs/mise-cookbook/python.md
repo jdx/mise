@@ -120,7 +120,7 @@ _.python.venv = { path = ".venv" }
 
 ### Syncing python versions installed by mise and uv
 
-Use [`mise sync python --uv`](/cli/sync/python.html#uv) to make existing Python
+Use [`mise sync python --uv`](/cli/sync/python.html) to make existing Python
 installations available across mise and uv. This shares installed runtimes; it
 does not update `.python-version`, select the project version, or sync packages.
 Use `uv sync` for project dependencies.
