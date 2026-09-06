@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1VPS1JYJJHTZ4FKF523GA8J",
+  "session_id": "01a0775e-3c40-7832-be78-fd18d1122041",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T15:53:17.280365Z",
+  "branch": "codex/docs-security-guides",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/github/sigstore.rs",
+    "src/http.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "1aeecd3a49a5",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 102844,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3494784,
+    "output_tokens": 6743,
+    "api_call_count": 52
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T15:53:17.185609Z",
+    "agent_lines": 87,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 87,
+    "total_lines_changed": 87,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
