@@ -579,6 +579,12 @@ pub(crate) async fn apply(
     dry_run: bool,
     yes: bool,
 ) -> Result<Option<String>> {
+    if requests
+        .iter()
+        .any(|request| request.builtin.as_deref() == Some("history-watch"))
+    {
+        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
+    }
     if requests.is_empty() {
         return Ok(None);
     }
