@@ -76,15 +76,19 @@ impl InstallInto {
         // locks would not overlap. Keep the lock through confirmation and the
         // backend replacement so no cooperating writer can populate the path
         // between the occupancy check and deletion.
+        let lock_path = install_path.clone();
         let lock_display_path = install_path.clone();
-        let _destination_lock = crate::lock_file::LockFile::new(&install_path)
-            .with_callback(move |_| {
-                debug!(
-                    "waiting for install-into destination lock on {}",
-                    display_path(&lock_display_path)
-                );
-            })
-            .lock()?;
+        let _destination_lock = tokio::task::spawn_blocking(move || {
+            crate::lock_file::LockFile::new(&lock_path)
+                .with_callback(move |_| {
+                    debug!(
+                        "waiting for install-into destination lock on {}",
+                        display_path(&lock_display_path)
+                    );
+                })
+                .lock()
+        })
+        .await??;
         // install-into force-reinstalls, which uninstalls (rm -rf) whatever
         // already exists at the install path. Check immediately before the
         // install performs that deletion (rather than at the start of `run`) so

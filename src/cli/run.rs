@@ -202,7 +202,9 @@ pub(crate) struct Run {
     pub allow_env: Vec<String>,
 
     /// Allow network to specific host (implies --deny-net for everything else)
-    /// Unsupported on Linux; see the sandboxing guide for macOS limitations.
+    /// Per-host filtering is unsupported on Linux and returns an error.
+    /// See the sandboxing guide for current macOS host-filter limitations.
+    /// On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
     #[usage(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
