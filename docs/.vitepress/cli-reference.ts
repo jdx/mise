@@ -178,6 +178,22 @@ export function commandIndex(root: Command): string {
   return `## Subcommands\n\nChoose a command family below. Its page lists the available subcommands.\n\n${sections.join("\n\n")}`;
 }
 
+export function replaceCommandIndex(page: string, index: string): string {
+  const heading = "## Subcommands";
+  const start = page.search(/^## Subcommands$/m);
+  if (start === -1)
+    throw new Error("Missing Subcommands section in generated CLI index");
+  const bodyStart = start + heading.length;
+  const nextSection = page.slice(bodyStart).search(/^## /m);
+  const suffix = nextSection === -1 ? "" : page.slice(bodyStart + nextSection);
+  return (
+    page.slice(0, start) +
+    index.trimEnd() +
+    "\n" +
+    (suffix ? "\n" + suffix : "")
+  );
+}
+
 function sourcePath(url: string): string {
   const path = url.split("#")[0];
   return resolve(
@@ -248,10 +264,7 @@ function main() {
         "**Usage:** `mise [FLAGS] [COMMAND | TASK] [ARGS]…`",
       );
       page = page.replace(/^- \*\*Usage:\*\*[^\n]+\n/m, "");
-      page =
-        page.slice(0, page.indexOf("## Subcommands")) +
-        commandIndex(root) +
-        "\n";
+      page = replaceCommandIndex(page, commandIndex(root));
       page = page.replace(
         "## Arguments",
         "Use `mise COMMAND --help` for the help shipped with your installed version. Put mise\nflags before a task name; arguments after the name are passed to that task.\nSquare brackets mark optional input, angle brackets mark required input, and `…`\nmeans the argument can repeat. Do not type those notation characters.\n\n## Arguments",
