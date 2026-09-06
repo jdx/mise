@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles paths [-J --json] [--preview <PATH>]`
 - **Effect:** read-only
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Source code:** [`src/cli/dotfiles/paths.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/paths.rs)
 
 Show what history tracks and under which policies
 

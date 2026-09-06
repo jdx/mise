@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles save [FLAGS] [PATH]…`
 - **Effect:** modifies state
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Source code:** [`src/cli/dotfiles/save.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/save.rs)
 
 Save a checkpoint of the tracked files now
 

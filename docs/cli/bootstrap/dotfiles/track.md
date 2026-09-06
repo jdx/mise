@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles track [FLAGS] <PATH>…`
 - **Effect:** modifies state
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Source code:** [`src/cli/dotfiles/track.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/track.rs)
 
 Track a file or directory where it is
 

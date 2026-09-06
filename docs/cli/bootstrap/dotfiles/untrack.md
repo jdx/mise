@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles untrack <PATH>…`
 - **Effect:** modifies state
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Source code:** [`src/cli/dotfiles/untrack.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/untrack.rs)
 
 Stop tracking a file or directory
 

@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles history describe <REF> <TEXT>`
 - **Effect:** modifies state
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Source code:** [`src/cli/dotfiles/history/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/history/mod.rs)
 
 Set the description of a checkpoint
 
