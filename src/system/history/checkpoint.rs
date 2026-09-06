@@ -353,6 +353,18 @@ impl Store {
             }
             _ => Changes::default(),
         };
+        // the same bytes under other permissions is a change the tree diff
+        // does not show: a path-scoped `latest` and `--path` must see it
+        if let Some((previous_checkpoint, _)) = &previous_tree {
+            let previous_modes = &previous_checkpoint.tree.modes;
+            let mode_only: BTreeSet<&String> = modes
+                .keys()
+                .chain(previous_modes.keys())
+                .filter(|path| modes.get(*path) != previous_modes.get(*path))
+                .filter(|path| !changes.touches(path))
+                .collect();
+            changes.modified.extend(mode_only.into_iter().cloned());
+        }
         // a manual-save entry carried forward holds its saved version by
         // definition: a difference against a protective capture of its live
         // contents is not a change this checkpoint made

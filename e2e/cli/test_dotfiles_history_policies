@@ -139,10 +139,14 @@ chmod 600 "$MISE_CONFIG_DIR/perm.toml"
 assert_succeed "mise bootstrap dotfiles save"
 assert "$count" "$((n + 1))"
 assert "$mode_of perm.toml" "384"
+# a permission-only checkpoint is one the path's history lists
+assert "mise bootstrap dotfiles history --json --path ~/.config/mise/perm.toml | jq length" "2"
+assert_contains "mise bootstrap dotfiles history --path ~/.config/mise/perm.toml" "perm.toml"
 chmod 644 "$MISE_CONFIG_DIR/perm.toml"
 assert_succeed "mise bootstrap dotfiles save"
 assert "$count" "$((n + 2))"
 assert "$mode_of perm.toml" ""
+assert "mise bootstrap dotfiles history --json --path ~/.config/mise/perm.toml | jq length" "3"
 
 # a template's rendered output is tracked locally and never shared
 assert "mise bootstrap dotfiles history show latest --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.gitconfig\") | \"\\(.mode) \\(.share) \\(.backup)\"'" "template false false"
