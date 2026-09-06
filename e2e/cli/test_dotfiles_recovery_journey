@@ -3,6 +3,7 @@
 # pull, undo, and recovery on a third machine using a separate recovery key.
 # shellcheck disable=SC2016
 require_cmd git
+export MISE_EXPERIMENTAL=1
 
 origin="$PWD/origin.git"
 git init -q --bare -b main "$origin"
@@ -100,4 +101,8 @@ mode=$(stat -c %a "$C/.config/journey/monitor" 2>/dev/null || stat -f %Lp "$C/.c
 assert "echo $mode" '600'
 assert_fail "test -e $C/.config/mise/age.txt"
 # The recovery-only file never appeared on the shared setup branch.
-assert_fail "git --git-dir=$origin cat-file -e main:tracked/home/.config/journey/monitor"
+shared_commits=$(git --git-dir="$origin" rev-list main)
+assert_succeed "test -n '$shared_commits'"
+for shared_commit in $shared_commits; do
+  assert_fail "git --git-dir=$origin cat-file -e $shared_commit:tracked/home/.config/journey/monitor"
+done
