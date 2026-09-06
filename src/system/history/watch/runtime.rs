@@ -229,6 +229,9 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 let mut config_changed = false;
                 let mut rescan = false;
                 let mut pending_appeared = false;
+                // a watched directory itself changed (replaced, recreated,
+                // renamed): its watch may be dead
+                let mut anchor_changed = false;
                 let mut throttled_changed = false;
                 match result {
                     Ok(events) => {
@@ -252,6 +255,9 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                                 // the way to it means the plan can move closer
                                 if state.plan.pending.iter().any(|pending| pending.starts_with(&path)) {
                                     pending_appeared = true;
+                                }
+                                if installed.iter().any(|anchor| anchor.path == path) {
+                                    anchor_changed = true;
                                 }
                                 // a link that appeared or changed may point
                                 // somewhere new: the derived entries follow
@@ -321,11 +327,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                             // throttling while something still declares it;
                             // one nothing declares any more leaves like any
                             // other
-                            capture.schedule.retain(|path| {
-                                state.relevant(path)
-                                    || (!path.exists() && state.may_cover_missing(path))
-                            });
-                            capture.persist_schedule();
+                            prune_schedule(&mut capture, &state);
                             // the configuration that changed is what this
                             // capture is for: never held back
                             let config_dir = state.config_dir.clone();
@@ -362,13 +364,31 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         ),
                     }
                 } else if rescan {
+                    // the backend lost track: every watch is made anew
+                    if let Ok(true) = state.reload().await {
+                        installed = match reinstall(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
+                            Ok(installed) => installed,
+                            Err(err) => {
+                                stop_after_install_failure(&mut capture, &state.tracked, &err).await;
+                                debouncer.stop();
+                                return Ok(1);
+                            }
+                        };
+                        prune_schedule(&mut capture, &state);
+                    }
                     capture.reconcile(&state.tracked, "rescan");
                     capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
                     capture.write_health();
-                } else if pending_appeared
+                } else if (pending_appeared || anchor_changed)
                     && let Ok(true) = state.reload().await
                 {
-                    installed = match install(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
+                    // a replaced directory keeps its path but not its
+                    // watch: an anchor that changed is watched anew
+                    installed = match if anchor_changed {
+                        reinstall(&mut debouncer, &installed, &state.plan.anchors, &mut capture)
+                    } else {
+                        install(&mut debouncer, &installed, &state.plan.anchors, &mut capture)
+                    } {
                         Ok(installed) => installed,
                         Err(err) => {
                             stop_after_install_failure(&mut capture, &state.tracked, &err).await;
@@ -376,6 +396,9 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                             return Ok(1);
                         }
                     };
+                    // what the new set no longer covers (a link's old
+                    // target, say) leaves the schedule
+                    prune_schedule(&mut capture, &state);
                     capture.out.emit(
                         "replan",
                         &format!("a tracked path appeared; watching {} anchor(s)", installed.len()),
@@ -431,10 +454,12 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 if let Some(every) = intervals.reconcile {
                     next_reconcile = Some(tokio::time::Instant::now() + every);
                 }
-                if state.plan.pending.iter().any(|path| path.exists())
-                    && let Ok(true) = state.reload().await
-                {
-                    installed = match install(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
+                // the tracked set and every watch are made anew: a pending
+                // path that appeared is watched, a replaced directory's dead
+                // watch is replaced, and what the set no longer covers
+                // leaves the schedule
+                if let Ok(true) = state.reload().await {
+                    installed = match reinstall(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
                         Ok(installed) => installed,
                         Err(err) => {
                             stop_after_install_failure(&mut capture, &state.tracked, &err).await;
@@ -442,6 +467,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                             return Ok(1);
                         }
                     };
+                    prune_schedule(&mut capture, &state);
                 }
                 capture.reconcile(&state.tracked, "reconcile");
                 capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
@@ -709,6 +735,35 @@ fn build_plan(tracked: &TrackedSet) -> WatchPlan {
 
 /// Installs the plan's anchors, removing the ones no longer wanted.
 /// Returns the anchors now installed.
+/// Drops from the schedule what the tracked set no longer covers (excluded,
+/// untracked, switched to manual saving, a link's old target): no capture
+/// from now on holds it or carries its old version forward. A path that is
+/// missing right now keeps its throttling while something still declares
+/// it.
+fn prune_schedule(capture: &mut Capture, state: &State) {
+    capture
+        .schedule
+        .retain(|path| state.relevant(path) || (!path.exists() && state.may_cover_missing(path)));
+    capture.persist_schedule();
+}
+
+/// Every watch anew: the one on a directory that was replaced or recreated
+/// keeps its path but is dead, and only a fresh watch on the new inode
+/// delivers events again.
+fn reinstall(
+    debouncer: &mut Debouncer<RecommendedWatcher, NoCache>,
+    installed: &[Anchor],
+    wanted: &[Anchor],
+    capture: &mut Capture,
+) -> Result<Vec<Anchor>> {
+    for anchor in installed {
+        if let Err(err) = debouncer.unwatch(&anchor.path) {
+            debug!("history watch: unwatch {}: {err}", anchor.path.display());
+        }
+    }
+    install(debouncer, &[], wanted, capture)
+}
+
 fn install(
     debouncer: &mut Debouncer<RecommendedWatcher, NoCache>,
     installed: &[Anchor],
