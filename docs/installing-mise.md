@@ -71,7 +71,7 @@ curl -fsSL https://mise.run | sh
 To choose another executable path (its parent must be writable by your user):
 
 ```sh
-curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
+curl -fsSL https://mise.run | MISE_INSTALL_PATH="$HOME/bin/mise" sh
 ```
 
 #### Shell-specific installation + activation
@@ -433,9 +433,10 @@ mise doctor
 ```
 
 For the default `mise.run` installation before activation, use
-`~/.local/bin/mise --version`. If the version is unexpected, check which copy is
-running with `command -v mise` on Unix or `Get-Command mise` in PowerShell.
-Having two installation methods on PATH can leave an older binary in use.
+`~/.local/bin/mise --version` and `~/.local/bin/mise doctor`. If the version is
+unexpected, check which copy is running with `command -v mise` on Unix or
+`Get-Command mise` in PowerShell. Having two installation methods on PATH can
+leave an older binary in use.
 
 ## Shells
 
@@ -446,20 +447,24 @@ to the startup file you actually use; avoid appending duplicates.
 ### Bash
 
 ```sh
-echo 'eval "$(mise activate bash)"' >> ~/.bashrc
+activation='eval "$(mise activate bash)"'
+grep -qxF "$activation" ~/.bashrc 2>/dev/null || printf '%s\n' "$activation" >> ~/.bashrc
 ```
 
 ### Zsh
 
 ```sh
-echo 'eval "$(mise activate zsh)"' >> "${ZDOTDIR-$HOME}/.zshrc"
+zshrc="${ZDOTDIR:-$HOME}/.zshrc"
+activation='eval "$(mise activate zsh)"'
+grep -qxF "$activation" "$zshrc" 2>/dev/null || printf '%s\n' "$activation" >> "$zshrc"
 ```
 
 ### Fish
 
 ```sh
 mkdir -p ~/.config/fish
-echo 'mise activate fish | source' >> ~/.config/fish/config.fish
+activation='mise activate fish | source'
+grep -qxF "$activation" ~/.config/fish/config.fish 2>/dev/null || printf '%s\n' "$activation" >> ~/.config/fish/config.fish
 ```
 
 ::: tip
@@ -581,9 +586,9 @@ mkdir -p ~/.zfunc
 mise completion zsh > ~/.zfunc/_mise
 
 # Add these to .zshrc, with fpath before your existing compinit call:
-# fpath=(~/.zfunc $fpath)
-# autoload -Uz compinit
-# compinit
+fpath=(~/.zfunc $fpath)
+autoload -Uz compinit
+compinit
 ```
 
 ```sh [fish]
