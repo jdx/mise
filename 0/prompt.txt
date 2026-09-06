@@ -1,5 +1,1 @@
-why is lint failing on main?
-
----
-
 fix it, commit to origin/main directly
