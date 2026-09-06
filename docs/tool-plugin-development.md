@@ -1,337 +1,240 @@
 # Tool Plugin Development
 
-::: tip
-The [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
-:::
+A tool plugin manages one versioned tool using Lua lifecycle hooks. Use a
+[backend plugin](/backend-plugin-development.html) for an integration that manages several
+tools, or an [environment plugin](/env-plugin-development.html) for variables without an
+installation. Check the built-in [backends](/dev-tools/backends/) before writing an installer.
 
-Tool plugins use a hook-based architecture to manage individual tools. They are compatible with the standard vfox ecosystem and are perfect for tools that need complex installation logic, environment configuration, or legacy file parsing.
+The [tool plugin template](https://github.com/jdx/mise-tool-plugin-template) supplies a
+starting layout and development tooling. mise embeds Lua 5.1; its supported vfox hooks
+and extensions are described here. Sharing a plugin with upstream vfox requires testing
+there as well, particularly when using mise-specific modules or metadata.
 
 ## What are Tool Plugins?
 
-Tool plugins use traditional hook functions to manage a single tool. They provide:
+Tool plugins can download archives, compile sources, return environment entries, and parse
+idiomatic version files. The Lua runtime runs on Windows, macOS, and Linux; each plugin
+must implement the artifact selection and external commands needed for those targets.
 
-- **Standard vfox Compatibility**: Works with both mise and vfox
-- **Complex Installation Logic**: Handles source compilation, custom builds, and complex setups
-- **Environment Configuration**: Sets up complex environment variables beyond PATH
-- **Legacy File Support**: Parses version files from other tools (`.nvmrc`, `.tool-version`, etc.)
-- **Cross-Platform Support**: Works on Windows, macOS, and Linux
+Plugins run with the user's permissions. Keep metadata free of host probes and avoid
+changing global package-manager configuration from an installation hook.
 
 ## Plugin Architecture
 
-Tool plugins are implemented in Lua (currently version 5.1). They use a hook-based architecture with specific functions for different lifecycle events:
-
 ```mermaid
-graph TD
-    A[User Request] --> B[mise CLI]
-    B --> C[Tool Plugin]
-
-    C --> D[Available Hook<br/>List Versions]
-    C --> E[PreInstall Hook<br/>Download]
-    C --> F[PostInstall Hook<br/>Setup]
-    C --> G[EnvKeys Hook<br/>Configure]
-
-    subgraph "Plugin Files"
-        H[metadata.lua]
-        I[hooks/available.lua]
-        J[hooks/pre_install.lua]
-        K[hooks/env_keys.lua]
-        L[hooks/post_install.lua]
-    end
-
-    style C fill:#e1f5fe
-    style D fill:#e8f5e8
-    style E fill:#e8f5e8
-    style F fill:#e8f5e8
-    style G fill:#e8f5e8
+flowchart LR
+    A[Available: list versions] --> B[Resolve a version]
+    B --> C[PreInstall: describe artifact]
+    C --> D[mise: download, verify, extract]
+    D --> E[PostInstall: optional setup]
+    E --> F[EnvKeys: return environment]
 ```
+
+A pinned or already-installed version can skip parts of this flow. Environment construction
+can happen again on later invocations; it is not a one-time installation callback.
 
 ## Hook Functions
 
 ### Required Hooks
 
-A functional plugin must implement these hooks:
-
 #### Available Hook
 
-Lists all available versions of the tool:
+Return an array **newest first**, ordered by the publisher's release policy. mise reverses
+this list for its internal oldest-first version listing. This differs from
+`BackendListVersions`, which already returns oldest first.
 
 ```lua
 -- hooks/available.lua
 function PLUGIN:Available(ctx)
-    local args = ctx.args  -- User arguments
-
-    -- Return array of available versions
     return {
-        {
-            version = "20.0.0",
-            note = "Latest"
-        },
-        {
-            version = "18.18.0",
-            note = "LTS",
-            addition = {
-                {
-                    name = "npm",
-                    version = "9.8.1"
-                }
-            }
-        }
+        {version = "1.10.0", note = "Current stable release"},
+        {version = "1.2.0"},
     }
 end
 ```
 
+Do not discard prerelease suffixes or sort arbitrary versions with a shared SemVer parser.
+`ctx.args` is available but mise does not supply interactive vfox arguments here.
+
 ##### Rolling Releases
 
-For tools with rolling releases such as "nightly" or "stable", where the version string stays the same but the content changes, mark the version as rolling and provide a checksum so mise can detect updates:
+For a channel whose contents change without changing its name, return `rolling = true`
+and an asset checksum that changes with the channel's artifact:
 
 ```lua
 function PLUGIN:Available(ctx)
     return {
         {
             version = "nightly",
-            note = "Latest development build",
-            rolling = true,  -- Mark as rolling release
-            checksum = "abc123..."  -- SHA256 of the release asset
-        },
-        {
-            version = "stable",
-            note = "Latest stable release",
             rolling = true,
-            checksum = "def456..."
+            checksum = "REPLACE_WITH_CURRENT_PLATFORM_ASSET_SHA256",
         },
-        {
-            version = "1.0.0",
-            note = "Fixed release"
-            -- No rolling or checksum needed for fixed versions
-        }
     }
 end
 ```
 
-When `rolling = true` is set:
-
-- `mise upgrade` checks whether the checksum has changed to detect updates
-- `mise upgrade --bump` preserves the version name (e.g., "nightly") instead of converting it to a semver version
-
-The checksum should be the SHA256 hash of the release asset for the user's platform. See the [vfox-neovim plugin](https://github.com/mise-plugins/vfox-neovim) for a complete example.
+The checksum above is a placeholder. Fetch the actual checksum for the selected platform.
+`mise upgrade` compares rolling checksums, and `mise upgrade --bump` preserves the channel
+name. This update marker is separate from the artifact checksum returned by `PreInstall`.
 
 #### PreInstall Hook
 
-Handles pre-installation logic and returns download information:
+Return the URL and verification metadata for `ctx.version`. mise downloads and extracts
+the main artifact. `ctx.options` contains typed tool options; use `RUNTIME` for platform
+information, including when mise asks for another platform's lockfile entry.
 
 ```lua
--- hooks/pre_install.lua
+-- hooks/pre_install.lua: an illustrative Linux x64 release layout
 function PLUGIN:PreInstall(ctx)
-    local version = ctx.version
-    local runtimeVersion = ctx.runtimeVersion
-
-    -- Determine download URL and checksums
-    local url = "https://nodejs.org/dist/v" .. version .. "/node-v" .. version .. "-linux-x64.tar.gz"
-
+    if RUNTIME.osType ~= "linux" or RUNTIME.archType ~= "amd64" then
+        error("This example artifact supports Linux x64 only")
+    end
+    local filename = "example-" .. ctx.version .. "-linux-x64.tar.gz"
     return {
-        version = version,
-        url = url,
-        sha256 = "abc123...",  -- Optional checksum
-        note = "Installing Node.js " .. version,
-        -- Optional attestation metadata, choose a verification type
-        attestation = {
-            -- GitHub
-            github_owner = "ownername"
-            github_repo = "reponame"
-            -- Cosign
-            cosign_sig_or_bundle_path = "/path/to/sig/or/bundle/file"
-            -- SLSA
-            slsa_provenance_path = "/path/to/provenance/file"
-        },
-        -- Additional files can be specified
-        addition = {
-            {
-                name = "npm",
-                url = "https://registry.npmjs.org/npm/-/npm-" .. npm_version .. ".tgz"
-            }
-        }
+        version = ctx.version,
+        url = "https://downloads.example.com/" .. filename,
+        sha256 = ctx.options.sha256 or error("sha256 option is required"),
     }
 end
 ```
 
+Replace the publisher URL and provide its trusted SHA-256 digest. Never put an ellipsis or
+dummy checksum in a working installer. A URL with no strong checksum or supported
+attestation does not establish artifact integrity. SHA-256 and SHA-512 are supported;
+legacy SHA-1/MD5 do not satisfy strong-verification requirements.
+
+For supported attestations, return an `attestation` table. For example:
+
+```lua
+local attestation = {
+    github_owner = "your-org",
+    github_repo = "your-tool",
+    -- Optional: constrain the publishing workflow.
+    github_signer_workflow = "your-org/your-tool/.github/workflows/release.yml",
+}
+```
+
+Assign this table to the `attestation` field in `PreInstall`'s response. Other supported
+fields include `cosign_sig_or_bundle_path` with optional `cosign_public_key_path`, and
+`slsa_provenance_path` with optional `slsa_min_level`. Supply real verification inputs for
+the chosen method. Do not combine unrelated placeholder methods into one example.
+
+mise's lifecycle processes the main artifact; do not rely on upstream vfox `addition`
+entries to install a second SDK. Use tool dependencies or implement the additional work
+explicitly when needed.
+
 #### EnvKeys Hook
 
-Configures environment variables for the installed tool:
+Return `{key, value}` entries. `ctx.path` is the installation path and `ctx.version` is the
+selected version. `ctx.main`, `ctx.sdkInfo`, and typed `ctx.options` are also available;
+`ctx.runtimeVersion` is not part of this hook's context.
 
 ```lua
 -- hooks/env_keys.lua
 function PLUGIN:EnvKeys(ctx)
-    local mainPath = ctx.path
-    local runtimeVersion = ctx.runtimeVersion
-    local sdkInfo = ctx.sdkInfo['nodejs']
-    local path = sdkInfo.path
-    local version = sdkInfo.version
-    local name = sdkInfo.name
-
+    local file = require("file")
     return {
-        {
-            key = "NODE_HOME",
-            value = mainPath
-        },
-        {
-            key = "PATH",
-            value = mainPath .. "/bin"
-        },
-        -- Multiple PATH entries are automatically merged
-        {
-            key = "PATH",
-            value = mainPath .. "/lib/node_modules/.bin"
-        }
+        {key = "EXAMPLE_HOME", value = ctx.path},
+        {key = "PATH", value = file.join_path(ctx.path, "bin")},
     }
 end
 ```
 
-### Optional Hooks
+Multiple PATH entries are merged. Return directories, not a replacement containing the
+entire inherited PATH. Avoid network access or other expensive work in this hook.
 
-These hooks provide additional functionality:
+### Optional Hooks
 
 #### PostInstall Hook
 
-Performs additional setup after installation:
+Use `ctx.rootPath` for the extracted installation directory. `ctx.sdkInfo` describes the
+main SDK, and `ctx.options` contains tool options. The compatibility field
+`ctx.runtimeVersion` holds the requested tool version, not the mise application version.
 
 ```lua
 -- hooks/post_install.lua
 function PLUGIN:PostInstall(ctx)
-    local rootPath = ctx.rootPath
-    local runtimeVersion = ctx.runtimeVersion
-    local sdkInfo = ctx.sdkInfo['nodejs']
-    local path = sdkInfo.path
-    local version = sdkInfo.version
-
-    -- Compile native modules, set permissions, etc.
-    local result = os.execute("chmod +x " .. path .. "/bin/*")
-    if result ~= 0 then
-        error("Failed to set permissions")
+    local file = require("file")
+    if not file.exists(file.join_path(ctx.rootPath, "bin", "example")) then
+        error("Expected bin/example in the extracted archive")
     end
-
-    -- No return value needed
 end
 ```
+
+The check above assumes a Unix executable layout. Archives normally carry executable
+permissions; only change them when the actual distribution requires it.
 
 #### PreUse Hook
 
-Modifies the version before use:
-
-```lua
--- hooks/pre_use.lua
-function PLUGIN:PreUse(ctx)
-    local version = ctx.version
-    local previousVersion = ctx.previousVersion
-    local installedSdks = ctx.installedSdks
-    local cwd = ctx.cwd
-    local scope = ctx.scope  -- global/project/session
-
-    -- Optionally modify the version
-    if version == "latest" then
-        version = "20.0.0"  -- Resolve to specific version
-    end
-
-    return {
-        version = version
-    }
-end
-```
+mise does not implement the upstream vfox `PreUse` hook. Do not rely on it to rewrite a
+version, observe shell changes, or perform activation work. Resolve version requests using
+supported version listing/aliases and return environment entries through `EnvKeys`.
 
 #### ParseLegacyFile Hook
 
-Parses version files from other tools:
+Declare filenames in `metadata.lua`, implement the parser, and ask users to enable
+[`idiomatic_version_file_enable_tools`](/configuration/settings.html#idiomatic_version_file_enable_tools)
+for the plugin's installed name. Return a version request without changing its meaning:
 
 ```lua
 -- hooks/parse_legacy_file.lua
 function PLUGIN:ParseLegacyFile(ctx)
-    local filename = ctx.filename
-    local filepath = ctx.filepath
-    local versions = ctx:getInstalledVersions()
-
-    -- Read and parse the file
     local file = require("file")
-    local content = file.read(filepath)
-    local version = content:match("v?([%d%.]+)")
-
-    return {
-        version = version
-    }
+    local contents = file.read(ctx.filepath)
+    local version = contents:match("^%s*([^\r\n]+)")
+    if version then
+        version = version:match("^%s*(.-)%s*$")
+    end
+    return {version = version}
 end
 ```
+
+This parser supports a single-line version request, including channels and prereleases.
+Adapt it to the file's real format. `ctx.filename` is the basename and `ctx.filepath` is the
+full path. Despite its name, the compatibility method `ctx:getInstalledVersions()` calls
+`Available`; it is not an inventory of installed versions and can perform network requests.
 
 ## Creating a Tool Plugin
 
 ### Using the Template Repository
 
-The easiest way to create a new tool plugin is to use the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) repository as a starting point:
-
-```bash
-# Clone the template
-git clone https://github.com/jdx/mise-tool-plugin-template my-tool-plugin
-cd my-tool-plugin
-
-# Remove the template's git history and start fresh
-rm -rf .git
-git init
-
-# Customize the plugin for your tool
-# Edit metadata.lua, hooks/*.lua files, etc.
-```
-
-The template includes:
-
-- Pre-configured plugin structure with all required hooks
-- Example implementations with comments
-- Linting configuration (`.luacheckrc`, `stylua.toml`)
-- Testing setup with mise tasks
-- GitHub Actions workflow for CI
+Create a repository from the [tool template](https://github.com/jdx/mise-tool-plugin-template),
+or clone it to inspect and customize its files. Choose a plugin name that does not collide
+with a core tool or an existing plugin while testing.
 
 ### 1. Plugin Structure
 
-Create a directory with this structure (or use the template above):
-
-```
+```text
 my-tool-plugin/
-├── metadata.lua          # Plugin metadata and configuration
-├── hooks/               # Hook functions directory
-│   ├── available.lua    # List available versions [required]
-│   ├── pre_install.lua  # Pre-installation hook [required]
-│   ├── env_keys.lua     # Environment configuration [required]
-│   ├── post_install.lua # Post-installation hook [optional]
-│   ├── pre_use.lua      # Pre-use hook [optional]
-│   └── parse_legacy_file.lua # Legacy file parser [optional]
-├── lib/                 # Shared library code [optional]
-│   └── helper.lua       # Helper functions
-└── test/               # Test scripts [optional]
-    └── test.sh
+├── metadata.lua
+├── hooks/
+│   ├── available.lua
+│   ├── pre_install.lua
+│   ├── env_keys.lua
+│   ├── post_install.lua       # optional
+│   └── parse_legacy_file.lua  # optional
+└── lib/
+    └── helper.lua            # optional shared code
 ```
 
 ### 2. metadata.lua
 
-Configure plugin metadata and legacy file support:
-
 ```lua
--- metadata.lua
 PLUGIN = {
-    name = "nodejs",
-    version = "1.0.0",
-    description = "Node.js runtime environment",
+    name = "my-tool",
+    version = "1.0.0", -- plugin release, separate from the tool version
+    description = "Install Example Tool",
     author = "Plugin Author",
-
-    -- Legacy version files this plugin can parse
-    legacyFilenames = {
-        '.nvmrc',
-        '.node-version'
-    },
-
-    -- Tools whose bin paths should be available during install hooks
-    depends = { "node" },
+    legacyFilenames = {".example-version"},
+    -- Add only real installation prerequisites, if any:
+    -- depends = {"go", "make"},
 }
 ```
 
-Add `depends` to the `PLUGIN` table when install hooks need other mise-managed tools on `PATH`. Use tool names as they would appear in `mise.toml`, for example `depends = { "go", "make" }`. Omit it if hooks do not shell out to other tools.
-
-This is separate from `depends` in `[tools]`, which only makes one configured tool wait for another in the install graph. The `depends` field in vfox `metadata.lua` is plugin metadata; when matching tools are configured, mise uses it to order the current install jobs and to build the hook environment.
+`depends` exposes matching configured tools to installation hooks and orders their install
+jobs. Users must configure those tools; the metadata does not choose their versions. Avoid
+self-dependencies. This differs from a tool's `[tools]` `depends` option, which orders the
+configured install graph.
 
 #### System Dependencies
 
@@ -390,507 +293,182 @@ These declarations are inert on older mise versions and on upstream vfox (both i
 
 ### 3. Helper Libraries
 
-Create shared functions in the `lib/` directory:
+Use Lua helpers for publisher-specific platform naming. The runtime reports `darwin` for
+macOS and `amd64` for x64; an upstream archive may spell those differently. Map only the
+platforms the publisher actually supports and reject others explicitly.
 
 ```lua
--- lib/helper.lua
+-- lib/platform.lua
 local M = {}
-
-function M.get_arch()
-    -- Use the RUNTIME object provided by vfox/mise
-    return (RUNTIME.archType == "amd64") and "x64" or RUNTIME.archType  -- return as-is for other architectures
+function M.archive_platform()
+    local os_names = {darwin = "macos", linux = "linux", windows = "windows"}
+    local arches = {amd64 = "x64", arm64 = "arm64"}
+    local os_name = os_names[RUNTIME.osType] or error("Unsupported OS: " .. RUNTIME.osType)
+    local arch = arches[RUNTIME.archType] or error("Unsupported architecture: " .. RUNTIME.archType)
+    return os_name .. "-" .. arch
 end
-
-function M.get_os()
-    -- Use the RUNTIME object provided by vfox/mise
-    return (RUNTIME.osType == "windows") and "win" or RUNTIME.osType
-end
-
-function M.get_platform()
-    return M.get_os() .. "-" .. M.get_arch()
-end
-
 return M
 ```
 
 ## Real-World Example: vfox-nodejs
 
-Here is a complete example, based on the vfox-nodejs plugin, that demonstrates all of these concepts:
+Study [vfox-nodejs](https://github.com/version-fox/vfox-nodejs) for an upstream implementation.
+For normal Node use, prefer mise's [core Node backend](/lang/node.html). A Node plugin must
+handle the following details rather than copying a fixed Linux archive URL.
 
 ### Available Hook Example
 
-```lua
--- hooks/available.lua
-function PLUGIN:Available(ctx)
-    local http = require("http")
-    local json = require("json")
-
-    -- Fetch versions from Node.js API
-    local resp, err = http.get({
-        url = "https://nodejs.org/dist/index.json"
-    })
-
-    if err ~= nil then
-        error("Failed to fetch versions: " .. err)
-    end
-
-    local versions = json.decode(resp.body)
-    local result = {}
-
-    for i, v in ipairs(versions) do
-        local version = v.version:gsub("^v", "")  -- Remove 'v' prefix
-        local note = nil
-
-        if v.lts then
-            note = "LTS"
-        end
-
-        table.insert(result, {
-            version = version,
-            note = note,
-            addition = {
-                {
-                    name = "npm",
-                    version = v.npm
-                }
-            }
-        })
-    end
-
-    return result
-end
-```
+Node's release index contains version strings and release metadata. Check the HTTP status
+before decoding it, preserve the index's release order, and remove only its known leading
+`v`. Keep prerelease identifiers intact. The [HTTP and JSON modules](/plugin-lua-modules.html)
+provide the request and decoding APIs.
 
 ### PreInstall Hook Example
 
+Select the exact archive for the target OS/architecture, then match its filename exactly
+in `SHASUMS256.txt`. A filename contains Lua pattern characters such as `.` and `-`, so
+`line:match(filename)` is not an exact filename check. For example:
+
 ```lua
--- hooks/pre_install.lua
-function PLUGIN:PreInstall(ctx)
-    local version = ctx.version
-
-    -- Determine platform using RUNTIME object
-    local arch_token = (RUNTIME.archType == "amd64") and "x64" or RUNTIME.archType
-    local os_token = (RUNTIME.osType == "windows") and "win" or RUNTIME.osType
-    local platform = os_token .. "-" .. arch_token
-    local extension = (RUNTIME.osType == "windows") and "zip" or "tar.gz"
-
-    -- Build download URL
-    local filename = "node-v" .. version .. "-" .. platform .. "." .. extension
-    local url = "https://nodejs.org/dist/v" .. version .. "/" .. filename
-
-    -- Fetch checksum
-    local http = require("http")
-    local shasums_url = "https://nodejs.org/dist/v" .. version .. "/SHASUMS256.txt"
-    local resp, err = http.get({ url = shasums_url })
-
-    local sha256 = nil
-    if err == nil then
-        -- Extract SHA256 for our file
-        for line in resp.body:gmatch("[^\n]+") do
-            if line:match(filename) then
-                sha256 = line:match("^(%w+)")
-                break
-            end
+local function find_checksum(body, filename)
+    for line in body:gmatch("[^\r\n]+") do
+        local digest, name = line:match("^(%x+)%s+%*?(.+)$")
+        if name == filename and #digest == 64 then
+            return digest
         end
     end
-
-    return {
-        version = version,
-        url = url,
-        sha256 = sha256,
-        note = "Installing Node.js " .. version .. " (" .. platform .. ")"
-    }
+    error("No SHA-256 entry for " .. filename)
 end
 ```
 
+Fail if the checksum is missing. Do not silently continue with `sha256 = nil` after a
+failed request. Obtaining a checksum from the same server is an integrity check, not the
+same guarantee as verifying Node's signed checksum manifest.
+
 ### EnvKeys Hook Example
 
+Node archives place executables in `bin` on Unix and at the installation root on Windows.
+Use the correct directory:
+
 ```lua
--- hooks/env_keys.lua
 function PLUGIN:EnvKeys(ctx)
-    local mainPath = ctx.path
-    local os_type = RUNTIME.osType
-
-    local env_vars = {
-        {
-            key = "NODE_HOME",
-            value = mainPath
-        },
-        {
-            key = "PATH",
-            value = mainPath .. "/bin"
-        }
+    local file = require("file")
+    local bin = RUNTIME.osType == "windows" and ctx.path or file.join_path(ctx.path, "bin")
+    return {
+        {key = "NODE_HOME", value = ctx.path},
+        {key = "PATH", value = bin},
     }
-
-    -- Add npm global modules to PATH
-    local npm_global_path = mainPath .. "/lib/node_modules/.bin"
-    if os_type == "windows" then
-        npm_global_path = mainPath .. "/node_modules/.bin"
-    end
-
-    table.insert(env_vars, {
-        key = "PATH",
-        value = npm_global_path
-    })
-
-    return env_vars
 end
 ```
 
 ### PostInstall Hook Example
 
-```lua
--- hooks/post_install.lua
-function PLUGIN:PostInstall(ctx)
-    local sdkInfo = ctx.sdkInfo['nodejs']
-    local path = sdkInfo.path
-    -- Set executable permissions on Unix systems
-    if RUNTIME.osType ~= "windows" then
-        os.execute("chmod +x " .. path .. "/bin/*")
-    end
-
-    -- Create npm cache directory
-    local npm_cache_dir = path .. "/.npm"
-    os.execute("mkdir -p " .. npm_cache_dir)
-
-    -- Configure npm to use local cache
-    local npm_cmd = path .. "/bin/npm"
-    if RUNTIME.osType == "windows" then
-        npm_cmd = path .. "/npm.cmd"
-    end
-
-    os.execute(npm_cmd .. " config set cache " .. npm_cache_dir)
-    os.execute(npm_cmd .. " config set prefix " .. path)
-end
-```
+Avoid running `npm config set` without a deliberate configuration scope: it can change the
+user's npm configuration outside the tool installation. Prefer returning environment
+entries if the plugin needs a specific npm prefix or cache. Test the actual archive layout
+before adding permission changes or setup commands.
 
 ### Legacy File Support
 
-```lua
--- hooks/parse_legacy_file.lua
-function PLUGIN:ParseLegacyFile(ctx)
-    local filename = ctx.filename
-    local filepath = ctx.filepath
-    local file = require("file")
-
-    -- Read file content
-    local content = file.read(filepath)
-    if not content then
-        error("Failed to read " .. filepath)
-    end
-
-    -- Parse version from different file formats
-    local version = nil
-
-    if filename == ".nvmrc" then
-        -- .nvmrc can contain version with or without 'v' prefix
-        version = content:match("v?([%d%.]+)")
-    elseif filename == ".node-version" then
-        -- .node-version typically contains just the version number
-        version = content:match("([%d%.]+)")
-    end
-
-    -- Remove any whitespace
-    if version then
-        version = version:gsub("%s+", "")
-    end
-
-    return {
-        version = version
-    }
-end
-```
+Node version files can contain aliases such as `lts/*`, prefixes, and prereleases. Do not
+extract only digits and dots. A parser must preserve the request and the plugin must support
+resolving it; otherwise report the unsupported value instead of selecting a different release.
 
 ## Testing Your Plugin
 
 ### Local Development
 
-```bash
-# Link your plugin for development
+Use a separate test project and a plugin name that will not replace your normal tools:
+
+```sh
 mise plugin link my-tool /path/to/my-tool-plugin
-
-# Test listing versions
 mise ls-remote my-tool
-
-# Test installation
-mise install my-tool@1.0.0
-
-# Test environment setup
 mise use my-tool@1.0.0
-my-tool --version
-
-# Test legacy file parsing (if applicable)
-echo "2.0.0" > .my-tool-version
-mise use my-tool
+mise exec -- example --version
 ```
 
-If you're using the template repository, you can run the included tests:
+Replace `1.0.0` with a published test version and `example` with the executable it provides.
+For version-file tests, use another empty project with no competing `[tools]` pin:
 
-```bash
-# Run linting
-mise run lint
-
-# Run tests
-mise run test
+```toml
+[settings]
+idiomatic_version_file_enable_tools = ["my-tool"]
 ```
+
+Write a supported request to `.example-version`, run `mise install`, and verify
+`mise exec -- example --version`. `mise use my-tool` would write a tool selection, so it
+is not a test of whether the version file controls resolution.
 
 ### Debug Mode
 
-Use debug mode to see detailed plugin execution:
-
-```bash
-mise --debug install nodejs@20.0.0
+```sh
+MISE_DEBUG=1 mise install my-tool@1.0.0
+mise cache clear my-tool
 ```
+
+Clear the tool's cache when cached metadata or version results hide a local hook edit.
 
 ### Plugin Test Script
 
-Create a comprehensive test script:
-
-```bash
-#!/bin/bash
-# test/test.sh
-set -e
-
-echo "Testing nodejs plugin..."
-
-# Install the plugin
-mise plugin install nodejs .
-
-# Test basic functionality
-mise install nodejs@18.18.0
-mise use nodejs@18.18.0
-
-# Verify installation
-node --version | grep "18.18.0"
-npm --version
-
-# Test legacy file support
-echo "20.0.0" > .nvmrc
-mise use nodejs
-node --version | grep "20.0.0"
-
-# Clean up
-rm -f .nvmrc
-mise plugin remove nodejs
-
-echo "All tests passed!"
-```
+Use the isolated [publishing test workflow](/plugin-publishing.html#testing-before-publication).
+Exercise version listing, a concrete install, executable lookup, and environment values.
+Also test unsupported platforms, missing checksums, malformed metadata, paths with spaces,
+and idiomatic files if supported. Run each advertised OS in CI.
 
 ## Best Practices
 
 ### Error Handling
 
-Always provide meaningful error messages:
-
-```lua
-function PLUGIN:Available(ctx)
-    local http = require("http")
-    local resp, err = http.get({
-        url = "https://api.example.com/versions"
-    })
-
-    if err ~= nil then
-        error("Failed to fetch versions from API: " .. err)
-    end
-
-    if resp.status_code ~= 200 then
-        error("API returned status " .. resp.status_code .. ": " .. resp.body)
-    end
-
-    -- Process response...
-end
-```
+Use `http.try_get` for a recoverable transport failure, and check HTTP status before parsing.
+Synchronous operations such as `json.decode` and `cmd.exec` raise catchable Lua errors.
+Never log tokens or a secret-bearing response body just to explain a failed request.
 
 ### Platform Detection
 
-Handle different operating systems using the `RUNTIME` object:
+Use the injected runtime instead of spawning `uname`:
 
-```lua
--- lib/platform.lua
-local M = {}
-
-function M.is_windows()
-    return RUNTIME.osType == "windows"
-end
-
-function M.get_exe_extension()
-    return M.is_windows() and ".exe" or ""
-end
-
-function M.get_path_separator()
-    return M.is_windows() and "\\" or "/"
-end
-
-return M
-```
-
-The `RUNTIME` object is available in all plugin hooks and provides:
-
-- `RUNTIME.osType`: Operating system type ("windows", "linux", "darwin")
-- `RUNTIME.archType`: Architecture ("amd64", "arm64", "x86", etc.)
-- `RUNTIME.envType`: libc environment type (`"gnu"` on glibc Linux, `"musl"` on musl Linux, `nil` on Windows/macOS and undetected systems)
-- `RUNTIME.version`: vfox runtime version
-- `RUNTIME.pluginDirPath`: Plugin directory path
+| Field                   | Values or meaning                                          |
+| ----------------------- | ---------------------------------------------------------- |
+| `RUNTIME.osType`        | `windows`, `linux`, `darwin`                               |
+| `RUNTIME.archType`      | `amd64`, `arm64`, `x86`, and other supported architectures |
+| `RUNTIME.envType`       | `gnu` or `musl` on detected Linux systems; otherwise `nil` |
+| `RUNTIME.version`       | Embedded vfox runtime version                              |
+| `RUNTIME.pluginDirPath` | Plugin source directory                                    |
 
 ### Version Normalization
 
-Normalize versions consistently:
-
-```lua
-local function normalize_version(version)
-    -- Remove 'v' prefix if present
-    version = version:gsub("^v", "")
-
-    -- Remove pre-release suffixes
-    version = version:gsub("%-.*", "")
-
-    return version
-end
-```
+Normalize only a documented publisher convention, such as a leading `v`. Treat the rest
+of the version as opaque. Removing `-beta.1` changes a prerelease into a different request.
 
 ### Caching
 
-Cache expensive operations:
-
-```lua
--- Cache versions for 12 hours
-local cache = {}
-local cache_ttl = 12 * 60 * 60  -- 12 hours in seconds
-
-function PLUGIN:Available(ctx)
-    local now = os.time()
-
-    -- Check cache first
-    if cache.versions and cache.timestamp and (now - cache.timestamp) < cache_ttl then
-        return cache.versions
-    end
-
-    -- Fetch fresh data
-    local versions = fetch_versions_from_api()
-
-    -- Update cache
-    cache.versions = versions
-    cache.timestamp = now
-
-    return versions
-end
-```
+mise caches remote version lists and environment results. A module-level Lua table only
+lasts for that runtime and cannot provide a cache shared by separate mise invocations.
+Keep metadata declarative and see [cache behavior](/cache-behavior.html) for refresh controls.
 
 ## Advanced Features
 
 ### Conditional Installation
 
-Use different installation logic depending on the platform or version:
-
-```lua
-function PLUGIN:PreInstall(ctx)
-    local version = ctx.version
-
-    -- Different logic for different platforms using RUNTIME object
-    if RUNTIME.osType == "windows" then
-        -- Windows-specific installation
-        return install_windows(version)
-    elseif RUNTIME.osType == "darwin" then
-        -- macOS-specific installation
-        return install_macos(version)
-    else
-        -- Linux installation
-        return install_linux(version)
-    end
-end
-```
+Choose the archive using `RUNTIME` and the exact requested version. `PreInstall` can be
+called for lockfile generation on another target platform; avoid probing the host or
+installing dependencies just to calculate an artifact URL.
 
 ### Source Compilation
 
-For plugins that need to compile from source:
-
-```lua
--- hooks/post_install.lua
-function PLUGIN:PostInstall(ctx)
-    local sdkInfo = ctx.sdkInfo['tool-name']
-    local path = sdkInfo.path
-    local version = sdkInfo.version
-
-    -- Change to source directory
-    local build_dir = path .. "/src"
-
-    -- Configure build
-    local configure_result = os.execute("cd " .. build_dir .. " && ./configure --prefix=" .. path)
-    if configure_result ~= 0 then
-        error("Configure failed")
-    end
-
-    -- Compile
-    local make_result = os.execute("cd " .. build_dir .. " && make -j$(nproc)")
-    if make_result ~= 0 then
-        error("Compilation failed")
-    end
-
-    -- Install
-    local install_result = os.execute("cd " .. build_dir .. " && make install")
-    if install_result ~= 0 then
-        error("Installation failed")
-    end
-end
-```
+Compile only in the installation phase. Declare prerequisites, use `cmd.exec` with a `cwd`
+option, and pass paths through correctly quoted arguments or environment variables.
+Document whether the build needs a POSIX shell. Commands such as `nproc`, `chmod`, and
+`./configure` do not form a portable Windows build recipe.
 
 ### Environment Configuration
 
-A more complex environment variable setup:
-
-```lua
-function PLUGIN:EnvKeys(ctx)
-    local mainPath = ctx.path
-    local version = ctx.sdkInfo['tool-name'].version
-
-    local env_vars = {
-        -- Standard environment variables
-        {
-            key = "TOOL_HOME",
-            value = mainPath
-        },
-        {
-            key = "TOOL_VERSION",
-            value = version
-        },
-
-        -- PATH entries
-        {
-            key = "PATH",
-            value = mainPath .. "/bin"
-        },
-        {
-            key = "PATH",
-            value = mainPath .. "/scripts"
-        },
-
-        -- Library paths
-        {
-            key = "LD_LIBRARY_PATH",
-            value = mainPath .. "/lib"
-        },
-        {
-            key = "PKG_CONFIG_PATH",
-            value = mainPath .. "/lib/pkgconfig"
-        }
-    }
-
-    -- Platform-specific additions
-    if RUNTIME.osType == "darwin" then
-        table.insert(env_vars, {
-            key = "DYLD_LIBRARY_PATH",
-            value = mainPath .. "/lib"
-        })
-    end
-
-    return env_vars
-end
-```
+Return only the variables the tool needs. PATH entries are directories; setting unrelated
+variables such as `LD_LIBRARY_PATH` can affect every process launched in the environment.
+For variables unrelated to a tool version, use an [environment plugin](/env-plugin-development.html).
 
 ## Next Steps
 
-- [Start with the plugin template](https://github.com/jdx/mise-tool-plugin-template)
-- [Learn about Backend Plugin Development](backend-plugin-development.md)
-- [Explore available Lua modules](plugin-lua-modules.md)
-- [Publish your plugin](plugin-publishing.md)
-- [View the vfox-nodejs plugin source](https://github.com/version-fox/vfox-nodejs)
+- [Backend Plugin Development](/backend-plugin-development.html).
+- [Plugin Lua Modules](/plugin-lua-modules.html).
+- [Plugin Publishing](/plugin-publishing.html).

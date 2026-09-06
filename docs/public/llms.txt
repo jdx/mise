@@ -123,11 +123,11 @@
 - [Plugin Overview](https://mise.jdx.dev/plugins.html): Plugins extend mise with new functionality, such as extra tools or environment variable management.
 - [Using Plugins](https://mise.jdx.dev/plugin-usage.html): mise supports plugins that extend its functionality, allowing you to install tools that aren't available in the standard registry. This is particularly useful for.
 - [Backend Plugin Development](https://mise.jdx.dev/backend-plugin-development.html): The mise-backend-plugin-template provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
-- [Tool Plugin Development](https://mise.jdx.dev/tool-plugin-development.html): The mise-tool-plugin-template provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
-- [Environment Plugin Development](https://mise.jdx.dev/env-plugin-development.html): Environment plugins are a special type of mise plugin that provides environment variables and PATH modifications without managing tool versions.
+- [Tool Plugin Development](https://mise.jdx.dev/tool-plugin-development.html): A tool plugin manages one versioned tool using Lua lifecycle hooks. Use a backend plugin for an integration that manages several tools, or an environment plugin for variables without an installation.
+- [Environment Plugin Development](https://mise.jdx.dev/env-plugin-development.html): Environment plugins return variables and PATH entries without installing a versioned tool. Use them for an external configuration service, secret manager, or team environment.
 - [Package Plugin Development](https://mise.jdx.dev/package-plugin-development.html): A package plugin is a Lua-based vfox plugin that implements a machine-global manager for [bootstrap.packages].
-- [Plugin Lua Modules](https://mise.jdx.dev/plugin-lua-modules.html): mise plugins have access to a comprehensive set of built-in Lua modules. These modules are available in both backend plugins and tool plugins, making it easy to perform common operations like HTTP…
-- [Plugin Publishing](https://mise.jdx.dev/plugin-publishing.html): This guide shows how to publish and distribute backend plugins and tool plugins. Publishing makes your plugins available to other users and keeps them easy to install and maintain.
+- [Plugin Lua Modules](https://mise.jdx.dev/plugin-lua-modules.html): mise's embedded Lua 5.1 runtime provides modules for plugin hooks, including backend, tool, environment, and package plugins.
+- [Plugin Publishing](https://mise.jdx.dev/plugin-publishing.html): Publish a plugin as a Git repository or release archive, with a tested installation command and documentation for its actual interface.
 - [asdf (Legacy) Plugins](https://mise.jdx.dev/asdf-legacy-plugins.html): asdf plugins are considered legacy. New asdf and vfox plugins are not accepted into the mise registry for supply-chain security reasons — for registry submissions use packslip (preferred when the…
 
 ## About

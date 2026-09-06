@@ -1,6 +1,11 @@
 # Plugin Lua Modules
 
-mise plugins have access to a comprehensive set of built-in Lua modules. These modules are available in both backend plugins and tool plugins, making it easy to perform common operations like HTTP requests, JSON parsing, and file operations.
+mise's embedded Lua 5.1 runtime provides modules for plugin hooks, including backend, tool,
+environment, and package plugins. This reference describes mise's implementations; upstream
+vfox may differ. Load modules with `require` and use `RUNTIME` for the target platform.
+
+Use direct HTTP and file operations when possible. `cmd.exec` runs a shell, so command
+quoting and external prerequisites still depend on the selected platform.
 
 ## Available Modules
 
@@ -12,14 +17,17 @@ mise plugins have access to a comprehensive set of built-in Lua modules. These m
 - **`file`** - File system operations
 - **`env`** - Environment variable operations
 - **`strings`** - String manipulation utilities
-- **`semver`** - Semantic version comparison and sorting
+- **`semver`** - Numeric-component comparison and sorting (not full SemVer precedence)
 - **`html`** - HTML parsing and manipulation
 - **`archiver`** - Archive extraction
 - **`log`** - Structured logging
 
 ## HTTP Module
 
-The HTTP module makes web requests and downloads files.
+The HTTP module makes web requests and downloads files. `get` and `head` return a response
+or raise on a transport failure; a non-2xx HTTP response is still a response, so check
+`status_code`. `download_file` raises on transport and HTTP error status and returns no
+value on success. Use the non-raising `try_*` variants for fallback logic.
 
 ### Basic HTTP Requests
 
@@ -27,7 +35,7 @@ The HTTP module makes web requests and downloads files.
 local http = require("http")
 
 -- GET request
-local resp, err = http.get({
+local resp = http.get({
     url = "https://api.github.com/repos/owner/repo/releases",
     headers = {
         ['User-Agent'] = "mise-plugin",
@@ -35,9 +43,6 @@ local resp, err = http.get({
     }
 })
 
-if err ~= nil then
-    error("Request failed: " .. err)
-end
 
 if resp.status_code ~= 200 then
     error("HTTP error: " .. resp.status_code)
@@ -52,13 +57,10 @@ local body = resp.body
 local http = require("http")
 
 -- HEAD request to check file info
-local resp, err = http.head({
+local resp = http.head({
     url = "https://example.com/file.tar.gz"
 })
 
-if err ~= nil then
-    error("HEAD request failed: " .. err)
-end
 
 local content_length = resp.headers['content-length']
 local content_type = resp.headers['content-type']
@@ -201,32 +203,32 @@ print(strings.has_prefix(text, "hello"))  -- true
 print(strings.has_suffix(text, "world"))  -- true
 print(strings.contains(text, "lo wo"))    -- true
 
--- Trim specific characters
+-- Remove repeated exact suffixes (not a character set)
 local trimmed = strings.trim("hello world", "world")
 print(trimmed)  -- "hello "
 ```
 
 ### Version String Utilities
 
+Use Lua patterns to remove a known publisher prefix. The module has no `trim_prefix`
+function, and stripping a prerelease suffix would change the requested version:
+
 ```lua
-local strings = require("strings")
-
--- Common version string operations
 local function normalize_version(version)
-    -- Remove 'v' prefix if present
-    version = strings.trim_prefix(version, "v")
-
-    -- Remove pre-release suffixes
-    local parts = strings.split(version, "-")
-    return parts[1]
+    return (version:gsub("^v", ""))
 end
-
-local version = normalize_version("v1.2.3-beta.1")  -- "1.2.3"
+local version = normalize_version("v1.2.3-beta.1") -- "1.2.3-beta.1"
 ```
 
 ## Semver Module
 
-The semver module compares and sorts semantic versions. It is useful for sorting the version lists returned by `Available()` hooks.
+Despite its name, this module compares **numeric components extracted from strings**, not
+full Semantic Versioning precedence. It ignores non-digit text and treats missing numeric
+components as zero. For example, `1.0.0-beta` compares equal to `1.0.0`, and `1.0.0-beta.1`
+compares greater. Do not use it to choose the newest arbitrary tool version or order channels.
+
+Use it only when a tool's documented version scheme matches this numeric comparison.
+Otherwise preserve the publisher's order or implement that tool's actual policy.
 
 ### Version Comparison
 
@@ -255,7 +257,7 @@ print(parts[1])  -- 1
 print(parts[2])  -- 2
 print(parts[3])  -- 3
 
--- Works with prefixes and suffixes
+-- Non-digit text is discarded; this is not a SemVer parser
 local parts = semver.parse("v1.2.3-beta")  -- {1, 2, 3}
 ```
 
@@ -287,19 +289,20 @@ local sorted = semver.sort_by(releases, "version")
 
 ### Real-World Example: Available Hook
 
+This sketch applies only to releases made of three numeric components, with no prereleases
+or channels. Prefer a structured release API over scraping text when one is available.
+
 ```lua
 local http = require("http")
 local semver = require("semver")
 
 function PLUGIN:Available(ctx)
-    local resp, err = http.get({
+    local resp = http.get({
         url = "https://example.com/releases/"
     })
 
-    if err ~= nil then
-        error("Failed to fetch versions: " .. err)
-    end
 
+    assert(resp.status_code == 200, "Release request failed")
     local result = {}
     -- Parse versions from response...
     for version in string.gmatch(resp.body, 'v([0-9]+%.[0-9]+%.[0-9]+)') do
@@ -335,7 +338,10 @@ end)
 
 ## HTML Module
 
-The HTML module parses HTML documents.
+The HTML module returns selection objects, not Lua arrays. Use `:each(function(index,
+node) ... end)` to iterate a selection, `:first()` for its first element, and `:eq(0)` for
+its zero-based first position. `:text()` reads the first selected node's inner content
+(which can include markup); `:attr(name)` reads its attribute.
 
 ### Basic HTML Parsing
 
@@ -360,11 +366,10 @@ local version = doc:find("#version"):text()  -- "1.2.3"
 
 -- Extract attributes
 local links = doc:find("a")
-for _, link in ipairs(links) do
+links:each(function(index, link)
     local href = link:attr("href")
-    local text = link:text()
-    print(text .. ": " .. href)
-end
+    print(index, link:text(), href)
+end)
 ```
 
 ### CSS Selectors
@@ -389,25 +394,26 @@ local specific_links = doc:find("ul.downloads a[href$='.tar.gz']")
 
 ### Real-World Example: Scraping Releases
 
+This illustrates selection traversal. Website HTML and duplicate links can change; prefer
+a release API when available and deduplicate identifiers before returning a hook result.
+
 ```lua
 local html = require("html")
 local http = require("http")
 
 function get_github_releases(owner, repo)
-    local resp, err = http.get({
+    local resp = http.get({
         url = "https://github.com/" .. owner .. "/" .. repo .. "/releases"
     })
 
-    if err ~= nil then
-        error("Failed to fetch releases: " .. err)
-    end
 
+    assert(resp.status_code == 200, "Release page request failed")
     local doc = html.parse(resp.body)
     local releases = {}
 
     -- Find all release tags
     local release_elements = doc:find("a[href*='/releases/tag/']")
-    for _, element in ipairs(release_elements) do
+    release_elements:each(function(index, element)
         local href = element:attr("href")
         local version = href:match("/releases/tag/(.+)")
         if version then
@@ -416,7 +422,7 @@ function get_github_releases(owner, repo)
                 url = "https://github.com" .. href
             })
         end
-    end
+    end)
 
     return releases
 end
@@ -424,7 +430,8 @@ end
 
 ## Archiver Module
 
-The archiver module extracts compressed archives.
+The archiver module extracts archives based on their filename suffix. It does not download
+or authenticate the archive; verify the artifact before extracting it.
 
 ### Supported Formats
 
@@ -441,16 +448,13 @@ local archiver = require("archiver")
 -- Extract archive to directory
 archiver.decompress("archive.tar.gz", "extracted/")
 
--- Failures raise Lua errors. Use pcall only when the plugin needs to intercept one.
-local ok, err = pcall(archiver.decompress, "package.zip", "destination/")
-if not ok then
-    error("ZIP extraction failed: " .. err)
-end
+-- Failures raise Lua errors and stop the hook.
+archiver.decompress("package.zip", "destination/")
 ```
 
 To flatten versioned directories at the root of an archive, pass
 `strip_components = 1`. Files already at the archive root are retained, matching
-mise's built-in archive backends.
+mise's built-in archive backends. Only `0` and `1` are supported; higher values raise an error.
 
 ```lua
 archiver.decompress("node-v24.18.1-linux-x64.tar.gz", "destination/", {
@@ -490,10 +494,13 @@ local file = require("file")
 
 -- Join path segments using the OS-specific separator
 local full_path = file.join_path("/foo", "bar", "baz.txt")
-print(full_path)  -- On Unix: /foo/bar/baz.txt, on Windows: \foo\bar\baz.txt
+print(full_path)  -- On Unix: /foo/bar/baz.txt
 ```
 
-The `file.join_path(...)` function joins any number of path segments using the correct separator for the current operating system. This is the recommended way to construct file paths in cross-platform plugins.
+`file.join_path` joins nonempty segments with the host path separator. It does not normalize
+existing separators, resolve `..`, expand `~`, or make an untrusted path safe. Pass relative
+segments after the base directory. For environment plugins, use `ctx.config_root` as the
+base for project-relative options.
 
 ### Read File Contents
 
@@ -501,6 +508,8 @@ The `file.join_path(...)` function joins any number of path segments using the c
 local file = require("file")
 print(file.read("/path/to/file"))
 ```
+
+`file.read` returns UTF-8 text or raises an error; it does not return `nil` for a missing file.
 
 ### Create Symbolic Links
 
@@ -545,9 +554,19 @@ file.move(
 )
 ```
 
+### File Metadata
+
+`file.stat(path)` returns `nil` when the path is missing. Otherwise it returns `size`,
+`is_file`, `is_dir`, `is_symlink`, and available `modified`, `accessed`, and `created` Unix
+timestamps. It inspects the link itself. `mode` is an octal permission string on Unix and
+`nil` on other platforms.
+
 ## Environment Module
 
-The env module provides environment variable operations.
+`env.setenv` changes the mise process environment. It does not return a variable to the
+user's shell, and it does not update an already-constructed hook environment. Prefer
+returning values from `MiseEnv`, `EnvKeys`, or `BackendExecEnv`. For one child command, use
+`cmd.exec(..., {env = {...}})` to avoid process-wide mutations.
 
 ### Set Environment Variable
 
@@ -564,25 +583,20 @@ env.setenv("MY_VAR", "my_value")
 
 ### Path Operations
 
-```lua
-local env = require("env")
-
--- Get current PATH
-local current_path = os.getenv("PATH")
-
--- Add to PATH
-local new_path = "/usr/local/bin:" .. current_path
-env.setenv("PATH", new_path)
-
--- Platform-specific PATH separator
-local separator = package.config:sub(1,1) == '\\' and ";" or ":"
-local paths = {"/usr/local/bin", "/opt/bin", current_path}
-env.setenv("PATH", table.concat(paths, separator))
-```
+Return separate PATH entries from an environment hook. Use `file.join_path` to construct
+paths and let mise merge them using the host's PATH separator. Do not prepend a Unix
+colon-separated string to PATH in code that also runs on Windows.
 
 ## Command Module
 
-The cmd module executes shell commands.
+`cmd.exec` runs a command through mise's configured default inline shell. It returns stdout
+on success and raises an error containing stderr on failure. Successful stderr is not part
+of the returned string. `pcall(cmd.exec, ...)` can intercept the error.
+
+The string is shell code, not an argument array. Use `cwd` for the working directory and
+quote external values for that shell; interpolating tool options into shell text can execute
+unintended commands. `os.execute` streams output and returns the exit status using Lua 5.1
+conventions (`0` for success), with the same mise-constructed environment.
 
 ### Basic Command Execution
 
@@ -625,7 +639,7 @@ The options table supports the following keys:
 
 - **`cwd`** (string): Set the working directory for the command
 - **`env`** (table): Set environment variables for the command. These are merged on top of the inherited environment (see below).
-- **`timeout`** (number): Set a timeout for command execution (future feature)
+- **`timeout`**: Currently ignored. Do not rely on it to terminate a command.
 
 ### Environment Inheritance in Env Module Hooks
 
@@ -640,6 +654,7 @@ _.my-plugin = { tools = true }
 
 ```lua
 function PLUGIN:MiseEnv(ctx)
+    local cmd = require("cmd")
     -- With tools=true, mise-managed tools are on PATH
     local version = cmd.exec("node --version")
     return {
@@ -678,22 +693,23 @@ print("OS Info:", os_info)
 
 ### Version Fetching from API
 
+This helper collects version identifiers. An unordered JSON object does not establish
+oldest/newest order, and lexicographic sorting misorders `1.10.0` and `1.2.0`.
+
 ```lua
 local http = require("http")
 local json = require("json")
 
 function fetch_npm_versions(package_name)
-    local resp, err = http.get({
+    local resp = http.get({
         url = "https://registry.npmjs.org/" .. package_name,
         headers = {
             ['User-Agent'] = "mise-plugin"
         }
     })
 
-    if err ~= nil then
-        error("Failed to fetch package info: " .. err)
-    end
 
+    assert(resp.status_code == 200, "Package metadata request failed")
     local package_info = json.decode(resp.body)
     local versions = {}
 
@@ -701,42 +717,19 @@ function fetch_npm_versions(package_name)
         table.insert(versions, version)
     end
 
-    -- Sort versions (simple string sort)
-    table.sort(versions)
-
+    -- The JSON object has no release order. Return the collected identifiers;
+    -- callers must apply npm's actual release policy before using this as a hook.
     return versions
 end
 ```
 
-### File Download with Progress
+### Download and Verification {#file-download-with-progress}
 
-```lua
-local http = require("http")
-local file = require("file")
-
-function download_with_verification(url, dest_path, expected_sha256)
-    -- Download file
-    local err = http.download_file({
-        url = url,
-        headers = {
-            ['User-Agent'] = "mise-plugin"
-        }
-    }, dest_path)
-
-    if err ~= nil then
-        error("Download failed: " .. err)
-    end
-
-    -- Verify file exists
-    if not file.exists(dest_path) then
-        error("Downloaded file not found")
-    end
-
-    -- Note: SHA256 verification would need additional implementation
-    -- This is a simplified example
-    print("Downloaded successfully to: " .. dest_path)
-end
-```
+`http.download_file` downloads bytes; checking that the destination exists is not checksum
+verification. A tool plugin should return the trusted digest in `PreInstall.sha256` or
+`PreInstall.sha512` so mise verifies before extraction. A backend plugin performing its own
+download must implement verification explicitly. Do not accept an `expected_sha256` argument
+and then ignore it.
 
 ### Configuration File Parsing
 
@@ -751,11 +744,7 @@ function parse_config_file(config_path)
     end
 
     local content = file.read(config_path)
-    if not content then
-        error("Failed to read config file: " .. config_path)
-    end
-
-    -- Trim whitespace
+        -- Trim whitespace
     content = strings.trim_space(content)
 
     -- Parse JSON
@@ -776,25 +765,23 @@ local html = require("html")
 local strings = require("strings")
 
 function scrape_versions_from_releases(base_url)
-    local resp, err = http.get({
+    local resp = http.get({
         url = base_url .. "/releases"
     })
 
-    if err ~= nil then
-        error("Failed to fetch releases page: " .. err)
-    end
 
+    assert(resp.status_code == 200, "Release page request failed")
     local doc = html.parse(resp.body)
     local versions = {}
 
     -- Find version tags
     local version_elements = doc:find("h2 a[href*='/releases/tag/']")
-    for _, element in ipairs(version_elements) do
+    version_elements:each(function(index, element)
         local version_text = element:text()
         local version = strings.trim_space(version_text)
 
         -- Remove 'v' prefix if present
-        version = strings.trim_prefix(version, "v")
+        version = version:gsub("^v", "")
 
         if version and version ~= "" then
             table.insert(versions, {
@@ -802,7 +789,7 @@ function scrape_versions_from_releases(base_url)
                 url = base_url .. element:attr("href")
             })
         end
-    end
+    end)
 
     return versions
 end
@@ -875,14 +862,11 @@ local http = require("http")
 local json = require("json")
 
 function safe_api_call(url)
-    local resp, err = http.get({url = url})
+    local resp = http.get({url = url})
 
-    if err ~= nil then
-        error("HTTP request failed: " .. err)
-    end
 
     if resp.status_code ~= 200 then
-        error("API returned error: " .. resp.status_code .. " " .. resp.body)
+        error("API returned error: " .. resp.status_code)
     end
 
     local success, data = pcall(json.decode, resp.body)
@@ -896,7 +880,10 @@ end
 
 ### Caching
 
-Cache expensive operations:
+A local Lua table can avoid repeated work within one runtime. It does not persist between
+separate mise invocations. mise already caches tool version and environment results;
+environment plugins can also return [cache metadata](/env-plugin-development.html#hooks-mise-env-lua).
+The example below is only an in-memory cache:
 
 ```lua
 local cache = {}
@@ -913,12 +900,10 @@ function cached_http_get(url)
 
     -- Fetch fresh data
     local http = require("http")
-    local resp, err = http.get({url = url})
+    local resp = http.get({url = url})
 
-    if err ~= nil then
-        error("HTTP request failed: " .. err)
-    end
 
+    assert(resp.status_code == 200, "Request failed")
     -- Cache the result
     cache[cache_key] = {
         data = resp,
@@ -931,33 +916,18 @@ end
 
 ### Platform Detection
 
-Handle cross-platform differences:
+Use runtime metadata instead of subprocesses or ambient host variables:
 
 ```lua
-local function get_platform_info()
-    local is_windows = package.config:sub(1,1) == '\\'
-    local cmd = require("cmd")
-
-    if is_windows then
-        return {
-            os = "windows",
-            arch = os.getenv("PROCESSOR_ARCHITECTURE") or "x64",
-            path_sep = "\\",
-            env_sep = ";"
-        }
-    else
-        local uname = cmd.exec("uname -s"):lower()
-        local arch = cmd.exec("uname -m")
-
-        return {
-            os = uname,
-            arch = arch,
-            path_sep = "/",
-            env_sep = ":"
-        }
-    end
-end
+local platform = {
+    os = RUNTIME.osType,
+    arch = RUNTIME.archType,
+    libc = RUNTIME.envType,
+}
 ```
+
+`RUNTIME` may describe another target during lockfile generation. Shelling out to `uname`
+would report the host and can produce the wrong artifact URL for that target.
 
 ## Next Steps
 
