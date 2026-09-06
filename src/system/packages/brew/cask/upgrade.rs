@@ -205,3 +205,59 @@ pub(super) fn assess_auto_update(
     let parent = open_trusted_appdir_readonly(parent)?;
     read_live_version_at(&parent, name, &cask.version)
 }
+
+#[cfg(unix)]
+pub(super) fn recheck_auto_update(
+    cask: &Cask,
+    initial_receipt: &CaskReceipt,
+    parent: Option<&TrustedOperationParent>,
+) -> Result<UpgradeDecision> {
+    if homebrew_metadata_present(&cask.token)? {
+        bail!(
+            "brew-cask:{}: Homebrew took ownership of this cask while installation was pending",
+            cask.token
+        );
+    }
+    if previous_receipt(cask)?.as_ref() != Some(initial_receipt) {
+        return Ok(unknown(
+            "mise ownership receipt changed while upgrade was pending",
+        ));
+    }
+    let [target] = initial_receipt.apps.as_slice() else {
+        bail!("brew-cask: eligible upgrade must own exactly one app");
+    };
+    let name = target
+        .file_name()
+        .ok_or_else(|| eyre!("brew-cask: app target has no filename"))?;
+    if let Some(parent) = parent {
+        return read_live_version_at(parent, name, &cask.version);
+    }
+    let parent = open_trusted_appdir_readonly(
+        target
+            .parent()
+            .ok_or_else(|| eyre!("brew-cask: app target has no parent"))?,
+    )?;
+    read_live_version_at(&parent, name, &cask.version)
+}
+
+#[cfg(unix)]
+pub(super) fn validate_distribution(cask: &Cask, app: &AppArtifact, stage: &Path) -> Result<()> {
+    let source = find_app(stage, &app.source)
+        .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
+    let parent = open_trusted_appdir_readonly(
+        source
+            .parent()
+            .ok_or_else(|| eyre!("brew-cask: staged app has no parent"))?,
+    )?;
+    let name = source
+        .file_name()
+        .ok_or_else(|| eyre!("brew-cask: staged app has no filename"))?;
+    match read_live_version_at(&parent, name, &cask.version)? {
+        UpgradeDecision::Equal { .. } => Ok(()),
+        decision => bail!(
+            "brew-cask:{}: distributed app version does not match cask {}: {decision:?}",
+            cask.token,
+            cask.version
+        ),
+    }
+}

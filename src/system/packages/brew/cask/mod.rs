@@ -46,6 +46,7 @@ pub(super) use model::Cask;
 use paths::*;
 use state::*;
 pub(crate) use state::{apply_cask_prune_plan, cask_formula_dependencies, cask_prune_plan};
+use upgrade::UpgradeDecision;
 
 const API_BASE: &str = "https://formulae.brew.sh/api";
 const HOMEBREW_CASK_RAW: &str = "https://raw.githubusercontent.com/Homebrew/homebrew-cask";
@@ -59,6 +60,59 @@ const APP_DIR_ENV: &str = "MISE_BREW_CASK_OPT_APPDIR";
 const MAX_NESTED_CASK_ARCHIVES: usize = 16;
 
 pub(crate) struct BrewCaskManager {}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InstallMode {
+    Install,
+    Upgrade,
+}
+
+#[cfg(test)]
+enum InstallTestEvent {
+    BeforeLock {
+        stage: PathBuf,
+    },
+    BeforeActivate {
+        stage: PathBuf,
+        prepared_app: PathBuf,
+    },
+}
+
+struct InstallAttempt<'a> {
+    mode: InstallMode,
+    ancestors: BTreeSet<String>,
+    decision: Option<UpgradeDecision>,
+    manager_options: &'a ManagerPackageOptions,
+    #[cfg(test)]
+    hook: Option<&'a mut dyn FnMut(InstallTestEvent) -> Result<()>>,
+}
+
+impl<'a> InstallAttempt<'a> {
+    fn new(mode: InstallMode, manager_options: &'a ManagerPackageOptions) -> Self {
+        Self {
+            mode,
+            ancestors: BTreeSet::new(),
+            decision: None,
+            manager_options,
+            #[cfg(test)]
+            hook: None,
+        }
+    }
+
+    fn should_skip(&mut self, decision: UpgradeDecision) -> bool {
+        let skip = !matches!(decision, UpgradeDecision::Older { .. });
+        self.decision = Some(decision);
+        skip
+    }
+
+    #[cfg(test)]
+    fn notify(&mut self, event: InstallTestEvent) -> Result<()> {
+        if let Some(hook) = &mut self.hook {
+            hook(event)?;
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AppArtifact {
@@ -481,11 +535,38 @@ impl BrewCaskManager {
         ancestors: &BTreeSet<String>,
         manager_options: &ManagerPackageOptions,
     ) -> Result<String> {
+        let mut attempt = InstallAttempt::new(InstallMode::Install, manager_options);
+        attempt.ancestors = ancestors.clone();
+        self.install_one_attempt(req, opts, pr, &mut attempt).await
+    }
+
+    #[cfg(test)]
+    async fn install_one_with_test_hook(
+        &self,
+        req: &PackageRequest,
+        opts: &InstallOpts,
+        mode: InstallMode,
+        mut hook: impl FnMut(InstallTestEvent) -> Result<()>,
+    ) -> Result<()> {
+        let mut attempt = InstallAttempt::new(mode, &ManagerPackageOptions::None);
+        attempt.hook = Some(&mut hook);
+        self.install_one_attempt(req, opts, None, &mut attempt)
+            .await?;
+        Ok(())
+    }
+
+    async fn install_one_attempt(
+        &self,
+        req: &PackageRequest,
+        opts: &InstallOpts,
+        pr: Option<&dyn SingleReport>,
+        attempt: &mut InstallAttempt<'_>,
+    ) -> Result<String> {
         let cask = fetch_cask(req, !opts.dry_run).await?;
-        if ancestors.contains(&cask.token) {
+        if attempt.ancestors.contains(&cask.token) {
             bail!("brew-cask:{}: dependency cycle detected", cask.token);
         }
-        let mut ancestors = ancestors.clone();
+        let mut ancestors = attempt.ancestors.clone();
         ancestors.insert(cask.token.clone());
         if let Some(version) = homebrew_installed_version(&cask.token)? {
             info!(
@@ -497,7 +578,27 @@ impl BrewCaskManager {
         let artifacts = cask_artifacts(&cask)?;
         validate_platform_support(&cask, &artifacts)?;
         let installed_version = mise_installed_cask_version(&cask)?;
-        if let Some(version) = installed_version.as_ref()
+        let auto_upgrade = attempt.mode == InstallMode::Upgrade && cask.auto_updates;
+        let initial_receipt = if auto_upgrade {
+            previous_receipt(&cask)?
+        } else {
+            None
+        };
+        if auto_upgrade {
+            let decision = upgrade::assess_auto_update(
+                &cask,
+                initial_receipt.as_ref(),
+                installed_version.is_some(),
+                false,
+            )?;
+            if attempt.should_skip(decision) {
+                return Ok(cask.version.clone());
+            }
+            if opts.dry_run {
+                artifacts.print_install_plan(&cask)?;
+                return Ok(cask.version.clone());
+            }
+        } else if let Some(version) = installed_version.as_ref()
             && (cask.auto_updates || version == &cask.version)
         {
             info!("brew-cask:{}: already installed", cask.token);
@@ -540,7 +641,7 @@ impl BrewCaskManager {
                 opts,
                 None,
                 &ancestors,
-                manager_options,
+                attempt.manager_options,
             ))
             .await?;
         }
@@ -550,198 +651,289 @@ impl BrewCaskManager {
         }
         prefix::bootstrap(false)?;
         let stage = fetch_and_stage(&cask, pr).await?;
-        let adopt = manager_options.brew_cask_adopt(&cask.token) && installed_version.is_none();
-        if adopt && !cask.auto_updates {
-            validate_adoptable_apps(&stage, &artifacts.apps)?;
-        }
-        let _caskroom_lock = lock_caskroom()?;
-        recover_flight_backups()?;
-        ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
-        if let Some(version) = mise_installed_cask_version(&cask)?
-            && (cask.auto_updates || version == cask.version)
-        {
-            file::remove_all(stage)?;
-            return Ok(version);
-        }
-        let previous_binaries = previous_binary_targets(&cask)?;
-        let previous_fonts = previous_font_targets(&cask)?;
-        let previous_completions = previous_completion_targets(&cask)?;
-        let previous_flight_symlinks = previous_flight_symlink_targets(&cask)?;
-        let previous_flight_directories = previous_flight_directory_targets(&cask)?;
-        let previous_generic = previous_generic_targets(&cask)?;
-        let caskroom_token = caskroom_token_dir(&cask.token);
-        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
-        let tmp_caskroom = caskroom_tmp_dir(&cask);
-        file::remove_all(&tmp_caskroom)?;
-        file::create_dir_all(&tmp_caskroom)?;
-        let appdir = cask_appdir(&artifacts.apps)?;
-        let mut journal = CaskTransactionJournal {
-            schema_version: 1,
-            token: &cask.token,
-            version: &cask.version,
-            completed: Vec::new(),
-        };
-        let mut flight_targets = FlightTargetTransaction::default();
-        flight_targets.receipt_caskroom = Some(caskroom.clone());
-        flight_targets.previous_symlinks = previous_flight_symlinks.iter().cloned().collect();
-        flight_targets.previous_directories = previous_flight_directories.into_iter().collect();
-        write_cask_journal(&journal)?;
-        let current_completions = artifacts.completion_target_paths(&cask)?;
-        for target in &current_completions {
-            ensure_completion_target_replaceable(&cask, &artifacts, target)?;
-        }
-        // Match Homebrew's artifact phases: preflight runs before app installation.
-        // An appdir-based preflight command therefore sees only a previously installed app.
-        execute_flight_steps_recording(
-            &cask,
-            &artifacts.preflight_steps,
-            &stage,
-            &appdir,
-            "preflight_steps",
-            &mut journal,
-            &mut flight_targets,
-        )?;
-        execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
-        if has_lifecycle_hook(&cask, "preflight") {
-            record_cask_action(&mut journal, "preflight_hook")?;
-        }
-        // Homebrew leaves artifacts from the installed version available to
-        // preflight. Back them up only after preflight so guards and commands
-        // can observe those links during an upgrade. A structured preflight
-        // step that replaces one has already protected it transactionally.
-        for target in &previous_flight_symlinks {
-            flight_targets.protect(target)?;
-        }
-        run_installers_before_durabilizing(
-            &stage,
-            &tmp_caskroom,
-            &artifacts.installers,
-            &mut flight_targets,
-            |index| record_cask_action(&mut journal, &format!("installer[{index}]")),
-        )?;
-        let mut metadata_only_apps = Vec::new();
-        for (index, app) in artifacts.apps.iter().enumerate() {
-            if install_app(
+        let mut current_journal = false;
+        let mut app_activated = false;
+        let mut _caskroom_lock = None;
+        let result = async {
+            #[cfg(test)]
+            attempt.notify(InstallTestEvent::BeforeLock {
+                stage: stage.clone(),
+            })?;
+            let adopt = attempt.mode == InstallMode::Install
+                && attempt.manager_options.brew_cask_adopt(&cask.token)
+                && installed_version.is_none();
+            if adopt && !cask.auto_updates {
+                validate_adoptable_apps(&stage, &artifacts.apps)?;
+            }
+            _caskroom_lock = Some(lock_caskroom()?);
+            recover_flight_backups()?;
+            ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
+            if auto_upgrade {
+                let decision = upgrade::recheck_auto_update(
+                    &cask,
+                    initial_receipt
+                        .as_ref()
+                        .expect("eligible upgrade has a receipt"),
+                    None,
+                )?;
+                if attempt.should_skip(decision) {
+                    file::remove_all(&stage)?;
+                    return Ok(cask.version.clone());
+                }
+                upgrade::validate_distribution(&cask, &artifacts.apps[0], &stage)?;
+            } else if let Some(version) = mise_installed_cask_version(&cask)?
+                && (cask.auto_updates || version == cask.version)
+            {
+                file::remove_all(&stage)?;
+                return Ok(version);
+            }
+            let previous_binaries = previous_binary_targets(&cask)?;
+            let previous_fonts = previous_font_targets(&cask)?;
+            let previous_completions = previous_completion_targets(&cask)?;
+            let previous_flight_symlinks = previous_flight_symlink_targets(&cask)?;
+            let previous_flight_directories = previous_flight_directory_targets(&cask)?;
+            let previous_generic = previous_generic_targets(&cask)?;
+            let caskroom_token = caskroom_token_dir(&cask.token);
+            let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+            let tmp_caskroom = caskroom_tmp_dir(&cask);
+            file::remove_all(&tmp_caskroom)?;
+            file::create_dir_all(&tmp_caskroom)?;
+            let appdir = cask_appdir(&artifacts.apps)?;
+            let mut journal = CaskTransactionJournal {
+                schema_version: 1,
+                token: &cask.token,
+                version: &cask.version,
+                completed: Vec::new(),
+            };
+            let mut flight_targets = FlightTargetTransaction::default();
+            flight_targets.receipt_caskroom = Some(caskroom.clone());
+            flight_targets.previous_symlinks = previous_flight_symlinks.iter().cloned().collect();
+            flight_targets.previous_directories = previous_flight_directories.into_iter().collect();
+            write_cask_journal(&journal)?;
+            current_journal = true;
+            let current_completions = artifacts.completion_target_paths(&cask)?;
+            for target in &current_completions {
+                ensure_completion_target_replaceable(&cask, &artifacts, target)?;
+            }
+            // Match Homebrew's artifact phases: preflight runs before app installation.
+            // An appdir-based preflight command therefore sees only a previously installed app.
+            execute_flight_steps_recording(
+                &cask,
+                &artifacts.preflight_steps,
+                &stage,
+                &appdir,
+                "preflight_steps",
+                &mut journal,
+                &mut flight_targets,
+            )?;
+            execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
+            if has_lifecycle_hook(&cask, "preflight") {
+                record_cask_action(&mut journal, "preflight_hook")?;
+            }
+            // Homebrew leaves artifacts from the installed version available to
+            // preflight. Back them up only after preflight so guards and commands
+            // can observe those links during an upgrade. A structured preflight
+            // step that replaces one has already protected it transactionally.
+            if !auto_upgrade {
+                for target in &previous_flight_symlinks {
+                    flight_targets.protect(target)?;
+                }
+            }
+            run_installers_before_durabilizing(
                 &stage,
                 &tmp_caskroom,
-                app,
-                !cask.auto_updates,
-                adopt,
-                !cask.auto_updates,
-            )? {
-                metadata_only_apps.push(app_target_path(app.target_name())?);
-            }
-            record_cask_action(&mut journal, &format!("app[{index}]"))?;
-        }
-        for (index, pkg) in artifacts.pkgs.iter().enumerate() {
-            install_pkg(&stage, pkg)?;
-            record_cask_action(&mut journal, &format!("pkg[{index}]"))?;
-        }
-        for (index, font) in artifacts.fonts.iter().enumerate() {
-            stage_font(&stage, &tmp_caskroom, font)?;
-            record_cask_action(&mut journal, &format!("font[{index}]"))?;
-        }
-        for (index, wrapper) in artifacts.command_wrappers.iter().enumerate() {
-            stage_command_wrapper(&tmp_caskroom, &appdir, &cask, wrapper)?;
-            record_cask_action(&mut journal, &format!("command_wrapper[{index}]"))?;
-        }
-        for (index, artifact) in artifacts.generic.iter().enumerate() {
-            install_generic_artifact(&stage, &tmp_caskroom, artifact, &mut flight_targets)?;
-            record_cask_action(&mut journal, &format!("artifact[{index}]"))?;
-        }
-        execute_flight_steps_recording(
-            &cask,
-            &artifacts.postflight_steps,
-            &tmp_caskroom,
-            &appdir,
-            "postflight_steps",
-            &mut journal,
-            &mut flight_targets,
-        )?;
-        execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
-        if has_lifecycle_hook(&cask, "postflight") {
-            record_cask_action(&mut journal, "postflight_hook")?;
-        }
-        if artifacts
-            .binaries
-            .iter()
-            .any(|binary| payload_backed_binary(&stage, binary))
-        {
-            durabilize_stage_payload(&stage, &tmp_caskroom, &artifacts.apps)?;
-        }
-        for (index, binary) in artifacts.binaries.iter().enumerate() {
-            stage_binary(&stage, &tmp_caskroom, &cask, &artifacts.apps, binary)?;
-            record_cask_action(&mut journal, &format!("binary[{index}]"))?;
-        }
-        for (index, completion) in artifacts.completions.iter().enumerate() {
-            stage_completion(&stage, &tmp_caskroom, &cask, &artifacts.apps, completion)?;
-            record_cask_action(&mut journal, &format!("completion[{index}]"))?;
-        }
-        for (index, generated) in artifacts.generated_completions.iter().enumerate() {
-            stage_generated_completions(&stage, &tmp_caskroom, &cask, &artifacts.apps, generated)?;
-            record_cask_action(&mut journal, &format!("generated_completion[{index}]"))?;
-        }
-        let current_binaries = artifacts.binary_targets()?;
-        let current_fonts = artifacts.font_target_paths()?;
-        let mut current_targets = current_binaries.clone();
-        current_targets.extend(current_completions.iter().cloned());
-        current_targets.extend(current_fonts.iter().cloned());
-        let mut link_transaction = ArtifactLinkTransaction::begin(current_targets)?;
-        let activation = replace_caskroom(&cask, &tmp_caskroom, &caskroom, || {
-            retarget_transient_symlinks(&tmp_caskroom, &caskroom, &caskroom, &flight_targets)?;
-            for binary in &artifacts.binaries {
-                link_binary(&caskroom, &appdir, binary)?;
-            }
-            for wrapper in &artifacts.command_wrappers {
-                link_command_wrapper(&caskroom, wrapper)?;
-            }
-            for target in &current_completions {
-                link_completion(&cask, &artifacts, &caskroom, target)?;
-            }
-            for font in &artifacts.fonts {
-                link_font(&caskroom, font)?;
-            }
-            write_receipt_with_flight_targets(
-                &caskroom,
-                &cask,
-                &artifacts,
-                flight_targets.installed_targets(),
-                flight_targets.uninstall_targets(),
-                flight_targets.installed_directories(),
-                &metadata_only_apps,
+                &artifacts.installers,
+                &mut flight_targets,
+                |index| record_cask_action(&mut journal, &format!("installer[{index}]")),
             )?;
-            Ok(())
-        });
-        if let Err(err) = activation {
-            if let Err(rollback_err) = link_transaction.rollback() {
-                return Err(err.wrap_err(format!(
-                    "failed to restore external cask artifacts: {rollback_err:#}"
-                )));
+            let mut metadata_only_apps = Vec::new();
+            for (index, app) in artifacts.apps.iter().enumerate() {
+                if auto_upgrade {
+                    let prepared = prepare_app(&stage, &tmp_caskroom, app)?;
+                    let activate: Result<bool> = (|| {
+                        #[cfg(test)]
+                        attempt.notify(InstallTestEvent::BeforeActivate {
+                            stage: stage.clone(),
+                            prepared_app: prepared.parent.path()?.join(&prepared.tmp_name),
+                        })?;
+                        let decision = upgrade::recheck_auto_update(
+                            &cask,
+                            initial_receipt
+                                .as_ref()
+                                .expect("eligible upgrade has a receipt"),
+                            Some(&prepared.parent),
+                        )?;
+                        if attempt.should_skip(decision) {
+                            return Ok(false);
+                        }
+                        app_activated = true;
+                        prepared.activate()?;
+                        Ok(true)
+                    })();
+                    match activate {
+                        Ok(true) => {
+                            metadata_only_apps.push(prepared.logical_target.clone());
+                        }
+                        Ok(false) => {
+                            prepared.cancel()?;
+                            file::remove_all(&tmp_caskroom)?;
+                            file::remove_all(&stage)?;
+                            file::remove_all(cask_journal_path_in(
+                                &crate::dirs::STATE,
+                                &cask.token,
+                                &cask.version,
+                            ))?;
+                            current_journal = false;
+                            return Ok(cask.version.clone());
+                        }
+                        Err(error) => {
+                            prepared.cancel().wrap_err_with(|| {
+                                format!("app preparation cleanup failed after: {error:#}")
+                            })?;
+                            return Err(error);
+                        }
+                    }
+                } else if install_app(
+                    &stage,
+                    &tmp_caskroom,
+                    app,
+                    !cask.auto_updates,
+                    adopt,
+                    !cask.auto_updates,
+                )? {
+                    metadata_only_apps.push(app_target_path(app.target_name())?);
+                }
+                record_cask_action(&mut journal, &format!("app[{index}]"))?;
             }
-            return Err(err);
+            for (index, pkg) in artifacts.pkgs.iter().enumerate() {
+                install_pkg(&stage, pkg)?;
+                record_cask_action(&mut journal, &format!("pkg[{index}]"))?;
+            }
+            for (index, font) in artifacts.fonts.iter().enumerate() {
+                stage_font(&stage, &tmp_caskroom, font)?;
+                record_cask_action(&mut journal, &format!("font[{index}]"))?;
+            }
+            for (index, wrapper) in artifacts.command_wrappers.iter().enumerate() {
+                stage_command_wrapper(&tmp_caskroom, &appdir, &cask, wrapper)?;
+                record_cask_action(&mut journal, &format!("command_wrapper[{index}]"))?;
+            }
+            for (index, artifact) in artifacts.generic.iter().enumerate() {
+                install_generic_artifact(&stage, &tmp_caskroom, artifact, &mut flight_targets)?;
+                record_cask_action(&mut journal, &format!("artifact[{index}]"))?;
+            }
+            execute_flight_steps_recording(
+                &cask,
+                &artifacts.postflight_steps,
+                &tmp_caskroom,
+                &appdir,
+                "postflight_steps",
+                &mut journal,
+                &mut flight_targets,
+            )?;
+            execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
+            if has_lifecycle_hook(&cask, "postflight") {
+                record_cask_action(&mut journal, "postflight_hook")?;
+            }
+            if artifacts
+                .binaries
+                .iter()
+                .any(|binary| payload_backed_binary(&stage, binary))
+            {
+                durabilize_stage_payload(&stage, &tmp_caskroom, &artifacts.apps)?;
+            }
+            for (index, binary) in artifacts.binaries.iter().enumerate() {
+                stage_binary(&stage, &tmp_caskroom, &cask, &artifacts.apps, binary)?;
+                record_cask_action(&mut journal, &format!("binary[{index}]"))?;
+            }
+            for (index, completion) in artifacts.completions.iter().enumerate() {
+                stage_completion(&stage, &tmp_caskroom, &cask, &artifacts.apps, completion)?;
+                record_cask_action(&mut journal, &format!("completion[{index}]"))?;
+            }
+            for (index, generated) in artifacts.generated_completions.iter().enumerate() {
+                stage_generated_completions(
+                    &stage,
+                    &tmp_caskroom,
+                    &cask,
+                    &artifacts.apps,
+                    generated,
+                )?;
+                record_cask_action(&mut journal, &format!("generated_completion[{index}]"))?;
+            }
+            let current_binaries = artifacts.binary_targets()?;
+            let current_fonts = artifacts.font_target_paths()?;
+            let mut current_targets = current_binaries.clone();
+            current_targets.extend(current_completions.iter().cloned());
+            current_targets.extend(current_fonts.iter().cloned());
+            let mut link_transaction = ArtifactLinkTransaction::begin(current_targets)?;
+            let activation = replace_caskroom(&cask, &tmp_caskroom, &caskroom, || {
+                retarget_transient_symlinks(&tmp_caskroom, &caskroom, &caskroom, &flight_targets)?;
+                for binary in &artifacts.binaries {
+                    link_binary(&caskroom, &appdir, binary)?;
+                }
+                for wrapper in &artifacts.command_wrappers {
+                    link_command_wrapper(&caskroom, wrapper)?;
+                }
+                for target in &current_completions {
+                    link_completion(&cask, &artifacts, &caskroom, target)?;
+                }
+                for font in &artifacts.fonts {
+                    link_font(&caskroom, font)?;
+                }
+                write_receipt_with_flight_targets(
+                    &caskroom,
+                    &cask,
+                    &artifacts,
+                    flight_targets.installed_targets(),
+                    flight_targets.uninstall_targets(),
+                    flight_targets.installed_directories(),
+                    &metadata_only_apps,
+                )?;
+                Ok(())
+            });
+            if let Err(err) = activation {
+                if let Err(rollback_err) = link_transaction.rollback() {
+                    return Err(err.wrap_err(format!(
+                        "failed to restore external cask artifacts: {rollback_err:#}"
+                    )));
+                }
+                return Err(err);
+            }
+            if let Err(err) = flight_targets.commit() {
+                warn!("brew-cask: failed to remove flight target backups: {err:#}");
+            }
+            if let Err(err) = link_transaction.commit() {
+                warn!("brew-cask: failed to remove artifact link backups: {err:#}");
+            }
+            record_cask_action(&mut journal, "activated")?;
+            remove_obsolete_binary_links(&cask, &previous_binaries, &current_binaries)?;
+            remove_obsolete_completions(&cask, &previous_completions, &current_completions)?;
+            remove_obsolete_fonts(&cask, &previous_fonts, &current_fonts)?;
+            remove_obsolete_generic_artifacts(
+                &previous_generic,
+                &artifacts.generic_artifact_targets()?,
+            )?;
+            remove_obsolete_flight_directories(
+                &flight_targets.previous_directories,
+                flight_targets.installed_directories(),
+            )?;
+            remove_stale_versions(&caskroom_token, &cask.version)?;
+            remove_cask_journals(&cask.token)?;
+            file::remove_all(&stage)?;
+            Ok(cask.version.clone())
         }
-        if let Err(err) = flight_targets.commit() {
-            warn!("brew-cask: failed to remove flight target backups: {err:#}");
+        .await;
+        if auto_upgrade && result.is_err() && !app_activated {
+            file::remove_all(&stage)?;
+            if current_journal {
+                file::remove_all(caskroom_tmp_dir(&cask))?;
+                file::remove_all(cask_journal_path_in(
+                    &crate::dirs::STATE,
+                    &cask.token,
+                    &cask.version,
+                ))?;
+            }
         }
-        if let Err(err) = link_transaction.commit() {
-            warn!("brew-cask: failed to remove artifact link backups: {err:#}");
-        }
-        record_cask_action(&mut journal, "activated")?;
-        remove_obsolete_binary_links(&cask, &previous_binaries, &current_binaries)?;
-        remove_obsolete_completions(&cask, &previous_completions, &current_completions)?;
-        remove_obsolete_fonts(&cask, &previous_fonts, &current_fonts)?;
-        remove_obsolete_generic_artifacts(
-            &previous_generic,
-            &artifacts.generic_artifact_targets()?,
-        )?;
-        remove_obsolete_flight_directories(
-            &flight_targets.previous_directories,
-            flight_targets.installed_directories(),
-        )?;
-        remove_stale_versions(&caskroom_token, &cask.version)?;
-        remove_cask_journals(&cask.token)?;
-        file::remove_all(stage)?;
-        Ok(cask.version)
+        result
     }
 }
 
@@ -893,7 +1085,16 @@ impl SystemPackageManager for BrewCaskManager {
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        self.install(pkgs, opts).await
+        for pkg in pkgs {
+            if pkg.version.is_some() {
+                bail!("brew casks are installed at their current version ('{pkg}')");
+            }
+            let mut attempt =
+                InstallAttempt::new(InstallMode::Upgrade, &ManagerPackageOptions::None);
+            self.install_one_attempt(pkg, opts, None, &mut attempt)
+                .await?;
+        }
+        Ok(())
     }
 }
 
@@ -938,35 +1139,91 @@ fn install_app(
         return Ok(true);
     }
 
-    ditto(&source, &caskroom_app)?;
-    // Suffix hashes stay derived from the logical path so temporary and backup
-    // names are stable across runs.
+    let prepared = prepare_app_at(&source, caskroom_app, logical_target, parent)?;
+    prepared.activate()?;
+    Ok(!keep_caskroom_copy)
+}
+
+struct PreparedApp {
+    parent: TrustedOperationParent,
+    name: std::ffi::OsString,
+    tmp_name: std::ffi::OsString,
+    old_name: std::ffi::OsString,
+    caskroom_app: PathBuf,
+    logical_target: PathBuf,
+}
+
+impl PreparedApp {
+    fn cancel(&self) -> Result<()> {
+        remove_all_at(&self.parent.fd, &self.tmp_name)
+    }
+
+    fn activate(&self) -> Result<()> {
+        activate_app_at(
+            &self.parent,
+            &self.name,
+            &self.tmp_name,
+            &self.old_name,
+            &self.caskroom_app,
+            &self.logical_target,
+        )?;
+        let relative = Path::new(".").join(&self.name);
+        let _ = run_in_trusted_dir(
+            "xattr",
+            &[
+                std::ffi::OsStr::new("-r"),
+                std::ffi::OsStr::new("-d"),
+                std::ffi::OsStr::new("com.apple.quarantine"),
+                relative.as_os_str(),
+            ],
+            &self.parent.fd,
+        );
+        Ok(())
+    }
+}
+
+fn prepare_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<PreparedApp> {
+    let source = find_app(stage, &app.source)
+        .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
+    let caskroom_app = caskroom.join(app_bundle_name(app.target_name())?);
+    let target = app_target_path(app.target_name())?;
+    let parent = open_trusted_appdir_readonly(
+        target
+            .parent()
+            .ok_or_else(|| eyre!("brew-cask: app target has no parent"))?,
+    )?;
+    prepare_app_at(&source, caskroom_app, target, parent)
+}
+
+fn prepare_app_at(
+    source: &Path,
+    caskroom_app: PathBuf,
+    logical_target: PathBuf,
+    parent: TrustedOperationParent,
+) -> Result<PreparedApp> {
+    file::remove_all(&caskroom_app)?;
+    ditto(source, &caskroom_app)?;
+    let name = logical_target
+        .file_name()
+        .ok_or_else(|| eyre!("brew-cask: app target has no filename"))?
+        .to_owned();
     let name_hash = crate::hash::hash_to_str(&logical_target.display().to_string());
     let tmp_name = replace_bundle_extension(&name, &format!("mise-tmp-{name_hash}"));
     let old_name = replace_bundle_extension(&name, &format!("mise-old-{name_hash}"));
     remove_all_at(&parent.fd, &tmp_name)?;
-    ditto_into(&caskroom_app, &parent.fd, &tmp_name)?;
-    activate_app_at(
-        &parent,
-        &name,
-        &tmp_name,
-        &old_name,
-        &caskroom_app,
-        &logical_target,
-    )?;
-    // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
-    let relative = Path::new(".").join(&name);
-    let _ = run_in_trusted_dir(
-        "xattr",
-        &[
-            std::ffi::OsStr::new("-r"),
-            std::ffi::OsStr::new("-d"),
-            std::ffi::OsStr::new("com.apple.quarantine"),
-            relative.as_os_str(),
-        ],
-        &parent.fd,
-    );
-    Ok(!keep_caskroom_copy)
+    if let Err(error) = ditto_into(&caskroom_app, &parent.fd, &tmp_name) {
+        remove_all_at(&parent.fd, &tmp_name)
+            .wrap_err_with(|| format!("app copy cleanup failed after: {error:#}"))?;
+        return Err(error);
+    }
+    Ok(PreparedApp {
+        parent,
+        name,
+        tmp_name,
+        old_name,
+        caskroom_app,
+        logical_target,
+    })
 }
 
 fn validate_adoptable_apps(stage: &Path, apps: &[AppArtifact]) -> Result<()> {
