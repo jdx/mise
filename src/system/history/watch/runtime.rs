@@ -308,14 +308,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         }
                     };
                             // the timing settings may have changed with it
-                            let fresh = Intervals::from_settings(&Settings::get());
-                            if fresh.limits != *capture.schedule.limits() {
-                                capture.schedule.set_limits(fresh.limits.clone());
-                            }
-                            if fresh.reconcile != intervals.reconcile {
-                                next_reconcile = fresh.reconcile.map(|every| tokio::time::Instant::now() + every);
-                            }
-                            intervals = fresh;
+                            apply_intervals(&mut capture, &mut intervals, &mut next_reconcile);
                             capture.out.emit(
                                 "replan",
                                 &format!("configuration changed; watching {} anchor(s)", installed.len()),
@@ -358,10 +351,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                             capture.write_health();
                         }
                         Ok(false) => {
-                            // what is still pending is saved under the
-                            // set that was in force, like any stop
-                            capture.out.emit("disabled", "history was disabled; stopping", json!({}));
-                            finish(&mut capture, &state.tracked).await;
+                            stop_disabled(&mut capture, &state.tracked).await;
                             debouncer.stop();
                             return Ok(0);
                         }
@@ -373,23 +363,51 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                     }
                 } else if rescan {
                     // the backend lost track: every watch is made anew
-                    if let Ok(true) = state.reload().await {
-                        installed = match reinstall(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
-                            Ok(installed) => installed,
-                            Err(err) => {
-                                stop_after_install_failure(&mut capture, &state.tracked, &err, "re-installed").await;
-                                debouncer.stop();
-                                return Ok(1);
-                            }
-                        };
-                        prune_schedule(&mut capture, &state);
+                    match state.reload().await {
+                        Ok(true) => {
+                            installed = match reinstall(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
+                                Ok(installed) => installed,
+                                Err(err) => {
+                                    stop_after_install_failure(&mut capture, &state.tracked, &err, "re-installed").await;
+                                    debouncer.stop();
+                                    return Ok(1);
+                                }
+                            };
+                            apply_intervals(&mut capture, &mut intervals, &mut next_reconcile);
+                            prune_schedule(&mut capture, &state);
+                        }
+                        Ok(false) => {
+                            stop_disabled(&mut capture, &state.tracked).await;
+                            debouncer.stop();
+                            return Ok(0);
+                        }
+                        Err(err) => capture.out.emit(
+                            "error",
+                            &format!("configuration could not be reloaded; keeping the previous tracked set: {err:#}"),
+                            json!({ "message": format!("{err:#}") }),
+                        ),
                     }
                     capture.reconcile(&state.tracked, "rescan");
                     capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
                     capture.write_health();
-                } else if (pending_appeared || anchor_changed)
-                    && let Ok(true) = state.reload().await
-                {
+                } else if pending_appeared || anchor_changed {
+                    match state.reload().await {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            stop_disabled(&mut capture, &state.tracked).await;
+                            debouncer.stop();
+                            return Ok(0);
+                        }
+                        Err(err) => {
+                            capture.out.emit(
+                                "error",
+                                &format!("configuration could not be reloaded; keeping the previous tracked set: {err:#}"),
+                                json!({ "message": format!("{err:#}") }),
+                            );
+                            continue;
+                        }
+                    }
+                    apply_intervals(&mut capture, &mut intervals, &mut next_reconcile);
                     // a replaced directory keeps its path but not its
                     // watch: an anchor that changed is watched anew
                     installed = match if anchor_changed {
@@ -472,16 +490,29 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 // path that appeared is watched, a replaced directory's dead
                 // watch is replaced, and what the set no longer covers
                 // leaves the schedule
-                if let Ok(true) = state.reload().await {
-                    installed = match reinstall(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
-                        Ok(installed) => installed,
-                        Err(err) => {
-                            stop_after_install_failure(&mut capture, &state.tracked, &err, "re-installed").await;
-                            debouncer.stop();
-                            return Ok(1);
-                        }
-                    };
-                    prune_schedule(&mut capture, &state);
+                match state.reload().await {
+                    Ok(true) => {
+                        installed = match reinstall(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
+                            Ok(installed) => installed,
+                            Err(err) => {
+                                stop_after_install_failure(&mut capture, &state.tracked, &err, "re-installed").await;
+                                debouncer.stop();
+                                return Ok(1);
+                            }
+                        };
+                        apply_intervals(&mut capture, &mut intervals, &mut next_reconcile);
+                        prune_schedule(&mut capture, &state);
+                    }
+                    Ok(false) => {
+                        stop_disabled(&mut capture, &state.tracked).await;
+                        debouncer.stop();
+                        return Ok(0);
+                    }
+                    Err(err) => capture.out.emit(
+                        "error",
+                        &format!("configuration could not be reloaded; keeping the previous tracked set: {err:#}"),
+                        json!({ "message": format!("{err:#}") }),
+                    ),
                 }
                 capture.reconcile(&state.tracked, "reconcile");
                 capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
@@ -636,6 +667,10 @@ struct State {
     tracked: TrackedSet,
     /// The declared set plus derived entries, what is watched.
     watched: TrackedSet,
+    /// Links inside tracked directories and where they pointed when last
+    /// walked (a target that is missing now is not derived any more, but
+    /// the link still declares it).
+    derived_links: Vec<(PathBuf, PathBuf)>,
     plan: WatchPlan,
     exclude: ExcludeSet,
     hard: Vec<PathBuf>,
@@ -652,9 +687,16 @@ impl State {
         let exclude = tracked.exclude_set()?;
         let watched = watched_set(&tracked)?;
         let plan = build_plan(&watched);
+        let derived_links = watched
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == tracked::EntryKind::Derived)
+            .filter_map(|entry| Some((entry.source.clone()?, entry.path.clone())))
+            .collect();
         Ok(Self {
             tracked,
             watched,
+            derived_links,
             plan,
             exclude,
             hard: hard_exclusions(),
@@ -669,7 +711,15 @@ impl State {
             return Ok(false);
         }
         let tracked = TrackedSet::effective().await?;
-        *self = Self::from_tracked(tracked)?;
+        let mut fresh = Self::from_tracked(tracked)?;
+        // a link whose target is between two versions derives nothing
+        // right now; what it pointed at is remembered while it is a link
+        for (link, target) in self.derived_links.drain(..) {
+            if link.is_symlink() && !fresh.derived_links.iter().any(|(l, _)| *l == link) {
+                fresh.derived_links.push((link, target));
+            }
+        }
+        *self = fresh;
         Ok(true)
     }
 
@@ -721,10 +771,20 @@ impl State {
         {
             return true;
         }
-        self.watched.entries.iter().any(|entry| {
+        if self.watched.entries.iter().any(|entry| {
             entry.policy.autosave
                 && entry.path.is_symlink()
                 && tracked::link_target(&entry.path).is_some_and(|target| path.starts_with(target))
+        }) {
+            return true;
+        }
+        // a link inside a tracked directory, whose target was derived when
+        // it existed and still is where the link points
+        self.derived_links.iter().any(|(link, target)| {
+            path.starts_with(target)
+                && link.is_symlink()
+                && self.relevant(link)
+                && tracked::link_target(link).is_some_and(|now| path.starts_with(now))
         })
     }
 }
@@ -761,6 +821,35 @@ fn build_plan(tracked: &TrackedSet) -> WatchPlan {
 
 /// Installs the plan's anchors, removing the ones no longer wanted.
 /// Returns the anchors now installed.
+/// History was switched off while the watcher ran: what is still pending
+/// is saved under the set that was in force, like any stop.
+async fn stop_disabled(capture: &mut Capture, tracked: &TrackedSet) {
+    capture
+        .out
+        .emit("disabled", "history was disabled; stopping", json!({}));
+    finish(capture, tracked).await;
+}
+
+/// The timing settings as they are now, after a reload of the
+/// configuration: the schedule's limits and the reconciliation timer follow
+/// an edit to `history.watch.*` without a restart.
+fn apply_intervals(
+    capture: &mut Capture,
+    intervals: &mut Intervals,
+    next_reconcile: &mut Option<tokio::time::Instant>,
+) {
+    let fresh = Intervals::from_settings(&Settings::get());
+    if fresh.limits != *capture.schedule.limits() {
+        capture.schedule.set_limits(fresh.limits.clone());
+    }
+    if fresh.reconcile != intervals.reconcile {
+        *next_reconcile = fresh
+            .reconcile
+            .map(|every| tokio::time::Instant::now() + every);
+    }
+    *intervals = fresh;
+}
+
 /// Drops from the schedule what the tracked set no longer covers (excluded,
 /// untracked, switched to manual saving, a link's old target): no capture
 /// from now on holds it or carries its old version forward. A path that is
@@ -1193,6 +1282,7 @@ mod tests {
     fn state_of(tracked: TrackedSet, config_dir: PathBuf) -> State {
         State {
             watched: tracked.clone(),
+            derived_links: vec![],
             plan: build_plan(&tracked),
             exclude: tracked.exclude_set().unwrap(),
             hard: vec![],
@@ -1227,6 +1317,16 @@ mod tests {
         assert!(state.may_cover_missing(&root.join("elsewhere/target")));
         assert!(!state.may_cover_missing(&hypr.join("plugins/state.json")));
         assert!(!state.may_cover_missing(&root.join("untracked/state.json")));
+
+        // a link inside the tracked directory whose target went missing:
+        // remembered from the last walk while the link still points there
+        let inner = hypr.join("inner-link");
+        std::os::unix::fs::symlink(root.join("elsewhere/inner"), &inner).unwrap();
+        let mut remembered = state_of(tracked.clone(), root.join("mise"));
+        remembered.derived_links = vec![(inner.clone(), root.join("elsewhere/inner"))];
+        assert!(remembered.may_cover_missing(&root.join("elsewhere/inner")));
+        std::fs::remove_file(&inner).unwrap();
+        assert!(!remembered.may_cover_missing(&root.join("elsewhere/inner")));
 
         // untracked, or switched to manual saving: nothing keeps it
         tracked.entries[0].policy.autosave = false;
