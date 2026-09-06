@@ -1,5 +1,1 @@
-improve this in this pr to do something more maintainable
-
----
-
 fix [https://github.com/jdx/mise/actions/runs/34044876767/job/101518467987?pr=12877](https://github.com/jdx/mise/actions/runs/34044876767/job/101518467987?pr=12877)
