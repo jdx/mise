@@ -879,6 +879,11 @@ Conflicts pause both publication and application for the whole setup;
 local history and fetching continue. Decisions are recorded per path
 with `--take-remote` or `--keep-local`; sharing resumes only after all
 conflicts are resolved and the plan has been recomputed.
+
+In `sync` mode the watcher pulls conflict-free setups on its
+own; this command writes what is pending right now and decides
+conflicts. When an incoming configuration declares more tracked files,
+their shared versions follow in the same run.
 """#
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --keep-local ~/.zshrc\u{1b}[22m\n"
             flag "-n --dry-run" help="Show the plan without changing anything"
@@ -970,6 +975,9 @@ head; a rejection fetches again and retries), uploads eligible
 checkpoints, and records incoming changes to apply and conflicts to
 decide. Live files are never changed here: `mise bootstrap dotfiles pull` does
 that. In `fetch-only` mode nothing is published.
+
+The history watcher does this on its own in `sync` and `fetch-only` mode
+(`settings.history.sync`); this command is for right now.
 """#
             flag --fetch-only help="Fetch without publishing"
             flag --best-effort help="Warn instead of failing when the origin is unreachable"
@@ -1061,6 +1069,14 @@ reconciles the whole set at startup, every `history.watch.reconcile`,
 and when the configuration changes. Manual-save entries are never
 watched.
 
+With a connected setup repository the watcher also synchronizes per
+`settings.history.sync`: in `sync` mode it publishes within
+`history.sync_interval` after a save, fetches every
+`history.fetch_interval`, and applies nonconflicting incoming changes;
+in `fetch-only` mode it only fetches; in `manual` mode it does nothing
+on the network. A failed sync backs off and is retried while saving
+continues. `--once` runs one reconcile and one such synchronization.
+
 The `history-watch` built-in service runs this for you:
 
     [bootstrap.services.mise-history]
@@ -1073,7 +1089,7 @@ the pending changes; one that would overlap another history operation
 is deferred.
 """#
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles watch\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles watch --once\u{1b}[22m      # one reconcile, for a timer\n    $ \u{1b}[1mmise bootstrap dotfiles watch --json\u{1b}[22m\n"
-            flag --once help="Reconcile once and exit (for timers and cron)"
+            flag --once help="Reconcile and synchronize once and exit (for timers and cron)"
             flag "-J --json" help="One JSON object per line instead of log lines"
             flag "-h --help" help="Print help" action=help builtin=#true
         }

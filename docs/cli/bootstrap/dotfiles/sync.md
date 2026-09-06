@@ -14,6 +14,9 @@ checkpoints, and records incoming changes to apply and conflicts to
 decide. Live files are never changed here: `mise bootstrap dotfiles pull` does
 that. In `fetch-only` mode nothing is published.
 
+The history watcher does this on its own in `sync` and `fetch-only` mode
+(`settings.history.sync`); this command is for right now.
+
 ## Flags
 - **`--fetch-only`** — Fetch without publishing
 - **`--best-effort`** — Warn instead of failing when the origin is unreachable
