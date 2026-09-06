@@ -74,6 +74,9 @@ pub(crate) struct DotfilesOriginSet {
 
 impl DotfilesOrigin {
     pub(crate) async fn run(self) -> Result<()> {
+        if self.command.is_some() || self.remove || self.purge {
+            crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
+        }
         match self.command {
             Some(DotfilesOriginCommands::Set(cmd)) => cmd.run().await,
             None if self.purge => {

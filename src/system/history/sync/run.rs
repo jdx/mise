@@ -145,6 +145,7 @@ pub(crate) fn sync(
     tracked: &TrackedSet,
     request: &SyncRequest,
 ) -> Result<SyncOutcome> {
+    crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
     let _sync_lock = lock(store)?;
     let origin = origin()?;
     if origin.encrypt_backups {

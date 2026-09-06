@@ -24,6 +24,7 @@ pub(crate) struct DotfilesSync {
 
 impl DotfilesSync {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         match self.sync().await {
             Ok(()) => Ok(()),
             Err(err) if self.best_effort => {

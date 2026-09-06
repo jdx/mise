@@ -45,6 +45,7 @@ pub(crate) struct DotfilesPull {
 
 impl DotfilesPull {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         if !crate::config::Settings::get().history.enabled {
             bail!("history is disabled (history.enabled = false)");
         }
