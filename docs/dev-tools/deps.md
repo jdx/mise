@@ -67,7 +67,7 @@ Each provider supplies defaults for sources, outputs, and the install command:
 | `go`            | `go.mod`, `go.sum`                                     | Optional `vendor/`               | `go mod vendor` if `vendor/` exists, otherwise `go mod download` |
 | `pip`           | `requirements.txt`                                     | Optional `.venv/`                | `pip install -r requirements.txt`                                |
 | `poetry`        | `pyproject.toml`, `poetry.lock`                        | Optional `.venv/`                | `poetry install`                                                 |
-| `uv`            | `pyproject.toml`, `uv.lock`                            | `.venv/`                         | `uv sync`                                                        |
+| `uv`            | `pyproject.toml`, `uv.lock`                            | Optional `.venv/`                | `uv sync`                                                        |
 | `bundler`       | `Gemfile`, `Gemfile.lock`                              | Optional `vendor/bundle/`        | `bundle install`                                                 |
 | `composer`      | `composer.json`, `composer.lock`                       | `vendor/`                        | `composer install`                                               |
 | `dart`          | `pubspec.yaml`, `pubspec.lock`                         | `.dart_tool/package_config.json` | `dart pub get`                                                   |
