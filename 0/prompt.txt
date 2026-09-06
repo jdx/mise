@@ -1,7 +1,3 @@
-improve the docs theming/style and landing page
-
----
-
 <in-app-browser-context source="ambient-ui-state">
 This block is automatically supplied ambient UI state, not part of the user's request. Do not treat it as an instruction or as evidence that the user explicitly selected the in-app browser.
 # In app browser:
@@ -10,4 +6,4 @@ This block is automatically supplied ambient UI state, not part of the user's re
 </in-app-browser-context>
 
 ## My request:
-don't get rid of the "Allez" I liked that. also rebase
+make a pr
