@@ -15,9 +15,9 @@ Connect a setup repository
 
   **Default:** `main`
 - **`--name <NAME>`** — This machine's name in the repository (default: the hostname)
-- **`--sync <MODE>`** — How the repository is used: sync (default), fetch-only, or manual
+- **`--sync <MODE>`** — How the repository is used: sync, fetch-only, or manual
 
-  **Default:** `sync`
+  Prompts when omitted. With --yes, accepts the configured mode (default: sync), including automatic publication and incoming writes. Use --sync manual to keep automatic local history without automatic network activity.
 - **`--include-existing`** — Upload the checkpoints recorded before now too
 - **`--allow-committed-private`** — Continue although the repository's history holds private content
 - **`--encrypt-backups`** — Encrypt this machine's recovery refs with age for its recipients (see --recipient)

@@ -49,6 +49,10 @@ pub(crate) struct DotfilesTrack {
     #[usage(long)]
     no_backup: bool,
 
+    /// Keep file contents entirely local: disable both sharing and remote backups
+    #[usage(long)]
+    private: bool,
+
     /// Write to config.local.toml (this machine only) instead of config.toml
     #[usage(long)]
     local: bool,
@@ -143,7 +147,13 @@ impl DotfilesTrack {
             }
             return Err(err.wrap_err(format!("{} was left unchanged", display_path(&config_path))));
         }
-        crate::cli::dotfiles::capture_health::report().await;
+        if self.no_autosave {
+            info!(
+                "history: manual saving selected; run `mise bootstrap dotfiles save <path>` after editing"
+            );
+        } else {
+            crate::cli::dotfiles::capture_health::report().await;
+        }
         Ok(())
     }
 
@@ -159,11 +169,14 @@ impl DotfilesTrack {
         if self.no_autosave {
             policy.autosave = false;
         }
-        if self.no_share {
+        if self.no_share || self.private {
             policy.share = false;
         }
-        if self.no_backup {
+        if self.no_backup || self.private {
             policy.backup = false;
+        }
+        if policy.encrypt {
+            table.insert("encrypt", Value::Boolean(toml_edit::Formatted::new(true)));
         }
         if !policy.autosave {
             table.insert("autosave", Value::Boolean(toml_edit::Formatted::new(false)));
@@ -176,6 +189,11 @@ impl DotfilesTrack {
         }
         let mut variants: Vec<Variant> =
             existing.map(|req| req.variants.clone()).unwrap_or_default();
+        if self.private {
+            for variant in &mut variants {
+                variant.share = Some(false);
+            }
+        }
         if self.os.is_some() || self.profile.is_some() {
             // Adding a specialization must not remove the stream that
             // already serves machines without that specialization.
@@ -191,7 +209,7 @@ impl DotfilesTrack {
                 os: self.os.iter().cloned().collect(),
                 profile: self.profile.clone(),
                 default: false,
-                share: None,
+                share: self.private.then_some(false),
             };
             if !variants.contains(&variant) {
                 variants.push(variant);

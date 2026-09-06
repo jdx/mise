@@ -25,6 +25,7 @@ Linux box can share the same live path with different contents.
 - **`--no-autosave`** — Save only on `mise bootstrap dotfiles save <path>`, never automatically
 - **`--no-share`** — Keep the file out of the shared setup (still backed up)
 - **`--no-backup`** — Keep the file out of remote backups (still protected locally)
+- **`--private`** — Keep file contents entirely local: disable both sharing and remote backups
 - **`--local`** — Write to config.local.toml (this machine only) instead of config.toml
 - **`-y --yes`** — Accept without prompting
 - **`-h --help`** — Print help

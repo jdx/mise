@@ -837,7 +837,12 @@ in the global config; the mode to `settings.history.sync`.
                 flag --name help="This machine's name in the repository (default: the hostname)" {
                     arg <NAME>
                 }
-                flag --sync help="How the repository is used: sync (default), fetch-only, or manual" default=sync {
+                flag --sync help="How the repository is used: sync, fetch-only, or manual" {
+                    long_help #"""
+How the repository is used: sync, fetch-only, or manual
+
+Prompts when omitted. With --yes, accepts the configured mode (default: sync), including automatic publication and incoming writes. Use --sync manual to keep automatic local history without automatic network activity.
+"""#
                     arg <MODE>
                 }
                 flag --include-existing help="Upload the checkpoints recorded before now too"
@@ -1022,6 +1027,7 @@ Linux box can share the same live path with different contents.
             flag --no-autosave help="Save only on `mise bootstrap dotfiles save <path>`, never automatically"
             flag --no-share help="Keep the file out of the shared setup (still backed up)"
             flag --no-backup help="Keep the file out of remote backups (still protected locally)"
+            flag --private help="Keep file contents entirely local: disable both sharing and remote backups"
             flag --local help="Write to config.local.toml (this machine only) instead of config.toml"
             flag "-y --yes" help="Accept without prompting"
             flag "-h --help" help="Print help" action=help builtin=#true
