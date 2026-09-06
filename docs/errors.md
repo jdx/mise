@@ -4,40 +4,42 @@ This page lists common error messages mise emits, what causes them, and how to f
 It complements [Troubleshooting](/troubleshooting.html), which is organized by symptom
 (wrong tool version, slow prompts, activation issues) rather than by error message.
 
-Every error is followed by a generic footer like this:
-
-```text
-mise ERROR Version: 2026.7.0
-mise ERROR Run with --verbose or MISE_VERBOSE=1 for more information
-```
-
-The actual error is the line(s) above the footer. To get more detail on any error:
+Start with the specific failure and any nested cause above the final exit-status or version
+line. The footer often just suggests verbose logging; it is not the cause of the error.
+For example, to diagnose a Node installation:
 
 ```sh
-mise --verbose <command>    # or MISE_VERBOSE=1 — show stacktraces and command output
-MISE_DEBUG=1 mise <command> # debug logging
-MISE_TRACE=1 mise <command> # trace logging (very verbose)
-mise doctor                 # diagnostics and warnings about your setup
+mise --verbose install node@24
+MISE_DEBUG=1 mise install node@24
+MISE_TRACE=1 mise install node@24
+mise doctor
 ```
+
+Replace `install node@24` with the command that failed. Trace logging is especially detailed;
+review logs for credentials, environment values, and private paths before sharing them.
 
 ## `Config files in <dir> are not trusted. Trust them with mise trust.`
 
-mise found a config file (`mise.toml`, `.tool-versions`, etc.) in a directory you
-haven't marked as trusted. Config files can define environment variables, templates, and
-tasks, so mise won't load them from unfamiliar directories until you approve them.
+mise found configuration that needs trust before it can be loaded. Inspect the file, then
+run [`mise trust`](/cli/trust.html) in its directory if you accept its contents.
+`mise trust --show` displays the current trust status without changing it.
 
-Run [`mise trust`](/cli/trust.html) in the directory to trust it. To trust a whole tree
-of projects (e.g. everything under `~/src`), use the
-[`trusted_config_paths`](/configuration/settings.html#trusted_config_paths) setting.
-See also [paranoid mode](/paranoid.html) for stricter behavior.
+In normal mode, simple tool-version/task configuration can be loaded without trust, and
+commands such as `mise run`, `mise install`, and `mise exec` implicitly trust their active
+configuration. Environment directives, templates, tool options, ignored configurations, and
+[paranoid mode](/paranoid.html) can change what requires explicit approval. Do not assume that
+all files are blocked until you have run `mise trust`.
+
+Use [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths) only for
+paths whose configuration you intend to trust, including future projects below those paths.
 
 ## `<tool> not found in mise tool registry`
 
 The tool name you used has no shorthand in the [registry](/registry.html). If the error
 includes a "Did you mean?" list, check for a typo first.
 
-If the tool genuinely isn't in the registry, you can still install it by specifying the
-backend explicitly:
+If there is no registry entry, select a backend that supports the tool. These are syntax
+examples; replace the repository or package names with real ones:
 
 ```sh
 mise use aqua:owner/repo     # if it's in the aqua registry
@@ -47,7 +49,8 @@ mise use npm:some-tool       # npm
 ```
 
 See [backends](/dev-tools/backends/) for all options. The registry only provides short
-names for popular tools — any tool can be installed with explicit backend syntax.
+names for popular tools. Explicit backend syntax avoids needing a registry entry, but the
+backend still needs a compatible package or release asset and any required runtime.
 
 ## `Failed to install <tool>@<version>: <underlying error>`
 
@@ -70,14 +73,14 @@ mise could not resolve the version requested by the named config file — for ex
 
 - **The version doesn't exist**: check `mise ls-remote <tool>` for available versions.
 - **Stale version cache**: a recently released version may not be cached yet. Run
-  `mise cache clear` and retry. See
+  `mise cache clear node` for Node, or substitute the affected tool, and retry. See
   [new version not available](/troubleshooting.html#new-version-of-a-tool-is-not-available).
 - **Network/API errors**: the backend couldn't list versions (rate limits, offline).
   The underlying error after the colon will say so.
 
 ## `HTTP status client error (401 Unauthorized)`
 
-GitHub rejected the credential mise sent, usually because the token is invalid,
+For a GitHub URL, this means GitHub rejected the credential mise sent, usually because the token is invalid,
 expired, for a different GitHub host, or missing a required scope. The error
 includes a `github auth:` line that names the token source when mise resolved it,
 for example `GITHUB_TOKEN`, `gh CLI (hosts.yml)`, or `github_tokens.toml`.
@@ -86,21 +89,21 @@ Check or replace the token in the named source. If the source is not known, mise
 prints `github auth: yes` and refers to a configured GitHub token. If no
 Authorization header was sent, it prints `github auth: no`. See
 [GitHub Tokens](/dev-tools/github-tokens.html) for supported token sources and
-configuration.
+configuration. For a different host, check that backend's authentication settings.
 
 ## `HTTP status client error (403 Forbidden)` / `GitHub rate limit exceeded`
 
-You've hit GitHub's API rate limit, which is very low for unauthenticated requests.
-This is especially common in CI. If no token is configured, mise prints a warning
-telling you so.
+A 403 can mean an API rate limit, missing repository access, or an organization policy that
+rejects the request. Check the URL and response body. For GitHub, the `github auth:` and
+`github rate limit:` diagnostic lines help distinguish these cases.
 
-Set a GitHub token (no scopes required) as `GITHUB_TOKEN` or `MISE_GITHUB_TOKEN` in
-your environment — see [GitHub Tokens](/dev-tools/github-tokens.html) for all supported
-token sources. If a token _is_ set, verify it's valid and has access to the repository
-(private repos need appropriate scopes).
+If the error reports a rate limit, configure authentication or wait for the stated reset.
+For public repositories, a token does not need private-repository access. If a token is
+already present, verify its source and access to the repository, including any required
+organization authorization. See [GitHub Tokens](/dev-tools/github-tokens.html).
 
-The error output includes `github auth:` and `github rate limit:` lines to help
-diagnose which case you're in.
+For non-GitHub hosts, use the authentication mechanism documented by the relevant backend.
+Adding a GitHub token will not fix a 403 from another service.
 
 ## `Checksum mismatch for file <file>`
 
@@ -110,15 +113,17 @@ Expected: sha256:abc123...
 Actual:   sha256:def456...
 ```
 
-The downloaded file doesn't match the expected checksum from the lockfile, the aqua
-registry, or the tool's published checksums. Causes, in rough order of likelihood:
+The downloaded file does not match the expected checksum. Identify where that expectation
+came from: the lockfile, backend registry, or upstream release checksums. Also check that the
+URL and selected asset match the intended version, OS, and architecture.
 
-- **Corrupted or truncated download**: run `mise cache clear` and retry.
-- **Stale lockfile**: the checksum in [`mise.lock`](/dev-tools/mise-lock.html) was
-  recorded for a different artifact (e.g. the upstream release asset was re-uploaded).
-  Remove the affected entry from `mise.lock` and reinstall to re-lock it.
-- **Tampering**: if the mismatch persists and you can't explain it, don't override
-  it — verify the upstream release before installing.
+A truncated download can cause a mismatch; retry the download after checking the network or
+proxy error. A release asset replaced upstream can also invalidate a previously recorded
+checksum. Compare the release publisher's information before updating a lockfile entry.
+Do not delete the expected checksum or disable verification just to make the error disappear.
+
+See [lockfiles](/dev-tools/mise-lock.html) for how artifact URLs and checksums are recorded.
+Clearing the version cache alone does not change a checksum pinned in `mise.lock`.
 
 ## `mise version <X> is required, but you are using <Y>`
 
@@ -129,13 +134,14 @@ standalone installer) or through the package manager you installed it with.
 ## `no tasks <name> found`
 
 No [task](/tasks/) with that name is defined in the current config hierarchy. Run
-`mise tasks ls` to see available tasks. Tasks are loaded from config files in
-the current directory and its parents, so a task defined in another project directory
-won't be visible.
+`mise tasks ls` to see available tasks. Check the current directory, selected
+environment, and task name, including any monorepo namespace. Use `mise --cd path/to/project tasks ls` to inspect another project. See [task configuration](/tasks/) for file tasks and
+configuration discovery.
 
 ## `<command> exited with non-zero status: exit code <N>` / `command failed: exit code <N>`
 
 These mean a command mise executed failed — a task, a plugin script, or the program run
-via `mise exec`/shims. The problem is in the command, not mise itself; mise propagates
-the command's exit code. Re-run with `--verbose` (or `MISE_DEBUG=1`) to see the
+via `mise exec`/shims. Start with that child command's output, then check
+its working directory, arguments, selected tools, and environment. A task or installation
+can fail because those inputs differ from the ones in your interactive shell. Re-run with `--verbose` (or `MISE_DEBUG=1`) to see the
 command's full output if it isn't already shown.
