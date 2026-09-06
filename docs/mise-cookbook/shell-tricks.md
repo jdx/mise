@@ -4,36 +4,33 @@ A collection of shell utilities that build on mise.
 
 ## Prompt colouring
 
-In zsh, to change the prompt colour whenever mise updates the environment (e.g. on `cd` into a project, or after a `.mise*.toml` file is modified):
+In Zsh, add a prompt hook after your existing `mise activate zsh` setup. This
+example replaces the prompt with a blue marker when mise's environment state
+changes and a green marker otherwise. It leaves mise's activation functions intact:
 
-```shell
-# activate mise like normal
-source <(command mise activate zsh)
+```zsh
+# Put this after your existing mise activation in ~/.zshrc.
+autoload -Uz add-zsh-hook
+typeset -g _mise_prompt_diff="${__MISE_DIFF-}"
 
-typeset -i _mise_updated
-
-# replace default mise hook
-function _mise_hook {
-  local diff=${__MISE_DIFF}
-  source <(command mise hook-env -s zsh)
-  [[ ${diff} == ${__MISE_DIFF} ]]
-  _mise_updated=$?
-}
-
-_PROMPT="❱ "  # or _PROMPT=${PROMPT} to keep the default
-
-function _prompt {
-  if (( ${_mise_updated} )); then
-    PROMPT='%F{blue}${_PROMPT}%f'
+function _mise_prompt_colour {
+  local previous_status=$?
+  if [[ "${__MISE_DIFF-}" != "$_mise_prompt_diff" ]]; then
+    PROMPT='%F{blue}❱ %f'
   else
-    PROMPT='%(?.%F{green}${_PROMPT}%f.%F{red}${_PROMPT}%f)'
+    PROMPT='%F{green}❱ %f'
   fi
+  _mise_prompt_diff="${__MISE_DIFF-}"
+  return "$previous_status"
 }
 
-add-zsh-hook precmd _prompt
+add-zsh-hook -d precmd _mise_prompt_colour
+add-zsh-hook precmd _mise_prompt_colour
 ```
 
-Now, whenever mise updates the environment, the prompt turns blue.
+`__MISE_DIFF` is internal state, so treat this as a customization to maintain when
+upgrading mise. To undo it, remove `_mise_prompt_colour` with `add-zsh-hook -d precmd
+_mise_prompt_colour` and restore your usual `PROMPT` or prompt theme.
 
 ## Current configuration environment in powerline-go prompt
 
@@ -47,47 +44,53 @@ Mostly, it works as you would expect: include `shell-var` in `-modules`,
 pass `-shell-var MISE_ENV -shell-var-no-warn-empty` in the arguments,
 and make sure `MISE_ENV` is exported so `powerline-go` can see it.
 
-A gotcha as of February 2025 is that the `shell-var` module does not
-tolerate _unset_ (as opposed to empty) environment variables.
-To work around this, set `MISE_ENV` to an empty value early in the shell
-startup scripts, and avoid manually `unset`ing it.
-For example, for bash, typically in `~/.bashrc`:
+If your version of powerline-go warns when `MISE_ENV` is unset, ensure the variable
+is defined while preserving any selection made before the shell started:
 
 ```bash
-export MISE_ENV=
+export MISE_ENV="${MISE_ENV-}"
 ```
+
+This displays the exported `MISE_ENV` value. Environments chosen only for one
+command with `mise -E`, or platform environments selected by `auto_env`, are not
+persistent changes to that shell variable.
 
 ## Inspect what changed after mise hook
 
-Using record-query, you can inspect the `__MISE_DIFF` and `__MISE_SESSION` variables to see what the mise hook changes in your environment.
+For ordinary troubleshooting, start with `mise config`, `mise doctor`, or
+`MISE_DEBUG=1 mise env`. If you need to inspect shell bookkeeping itself,
+`__MISE_DIFF` and `__MISE_SESSION` currently contain base64-encoded, zlib-compressed
+MessagePack data.
 
-```toml [~/.config/mise/config.toml]
-[tools]
-"cargo:record-query" = "latest"
+The following Bash/Zsh helper requires Python and the `msgpack` package. Create an
+isolated Python environment for the decoder:
+
+```sh
+python3 -m venv ~/.cache/mise-env-inspect
+~/.cache/mise-env-inspect/bin/python -m pip install msgpack
 ```
 
-```shell
+```bash
 function mise_parse_env {
-  rq -m < <(
-    zcat -q < <(
-      printf '\x1f\x8b\x08\x00\x00\x00\x00\x00'
-      base64 -d <<< "$1"
-    )
-  )
+  printf '%s' "$1" | "$HOME/.cache/mise-env-inspect/bin/python" -c '
+import base64, pprint, sys, zlib
+import msgpack
+value = sys.stdin.read().strip()
+if not value:
+    raise SystemExit("No mise state was supplied; activate mise first")
+payload = zlib.decompress(base64.b64decode(value + "=" * (-len(value) % 4)))
+pprint.pprint(msgpack.unpackb(payload, raw=False), sort_dicts=False)
+'
 }
 ```
 
-```shell
-$ mise_parse_env "${__MISE_DIFF}"
-{
-  "new": {
-    ...
-  },
-  "old": {
-    ...
-  },
-  "path": [
-    ...
-  ]
-}
+Use it in an activated shell:
+
+```sh
+mise_parse_env "$__MISE_DIFF"
+mise_parse_env "$__MISE_SESSION"
 ```
+
+This format is an implementation detail, not an API. The decoded data can contain
+environment values, including secrets; inspect it locally and redact it before
+sharing diagnostic output.

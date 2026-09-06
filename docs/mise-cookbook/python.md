@@ -1,10 +1,14 @@
-# Mise + Python Cookbook
+# Python Cookbook
 
-Here are some tips on managing [Python](/lang/python.html) projects with mise.
+Choose a recipe for an existing requirements-based project, a uv project, or a
+standalone Python script. See [Python configuration](/lang/python.html) for runtime
+installation and virtualenv settings.
 
 ## A Python Project with virtualenv
 
-Here is an example Python project with a `requirements.txt` file.
+This recipe expects `requirements.txt`, `app.py`, and a `tests/` directory. Include
+`pytest` in the requirements used for development. mise creates `.venv`; the
+install task populates it with project dependencies.
 
 ```toml [mise.toml]
 min_version = "2024.9.5"
@@ -17,7 +21,8 @@ PROJECT_NAME = "{{ config_root | basename }}"
 _.python.venv = { path = ".venv", create = true }
 
 [tools]
-python = "{{ get_env(name='PYTHON_VERSION', default='3.11') }}"
+python = "3.12"
+uv = "latest"
 ruff = "latest"
 
 [tasks.install]
@@ -31,11 +36,11 @@ run = "python app.py"
 
 [tasks.test]
 description = "Run tests"
-run = "pytest tests/"
+run = "python -m pytest tests/"
 
 [tasks.lint]
 description = "Lint the code"
-run = "ruff src/"
+run = "ruff check ."
 
 [tasks.info]
 description = "Print project information"
@@ -44,6 +49,9 @@ echo "Project: $PROJECT_NAME"
 echo "Virtual Environment: $VIRTUAL_ENV"
 '''
 ```
+
+Run `mise run install`, then `mise run test`, `mise run lint`, or `mise run run`.
+Add `.venv/` to `.gitignore`.
 
 ## mise + uv
 
@@ -65,13 +73,20 @@ cat .python-version
 
 If you run `uv run main.py` in the `uv` project, `uv` automatically creates a virtual environment for you using the Python version specified in the `.python-version` file. It also creates a `uv.lock` file.
 
-`mise` detects the Python version in `.python-version`, but by default it does not use the virtual environment created by `uv`. So `which python` shows a global Python installation from `mise`.
+Enable `.python-version` discovery if you want mise to select the same Python
+version. Declare uv as a tool as well:
 
-```shell
-mise i
-which python
-# ~/.local/share/mise/installs/python/3.12.4/bin/python
+```toml [mise.toml]
+[tools]
+uv = "latest"
+
+[settings]
+idiomatic_version_file_enable_tools = ["python"]
 ```
+
+Run `mise install`, then `mise exec -- uv sync` to create the lockfile, virtualenv,
+and project dependencies. By default, mise still selects its managed Python when
+you run `mise exec -- python`; `uv run` selects uv's project environment.
 
 To make `mise` use the virtual environment created by `uv`, set the [`python.uv_venv_auto`](/lang/python.html#python.uv_venv_auto) setting in your `mise.toml` file.
 Use `"source"` to source only an existing `.venv`, or `"create|source"` to create it if missing and then source it.
@@ -88,11 +103,12 @@ python.uv_venv_auto = "source"
 # python.uv_venv_auto = "create|source"
 ```
 
-`which python` now shows the Python version from the virtual environment created by `uv`.
+After activation refreshes, `python` resolves to the virtualenv. You can also
+check through mise directly:
 
 ```shell
-which python
-# ./uv-project/.venv/bin/python
+mise exec -- python -c 'import sys; print(sys.executable)'
+# /path/to/uv-project/.venv/bin/python
 ```
 
 Another option is to use `_.python.venv` in your `mise.toml` file to specify the path to the virtual environment created by `uv`.
@@ -104,7 +120,10 @@ _.python.venv = { path = ".venv" }
 
 ### Syncing python versions installed by mise and uv
 
-Use [mise sync python --uv](/cli/sync/python.html#uv) to sync the Python version installed by `mise` with the version specified in the `uv` project's `.python-version` file.
+Use [`mise sync python --uv`](/cli/sync/python.html#uv) to make existing Python
+installations available across mise and uv. This shares installed runtimes; it
+does not update `.python-version`, select the project version, or sync packages.
+Use `uv sync` for project dependencies.
 
 ### uv scripts
 
@@ -127,7 +146,8 @@ run = '''
 import requests
 from rich.pretty import pprint
 
-resp = requests.get("https://peps.python.org/api/peps.json")
+resp = requests.get("https://peps.python.org/api/peps.json", timeout=30)
+resp.raise_for_status()
 data = resp.json()
 pprint([(k, v["title"]) for k, v in data.items()][:10])
 '''
@@ -144,12 +164,15 @@ Or as a file task:
 import requests
 from rich.pretty import pprint
 
-resp = requests.get("https://peps.python.org/api/peps.json")
+resp = requests.get("https://peps.python.org/api/peps.json", timeout=30)
+resp.raise_for_status()
 data = resp.json()
 pprint([(k, v["title"]) for k, v in data.items()][:10])
 ```
 
-You can then run it with `mise run print_peps`:
+For the file task, make it executable on Unix with
+`chmod +x mise-tasks/print_peps.py`. Declare uv in the project as in the TOML
+example. Either form can then run with `mise run print_peps`:
 
 ```shell
 ❯ mise run print_peps

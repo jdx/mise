@@ -1,71 +1,74 @@
 # Presets
 
-You can create your own presets with [mise tasks](../tasks/index.md) to reduce boilerplate and make setting up new projects easier.
+A preset is a task you write to create a project's starting configuration. Store
+it as a [global file task](/tasks/file-tasks.html) so it is available in new
+repositories. For reuse within an existing project, [task templates](/tasks/templates.html)
+may be a better fit: they share task definitions without generating files.
 
 ## Example python preset
 
-Here is an example of a Python preset that creates a `mise.toml` file for working with `python` and `pdm`:
+This Bash task writes a Python and uv config into the directory where you invoke
+it. It refuses to replace an existing `mise.toml` and leaves project initialization
+and dependency installation as explicit next steps.
 
-```shell [~/.config/mise/tasks/preset/python]
+Create the task directory:
+
+```sh
+mkdir -p ~/.config/mise/tasks/preset
+```
+
+Then save the following as `~/.config/mise/tasks/preset/python`:
+
+```bash [~/.config/mise/tasks/preset/python]
 #!/usr/bin/env bash
+#MISE description="Create a Python and uv project config"
 #MISE dir="{{cwd}}"
+set -euo pipefail
 
-mise use pre-commit
-mise config set env._.python.venv.path .venv
-mise config set env._.python.venv.create true -t bool
-mise tasks add lint -- pre-commit run -a
-```
+if [[ -e mise.toml ]]; then
+  echo "mise.toml already exists; merge the preset manually" >&2
+  exit 1
+fi
 
-```shell [~/.config/mise/tasks/preset/pdm]
-#!/usr/bin/env bash
-#MISE dir="{{cwd}}"
-#MISE depends=["preset:python"]
-#USAGE arg "<version>"
-
-mise use python@${usage_version?}
-mise use pdm@latest
-mise config set hooks.postinstall "pdm sync"
-```
-
-Then in any directory, you can run `mise preset:pdm 3.10` to scaffold a new project with `python` and `pdm`:
-
-```shell
-cd my-project
-mise preset:pdm 3.10
-# [preset:python] $ ~/.config/mise/tasks/preset/python
-# mise WARN  No untrusted config files found.
-# mise ~/my-project/mise.toml tools: pre-commit@4.0.1
-# [preset:pdm] $ ~/.config/mise/tasks/preset/pdm 3.10
-# mise WARN  No untrusted config files found.
-# mise ~/my-project/mise.toml tools: python@3.10.15
-# mise ~/my-project/mise.toml tools: pdm@2.21.0
-# mise creating venv with uv at: ~/my-project/.venv
-# Using CPython 3.10.15 interpreter at: /Users/simon/.local/share/mise/installs/python/3.10.15/bin/python
-# Creating virtual environment at: .venv
-# Activate with: source .venv/bin/activate.fish
-
-~/my-project via 🐍 v3.10.15 (.venv)
-# we are in the virtual environment ^
-```
-
-Here is the generated `mise.toml` file:
-
-```toml [mise.toml]
+cat > mise.toml <<'TOML'
 [tools]
-pdm = "latest"
-pre-commit = "latest"
-python = "3.10"
+python = "3.12"
+uv = "latest"
 
-[hooks]
-postinstall = "pdm sync"
+[tasks.sync]
+description = "Sync the project's locked dependencies"
+run = "uv sync --locked"
 
-[env]
-[env._]
-[env._.python]
-[env._.python.venv]
-path = ".venv"
-create = true
+[tasks.test]
+description = "Run tests from the project environment"
+run = "uv run --locked pytest"
+TOML
 
-[tasks.lint]
-run = "pre-commit run -a"
+echo "Created mise.toml"
 ```
+
+Make the task executable on Unix:
+
+```sh
+chmod +x ~/.config/mise/tasks/preset/python
+```
+
+Then run it from an empty project directory:
+
+```sh
+mkdir my-project
+cd my-project
+mise run preset:python
+mise exec -- uv init --bare
+mise exec -- uv add --dev pytest
+```
+
+The preset creates `mise.toml`; uv creates the project manifest and lockfile.
+Add your application and tests, then run `mise run test`. Teammates can run
+`mise run sync` after cloning to install the locked dependencies. Commit
+`mise.toml`, `pyproject.toml`, and `uv.lock`, and ignore `.venv/`.
+
+`#MISE dir="{{cwd}}"` matters for a global task: it makes the task write into the
+invocation directory instead of the global task's config root. Adapt the script
+before using it in repositories with existing configuration or another package
+manager.
