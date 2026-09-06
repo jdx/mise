@@ -5,28 +5,40 @@
 > will begin warning in mise 2027.2.0 and be removed in mise 2028.2.0. Use
 > `mise bootstrap dotfiles` instead.
 
-mise can manage dotfiles from the `[dotfiles]` section of `mise.toml`.
-Entries can either own a whole file or directory, or manage one small piece
-of a file something else owns.
+Declare dotfiles in `[dotfiles]` to manage complete files and directories, or a named
+block or line in a file shared with other tools. Keep the sources in a repository and apply
+them explicitly on each machine. Choose a [mode](#modes) based on who should own the target:
+a symlink edits the source directly, while a copy or template writes a separate file.
+
+## Start with one file
+
+Create `dotfiles/example.conf` next to your `mise.toml`, then add an entry for an unused target:
 
 ```toml
-[settings]
-dotfiles.root = "~/.dotfiles"
-dotfiles.default_mode = "symlink"
-
 [dotfiles]
-"~/.config/mise/config.toml" = { source = "config.toml", mode = "symlink" }
-"~/.zshrc" = { mode = "symlink" }                                     # ~/.dotfiles/.zshrc
-"~/.gitconfig" = "dotfiles/gitconfig"                                # explicit source
-"~/.config/alacritty.toml" = { mode = "copy" }                       # ~/.dotfiles/.config/alacritty.toml
-"~/.config/starship.toml" = { source = "dotfiles/starship.toml", mode = "copy" }
-"~/.config/tool.conf" = { content = "enabled = true\n" }                # inline whole-file content
-"~/.ssh/config" = { source = "dotfiles/ssh_config.tmpl", mode = "template" }
-"~/.config/nvim" = "dotfiles/nvim"                                   # symlink the directory itself
-"~/.local/bin" = { source = "dotfiles/bin", mode = "symlink-each" }  # symlink each file within
-"~/managed-home" = { source = "home", mode = "symlink-each", manifest = "git" }
-"~/hosts/dev" = { line = "127.0.0.1 dev.local" }                     # edit one line in ~/hosts
+"~/.config/mise-dotfiles-example.conf" = {
+    source = "dotfiles/example.conf",
+    mode = "copy",
+}
 ```
+
+Inspect the declaration, preview its application, and then apply it:
+
+```sh
+mise bootstrap dotfiles status
+mise bootstrap dotfiles apply --dry-run
+mise bootstrap dotfiles apply
+mise bootstrap dotfiles status --missing
+```
+
+The last command exits successfully only when all selected entries match their sources.
+Editing a copy's target does not update the source: a later apply overwrites it. Use
+[`add` to capture changes](#capturing-changes), or edit the managed source with
+`mise bootstrap dotfiles edit <target>`.
+
+To adopt an existing file, use `mise bootstrap dotfiles add <target>`. This captures the live
+file into `dotfiles.root`, writes a declaration, and applies it. Start with `--no-apply`
+when you want to review the captured source and configuration first.
 
 New entries are captured and applied by `mise bootstrap dotfiles add`; pass
 `--no-apply` to only capture them. Existing entries can be applied explicitly
@@ -71,7 +83,7 @@ their precedence by hand.
 
 Use `content` to declare a literal whole file inline instead of keeping a
 separate source file. Inline content is written as a private regular file
-(`0600` on Unix) and cannot be combined with `source`, `mode`, or `exclude`:
+(`0600` on Unix) and cannot be combined with `source`, `mode`, `exclude`, or `manifest`:
 
 ```toml
 [dotfiles]
@@ -108,8 +120,9 @@ markdown file. A pattern containing `/` is anchored to the source root:
 `"nvim/spell"` skips only that path. Either kind matching a directory skips
 everything under it.
 
-Excluding a file mise already applied removes what it left behind on the next
-apply, the same as deleting the source would.
+For `symlink-each`, excluding a previously managed file removes its recorded link on the
+next apply, just as deleting the source would. Directory `copy` is additive: exclusions
+prevent future copying but leave existing target files in place.
 
 ## Git-tracked directories
 
@@ -137,12 +150,22 @@ preserved.
 
 ## Modes
 
-| Mode           | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `symlink`      | Symlink the target to the source. Works for files and directories — a directory source gets one link for the whole directory. This is the default.                                                                                                                                                                                                                                                                                                                                                                |
-| `symlink-each` | Source must be a directory: recreate its directory structure under the target and symlink each file individually, so the target directory (say, `~/.config`) can also hold files mise doesn't manage. Deleting a source file or removing it from the selected manifest removes the link it left behind on the next apply; files and links mise didn't create are never touched. Managed links are recorded under `$MISE_STATE_DIR/dotfiles`, so shared targets are not recursively scanned after the first apply. |
-| `copy`         | Copy the source file (or directory, recursively). Use when the target must be a real file — e.g. tools that rewrite their config in place. Directory copies are additive: matching files are overwritten, files mise doesn't manage are left in place. Copies are never pruned, so removing a source file leaves the copy behind.                                                                                                                                                                                 |
-| `template`     | Render the source through the [mise template engine](/templates.html) and write the result. Permissions are taken from the source file (and repaired if they drift).                                                                                                                                                                                                                                                                                                                                              |
+| Mode           | Target behavior                                                      | Use when                                                       |
+| -------------- | -------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `symlink`      | One link to a file or entire directory; the default.                 | Edits to the target should edit the source.                    |
+| `symlink-each` | Recreate directories and link individual files.                      | A target directory also contains unmanaged neighbors.          |
+| `copy`         | Copy a file or directory; overwrite matching files.                  | The application needs a regular file or writes its own config. |
+| `template`     | Render a source file through the [template engine](/templates.html). | The output depends on machine-specific variables.              |
+
+`symlink-each` requires a directory source. It records managed links under
+`$MISE_STATE_DIR/dotfiles`, so subsequent applies can remove links for deleted or excluded
+sources without recursively scanning a shared target. Unmanaged neighbors are preserved.
+Keep that state directory when you want mise to reconcile previously applied profiles.
+
+Directory copies are additive and **never pruned**: deleting or excluding a source leaves
+its old copy behind. Review and remove those leftovers yourself. Templates use the source
+file's permissions and repair permission drift when applied. See [Windows](#windows) for
+platform-specific link behavior.
 
 Templates get the same context as other mise templates (`env`, `vars`,
 `exec()`, etc.), which is the main reason to use them: one source file,
@@ -151,9 +174,10 @@ per-machine output.
 Detecting whether a template's output has drifted requires rendering it, so
 `mise bootstrap dotfiles status`, `mise bootstrap dotfiles diff`, and a real
 apply evaluate templates — including any `exec()` calls — from your trusted
-config, just like `[env]` templates. `--dry-run` is the exception: it promises
-to execute nothing, so it skips template rendering and lists those entries as
-`(if changed)`.
+config, just like `[env]` templates. Dotfile `--dry-run` skips rendering the dotfile
+templates and lists those entries as `(if changed)`. It does not suppress unrelated
+configuration evaluation, so this is a preview of dotfile writes, not a sandbox for
+untrusted configuration.
 
 ## Edit entries
 
@@ -209,14 +233,15 @@ multi-line content.
 - **Explicit application** — `mise bootstrap dotfiles add` applies the entries
   it captures unless `--no-apply` is set. Entries not captured by `add` are
   applied by `mise bootstrap dotfiles apply` or [`mise bootstrap`](/bootstrap.html).
-- **Idempotent** — entries already in their desired state are skipped;
-  re-running is always safe.
+- **Skip unchanged output** — entries already in their desired state are skipped.
+  Templates may still execute while checking their output, and copy/template entries
+  overwrite changed targets on apply.
 - **Unknown modes and operations are ignored with a warning** so configs
   using features from newer mise versions still parse.
 
 ## Conflicts
 
-mise refuses to _replace_ existing files it doesn't manage: a real file or
+For symlink entries, mise refuses to replace conflicting existing paths: a real file or
 directory where a symlink should go, or a directory where a file should go,
 is an error listing the conflicting paths. Pass
 `mise bootstrap dotfiles apply --force` to replace them.
@@ -229,9 +254,9 @@ comparison by moving each captured real path to its source before creating the
 symlink; cross-filesystem moves fall back to a symlink- and
 permission-preserving copy.
 
-Content updates are not conflicts: a `copy` or `template` entry overwrites
+Content updates in writing modes are not conflicts: a `copy` or `template` entry overwrites
 the target file's content without `--force` — that is the declared intent of
-those modes. Symlinks are re-pointed freely, since a symlink is never data.
+those modes. Existing symlinks can be repointed; inspect the diff before changing which source a target uses.
 
 Edit entries never need `--force`: a block owns only what's between its
 markers, and a line only ever appends. Two cases are refused with an error
@@ -292,7 +317,9 @@ mise bootstrap dotfiles edit --apply ~/.zshrc
 ```
 
 `mise bootstrap dotfiles status` reports each entry as `applied`, `missing`,
-`differs` with a reason, or `source missing`.
+`differs` with a reason, or `source missing`. JSON uses `source_missing` for the last
+state and includes [origin information](#whole-file-entries). `--missing` changes the
+exit status when any selected entry is out of sync; it does not filter the displayed list.
 
 ## Capturing changes
 
