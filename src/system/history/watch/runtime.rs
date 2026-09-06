@@ -26,13 +26,30 @@ use crate::lock_file::LockFile;
 use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::health::{self, Health, ThrottledPath};
 use crate::system::history::store::{self, Trigger};
-use crate::system::history::tracked::{self, TrackedSet, hard_exclusions, normalize};
+use crate::system::history::tracked::{
+    self, TrackedSet, hard_exclusions, normalize, normalize_target,
+};
 
 /// How long the debouncer coalesces raw filesystem events before they reach
 /// the scheduler, which applies the configured quiet period on top.
 const COALESCE: Duration = Duration::from_millis(500);
 const BACKOFF_MIN: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(5 * 60);
+/// How often, and how many times, the shutdown capture waits for a running
+/// history operation to finish before giving up.
+const SHUTDOWN_RETRY_EVERY: Duration = Duration::from_secs(1);
+const SHUTDOWN_RETRIES: usize = 10;
+
+/// What became of a capture attempt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Attempt {
+    /// It ran (a checkpoint was written, or nothing had changed).
+    Done,
+    /// Another history operation holds the lock; retried later.
+    Deferred,
+    /// It failed; retried after the backoff.
+    Failed,
+}
 
 pub(crate) struct WatchOptions {
     /// Reconcile once and exit.
@@ -66,15 +83,53 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         return Ok(0);
     };
     let settings = Settings::get();
-    let intervals = Intervals::from_settings(&settings);
+    let mut intervals = Intervals::from_settings(&settings);
     let mut state = State::load().await?;
     let mut capture = Capture::new(store, out, intervals.limits.clone());
     capture.health.watcher.started_at = Some(store::now_rfc3339());
-    capture.attempt(&state.tracked, "startup reconcile", &[]);
+    // the restored schedule applies to the startup reconcile too: a
+    // throttled file whose save is not due is held, not read live
+    let now = Instant::now();
+    let held = capture.schedule.held_paths(now);
+    let due = capture.schedule.due_paths(now);
+    let outcome = capture.attempt(&state.tracked, "startup reconcile", &held);
+    if outcome == Attempt::Done {
+        for path in &due {
+            capture.schedule.saved(path, now);
+        }
+        capture.schedule.prune(now);
+    }
+    capture.persist_schedule();
     capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
     capture.write_health();
     if opts.once {
-        return Ok(0);
+        return Ok(match outcome {
+            Attempt::Done => 0,
+            Attempt::Deferred => {
+                capture.out.emit(
+                    "unsaved",
+                    "nothing was saved: another history operation is running; run again once it finished",
+                    json!({ "reason": "deferred" }),
+                );
+                1
+            }
+            Attempt::Failed => {
+                capture.out.emit(
+                    "unsaved",
+                    &format!(
+                        "nothing was saved: {}",
+                        capture
+                            .health
+                            .watcher
+                            .last_error
+                            .as_deref()
+                            .unwrap_or("the capture failed")
+                    ),
+                    json!({ "reason": "failed" }),
+                );
+                1
+            }
+        });
     }
 
     let (tx, mut rx) = mpsc::unbounded_channel::<DebounceEventResult>();
@@ -112,7 +167,15 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         .reconcile
         .map(|every| tokio::time::Instant::now() + every);
     loop {
-        let flush_at = capture.schedule.deadline().map(|at| capture.not_before(at));
+        // the next save, or the retry of a deferred or failed capture,
+        // whichever comes first
+        let flush_at = match (
+            capture.schedule.deadline().map(|at| capture.not_before(at)),
+            capture.retry_due(),
+        ) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
         let flush = async {
             match flush_at {
                 Some(at) => tokio::time::sleep_until(tokio::time::Instant::from_std(at)).await,
@@ -131,6 +194,8 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 let now = Instant::now();
                 let mut config_changed = false;
                 let mut rescan = false;
+                let mut pending_appeared = false;
+                let mut throttled_changed = false;
                 match result {
                     Ok(events) => {
                         for event in events {
@@ -142,15 +207,36 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                                 rescan = true;
                             }
                             for path in &event.paths {
-                                let path = normalize(path);
+                                // the parent resolved, the final link kept:
+                                // a tracked link is scheduled as the link
+                                let path = normalize_target(path);
                                 if state.is_config_file(&path) {
                                     config_changed = true;
+                                }
+                                // a tracked path that did not exist is watched
+                                // through an ancestor: something appearing on
+                                // the way to it means the plan can move closer
+                                if state.plan.pending.iter().any(|pending| pending.starts_with(&path)) {
+                                    pending_appeared = true;
+                                }
+                                // a link that appeared or changed may point
+                                // somewhere new: the derived entries follow
+                                if path.is_symlink() && state.relevant(&path) {
+                                    pending_appeared = true;
                                 }
                                 if !state.relevant(&path) {
                                     debug!("history watch: ignoring {}", path.display());
                                     continue;
                                 }
-                                capture.schedule.note(path, now);
+                                // files are scheduled, never directories: a
+                                // held directory would hold everything in it
+                                if path.is_dir() && !path.is_symlink() {
+                                    continue;
+                                }
+                                capture.schedule.note(path.clone(), now);
+                                if capture.schedule.is_throttled(&path) {
+                                    throttled_changed = true;
+                                }
                             }
                         }
                     }
@@ -160,10 +246,25 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         }
                     }
                 }
+                // a throttled file's unsaved changes are visible to status
+                // and doctor as they happen, not only after its next save
+                if throttled_changed {
+                    capture.persist_schedule();
+                    capture.write_health();
+                }
                 if config_changed {
                     match state.reload().await {
                         Ok(true) => {
                             installed = install(&mut debouncer, &installed, &state.plan.anchors, &mut capture)?;
+                            // the timing settings may have changed with it
+                            let fresh = Intervals::from_settings(&Settings::get());
+                            if fresh.limits != *capture.schedule.limits() {
+                                capture.schedule.set_limits(fresh.limits.clone());
+                            }
+                            if fresh.reconcile != intervals.reconcile {
+                                next_reconcile = fresh.reconcile.map(|every| tokio::time::Instant::now() + every);
+                            }
+                            intervals = fresh;
                             capture.out.emit(
                                 "replan",
                                 &format!("configuration changed; watching {} anchor(s)", installed.len()),
@@ -178,7 +279,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                                 .into_iter()
                                 .filter(|path| !path.starts_with(&config_dir))
                                 .collect();
-                            if capture.attempt(&state.tracked, "configuration changed", &held) {
+                            if capture.attempt(&state.tracked, "configuration changed", &held) == Attempt::Done {
                                 for path in capture.schedule.due_paths(now).into_iter().chain(
                                     capture
                                         .schedule
@@ -205,14 +306,29 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 } else if rescan {
                     let held = capture.schedule.held_paths(now);
                     capture.attempt(&state.tracked, "rescan", &held);
+                } else if pending_appeared
+                    && let Ok(true) = state.reload().await
+                {
+                    installed = install(&mut debouncer, &installed, &state.plan.anchors, &mut capture)?;
+                    capture.out.emit(
+                        "replan",
+                        &format!("a tracked path appeared; watching {} anchor(s)", installed.len()),
+                        json!({ "anchors": installed.len(), "pending": state.plan.pending.len() }),
+                    );
                 }
             }
             _ = flush => {
                 let now = Instant::now();
                 let due = capture.schedule.due_paths(now);
-                if !due.is_empty() {
+                let retrying = capture.retry_due().is_some_and(|at| at <= now);
+                if !due.is_empty() || retrying {
                     let held = capture.schedule.held_paths(now);
-                    let done = capture.attempt(&state.tracked, &describe(&due), &held);
+                    let reason = if due.is_empty() {
+                        "retry".to_string()
+                    } else {
+                        describe(&due)
+                    };
+                    let done = capture.attempt(&state.tracked, &reason, &held) == Attempt::Done;
                     if done {
                         for path in &due {
                             match capture.schedule.saved(path, now) {
@@ -262,10 +378,29 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
             _ = shutdown.wait() => {
                 // a full capture, not only the due paths: a change still
                 // inside the coalescing window has not reached the scheduler
-                // yet, and a throttled file's final state is saved now
+                // yet, and a throttled file's final state is saved now. The
+                // backoff does not apply, and a running operation is given a
+                // moment to finish
                 let now = Instant::now();
-                if capture.attempt(&state.tracked, "shutdown", &[]) {
+                capture.retry_at = None;
+                let mut outcome = capture.attempt(&state.tracked, "shutdown", &[]);
+                for _ in 0..SHUTDOWN_RETRIES {
+                    if outcome != Attempt::Deferred {
+                        break;
+                    }
+                    tokio::time::sleep(SHUTDOWN_RETRY_EVERY).await;
+                    capture.retry_at = None;
+                    outcome = capture.attempt(&state.tracked, "shutdown", &[]);
+                }
+                if outcome == Attempt::Done {
                     capture.schedule.clear_pending(now);
+                } else {
+                    let pending = capture.schedule.held_paths(now).len() + capture.schedule.due_paths(now).len();
+                    capture.out.emit(
+                        "unsaved",
+                        &format!("stopping with {pending} pending path(s) unsaved; the next start saves them"),
+                        json!({ "pending": pending }),
+                    );
                 }
                 capture.persist_schedule();
                 capture.out.emit("stopped", "stopping", json!({}));
@@ -301,6 +436,7 @@ pub(crate) fn humantime(duration: Duration) -> String {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Intervals {
     limits: Limits,
     reconcile: Option<Duration>,
@@ -339,7 +475,10 @@ impl Intervals {
 
 /// The tracked set, its watch plan, and the filters applied to events.
 struct State {
+    /// The declared set, what captures walk.
     tracked: TrackedSet,
+    /// The declared set plus derived entries, what is watched.
+    watched: TrackedSet,
     plan: WatchPlan,
     exclude: GlobSet,
     hard: Vec<PathBuf>,
@@ -354,9 +493,11 @@ impl State {
 
     fn from_tracked(tracked: TrackedSet) -> Result<Self> {
         let exclude = tracked.exclude_set()?;
-        let plan = build_plan(&tracked);
+        let watched = watched_set(&tracked)?;
+        let plan = build_plan(&watched);
         Ok(Self {
             tracked,
+            watched,
             plan,
             exclude,
             hard: hard_exclusions(),
@@ -385,7 +526,9 @@ impl State {
                     .any(|component| component.as_os_str() == "conf.d"))
     }
 
-    /// Whether a change to `path` is one the watcher saves.
+    /// Whether a change to `path` is one the watcher saves: under a
+    /// declared or derived entry (a symlink target inside the home
+    /// directory), autosaved, and not excluded.
     fn relevant(&self, path: &Path) -> bool {
         if self.hard.iter().any(|dir| path.starts_with(dir)) {
             return false;
@@ -399,11 +542,20 @@ impl State {
         if self.exclude.is_match(path) {
             return false;
         }
-        match self.tracked.entry_for(path) {
+        match self.watched.entry_for(path) {
             Some(entry) => entry.policy.autosave,
             None => false,
         }
     }
+}
+
+/// The set the watcher plans and filters by: the declared entries plus the
+/// derived ones the walk discovers (targets of tracked symlinks).
+fn watched_set(tracked: &TrackedSet) -> Result<TrackedSet> {
+    let walk = tracked.walk()?;
+    let mut watched = tracked.clone();
+    watched.entries = walk.entries;
+    Ok(watched)
 }
 
 fn build_plan(tracked: &TrackedSet) -> WatchPlan {
@@ -498,6 +650,8 @@ struct Capture {
     health: Health,
     backoff: Duration,
     retry_at: Option<Instant>,
+    /// Why the last attempt did not run, while a retry is pending.
+    retry_kind: Option<Attempt>,
 }
 
 impl Capture {
@@ -508,7 +662,25 @@ impl Capture {
                 .ok()
                 .and_then(|text| serde_json::from_str(&text).ok())
                 .unwrap_or_default();
-        schedule.restore(&persisted, epoch_secs());
+        let now = Instant::now();
+        let now_epoch = epoch_secs();
+        schedule.restore(&persisted, now, now_epoch);
+        // a throttled file rewritten while the watcher was down has a change
+        // pending: held until its next save is due, like any other
+        for (path, record) in &persisted.paths {
+            let path = PathBuf::from(path);
+            let Some(saved) = record.saved_epoch_secs else {
+                continue;
+            };
+            let changed_since = std::fs::symlink_metadata(&path)
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+                .is_some_and(|modified| modified.as_secs() > saved);
+            if changed_since && schedule.get(&path).is_some_and(|s| !s.pending()) {
+                schedule.note(path, now);
+            }
+        }
         let health = health::read(store.state_dir()).unwrap_or_default();
         Self {
             store,
@@ -517,7 +689,13 @@ impl Capture {
             health,
             backoff: BACKOFF_MIN,
             retry_at: None,
+            retry_kind: None,
         }
+    }
+
+    /// When a deferred or failed capture is retried, if one is pending.
+    fn retry_due(&self) -> Option<Instant> {
+        self.retry_kind.and(self.retry_at)
     }
 
     /// A flush deadline no earlier than the current backoff allows.
@@ -532,11 +710,11 @@ impl Capture {
     /// forward from the newest checkpoint instead of read live. Returns
     /// whether the attempt ran (a deferred or failed attempt leaves its
     /// paths pending).
-    fn attempt(&mut self, tracked: &TrackedSet, reason: &str, held: &[PathBuf]) -> bool {
+    fn attempt(&mut self, tracked: &TrackedSet, reason: &str, held: &[PathBuf]) -> Attempt {
         if let Some(retry) = self.retry_at
             && Instant::now() < retry
         {
-            return false;
+            return self.retry_kind.unwrap_or(Attempt::Failed);
         }
         let operation =
             match LockFile::new(&store::operation_lock_in(self.store.state_dir())).try_lock() {
@@ -548,11 +726,12 @@ impl Capture {
                         json!({ "reason": reason }),
                     );
                     self.retry_at = Some(Instant::now() + BACKOFF_MIN);
-                    return false;
+                    self.retry_kind = Some(Attempt::Deferred);
+                    return Attempt::Deferred;
                 }
                 Err(err) => {
                     self.fail(reason, &format!("{err:#}"));
-                    return false;
+                    return Attempt::Failed;
                 }
             };
         let mut draft = Draft::new(Trigger::Edit);
@@ -571,7 +750,8 @@ impl Capture {
                     ),
                     json!({ "id": entry.id, "uuid": entry.checkpoint.uuid, "description": entry.checkpoint.description, "reason": reason }),
                 );
-                true
+                self.retry_kind = None;
+                Attempt::Done
             }
             Ok(Outcome::Unchanged) => {
                 self.recovered();
@@ -581,15 +761,16 @@ impl Capture {
                     &format!("nothing to save ({reason})"),
                     json!({ "reason": reason }),
                 );
-                true
+                self.retry_kind = None;
+                Attempt::Done
             }
             Ok(Outcome::Unavailable(message)) => {
                 self.fail(reason, &message);
-                false
+                Attempt::Failed
             }
             Err(err) => {
                 self.fail(reason, &format!("{err:#}"));
-                false
+                Attempt::Failed
             }
         }
     }
@@ -604,6 +785,7 @@ impl Capture {
             json!({ "reason": reason, "message": message, "retry_in_secs": self.backoff.as_secs() }),
         );
         self.retry_at = Some(Instant::now() + self.backoff);
+        self.retry_kind = Some(Attempt::Failed);
         self.backoff = (self.backoff * 2).min(BACKOFF_MAX);
         self.health.watcher.last_error = Some(message.to_string());
         self.health.watcher.last_error_at = Some(store::now_rfc3339());
@@ -614,6 +796,7 @@ impl Capture {
     fn recovered(&mut self) {
         self.backoff = BACKOFF_MIN;
         self.retry_at = None;
+        self.retry_kind = None;
         self.health.watcher.last_error = None;
         self.health.watcher.last_error_at = None;
         self.health.watcher.consecutive_failures = 0;

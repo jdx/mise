@@ -23,7 +23,7 @@ use super::store::{
     self, Annotation, Changes, Checkpoint, DescriptionSource, Entry, Index, IndexEntry, Machine,
     Operation, SavedRecord, TreeInfo, Trigger,
 };
-use super::tracked::{TrackedEntry, TrackedSet, Walk, display_to_tree_path, tree_path_to_display};
+use super::tracked::{TrackedEntry, TrackedSet, display_to_tree_path, tree_path_to_display};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 
@@ -269,6 +269,19 @@ impl Store {
                 modes.entry(path).or_insert(bits);
             }
         }
+        // a held path keeps the mode the previous checkpoint recorded (or
+        // none), like its content
+        if !draft.held.is_empty() && !draft.protective && draft.explicit_paths.is_empty() {
+            for held in &draft.held {
+                let display = display_path(held);
+                modes.remove(&display);
+                if let Some((previous_checkpoint, _)) = &previous_tree
+                    && let Some(bits) = previous_checkpoint.tree.modes.get(&display)
+                {
+                    modes.insert(display, *bits);
+                }
+            }
+        }
         let mut coverage = tracked.coverage(&walk);
         let promoted_head = match &self.repo {
             Some(repo) => repo.promoted_head()?,
@@ -312,7 +325,6 @@ impl Store {
                     let composed = self.hold_paths(
                         repo,
                         &composed,
-                        &walk,
                         &draft,
                         previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
                     )?;
@@ -488,34 +500,32 @@ impl Store {
     /// Carries the draft's held paths forward from the previous checkpoint:
     /// their live content is not what this capture records. Protective
     /// captures and explicit saves hold nothing.
+    /// Held paths (files whose save is not due yet) take their previous
+    /// version, or previous absence, from the newest checkpoint: a change,
+    /// a creation, and a deletion are all held until the path is due. Held
+    /// paths are files, matched exactly.
     fn hold_paths(
         &self,
         repo: &HistoryRepo,
         tree: &str,
-        walk: &Walk,
         draft: &Draft,
         previous: Option<&str>,
     ) -> Result<String> {
         if draft.held.is_empty() || draft.protective || !draft.explicit_paths.is_empty() {
             return Ok(tree.to_string());
         }
-        let mut overlays = vec![];
-        for path in walk.files.keys() {
-            if !draft.held.iter().any(|held| path.starts_with(held)) {
-                continue;
-            }
-            let tree_path = display_to_tree_path(&display_path(path));
-            let object = match previous {
-                Some(previous) => repo.object_at(previous, &tree_path)?,
-                None => None,
-            };
-            overlays.push(Overlay {
-                path: tree_path,
-                object,
-            });
-        }
-        if overlays.is_empty() {
+        // with no previous checkpoint there is nothing to carry forward:
+        // the live content is the only content there is
+        let Some(previous) = previous else {
             return Ok(tree.to_string());
+        };
+        let mut overlays = vec![];
+        for held in &draft.held {
+            let tree_path = display_to_tree_path(&display_path(held));
+            overlays.push(Overlay {
+                object: repo.object_at(previous, &tree_path)?,
+                path: tree_path,
+            });
         }
         repo.compose(tree, &overlays)
     }

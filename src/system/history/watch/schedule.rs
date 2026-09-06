@@ -36,7 +36,7 @@ pub(crate) const SETTLE_MAX: Duration = Duration::from_secs(5 * 60);
 /// A path whose interval reached this is reported as heavily throttled.
 pub(crate) const HEAVY_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Limits {
     /// The base quiet period (`history.watch.debounce`).
     pub base: Duration,
@@ -107,15 +107,22 @@ pub(crate) struct PersistedSchedule {
     pub paths: BTreeMap<String, PersistedPath>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct PersistedPath {
     pub interval_secs: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_saved: Option<String>,
-    /// Seconds before `saved_at_epoch` the path was last saved, for the
-    /// reset rule after a restart.
+    /// When the path was last saved (unix seconds), for the reset rule and
+    /// for telling a changed file from a quiet one after a restart.
     #[serde(default)]
     pub saved_epoch_secs: Option<u64>,
+    /// Changes seen since that save, and when the pending batch began and
+    /// last changed, so a restart neither forgets a pending save nor takes
+    /// it early.
+    #[serde(default)]
+    pub pending_changes: u32,
+    #[serde(default)]
+    pub pending_since_epoch_secs: Option<u64>,
+    #[serde(default)]
+    pub last_change_epoch_secs: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -144,10 +151,17 @@ impl Schedule {
         &self.limits
     }
 
-    /// Restores stretched intervals from a previous run. `now_epoch` is the
-    /// wall clock now; a path quiet longer than its reset period since its
-    /// last save comes back at the base interval.
-    pub(crate) fn restore(&mut self, persisted: &PersistedSchedule, now_epoch: u64) {
+    /// Restores stretched intervals from a previous run, with their last
+    /// save and pending batch placed on this run's clock (`now` is the
+    /// instant that corresponds to the wall clock `now_epoch`), so the
+    /// schedule continues where it stopped: a path quiet longer than its
+    /// reset period comes back at the base interval, and a pending save is
+    /// neither forgotten nor taken early.
+    pub(crate) fn restore(&mut self, persisted: &PersistedSchedule, now: Instant, now_epoch: u64) {
+        let ago = |epoch: u64| {
+            now.checked_sub(Duration::from_secs(now_epoch.saturating_sub(epoch)))
+                .unwrap_or(now)
+        };
         for (path, record) in &persisted.paths {
             let interval = self.limits.clamp(Duration::from_secs(record.interval_secs));
             if interval <= self.limits.base {
@@ -161,6 +175,13 @@ impl Schedule {
             if quiet_for.is_some_and(|quiet| Duration::from_secs(quiet) >= schedule.reset_after()) {
                 continue;
             }
+            schedule.last_saved = record.saved_epoch_secs.map(ago);
+            if record.pending_changes > 0 {
+                schedule.changes = record.pending_changes;
+                schedule.pending_since =
+                    Some(record.pending_since_epoch_secs.map(ago).unwrap_or(now));
+                schedule.last_change = Some(record.last_change_epoch_secs.map(ago).unwrap_or(now));
+            }
             self.paths.insert(PathBuf::from(path), schedule);
         }
     }
@@ -168,23 +189,40 @@ impl Schedule {
     /// The persisted form. Only stretched paths matter.
     pub(crate) fn persist(&self, now: Instant, now_epoch: u64) -> PersistedSchedule {
         let mut out = PersistedSchedule::default();
+        let epoch =
+            |at: Instant| now_epoch.saturating_sub(now.saturating_duration_since(at).as_secs());
         for (path, schedule) in &self.paths {
             if schedule.interval <= self.limits.base {
                 continue;
             }
-            let saved_epoch_secs = schedule.last_saved.map(|saved| {
-                now_epoch.saturating_sub(now.saturating_duration_since(saved).as_secs())
-            });
             out.paths.insert(
                 path.to_string_lossy().into_owned(),
                 PersistedPath {
                     interval_secs: schedule.interval.as_secs(),
-                    last_saved: None,
-                    saved_epoch_secs,
+                    saved_epoch_secs: schedule.last_saved.map(epoch),
+                    pending_changes: schedule.changes,
+                    pending_since_epoch_secs: schedule.pending_since.map(epoch),
+                    last_change_epoch_secs: schedule.last_change.map(epoch),
                 },
             );
         }
         out
+    }
+
+    /// Applies new limits (a settings change while running): every interval
+    /// is clamped into the new range.
+    pub(crate) fn set_limits(&mut self, limits: Limits) {
+        for schedule in self.paths.values_mut() {
+            schedule.interval = limits.clamp(schedule.interval);
+        }
+        self.limits = limits;
+    }
+
+    /// Whether `path` is throttled (its interval is above the base).
+    pub(crate) fn is_throttled(&self, path: &Path) -> bool {
+        self.paths
+            .get(path)
+            .is_some_and(|schedule| schedule.interval > self.limits.base)
     }
 
     /// A change to `path` was seen.
@@ -293,13 +331,13 @@ impl Schedule {
         self.paths.get(path)
     }
 
-    /// Drops paths that are neither pending, stretched, nor saved recently
-    /// (a recent save is what lets the next one be recognized as churn).
+    /// Drops paths that are neither pending nor saved within their reset
+    /// period (a recent save is what lets the next one be recognized as
+    /// churn; a stretched path past its reset period would come back at the
+    /// base interval anyway, so it is forgotten rather than reported).
     pub(crate) fn prune(&mut self, now: Instant) {
-        let base = self.limits.base;
         self.paths.retain(|_, schedule| {
             schedule.pending()
-                || schedule.interval > base
                 || schedule.last_saved.is_some_and(|saved| {
                     now.saturating_duration_since(saved) < schedule.reset_after()
                 })
@@ -489,6 +527,88 @@ mod tests {
     }
 
     #[test]
+    fn a_restart_continues_the_schedule_where_it_stopped() {
+        let start = Instant::now();
+        let mut schedule = Schedule::new(limits());
+        let path = PathBuf::from("/tmp/state.json");
+        for tick in 0..300u64 {
+            let now = start + secs(tick);
+            schedule.note(path.clone(), now);
+            if schedule.due_paths(now).contains(&path) {
+                schedule.saved(&path, now);
+            }
+        }
+        // a change is pending and not due yet
+        let stopped = start + secs(300);
+        schedule.note(path.clone(), stopped);
+        let pending_before = schedule.get(&path).unwrap().changes;
+        let due_before = schedule.get(&path).unwrap().due(schedule.limits()).unwrap();
+        assert!(due_before > stopped + secs(2));
+        let persisted = schedule.persist(stopped, 1_000_000);
+        // ten seconds later the watcher is back: the same save is due at the
+        // same moment, the last save is remembered, and the path is held
+        let restarted_at = stopped + secs(10);
+        let mut restarted = Schedule::new(limits());
+        restarted.restore(&persisted, restarted_at, 1_000_010);
+        let restored = restarted.get(&path).unwrap();
+        assert_eq!(restored.changes, pending_before);
+        assert!(restored.last_saved.is_some());
+        assert_eq!(restored.due(restarted.limits()), Some(due_before));
+        assert!(restarted.held_paths(restarted_at).contains(&path));
+        assert!(restarted.due_paths(restarted_at).is_empty());
+        // an overdue save is due at once
+        let mut late = Schedule::new(limits());
+        late.restore(
+            &persisted,
+            due_before + secs(1),
+            1_000_000 + 1 + (due_before - stopped).as_secs(),
+        );
+        assert!(late.due_paths(due_before + secs(1)).contains(&path));
+    }
+
+    #[test]
+    fn new_limits_clamp_every_interval() {
+        let start = Instant::now();
+        let mut schedule = Schedule::new(limits());
+        let path = PathBuf::from("state.json");
+        for tick in 0..600u64 {
+            let now = start + secs(tick);
+            schedule.note(path.clone(), now);
+            if schedule.due_paths(now).contains(&path) {
+                schedule.saved(&path, now);
+            }
+        }
+        assert!(schedule.get(&path).unwrap().interval > secs(16));
+        schedule.set_limits(Limits {
+            base: secs(2),
+            max: secs(16),
+        });
+        assert_eq!(schedule.get(&path).unwrap().interval, secs(16));
+        assert!(schedule.is_throttled(&path));
+    }
+
+    #[test]
+    fn a_throttled_path_past_its_reset_period_is_forgotten() {
+        let start = Instant::now();
+        let mut schedule = Schedule::new(limits());
+        let path = PathBuf::from("state.json");
+        for tick in 0..300u64 {
+            let now = start + secs(tick);
+            schedule.note(path.clone(), now);
+            if schedule.due_paths(now).contains(&path) {
+                schedule.saved(&path, now);
+            }
+        }
+        let settle = schedule.get(&path).unwrap().settle(schedule.limits());
+        schedule.saved(&path, start + secs(300) + settle);
+        let reset_after = schedule.get(&path).unwrap().reset_after();
+        schedule.prune(start + secs(300) + settle + reset_after - secs(1));
+        assert!(schedule.is_throttled(&path));
+        schedule.prune(start + secs(300) + settle + reset_after);
+        assert!(schedule.get(&path).is_none());
+    }
+
+    #[test]
     fn persisted_intervals_survive_a_restart_unless_quiet_long_enough() {
         let start = Instant::now();
         let mut schedule = Schedule::new(limits());
@@ -505,14 +625,18 @@ mod tests {
         assert!(record.interval_secs > 2);
 
         let mut restarted = Schedule::new(limits());
-        restarted.restore(&persisted, 1_000_060);
+        restarted.restore(&persisted, start + secs(360), 1_000_060);
         assert_eq!(
             restarted.get(&path).unwrap().interval,
             secs(record.interval_secs)
         );
 
         let mut later = Schedule::new(limits());
-        later.restore(&persisted, 1_000_000 + 24 * 3600);
+        later.restore(
+            &persisted,
+            start + secs(300 + 24 * 3600),
+            1_000_000 + 24 * 3600,
+        );
         assert!(later.get(&path).is_none());
     }
 }

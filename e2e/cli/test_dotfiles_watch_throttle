@@ -8,11 +8,17 @@
 
 require_cmd git
 
-export MISE_HISTORY_WATCH_DEBOUNCE=1s
-export MISE_HISTORY_WATCH_MAX_INTERVAL=5s
-
 count="mise bootstrap dotfiles history --json -n 0 | jq length"
 throttled="mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].interval_secs // 0'"
+repo="$MISE_STATE_DIR/history/repo.git"
+# the content of a path inside a checkpoint's snapshot (a script: assertions
+# run in a subshell where shell functions are not available)
+snapshot_of="$PWD/snapshot_of"
+cat <<EOF2 >"$snapshot_of"
+#!/usr/bin/env bash
+git --git-dir="$repo" show "refs/checkpoints/\$(mise bootstrap dotfiles history show "\$1" --json | jq -r .uuid):snapshot/home/\$2"
+EOF2
+chmod +x "$snapshot_of"
 
 wait_until() {
   for _ in $(seq 1 100); do
@@ -30,7 +36,15 @@ mkdir -p ~/.config/hypr
 echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
 echo '{"n":0}' >~/.config/hypr/state.json
 assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+# the timing settings live in the configuration so a change to them can be
+# observed while the watcher runs; reconciliation is off, so only events and
+# retries save anything
 cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+
+[settings]
+history.watch.debounce = "1s"
+history.watch.max_interval = "8s"
+history.watch.reconcile = "0"
 
 [bootstrap.services.mise-history]
 builtin = "history-watch"
@@ -65,7 +79,7 @@ wait_until "grep -q '\"event\":\"started\"' watch.log"
 churn=$!
 
 # the churning file is throttled: its interval grows past the base
-wait_until "[[ \$($throttled) -ge 2 ]]"
+wait_until "[[ \$($throttled) -ge 8 ]]"
 assert_contains "cat watch.log" '"event":"throttled"'
 assert_contains "mise bootstrap dotfiles paths --noisy" "state.json"
 assert_contains "mise bootstrap dotfiles status" "throttled: ~/.config/hypr/state.json changes constantly"
@@ -76,11 +90,39 @@ assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "exclude"
 assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "autosave"
 
 # an ordinary edit is still saved promptly while the churn goes on, and the
-# checkpoint it makes does not carry the churning file's live content
+# checkpoint it makes does not carry the churning file's live content (the
+# edit lands right after a save of the churning file, so its next save is a
+# whole interval away)
+captured="grep -c '\"event\":\"captured\"' watch.log"
+n="$(eval "$captured")"
+wait_until "[[ \$($captured) -gt $n ]]"
 echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
 wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
 saved_n="$(mise bootstrap dotfiles history show latest --files 2>/dev/null | grep -c state.json || true)"
 assert "echo $saved_n" "1"
+
+# unsaved changes to the throttled file are visible as they happen
+wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].pending_changes // 0') -ge 1 ]]"
+
+# the throttling survives a restart of the watcher while the churn goes on:
+# the startup capture holds the throttled file at its saved version instead
+# of saving it early, and its pending changes are still reported
+kill -TERM "$watcher"
+wait "$watcher" || true
+assert_contains "cat $MISE_STATE_DIR/history/watch-schedule.json" "state.json"
+saved_before="$($snapshot_of latest .config/hypr/state.json)"
+sleep 1.2
+mise bootstrap dotfiles watch --json >watch.log 2>&1 &
+watcher=$!
+wait_until "grep -q '\"event\":\"started\"' watch.log"
+assert "$snapshot_of latest .config/hypr/state.json" "$saved_before"
+assert "mise bootstrap dotfiles status --json | jq -r '.history.health.throttled | length'" "1"
+wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].pending_changes // 0') -ge 1 ]]"
+
+# a timing setting changed while running takes effect: the interval is
+# clamped to the new maximum
+sed -i.bak 's/max_interval = "8s"/max_interval = "2s"/' "$MISE_CONFIG_DIR/config.toml" && rm -f "$MISE_CONFIG_DIR/config.toml.bak"
+wait_until "[[ \$($throttled) -le 2 ]]"
 
 # the churn stops: the final state is captured promptly
 kill "$churn"
@@ -88,16 +130,44 @@ churn=""
 sleep 0.3
 final="$(cat ~/.config/hypr/state.json)"
 wait_until "mise bootstrap dotfiles history diff --path ~/.config/hypr/state.json --exit-code"
-assert "$count" "$(($(eval "$count")))"
+# and nothing else is saved once everything is quiet
+n="$(eval "$count")"
+sleep 3
+assert "$count" "$n"
 
-# the throttling survives a restart of the watcher
-kill -TERM "$watcher"
-wait "$watcher" || true
-assert_contains "cat $MISE_STATE_DIR/history/watch-schedule.json" "state.json"
-mise bootstrap dotfiles watch --json >watch.log 2>&1 &
-watcher=$!
-wait_until "grep -q '\"event\":\"started\"' watch.log"
-assert "mise bootstrap dotfiles status --json | jq -r '.history.health.throttled | length'" "1"
+# the target of a symlink inside a tracked directory is watched too, even
+# outside every declared root and with reconciliation off
+echo 'outside' >~/outside.conf
+ln -s ~/outside.conf ~/.config/hypr/link.conf
+wait_until "grep -q 'a tracked path appeared' watch.log"
+echo 'outside2' >~/outside.conf
+wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"outside.conf\")'"
+
+# a capture deferred by a running history operation is retried once the
+# operation finished (nothing else could save it: reconciliation is off).
+# The operation is an apply whose pre-dotfiles hook holds the operation lock
+# for a while
+cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+
+[bootstrap.hooks.pre-dotfiles]
+run = "sleep 4"
+EOF
+wait_until "grep -q 'configuration changed' watch.log"
+mise bootstrap dotfiles apply --yes >apply.log 2>&1 &
+applying=$!
+sleep 1
+echo 'monitor=DP-3' >~/.config/hypr/monitors.lua
+wait_until "grep -q '\"event\":\"deferred\"' watch.log"
+wait "$applying" || true
+wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
+
 kill -TERM "$watcher"
 wait "$watcher" || true
 assert "cat ~/.config/hypr/state.json" "$final"
+
+# `--once` reports that nothing was saved while an operation holds the lock
+mise bootstrap dotfiles apply --yes >apply.log 2>&1 &
+applying=$!
+sleep 1
+assert_fail "mise bootstrap dotfiles watch --once --json 2>&1" '"reason":"deferred"'
+wait "$applying" || true

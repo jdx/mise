@@ -52,6 +52,8 @@ pub(crate) struct ThrottledPath {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_saved: Option<String>,
     /// Changes seen since the last save.
+    /// Changes seen since the last save (events, not verified content
+    /// differences).
     pub pending_changes: u32,
     /// The interval reached the heavy-throttling mark.
     pub heavy: bool,

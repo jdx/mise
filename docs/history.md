@@ -183,8 +183,14 @@ The thresholds are fixed: an interval doubles when a file changed again
 within its settle time of the previous save and at least two changes
 arrived since. A person saving from an editor every few seconds leaves gaps
 longer than the settle time, so ordinary editing is never stretched. The
-schedule is persisted (`watch-schedule.json` in the history store), so a
-restart of the service does not reset a noisy file.
+schedule is persisted (`watch-schedule.json` in the history store) with
+each throttled file's last save and pending changes, so a restart of the
+service continues where it stopped: the startup capture holds a throttled
+file at its saved version until its next save is due, and a file rewritten
+while the service was down is pending, not saved early. Editing
+`history.watch.debounce`, `history.watch.max_interval`, or
+`history.watch.reconcile` in the global configuration takes effect while
+the service runs.
 
 Constantly rewritten application state, logs, caches, and databases are
 better excluded, and a file that genuinely holds configuration but changes
@@ -210,8 +216,12 @@ timer or cron instead of the service.
 
 A capture that fails is retried with backoff (1s to 5min) and never drops
 the pending changes; one that would overlap another history operation (a
-running bootstrap, rollback, or undo) is deferred until that operation
-finishes. One watcher runs per store: a second one exits 0 immediately.
+running bootstrap, rollback, or undo) is deferred and retried until that
+operation finishes, whether or not any other save is due. The shutdown
+capture waits a moment for a running operation and says what stays unsaved
+if it cannot. `mise bootstrap dotfiles watch --once` exits 1 when nothing
+could be saved (deferred or failed), so a timer notices. One watcher runs
+per store: a second one exits 0 immediately.
 `--json` prints one object per line (`started`, `captured`, `unchanged`,
 `deferred`, `replan`, `throttled`, `settled`, `degraded`, `error`,
 `stopped`).
@@ -230,7 +240,8 @@ applying anything, or prompting:
 - `mise bootstrap dotfiles status` prints the detail: the watcher state
   (`running`, `declared but not running`, `not declared`), the last capture
   and reconcile, the last failure, and for every throttled file its
-  effective interval, last save, and unsaved changes.
+  effective interval, last save, and unsaved changes (changes seen since the
+  last save, kept current as they happen).
 
 ## What is tracked
 
