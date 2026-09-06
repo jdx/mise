@@ -2,25 +2,25 @@
 
 > Dev tools, env vars, and tasks in one CLI
 
-## Guides
+## Start Here
 
+- [Getting Started](https://mise.jdx.dev/getting-started.html): By the end of this guide, you'll have a project with a managed tool, an environment variable, and a task you can run.
 - [Demo](https://mise.jdx.dev/demo.html): The following demo shows.
-- [Getting Started](https://mise.jdx.dev/getting-started.html): Get up and running with mise in minutes.
-- [Walkthrough](https://mise.jdx.dev/walkthrough.html): Once you've completed the Getting Started guide, you're ready to start using mise. This document offers a quick overview of some things you may want to try first.
+- [Walkthrough](https://mise.jdx.dev/walkthrough.html): Use this guide to add mise to an existing project and maintain its configuration: select tools, share defaults, upgrade versions, and run everyday commands.
 - [Installing mise](https://mise.jdx.dev/installing-mise.html): If you are new to mise, follow the Getting Started guide first.
 - [IDE Integration](https://mise.jdx.dev/ide-integration.html): Code editors and IDEs work differently from interactive shells.
 - [Continuous Integration](https://mise.jdx.dev/continuous-integration.html): You can use mise in continuous integration (CI) environments to provision the tools your project needs. We recommend pinning tools to specific versions so the environment is reproducible.
 
 ## Configuration
 
-- [mise.toml](https://mise.jdx.dev/configuration.html): Learn how to configure mise for your project with mise.toml files, environment variables, and various configuration options to manage your development environment.
+- [mise.toml](https://mise.jdx.dev/configuration.html): A project's mise.toml declares tools, environment variables, and tasks. Global configuration supplies personal defaults; project and local files override them.
 - [Variables](https://mise.jdx.dev/configuration/vars.html): [vars] defines values that can be reused in mise configuration templates. Vars are similar to environment variables, but mise does not export them to child processes.
-- [Settings](https://mise.jdx.dev/configuration/settings.html): The following is a list of all of mise's settings. These can be set via mise settings key=value, by directly modifying the global config file (~/.config/mise/config.toml) or local config, or via…
-- [Configuration Environments](https://mise.jdx.dev/configuration/environments.html): It's possible to have separate mise.toml files in the same directory for different environments like development and production.
+- [Settings](https://mise.jdx.dev/configuration/settings.html): Settings control mise itself, such as installation concurrency and task output. Application environment variables belong in [env].
+- [Configuration Environments](https://mise.jdx.dev/configuration/environments.html): Config environments select additional files such as mise.development.toml and mise.production.toml. The base mise.toml still loads, and the selected file overrides values at the same directory level.
 
 ## Dev Tools
 
-- [Dev Tools Overview](https://mise.jdx.dev/dev-tools/): Install and switch between dev tools like node, python, cmake, terraform, and hundreds more, all from the same project config.
+- [Dev Tools Overview](https://mise.jdx.dev/dev-tools/): mise installs development tools and selects their versions for each project. Keep multiple versions of Node.js, Python, Ruby, Go, and other tools on the same machine, then declare which ones a project…
 - [Comparison to asdf](https://mise.jdx.dev/dev-tools/comparison-to-asdf.html): mise can be used as a drop-in replacement for asdf. It supports the same .tool-versions files that you may have used with asdf and can use asdf plugins through the asdf backend.
 - [Shims](https://mise.jdx.dev/dev-tools/shims.html): There are several ways to load the mise context (dev tools, environment variables) into your shell.
 - [Tool Aliases](https://mise.jdx.dev/dev-tools/aliases.html): [alias] has been renamed to [tool_alias] to distinguish it from [shell_alias]. The old [alias] key still works but is deprecated.
@@ -95,13 +95,13 @@
 
 ## Environments
 
-- [Environment Variables](https://mise.jdx.dev/environments/): Load the right environment variables automatically for each project directory.
-- [Shell Aliases](https://mise.jdx.dev/shell-aliases.html): mise can manage shell aliases that are set dynamically when you enter a directory and unset when you leave, similar to how environment variables work.
-- [Secrets](https://mise.jdx.dev/environments/secrets/): Use mise to manage sensitive environment variables securely. There are multiple supported approaches.
+- [Environment Variables](https://mise.jdx.dev/environments/): Define project environment variables in [env]. mise supplies them to commands run with mise exec, tasks, and activated interactive shells.
+- [Shell Aliases](https://mise.jdx.dev/shell-aliases.html): Define project shortcuts for an interactive Bash, Zsh, or Fish shell with mise activate. mise sets the aliases as you enter a directory and removes them when they are no longer configured.
+- [Secrets](https://mise.jdx.dev/environments/secrets/): Choose how to supply secret values to the project. mise passes resolved values to commands as environment variables; the secret provider or encryption key controls who can resolve them.
 - [sops](https://mise.jdx.dev/environments/secrets/sops.html): mise reads encrypted secret files and makes values available as environment variables via env._.file.
-- [age](https://mise.jdx.dev/environments/secrets/age.html): Encrypt individual environment variable values directly in mise.toml using age encryption. The age tool is not required—support is built into mise.
+- [age](https://mise.jdx.dev/environments/secrets/age.html): Encrypt individual environment variable values directly in mise.toml using age encryption. Encryption and decryption are built into mise.
 - [Hooks](https://mise.jdx.dev/hooks.html): mise can automatically execute scripts during a mise activate session. Except for the preinstall and postinstall hooks, these require the mise activate shell hook to be installed in your shell.
-- [direnv](https://mise.jdx.dev/direnv.html): direnv and mise both manage environment variables based on directory. Because they both analyze the current environment variables before and after their respective "hook" commands are run, they can…
+- [direnv](https://mise.jdx.dev/direnv.html): direnv and mise both change the environment when you enter a directory. Their shell hooks can disagree about which PATH entries to add, restore, or remove.
 
 ## Tasks
 
@@ -155,7 +155,7 @@
 
 - [Architecture](https://mise.jdx.dev/architecture.html): This document gives an overview of mise's architecture. It is aimed at contributors and anyone interested in how mise works internally.
 - [Paranoid](https://mise.jdx.dev/paranoid.html): Paranoid mode is an optional behavior that locks mise down further to make it harder for a bad actor to compromise your system.
-- [Templates](https://mise.jdx.dev/templates.html): Templates in mise provide a powerful way to configure different aspects of your environment and project settings.
+- [Templates](https://mise.jdx.dev/templates.html): Use Tera expressions to derive configuration values from the project directory, environment, or [vars]. mise renders those expressions when it resolves configuration or prepares a task.
 - [URL Replacements](https://mise.jdx.dev/url-replacements.html): mise does not include a built-in registry for downloading artifacts. Instead, it retrieves remote registry manifests, which specify the URLs for downloading tools.
 - [Model Context Protocol](https://mise.jdx.dev/mcp.html): The Model Context Protocol (MCP) is a standard protocol that enables AI assistants to interact with development tools and access project context.
 - [Directory Structure](https://mise.jdx.dev/directories.html): mise uses the following directories.

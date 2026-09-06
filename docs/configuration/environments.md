@@ -170,12 +170,10 @@ that would be newly loaded. To control the behavior explicitly:
 
 ```toml
 # .miserc.toml
-auto_env = true # adopt the new behavior now
-# or
-# auto_env = false # keep the old behavior and silence the warning
+auto_env = false # keep the old behavior and silence the warning
 ```
 
-Alternatively, set `MISE_AUTO_ENV=true` / `MISE_AUTO_ENV=false`. Like `MISE_ENV`, this is an early-init
-setting: it must be set in `.miserc.toml` or via the environment variable — setting it in
-`mise.toml` has no effect because config file discovery has already happened by the time
-`mise.toml` is read.
+Set `auto_env = true` instead to adopt the new behavior now. Alternatively, set
+`MISE_AUTO_ENV=true` / `MISE_AUTO_ENV=false`. Like `MISE_ENV`, this is an early-init setting: it must
+be set in `.miserc.toml` or via the environment variable — setting it in `mise.toml` has no effect
+because config file discovery has already happened by the time `mise.toml` is read.
