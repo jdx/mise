@@ -1,5 +1,1 @@
-now fix [https://github.com/jdx/mise/pull/12862](https://github.com/jdx/mise/pull/12862)
-
----
-
 fix [https://github.com/jdx/mise/pull/12863](https://github.com/jdx/mise/pull/12863) address feedback and ci checks
