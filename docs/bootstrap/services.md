@@ -17,6 +17,14 @@ enabled = true
 Names without a unit suffix receive `.service`. Explicit unit names such as
 `postgresql@16-main.service`, sockets, and timers are also accepted.
 
+For user-owned units written under `~/.config/systemd/user`, use
+[systemd user units](/bootstrap/systemd.html) instead. This section manages
+system units already supplied by packages or [managed files](/bootstrap/files.html).
+
+Preview with `mise bootstrap services apply --dry-run`. If the unit will be
+created by the same configuration, use the full bootstrap to install its package
+or file before converging the service.
+
 ## Options
 
 - `state`: `"running"` (default) or `"stopped"`
@@ -63,7 +71,9 @@ and `mise bootstrap plan` include the notification consequences of pending
 managed-file changes, while `mise bootstrap files apply` runs those handlers
 only after the causal file operation succeeds.
 
-A masked unit must also be stopped and disabled:
+Removing a service declaration leaves its current state unmanaged. To stop it
+and prevent future starts, keep an explicit declaration. A masked unit must
+also be stopped and disabled:
 
 ```toml
 [bootstrap.services.old-worker]

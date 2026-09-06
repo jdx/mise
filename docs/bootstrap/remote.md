@@ -5,146 +5,28 @@ through the locally installed OpenSSH client. Targets can live in versioned
 configuration or be supplied ad hoc from the command line.
 
 Remote targets must provide a POSIX shell plus `cksum`, `mktemp`, `tar`, and `uname`.
-Linux and macOS hosts satisfy these requirements by default. The orchestrating
+Minimal images may need these utilities installed first. The orchestrating
 machine needs local `ssh` and `tar` commands.
 
-## Private configuration repositories
+## First remote run
 
-Install your configuration repository into the remote user's persistent global
-mise configuration directory:
-
-```sh
-# Authenticate on this machine first (for example, using gh auth login).
-mise bootstrap remote --host devbox --from-git jdx/dotfiles \
-  --github-relay-read-only --github-relay-repo jdx/dotfiles
-```
-
-`OWNER/REPO` expands to `https://github.com/OWNER/REPO.git`. Explicit Git URLs,
-SSH syntax, and local paths also work. Network repositories must use HTTPS or
-SSH; other transports and custom Git helpers are rejected. Source clones do not
-follow HTTP redirects, so use the repository's canonical URL.
-`--from-git` conflicts with `--source`.
-Targets still come from explicit `--host` or inventory selectors, never from the
-downloaded repository's inventory.
-
-mise fetches the repository once using **local Git authentication**, pins that
-commit for every selected target, and transfers a Git bundle over SSH. It does
-not modify the initiating machine's global configuration or copy its Git
-configuration. The remote checkout retains the original credential-free origin,
-its branch, and its upstream. Temporary staging is removed; the installed global
-configuration is not. Use `--install-mise` to also install mise persistently when
-the target does not already have it.
-
-An existing matching checkout is reused unless `--update` requests a safe
-fast-forward. Dirty checkouts, mismatched origins, conflicting files, and source
-files ending in `.local.toml` require manual resolution. A nonempty non-Git
-directory can be adopted after confirmation: existing files and local overrides
-are preserved. `--dry-run` reports the required fetch/adoption work without
-fetching the source or changing the target.
-
-`--from-git` uses the repository instead of the inventory's archive source and
-copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and
-`--exclude` flags cannot be combined with it.
-
-The relay is separate from this initial transfer. Enable it when bootstrap needs
-additional private GitHub content, authorizing each required repository with a
-repeated `--github-relay-repo`. Shorthand never enables or expands relay access.
-
-## Borrowing GitHub access for one session
+Use a project containing reviewed bootstrap configuration and an SSH host you
+can already reach. Replace `devbox` with your SSH host or alias:
 
 ```sh
-mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles
-mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
-  -- git clone https://github.com/jdx/dotfiles.git
-
-# Deliberately allow every repository your local credential can read:
-mise ssh devbox --github-relay-read-only --github-relay-all-repos
-
-# Ordinary OpenSSH, without provisioning mise or starting a relay:
-mise ssh devbox -i ~/.ssh/devbox -p 2222 -o ServerAliveInterval=30 -- uname -a
+ssh devbox uname -s
+mise bootstrap remote --host devbox --source . --dry-run
+mise bootstrap remote --host devbox --source .
 ```
 
-The same relay flags work with `mise bootstrap remote`. Enabling the relay
-requires either a repository allowlist or explicit all-repository access, not
-both. Credentials are resolved on the initiating machine using mise's existing
-GitHub token resolution; there is no automatic login or new credential store.
+A remote dry run still connects over SSH, transfers the project, stages mise,
+and inspects the target. It suppresses bootstrap resource changes; it is not an
+offline plan. Temporary staging is cleaned up unless `--keep-staging` is set.
 
-The owned SSH connection forwards a private Unix socket. Remote mise requests
-and Git's GitHub HTTPS/SSH transports use session-only adapters. The local broker
-authorizes repository metadata, refs, contents, releases, assets, and smart-HTTP
-clone/fetch. Pushes, API mutations, GraphQL, and other endpoints are denied.
-Only approved GitHub asset redirects are followed, without authentication.
-Requests are limited to 8 MiB and 32 accepted connections; responses are streamed.
-The default concurrency is eight requests and the default total request timeout
-is five minutes. Both limits can be configured on the initiating machine.
+Use `--install-mise` if the target should keep mise after the run. Review archive
+exclusions before transferring a repository with local secrets or generated data.
 
-Borrowed access ends when the session ends, including failures and disconnects.
-No GitHub token or persistent transport rewrite is installed on the target.
-Future independent private-repository updates need that machine's own
-credentials or another relay-enabled session. Without the relay, existing remote
-authentication works as before.
-
-::: warning Trust the target with the content you authorize
-A compromised target can read authorized private content during the session.
-Keeping credentials local limits credential exposure; it does not make the
-target trustworthy. Use narrowly scoped repository allowlists.
-:::
-
-Relay support is initially limited to Linux/macOS clients and POSIX Linux/macOS
-targets running a compatible mise. Windows, GitHub Enterprise, remote `gh`, write
-operations, and unattended/persistent relay access are not supported.
-
-Read-only access includes Git clone/fetch, repository metadata, contents, refs,
-releases, release assets, and tar/zip source archives. Archive and asset redirects
-are restricted to approved GitHub download hosts and never carry your credential.
-Resume requests retain their range headers, and denied downloads fail rather than
-being saved as artifacts.
-
-### Observing and limiting borrowed access
-
-```sh
-mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
-  --github-relay-log-requests --github-relay-max-duration 1h
-
-# Structured relay events for troubleshooting or auditing:
-mise bootstrap remote --host devbox --from-git jdx/dotfiles \
-  --github-relay-read-only --github-relay-repo jdx/dotfiles \
-  --github-relay-log-requests --github-relay-log-format jsonl
-```
-
-Request logs are off by default. Enable them per invocation or save preferences
-in your **local global** mise configuration:
-
-```toml
-[settings.github_relay]
-log_requests = true
-log_format = "text" # or "jsonl"
-max_duration = "1h" # default "0s": until the session ends
-request_timeout = "5m"
-concurrency = 8 # 1-32; excess requests fail closed rather than queue
-```
-
-`--github-relay-no-log-requests` overrides a saved logging preference. The format
-and duration flags also override their respective settings. These preferences
-never enable the relay or authorize repositories: access and scope still require
-explicit flags on every invocation.
-
-Events go to the initiating machine's stderr, not the remote command's stdout.
-They show the method, repository and fixed operation name, status, and time to
-response headers. Approved download redirects are identified by host only. Query
-values, refs, filenames, headers, credentials, bodies, and signed download URLs
-are omitted; rejected paths appear as `unapproved operation`. JSONL applies to
-relay events; other mise diagnostics can still appear on stderr.
-
-Every relay prints a session-end summary, even when request logging is off:
-requests received (excluding heartbeat probes), denied/unavailable requests,
-upstream response bytes received, and up to 128 authorized repositories requested.
-Redirects are separate log events but do not add to the incoming request count.
-
-The duration limit starts when the local relay is created. Expiration immediately
-revokes borrowed access and cancels active transfers; the remote adapter then
-ends its command after detecting failed heartbeat probes. No credentials are
-installed to extend access beyond this limit.
+## Inventory configuration
 
 ```toml
 [bootstrap.remote]
@@ -371,8 +253,8 @@ and it is what runs the bootstrap, so the host converges with the mise version
 that orchestrated it. mise writes a temporary file beside the target and renames
 it into place, so replacing a mise that is currently running cannot truncate it.
 When the target already holds a byte-identical executable, nothing is uploaded.
-A dry run never writes to the host: `--dry-run` reports the path it would
-install to and stages the executable as usual.
+A dry run does not write the persistent install path: `--dry-run` reports that
+path and uses a temporary staged executable for inspection.
 
 `install_mise` composes with `mise_bin`, which installs a locally built
 executable. It cannot be combined with `remote_mise` or `bootstrap_command`,
@@ -415,3 +297,145 @@ explicitly configured `mise_env` is remote orchestration metadata rather than
 an inherited local environment. Use `--prompt-secrets` for an attended run.
 Provider-backed secret environment transport can be layered on separately
 without putting values in config, archives, process arguments, plans, or logs.
+
+## Private configuration repositories
+
+Install your configuration repository into the remote user's persistent global
+mise configuration directory:
+
+```sh
+# Authenticate on this machine first (for example, using gh auth login).
+mise bootstrap remote --host devbox --from-git jdx/dotfiles \
+  --github-relay-read-only --github-relay-repo jdx/dotfiles
+```
+
+`OWNER/REPO` expands to `https://github.com/OWNER/REPO.git`. Explicit Git URLs,
+SSH syntax, and local paths on the initiating machine also work. Network repositories must use HTTPS or
+SSH; other transports and custom Git helpers are rejected. Source clones do not
+follow HTTP redirects, so use the repository's canonical URL.
+`--from-git` conflicts with `--source`.
+Targets still come from explicit `--host` or inventory selectors, never from the
+downloaded repository's inventory.
+
+mise fetches the repository once using **local Git authentication**, pins that
+commit for every selected target, and transfers a Git bundle over SSH. It does
+not modify the initiating machine's global configuration or copy its Git
+configuration. The remote checkout retains the original credential-free origin,
+its branch, and its upstream. Temporary staging is removed; the installed global
+configuration is not. Use `--install-mise` to also install mise persistently when
+the target does not already have it.
+
+An existing matching checkout is reused unless `--update` requests a safe
+fast-forward. Dirty checkouts, mismatched origins, conflicting files, and source
+files ending in `.local.toml` require manual resolution. A nonempty non-Git
+directory can be adopted after confirmation: existing files and local overrides
+are preserved. With `--from-git`, `--dry-run` only reports the proposed operation;
+it does not fetch the source, open an SSH session, inspect the target, or create
+temporary staging. Dirty checkouts, mismatched origins, and adoption conflicts
+are therefore detected only during a real apply. By contrast, `--source .
+--dry-run` connects to and inspects the target without applying persistent
+changes.
+
+`--from-git` uses the repository instead of the inventory's archive source and
+copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and
+`--exclude` flags cannot be combined with it.
+
+The relay is separate from this initial transfer. Enable it when bootstrap needs
+additional private GitHub content, authorizing each required repository with a
+repeated `--github-relay-repo`. Shorthand never enables or expands relay access.
+
+## Borrowing GitHub access for one session
+
+```sh
+mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles
+mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
+  -- git clone https://github.com/jdx/dotfiles.git
+
+# Deliberately allow every repository your local credential can read:
+mise ssh devbox --github-relay-read-only --github-relay-all-repos
+
+# Ordinary OpenSSH, without provisioning mise or starting a relay:
+mise ssh devbox -i ~/.ssh/devbox -p 2222 -o ServerAliveInterval=30 -- uname -a
+```
+
+The same relay flags work with `mise bootstrap remote`. Enabling the relay
+requires either a repository allowlist or explicit all-repository access, not
+both. Credentials are resolved on the initiating machine using mise's existing
+GitHub token resolution; there is no automatic login or new credential store.
+
+The owned SSH connection forwards a private Unix socket. Remote mise requests
+and Git's GitHub HTTPS/SSH transports use session-only adapters. The local broker
+authorizes repository metadata, refs, contents, releases, assets, and smart-HTTP
+clone/fetch. Pushes, API mutations, GraphQL, and other endpoints are denied.
+Only approved GitHub asset redirects are followed, without authentication.
+Requests are limited to 8 MiB and 32 accepted connections; responses are streamed.
+The default concurrency is eight requests and the default total request timeout
+is five minutes. Both limits can be configured on the initiating machine.
+
+Borrowed access ends when the session ends, including failures and disconnects.
+No GitHub token or persistent transport rewrite is installed on the target.
+Future independent private-repository updates need that machine's own
+credentials or another relay-enabled session. Without the relay, existing remote
+authentication works as before.
+
+::: warning Trust the target with the content you authorize
+A compromised target can read authorized private content during the session.
+Keeping credentials local limits credential exposure; it does not make the
+target trustworthy. Use narrowly scoped repository allowlists.
+:::
+
+Relay support is initially limited to Linux/macOS clients and POSIX Linux/macOS
+targets running a compatible mise. Windows, GitHub Enterprise, remote `gh`, write
+operations, and unattended/persistent relay access are not supported.
+
+Read-only access includes Git clone/fetch, repository metadata, contents, refs,
+releases, release assets, and tar/zip source archives. Archive and asset redirects
+are restricted to approved GitHub download hosts and never carry your credential.
+Resume requests retain their range headers, and denied downloads fail rather than
+being saved as artifacts.
+
+### Observing and limiting borrowed access
+
+```sh
+mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
+  --github-relay-log-requests --github-relay-max-duration 1h
+
+# Structured relay events for troubleshooting or auditing:
+mise bootstrap remote --host devbox --from-git jdx/dotfiles \
+  --github-relay-read-only --github-relay-repo jdx/dotfiles \
+  --github-relay-log-requests --github-relay-log-format jsonl
+```
+
+Request logs are off by default. Enable them per invocation or save preferences
+in your **local global** mise configuration:
+
+```toml
+[settings.github_relay]
+log_requests = true
+log_format = "text" # or "jsonl"
+max_duration = "1h" # default "0s": until the session ends
+request_timeout = "5m"
+concurrency = 8 # 1-32; excess requests fail closed rather than queue
+```
+
+`--github-relay-no-log-requests` overrides a saved logging preference. The format
+and duration flags also override their respective settings. These preferences
+never enable the relay or authorize repositories: access and scope still require
+explicit flags on every invocation.
+
+Events go to the initiating machine's stderr, not the remote command's stdout.
+They show the method, repository and fixed operation name, status, and time to
+response headers. Approved download redirects are identified by host only. Query
+values, refs, filenames, headers, credentials, bodies, and signed download URLs
+are omitted; rejected paths appear as `unapproved operation`. JSONL applies to
+relay events; other mise diagnostics can still appear on stderr.
+
+Every relay prints a session-end summary, even when request logging is off:
+requests received (excluding heartbeat probes), denied/unavailable requests,
+upstream response bytes received, and up to 128 authorized repositories requested.
+Redirects are separate log events but do not add to the incoming request count.
+
+The duration limit starts when the local relay is created. Expiration immediately
+revokes borrowed access and cancels active transfers; the remote adapter then
+ends its command after detecting failed heartbeat probes. No credentials are
+installed to extend access beyond this limit.

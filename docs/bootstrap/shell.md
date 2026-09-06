@@ -15,7 +15,12 @@ bashrc = "activate"
 fish = "activate"
 ```
 
-Use the inline table form when you want a shape that can accept future options:
+Configure only the shells and startup files you use. `"activate"` enables
+interactive environment updates; `"shims"` makes installed tool commands
+available without a prompt hook. See [shims](/dev-tools/shims.html) for that mode's
+limits. The `mise` executable must already be on the startup file's `PATH`.
+
+The inline table form makes enablement and mode explicit:
 
 ```toml
 [bootstrap.mise_shell_activate]
@@ -69,7 +74,9 @@ other bootstrap sections:
   that shell.
 
 For fully managed rc files or custom activation blocks, use `[dotfiles]`
-directly instead.
+directly instead. Review any existing unmarked activation lines to avoid running
+the hook twice. After applying, open a new shell and check `mise doctor`; editing
+a startup file does not change the shell process already running.
 
 ## Commands
 

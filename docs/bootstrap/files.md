@@ -17,6 +17,11 @@ group = "root"
 mode = "0644"
 ```
 
+Create `files/example.conf` beside the declaring configuration before applying
+this example. The source is read by mise; `/etc/example.conf` is its destination.
+For file templates containing credentials, use mode `"0600"` and ownership that
+allows only the intended service account or root to read them.
+
 File content may come from `source` or inline `content`. Relative source paths
 are resolved from the configuration file that declares them, and source paths
 beginning with `~/` are resolved from the user's home directory. Present files
@@ -52,6 +57,18 @@ search one of its parent directories, mise compares its metadata and content in
 one privileged batch. Plans and file content are sent to narrowly scoped mise
 helpers over stdin, so file content does not appear in process arguments or
 logs.
+
+## Preview and inspect
+
+```sh
+mise bootstrap files status --json
+mise bootstrap files apply --dry-run
+```
+
+Check source paths, ownership, modes, and any `unknown` states before applying.
+Inspection may need elevated access to read protected targets. A missing source
+must be fixed in the configuration checkout; changing target permissions does
+not supply that source.
 
 ## Removing resources
 

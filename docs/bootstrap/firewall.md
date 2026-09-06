@@ -4,6 +4,11 @@
 supports native nftables, firewalld policies, and UFW while keeping mise-owned
 rules separate from unrelated host rules.
 
+The example allows HTTPS and limits SSH from one administrator address.
+Replace `203.0.113.10/32` with your actual administration network and use the
+host's real SSH port before applying it. Ensure the chosen firewall command is
+installed; `backend = "auto"` selects an available backend rather than installing one.
+
 ```toml
 [bootstrap.linux.firewall]
 backend = "auto"
@@ -97,6 +102,18 @@ Set `exclusive = true` only when the configuration owns the complete firewall.
 It drops undeclared mise rules. With UFW, exclusive mode performs `ufw reset`,
 which also removes unrelated UFW rules, and is therefore always confirmed as a
 destructive operation.
+
+## Preview the target's policy
+
+```sh
+mise bootstrap firewall status --json
+mise bootstrap firewall apply --dry-run
+```
+
+Inspect the selected backend, default policies, rule order, and removals. Other
+firewall systems and container networking can affect the same host; verify the
+resulting reachability from the networks that use the service. A plan describes
+mise's requested changes, not an end-to-end connectivity test.
 
 ## SSH lockout protection
 

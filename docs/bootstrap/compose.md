@@ -6,7 +6,17 @@ have converged. This makes it suitable for self-hosted services whose Compose
 file, environment file, Docker installation, and daemon lifecycle are all
 managed by the same bootstrap configuration.
 
+The example below targets a Debian/Ubuntu host whose repositories provide the
+listed Docker packages. Create `infra/mise-cache/compose.yaml` with your
+service's Compose model, and provide both declared secret inputs before apply.
+The environment-file template assumes single-line values valid in Compose's
+`.env` format; encode other values for that format.
+
 ```toml
+[bootstrap.secrets]
+s3_access_key = "EXAMPLE_S3_ACCESS_KEY"
+s3_secret_key = "EXAMPLE_S3_SECRET_KEY"
+
 [bootstrap.packages]
 "apt:docker.io" = "latest"
 "apt:docker-compose-v2" = "latest"
@@ -27,6 +37,9 @@ content = """
 S3_ACCESS_KEY={{ secret(name="s3_access_key") }}
 S3_SECRET_KEY={{ secret(name="s3_secret_key") }}
 """
+template = true
+owner = "root"
+group = "root"
 mode = "0600"
 
 [bootstrap.compose.mise-cache]
@@ -43,6 +56,19 @@ depends_on = ["package:apt:docker.io", "service:docker"]
 and `env_files` resolve from it. With no `files`, Compose performs its normal
 project-directory discovery. mise passes multiple files and environment files
 in declaration order, so later entries retain Compose's override semantics.
+
+## Preview the whole setup
+
+```sh
+mise bootstrap plan
+mise bootstrap --only packages,files,services,compose --dry-run
+```
+
+Use the full bootstrap, or include the required phases as above, when mise must
+create the files and install Docker first. `mise bootstrap compose apply` only
+converges Compose projects; it does not apply their package and file prerequisites.
+A dry run cannot prove that an image will start successfully or pass its health
+check on the target.
 
 ## Lifecycle and convergence
 
@@ -118,7 +144,8 @@ command = ["podman", "compose"]
 engine_command = ["podman"]
 ```
 
-The engine command is used only to inspect container config-hash labels. Set
+The engine command inspects container config-hash labels and removes orphaned
+containers when converging a stopped project with `remove_orphans = true`. Set
 `sudo = true` when the project belongs to the system Docker daemon and the
 bootstrap user does not have socket access. mise authenticates before capturing
 status output, never hides an interactive sudo prompt, and honors the existing

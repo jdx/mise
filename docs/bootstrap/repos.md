@@ -1,4 +1,4 @@
-# Repos
+# Git repositories
 
 mise can declare git repositories in `[bootstrap.repos]` and apply them with
 `mise bootstrap repos apply` or as part of [`mise bootstrap`](/bootstrap.html):
@@ -47,6 +47,17 @@ from that checkout.
   `--skip-dirty` to skip dirty repos while applying or updating the rest.
 - **Omitted `ref`** — an existing repo with the expected origin is considered
   current; mise does not fetch or update it.
+
+## Choose apply or update
+
+Use `apply` to establish the declared checkout. With no `ref`, an existing
+matching checkout is left at its current commit. Use `update` when you want
+mise to fetch and fast-forward its current branch. A declared `ref` remains the
+target for both commands; `update` does not override that selection.
+
+Git must be installed and able to authenticate to every configured origin.
+For a dotfiles source in one of these checkouts, apply repos before dotfiles,
+as the full bootstrap does.
 
 ## Commands
 
