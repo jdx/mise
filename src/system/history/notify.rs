@@ -1,6 +1,6 @@
 //! Optional desktop notifications for sync conflicts that newly need a
 //! decision (`settings.history.notify`, on by default). Best effort: the
-//! notifier is started and not waited for, a missing desktop or tool is a
+//! notifier runs and is reaped on a worker thread, a missing desktop or tool is a
 //! debug line, and nothing here ever holds up a capture or a sync.
 
 use std::process::{Command, Stdio};
@@ -44,10 +44,28 @@ pub(crate) fn send(title: &str, body: &str) {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    match command.spawn() {
-        Ok(_child) => debug!("history: notified: {title}"),
+    match dispatch(command) {
+        Ok(_worker) => debug!("history: notification dispatched: {title}"),
         Err(err) => debug!("history: could not notify ({title}): {err}"),
     }
+}
+
+fn dispatch(
+    mut command: Command,
+) -> std::io::Result<std::thread::JoinHandle<std::io::Result<std::process::ExitStatus>>> {
+    // Start the process inside the thread, so a thread-creation failure cannot
+    // strand an unreaped child. Waiting here never blocks the watcher.
+    std::thread::Builder::new()
+        .name("mise-notification".into())
+        .spawn(move || {
+            let result = command.status();
+            match &result {
+                Ok(status) if status.success() => debug!("history: notifier completed"),
+                Ok(status) => debug!("history: notifier exited with {status}"),
+                Err(err) => debug!("history: could not run notifier: {err}"),
+            }
+            result
+        })
 }
 
 #[cfg(target_os = "linux")]
@@ -116,6 +134,22 @@ fn notifier(_title: &str, _body: &str) -> Option<Command> {
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notification_worker_reaps_the_child_and_reports_spawn_errors() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "exit 7"]);
+        let status = dispatch(command).unwrap().join().unwrap().unwrap();
+        assert_eq!(status.code(), Some(7));
+        let missing = tempfile::tempdir().unwrap().path().join("missing-notifier");
+        assert!(
+            dispatch(Command::new(missing))
+                .unwrap()
+                .join()
+                .unwrap()
+                .is_err()
+        );
+    }
 
     #[test]
     fn notification_logo_is_cached_and_repaired() {

@@ -165,6 +165,7 @@ by default on Linux and macOS, once per pause; set
 
 ```sh
 curl https://mise.run | sh
+mise settings experimental=true
 gh auth login --hostname github.com --git-protocol https --web
 gh auth setup-git --hostname github.com
 mise bootstrap --from-git you/setup
@@ -198,7 +199,8 @@ mise bootstrap remote --host devbox --install-mise --from-git you/setup \
 
 The borrowed GitHub access is read-only and ends with the session; give the
 host credentials of its own (step 1, there) for ongoing synchronization.
-`--dry-run` shows the same plan on the host without writing anything there.
+`--dry-run` previews on the host without persisting setup state; it removes
+the temporary mise and bundle staging afterwards.
 
 ## Templates next to tracked files
 
