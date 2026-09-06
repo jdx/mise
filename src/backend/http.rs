@@ -1463,16 +1463,46 @@ fn referenced_cache_entries(
             )
         })?;
         if metadata.is_dir() && walked.insert(root.clone()) {
-            collect_referenced_entries(canonical_tarballs, &root, &mut referenced)?;
+            // A root holds tool directories, and a tool directory holds version
+            // entries. The version entry is where an ordinary install's link
+            // lives, so the walk reads that level everywhere; it only opens a
+            // version directory for a tool that installs through the http
+            // backend, which is the only one that puts a link deeper.
+            collect_referenced_entries(
+                canonical_tarballs,
+                &root,
+                &mut referenced,
+                Descend::OnlyHttpTools,
+            )?;
         }
     }
     Ok(referenced)
+}
+
+/// How far into a directory the walk is allowed to go.
+///
+/// The links live at known depths — `installs/<tool>/<version>` for an ordinary
+/// install, and one level further inside for a raw file with `bin_path` — so
+/// there is never a reason to open a tool's payload. Walking one would mean
+/// reading every directory of a Node or Python installation on a command that
+/// has nothing to do with either.
+#[derive(Clone, Copy)]
+enum Descend {
+    /// Everything below here is small and may hold a link: an http tool's own
+    /// install directory.
+    Always,
+    /// Read this level for links, but only open a subdirectory when the tool it
+    /// belongs to installs through the http backend.
+    OnlyHttpTools,
+    /// Read this level for links and open nothing.
+    Never,
 }
 
 fn collect_referenced_entries(
     canonical_tarballs: &Path,
     dir: &Path,
     referenced: &mut std::collections::HashSet<PathBuf>,
+    depth: Descend,
 ) -> Result<()> {
     let entries = std::fs::read_dir(dir)
         .map_err(|err| eyre::eyre!("failed to read {}: {err}", file::display_path(dir)))?;
@@ -1491,6 +1521,33 @@ fn collect_referenced_entries(
         if !file_type.is_dir() && !file_type.is_symlink() {
             continue;
         }
+        // What this entry's own contents are worth to the walk. At the root
+        // level the entry is a tool directory: it is always read, because an
+        // ordinary install's link sits at the version level inside it, but its
+        // version directories are only opened for a tool that installs through
+        // the http backend — the only one that puts a link deeper still.
+        // `install_state` keys tools by their install directory's name, so the
+        // name in hand is the lookup.
+        let below = match depth {
+            Descend::Always => Some(Descend::Always),
+            Descend::OnlyHttpTools => {
+                let is_http = entry
+                    .file_name()
+                    .to_str()
+                    .and_then(|short| {
+                        crate::toolset::install_state::backend_type(short)
+                            .ok()
+                            .flatten()
+                    })
+                    .is_some_and(|backend| backend == BackendType::Http);
+                Some(if is_http {
+                    Descend::Always
+                } else {
+                    Descend::Never
+                })
+            }
+            Descend::Never => None,
+        };
         // Never judge by `is_symlink` alone: on Windows `file::make_symlink`
         // creates a junction, which is a directory as far as `file_type` is
         // concerned, and a walk that missed that would step into the cache
@@ -1501,7 +1558,9 @@ fn collect_referenced_entries(
         let is_link = file_type.is_symlink()
             || (cfg!(windows) && file_type.is_dir() && file::is_symlink_or_junction(&path));
         if !is_link {
-            collect_referenced_entries(canonical_tarballs, &path, referenced)?;
+            if let Some(below) = below {
+                collect_referenced_entries(canonical_tarballs, &path, referenced, below)?;
+            }
             continue;
         }
         // Resolving collapses the `latest` alias's two hops in one go. A link
@@ -2071,6 +2130,34 @@ mod tests {
         assert!(
             sweep_install_roots().contains(&crate::env::MISE_SYSTEM_INSTALLS_DIR),
             "the walk cannot apply its own rule to a root it is never handed"
+        );
+    }
+
+    /// The walk must not open a tool's payload. A Node or Python installation
+    /// has thousands of directories under its version, and none of them can hold
+    /// a cache link — only the http backend puts one below the version level.
+    #[test]
+    fn a_payload_tool_has_its_versions_left_unopened() {
+        let fx = tarball_fixture();
+        let orphan = fx.entry("orphan");
+        // Shaped like a payload install: a version directory with a tree under
+        // it. `install_state` knows nothing about "payload", so it is not http.
+        let deep = fx
+            .installs
+            .join("payload")
+            .join("1.0.0")
+            .join("lib")
+            .join("nested");
+        std::fs::create_dir_all(&deep).unwrap();
+        // A link planted where only a descent would find it. The walk is
+        // supposed to stop above this, so the entry stays reclaimable — this
+        // asserts the bound rather than the reachability.
+        file::make_symlink(&orphan, &deep.join("link")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(
+            results.count, 1,
+            "the walk opened a payload directory it had no reason to read"
         );
     }
 
