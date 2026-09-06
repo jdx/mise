@@ -1,65 +1,60 @@
 # Using Plugins
 
-mise supports plugins that extend its functionality, allowing you to install tools that aren't available in the standard registry. This is particularly useful for:
-
-- Installing tools from private repositories
-- Using experimental or niche tools
-- Creating custom tool installations for your team
+Use a plugin when an integration needs custom installation logic, environment directives,
+or a host package manager. A tool does not need a registry shorthand or a plugin to be
+installable: first check whether a built-in [backend](/dev-tools/backends/) accepts it directly.
+For example, `mise use npm:prettier` uses the built-in npm backend.
 
 ## What Are Plugins?
 
-Plugins are extensions that can install and manage tools not included in mise's built-in registry. They are written in Lua and come in two main types:
+Lua plugins support several interfaces. The [plugin overview](/plugins.html#choose-a-plugin-type)
+compares backend, tool, environment, and package plugins. This page covers installing and
+maintaining them; [asdf plugins](/asdf-legacy-plugins.html) have a separate compatibility guide.
 
 ### Backend Plugins
 
-Backend plugins use enhanced backend methods and support the `plugin:tool` format:
-
-- **Multiple Tools**: A single plugin can manage multiple tools
-- **Enhanced Methods**: Backend methods for listing, installing, and environment setup
-- **Format**: Use the `plugin:tool` format (e.g., `vfox-npm:prettier`)
+A backend plugin manages one or more tools using `plugin-name:tool`. For example,
+`vfox-npm:prettier` selects `prettier` through a plugin installed as `vfox-npm`.
 
 ### Tool Plugins
 
-Tool plugins use the traditional hook-based approach:
-
-- **Single Tool**: Each plugin manages one tool
-- **Hook-based**: Use hooks like `PreInstall`, `PostInstall`, `Available`, etc.
-- **Format**: Use the tool name directly (e.g., `my-tool`)
-
-Both types:
-
-- Install tools from any source (npm packages, GitHub releases, custom builds)
-- Set up environment variables and PATH entries
-- Handle version management and listing
-- Work across all platforms (Windows, macOS, Linux)
+A tool plugin manages one tool. Use the name under which it was installed, such as
+`my-tool`. Lua runs on Windows, macOS, and Linux, but the plugin's own dependencies and
+installation logic determine which platforms it supports.
 
 ## Installing Plugins
 
 ### From a Git Repository
 
-```bash
-# Install a plugin from a repository
-mise plugin install <plugin-name> <repository-url>
-
-# Example: Installing the vfox-npm plugin
-mise plugin install vfox-npm https://github.com/jdx/vfox-npm
+```sh
+# Substitute your plugin's name and repository URL.
+mise plugin install my-plugin https://github.com/your-org/my-plugin
 ```
+
+For a specific Git revision, append `#<ref>` to the URL:
+
+```sh
+mise plugin install my-plugin 'https://github.com/your-org/my-plugin#v1.0.0'
+```
+
+Use a commit ID when you need an immutable source revision. A tag or branch can move.
+Review updates before changing the revision; a tool version pin is a separate choice.
 
 ### From Zip File
 
-```bash
-# Install a plugin from a zip file over HTTPS
-mise plugin install <plugin-name> <zip-url>
+For an HTTPS archive, provide its URL instead of a Git URL:
 
-# Example: Installing a plugin from a zip file
-mise plugin install tiny https://github.com/mise-plugins/mise-tiny/archive/refs/heads/main.zip
+```sh
+mise plugin install my-plugin https://github.com/your-org/my-plugin/archive/refs/tags/v1.0.0.zip
 ```
+
+The archive must contain a valid plugin. An unpacked archive has no Git checkout for
+`mise plugin update`; install a new archive explicitly when updating it.
 
 ### From Local Directory
 
-```bash
-# Link a local plugin for development
-mise plugin link <plugin-name> /path/to/plugin/directory
+```sh
+mise plugin link my-plugin /path/to/plugin/directory
 ```
 
 Local plugins can also be declared in `mise.toml`:
@@ -69,193 +64,164 @@ Local plugins can also be declared in `mise.toml`:
 my-plugin = "./plugins/my-plugin"
 ```
 
-Absolute paths and `~/...` are supported. Explicit relative paths beginning with
-`./` or `../` are resolved from the config root of the file containing the
-declaration. mise symlinks the directory just like `mise plugins link`, so local
-edits are reflected immediately. Existing plugin installations are not replaced
-automatically; use `mise plugins install --force my-plugin` to switch an
-existing installation to a local source.
+Absolute paths and `~/...` are supported. Explicit relative paths beginning with `./` or
+`../` resolve from the config root of the declaring file. mise symlinks the directory,
+so local edits take effect immediately. Existing installations are not replaced
+automatically: use `mise plugins install --force my-plugin` to apply a changed local source,
+or `mise plugins link --force my-plugin /path/to/plugin` when linking explicitly.
 
 ## Using Plugins (Advanced)
 
-Once a plugin is installed, you can use it with the `plugin:tool` format:
+After installing a backend plugin, select a tool and then invoke its executable:
 
-```bash
-# Install a specific tool using the plugin
-mise install vfox-npm:prettier@latest
-
-# Use the tool
-mise use vfox-npm:prettier@3.0.0
-
-# Execute the tool
-mise exec vfox-npm:prettier -- --version
-
-# List available versions
-mise ls-remote vfox-npm:prettier
+```sh
+mise ls-remote my-backend:some-tool
+mise use my-backend:some-tool@1.0.0
+mise exec -- some-tool --version
 ```
+
+To use a version for just one command without writing configuration:
+
+```sh
+mise exec my-backend:some-tool@1.0.0 -- some-tool --version
+```
+
+Replace the names with the plugin's documented identifiers. The argument after `--` is
+an executable, which may differ from the tool name: a TypeScript package provides `tsc`,
+for example. `mise install` alone installs a version; `mise use` also selects it in configuration.
 
 ## Plugin:Tool Format
 
-The `plugin:tool` format allows a single plugin to manage multiple tools. This is particularly useful for:
+The prefix is the installed backend plugin name, and the suffix identifies a tool within
+that backend. It is not the syntax for an ordinary single-tool plugin. Use:
 
-- **Package managers**: Install different npm packages, Python packages, etc.
-- **Tool families**: Manage related tools from the same ecosystem
-- **Custom builds**: Install different variants of the same tool
+```toml
+[plugins]
+my-backend = "https://github.com/your-org/my-backend"
+my-tool = "https://github.com/your-org/my-tool-plugin"
 
-### Example: npm packages
-
-```bash
-# Install different npm packages using the same plugin
-mise install vfox-npm:prettier@latest
-mise install vfox-npm:eslint@8.0.0
-mise install vfox-npm:typescript@latest
-
-# Use them in your project
-mise use vfox-npm:prettier@latest vfox-npm:eslint@8.0.0
+[tools]
+"my-backend:some-tool" = "1.0.0"
+my-tool = "2.0.0"
 ```
+
+The repository and version values are illustrative; choose versions returned by the plugin.
 
 ## Managing Plugins
 
 ### List installed plugins
 
-```bash
-# Show all plugins
+```sh
 mise plugins ls
-
-# Show plugin URLs
 mise plugins ls --urls
 ```
 
 ### Update plugins
 
-```bash
-# Update a specific plugin
-mise plugin update vfox-npm
-
-# Update all plugins
-mise plugin update --all
+```sh
+mise plugin update my-plugin
+mise plugin update my-plugin#v1.1.0
+mise plugin update  # all installed Git plugins
 ```
+
+This updates plugin code, not the versions of tools it has installed. Local links are
+skipped. Check the resulting revision with `mise plugins ls --urls`.
 
 ### Remove plugins
 
-```bash
-# Remove a plugin
-mise plugin remove vfox-npm
-
-# This will also remove all tools installed by the plugin
+```sh
+mise plugin remove my-plugin
 ```
+
+By default this removes plugin code and retains installed tools. Those tools may still
+need the plugin to resolve their executable paths or environment. Remove unneeded tool
+versions with `mise uninstall` before removing the plugin. For a single-tool plugin,
+`mise plugin remove --purge my-plugin` also removes its installs, downloads, and cache.
+Remove corresponding `[plugins]` and `[tools]` entries if you no longer want the integration.
 
 ## Configuration
 
-Plugins can be configured in your `mise.toml` file:
-
-```toml
-[plugins]
-vfox-npm = "https://github.com/jdx/vfox-npm"
-
-[tools]
-"vfox-npm:prettier" = "latest"
-"vfox-npm:eslint" = "8.0.0"
-```
+Declare plugin sources in `[plugins]` and tool versions in `[tools]`, as shown above.
+Environment plugins use `[env]`; package plugins use `[bootstrap.packages]`. Configuration
+options belong to the plugin's own interface, so consult its README before copying options
+from another plugin.
 
 ## Finding Plugins
 
-mise doesn't have a centralized registry for community plugins, but you can find them in a few places:
-
-- **GitHub**: Search for repositories with the "vfox-" prefix
-- **Community**: Check mise community discussions and Discord
-- **Company internal**: Your organization may have private plugins
+Check the [mise-plugins organization](https://github.com/mise-plugins), the
+[mise discussions](https://github.com/jdx/mise/discussions), or your organization's repositories.
+The [registry](/registry.html) contains some existing plugin-backed tool shorthands, but it
+is not a general catalog of plugins and does not accept new asdf or vfox tool entries.
 
 ## Plugin Examples
 
 ### vfox-npm (Example Plugin)
 
-The `vfox-npm` plugin demonstrates how to create a plugin that installs npm packages:
+[vfox-npm](https://github.com/jdx/vfox-npm) demonstrates a multi-tool backend. It is an example
+for plugin development; use mise's built-in [npm backend](/dev-tools/backends/npm.html) for
+normal npm tool installation:
 
-```bash
-# Install the plugin
-mise plugin install vfox-npm https://github.com/jdx/vfox-npm
-
-# Install tools
-mise install vfox-npm:prettier@latest
-mise install vfox-npm:eslint@latest
-
-# Use them
-mise use vfox-npm:prettier@latest
-mise exec vfox-npm:prettier -- --check .
+```sh
+mise use npm:prettier
+mise exec -- prettier --check .
 ```
-
-::: info
-This is only an example plugin for testing. mise has built-in npm support, which you should use instead: `mise install npm:prettier@latest`
-:::
 
 ## Backend Plugins (Advanced)
 
-Backend plugins use enhanced backend methods that provide better performance and support for the `plugin:tool` format:
-
-- **BackendListVersions**: Lists available versions of a tool
-- **BackendInstall**: Installs a specific version
-- **BackendExecEnv**: Sets up environment variables
-
-This architecture allows plugins to manage multiple tools efficiently while providing a consistent interface.
+Backend plugins implement `BackendListVersions`, `BackendInstall`, and optionally
+`BackendExecEnv`. See [Backend Plugin Development](/backend-plugin-development.html) for
+context fields and typed tool options.
 
 ## Tool Plugins (Advanced)
 
-Tool plugins use the traditional hook-based approach:
-
-- **Available**: Lists available versions
-- **PreInstall/PostInstall**: Installation hooks
-- **EnvKeys**: Environment variable setup
-- **ParseLegacyFile**: Parses version files from other tools (e.g. `.nvmrc`)
-
-Both architectures provide a flexible plugin system that can handle diverse installation and management needs.
+Tool plugins use hooks such as `Available`, `PreInstall`, `PostInstall`, and `EnvKeys`.
+See [Tool Plugin Development](/tool-plugin-development.html) for lifecycle ordering and
+idiomatic version-file support.
 
 ## Security Considerations
 
-::: danger
-When using plugins, be aware that:
+Plugin code runs with your permissions during installation and use. Inspect its source
+and revisions before installing or updating it. Plugins can invoke external commands;
+Lua does not provide an OS sandbox for those operations.
 
-- **Plugins execute arbitrary code** during installation and use
-- **Only install plugins from trusted sources**
-- **Review plugin code** before installation when possible
-- **Use version pinning**, such as [`mise.lock`](/dev-tools/mise-lock.md), to avoid unexpected updates
-:::
+A tool pin in `mise.toml` or `mise.lock` does not pin plugin code. Pin the plugin repository
+revision separately, and check which [lockfile guarantees](/dev-tools/mise-lock.html) its
+backend supports. See [Security](/security.html) for safe mode and trust boundaries.
 
 ## Troubleshooting
 
 ### Plugin installation fails
 
-```bash
-# Check if the repository URL is correct
-mise plugin install vfox-npm https://github.com/jdx/vfox-npm
-
-# Check plugin directory
-ls ~/.local/share/mise/plugins/
-```
+Check the repository URL, revision, Git credentials, and `mise plugins ls --urls` output.
+A local directory must have the plugin's expected files and hooks. To replace an existing
+plugin, use `--force` only after checking the intended source.
 
 ### Tool installation fails
 
-```bash
-# Check plugin logs
-mise install vfox-npm:prettier@latest --verbose
-
-# Verify plugin is installed
-mise plugins ls
+```sh
+mise ls-remote my-backend:some-tool
+mise install --verbose my-backend:some-tool@1.0.0
 ```
+
+Confirm the plugin supports the host platform and that its required external programs are
+available. Verbose output shows the underlying error; avoid publishing credentials from logs.
 
 ### Environment issues
 
-```bash
-# Check if PATH is set correctly
-mise exec vfox-npm:prettier env | grep PATH
-
-# Verify tool is installed
-ls ~/.local/share/mise/installs/vfox-npm/prettier/
+```sh
+mise ls --current
+mise where my-backend:some-tool
+mise exec my-backend:some-tool@1.0.0 -- some-tool --version
 ```
+
+Use `mise where` instead of guessing an installation path. For environment plugins, check
+`mise env --json` locally; its output may contain secrets. A successful installation alone
+does not activate a tool in the current shell.
 
 ## Next Steps
 
-- [Learn how to create backend plugins](backend-plugin-development.md)
-- [Learn how to create tool plugins](tool-plugin-development.md)
-- [Explore built-in backends](dev-tools/backends/)
-- [Check the community registry](registry.md)
+- [Create a backend plugin](/backend-plugin-development.html).
+- [Create a tool plugin](/tool-plugin-development.html).
+- [Create an environment plugin](/env-plugin-development.html).
+- [Create a package plugin](/package-plugin-development.html).
+- [Publish a plugin](/plugin-publishing.html).

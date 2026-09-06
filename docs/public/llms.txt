@@ -25,7 +25,7 @@
 - [Shims](https://mise.jdx.dev/dev-tools/shims.html): There are several ways to load the mise context (dev tools, environment variables) into your shell.
 - [Tool Aliases](https://mise.jdx.dev/dev-tools/aliases.html): Use [tool_alias] to give a tool a different backend or name a version request. Put shared aliases in the project's mise.toml; use ~/.config/mise/config.toml for personal defaults.
 - [Tool Stubs](https://mise.jdx.dev/dev-tools/tool-stubs.html): A tool stub is an executable file that records how to obtain and run one tool. Commit it to a repository so a command such as ./bin/py selects the intended runtime and forwards its arguments.
-- [Registry](https://mise.jdx.dev/registry.html): List of all tools aliased by default in mise.
+- [Registry](https://mise.jdx.dev/registry.html): The registry maps short tool names to one or more installation backends. Search the tool list below, or inspect the registry bundled with your installed mise.
 - [GitHub Tokens](https://mise.jdx.dev/dev-tools/github-tokens.html): Many tools in mise are hosted on GitHub. For public releases, mise uses mise-versions by default as a shared cache for version lists, release metadata, and GitHub artifact attestations.
 - [mise.lock Lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html): mise.toml records the versions a project accepts; mise.lock records the concrete versions those requests resolved to.
 - [Security](https://mise.jdx.dev/security.html): mise includes several supply-chain controls for installing and managing tools. These controls have different coverage depending on the backend and the metadata available from upstream.
@@ -120,8 +120,8 @@
 
 ## Plugins
 
-- [Plugin Overview](https://mise.jdx.dev/plugins.html): Plugins extend mise with new functionality, such as extra tools or environment variable management.
-- [Using Plugins](https://mise.jdx.dev/plugin-usage.html): mise supports plugins that extend its functionality, allowing you to install tools that aren't available in the standard registry. This is particularly useful for.
+- [Plugin Overview](https://mise.jdx.dev/plugins.html): Plugins add installation logic, environment directives, or bootstrap package managers to mise. Most tools can use a built-in backend directly, even when they have no registry shorthand.
+- [Using Plugins](https://mise.jdx.dev/plugin-usage.html): Use a plugin when an integration needs custom installation logic, environment directives, or a host package manager.
 - [Backend Plugin Development](https://mise.jdx.dev/backend-plugin-development.html): The mise-backend-plugin-template provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
 - [Tool Plugin Development](https://mise.jdx.dev/tool-plugin-development.html): The mise-tool-plugin-template provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
 - [Environment Plugin Development](https://mise.jdx.dev/env-plugin-development.html): Environment plugins are a special type of mise plugin that provides environment variables and PATH modifications without managing tool versions.

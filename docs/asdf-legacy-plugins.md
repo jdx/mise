@@ -16,11 +16,12 @@ asdf plugins are shell script-based plugins that follow the asdf plugin specific
 
 asdf plugins have several limitations compared to mise's modern plugin system:
 
-- **Platform Support**: Only work on Linux and macOS (no Windows support)
+- **Platform Support**: Require Unix shell utilities; the asdf backend is disabled by default on Windows
 - **Performance**: Shell script execution is slower than mise's native backends
 - **Features**: Limited compared to modern backends like aqua, github, or tool/backend plugins
 - **Maintenance**: Harder to maintain and debug
-- **Security**: Less secure than sandboxed modern backends
+- **Execution scope**: Plugin scripts run with your permissions. Lua plugins can also run
+  commands and access files; neither plugin format is an OS sandbox.
 
 ## When to Use asdf (Legacy) Plugins
 
@@ -44,14 +45,15 @@ Only use asdf plugins when:
 
 ### From the Registry
 
-Most popular asdf plugins are available through mise's registry:
+Some registry entries retain asdf alternatives, but a shorthand may prefer another backend.
+Select asdf explicitly when you need to test or maintain that implementation:
 
 ```bash
-# Install from registry shorthand
-mise use postgres@15
+# Select the asdf implementation explicitly
+mise use asdf:mise-plugins/mise-postgres@17
 
-# This is equivalent to
-mise use asdf:mise-plugins/mise-postgres@15
+# The postgres shorthand currently prefers vfox instead
+mise registry postgres
 ```
 
 ### From Git Repository
@@ -71,11 +73,15 @@ mise plugin install postgres https://github.com/mise-plugins/mise-postgres
 mise plugin add postgres https://github.com/mise-plugins/mise-postgres
 
 # Install tool version
-mise install postgres@15.0.0
+mise install postgres@17.0
 
 # Use the tool
-mise use postgres@15.0.0
+mise use postgres@17.0
 ```
+
+An installed plugin with that name takes precedence over the registry shorthand when its
+backend is enabled. Use the full `asdf:owner/repo` identifier above to select an implementation
+without relying on an installed short-name plugin.
 
 ## Plugin Structure
 
@@ -85,7 +91,7 @@ asdf plugins follow this directory structure:
 plugin-name/
 ├── bin/
 │   ├── list-all          # List all available versions
-│   ├── download          # Download source code/binary
+│   ├── download          # Separate download phase [optional]
 │   ├── install           # Install the tool
 │   ├── latest-stable     # Get latest stable version [optional]
 │   ├── help.overview     # Plugin description [optional]
@@ -104,18 +110,24 @@ plugin-name/
 
 ## Required Scripts
 
+Provide `bin/list-all` and `bin/install`. The separate `bin/download` hook is optional;
+without it, the install hook is responsible for obtaining the source or binary. Mark
+scripts executable and write diagnostics to stderr so version output stays machine-readable.
+
 ### bin/list-all
 
 Lists all available versions of the tool:
 
 ```bash
 #!/usr/bin/env bash
-# List all available versions
-curl -s https://api.github.com/repos/owner/repo/releases |
-  grep '"tag_name":' |
-  sed -E 's/.*"([^"]+)".*/\1/' |
-  sort -V
+set -euo pipefail
+# Illustrative version list, ordered oldest to newest by the publisher's rules.
+printf '%s\n' 1.0.0 1.1.0 1.10.0
 ```
+
+For real plugins, query the publisher's release source and parse structured metadata with
+a suitable parser. Do not scrape JSON with `grep` or assume every tool uses SemVer. Preserve
+meaningful release order; `sort -V` is not portable to macOS and does not understand channels.
 
 ### bin/download
 
@@ -123,7 +135,7 @@ Downloads the tool source/binary:
 
 ```bash
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 # Input variables from mise
 # ASDF_INSTALL_TYPE (version or ref)
@@ -135,17 +147,19 @@ version="$ASDF_INSTALL_VERSION"
 download_path="$ASDF_DOWNLOAD_PATH"
 
 # Download logic here
-curl -Lo "$download_path/archive.tar.gz" \
+mkdir -p "$download_path"
+curl -fSL -o "$download_path/archive.tar.gz" \
   "https://github.com/owner/repo/archive/v${version}.tar.gz"
 ```
 
 ### bin/install
 
-Installs the tool:
+Installs the tool. This source-build sketch assumes the archive contains a Makefile with
+an `install` target accepting `PREFIX`, and that build dependencies are already available:
 
 ```bash
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 # Input variables from mise
 # ASDF_INSTALL_TYPE (version or ref)
@@ -182,9 +196,8 @@ Gets the latest stable version:
 
 ```bash
 #!/usr/bin/env bash
-curl -s https://api.github.com/repos/owner/repo/releases/latest |
-  grep '"tag_name":' |
-  sed -E 's/.*"([^"]+)".*/\1/'
+# Return a version from bin/list-all according to this tool's stable-release policy.
+printf '%s\n' 1.10.0
 ```
 
 ### bin/list-legacy-filenames
@@ -193,9 +206,12 @@ Lists legacy version file names:
 
 ```bash
 #!/usr/bin/env bash
-echo ".tool-version"
-echo ".tool-versions"
+echo ".example-version"
 ```
+
+Enable idiomatic version files for the tool through
+[`idiomatic_version_file_enable_tools`](/configuration/settings.html#idiomatic_version_file_enable_tools).
+Do not return `.tool-versions`: mise already parses that multi-tool format itself.
 
 ### bin/parse-legacy-file
 
@@ -203,12 +219,13 @@ Parses a legacy version file:
 
 ```bash
 #!/usr/bin/env bash
-cat "$1" | head -n 1
+head -n 1 "$1"
 ```
 
 ## Environment Variables
 
-asdf plugins have access to these environment variables:
+Hook inputs depend on the phase. Installation hooks receive the version and path values;
+update hooks receive the previous and new Git refs:
 
 - `ASDF_INSTALL_TYPE` - `version` or `ref`
 - `ASDF_INSTALL_VERSION` - Version number or git ref
@@ -217,7 +234,6 @@ asdf plugins have access to these environment variables:
 - `ASDF_PLUGIN_PATH` - Plugin directory
 - `ASDF_PLUGIN_PREV_REF` - Previous git ref (for updates)
 - `ASDF_PLUGIN_POST_REF` - New git ref (for updates)
-- `ASDF_CMD_FILE` - Path to executable being run
 
 ## Best Practices
 
@@ -248,17 +264,20 @@ esac
 
 case "$(uname -m)" in
   x86_64) arch="amd64" ;;
-  arm64)  arch="arm64" ;;
+  arm64|aarch64) arch="arm64" ;;
   *)      echo "Unsupported architecture" >&2; exit 1 ;;
 esac
 ```
 
 ### Version Parsing
 
+Normalize a publisher prefix only when it is part of that tool's convention. Keep
+non-numeric versions and channels intact; a shared SemVer parser is not appropriate.
+
 ```bash
 #!/usr/bin/env bash
 
-# Parse semantic version
+# Remove this example publisher's prefix
 parse_version() {
   local version="$1"
   # Remove 'v' prefix if present
@@ -273,12 +292,12 @@ parse_version() {
 
 ```bash
 # Link plugin for development
-mise plugin add my-plugin /path/to/local/plugin
+mise plugin link my-plugin /path/to/local/plugin
 
 # Test basic functionality
 mise ls-remote my-plugin
-mise install my-plugin@1.0.0
-mise which my-plugin
+mise use my-plugin@1.0.0
+mise exec -- my-plugin --version
 ```
 
 ### Debugging
@@ -293,44 +312,46 @@ mise install --verbose my-plugin@1.0.0
 
 ## Example Plugin
 
-Here's a minimal example for a fictional tool:
+This self-contained local fixture demonstrates the minimum interface without network
+requests or a compiler. Create these two executable files under `my-plugin/bin/`:
 
 ```bash
 #!/usr/bin/env bash
 # bin/list-all
-curl -s "https://api.github.com/repos/example/tool/releases" |
-  grep '"tag_name":' |
-  sed -E 's/.*"v([^"]+)".*/\1/' |
-  sort -V
-```
-
-```bash
-#!/usr/bin/env bash
-# bin/download
-set -e
-version="$ASDF_INSTALL_VERSION"
-platform=$(uname -s | tr '[:upper:]' '[:lower:]')
-arch=$(uname -m)
-
-url="https://github.com/example/tool/releases/download/v${version}/tool-${platform}-${arch}.tar.gz"
-curl -fSL "$url" -o "$ASDF_DOWNLOAD_PATH/tool.tar.gz"
+set -euo pipefail
+printf '%s\n' 1.0.0
 ```
 
 ```bash
 #!/usr/bin/env bash
 # bin/install
-set -e
-cd "$ASDF_DOWNLOAD_PATH"
-tar -xzf tool.tar.gz
-cp tool "$ASDF_INSTALL_PATH/bin/"
-chmod +x "$ASDF_INSTALL_PATH/bin/tool"
+set -euo pipefail
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+cat > "$ASDF_INSTALL_PATH/bin/my-plugin" <<'SCRIPT'
+#!/usr/bin/env sh
+printf '%s\n' 'my-plugin 1.0.0'
+SCRIPT
+chmod +x "$ASDF_INSTALL_PATH/bin/my-plugin"
 ```
+
+Test from a separate project directory:
+
+```sh
+chmod +x /path/to/my-plugin/bin/list-all /path/to/my-plugin/bin/install
+mise plugin link my-plugin /path/to/my-plugin
+mise ls-remote my-plugin
+mise use my-plugin@1.0.0
+mise exec -- my-plugin --version
+```
+
+Replace the fixture installer with your real download, verification, extraction, or build
+steps. Keep `bin/exec-env` cheap: it can run while constructing the shell environment.
 
 ## Migration Path
 
 Consider migrating from asdf plugins to modern alternatives:
 
-1. **Check if tool is available in [aqua registry](https://github.com/aquaproj/aqua-registry)**
+1. **Check for [signed packslip releases](/dev-tools/backends/packslip.html), then whether the tool is available in [aqua registry](https://github.com/aquaproj/aqua-registry)**
 2. **Use [github backend](dev-tools/backends/github.md) for simple GitHub releases**
 3. **Create a [mise plugin](tool-plugin-development.md) for complex tools** - use the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) for a quick start
 4. **Use language-specific package managers** (npm, pipx, cargo, gem)

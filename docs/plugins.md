@@ -1,151 +1,136 @@
 # Plugins
 
-Plugins extend mise with new functionality, such as extra tools or environment variable management.
+Plugins add installation logic, environment directives, or bootstrap package managers to
+mise. Most tools can use a built-in [backend](/dev-tools/backends/) directly, even when they
+have no [registry](/registry.html) shorthand. Start there before installing a plugin.
 
-Historically, plugins were the only way to add new tools, since the only backend was [asdf](/dev-tools/backends/asdf.html).
+For release binaries, prefer [packslip](/dev-tools/backends/packslip.html) when the publisher
+provides signed manifests, then [aqua](/dev-tools/backends/aqua.html),
+[github](/dev-tools/backends/github.html), or [gitlab](/dev-tools/backends/gitlab.html).
+Use a plugin when your integration needs custom behavior those backends cannot provide.
 
-With that backend, every tool has its own plugin, which must be installed manually. Now, with [core tools](/core-tools.html)
-and backends like [aqua](/dev-tools/backends/aqua.html)/[github](/dev-tools/backends/github.html), plugins are no longer necessary to run most tools in mise.
+Plugin code can read files, make requests, and run processes with your permissions. Lua's
+cross-platform runtime does not make a plugin an OS sandbox. Review the source and its
+updates; new asdf and vfox tool plugins are not accepted into the mise registry.
 
-Tool plugins should be avoided for security reasons. New tools built with asdf/plugins will not be accepted into mise unless they are very popular and
-aqua/github is not an option for some reason.
+## Choose a plugin type
 
-The exception is a tool that needs to set env vars or has a complex installation process: plugins can provide functionality like [setting env vars globally](/environments/#plugin-provided-env-directives) without relying on a tool being installed. They can also provide [aliases for versions](/dev-tools/aliases.html#aliased-versions).
+| Type        | Use it for                                            | Configuration                        | Author guide                                            |
+| ----------- | ----------------------------------------------------- | ------------------------------------ | ------------------------------------------------------- |
+| Backend     | Several versioned tools managed by one integration    | `[tools]`, `my-backend:tool`         | [Backend development](/backend-plugin-development.html) |
+| Tool        | One versioned tool with download/install hooks        | `[tools]`, the installed plugin name | [Tool development](/tool-plugin-development.html)       |
+| Environment | Variables or PATH entries without a tool installation | `[env]`, `_.my-plugin`               | [Environment development](/env-plugin-development.html) |
+| Package     | Host-managed packages for machine bootstrap           | `[bootstrap.packages]`               | [Package development](/package-plugin-development.html) |
+| asdf        | An existing shell-based tool integration              | `[tools]`, an asdf backend           | [Legacy plugins](/asdf-legacy-plugins.html)             |
 
-To integrate a new tool into mise, prefer [packslip](/dev-tools/backends/packslip.html)
-when the project publishes signed release manifests. Otherwise, get it into the
-[aqua registry](/dev-tools/backends/aqua.html) or check whether it can be installed
-with [github](/dev-tools/backends/github.html) or [gitlab](/dev-tools/backends/gitlab.html).
-Aqua is preferred over github: it has better UX and more features, such as SLSA verification and the ability to use different logic for older versions.
-
-You can manage all installed plugins in `mise` with [`mise plugins`](/cli/plugins.html).
-
-```shell
-mise plugins ls --urls
-# Plugin                          Url                                                     Ref  Sha
-# 1password                       https://github.com/mise-plugins/mise-1password-cli.git  HEAD f5d5aab
-# vfox-mise-plugins-vfox-dart     https://github.com/mise-plugins/vfox-dart               HEAD 1424253
-# ...
-```
+The Lua runtime is available on Windows, macOS, and Linux. Each plugin must still support
+the selected platform and any external programs it invokes. asdf plugins use shell scripts
+and are disabled by default on Windows.
 
 ## Backend Plugins
 
-Backend plugins provide enhanced functionality with modern backend methods. These plugins use the `plugin:tool` format and offer advantages over traditional plugins:
+A backend plugin implements `BackendListVersions`, `BackendInstall`, and optionally
+`BackendExecEnv`. The prefix is the name under which you install the plugin:
 
-- **Multiple Tools**: A single plugin can manage multiple tools
-- **Enhanced Methods**: Backend methods for listing versions, installing, and setting environment variables
-- **Cross-platform**: Work on Windows, macOS, and Linux
-- **Performance**: Faster execution than shell-based plugins
-
-Example usage:
-
-```bash
-# Install a backend plugin
-mise plugin install my-plugin https://github.com/username/my-plugin
-
-# Use the plugin:tool format
-mise install my-plugin:some-tool@1.0.0
-mise use my-plugin:some-tool@latest
+```sh
+# Replace this example repository and tool with your plugin's values.
+mise plugin install my-backend https://github.com/your-org/my-backend
+mise use my-backend:some-tool@1.0.0
+mise exec -- some-tool --version
 ```
 
-See [Backend Plugin Development](backend-plugin-development.md) for creating backend plugins. You can start quickly with the [mise-backend-plugin-template](https://github.com/jdx/mise-backend-plugin-template).
+See [Using Plugins](/plugin-usage.html) for installation, local development, and updates.
+The [backend template](https://github.com/jdx/mise-backend-plugin-template) provides a starting point.
 
 ## Tool Plugins
 
-Tool plugins use the traditional hook-based approach with Lua scripts. These plugins provide:
+A tool plugin manages one tool through hooks such as `Available`, `PreInstall`, and
+`EnvKeys`. Use its installed name as the tool name:
 
-- **Hook-based**: Use hooks like `PreInstall`, `PostInstall`, `Available`, etc.
-- **Single Tool**: Each plugin manages one tool
-- **Cross-platform**: Work on Windows, macOS, and Linux
-- **Flexible**: Full control over installation and environment setup
-
-Example usage:
-
-```bash
-# Install a tool plugin
-mise plugin install my-tool https://github.com/username/my-tool-plugin
-
-# Use the tool directly
-mise install my-tool@1.0.0
-mise use my-tool@latest
+```sh
+mise plugin install my-tool https://github.com/your-org/my-tool-plugin
+mise use my-tool@1.0.0
+mise exec -- my-tool --version
 ```
 
-See [Tool Plugin Development](tool-plugin-development.md) for creating tool plugins. The [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) provides a ready-to-use starting point.
+These repository and executable names are placeholders. Start with the
+[tool template](https://github.com/jdx/mise-tool-plugin-template) when writing your own.
 
 ## Environment Plugins
 
-Environment plugins provide environment variables and PATH modifications without managing tool versions. They're ideal for integrating with secret managers, setting dynamic configurations, and standardizing team environments.
+An environment plugin implements `MiseEnv` and optionally `MisePath`. Install it before
+using its directive:
 
-Example usage:
-
-```bash
-# Install an environment plugin
-mise plugin install my-env-plugin https://github.com/username/my-env-plugin
+```sh
+mise plugin install my-env-plugin https://github.com/your-org/my-env-plugin
 ```
 
 ```toml
-# Configure in mise.toml
 [env]
-_.my-env-plugin = { api_url = "https://api.example.com", debug = true }
+_.my-env-plugin = {
+  api_url = "https://api.example.com",
+  debug = true,
+}
 ```
 
-Unlike tool plugins, environment plugins:
+The fields are defined by the plugin. See [environment plugin development](/env-plugin-development.html)
+for return values, cache behavior, and the [environment template](https://github.com/jdx/mise-env-plugin-template).
 
-- Only implement environment hooks (`MiseEnv`, `MisePath`)
-- Are activated via `env._.<plugin-name>` syntax
-- Don't manage tool versions or installations
+## Package plugins
 
-See [Environment Plugin Development](env-plugin-development.md) for creating environment plugins. The [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) repository provides a ready-to-use starting point.
+Package plugins implement a host package manager for [bootstrap packages](/bootstrap/packages/plugins.html).
+They operate on batches of package requests and report installed state. Their installations
+belong to the host manager, unlike versioned tools stored under mise's data directory.
+See [Package Plugin Development](/package-plugin-development.html) for the hook contract.
 
 ## General Plugin Usage
 
-For end-user documentation on installing and using both backend and tool plugins, see [Using Plugins](plugin-usage.md).
+[Using Plugins](/plugin-usage.html) explains repository URLs, archive installation, local
+links, pinning plugin revisions, and diagnostics. List what is already installed with:
+
+```sh
+mise plugins ls --urls
+```
 
 ## asdf (Legacy) Plugins
 
-mise can use asdf's plugin ecosystem under the hood for backward compatibility. These plugins contain shell scripts like
-`bin/install` (for installing) and `bin/list-all` (for listing all available versions).
-
-asdf plugins have limitations compared to modern backends and should only be used when necessary. They only work on Linux/macOS and are slower than native backends.
-
-See [asdf (Legacy) Plugins](asdf-legacy-plugins.md) for comprehensive documentation on using and creating these plugins.
+mise can run existing asdf plugins with scripts such as `bin/list-all`, `bin/install`, and
+`bin/exec-env`. Use the [legacy guide](/asdf-legacy-plugins.html) to maintain one, or the
+[hook migration table](/dev-tools/backends/asdf.html#hook-migration-asdf-to-vfox) to port it to Lua.
 
 ## Plugin Authors
 
-<https://github.com/mise-plugins> is a GitHub organization for community-developed plugins.
-See [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md) for more details on how plugins here are treated differently.
-
-If you'd like your plugin to be hosted here, let me know (a GH discussion or Discord message is fine)
-and I'd be happy to host it for you.
+The [mise-plugins organization](https://github.com/mise-plugins) hosts community plugins.
+Contact the maintainers through a [GitHub discussion](https://github.com/jdx/mise/discussions)
+to discuss hosting. Hosting a plugin and adding a registry shorthand are separate decisions;
+see the [publishing guide](/plugin-publishing.html).
 
 ## Tool Options
 
-mise supports "tool options": configuration specified in `mise.toml` that changes the behavior
-of tools. One example is virtualenv for Python:
+Plugins define custom options in their tool configuration. For example, a plugin that
+supports a `mirror` option could accept:
 
 ```toml
 [tools]
-python = { version='3.11', virtualenv='.venv' }
+my-tool = {
+  version = "1.0.0",
+  mirror = "https://mirror.example.com",
+}
 ```
 
-::: warning
-The python `virtualenv` tool option is deprecated and will be removed in a future release.
-Use [`_.python.venv`](/lang/python.html#automatic-virtualenv-activation) in the `[env]` section instead.
-:::
-
-For asdf plugins and version-specific vfox lifecycle hooks, this is passed as
-`MISE_TOOL_OPTS__VIRTUALENV=.venv`. These variables are scoped to the plugin hook environment; mise
-does not export them to the user's shell. Custom backend options are passed to the plugin in that
-format; mise-managed fields such as `depends`, `install_env`, and `os` are not exported.
-
-Currently, this only supports simple strings, but we can make it compatible with more complex types
-(arrays, tables) fairly easily if there is a need for it.
+For asdf and version-specific vfox lifecycle hooks, that option is exposed as
+`MISE_TOOL_OPTS__MIRROR`. These variables are scoped to hook execution, not exported into
+your shell. mise-managed fields such as `depends`, `install_env`, and `os` are handled by
+mise instead. Backend plugin hooks receive typed options through `ctx.options`, including
+arrays and nested tables; see [backend context](/backend-plugin-development.html#context-variables).
 
 ## Templates
 
-Plugin custom repository values can be templates; see [Templates](/templates) for details.
+Repository values in `[plugins]` support [templates](/templates.html). Prefer a normal SSH
+or HTTPS repository URL and your Git credential setup for private repositories; embedding
+credentials in a URL can expose them in configuration or logs.
 
 ```toml
 [plugins]
-"vfox-backend:my-plugin" = "https://{{ get_env(name='GIT_USR', default='empty') }}:{{ get_env(name='GIT_PWD', default='empty') }}@github.com/foo/my-plugin.git"
+my-backend = "git@github.com:your-org/my-backend.git"
 ```
