@@ -299,12 +299,13 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                             // from now on holds it or carries its old
                             // version forward as if it were still eligible.
                             // A path that is missing right now (a symlink
-                            // target between two versions, say) is not
-                            // judged: it keeps its throttling until it is
-                            // back and the next reload can tell
+                            // target between two versions, say) keeps its
+                            // throttling while something still declares it;
+                            // one nothing declares any more leaves like any
+                            // other
                             capture.schedule.retain(|path| {
                                 state.relevant(path)
-                                    || (!path.exists() && !state.exclude.is_match(path))
+                                    || (!path.exists() && state.may_cover_missing(path))
                             });
                             capture.persist_schedule();
                             // the configuration that changed is what this
@@ -632,6 +633,29 @@ impl State {
             Some(entry) => entry.policy.autosave,
             None => false,
         }
+    }
+
+    /// Whether a path that does not exist right now may still be one the
+    /// watcher saves once it is back: under a declared autosave entry, or
+    /// where a tracked symlink points (its target between two versions,
+    /// say). A path nothing declares for automatic saving any more is not
+    /// kept for being missing.
+    fn may_cover_missing(&self, path: &Path) -> bool {
+        if self.hard.iter().any(|dir| path.starts_with(dir)) || self.exclude.is_match(path) {
+            return false;
+        }
+        if self
+            .tracked
+            .entry_for(path)
+            .is_some_and(|entry| entry.policy.autosave)
+        {
+            return true;
+        }
+        self.watched.entries.iter().any(|entry| {
+            entry.policy.autosave
+                && entry.path.is_symlink()
+                && tracked::link_target(&entry.path).is_some_and(|target| path.starts_with(target))
+        })
     }
 }
 
@@ -1052,5 +1076,56 @@ impl Shutdown {
                 _ = self.ctrl_break.recv() => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::system::files::{FileMode, FilePolicy};
+    use crate::system::history::tracked::{EntryKind, TrackedEntry};
+
+    fn state_of(tracked: TrackedSet, config_dir: PathBuf) -> State {
+        State {
+            watched: tracked.clone(),
+            plan: build_plan(&tracked),
+            exclude: tracked.exclude_set().unwrap(),
+            hard: vec![],
+            config_dir,
+            tracked,
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_missing_path_keeps_its_schedule_only_while_something_declares_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = normalize(dir.path());
+        let hypr = root.join("hypr");
+        std::fs::create_dir_all(&hypr).unwrap();
+        // a tracked link whose target is between two versions
+        let link = root.join("link");
+        std::os::unix::fs::symlink(root.join("elsewhere/target"), &link).unwrap();
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut tracked = TrackedSet {
+            entries: vec![
+                TrackedEntry::new(hypr.clone(), EntryKind::Track, "track", policy),
+                TrackedEntry::new(link.clone(), EntryKind::Track, "track", policy),
+            ],
+            exclude: vec![format!("{}/hypr/plugins/**", root.display())],
+            invalid: vec![],
+        };
+        let state = state_of(tracked.clone(), root.join("mise"));
+        assert!(state.may_cover_missing(&hypr.join("bindings.lua")));
+        assert!(state.may_cover_missing(&root.join("elsewhere/target")));
+        assert!(!state.may_cover_missing(&hypr.join("plugins/state.json")));
+        assert!(!state.may_cover_missing(&root.join("untracked/state.json")));
+
+        // untracked, or switched to manual saving: nothing keeps it
+        tracked.entries[0].policy.autosave = false;
+        tracked.entries.pop();
+        let state = state_of(tracked, root.join("mise"));
+        assert!(!state.may_cover_missing(&hypr.join("bindings.lua")));
+        assert!(!state.may_cover_missing(&root.join("elsewhere/target")));
     }
 }
