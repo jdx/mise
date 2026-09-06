@@ -449,7 +449,19 @@ mod tests {
         ) -> Self {
             let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
             let mut settings = crate::config::settings::SettingsPartial::empty();
-            settings.url_replacements = replacements;
+            settings.url_replacements = replacements.map(|r| {
+                r.into_iter()
+                    .map(|(pattern, url)| {
+                        (
+                            pattern,
+                            crate::config::settings::UrlReplacement {
+                                url,
+                                forward_auth: true,
+                            },
+                        )
+                    })
+                    .collect()
+            });
             settings.use_versions_host = use_versions_host;
             crate::config::Settings::reset(Some(settings));
             Self { _lock: lock }

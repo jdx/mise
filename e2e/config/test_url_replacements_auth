@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# `url_replacements` keeps the caller's Authorization header, which is what lets
+# an internal proxy relay an authenticated request upstream. When the replacement
+# points somewhere else entirely, that header follows it -- and a host allowing
+# anonymous reads rejects the token it never asked for.
+#
+# The opt-out is per replacement, so one config can hold both kinds. This runs
+# both in a single config to prove they do not interfere.
+# See: https://github.com/jdx/mise/discussions/9781
+
+SERVER_ROOT="$PWD/server"
+PORT_FILE="$PWD/server-port"
+mkdir -p "$SERVER_ROOT/hello-world-1.0.0/bin"
+
+cat >"$SERVER_ROOT/hello-world-1.0.0/bin/hello-world" <<'SH'
+#!/usr/bin/env sh
+echo "hello world"
+SH
+chmod +x "$SERVER_ROOT/hello-world-1.0.0/bin/hello-world"
+tar -czf "$SERVER_ROOT/tool.tar.gz" -C "$SERVER_ROOT" hello-world-1.0.0
+
+# Stands in for the reporter's Artifactory: anonymous reads are fine, a
+# forwarded bearer token is not.
+python3 - "$SERVER_ROOT" "$PORT_FILE" <<'PY' &
+import http.server
+import os
+import socketserver
+import sys
+
+root, port_file = sys.argv[1:]
+os.chdir(root)
+
+
+class AnonymousOnlyHandler(http.server.SimpleHTTPRequestHandler):
+    def anonymous(self):
+        if "Authorization" not in self.headers:
+            return True
+        self.send_response(401)
+        self.end_headers()
+        return False
+
+    def do_GET(self):
+        if self.anonymous():
+            super().do_GET()
+
+    def do_HEAD(self):
+        if self.anonymous():
+            super().do_HEAD()
+
+
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), AnonymousOnlyHandler) as httpd:
+    with open(port_file, "w") as file:
+        file.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "anonymous-only server port" 30 "$SERVER_PID"
+SERVER_PORT=$(cat "$PORT_FILE")
+
+# The original URL has to be a GitHub API host: that is the only thing that
+# makes mise attach a token in the first place, which is what this is about.
+# `is_github_api_url` keys on the host alone, so plain http still gets a token --
+# and keeping both sides on http keeps `forward_auth` separable from the scheme
+# downgrade rule, which drops the header on its own and is asserted last.
+export GITHUB_TOKEN="forwarded-token-should-not-arrive"
+export MISE_GITHUB_TOKEN="$GITHUB_TOKEN"
+
+write_config() {
+  cat >mise.toml <<EOF
+[settings]
+url_replacements = { "${2:-http}://api.github.com/mise-e2e" = $1 }
+
+[tools]
+"http:anon-tool" = { version = "1.0.0", url = "${2:-http}://api.github.com/mise-e2e/tool.tar.gz", bin_path = "hello-world-1.0.0/bin" }
+EOF
+}
+
+# Default: the token follows the replacement to a host that never asked for it,
+# and the install fails. This is the reported behaviour, and asserting it here
+# is also what keeps the rest of this test from passing vacuously -- if mise
+# stopped attaching the token at all, this line would fail first.
+write_config "\"http://127.0.0.1:$SERVER_PORT\""
+assert_fail "mise install"
+
+# The table form with forward_auth = false drops the header, and the anonymous
+# read succeeds. The plain string above and this table are the same replacement
+# expressed both ways, so this also covers the string form still parsing.
+mise uninstall --all "http:anon-tool" 2>/dev/null || true
+write_config "{ url = \"http://127.0.0.1:$SERVER_PORT\", forward_auth = false }"
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+
+# An https origin rewritten to http drops the header on its own, whatever
+# `forward_auth` says -- the caller's token was issued for the original host and
+# must not reach a plaintext wire to a different one. So this install succeeds
+# even on the default, and the first case above is what proves that is the
+# downgrade rule acting rather than mise never having attached a token.
+mise uninstall --all "http:anon-tool" 2>/dev/null || true
+write_config "\"http://127.0.0.1:$SERVER_PORT\"" https
+mise install
+assert_contains "mise x -- hello-world" "hello world"

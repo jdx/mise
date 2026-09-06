@@ -1948,9 +1948,65 @@ fn split_default_shell_or_fallback(sa: &str, fallback: &str) -> Result<Vec<Strin
 
 /// Parse URL replacements from JSON string format
 /// Expected format: {"source_domain": "replacement_domain", ...}
+/// One entry in [`Settings::url_replacements`].
+///
+/// The value is normally just the replacement URL. A table form carries options
+/// beside it, so a config can hold both a proxy that needs the upstream token
+/// and a mirror that must not receive it:
+///
+/// ```toml
+/// [settings.url_replacements]
+/// "https://public.example.com" = "https://mirror.internal"
+/// 'regex:^https://api\.github\.com/repos/acme' = { url = "https://artifactory.example.com/acme", forward_auth = false }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct UrlReplacement {
+    pub url: String,
+    /// Whether an `Authorization` header supplied by the caller may follow this
+    /// replacement to a different origin. Defaults to `true`, which is the
+    /// documented behaviour and what an internal proxy relaying upstream needs.
+    pub forward_auth: bool,
+}
+
+impl UrlReplacement {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.url
+    }
+}
+
+impl<'de> Deserialize<'de> for UrlReplacement {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            // Kept first so every existing config keeps parsing unchanged.
+            Url(String),
+            Table {
+                url: String,
+                #[serde(default = "default_true")]
+                forward_auth: bool,
+            },
+        }
+        Ok(match Repr::deserialize(deserializer)? {
+            Repr::Url(url) => UrlReplacement {
+                url,
+                forward_auth: true,
+            },
+            Repr::Table { url, forward_auth } => UrlReplacement { url, forward_auth },
+        })
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
 pub(crate) fn parse_url_replacements(
     input: &str,
-) -> Result<IndexMap<String, String>, serde_json::Error> {
+) -> Result<IndexMap<String, UrlReplacement>, serde_json::Error> {
     serde_json::from_str(input)
 }
 
@@ -1969,6 +2025,53 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every existing config uses the plain string form, and it has to keep
+    /// meaning exactly what it meant: forward the caller's auth.
+    #[test]
+    fn a_plain_string_replacement_still_forwards_auth() {
+        let parsed: IndexMap<String, UrlReplacement> =
+            parse_url_replacements(r#"{"https://a.example":"https://b.example"}"#).unwrap();
+
+        let entry = &parsed["https://a.example"];
+        assert_eq!(entry.url, "https://b.example");
+        assert!(entry.forward_auth);
+    }
+
+    #[test]
+    fn a_table_replacement_can_opt_out_of_forwarding_auth() {
+        let parsed: IndexMap<String, UrlReplacement> = parse_url_replacements(
+            r#"{"https://a.example":{"url":"https://b.example","forward_auth":false}}"#,
+        )
+        .unwrap();
+
+        let entry = &parsed["https://a.example"];
+        assert_eq!(entry.url, "https://b.example");
+        assert!(!entry.forward_auth);
+    }
+
+    /// The option is per replacement so one configuration can hold both a proxy
+    /// that needs the upstream token and a mirror that must not receive it.
+    #[test]
+    fn the_two_forms_coexist_in_one_map() {
+        let parsed: IndexMap<String, UrlReplacement> = parse_url_replacements(
+            r#"{"https://proxy.example":"https://relay.internal",
+                "https://mirror.example":{"url":"https://anon.internal","forward_auth":false}}"#,
+        )
+        .unwrap();
+
+        assert!(parsed["https://proxy.example"].forward_auth);
+        assert!(!parsed["https://mirror.example"].forward_auth);
+    }
+
+    /// A table that omits the flag keeps the default rather than failing.
+    #[test]
+    fn a_table_without_the_flag_defaults_to_forwarding() {
+        let parsed: IndexMap<String, UrlReplacement> =
+            parse_url_replacements(r#"{"https://a.example":{"url":"https://b.example"}}"#).unwrap();
+
+        assert!(parsed["https://a.example"].forward_auth);
+    }
 
     /// File-backed exclusions are inherited in low-to-high precedence order and deduplicated.
     #[test]
