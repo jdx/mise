@@ -713,11 +713,15 @@ fn sibling_unit_path(request: &SystemdRequest) -> PathBuf {
 fn expand_exec_string(command: &str) -> String {
     for quote in ['\'', '"'] {
         if let Some(rest) = command.strip_prefix(quote)
-            && let Some((program, args)) = rest.split_once(quote)
-            && program.starts_with("~/")
+            && let Some(rest) = rest.strip_prefix("~/")
         {
-            let program = expand_path_string(program);
-            return format!("{}{args}", quote_environment(&program));
+            // Replace only the home prefix. The executable's existing escapes,
+            // closing quote and all arguments retain systemd's original syntax.
+            let home = crate::dirs::HOME
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .replace(quote, &format!("\\{quote}"));
+            return format!("{quote}{home}/{rest}");
         }
     }
     expand_path_string(command)
@@ -900,8 +904,8 @@ mod tests {
             assert_eq!(
                 super::expand_exec_string(&command),
                 format!(
-                    "{} --serve '$VALUE' %i",
-                    super::quote_environment(&super::expand_path_string("~/.local/my agent"))
+                    "{quote}{}{quote} --serve '$VALUE' %i",
+                    super::expand_path_string("~/.local/my agent")
                 )
             );
         }
@@ -909,6 +913,13 @@ mod tests {
             super::expand_exec_string("/bin/echo '~/literal'"),
             "/bin/echo '~/literal'"
         );
+        for quote in ['\'', '"'] {
+            let rest = format!(".local/agent\\{quote}name\\x20bin{quote} --serve %i");
+            assert_eq!(
+                super::expand_exec_string(&format!("{quote}~/{rest}")),
+                format!("{quote}{}/{rest}", crate::dirs::HOME.display())
+            );
+        }
     }
 
     use super::*;
