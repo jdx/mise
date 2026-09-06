@@ -410,6 +410,11 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
     let mut symlink_each_identities: HashMap<(&Path, &Path), &FileRequest> = HashMap::new();
 
     for request in requests {
+        // Tracking observes native files; it does not own an apply leaf.
+        // A tracked parent may contain independently managed destinations.
+        if request.mode == FileMode::Track {
+            continue;
+        }
         if request.manifest.is_some() && request.source.exists() && !request.source.is_dir() {
             bail!(
                 "[dotfiles].\"{}\": manifest requires the source to be a directory: {}",
@@ -3473,6 +3478,27 @@ mod tests {
 
     /// Nested declarations may share directories when their concrete leaves
     /// remain disjoint.
+    #[test]
+    fn tracking_does_not_claim_an_apply_footprint() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::write(&source, "managed")?;
+        for requests in [
+            vec![
+                link_req(&source, &target, FileMode::Track),
+                link_req(&source, &target.join("nested"), FileMode::Copy),
+            ],
+            vec![
+                link_req(&source, &target.join("nested"), FileMode::Copy),
+                link_req(&source, &target, FileMode::Track),
+            ],
+        ] {
+            validate_composed_file_footprints(&requests)?;
+        }
+        Ok(())
+    }
+
     #[test]
     fn composed_file_footprints_allow_disjoint_nested_leaves() -> Result<()> {
         let dir = tempfile::tempdir()?;
