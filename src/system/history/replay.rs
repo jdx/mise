@@ -396,7 +396,7 @@ async fn execute(
     live: String,
 ) -> Result<()> {
     let repo = store.repo().expect("checked by the caller");
-    let mut steps = plan(repo, &exec.targets, &live, exec.force)?;
+    let mut steps = plan(repo, &exec, &live)?;
     print_plan(&steps, &exec, tracked)?;
     if exec.dry_run {
         return Ok(());
@@ -415,7 +415,7 @@ async fn execute(
     let restores = exec
         .restore_dirs
         .iter()
-        .filter(|dir| !dir.is_dir() || dir.is_symlink())
+        .filter(|dir| std::fs::symlink_metadata(dir).is_err())
         .count();
     if !steps.iter().any(|step| step.action.mutates()) && restores == 0 {
         info!("history: nothing to do");
@@ -478,7 +478,7 @@ async fn apply_steps(
         round += 1;
         // editors may have written while the prompt was open: re-plan
         live = live_tree(repo, tracked)?;
-        let fresh = plan(repo, &exec.targets, &live, exec.force)?;
+        let fresh = plan(repo, exec, &live)?;
         let changed = actionable(&fresh) != actionable(steps);
         if changed {
             *steps = fresh.clone();
@@ -751,9 +751,10 @@ mod store {
 }
 
 /// The plan for every selected path of every target.
-fn plan(repo: &HistoryRepo, targets: &[Target], live: &str, force: bool) -> Result<Vec<Step>> {
+fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
+    let force = exec.force;
     let mut steps = vec![];
-    for target in targets {
+    for target in &exec.targets {
         let checkpoint = &target.entry.checkpoint;
         let Some(snapshot) = &checkpoint.tree.snapshot else {
             bail!("checkpoint {} has no content snapshot", target.entry.id);
@@ -829,7 +830,60 @@ fn plan(repo: &HistoryRepo, targets: &[Target], live: &str, force: bool) -> Resu
     }
     steps.sort_by(|a, b| a.path.cmp(&b.path));
     steps.dedup_by(|a, b| a.path == b.path);
+    occupied_restore_dirs(repo, exec, live, &mut steps)?;
     Ok(steps)
+}
+
+/// A recorded empty directory whose path now holds a symlink or a file is
+/// part of the plan, so it is decided before anything is written instead
+/// of failing after other paths changed: a captured occupant is removed
+/// like any other step (protected, journaled); one history does not
+/// capture (excluded, say) cannot be protected, so it is a conflict that
+/// `--force` does not override. An occupant inside a directory the plan
+/// removes goes with it.
+fn occupied_restore_dirs(
+    repo: &HistoryRepo,
+    exec: &Execution,
+    live: &str,
+    steps: &mut Vec<Step>,
+) -> Result<()> {
+    for dir in &exec.restore_dirs {
+        let Ok(meta) = std::fs::symlink_metadata(dir) else {
+            continue;
+        };
+        if meta.is_dir() {
+            continue;
+        }
+        if steps
+            .iter()
+            .any(|step| &step.path == dir || (step.action.mutates() && dir.starts_with(&step.path)))
+        {
+            continue;
+        }
+        let kind = if meta.file_type().is_symlink() {
+            "a symlink"
+        } else {
+            "a file"
+        };
+        let tree_path = display_to_tree_path(&dir.to_string_lossy());
+        let action = match repo.object_at(live, &tree_path)? {
+            Some(_) => Action::Delete,
+            None => Action::Conflict(format!(
+                "{kind} history does not capture stands where a directory was; remove it first"
+            )),
+        };
+        steps.push(Step {
+            path: dir.clone(),
+            tree_path,
+            action,
+            from: kind.into(),
+            to: "an empty directory".into(),
+            bits: None,
+            dir_bits: vec![],
+        });
+    }
+    steps.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(())
 }
 
 fn kind_of(mode: &str) -> &'static str {
@@ -978,16 +1032,13 @@ fn print_plan(steps: &[Step], exec: &Execution, tracked: &TrackedSet) -> Result<
             step.to.clone(),
         ]);
     }
+    // an occupied one is a step of the plan
     for dir in &exec.restore_dirs {
-        if !dir.is_dir() || dir.is_symlink() {
+        if std::fs::symlink_metadata(dir).is_err() {
             table.add_row(vec![
                 display_path(dir),
                 "recreate".into(),
-                if dir.exists() || dir.is_symlink() {
-                    "something else".into()
-                } else {
-                    "missing".into()
-                },
+                "missing".into(),
                 "an empty directory".into(),
             ]);
         }

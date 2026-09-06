@@ -77,6 +77,27 @@ assert_fail "mise bootstrap dotfiles rollback ~/.config/hypr/monitors.lua --yes"
 assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/monitors.lua --yes --force"
 assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
 
+# an undo that must recreate an empty directory where something history does not
+# capture now stands is refused before anything is written
+rm ~/.config/hypr/monitors.lua && mkdir -p ~/.config/hypr/monitors.lua/sub
+echo inner >~/.config/hypr/monitors.lua/f
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/monitors.lua --yes --force"
+assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
+printf '\n[history]\nexclude = ["~/.config/hypr/monitors.lua/sub"]\n' >>"$config"
+rm ~/.config/hypr/monitors.lua && mkdir -p ~/.config/hypr/monitors.lua ~/elsewhere
+ln -s ~/elsewhere ~/.config/hypr/monitors.lua/sub
+assert_contains "mise bootstrap dotfiles undo --dry-run 2>&1" "conflict: a symlink history does not capture stands where a directory was"
+assert_fail "mise bootstrap dotfiles undo --yes" "conflict"
+assert_fail "test -e ~/.config/hypr/monitors.lua/f"
+assert "readlink ~/.config/hypr/monitors.lua/sub" "$HOME/elsewhere"
+rm ~/.config/hypr/monitors.lua/sub
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.config/hypr/monitors.lua/f" "inner"
+assert "test -d ~/.config/hypr/monitors.lua/sub && echo dir" "dir"
+rm -r ~/.config/hypr/monitors.lua && echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
+assert_succeed "mise bootstrap dotfiles save"
+
 # a config file rolled back prints the bootstrap hint; declarations are never run
 echo '[settings]' >"$MISE_CONFIG_DIR/extra.toml"
 assert_succeed "mise bootstrap dotfiles save"
