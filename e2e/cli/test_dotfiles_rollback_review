@@ -34,9 +34,15 @@ assert_succeed "test -d ~/.config/review/empty"
 # removes neighboring files and their otherwise-new parent directory.
 before="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
 mkdir -p ~/.config/review/new-dir/empty
+mkdir -p ~/.config/review/unreadable-dir/child
+echo temporary >~/.config/review/unreadable-dir/transient
 echo temporary >~/.config/review/new-dir/transient
 assert_succeed "mise bootstrap dotfiles save"
+chmod 000 ~/.config/review/unreadable-dir/child
 assert_succeed "mise bootstrap dotfiles rollback ~/.config/review --to $before --yes"
+chmod 755 ~/.config/review/unreadable-dir/child
+assert_succeed "test -d ~/.config/review/unreadable-dir/child"
+assert_fail "test -e ~/.config/review/unreadable-dir/transient"
 assert_fail "test -e ~/.config/review/new-dir/transient"
 assert_succeed "test -d ~/.config/review/new-dir/empty"
 assert_succeed "test -d ~/.config/review/empty"

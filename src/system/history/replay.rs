@@ -984,7 +984,9 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                 if !abs.is_dir() || abs.is_symlink() {
                     continue;
                 }
-                if has_empty_descendant(&abs)? {
+                // Cleanup is optional. An unreadable descendant is not proof
+                // of absence, so preserve the directory if inspection fails.
+                if has_empty_descendant(&abs).unwrap_or(true) {
                     continue;
                 }
                 steps.push(Step {
