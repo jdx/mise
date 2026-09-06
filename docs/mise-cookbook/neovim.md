@@ -82,7 +82,11 @@ For example, using [`lazy.nvim`](https://github.com/folke/lazy.nvim):
       local filepath = vim.fs.normalize(vim.api.nvim_buf_get_name(tonumber(bufnr) or 0))
       local filename = vim.fn.fnamemodify(filepath, ":t")
       return filename:match("^%.?mise.*%.toml$") ~= nil
-        or filepath:match("/%.?mise/[^/]+%.toml$") ~= nil
+        or filepath:match("/%.?mise/config%.toml$") ~= nil
+        or filepath:match("/%.?mise/config%.local%.toml$") ~= nil
+        or filepath:match("/%.?mise/config%.[^/]+%.toml$") ~= nil
+        or filepath:match("/%.config/mise/mise%.toml$") ~= nil
+        or filepath:match("/%.config/mise/mise%.local%.toml$") ~= nil
         or filepath:match("/%.?mise/conf%.d/[^/]+%.toml$") ~= nil
     end, { force = true, all = false })
   end,

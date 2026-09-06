@@ -138,14 +138,14 @@
 - [Troubleshooting](https://mise.jdx.dev/troubleshooting.html): If you're looking for help with a specific error message, see Errors — this page is organized by symptom instead.
 - [Errors](https://mise.jdx.dev/errors.html): This page lists common error messages mise emits, what causes them, and how to fix them. It complements Troubleshooting, which is organized by symptom (wrong tool version, slow prompts, activation…
 - [Tips & Tricks](https://mise.jdx.dev/tips-and-tricks.html): An assortment of helpful tips for using mise.
-- [Cookbook](https://mise.jdx.dev/mise-cookbook/): Here are a few mise setups that other people have found useful.
-- [C++](https://mise.jdx.dev/mise-cookbook/cpp.html): Here are some tips on managing C++ projects with mise.
-- [Docker](https://mise.jdx.dev/mise-cookbook/docker.html): Here are some tips on using Docker with mise.
-- [Node](https://mise.jdx.dev/mise-cookbook/nodejs.html): Here are some tips on managing Node.js projects with mise.
-- [Ruby](https://mise.jdx.dev/mise-cookbook/ruby.html): Here are some tips on managing Ruby projects with mise.
-- [Terraform](https://mise.jdx.dev/mise-cookbook/terraform.html): Here are some tips on managing Terraform projects with mise.
-- [Python](https://mise.jdx.dev/mise-cookbook/python.html): Here are some tips on managing Python projects with mise.
-- [Presets](https://mise.jdx.dev/mise-cookbook/presets.html): You can create your own presets with mise tasks to reduce boilerplate and make setting up new projects easier.
+- [Cookbook](https://mise.jdx.dev/mise-cookbook/): These recipes combine tools, environment variables, and tasks for specific workflows. Start with the recipe closest to your project, then adapt its paths, versions, and application commands.
+- [C++](https://mise.jdx.dev/mise-cookbook/cpp.html): Use mise to install build tools and define the configure/build cycle. A C or C++ compiler must already be available, for example through your operating system's development tools.
+- [Docker](https://mise.jdx.dev/mise-cookbook/docker.html): Install mise inside an image, use it to run project commands, or preinstall tools outside user home directories for shared development containers.
+- [Node](https://mise.jdx.dev/mise-cookbook/nodejs.html): Use mise to select Node.js and your package manager, then run the scripts and dependencies declared by the project.
+- [Ruby](https://mise.jdx.dev/mise-cookbook/ruby.html): Use mise to select Ruby and tasks to run the application's Bundler and Rails commands. This recipe assumes an existing Rails project with Gemfile, Gemfile.lock, and bin/rails.
+- [Terraform](https://mise.jdx.dev/mise-cookbook/terraform.html): Use tasks to keep infrastructure commands pointed at the same working directory. The recipe assumes a terraform/ directory containing your configuration and any provider credentials already configured…
+- [Python](https://mise.jdx.dev/mise-cookbook/python.html): Choose a recipe for an existing requirements-based project, a uv project, or a standalone Python script. See Python configuration for runtime installation and virtualenv settings.
+- [Presets](https://mise.jdx.dev/mise-cookbook/presets.html): A preset is a task you write to create a project's starting configuration. Store it as a global file task so it is available in new repositories.
 - [Shell tricks](https://mise.jdx.dev/mise-cookbook/shell-tricks.html): A collection of shell utilities that build on mise.
 - [Team](https://mise.jdx.dev/team.html): Jeff Dickey is the primary developer behind mise. He does the bulk of development for the project.
 - [Contributing](https://mise.jdx.dev/contributing.html): mise has a specific scope and design taste. Unless the change is obvious, start a discussion or mention what you plan to do in Discord before opening a PR.

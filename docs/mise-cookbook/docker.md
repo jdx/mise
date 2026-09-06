@@ -25,7 +25,17 @@ ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
 ENV PATH="/mise/shims:$PATH"
 # ENV MISE_VERSION="..."
 
-RUN curl --fail --show-error --silent --location https://mise.run | sh
+RUN curl --proto '=https' --proto-redir '=https' \
+    --fail --show-error --silent --location https://mise.run | sh
+```
+
+Before building, exclude local credentials from the build context:
+
+```gitignore [.dockerignore]
+.env
+.env.*
+*.tfvars
+*.tfvars.json
 ```
 
 Build and run the Docker image:
@@ -47,6 +57,7 @@ COPY . .
 
 Also copy `mise.lock` if the project uses a lockfile, plus any files the config
 reads. If an install hook needs application files, copy those before `mise install`.
+Keep credentials out of the build context rather than relying on later image layers to remove them.
 Use `mise exec -- <command>` or `mise run <task>` in `RUN` and `CMD` instructions;
 Docker build shells do not run interactive activation hooks.
 
