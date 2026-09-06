@@ -153,12 +153,20 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         Ok(installed) if !installed.is_empty() => installed,
         outcome => {
             // what changed while the watcher was down is saved before it
-            // gives up on watching
+            // gives up on watching, and why it gave up is on record for
+            // `doctor` and `status`
             capture.reconcile(&state.tracked, "startup reconcile");
             capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
+            let reason = match &outcome {
+                Ok(_) => "no watch could be installed for the tracked set".to_string(),
+                Err(err) => format!("{err:#}"),
+            };
+            capture.health.watcher.last_error = Some(reason.clone());
+            capture.health.watcher.last_error_at = Some(store::now_rfc3339());
+            capture.health.watcher.consecutive_failures += 1;
             capture.write_health();
             outcome?;
-            bail!("no watch could be installed for the tracked set");
+            bail!("{reason}");
         }
     };
     // the first capture comes after the watches are in place, so an edit
@@ -354,7 +362,11 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                             capture.write_health();
                         }
                         Ok(false) => {
+                            // what is still pending is saved under the
+                            // set that was in force, like any stop
                             capture.out.emit("disabled", "history was disabled; stopping", json!({}));
+                            finish(&mut capture, &state.tracked).await;
+                            debouncer.stop();
                             return Ok(0);
                         }
                         Err(err) => capture.out.emit(
@@ -399,6 +411,12 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                     // what the new set no longer covers (a link's old
                     // target, say) leaves the schedule
                     prune_schedule(&mut capture, &state);
+                    // an edit that landed while the watches were being
+                    // remade is saved now, not at the next reconciliation
+                    if anchor_changed {
+                        capture.reconcile(&state.tracked, "watches reinstalled");
+                        capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
+                    }
                     capture.out.emit(
                         "replan",
                         &format!("a tracked path appeared; watching {} anchor(s)", installed.len()),
@@ -820,6 +838,12 @@ fn install(
                 );
             }
         }
+    }
+    // nothing watched while something should be: no event would ever
+    // arrive, so the caller stops (and the service restarts it) instead of
+    // running blind until a reconciliation that may be disabled
+    if current.is_empty() && !wanted.is_empty() {
+        bail!("no watch could be installed for the tracked set");
     }
     Ok(current)
 }
