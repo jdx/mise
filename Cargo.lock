@@ -554,9 +554,9 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "aube"
-version = "2.2.11"
+version = "2.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f38a552692bbac2ee4880e4f6c6e082df449723ca642643c0cb317ed2eab98e"
+checksum = "4011d45e502a1f591fd435ac76e66bb6f9dbc1a32f2d4a2515567eb50c24edd9"
 dependencies = [
  "aube-codes",
  "aube-linker",
@@ -692,9 +692,9 @@ dependencies = [
 
 [[package]]
 name = "aube-registry"
-version = "2.2.11"
+version = "2.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd0be54878bfc7f2e1cb4c8075e065f79a6e6ec8553648d253b57ede6a91b136"
+checksum = "97f4dabaa42d7b33ba51b1389f96e2a48425855005668a6459d689614420c99a"
 dependencies = [
  "aube-codes",
  "aube-manifest",
@@ -1522,7 +1522,7 @@ dependencies = [
  "bitflags 2.13.1",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -9601,7 +9601,7 @@ version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
- "errno 0.2.8",
+ "errno 0.3.14",
  "libc",
 ]
 
