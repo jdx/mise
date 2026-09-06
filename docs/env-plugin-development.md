@@ -1,218 +1,186 @@
 # Environment Plugin Development
 
-Environment plugins are a special type of mise plugin that provides environment variables and PATH modifications without managing tool versions. They're ideal for integrating external services, managing secrets, and standardizing environment configuration across teams.
+Environment plugins return variables and PATH entries without installing a versioned tool.
+Use them for an external configuration service, secret manager, or team environment. They
+run while mise constructs an environment, so keep their hooks fast and non-interactive.
+Their execution frequency depends on environment caching and the command being run.
 
-Unlike [tool plugins](tool-plugin-development.md) and [backend plugins](backend-plugin-development.md), environment plugins:
-
-- Don't implement version management (`Available`, `PreInstall`, `PostInstall` hooks)
-- Only implement environment hooks (`MiseEnv`, `MisePath`)
-- Are configured with the `env._.<plugin-name>` syntax
-- Can accept configuration options as TOML values
-- Execute on every environment activation
+For installation lifecycles, use a [tool](/tool-plugin-development.html) or
+[backend](/backend-plugin-development.html) plugin instead.
 
 ## Quick Start
 
-The fastest way to create an environment plugin is to use the [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template).
+Start from the [environment plugin template](https://github.com/jdx/mise-env-plugin-template),
+or create the files below. Link the directory before referencing the directive:
 
-::: tip
-The [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
-:::
-
-To get started:
-
-```bash
-# Clone the template
-git clone https://github.com/jdx/mise-env-plugin-template my-env-plugin
-cd my-env-plugin
-
-# Customize for your use case
-# Edit metadata.lua, hooks/mise_env.lua, hooks/mise_path.lua
+```sh
+mise plugin link my-env-plugin /path/to/my-env-plugin
 ```
+
+```toml
+[env]
+_.my-env-plugin = {
+  api_url = "https://api.example.com",
+  debug = false,
+}
+```
+
+Check the result with `mise env --json` or run a command through `mise exec`. Environment
+output may contain secrets, so inspect it locally and avoid pasting it into logs or issues.
 
 ## Plugin Structure
 
-Environment plugins are implemented in Lua (currently version 5.1). A minimal environment plugin has this structure:
-
-```
+```text
 my-env-plugin/
-├── metadata.lua           # Plugin metadata
+├── metadata.lua
 └── hooks/
-    ├── mise_env.lua      # Returns environment variables (required)
-    └── mise_path.lua     # Returns PATH entries (optional)
+    ├── mise_env.lua   # variables
+    └── mise_path.lua  # optional PATH entries
 ```
+
+Plugins use mise's embedded Lua 5.1 runtime. Environment hooks are mise extensions; do not
+assume an upstream vfox installation will invoke them.
 
 ### metadata.lua
 
-The `metadata.lua` file defines your plugin's basic information:
-
 ```lua
-PLUGIN = {}
-
---- Plugin name (required)
-PLUGIN.name = "my-env-plugin"
-
---- Plugin version (required)
-PLUGIN.version = "1.0.0"
-
---- Plugin description (required)
-PLUGIN.description = "Provides environment variables for my service"
-
---- Plugin homepage (optional)
-PLUGIN.homepage = "https://github.com/username/my-env-plugin"
-
---- Plugin license (optional)
-PLUGIN.license = "MIT"
-
---- Minimum mise/vfox version required (optional)
-PLUGIN.minRuntimeVersion = "0.3.0"
+PLUGIN = {
+    name = "my-env-plugin",
+    version = "1.0.0",
+    description = "Provide service configuration",
+    author = "Plugin Author",
+}
 ```
+
+Keep metadata declarative. Document and test the required mise version in your README and
+CI; a `minRuntimeVersion` field is not a mise-version compatibility check.
 
 ### hooks/mise_env.lua
 
-The `MiseEnv` hook returns environment variables to set:
+A minimal working hook returns an array of key/value entries:
 
 ```lua
 function PLUGIN:MiseEnv(ctx)
-    -- Access configuration from mise.toml via ctx.options
-    local api_url = ctx.options.api_url or "https://api.example.com"
-    local debug = ctx.options.debug or false
-
-    -- Return array of environment variables
     return {
-        {
-            key = "API_URL",
-            value = api_url
-        },
-        {
-            key = "DEBUG",
-            value = tostring(debug)
-        },
-        {
-            key = "SERVICE_TOKEN",
-            value = get_token_from_somewhere()  -- Your custom logic
-        }
+        {key = "API_URL", value = ctx.options.api_url or "https://api.example.com"},
+        {key = "DEBUG", value = tostring(ctx.options.debug or false)},
     }
 end
 ```
 
-::: tip
-When `cmd.exec()` is called from `MiseEnv` or `MisePath` hooks, it inherits the mise-constructed environment — including `_.path` entries and environment variables from preceding directives. If the module directive is configured with `tools = true` (e.g., `_.my-plugin = { tools = true }`), tool installation bin paths are also included, so mise-managed tools are directly callable (e.g., `cmd.exec("node --version")`).
-:::
-
-**Return value**: Either a simple array of env keys or a table with caching metadata.
-
-Simple format - array of tables, each with:
-
-- `key` (string, required): Environment variable name
-- `value` (string, required): Environment variable value
-
-Extended format - table with:
-
-- `env` (array, required): Array of `{key, value}` tables (same as simple format)
-- `cacheable` (boolean, optional): If `true`, mise can cache this plugin's output. Default: `false`
-- `watch_files` (array of strings, optional): File paths to watch for changes. If any file's mtime changes, the cache is invalidated.
-
-Example using extended format with caching:
+Keys and values must be strings. To provide cache and redaction metadata, return a table:
 
 ```lua
 function PLUGIN:MiseEnv(ctx)
-    local config_path = ctx.options.config_file or "config.json"
-    local config = load_config(config_path)
-
+    local file = require("file")
+    local json = require("json")
+    local path = file.join_path(ctx.config_root, ctx.options.config_file or "service.json")
+    local config = json.decode(file.read(path))
+    assert(type(config.api_url) == "string", "service.json must contain a string api_url")
     return {
         cacheable = true,
-        watch_files = {config_path},
-        env = {
-            {key = "API_URL", value = config.api_url},
-            {key = "API_KEY", value = config.api_key}
-        }
+        watch_files = {path},
+        env = {{key = "API_URL", value = config.api_url}},
     }
 end
 ```
 
-When `cacheable = true`, mise caches the environment variables and only re-executes the plugin when:
+This example treats `config_file` as relative to the config root. Define and document a
+separate policy if your plugin also accepts absolute paths.
 
-- Any file in `watch_files` changes
-- The mise configuration changes
-- The cache TTL expires (configured via `env_cache_ttl` setting)
+| Field         | Meaning                                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------- |
+| `env`         | Array of `{key, value}` entries; omitted means no variables                                                   |
+| `cacheable`   | Whether mise may cache this output; defaults to `false`                                                       |
+| `watch_files` | Files whose modification times participate in cache validation; relative entries resolve from the config root |
+| `redact`      | Request redaction of returned values in mise's processed output; defaults to `false`                          |
 
-::: tip
-For caching to work, users must enable the `env_cache` setting:
+A user's explicit directive-level `redact` option overrides the plugin's preference.
+Redaction does not remove values from the environment and raw task output bypasses it.
+See [redactions](/environments/#redactions).
 
-```toml
-# ~/.config/mise/config.toml
-[settings]
-env_cache = true
-```
-
-:::
+Caching requires the global `env_cache` setting. The cache is session-keyed and has a TTL;
+file watching does not detect a changed value in a remote service. There are also limitations
+when cached environments are inherited by nested mise invocations. Do not promise immediate
+refresh of secrets merely because `cacheable = false` or `watch_files` is present. Use
+`MISE_ENV_CACHE=0` when current values are required; see [cache behavior](/cache-behavior.html).
 
 ### hooks/mise_path.lua
 
-The optional `MisePath` hook returns directories to add to PATH:
+Return an array of directory paths. For project-relative configuration, resolve paths
+against `ctx.config_root`, not the process's current working directory:
 
 ```lua
 function PLUGIN:MisePath(ctx)
-    -- Return array of paths to prepend to PATH
-    local paths = {
-        "/opt/my-service/bin"
-    }
-
-    -- Optionally add user-configured path
-    if ctx.options.custom_bin_path then
-        table.insert(paths, ctx.options.custom_bin_path)
+    local file = require("file")
+    if not ctx.options.bin_dir then
+        return {}
     end
-
-    return paths
+    return {file.join_path(ctx.config_root, ctx.options.bin_dir)}
 end
 ```
 
-**Return value**: Array of strings (directory paths)
+This example accepts a relative `bin_dir`. The hook returns directories to add to PATH,
+not a full PATH string. Return only existing directories your integration needs.
 
 ## Context Object
 
-Both hooks receive a `ctx` parameter with:
+Both hooks receive `ctx.options`, containing directive configuration as typed TOML values,
+and `ctx.config_root`, the root associated with the declaring config file. Resolve local
+input files from that root so invoking mise from a subdirectory produces the same result.
 
-- **`ctx.options`**: TOML table of user configuration from `mise.toml`
+`os.getenv` and `cmd.exec` see the mise-constructed environment, including preceding
+directives and `_.path` entries. To expose configured tool binaries, use `tools = true`:
 
-For environment plugins, `ctx.options` is the primary way to accept user configuration.
+```toml
+[tools]
+node = "24"
+
+[env]
+_.my-env-plugin = { tools = true }
+```
+
+This runs the directive in the tool-aware phase. It does not declare which external programs
+your plugin requires; document those prerequisites for users.
 
 ## Configuration in mise.toml
 
-Users configure environment plugins using the `env._` directive:
-
-Simple activation with no options:
+An empty table invokes a plugin without custom options:
 
 ```toml
 [env]
 _.my-env-plugin = {}
 ```
 
-With configuration options:
+Use a TOML table for options. mise supports TOML 1.1 multiline inline tables, comments, and
+trailing commas:
 
 ```toml
 [env]
 _.my-env-plugin = {
-  api_url = "https://prod.api.example.com",
-  debug = false,
-  custom_bin_path = "/custom/path/bin",
+  # Relative to the file's configuration root.
+  config_file = "service.json",
+  bin_dir = "bin",
 }
 ```
 
-All fields in the TOML table are passed to your hooks as `ctx.options`.
+Reserve mise's directive controls, such as `tools` and `redact`, for their documented
+meaning. Do not repurpose them as unrelated plugin options.
 
 ## Complete Example: Secret Manager Plugin
 
-Here's a complete example of a plugin that fetches secrets from an external service:
+This hook reads string-valued secrets from a [HashiCorp Vault KV v2](https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2#read-secret-version) response. It requires
+a preexisting `VAULT_TOKEN` with permission to read the selected path. It does not implement
+token login/renewal, namespaces, or other Vault secret engines.
 
 **metadata.lua**:
 
 ```lua
-PLUGIN = {}
-PLUGIN.name = "vault-secrets"
-PLUGIN.version = "1.0.0"
-PLUGIN.description = "Fetch secrets from HashiCorp Vault"
-PLUGIN.minRuntimeVersion = "0.3.0"
+PLUGIN = {
+    name = "vault-secrets",
+    version = "1.0.0",
+    description = "Read Vault KV v2 secrets",
+}
 ```
 
 **hooks/mise_env.lua**:
@@ -222,39 +190,31 @@ local http = require("http")
 local json = require("json")
 
 function PLUGIN:MiseEnv(ctx)
-    local vault_url = ctx.options.vault_url or error("vault_url required")
-    local secrets_path = ctx.options.secrets_path or error("secrets_path required")
-    local vault_token = os.getenv("VAULT_TOKEN") or error("VAULT_TOKEN not set")
-
-    -- Fetch secrets from Vault
-    local url = vault_url .. "/v1/" .. secrets_path
+    local vault_url = ctx.options.vault_url or error("vault_url is required")
+    local secrets_path = ctx.options.secrets_path or error("secrets_path is required")
+    local token = os.getenv("VAULT_TOKEN") or error("VAULT_TOKEN is not set")
     local response = http.get({
-        url = url,
-        headers = {
-            ["X-Vault-Token"] = vault_token
-        }
+        url = vault_url:gsub("/+$", "") .. "/v1/" .. secrets_path,
+        headers = {["X-Vault-Token"] = token},
     })
-
     if response.status_code ~= 200 then
-        error("Failed to fetch secrets: " .. response.status_code)
+        error("Vault request failed with HTTP " .. response.status_code)
     end
-
-    local data = json.decode(response.body)
-    local env_vars = {}
-
-    -- Convert Vault secrets to environment variables
-    for key, value in pairs(data.data.data) do
-        table.insert(env_vars, {
-            key = key,
-            value = value
-        })
+    local payload = json.decode(response.body)
+    local data = payload.data and payload.data.data
+    assert(type(data) == "table", "Expected a Vault KV v2 data response")
+    local variables = {}
+    for key, value in pairs(data) do
+        assert(key:match("^[%a_][%w_]*$"), "Secret key is not an environment variable name")
+        assert(type(value) == "string", "Secret values must be strings")
+        table.insert(variables, {key = key, value = value})
     end
-
-    return env_vars
+    return {env = variables, cacheable = false, redact = true}
 end
 ```
 
-**Usage in mise.toml**:
+Install or link this plugin as `vault-secrets`, then configure the endpoint and KV v2 API
+path. Use an HTTPS endpoint you trust to receive the token:
 
 ```toml
 [env]
@@ -264,204 +224,76 @@ _.vault-secrets = {
 }
 ```
 
+The hook returns unmasked values to child processes. Redaction only affects supported mise
+output processing. Account for the cache limitations above when defining secret freshness.
+
 ## Available Lua Modules
 
-Environment plugins have access to mise's built-in Lua modules:
-
-- **`http`**: Make HTTP requests
-- **`json`**: Encode/decode JSON
-- **`file`**: Read/write files
-- **`cmd`**: Execute shell commands
-- **`strings`**: String manipulation utilities
-- **`env`**: Access environment variables
-
-See [Plugin Lua Modules](/plugin-lua-modules.html) for complete documentation.
+Use the [Lua modules reference](/plugin-lua-modules.html) for HTTP, JSON, files, commands,
+strings, and logging. `cmd.exec` invokes a shell; prefer direct file/HTTP operations when
+possible and never interpolate an untrusted option into a command string.
 
 ## Best Practices
 
-### 1. Provide Sensible Defaults
+Validate required options before a request and reject malformed responses with a useful
+error that omits credentials and secret values. Provide defaults only when they have a clear
+meaning. Avoid interactive login during shell activation; explain authentication setup in
+the plugin README.
 
-```lua
-function PLUGIN:MiseEnv(ctx)
-    local api_url = ctx.options.api_url or "https://api.example.com"
-    local timeout = ctx.options.timeout or 30
-
-    -- ...
-end
-```
-
-### 2. Validate Required Options
-
-```lua
-function PLUGIN:MiseEnv(ctx)
-    if not ctx.options.api_key then
-        error("api_key is required in mise.toml configuration")
-    end
-
-    -- ...
-end
-```
-
-### 3. Handle Errors Gracefully
-
-```lua
-function PLUGIN:MiseEnv(ctx)
-    local response = http.get({url = ctx.options.api_url})
-
-    if response.status_code ~= 200 then
-        error("API request failed: " .. response.status_code .. " - " .. response.body)
-    end
-
-    -- ...
-end
-```
+Return environment values through the hook. `env.setenv` changes the mise process itself;
+it is not the mechanism for returning variables to the user's shell.
 
 ### 4. Use Built-in Caching for Expensive Operations
 
-For plugins that fetch data from external services, use mise's built-in caching by returning the extended format with `cacheable = true`:
-
-```lua
-function PLUGIN:MiseEnv(ctx)
-    local config_file = ctx.options.config_file or "secrets.json"
-
-    -- Fetch secrets (mise will cache the result)
-    local secrets = fetch_secrets(ctx.options)
-
-    return {
-        cacheable = true,
-        watch_files = {config_file},  -- Re-fetch if config changes
-        env = secrets
-    }
-end
-```
-
-This is preferred over manual caching because:
-
-- mise handles cache invalidation automatically
-- The cache is encrypted with session-scoped keys
-- It integrates with `mise cache clear` and `mise cache prune`
-- It respects the `env_cache_ttl` setting
-
-Users must enable `env_cache = true` in their settings for caching to work.
-
-### 5. Support Multiple Environments
-
-```lua
-function PLUGIN:MiseEnv(ctx)
-    local env_name = ctx.options.environment or "development"
-
-    -- Load different config based on environment
-    local config = load_config(env_name)
-
-    return {
-        {key = "ENV", value = env_name},
-        {key = "API_URL", value = config.api_url},
-        -- ...
-    }
-end
-```
+Opt into caching only when a stale result is acceptable for the configured TTL. List local
+inputs in `watch_files`, and test refresh from an inherited shell session as well as a fresh
+process. A local Lua table is not a persistent cache across mise invocations.
 
 ## Testing Your Plugin
 
 ### Local Testing
 
-1. Link your plugin for development:
+Test from an isolated configuration/data directory, using the workflow in
+[Plugin Publishing](/plugin-publishing.html#testing-before-publication). Cover at least:
 
-```bash
-mise plugin link my-env-plugin /path/to/my-env-plugin
-```
-
-2. Configure it in `mise.toml`:
-
-```toml
-[env]
-_.my-env-plugin = { test_option = "value" }
-```
-
-3. Test the environment:
-
-```bash
-# See environment variables
-mise env | grep MY_
-
-# Run a command with the environment
-mise exec -- env | grep MY_
-
-# Debug with MISE_DEBUG
-MISE_DEBUG=1 mise env
-```
+- A minimal directive and each supported option.
+- Invocation from a subdirectory, including file and PATH resolution.
+- Missing credentials, non-200 HTTP responses, and malformed payloads.
+- The `tools = true` phase if the plugin invokes a configured tool.
+- Fresh and cached environments when cache metadata is returned.
 
 ### Common Issues
 
-**Plugin not found**: Make sure you've installed or linked the plugin:
+Use `mise plugins ls` to confirm the plugin name matches the directive. Check the TOML
+shape: `_.my-plugin = { key = "value" }` is a table; a string value is not the same interface.
+Use `MISE_DEBUG=1 mise env` locally for hook failures, taking care with secret-bearing output.
 
-```bash
-mise plugin ls
-```
-
-**Hook not executing**: Enable debug logging:
-
-```bash
-MISE_DEBUG=1 mise env
-```
-
-**Options not passed**: Verify TOML syntax in `mise.toml`:
-
-```toml
-[env]
-# Correct: TOML table
-_.my-plugin = { key = "value" }
-
-# Wrong: String value
-_.my-plugin = "value"  # This won't work
-```
+If the hook is not running, check for safe mode or a cached environment. If a command is
+missing, confirm its prerequisite and whether the directive needs `tools = true`.
 
 ## Publishing Your Plugin
 
-Once your environment plugin is ready:
-
-1. **Create a GitHub repository** for your plugin
-2. **Add a README** with usage instructions
-3. **Tag releases** following semantic versioning
-4. **Share the repository URL** (optional) so others can install it directly with `mise plugin install`
-
-See [Plugin Publishing](/plugin-publishing.html) for detailed instructions.
+Document the configuration fields, required credentials, API scope, supported platforms,
+and cache/redaction behavior. Publish a Git repository and share its URL; a registry
+shorthand is not required. See [Plugin Publishing](/plugin-publishing.html).
 
 ## Examples
 
-- [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) - Simple example showing basic usage
-- The [mise-plugins](https://github.com/mise-plugins) organization currently hosts tool plugins only. Add your environment plugin there (or share it with the community) so others can learn from more examples
+Start with the [environment template](https://github.com/jdx/mise-env-plugin-template) and
+adapt the working hooks above. Treat a third-party example as code to review, not as an
+assurance that its service or authentication behavior matches your environment.
 
 ## Migration from Tool Plugins
 
-If you have an existing tool plugin that only sets environment variables, you can simplify it to an environment-only plugin:
-
-**Before** (tool plugin with unused hooks):
-
-```
-my-plugin/
-├── metadata.lua
-└── hooks/
-    ├── available.lua        # Returns empty list
-    ├── pre_install.lua      # Not used
-    ├── post_install.lua     # Not used
-    └── env_keys.lua         # Actually sets env vars
-```
-
-**After** (environment plugin):
-
-```
-my-plugin/
-├── metadata.lua
-└── hooks/
-    └── mise_env.lua         # Clean and focused
-```
+Move environment-only behavior from `EnvKeys` into `MiseEnv`, add a directive under `[env]`,
+and remove the artificial tool version/install hooks. Use `MisePath` for PATH entries.
+This changes activation from a selected tool version to an explicit environment directive;
+document the configuration migration for existing users.
 
 ## Related Documentation
 
-- [Plugin Overview](/plugins.html) - Overview of all plugin types
-- [Tool Plugin Development](/tool-plugin-development.html) - For plugins that manage tool versions
-- [Backend Plugin Development](/backend-plugin-development.html) - For multi-tool backends
-- [Plugin Lua Modules](/plugin-lua-modules.html) - Available Lua APIs
-- [Plugin Publishing](/plugin-publishing.html) - Publishing your plugin
-- [Environment Variables](/environments/) - How mise manages environments
+- [Plugin Overview](/plugins.html).
+- [Tool Plugin Development](/tool-plugin-development.html).
+- [Backend Plugin Development](/backend-plugin-development.html).
+- [Plugin Lua Modules](/plugin-lua-modules.html).
+- [Environment Variables](/environments/).

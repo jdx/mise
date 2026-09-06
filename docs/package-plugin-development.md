@@ -5,6 +5,11 @@ manager for [`[bootstrap.packages]`](/bootstrap/packages/). It wraps state owned
 by a host tool rather than installing versioned tools under mise's data
 directory.
 
+Start with a manager that can report installed state without prompting or making changes.
+The status hook drives previews and action selection, so an inaccurate answer can cause
+unnecessary installations or hide missing packages. See [package plugin usage](/bootstrap/packages/plugins.html)
+for user configuration.
+
 ## Layout
 
 ```text
@@ -23,6 +28,18 @@ identifies the repository as a package plugin. A repository with only one of
 these hooks remains a regular vfox plugin. If `hooks/backend_install.lua` is
 also present, mise treats the repository as a tool backend instead; package
 and tool-backend plugins must be separate repositories.
+
+Provide normal Lua metadata as well as the package-manager declaration:
+
+```lua
+PLUGIN = {
+  name = "vscode-extensions",
+  version = "1.0.0",
+  description = "Manage VS Code extensions",
+}
+```
+
+In `mise.plugin.toml`:
 
 ```toml
 [package-manager]
@@ -54,15 +71,29 @@ Hooks are batch-oriented, but each hook receives the batch for its own phase:
 
 mise does not call an action hook when its action batch is empty.
 
+For example, a VS Code manager can inspect extensions with one host command and return
+only the requested identities:
+
 ```lua
 function PLUGIN:PackageInstalled(ctx)
-  -- ctx.packages: {{ name = "diff", version = "1.3.4" | nil }, ...}
-  return {
-    packages = {
-      { name = "diff", state = "installed", version = "1.3.4" },
-      { name = "s3", state = "missing" },
-    },
-  }
+  local output = require("cmd").exec("code --list-extensions --show-versions")
+  local installed = {}
+  for line in output:gmatch("[^\r\n]+") do
+    local name, version = line:match("^(.+)@([^@]+)$")
+    if name then
+      installed[name:lower()] = version
+    end
+  end
+  local results = {}
+  for _, package in ipairs(ctx.packages) do
+    local version = installed[package.name:lower()]
+    table.insert(results, {
+      name = package.name,
+      state = version and "installed" or "missing",
+      version = version,
+    })
+  end
+  return {packages = results}
 end
 ```
 
@@ -132,5 +163,17 @@ and new removal candidates are never added without another confirmation.
 
 For a VS Code implementation, `PackageInstalled` can parse
 `code --list-extensions --show-versions`, `PackageInstall` can run
-`code --install-extension name[@version]`, and `PackageUpgrade` can run
-`code --update-extensions` or reinstall the requested extensions.
+`code --install-extension name[@version]`, and `PackageUpgrade` can reinstall only the
+requested extensions. Avoid `code --update-extensions` for a selected batch: it updates
+extensions outside that batch too. Keep any profile selection consistent between status
+and action hooks, and quote package arguments for the shell in use.
+
+## Testing
+
+Test against a disposable host profile or a fake host CLI before changing real packages.
+Cover an empty batch, missing and installed packages, exact pin mismatch, failed action,
+and a subset request. Verify that status calls never mutate state and that an action touches
+only `ctx.packages`. Test dry runs and the explicit prune ownership checks separately.
+
+See [Plugin Publishing](/plugin-publishing.html) for isolated mise directories and release
+validation, and [Lua modules](/plugin-lua-modules.html#command-module) for command execution.

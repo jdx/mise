@@ -4,14 +4,14 @@
 The [mise-backend-plugin-template](https://github.com/jdx/mise-backend-plugin-template) provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
 :::
 
-Backend plugins in mise use enhanced backend methods to manage multiple tools with the `plugin:tool` format. They are well suited to package managers, tool families, and custom installations that manage several related tools.
+Backend plugins in mise use dedicated backend hooks to manage multiple tools with the `plugin:tool` format. They are well suited to package managers, tool families, and custom installations that manage several related tools.
 
 ## What are Backend Plugins?
 
-Backend plugins extend the standard vfox plugin system with enhanced backend methods. They support:
+Backend plugins extend the standard vfox plugin system with dedicated backend hooks. They support:
 
 - **Multiple Tools**: One plugin can manage multiple tools. For example, `vfox-npm` can install `prettier`, `eslint`, and other npm packages
-- **Cross-Platform Support**: Works on Windows, macOS, and Linux
+- **Cross-Platform Support**: Lua runs on Windows, macOS, and Linux; your installer must support each target
 - **Flexible Architecture**: A modern plugin system with dedicated backend methods
 
 ## Plugin Architecture
@@ -45,7 +45,9 @@ end
 ```
 
 > [!WARNING]
-> **Version sorting**: The versions returned by `BackendListVersions` should be in ascending order (oldest to newest), sorted semantically (version `3.10.0` should not come before `3.2.0`). mise does not apply any additional sorting to the versions returned by this method.
+> Return versions **oldest to newest**, according to the tool's release policy. mise preserves
+> that order. Do not assume SemVer: versions may be dates, prereleases, or channel names.
+> This is the opposite of a tool plugin's `Available` hook, which returns newest first.
 
 ### BackendInstall
 
@@ -69,7 +71,8 @@ end
 
 ### BackendExecEnv
 
-Sets up environment variables for a tool:
+Returns environment entries for a selected installation. Implement this hook even when
+there are no entries to add; return `{env_vars = {}}` in that case:
 
 ```lua
 function PLUGIN:BackendExecEnv(ctx)
@@ -125,7 +128,7 @@ my-backend-plugin/
 │   ├── backend_list_versions.lua   # BackendListVersions hook
 │   ├── backend_install.lua         # BackendInstall hook
 │   └── backend_exec_env.lua        # BackendExecEnv hook
-└── Injection.lua                   # Runtime injection (auto-generated)
+
 ```
 
 ### 2. Basic metadata.lua
@@ -141,7 +144,13 @@ PLUGIN = {
 
 ## Real-World Example: vfox-npm
 
-Here's the complete implementation of the vfox-npm plugin, which manages npm packages:
+This small teaching implementation uses npm to install packages. It requires a POSIX shell
+and Node/npm on PATH; the commands below are not a Windows implementation. For everyday
+use, prefer the built-in [npm backend](/dev-tools/backends/npm.html), which handles platform
+integration and additional installation options.
+
+The snippets belong in the three hook files shown. They pass package values through quoted
+environment variables instead of concatenating them into shell commands.
 
 ### metadata.lua
 
@@ -150,7 +159,8 @@ PLUGIN = {
     name = "vfox-npm",
     version = "1.0.0",
     description = "Backend plugin for npm packages",
-    author = "jdx"
+    author = "Plugin Author",
+    depends = { "node" },
 }
 ```
 
@@ -158,12 +168,22 @@ PLUGIN = {
 
 ```lua
 function PLUGIN:BackendListVersions(ctx)
+    if RUNTIME.osType == "windows" then
+        error("This example requires a POSIX shell")
+    end
     local cmd = require("cmd")
     local json = require("json")
-
-    local result = cmd.exec("npm view " .. ctx.tool .. " versions --json")
+    local result = cmd.exec('npm view "$MISE_PLUGIN_PACKAGE" versions --json', {
+        env = {MISE_PLUGIN_PACKAGE = ctx.tool},
+    })
     local versions = json.decode(result)
-
+    -- npm can return a single version as a string.
+    if type(versions) == "string" then
+        versions = {versions}
+    end
+    if type(versions) ~= "table" or #versions == 0 then
+        error("No versions returned for " .. ctx.tool)
+    end
     return {versions = versions}
 end
 ```
@@ -172,16 +192,14 @@ end
 
 ```lua
 function PLUGIN:BackendInstall(ctx)
-    local tool = ctx.tool
-    local version = ctx.version
-    local install_path = ctx.install_path
-
-    -- Install the package directly using npm install
+    if RUNTIME.osType == "windows" then
+        error("This example requires a POSIX shell")
+    end
     local cmd = require("cmd")
-    local npm_cmd = "npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent"
-    local result = cmd.exec(npm_cmd, {cwd = install_path})
-
-    -- If we get here, the command succeeded
+    cmd.exec('npm install --no-package-lock --no-save -- "$MISE_PLUGIN_SPEC"', {
+        cwd = ctx.install_path,
+        env = {MISE_PLUGIN_SPEC = ctx.tool .. "@" .. ctx.version},
+    })
     return {}
 end
 ```
@@ -204,8 +222,9 @@ end
 The plugin name doesn't have to match the repository name. The backend prefix is whatever name the plugin was installed under.
 
 ```bash
-# Install the plugin
-mise plugin install vfox-npm https://github.com/jdx/vfox-npm
+# Link the example you created and configure its prerequisite
+mise plugin link vfox-npm /path/to/your/plugin
+mise use node@24
 
 # List available versions
 mise ls-remote vfox-npm:prettier
@@ -220,7 +239,9 @@ mise use vfox-npm:prettier@latest
 mise exec -- prettier --help
 ```
 
-> **Tip**: This naming flexibility lets a plugin behave differently depending on the name it was installed under. For example, you could install the same plugin under different names to configure different behaviors or access different tool registries.
+Use a name that does not collide with a built-in backend. To test different registries or
+behavior, define explicit tool options and read `ctx.options`; the installed name is not a
+substitute for an options contract.
 
 ## Context Variables
 
@@ -288,48 +309,12 @@ mise --debug install my-plugin:some-tool@1.0.0
 
 ### Error Handling
 
-Provide meaningful error messages:
+`cmd.exec` raises an error on a nonzero exit status and includes stderr. Do not hide stderr
+or search successful stdout for an error string. Check HTTP status codes before parsing
+bodies, validate required response fields, and keep credentials out of errors.
 
-```lua
-function PLUGIN:BackendListVersions(ctx)
-    local tool = ctx.tool
-
-    -- Validate tool name
-    if not tool or tool == "" then
-        error("Tool name cannot be empty")
-    end
-
-    -- Execute command with error checking
-    local cmd = require("cmd")
-    local result = cmd.exec("npm view " .. tool .. " versions --json 2>/dev/null")
-    if not result or result:match("npm ERR!") then
-        error("Failed to fetch versions for " .. tool .. ": " .. (result or "no output"))
-    end
-
-    -- Parse JSON response
-    local json = require("json")
-    local success, npm_versions = pcall(json.decode, result)
-    if not success or not npm_versions then
-        error("Failed to parse versions for " .. tool)
-    end
-
-    -- Return versions or error if none found
-    -- `npm view` already returns versions oldest-to-newest, which is the
-    -- order mise expects, so keep them as-is
-    local versions = {}
-    if type(npm_versions) == "table" then
-        for _, v in ipairs(npm_versions) do
-            table.insert(versions, v)
-        end
-    end
-
-    if #versions == 0 then
-        error("No versions found for " .. tool)
-    end
-
-    return {versions = versions}
-end
-```
+The [Lua modules reference](/plugin-lua-modules.html) explains synchronous errors and the
+HTTP `try_*` methods for recoverable transport failures.
 
 ### Regex Parsing
 
@@ -344,64 +329,28 @@ end
 
 ### Path Handling
 
-Use cross-platform path handling:
+Use `file.join_path` for path construction and `cmd.exec`'s `cwd` option for the command's
+working directory. Prefer file operations over shelling out to `mkdir`, `cp`, or `mv`.
+If your installer needs shell commands, document the shell and quote every external value.
 
 ```lua
-local function join_path(...)
-    local sep = package.config:sub(1,1) -- Get OS path separator
-    return table.concat({...}, sep)
-end
-
-local bin_path = join_path(install_path, "bin")
+local file = require("file")
+local bin_path = file.join_path(ctx.install_path, "bin")
 ```
 
 ### Cross-Platform Commands
 
-Handle different operating systems:
-
-```lua
-local function create_dir(path)
-    local cmd = RUNTIME.osType == "windows" and "mkdir" or "mkdir -p"
-    os.execute(cmd .. " " .. path)
-end
-```
+The Lua runtime does not translate a shell command between operating systems. A POSIX
+`mkdir -p`, `$VARIABLE`, or `chmod` example needs a different implementation on Windows.
+Test on each platform you claim to support, including paths containing spaces.
 
 ## Advanced Features
 
 ### Conditional Installation
 
-Use different installation logic depending on the tool or version:
-
-```lua
-function PLUGIN:BackendInstall(ctx)
-    local tool = ctx.tool
-    local version = ctx.version
-    local install_path = ctx.install_path
-
-    -- Create install directory
-    os.execute("mkdir -p " .. install_path)
-
-    if tool == "special-tool" then
-        -- Special installation logic
-        local cmd = require("cmd")
-        local npm_cmd = "cd " .. install_path .. " && npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent 2>/dev/null"
-        local result = cmd.exec(npm_cmd)
-        if result:match("npm ERR!") then
-            error("Failed to install " .. tool .. "@" .. version)
-        end
-    else
-        -- Default installation logic
-        local cmd = require("cmd")
-        local npm_cmd = "cd " .. install_path .. " && npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent 2>/dev/null"
-        local result = cmd.exec(npm_cmd)
-        if result:match("npm ERR!") then
-            error("Failed to install " .. tool .. "@" .. version)
-        end
-    end
-
-    return {}
-end
-```
+Choose installation logic using `ctx.tool`, `ctx.version`, and `RUNTIME`. Validate that the
+tool and platform are supported before downloading or running an installer. Keep shared
+logic in a Lua helper module instead of duplicating the same command in every branch.
 
 ### Environment Detection
 
@@ -441,8 +390,8 @@ function PLUGIN:BackendExecEnv(ctx)
     return {
         env_vars = {
             {key = "PATH", value = bin_path},
-            {key = ctx.tool:upper() .. "_HOME", value = ctx.install_path},
-            {key = ctx.tool:upper() .. "_VERSION", value = ctx.version}
+            {key = "EXAMPLE_TOOL_HOME", value = ctx.install_path},
+            {key = "EXAMPLE_TOOL_VERSION", value = ctx.version}
         }
     }
 end
@@ -452,7 +401,10 @@ end
 
 ### Caching
 
-TODO: We need caching support for [Shared Lua modules](plugin-lua-modules.md).
+mise caches remote version lists and tool environment results. During development, use
+`mise cache clear my-plugin:some-tool` when a cached result hides a hook change. A Lua table
+only caches within that Lua runtime; it does not persist across separate mise invocations.
+See [cache behavior](/cache-behavior.html) and the [Lua modules reference](/plugin-lua-modules.html#caching).
 
 ## Next Steps
 
