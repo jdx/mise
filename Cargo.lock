@@ -554,9 +554,9 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "aube"
-version = "2.2.11"
+version = "2.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f38a552692bbac2ee4880e4f6c6e082df449723ca642643c0cb317ed2eab98e"
+checksum = "4011d45e502a1f591fd435ac76e66bb6f9dbc1a32f2d4a2515567eb50c24edd9"
 dependencies = [
  "aube-codes",
  "aube-linker",
