@@ -566,15 +566,33 @@ pub(crate) fn write_pending_in(state_dir: &Path, pending: &Pending) -> Result<()
     )
 }
 
-/// Every pending record with the file holding it.
+/// Every pending record with the file holding it, for recovery under the
+/// operation lock: an unreadable record is set aside (never deleted).
 pub(crate) fn list_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
+    list_pending_with(state_dir, true)
+}
+
+/// The same for a look without the lock (`history --pending`, `status`):
+/// a record an operation removes meanwhile is skipped, an unreadable one
+/// is left for recovery to judge.
+pub(crate) fn peek_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
+    list_pending_with(state_dir, false)
+}
+
+fn list_pending_with(state_dir: &Path, set_aside: bool) -> Result<Vec<(PathBuf, Pending)>> {
     let mut pending = vec![];
     for path in file::ls(&pending_dir_in(state_dir)).unwrap_or_default() {
         if path.extension().is_some_and(|ext| ext == "json") {
-            let text = file::read_to_string(&path)?;
+            let text = match std::fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(err) => {
+                    return Err(err).wrap_err_with(|| format!("reading {}", display_path(&path)));
+                }
+            };
             match serde_json::from_str::<Pending>(&text) {
                 Ok(record) => pending.push((path, record)),
-                Err(err) => {
+                Err(err) if set_aside => {
                     // recovery data for an unfinished operation: set aside,
                     // never deleted
                     warn!(
@@ -583,6 +601,7 @@ pub(crate) fn list_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)
                     );
                     let _ = std::fs::rename(&path, path.with_extension("json.broken"));
                 }
+                Err(err) => debug!("history: unreadable {}: {err}", display_path(&path)),
             }
         }
     }

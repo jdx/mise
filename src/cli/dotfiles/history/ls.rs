@@ -35,7 +35,7 @@ impl HistoryLs {
         if self.pending {
             // an operation still running, or one that crashed: its record
             // is in the index only once it is closed
-            entries = crate::system::history::store::list_pending_in(store.state_dir())?
+            entries = crate::system::history::store::peek_pending_in(store.state_dir())?
                 .into_iter()
                 .map(|(_, pending)| crate::system::history::store::Entry {
                     id: pending.id,

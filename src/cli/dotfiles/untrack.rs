@@ -80,6 +80,23 @@ impl DotfilesUntrack {
                     let Some(owner) = tracked.entry_for(&path) else {
                         bail!("{target_raw} is not tracked");
                     };
+                    // an exclusion wins over everything, so one that covers
+                    // a source a declaration still references would drop
+                    // what the declaration uses
+                    let sources: Vec<String> = tracked
+                        .entries
+                        .iter()
+                        .filter(|entry| {
+                            entry.kind == EntryKind::Source && entry.path.starts_with(&path)
+                        })
+                        .map(|entry| entry.display())
+                        .collect();
+                    if !sources.is_empty() {
+                        bail!(
+                            "{target_raw} holds the source of a `[dotfiles]` entry ({}); history captures a source while a declaration references it. Remove or change that entry, or untrack a narrower path",
+                            sources.join(", ")
+                        );
+                    }
                     let glob = if path.is_dir() {
                         format!("{key}/**")
                     } else {

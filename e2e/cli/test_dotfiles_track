@@ -169,17 +169,17 @@ if [[ -n ${MISE_SYSTEM_CONFIG_DIR:-} && -w $MISE_SYSTEM_CONFIG_DIR ]]; then
   assert "mise bootstrap dotfiles paths --json | jq -r '[.entries[] | select(.path == \"~/.inherited\")] | length'" "0"
   rm "$MISE_SYSTEM_CONFIG_DIR/config.toml"
 fi
-# a child of an always-tracked directory is excluded instead, and saving it is refused
-assert_succeed "mise bootstrap dotfiles untrack ~/.config/mise/templates"
-assert_contains "cat '$config'" 'exclude = ["~/.config/mise/templates/**"]'
-assert "mise bootstrap dotfiles paths --json | jq -r '.exclude | join(\",\")'" "~/.config/mise/templates/**"
-# (a source a declaration references stays captured; an unreferenced child does not)
-echo tpl >"$MISE_CONFIG_DIR/templates/gitconfig.tera"
-assert_succeed "mise bootstrap dotfiles save ~/.config/mise/templates/gitconfig.tera"
-assert_contains "mise bootstrap dotfiles history show latest --files" "templates/gitconfig.tera"
+# a child of an always-tracked directory is excluded instead, and saving it is
+# refused; a directory holding a source a declaration references cannot be
+# excluded that way (an exclusion wins over everything, so it would drop the
+# source)
+assert_fail "mise bootstrap dotfiles untrack ~/.config/mise/templates" "holds the source of a"
+assert_not_contains "cat '$config'" 'exclude = ["~/.config/mise/templates/**"]'
 mkdir -p "$MISE_CONFIG_DIR/scratch"
 echo n >"$MISE_CONFIG_DIR/scratch/notes.txt"
 assert_succeed "mise bootstrap dotfiles untrack ~/.config/mise/scratch"
+assert_contains "cat '$config'" 'exclude = ["~/.config/mise/scratch/**"]'
+assert "mise bootstrap dotfiles paths --json | jq -r '.exclude | join(\",\")'" "~/.config/mise/scratch/**"
 assert_fail "mise bootstrap dotfiles save ~/.config/mise/scratch/notes.txt" "excluded, missing, or omitted"
 assert_fail "mise bootstrap dotfiles untrack ~/.copied" 'managed by a `copy` entry'
 

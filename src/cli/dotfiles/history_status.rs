@@ -35,7 +35,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
     // an operation still running, or one that crashed: its record is in
     // the index only once it is closed
     let pending_operations =
-        crate::system::history::store::list_pending_in(store.state_dir())?.len();
+        crate::system::history::store::peek_pending_in(store.state_dir())?.len();
     let latest = entries.last().map(|entry| LatestReport {
         id: entry.id,
         created_at: entry.checkpoint.created_at.clone(),

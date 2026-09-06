@@ -523,14 +523,20 @@ fn walk_entry(
             return;
         }
     };
-    // an exclusion wins over a direct declaration as it does over a
-    // directory walk: what the user excluded never enters a snapshot. A
-    // source a `[dotfiles]` entry references is the exception: the
-    // declaration says it is needed, and untracking the directory around
-    // it (an exclusion) must not drop what the declaration still uses
-    let excluded = |path: &Path| entry.kind != EntryKind::Source && exclude.is_match(path);
     if !meta.is_dir() {
-        if excluded(&entry.path) {
+        // an exclusion wins over a direct declaration as it does over a
+        // directory walk: what the user excluded never enters a snapshot.
+        // A source a `[dotfiles]` entry still references is said so, not
+        // silently dropped (`untrack` refuses to write such an exclusion)
+        if exclude.is_match(&entry.path) {
+            if entry.kind == EntryKind::Source {
+                walk.omitted.push(PathReason {
+                    path: display,
+                    reason:
+                        "excluded by [history] exclude although a [dotfiles] entry references it"
+                            .to_string(),
+                });
+            }
             return;
         }
         match classify_file(&meta) {
@@ -585,7 +591,7 @@ fn walk_entry(
         {
             continue;
         }
-        if excluded(path) {
+        if exclude.is_match(path) {
             continue;
         }
         let file_type = candidate.file_type();
