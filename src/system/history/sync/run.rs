@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use eyre::{Result, WrapErr, bail};
 use serde::{Deserialize, Serialize};
@@ -82,6 +83,13 @@ pub(crate) struct SyncStatus {
     pub declarations_changed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    /// When the current run of failed syncs began; a success clears it. An
+    /// origin that has never answered has no last success to measure from,
+    /// so `mise doctor` measures the failure from here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failing_since: Option<String>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub consecutive_failures: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backoff_until: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -107,6 +115,10 @@ pub(crate) struct SyncStatus {
     /// in for a declaration.
     #[serde(default)]
     pub disconnected: bool,
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 pub(crate) fn status_path(state_dir: &Path) -> PathBuf {
@@ -407,6 +419,8 @@ pub(crate) fn sync(
         outcome.pending = status.pending_applications.len();
         outcome.conflicts = status.conflicts.len();
         status.last_error = None;
+        status.failing_since = None;
+        status.consecutive_failures = 0;
         status.backoff_until = None;
         if !request.dry_run {
             notify_new_conflicts(&mut status);
@@ -415,6 +429,8 @@ pub(crate) fn sync(
     })();
     if let Err(err) = &result {
         status.last_error = Some(format!("{err:#}"));
+        status.failing_since.get_or_insert_with(hstore::now_rfc3339);
+        status.consecutive_failures = status.consecutive_failures.saturating_add(1);
     }
     if let Err(write_error) = write_status(state_dir, &status) {
         return match result {
@@ -427,10 +443,49 @@ pub(crate) fn sync(
     result.map(|()| outcome)
 }
 
+/// How long a status update waits for a running sync or pull to finish.
+pub(crate) const STATUS_LOCK_WAIT: Duration = Duration::from_secs(5);
+const STATUS_LOCK_POLL: Duration = Duration::from_millis(100);
+
+fn lock_path(state_dir: &Path) -> PathBuf {
+    hstore::store_dir_in(state_dir).join("sync.lock")
+}
+
+/// The sync lock: every reader-then-writer of `sync.json` holds it. A sync
+/// or pull takes it for its whole duration and fails at once when another
+/// holds it.
 pub(crate) fn lock(store: &Store) -> Result<fslock::LockFile> {
-    crate::lock_file::LockFile::new(&hstore::store_dir_in(store.state_dir()).join("sync.lock"))
+    lock_in(store.state_dir())
+}
+
+pub(crate) fn lock_in(state_dir: &Path) -> Result<fslock::LockFile> {
+    crate::lock_file::LockFile::new(&lock_path(state_dir))
         .try_lock()?
         .ok_or_else(|| eyre::eyre!("another setup sync or pull is running; retry shortly"))
+}
+
+/// Changes one thing in `sync.json` under the sync lock, reading the record
+/// again first, so a sync or pull that finished meanwhile is not written
+/// over with an older copy. Waits up to `wait` for a running one;
+/// `Duration::ZERO` tries once.
+pub(crate) fn update_status(
+    state_dir: &Path,
+    wait: Duration,
+    mutate: impl FnOnce(&mut SyncStatus),
+) -> Result<()> {
+    let deadline = Instant::now() + wait;
+    let _lock = loop {
+        if let Some(lock) = crate::lock_file::LockFile::new(&lock_path(state_dir)).try_lock()? {
+            break lock;
+        }
+        if Instant::now() >= deadline {
+            bail!("another setup sync or pull is running; retry shortly");
+        }
+        std::thread::sleep(STATUS_LOCK_POLL);
+    };
+    let mut status = read_status(state_dir);
+    mutate(&mut status);
+    write_status(state_dir, &status)
 }
 
 /// A desktop notification for conflicts that newly need a decision, when
@@ -731,18 +786,22 @@ pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -
 /// applied now, so `status` stops asking for one.
 pub(crate) fn bootstrap_completed() {
     let state_dir: &Path = &crate::dirs::STATE;
-    let mut status = match read_status(state_dir) {
+    let status = match read_status(state_dir) {
         Ok(status) => status,
         Err(err) => {
             warn!("history: could not record that the bootstrap ran: {err:#}");
             return;
         }
     };
-    if status.declarations_changed {
+    if !status.declarations_changed {
+        return;
+    }
+    // under the sync lock, changing only this: a sync that finished during
+    // the bootstrap keeps its conflicts, pending changes, and uploads
+    if let Err(err) = update_status(state_dir, STATUS_LOCK_WAIT, |status| {
         status.declarations_changed = false;
-        if let Err(err) = write_status(state_dir, &status) {
-            debug!("history: could not record that the bootstrap ran: {err}");
-        }
+    }) {
+        debug!("history: could not record that the bootstrap ran: {err}");
     }
 }
 
@@ -833,5 +892,71 @@ mod notification_tests {
         };
         notify_conflicts_with(&mut status, false, |_, _| panic!("notifications disabled"));
         assert_eq!(status.notified_conflicts.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    fn conflict() -> Conflict {
+        Conflict {
+            branch_path: "tracked/home/.zshrc".to_string(),
+            kind: reconcile::ConflictKind::SameHunk,
+            local: None,
+            remote: None,
+            base: None,
+        }
+    }
+
+    #[test]
+    fn an_older_record_loads_without_the_failure_run() {
+        let status: SyncStatus = serde_json::from_str("{}").unwrap();
+        assert_eq!(status.failing_since, None);
+        assert_eq!(status.consecutive_failures, 0);
+        let text = serde_json::to_string(&status).unwrap();
+        assert!(!text.contains("consecutive_failures"));
+    }
+
+    #[test]
+    fn an_update_changes_only_its_field_in_the_current_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state_dir = tmp.path();
+        let mut status = SyncStatus {
+            declarations_changed: true,
+            last_error: Some("unreachable".to_string()),
+            ..Default::default()
+        };
+        write_status(state_dir, &status).unwrap();
+        // a sync finishes meanwhile and records a conflict: the update reads
+        // that record, not the one it started from
+        status.conflicts.push(conflict());
+        write_status(state_dir, &status).unwrap();
+        update_status(state_dir, Duration::ZERO, |status| {
+            status.declarations_changed = false;
+        })
+        .unwrap();
+        let current = read_status(state_dir);
+        assert!(!current.declarations_changed);
+        assert_eq!(current.conflicts.len(), 1);
+        assert_eq!(current.last_error.as_deref(), Some("unreachable"));
+    }
+
+    #[test]
+    fn an_update_gives_way_to_a_running_sync() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state_dir = tmp.path();
+        std::fs::create_dir_all(hstore::store_dir_in(state_dir)).unwrap();
+        let held = lock_in(state_dir).unwrap();
+        let err = update_status(state_dir, Duration::ZERO, |status| {
+            status.declarations_changed = false;
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("another setup sync or pull"));
+        drop(held);
+        update_status(state_dir, Duration::ZERO, |status| {
+            status.declarations_changed = false;
+        })
+        .unwrap();
     }
 }

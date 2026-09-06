@@ -90,6 +90,33 @@ struct DotfilesDiagnosis {
     /// is longer than a few fetch intervals (a transient error is not).
     sync_error: Option<String>,
     sync_failing_for_secs: Option<u64>,
+    /// Failed syncs in a row, since the last success.
+    sync_failures: u32,
+}
+
+/// How long syncs have been failing: since the current run of failures
+/// began, or, for a record from before that was kept, since the last
+/// success. `None` when nothing is known.
+fn sync_failure_duration(
+    status: &crate::system::history::sync::run::SyncStatus,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<u64> {
+    let since = status
+        .failing_since
+        .as_deref()
+        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+        .or_else(|| {
+            [&status.last_fetch, &status.last_publish]
+                .into_iter()
+                .flatten()
+                .filter_map(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+                .max()
+        })?;
+    Some(
+        (now - since.with_timezone(&chrono::Utc))
+            .num_seconds()
+            .max(0) as u64,
+    )
 }
 
 enum SystemLoginShellDiagnosis {
@@ -730,6 +757,7 @@ impl Doctor {
             sync_conflicts: vec![],
             sync_error: None,
             sync_failing_for_secs: None,
+            sync_failures: 0,
         };
         if let Some(reason) = unavailable {
             self.errors.push(format!(
@@ -798,27 +826,20 @@ impl Doctor {
             }
             if let Some(error) = &status.last_error {
                 diagnosis.sync_error = Some(error.clone());
+                diagnosis.sync_failures = status.consecutive_failures;
                 let fetch_interval = crate::duration::parse_duration(
                     &crate::config::Settings::get().history.fetch_interval,
                 )
                 .map(|d| d.as_secs())
                 .unwrap_or(900);
-                let last_success = [&status.last_fetch, &status.last_publish]
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
-                    .max();
-                let failing_for = last_success.map(|at| {
-                    (chrono::Utc::now() - at.with_timezone(&chrono::Utc))
-                        .num_seconds()
-                        .max(0) as u64
-                });
+                let failing_for = sync_failure_duration(&status, chrono::Utc::now());
                 // a single failed attempt is transient; a repository that has
                 // not answered for a few fetch intervals is a problem
                 if failing_for.is_some_and(|secs| secs > fetch_interval.saturating_mul(3)) {
                     diagnosis.sync_failing_for_secs = failing_for;
                     self.warnings.push(format!(
-                        "dotfiles: syncing with the setup repository keeps failing ({error}).\n     Local checkpoints continue; nothing is published or pulled until it succeeds.\n     Inspect with: mise bootstrap dotfiles status"
+                        "dotfiles: syncing with the setup repository keeps failing ({error}; {} attempt(s)).\n     Local checkpoints continue; nothing is published or pulled until it succeeds.\n     Inspect with: mise bootstrap dotfiles status",
+                        status.consecutive_failures
                     ));
                 }
             }
@@ -877,10 +898,11 @@ impl Doctor {
         if let Some(error) = &diagnosis.sync_error {
             match diagnosis.sync_failing_for_secs {
                 Some(secs) => lines.push(format!(
-                    "sync failing for {}: {error}",
+                    "sync failing for {} ({} attempt(s)): {error}",
                     crate::system::history::watch::runtime::humantime(
                         std::time::Duration::from_secs(secs)
-                    )
+                    ),
+                    diagnosis.sync_failures
                 )),
                 None if diagnosis.sync_conflicts.is_empty() => {
                     lines.push(format!("last sync error (transient): {error}"))
@@ -1566,7 +1588,47 @@ fn install_dir_is_empty(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::install_dir_is_empty;
+    use super::{install_dir_is_empty, sync_failure_duration};
+    use crate::system::history::sync::run::SyncStatus;
+
+    fn ago(now: chrono::DateTime<chrono::Utc>, secs: i64) -> Option<String> {
+        Some((now - chrono::Duration::seconds(secs)).to_rfc3339())
+    }
+
+    #[test]
+    fn a_failure_run_is_measured_from_its_start() {
+        // the fetch is stamped before a publication can fail, so a repository
+        // whose publications keep failing still has a recent fetch
+        let now = chrono::Utc::now();
+        let status = SyncStatus {
+            failing_since: ago(now, 100),
+            last_fetch: ago(now, 10),
+            ..Default::default()
+        };
+        assert_eq!(sync_failure_duration(&status, now), Some(100));
+    }
+
+    #[test]
+    fn an_origin_that_never_worked_still_counts() {
+        let now = chrono::Utc::now();
+        let status = SyncStatus {
+            failing_since: ago(now, 30),
+            ..Default::default()
+        };
+        assert_eq!(sync_failure_duration(&status, now), Some(30));
+    }
+
+    #[test]
+    fn an_older_record_falls_back_to_the_last_success() {
+        let now = chrono::Utc::now();
+        let status = SyncStatus {
+            last_publish: ago(now, 50),
+            last_fetch: ago(now, 80),
+            ..Default::default()
+        };
+        assert_eq!(sync_failure_duration(&status, now), Some(50));
+        assert_eq!(sync_failure_duration(&SyncStatus::default(), now), None);
+    }
 
     #[test]
     fn empty_directory_is_reported() {

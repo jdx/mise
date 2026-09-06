@@ -38,6 +38,9 @@ pub(crate) struct SyncReport {
     pub conflicts: Vec<(String, String)>,
     pub declarations_changed: bool,
     pub last_error: Option<String>,
+    /// When the current run of failed syncs began, and how many so far.
+    pub failing_since: Option<String>,
+    pub consecutive_failures: u32,
     pub application_failure: Option<String>,
     pub validation_error: Option<String>,
 }
@@ -89,6 +92,8 @@ pub(crate) fn sync_report(
         conflicts: apply::describe_conflicts(&status.conflicts),
         declarations_changed: status.declarations_changed,
         last_error: status.last_error.clone(),
+        failing_since: status.failing_since.clone(),
+        consecutive_failures: status.consecutive_failures,
         application_failure: status.application_failure.clone(),
         validation_error: status.validation_error.clone(),
     }))
@@ -227,7 +232,14 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
                 miseprintln!("  declarations changed: run `mise bootstrap` (dry-run available)");
             }
             if let Some(error) = &sync.last_error {
-                miseprintln!("  last error: {error}");
+                match &sync.failing_since {
+                    Some(since) => miseprintln!(
+                        "  last error: {error} (failing since {}, {} attempt(s))",
+                        local_time(since),
+                        sync.consecutive_failures
+                    ),
+                    None => miseprintln!("  last error: {error}"),
+                }
             }
             if let Some(error) = &sync.application_failure {
                 miseprintln!("  sync paused: {error}");

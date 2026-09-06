@@ -719,7 +719,7 @@ fn start_sync(
     tracked: &TrackedSet,
 ) -> Option<tokio::task::JoinHandle<Result<SyncOutcome>>> {
     let plan = capture.sync.as_mut()?;
-    let fetch_only = !plan.automatic.publish;
+    let fetch_only = !plan.config.automatic.publish;
     plan.next_publish = None;
     plan.next_fetch = None;
     capture.out.emit(
@@ -788,7 +788,7 @@ async fn finish_sync(
     let applies = capture
         .sync
         .as_ref()
-        .is_some_and(|plan| plan.automatic.apply);
+        .is_some_and(|plan| plan.config.automatic.apply);
     if !applies || outcome.pending == 0 {
         return Some(false);
     }
@@ -844,24 +844,28 @@ async fn once_sync(capture: &mut Capture, state: &State) -> bool {
 /// `sync_interval` after a save) and the next fetch (every
 /// `fetch_interval`) are due, and the backoff after a failure.
 struct SyncPlan {
-    automatic: Automatic,
-    publish_after: Duration,
-    fetch_every: Duration,
+    config: SyncConfig,
     next_publish: Option<Instant>,
     next_fetch: Option<Instant>,
     backoff: Duration,
 }
 
-impl SyncPlan {
+/// What `settings.history.sync` and `[history.origin]` say. Compared after a
+/// reload of the configuration, so a pending deadline survives an edit to
+/// something else.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SyncConfig {
+    automatic: Automatic,
+    publish_after: Duration,
+    fetch_every: Duration,
+    /// The repository's url and branch: another one starts afresh.
+    origin: (String, String),
+}
+
+impl SyncConfig {
     /// `None` without a connected origin, or in `manual` mode.
-    fn from_settings(settings: &Settings, now: Instant) -> Option<Self> {
-        if !crate::system::history::config::origin()
-            .ok()
-            .flatten()
-            .is_some()
-        {
-            return None;
-        }
+    fn from_settings(settings: &Settings) -> Option<Self> {
+        let (_, origin) = crate::system::history::config::origin().ok().flatten()?;
         let automatic = SyncMode::parse(&settings.history.sync).ok()?.automatic();
         if !automatic.publish && !automatic.fetch {
             return None;
@@ -872,11 +876,6 @@ impl SyncPlan {
                 default
             })
         };
-        let fetch_every = parse(
-            "fetch_interval",
-            &settings.history.fetch_interval,
-            Duration::from_secs(900),
-        );
         Some(Self {
             automatic,
             publish_after: parse(
@@ -884,19 +883,73 @@ impl SyncPlan {
                 &settings.history.sync_interval,
                 Duration::from_secs(300),
             ),
-            fetch_every,
-            next_publish: None,
-            next_fetch: automatic
-                .fetch
-                .then(|| now + SYNC_FIRST_FETCH.min(fetch_every)),
-            backoff: SYNC_BACKOFF_MIN.min(fetch_every),
+            fetch_every: parse(
+                "fetch_interval",
+                &settings.history.fetch_interval,
+                Duration::from_secs(900),
+            ),
+            origin: (origin.url, origin.branch),
         })
+    }
+}
+
+impl SyncPlan {
+    /// `None` without a connected origin, or in `manual` mode.
+    fn from_settings(settings: &Settings, now: Instant) -> Option<Self> {
+        SyncConfig::from_settings(settings).map(|config| Self::new(config, now))
+    }
+
+    /// A fresh plan: the first fetch soon, no publication pending.
+    fn new(config: SyncConfig, now: Instant) -> Self {
+        Self {
+            next_publish: None,
+            next_fetch: config
+                .automatic
+                .fetch
+                .then(|| now + SYNC_FIRST_FETCH.min(config.fetch_every)),
+            backoff: SYNC_BACKOFF_MIN.min(config.fetch_every),
+            config,
+        }
+    }
+
+    /// The configuration was reloaded. Another origin starts afresh;
+    /// otherwise what is pending stays, moved only by what changed: a
+    /// disabled activity loses its deadline, a newly enabled fetch gets its
+    /// first one, and a shorter interval brings a deadline forward, never
+    /// back. A reload that changes nothing changes nothing here, so a
+    /// reconcile tick or an edit elsewhere never postpones what is due.
+    fn reconfigure(&mut self, fresh: SyncConfig, now: Instant) {
+        if fresh == self.config {
+            return;
+        }
+        if fresh.origin != self.config.origin {
+            *self = Self::new(fresh, now);
+            return;
+        }
+        let previous = std::mem::replace(&mut self.config, fresh);
+        let config = &self.config;
+        if !config.automatic.publish {
+            self.next_publish = None;
+        } else if config.publish_after != previous.publish_after {
+            // nothing saved, nothing to bring forward
+            let at = now + config.publish_after;
+            self.next_publish = self.next_publish.map(|due| due.min(at));
+        }
+        if !config.automatic.fetch {
+            self.next_fetch = None;
+        } else if !previous.automatic.fetch {
+            self.next_fetch = Some(now + SYNC_FIRST_FETCH.min(config.fetch_every));
+        } else if config.fetch_every != previous.fetch_every {
+            let at = now + config.fetch_every;
+            self.next_fetch = Some(self.next_fetch.map_or(at, |due| due.min(at)));
+        }
+        self.backoff = self.backoff.min(SYNC_BACKOFF_MAX).max(self.backoff_floor());
     }
 
     /// The shortest backoff: a minute, or the fetch interval when that is
     /// shorter (a test's, say).
     fn backoff_floor(&self) -> Duration {
-        SYNC_BACKOFF_MIN.min(self.fetch_every)
+        SYNC_BACKOFF_MIN.min(self.config.fetch_every)
     }
 
     fn deadline(&self) -> Option<Instant> {
@@ -909,10 +962,10 @@ impl SyncPlan {
     /// A checkpoint was saved: publish it soon, unless a publication is
     /// already due sooner.
     fn saved(&mut self, now: Instant) {
-        if !self.automatic.publish {
+        if !self.config.automatic.publish {
             return;
         }
-        let at = now + self.publish_after;
+        let at = now + self.config.publish_after;
         self.next_publish = Some(self.next_publish.map_or(at, |due| due.min(at)));
     }
 
@@ -933,7 +986,11 @@ impl SyncPlan {
     fn succeeded(&mut self, now: Instant) {
         self.backoff = self.backoff_floor();
         self.next_publish = None;
-        self.next_fetch = self.automatic.fetch.then(|| now + self.fetch_every);
+        self.next_fetch = self
+            .config
+            .automatic
+            .fetch
+            .then(|| now + self.config.fetch_every);
     }
 }
 
@@ -1302,15 +1359,17 @@ fn apply_intervals(
 }
 
 /// The synchronization plan as the configuration says now (the origin or
-/// the mode may have changed), keeping the backoff of the previous one.
+/// the mode may have changed), adjusted rather than rebuilt: a pending
+/// publication or fetch keeps its deadline unless what it depends on changed.
 fn refresh_sync_plan(capture: &mut Capture, now: Instant) {
-    let previous = capture.sync.take();
-    capture.sync = SyncPlan::from_settings(&Settings::get(), now).map(|mut plan| {
-        if let Some(previous) = previous {
-            plan.backoff = previous.backoff;
+    let fresh = SyncConfig::from_settings(&Settings::get());
+    capture.sync = match (capture.sync.take(), fresh) {
+        (Some(mut plan), Some(fresh)) => {
+            plan.reconfigure(fresh, now);
+            Some(plan)
         }
-        plan
-    });
+        (_, fresh) => fresh.map(|config| SyncPlan::new(config, now)),
+    };
 }
 
 /// Drops from the schedule what the tracked set no longer covers (excluded,
@@ -1615,10 +1674,15 @@ impl Capture {
             return SYNC_BACKOFF_MIN;
         };
         let retry_in = plan.failed(now);
-        let state_dir = self.store.state_dir();
-        let mut status = sync_run::read_status(state_dir);
-        status.backoff_until = Some(rfc3339_in(retry_in));
-        if let Err(err) = sync_run::write_status(state_dir, &status) {
+        // under the sync lock, changing only this; no wait: this is the event
+        // loop, and an explicit sync or pull holding the lock writes its own
+        // fresh record
+        let until = rfc3339_in(retry_in);
+        if let Err(err) =
+            sync_run::update_status(self.store.state_dir(), Duration::ZERO, |status| {
+                status.backoff_until = Some(until);
+            })
+        {
             debug!("history watch: could not record the sync backoff: {err}");
         }
         retry_in
@@ -1954,5 +2018,107 @@ mod tests {
         let state = state_of(tracked, root.join("mise"));
         assert!(!state.may_cover_missing(&hypr.join("bindings.lua")));
         assert!(!state.may_cover_missing(&root.join("elsewhere/target")));
+    }
+}
+
+#[cfg(test)]
+mod sync_plan_tests {
+    use super::*;
+
+    fn secs(n: u64) -> Duration {
+        Duration::from_secs(n)
+    }
+
+    fn config(mode: SyncMode, publish_after: u64, fetch_every: u64) -> SyncConfig {
+        SyncConfig {
+            automatic: mode.automatic(),
+            publish_after: secs(publish_after),
+            fetch_every: secs(fetch_every),
+            origin: ("file:///setup.git".to_string(), "main".to_string()),
+        }
+    }
+
+    #[test]
+    fn a_reload_that_changes_nothing_keeps_the_deadlines() {
+        let start = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.saved(start);
+        let retry = plan.failed(start + secs(1));
+        let (publish, fetch, backoff) = (plan.next_publish, plan.next_fetch, plan.backoff);
+        assert_eq!(fetch, Some(start + secs(1) + retry));
+        plan.reconfigure(config(SyncMode::Sync, 300, 900), start + secs(5));
+        assert_eq!(plan.next_publish, publish);
+        assert_eq!(plan.next_fetch, fetch);
+        assert_eq!(plan.backoff, backoff);
+    }
+
+    #[test]
+    fn fetch_only_drops_the_pending_publication() {
+        let start = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.saved(start);
+        let fetch = plan.next_fetch;
+        plan.reconfigure(config(SyncMode::FetchOnly, 300, 900), start + secs(5));
+        assert_eq!(plan.next_publish, None);
+        assert_eq!(plan.next_fetch, fetch);
+        // and a save in fetch-only mode schedules nothing
+        plan.saved(start + secs(6));
+        assert_eq!(plan.next_publish, None);
+    }
+
+    #[test]
+    fn a_shorter_fetch_interval_brings_the_next_fetch_forward_a_longer_one_does_not_delay_it() {
+        let start = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.succeeded(start);
+        assert_eq!(plan.next_fetch, Some(start + secs(900)));
+        plan.reconfigure(config(SyncMode::Sync, 300, 2), start + secs(5));
+        assert_eq!(plan.next_fetch, Some(start + secs(7)));
+        plan.reconfigure(config(SyncMode::Sync, 300, 900), start + secs(6));
+        assert_eq!(plan.next_fetch, Some(start + secs(7)));
+    }
+
+    #[test]
+    fn a_shorter_publish_delay_brings_a_pending_publication_forward() {
+        let start = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.reconfigure(config(SyncMode::Sync, 1, 900), start + secs(1));
+        // nothing saved: a new delay arms nothing
+        assert_eq!(plan.next_publish, None);
+        plan.saved(start + secs(2));
+        assert_eq!(plan.next_publish, Some(start + secs(3)));
+        plan.reconfigure(config(SyncMode::Sync, 300, 900), start + secs(2));
+        assert_eq!(plan.next_publish, Some(start + secs(3)));
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.saved(start);
+        plan.reconfigure(config(SyncMode::Sync, 1, 900), start + secs(2));
+        assert_eq!(plan.next_publish, Some(start + secs(3)));
+    }
+
+    #[test]
+    fn enabling_fetch_arms_the_first_fetch() {
+        let start = Instant::now();
+        let mut publish_only = config(SyncMode::Sync, 300, 900);
+        publish_only.automatic.fetch = false;
+        let mut plan = SyncPlan::new(publish_only, start);
+        assert_eq!(plan.next_fetch, None);
+        plan.reconfigure(config(SyncMode::Sync, 300, 900), start + secs(5));
+        assert_eq!(plan.next_fetch, Some(start + secs(5) + SYNC_FIRST_FETCH));
+    }
+
+    #[test]
+    fn another_origin_starts_afresh() {
+        let start = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.saved(start);
+        plan.failed(start);
+        plan.failed(start + secs(60));
+        assert!(plan.backoff > plan.backoff_floor());
+        let mut moved = config(SyncMode::Sync, 300, 900);
+        moved.origin.1 = "work".to_string();
+        plan.reconfigure(moved, start + secs(100));
+        assert_eq!(plan.backoff, plan.backoff_floor());
+        assert_eq!(plan.next_publish, None);
+        assert_eq!(plan.next_fetch, Some(start + secs(100) + SYNC_FIRST_FETCH));
     }
 }

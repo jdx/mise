@@ -209,19 +209,19 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     }
 
     // the connection: declared machine-locally, recorded for the watcher
-    let mut status = run::read_status(state_dir);
-    status.origin_url = Some(onboarding.origin.clone());
-    status.origin_branch = Some(onboarding.branch.clone());
-    status.disconnected = false;
-    if status.upload_since.is_none() {
-        let newest = store
-            .list()?
-            .into_iter()
-            .last()
-            .map(|entry| entry.checkpoint.created_at);
-        status.upload_since = Some(newest.unwrap_or_else(hstore::now_rfc3339));
-    }
-    run::write_status(state_dir, &status)?;
+    let newest = store
+        .list()?
+        .into_iter()
+        .last()
+        .map(|entry| entry.checkpoint.created_at);
+    run::update_status(state_dir, run::STATUS_LOCK_WAIT, |status| {
+        status.origin_url = Some(onboarding.origin.clone());
+        status.origin_branch = Some(onboarding.branch.clone());
+        status.disconnected = false;
+        if status.upload_since.is_none() {
+            status.upload_since = Some(newest.unwrap_or_else(hstore::now_rfc3339));
+        }
+    })?;
     super::origin::write_config(&onboarding.origin, &onboarding.branch, None)?;
 
     let applied = apply::apply(store, &tracked, &ApplyRequest::automatic()).await?;

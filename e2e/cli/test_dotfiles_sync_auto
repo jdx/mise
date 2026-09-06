@@ -87,9 +87,15 @@ echo 'bind = SUPER, W, exec, firefox' >>~/.config/hypr/bindings.lua
 wait_until "grep -q '\"event\":\"sync-error\"' a.log"
 assert_contains "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "bindings.lua"
 assert_contains "mise bootstrap dotfiles status 2>&1" "last error"
+# the failure has a start, so an origin that never answered is not "transient"
+# forever: after three fetch intervals doctor escalates
+assert_contains "mise bootstrap dotfiles status 2>&1" "failing since"
+wait_until "(mise doctor 2>&1 || true) | grep -q 'keeps failing'"
+assert "(mise doctor --json 2>/dev/null || true) | jq '.dotfiles.sync_failing_for_secs > 6'" "true"
 mv "$origin.away" "$origin"
 wait_until "grep -q 'firefox' $B/.config/hypr/bindings.lua"
 assert_not_contains "mise bootstrap dotfiles status 2>&1" "last error"
+assert_not_contains "mise bootstrap dotfiles status 2>&1" "failing since"
 
 # ---- a conflict: B changes a line while its watcher is down and A changes the
 # same line; both versions are kept, the entire setup waits, and one

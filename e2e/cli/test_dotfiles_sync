@@ -59,6 +59,14 @@ store="$MISE_STATE_DIR/history/repo.git"
 assert_contains "for ref in \$(git --git-dir=$store for-each-ref --format='%(refname)' refs/checkpoints); do git --git-dir=$store ls-tree -r --name-only \$ref; done" "github_tokens"
 # repeating a sync changes nothing
 assert_contains "mise bootstrap dotfiles sync 2>&1" "nothing new to publish"
+# a lost upload record is reconciled from the origin's refs, not re-pushed:
+# the backups already there are kept, the record fills in again
+status="$MISE_STATE_DIR/history/sync.json"
+jq '.uploaded = []' "$status" >"$status.tmp" && mv "$status.tmp" "$status"
+assert "jq '.uploaded | length' $status" "0"
+assert_succeed "mise bootstrap dotfiles sync"
+assert "git --git-dir=$origin for-each-ref --format='%(refname)' refs/mise-history | grep -c ." "2"
+assert "jq '.uploaded | length' $status" "2"
 assert_contains "mise bootstrap dotfiles origin 2>&1" "mode sync"
 
 # ---- machine B: connect, adopt the differing config, apply the rest

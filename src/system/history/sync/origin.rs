@@ -517,13 +517,15 @@ pub(crate) fn remove() -> Result<()> {
     }
     // the recorded connection no longer stands in for a declaration
     let state_dir: &std::path::Path = &crate::dirs::STATE;
-    let mut status = run::read_status(state_dir);
-    if status.origin_url.is_some() && !status.disconnected {
-        status.disconnected = true;
-        run::write_status(state_dir, &status)?;
-        if removed.is_empty() {
-            removed.push("the recorded connection".to_string());
+    let mut disconnected = false;
+    run::update_status(state_dir, run::STATUS_LOCK_WAIT, |status| {
+        if status.origin_url.is_some() && !status.disconnected {
+            status.disconnected = true;
+            disconnected = true;
         }
+    })?;
+    if disconnected && removed.is_empty() {
+        removed.push("the recorded connection".to_string());
     }
     if removed.is_empty() {
         info!("history: no setup repository was connected");
