@@ -121,7 +121,7 @@ wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health
 
 # a timing setting changed while running takes effect: the interval is
 # clamped to the new maximum
-sed -i.bak 's/max_interval = "8s"/max_interval = "2s"/' "$MISE_CONFIG_DIR/config.toml" && rm -f "$MISE_CONFIG_DIR/config.toml.bak"
+sed -i.bak 's/max_interval = "8s"/max_interval = "2s"/' "$MISE_CONFIG_DIR/config.toml"
 wait_until "[[ \$($throttled) -le 2 ]]"
 
 # the churn stops: the final state is captured promptly

@@ -131,10 +131,18 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         NoCache,
         notify::Config::default(),
     )?;
-    let mut installed = install(&mut debouncer, &[], &state.plan.anchors, &mut capture)?;
-    if installed.is_empty() {
-        bail!("no watch could be installed for the tracked set");
-    }
+    let mut installed = match install(&mut debouncer, &[], &state.plan.anchors, &mut capture) {
+        Ok(installed) if !installed.is_empty() => installed,
+        outcome => {
+            // what changed while the watcher was down is saved before it
+            // gives up on watching
+            capture.reconcile(&state.tracked, "startup reconcile");
+            capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
+            capture.write_health();
+            outcome?;
+            bail!("no watch could be installed for the tracked set");
+        }
+    };
     // the first capture comes after the watches are in place, so an edit
     // landing between the two reaches the scheduler instead of waiting for
     // the next reconcile
@@ -190,9 +198,12 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         "the filesystem watch stopped delivering events; stopping so the service restarts it",
                         json!({ "message": "watch channel closed" }),
                     );
+                    finish(&mut capture, &state.tracked).await;
+                    // recorded after the final capture, which would clear it
                     capture.health.watcher.last_error = Some("the filesystem watch stopped".into());
                     capture.health.watcher.last_error_at = Some(store::now_rfc3339());
-                    finish(&mut capture, &state.tracked).await;
+                    capture.health.watcher.consecutive_failures += 1;
+                    capture.write_health();
                     debouncer.stop();
                     return Ok(1);
                 };
