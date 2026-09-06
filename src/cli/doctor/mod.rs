@@ -733,13 +733,19 @@ impl Doctor {
                 && w.consecutive_failures > 0
             {
                 diagnosis.last_error = Some(error.clone());
-                self.errors.push(format!(
+                if running {
+                    self.errors.push(format!(
                     "dotfiles: the watcher could not save a checkpoint ({error}; {} consecutive failure(s), last at {}).\n     Edits since then are not protected.\n     Inspect with: mise bootstrap dotfiles status",
                     w.consecutive_failures,
                     w.last_error_at.as_deref().unwrap_or("unknown")
                 ));
+                } else {
+                    self.warnings.push(format!(
+                        "dotfiles: the stopped watcher's last capture failed ({error}).\n     This is historical health, not a current capture attempt.\n     Check or save with: mise bootstrap dotfiles save"
+                    ));
+                }
             }
-            for degraded in &w.degraded {
+            for degraded in w.degraded.iter().filter(|_| running) {
                 diagnosis.degraded.push(degraded.clone());
                 self.warnings.push(format!(
                     "dotfiles: {degraded}.\n     Changes there are saved by reconciliation only.\n     Inspect with: mise bootstrap dotfiles status"

@@ -114,6 +114,9 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     let mut capture = Capture::new(store, out, intervals.limits.clone());
     capture.health.watcher.started_at = Some(store::now_rfc3339());
     if opts.once {
+        // A one-shot capture has no installed filesystem watches. Failures
+        // from a previous watch installation do not describe this run.
+        capture.health.watcher.degraded.clear();
         // the restored schedule applies to this capture too: a throttled
         // file whose save is not due is held, not read live
         let outcome = capture.reconcile(&state.tracked, "startup reconcile");
@@ -233,10 +236,9 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                     // stay held, so a failure that persists does not save
                     // them on every restart
                     finish(&mut capture, &state.tracked, Restart::Held).await;
-                    // recorded after the final capture, which would clear it
-                    capture.health.watcher.last_error = Some("the filesystem watch stopped".into());
-                    capture.health.watcher.last_error_at = Some(store::now_rfc3339());
-                    capture.health.watcher.consecutive_failures += 1;
+                    // Transport failure is not a capture failure: finish may
+                    // have saved successfully. Preserve its actual outcome.
+                    capture.health.watcher.degraded.push("the filesystem watch stopped".into());
                     capture.write_health();
                     debouncer.stop();
                     return Ok(1);
@@ -311,7 +313,10 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 if config_changed {
                     match state.reload().await {
                         Ok(true) => {
-                            installed = match install(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
+                            // Config and root replacement events can share a
+                            // batch. Recreate watches even for retained paths,
+                            // whose old inode may no longer exist.
+                            installed = match reinstall(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
                         Ok(installed) => installed,
                         Err(err) => {
                             stop_after_install_failure(&mut capture, &state.tracked, &err, "re-installed").await;
@@ -1182,7 +1187,10 @@ impl Capture {
                 NoisyPath {
                     interval_secs: schedule.interval.as_secs(),
                     pending_changes: schedule.changes,
-                    last_seen: store::now_rfc3339(),
+                    last_seen: schedule
+                        .last_seen
+                        .map(|seen| rfc3339_ago(Instant::now().saturating_duration_since(seen)))
+                        .unwrap_or_else(|| "unknown".into()),
                 },
             );
         }

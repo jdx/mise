@@ -57,6 +57,8 @@ pub(crate) struct PathSchedule {
     pub interval: Duration,
     /// When the path last changed (`None`: no change pending).
     pub last_change: Option<Instant>,
+    /// Last observed event, retained after its pending batch is saved.
+    pub last_seen: Option<Instant>,
     /// When the pending batch of changes began.
     pub pending_since: Option<Instant>,
     /// Changes since the last save.
@@ -69,6 +71,7 @@ impl PathSchedule {
         Self {
             interval: base,
             last_change: None,
+            last_seen: None,
             pending_since: None,
             changes: 0,
             last_saved: None,
@@ -124,6 +127,8 @@ pub(crate) struct PersistedPath {
     pub pending_since_epoch_secs: Option<u64>,
     #[serde(default)]
     pub last_change_epoch_secs: Option<u64>,
+    #[serde(default)]
+    pub last_seen_epoch_secs: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -186,6 +191,10 @@ impl Schedule {
                 continue;
             }
             schedule.last_saved = record.saved_epoch_secs.map(ago);
+            schedule.last_seen = record
+                .last_seen_epoch_secs
+                .or(record.last_change_epoch_secs)
+                .map(ago);
             if record.pending_changes > 0 {
                 schedule.changes = record.pending_changes;
                 schedule.pending_since =
@@ -213,6 +222,7 @@ impl Schedule {
                     pending_changes: schedule.changes,
                     pending_since_epoch_secs: schedule.pending_since.map(epoch),
                     last_change_epoch_secs: schedule.last_change.map(epoch),
+                    last_seen_epoch_secs: schedule.last_seen.map(epoch),
                 },
             );
         }
@@ -251,6 +261,7 @@ impl Schedule {
         }
         schedule.pending_since.get_or_insert(now);
         schedule.last_change = Some(now);
+        schedule.last_seen = Some(now);
         schedule.changes += 1;
     }
 
@@ -381,6 +392,27 @@ mod tests {
             base: secs(2),
             max: secs(24 * 3600),
         }
+    }
+
+    #[test]
+    fn last_seen_survives_saves_persistence_and_restart() {
+        let start = Instant::now();
+        let path = PathBuf::from("state.json");
+        let mut schedule = Schedule::new(limits());
+        schedule.note(path.clone(), start);
+        schedule.paths.get_mut(&path).unwrap().interval = secs(16);
+        schedule.saved(&path, start + secs(2));
+        assert_eq!(schedule.get(&path).unwrap().last_seen, Some(start));
+        let first = schedule.persist(start + secs(3), 103);
+        let later = schedule.persist(start + secs(5), 105);
+        assert_eq!(first.paths["state.json"].last_seen_epoch_secs, Some(100));
+        assert_eq!(later.paths["state.json"].last_seen_epoch_secs, Some(100));
+        let mut restored = Schedule::new(limits());
+        restored.restore(&later, start + secs(6), 106);
+        assert_eq!(restored.get(&path).unwrap().last_seen, Some(start));
+        // Reconciliation uncertainty is not evidence of a new event.
+        restored.mark_pending(path.clone(), start + secs(7));
+        assert_eq!(restored.get(&path).unwrap().last_seen, Some(start));
     }
 
     #[test]

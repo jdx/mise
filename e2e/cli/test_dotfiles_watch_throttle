@@ -171,7 +171,18 @@ sleep 1
 echo 'monitor=DP-3' >~/.config/hypr/monitors.lua
 wait_until "grep -q '\"event\":\"deferred\"' watch.log"
 wait "$applying" || true
+
 wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
+
+# Replacing an anchor together with a config edit must reinstall the
+# retained path's watch, not keep a watch attached to its old inode.
+replans="$(grep -c 'configuration changed; watching' watch.log)"
+mv ~/.config/hypr ~/.config/hypr.old
+cp -R ~/.config/hypr.old ~/.config/hypr
+printf '\n# replan with a replaced root\n' >>"$MISE_CONFIG_DIR/config.toml"
+wait_until "[[ \$(grep -c 'configuration changed; watching' watch.log) -gt $replans ]]"
+echo 'monitor=replaced-root' >~/.config/hypr/monitors.lua
+wait_until "mise bootstrap dotfiles history diff --path ~/.config/hypr/monitors.lua --exit-code"
 
 kill -TERM "$watcher"
 wait "$watcher" || true
@@ -185,3 +196,14 @@ applying=$!
 wait_until 'test "$(wc -l <~/applying)" -ge 2'
 assert_fail "mise bootstrap dotfiles watch --once --json 2>&1" '"reason":"deferred"'
 wait "$applying" || true
+
+# Stopped watcher diagnostics are historical, and a successful one-shot
+# capture clears old watch-installation degradation.
+health="$MISE_STATE_DIR/history/health.json"
+jq '.watcher.last_error = "old capture failure" | .watcher.consecutive_failures = 1 | .watcher.degraded = ["old watch unavailable"]' "$health" >health.updated
+mv health.updated "$health"
+assert_not_contains "mise doctor 2>&1 || true" "Edits since then are not protected"
+assert_not_contains "mise doctor 2>&1 || true" "Changes there are saved by reconciliation only"
+assert_succeed "mise bootstrap dotfiles watch --once --json"
+assert "jq '.watcher.degraded | length' $health" "0"
+assert "jq '.watcher.last_error // \"cleared\"' -r $health" "cleared"
