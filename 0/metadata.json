@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1T3D4F42PNP7SZA4WDMKX58",
+  "session_id": "01a07436-73fa-7021-a504-5856da38e84f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T00:55:28.715447Z",
+  "branch": "codex/quiet-oauth-env-export",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_token_github",
+    "e2e/fixtures/mock-github-oauth.py",
+    "src/cli/token/github.rs",
+    "src/github/oauth.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "05b2630aa7c8",
+  "compact_transcript_start": 0,
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T00:55:28.701777Z",
+    "agent_lines": 40,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 40,
+    "total_lines_changed": 42,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

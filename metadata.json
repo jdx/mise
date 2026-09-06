@@ -1,0 +1,22 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1T3D4F42PNP7SZA4WDMKX58",
+  "strategy": "manual-commit",
+  "branch": "codex/quiet-oauth-env-export",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_token_github",
+    "e2e/fixtures/mock-github-oauth.py",
+    "src/cli/token/github.rs",
+    "src/github/oauth.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
