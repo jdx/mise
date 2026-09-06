@@ -729,14 +729,8 @@ impl State {
 
     fn from_tracked(tracked: TrackedSet) -> Result<Self> {
         let exclude = tracked.exclude_set()?;
-        let watched = watched_set(&tracked)?;
+        let (watched, derived_links) = watched_set(&tracked)?;
         let plan = build_plan(&watched);
-        let derived_links = watched
-            .entries
-            .iter()
-            .filter(|entry| entry.kind == tracked::EntryKind::Derived)
-            .filter_map(|entry| entry.source.clone())
-            .collect();
         Ok(Self {
             tracked,
             watched,
@@ -839,8 +833,17 @@ impl State {
 
 /// The set the watcher plans and filters by: the declared entries plus the
 /// derived ones the walk discovers (targets of tracked symlinks).
-fn watched_set(tracked: &TrackedSet) -> Result<TrackedSet> {
+fn watched_set(tracked: &TrackedSet) -> Result<(TrackedSet, Vec<PathBuf>)> {
     let walk = tracked.walk()?;
+    // Dangling links are captured themselves even though their missing targets
+    // cannot become derived entries. Rediscover them on startup so pruning
+    // preserves a missing target's persisted throttling, just as reload does.
+    let links = walk
+        .files
+        .keys()
+        .filter(|path| path.is_symlink())
+        .cloned()
+        .collect();
     let mut watched = tracked.clone();
     // an entry the walker refuses (the home directory or above) captures
     // nothing, so it is not watched either: a watch there would schedule
@@ -851,7 +854,7 @@ fn watched_set(tracked: &TrackedSet) -> Result<TrackedSet> {
         .into_iter()
         .filter(|entry| !tracked::is_refused_root(&entry.path, &home))
         .collect();
-    Ok(watched)
+    Ok((watched, links))
 }
 
 fn build_plan(tracked: &TrackedSet) -> WatchPlan {
@@ -1377,6 +1380,37 @@ mod tests {
         assert!(anchor_replaced(&ids, &anchor));
         std::fs::create_dir(&anchor).unwrap();
         assert!(anchor_replaced(&ids, &anchor));
+    }
+
+    #[test]
+    fn startup_discovers_dangling_links_inside_tracked_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = normalize(dir.path());
+        let tracked_dir = root.join("tracked");
+        std::fs::create_dir(&tracked_dir).unwrap();
+        let link = tracked_dir.join("link");
+        let target = root.join("missing");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let tracked = TrackedSet {
+            entries: vec![TrackedEntry::new(
+                tracked_dir,
+                EntryKind::Track,
+                "track",
+                FilePolicy::for_mode(FileMode::Track),
+            )],
+            exclude: vec![],
+            invalid: vec![],
+        };
+        let state = State::from_tracked(tracked.clone()).unwrap();
+        assert!(state.derived_links.contains(&link));
+        assert!(state.may_cover_missing(&target));
+        let mut excluded = tracked;
+        excluded.exclude.push(link.to_string_lossy().into_owned());
+        assert!(
+            !State::from_tracked(excluded)
+                .unwrap()
+                .may_cover_missing(&target)
+        );
     }
 
     fn state_of(tracked: TrackedSet, config_dir: PathBuf) -> State {
