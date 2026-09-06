@@ -1,5 +1,1 @@
-investigate [https://github.com/jdx/mise/discussions/12896](https://github.com/jdx/mise/discussions/12896)
-
----
-
 let's use colored, make a pr
