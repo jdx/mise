@@ -1109,10 +1109,18 @@ fn covered_paths(checkpoint: &Checkpoint) -> Vec<PathBuf> {
 /// that mode, and the bytes never exist under a wider mode in between.
 fn write_object(repo: &HistoryRepo, step: &Step, mode: &str, oid: &str) -> Result<()> {
     let path = &step.path;
+    // only a directory this restore creates gets its recorded mode; one
+    // that already exists keeps the mode it has
+    let created: Vec<(PathBuf, u32)> = step
+        .dir_bits
+        .iter()
+        .filter(|(dir, _)| std::fs::symlink_metadata(dir).is_err())
+        .cloned()
+        .collect();
     if let Some(parent) = path.parent() {
         file::create_dir_all(parent)?;
     }
-    restore_dir_modes(step);
+    restore_dir_modes(step, &created);
     if mode == "040000" {
         // a directory replaces a file or link; its files are their own steps
         if path.is_symlink() || path.is_file() {
@@ -1185,9 +1193,9 @@ fn write_object(repo: &HistoryRepo, step: &Step, mode: &str, oid: &str) -> Resul
 /// Puts back the recorded mode of the directories above a restored file
 /// (a `0700` directory recreated by `create_dir_all` would be `0755`).
 #[cfg(unix)]
-fn restore_dir_modes(step: &Step) {
+fn restore_dir_modes(_step: &Step, created: &[(PathBuf, u32)]) {
     use std::os::unix::fs::PermissionsExt;
-    for (dir, bits) in &step.dir_bits {
+    for (dir, bits) in created {
         if dir.is_dir() && !dir.is_symlink() {
             let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(*bits));
         }
@@ -1195,7 +1203,7 @@ fn restore_dir_modes(step: &Step) {
 }
 
 #[cfg(not(unix))]
-fn restore_dir_modes(step: &Step) {
+fn restore_dir_modes(step: &Step, _created: &[(PathBuf, u32)]) {
     if step.bits.is_some() || !step.dir_bits.is_empty() {
         debug!(
             "history: {}: recorded permission bits are not restored on this platform",
