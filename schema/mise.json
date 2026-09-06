@@ -4211,6 +4211,23 @@
                   "content": false
                 }
               }
+            ],
+            "anyOf": [
+              {
+                "properties": {
+                  "encrypt": {
+                    "const": false
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "content": false,
+                  "block": false,
+                  "line": false,
+                  "template": false
+                }
+              }
             ]
           }
         ]

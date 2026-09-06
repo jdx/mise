@@ -750,10 +750,11 @@ mod tests {
         let large_ciphertext = encrypt_bytes(&large, &recipients)?;
         assert!(large_ciphertext.len() < large.len());
 
-        env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
+        let mut vars = crate::test::EnvVarGuard::new();
+        vars.set("MISE_AGE_KEY", key.to_string().expose_secret());
         let decrypted = decrypt_bytes(&ciphertext).await;
         let decrypted_large = decrypt_bytes(&large_ciphertext).await;
-        env::remove_var("MISE_AGE_KEY");
+        vars.remove("MISE_AGE_KEY");
         assert_eq!(decrypted.unwrap(), small);
         assert_eq!(decrypted_large.unwrap(), large);
         Ok(())
@@ -767,10 +768,11 @@ mod tests {
         let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(key.to_public())];
         let ciphertext = encrypt_bytes(b"payload", &recipients)?;
 
-        env::set_var("MISE_AGE_KEY", other.to_string().expose_secret());
+        let mut vars = crate::test::EnvVarGuard::new();
+        vars.set("MISE_AGE_KEY", other.to_string().expose_secret());
         let result = decrypt_bytes(&ciphertext).await;
         let corrupt = decrypt_bytes(b"not an age file at all").await;
-        env::remove_var("MISE_AGE_KEY");
+        vars.remove("MISE_AGE_KEY");
         assert!(
             matches!(result, Err(DecryptError::Failed { .. })),
             "{result:?}"
@@ -872,12 +874,14 @@ mod plugin_tests {
         )
         .unwrap();
         std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut vars = crate::test::EnvVarGuard::new();
+        vars.remove("MISE_TEST_PLUGIN_MODE");
         let old_path = env::var("PATH").unwrap();
-        env::set_var("PATH", format!("{}:{old_path}", tmp.path().display()));
+        vars.set("PATH", format!("{}:{old_path}", tmp.path().display()));
         let identity = age::plugin::Identity::default_for_plugin("se")
             .unwrap()
             .to_string();
-        env::set_var("MISE_AGE_KEY", &identity);
+        vars.set("MISE_AGE_KEY", &identity);
         let recipient = "age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak";
         let software = age::x25519::Identity::generate();
         let recipients: Vec<Box<dyn Recipient + Send>> = vec![
@@ -892,9 +896,9 @@ mod plugin_tests {
             decrypt_bytes_mode(&ciphertext, true).await.unwrap(),
             b"plugin protocol test"
         );
-        env::set_var("MISE_TEST_PLUGIN_MODE", "malformed");
+        vars.set("MISE_TEST_PLUGIN_MODE", "malformed");
         assert!(decrypt_bytes_mode(&ciphertext, true).await.is_err());
-        env::set_var("MISE_TEST_PLUGIN_MODE", "cancel");
+        vars.set("MISE_TEST_PLUGIN_MODE", "cancel");
         assert!(encrypt_bytes(b"cancelled request", &recipients).is_err());
         let plugin_identity = identity.parse::<age::plugin::Identity>().unwrap();
         let noninteractive =
@@ -905,11 +909,11 @@ mod plugin_tests {
                 .decrypt(std::iter::once(&noninteractive as &dyn Identity))
                 .is_err()
         );
-        env::remove_var("MISE_TEST_PLUGIN_MODE");
+        vars.remove("MISE_TEST_PLUGIN_MODE");
         std::fs::remove_file(&executable).unwrap();
         assert!(parse_recipient(recipient).is_err());
         assert!(decrypt_bytes_mode(&ciphertext, true).await.is_err());
-        env::set_var("MISE_AGE_KEY", software.to_string().expose_secret());
+        vars.set("MISE_AGE_KEY", software.to_string().expose_secret());
         assert_eq!(
             decrypt_bytes_mode(&ciphertext, false).await.unwrap(),
             b"plugin protocol test"
@@ -926,7 +930,5 @@ mod plugin_tests {
             .await,
             Some(false)
         );
-        env::remove_var("MISE_AGE_KEY");
-        env::set_var("PATH", old_path);
     }
 }

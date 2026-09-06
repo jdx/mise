@@ -388,6 +388,10 @@ impl HistoryRepo {
             .wrap_err_with(|| format!("reading {oid}"))
     }
 
+    pub(crate) fn blob_starts_with(&self, oid: &str, prefix: &[u8]) -> Result<bool> {
+        self.git.blob_starts_with(oid, prefix)
+    }
+
     pub(crate) fn cat_object_bounded(&self, oid: &str, limit: u64) -> Result<Vec<u8>> {
         let size: u64 = self
             .output_str(PlumbingCall::new(["cat-file", "-s", oid]))?

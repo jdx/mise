@@ -176,7 +176,8 @@ fn validate_files(payload: &Payload) -> Result<()> {
             bail!("invalid or duplicate backup file path/mode");
         }
         if file.mode == "160000"
-            && !(file.content.0.len() == 40 && file.content.0.iter().all(u8::is_ascii_hexdigit))
+            && !(matches!(file.content.0.len(), 40 | 64)
+                && file.content.0.iter().all(u8::is_ascii_hexdigit))
         {
             bail!("invalid gitlink object id");
         }
@@ -543,6 +544,27 @@ mod validation_tests {
         assert!(
             validate_identity(&repo, &commit, &checkpoint.machine.id, "uuid", &changed).is_err()
         );
+    }
+
+    #[test]
+    fn gitlinks_accept_both_git_hash_formats() {
+        for (oid, valid) in [
+            ("a".repeat(40), true),
+            ("b".repeat(64), true),
+            ("a".repeat(41), false),
+            ("z".repeat(40), false),
+        ] {
+            let payload = Payload {
+                format: BACKUP_FORMAT,
+                checkpoint: test_checkpoint("uuid", None),
+                files: vec![PayloadFile {
+                    path: "home/repo".into(),
+                    mode: "160000".into(),
+                    content: Bytes(oid.into_bytes()),
+                }],
+            };
+            assert_eq!(validate_files(&payload).is_ok(), valid);
+        }
     }
 
     #[test]

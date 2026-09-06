@@ -40,9 +40,12 @@ fn control_file(path: &str) -> bool {
             && (path.starts_with("config.") || path.starts_with("mise.")))
 }
 
-fn envelope(repo: &HistoryRepo, object: &Object) -> Result<Option<Envelope>> {
-    // Bound remote data before decoding its envelope.
-    let bytes = repo.cat_object_bounded(&object.1, agecrypt::MAX_ENCRYPTED_BYTES)?;
+fn envelope(repo: &HistoryRepo, object: &Object, limit: u64) -> Result<Option<Envelope>> {
+    if !repo.blob_starts_with(&object.1, MAGIC)? {
+        return Ok(None);
+    }
+    // Only encrypted envelopes have this limit; do not change plaintext sync.
+    let bytes = repo.cat_object_bounded(&object.1, limit)?;
     let Some(body) = bytes.strip_prefix(MAGIC) else {
         return Ok(None);
     };
@@ -70,7 +73,7 @@ pub(crate) fn decrypt(
     object: &Object,
     interactive: bool,
 ) -> Result<Object> {
-    let Some(outer) = envelope(repo, object)? else {
+    let Some(outer) = envelope(repo, object, agecrypt::MAX_ENCRYPTED_BYTES)? else {
         return Ok(object.clone());
     };
     if control_file(path) {
@@ -149,7 +152,7 @@ pub(crate) fn publication(
                 continue;
             }
             let object = (item.mode, item.oid);
-            if let Some(envelope) = envelope(repo, &object)? {
+            if let Some(envelope) = envelope(repo, &object, agecrypt::MAX_ENCRYPTED_BYTES)? {
                 protected.insert(item.path.clone());
                 existing.insert(item.path, (object, envelope));
             }
@@ -177,7 +180,14 @@ pub(crate) fn publication(
     if strings.is_empty() {
         bail!("encrypted dotfiles require [history.encryption].recipients; nothing was published");
     }
-    if existing.is_empty()
+    let mut normalized = strings.clone();
+    normalized.sort();
+    normalized.dedup();
+    let scheme = crate::hash::hash_sha256_to_str(&normalized.join("\n"));
+    if (existing.is_empty()
+        || existing
+            .values()
+            .any(|(_, envelope)| envelope.scheme != scheme))
         && strings
             .iter()
             .all(|s| s.parse::<age::plugin::Recipient>().is_ok())
@@ -186,10 +196,6 @@ pub(crate) fn publication(
             "hardware-only file recipients: device loss can make these files unrecoverable; add an independent recovery recipient"
         );
     }
-    let mut normalized = strings.clone();
-    normalized.sort();
-    normalized.dedup();
-    let scheme = crate::hash::hash_sha256_to_str(&normalized.join("\n"));
     let recipients: Vec<_> = strings
         .iter()
         .map(|s| {
@@ -241,6 +247,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn plaintext_bypasses_envelope_limit_but_ciphertext_does_not() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        for bytes in [
+            b"".as_slice(),
+            b"ordinary plaintext longer than the envelope limit".as_slice(),
+        ] {
+            let object = ("100644".into(), repo.hash_blob(bytes).unwrap());
+            assert!(envelope(&repo, &object, 4).unwrap().is_none());
+        }
+        let object = ("100644".into(), repo.hash_blob(MAGIC).unwrap());
+        assert!(envelope(&repo, &object, 4).is_err());
+    }
+
+    #[test]
     fn envelope_preserves_modes_and_binds_path_and_scheme() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
@@ -258,7 +279,9 @@ mod tests {
                 object
             );
             assert!(decrypt(&repo, "tracked/home/other", &encrypted, false).is_err());
-            let mut outer = envelope(&repo, &encrypted).unwrap().unwrap();
+            let mut outer = envelope(&repo, &encrypted, agecrypt::MAX_ENCRYPTED_BYTES)
+                .unwrap()
+                .unwrap();
             outer.scheme = "forged".into();
             let inner = Plaintext {
                 path: outer.path.clone(),
