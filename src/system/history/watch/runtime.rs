@@ -34,6 +34,11 @@ use crate::system::history::tracked::{
 const COALESCE: Duration = Duration::from_millis(500);
 const BACKOFF_MIN: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(5 * 60);
+/// How often a start retries the watch lock a status probe may be holding
+/// for a moment.
+const WATCH_LOCK_TRIES: u32 = 5;
+const WATCH_LOCK_RETRY: Duration = Duration::from_millis(200);
+
 /// How often, and how many times, the shutdown capture waits for a running
 /// history operation to finish before giving up.
 const SHUTDOWN_RETRY_EVERY: Duration = Duration::from_secs(1);
@@ -73,7 +78,20 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         out.emit("unavailable", &format!("cannot watch: {reason}"), json!({}));
         return Ok(1);
     }
-    let Some(_watch_lock) = LockFile::new(&watch_lock_in(store.state_dir())).try_lock()? else {
+    // a status probe (`doctor`, `status`, `track`) takes the lock for a
+    // moment to see whether a watcher holds it: a start that lands on that
+    // moment tries again rather than concluding another watcher runs
+    let mut watch_lock = None;
+    for attempt in 0..WATCH_LOCK_TRIES {
+        if let Some(lock) = LockFile::new(&watch_lock_in(store.state_dir())).try_lock()? {
+            watch_lock = Some(lock);
+            break;
+        }
+        if attempt + 1 < WATCH_LOCK_TRIES {
+            tokio::time::sleep(WATCH_LOCK_RETRY).await;
+        }
+    }
+    let Some(_watch_lock) = watch_lock else {
         out.emit(
             "already-running",
             "another watcher is running for this store",
