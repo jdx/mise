@@ -76,7 +76,13 @@ impl InstallInto {
         // locks would not overlap. Keep the lock through confirmation and the
         // backend replacement so no cooperating writer can populate the path
         // between the occupancy check and deletion.
-        let lock_path = install_path.clone();
+        // Resolve parent aliases, including an existing prefix when the rest
+        // of the destination does not exist yet. Do not resolve the final
+        // component: installation replaces that entry, even if it is a symlink.
+        let lock_path = match (install_path.parent(), install_path.file_name()) {
+            (Some(parent), Some(name)) => crate::file::desymlink_path(parent).join(name),
+            _ => crate::file::desymlink_path(&install_path),
+        };
         let lock_display_path = install_path.clone();
         let _destination_lock = tokio::task::spawn_blocking(move || {
             crate::lock_file::LockFile::new(&lock_path)
