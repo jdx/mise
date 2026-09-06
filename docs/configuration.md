@@ -634,7 +634,7 @@ Use this when you want global writes, such as `mise use` or `mise set` run from
 `$HOME`, to target a different config file. [`MISE_DEFAULT_CONFIG_FILENAME`](#mise-default-config-filename)
 customizes the default local config filename, not the global config path.
 
-### `MISE_DEFAULT_CONFIG_FILENAME`
+### `MISE_DEFAULT_CONFIG_FILENAME` {#mise-default-config-filename}
 
 Default: `mise.toml`
 
