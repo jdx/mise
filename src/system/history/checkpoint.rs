@@ -12,6 +12,9 @@ use eyre::{Result, WrapErr};
 
 use std::collections::BTreeSet;
 
+/// How many checkpoints back the modes of a carried entry are looked for.
+const CARRIED_MODES_LOOKBACK: usize = 200;
+
 use super::shadow::{self, HistoryRepo, Overlay};
 use super::store::{
     self, Annotation, Changes, Checkpoint, DescriptionSource, Entry, Index, IndexEntry, Machine,
@@ -240,31 +243,47 @@ impl Store {
         // protective, since a protective one holds the live bits of a
         // manual-save file, not its saved ones
         let mut modes = file_modes(&walk);
-        let saved_modes = if manual.carry.is_empty() {
-            None
-        } else {
-            index.entries.iter().rev().find_map(|entry| {
-                let checkpoint = store::read_meta_cache_in(&self.state_dir, &entry.uuid)
-                    .ok()
-                    .flatten()?;
-                (!checkpoint.trigger.as_str().ends_with("-before")).then_some(checkpoint.tree.modes)
-            })
-        };
-        if let Some(saved_modes) = saved_modes {
+        if !manual.carry.is_empty() {
             let carried: Vec<String> = manual
                 .carry
                 .iter()
                 .map(|index| walk.entries[*index].display())
                 .collect();
-            for (path, bits) in &saved_modes {
-                let under = carried.iter().any(|entry| {
+            let under = |path: &str| {
+                carried.iter().any(|entry| {
                     path == entry
                         || path
                             .strip_prefix(entry.as_str())
                             .is_some_and(|rest| rest.starts_with('/'))
-                });
-                if under {
-                    modes.entry(path.clone()).or_insert(*bits);
+                })
+            };
+            // newest first, the first record of a path wins; the walk goes
+            // back past checkpoints that did not carry the entry (it may
+            // have been untracked for a while) until every carried entry
+            // has been seen, within a bound
+            let mut seen: BTreeSet<String> = BTreeSet::new();
+            for entry in index.entries.iter().rev().take(CARRIED_MODES_LOOKBACK) {
+                if seen.len() == carried.len() {
+                    break;
+                }
+                let Some(checkpoint) = store::read_meta_cache_in(&self.state_dir, &entry.uuid)
+                    .ok()
+                    .flatten()
+                else {
+                    continue;
+                };
+                if checkpoint.trigger.as_str().ends_with("-before") {
+                    continue;
+                }
+                for coverage in &checkpoint.tree.coverage.entries {
+                    if carried.contains(&coverage.path) {
+                        seen.insert(coverage.path.clone());
+                    }
+                }
+                for (path, bits) in &checkpoint.tree.modes {
+                    if under(path) {
+                        modes.entry(path.clone()).or_insert(*bits);
+                    }
                 }
             }
         }
