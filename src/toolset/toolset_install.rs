@@ -610,7 +610,8 @@ impl Toolset {
                                 let _permit = permit;
                                 let result = Self::install_single_tool(&config, &ts, &tr, &opts, progress.as_ref()).await;
                                 if let Some(progress) = progress {
-                                    progress.complete(result.is_ok());
+                                    let error = result.as_ref().err().map(|e| e.to_string());
+                                    progress.complete(error.as_deref());
                                 }
                                 (tr, result)
                             });

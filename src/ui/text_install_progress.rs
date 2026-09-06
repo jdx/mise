@@ -130,6 +130,10 @@ impl State {
     }
 }
 
+fn first_line(error: &str) -> String {
+    error.lines().next().unwrap_or("installation failed").into()
+}
+
 fn tool_noun(count: usize) -> &'static str {
     if count == 1 { "tool" } else { "tools" }
 }
@@ -220,8 +224,7 @@ impl TextInstallProgress {
                 .iter()
                 .position(|t| t.key == key && t.outcome.is_none())
             {
-                state.tools[index].message =
-                    error.lines().next().unwrap_or("installation failed").into();
+                state.tools[index].message = first_line(&error);
                 if let Some(line) = state.finish_tool(index, Outcome::Failed, now) {
                     info!("{line}");
                 }
@@ -257,14 +260,19 @@ impl TextToolProgress {
 
     /// The worker result is authoritative: backends sometimes finish their
     /// report before their postinstall work has actually returned.
-    pub(crate) fn complete(&self, success: bool) {
+    ///
+    /// `error` is the worker's own failure. Without it the line would report
+    /// whatever phase the tool happened to be in when it died, which reads as a
+    /// reason ("failed: ✓ Cosign verified") without being one.
+    pub(crate) fn complete(&self, error: Option<&str>) {
         let mut state = self.state.lock().unwrap();
-        let outcome = if !success {
-            Outcome::Failed
-        } else if state.tools[self.index].skipped {
-            Outcome::Skipped
-        } else {
-            Outcome::Installed
+        let outcome = match error {
+            Some(error) => {
+                state.tools[self.index].message = first_line(error);
+                Outcome::Failed
+            }
+            None if state.tools[self.index].skipped => Outcome::Skipped,
+            None => Outcome::Installed,
         };
         if let Some(line) = state.finish_tool(self.index, outcome, Instant::now()) {
             info!("{line}");
@@ -302,10 +310,13 @@ impl SingleReport for TextToolProgress {
     }
 
     fn println(&self, message: String) {
-        // Explicit output (including build scripts) remains immediate.
-        let state = self.state.lock().unwrap();
+        // Explicit output (including build scripts) remains immediate, through
+        // the logger so that it is redacted like every other line mise prints.
+        // The lock is released first: a child can emit a lot of these, and they
+        // must not serialize behind another tool's status update.
+        let prefix = self.state.lock().unwrap().tools[self.index].prefix.clone();
         for line in message.lines() {
-            safe_eprintln!("{} {line}", state.tools[self.index].prefix);
+            info!("{prefix} {line}");
         }
     }
 
@@ -381,10 +392,40 @@ mod tests {
         progress.finish_with_message("installed".into());
         assert!(shared.lock().unwrap().tools[0].outcome.is_none());
         progress.set_message("running postinstall hook".into());
-        progress.complete(false);
+        progress.complete(Some("hook exited with status 1"));
         assert_eq!(
             shared.lock().unwrap().tools[0].outcome,
             Some(Outcome::Failed)
+        );
+    }
+
+    #[test]
+    fn a_failure_reports_the_error_not_the_phase_it_died_in() {
+        let start = Instant::now();
+        let shared = Arc::new(Mutex::new(state(start)));
+        let progress = TextToolProgress {
+            state: shared.clone(),
+            index: 0,
+        };
+        // A phase message can even read as a success on its own.
+        progress.set_message("✓ Cosign verified".into());
+        progress.complete(Some("checksum mismatch\nsecond line"));
+        assert_eq!(shared.lock().unwrap().tools[0].message, "checksum mismatch");
+    }
+
+    #[test]
+    fn a_skip_survives_a_successful_completion() {
+        let start = Instant::now();
+        let shared = Arc::new(Mutex::new(state(start)));
+        let progress = TextToolProgress {
+            state: shared.clone(),
+            index: 0,
+        };
+        progress.finish_with_icon("already installed".into(), ProgressIcon::Skipped);
+        progress.complete(None);
+        assert_eq!(
+            shared.lock().unwrap().tools[0].outcome,
+            Some(Outcome::Skipped)
         );
     }
 

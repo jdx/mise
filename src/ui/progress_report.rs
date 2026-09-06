@@ -209,6 +209,13 @@ impl SingleReport for VerboseReport {
     fn println(&self, message: String) {
         safe_eprintln!("{message}");
     }
+    fn set_process_output(&self, message: String) {
+        // Not set_message: its dedup collapses repeated phase text, which would
+        // silently drop a child's repeated stdout lines now that
+        // `shows_process_output` suppresses the failure replay.
+        let prefix = pad_prefix(self.pad, &self.prefix);
+        log::info!("{prefix} {message}");
+    }
     fn shows_process_output(&self) -> bool {
         true
     }

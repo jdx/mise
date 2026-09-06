@@ -49,6 +49,11 @@ assert "grep -c 'hook-failed' output.log" "1"
 if [[ $output == *'✓ dummy@1.0.2'* ]]; then
   fail "postinstall failure was reported as a successful install: $output"
 fi
+# The reason on the failure line is the worker's error, not whatever phase the
+# tool happened to be in when it died.
+if [[ $output == *'failed: running postinstall hook'* ]]; then
+  fail "failure line reported a phase as the reason: $output"
+fi
 
 # Explicit output modes keep their existing behavior.
 echo '[tools]' >mise.toml
