@@ -265,7 +265,7 @@ pub(super) fn compare_app_versions(first: &str, second: &str) -> Option<Ordering
         text: "",
     };
     let (mut l, mut r) = (0, 0);
-    while l < left.len().max(right.len()) {
+    while l < left.len() || r < right.len() {
         let a = left.get(l).copied().unwrap_or(missing);
         let b = right.get(r).copied().unwrap_or(missing);
         let ordering = a.compare(b);

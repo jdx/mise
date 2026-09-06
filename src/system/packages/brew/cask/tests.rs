@@ -7442,6 +7442,8 @@ fn auto_updates_compares_homebrew_version_tokens_with_matching_component_counts(
         ("1.", "1.0", None),
         ("1..0", "1.0.0", Some(Equal)),
         ("1.0-p1", "1.p1", Some(Equal)),
+        ("1.0a", "1a.0-0-1", Some(Less)),
+        ("1.0a", "1a.0-0-0", Some(Equal)),
         ("1.2.3alpha4", "1.2.3A4", Some(Equal)),
         ("1.2.3beta2", "1.2.3B2", Some(Equal)),
         ("1.2.3pre9", "1.2.3PRE9", Some(Equal)),
@@ -7507,6 +7509,7 @@ fn auto_updates_matches_homebrew_short_build_decisions() {
         ("2.5.3,4000", Some("2.5.2(3329)"), Some("3329"), true),
         ("1.2.3", Some("1.2.3rc3"), None, true),
         ("1.2.3", Some("1.2.3-p34"), None, false),
+        ("1a.0-0-1", Some("1.0a"), None, true),
         ("latest", Some("1"), Some("1"), false),
     ] {
         assert_eq!(
