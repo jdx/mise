@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1W88X5JRS92GSDVAMNVARH8",
   "strategy": "manual-commit",
   "branch": "bootstrap/11-encrypted-backups",
-  "checkpoints_count": 5,
+  "checkpoints_count": 6,
   "files_touched": [
     "src/system/history/sync/files.rs"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 62778,
+    "input_tokens": 245394,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 6320384,
-    "output_tokens": 9798,
-    "api_call_count": 35
+    "cache_read_tokens": 9785728,
+    "output_tokens": 23341,
+    "api_call_count": 52
   }
 }
