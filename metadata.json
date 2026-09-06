@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1VNGF5VED58V18FWFZBR2TS",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-integrations",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/continuous-integration.md",
+    "docs/ide-integration.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 63339,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 465664,
+    "output_tokens": 2775,
+    "api_call_count": 10
+  }
+}

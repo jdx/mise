@@ -1,0 +1,1 @@
+fix the issues on [https://github.com/jdx/mise/pull/12875#issue-comment-box](https://github.com/jdx/mise/pull/12875#issue-comment-box)
