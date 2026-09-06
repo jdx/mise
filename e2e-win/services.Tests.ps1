@@ -60,7 +60,9 @@ command = "powershell.exe -NoProfile -Command Start-Sleep 300"
         $LASTEXITCODE | Should -Be 0
         schtasks /query /tn $script:Task 2>&1 | Out-Null
         $LASTEXITCODE | Should -Be 0
-        $status = (mise bootstrap services status --json | Out-String | ConvertFrom-Json)[0]
+        $json = mise bootstrap services status --json | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $status = ($json | ConvertFrom-Json)[0]
         $status.current | Should -Be 'running'
         $status.action | Should -Be 'noop'
 
@@ -70,7 +72,9 @@ scope = "user"
 command = "powershell.exe -NoProfile -Command Start-Sleep 300"
 state = "absent"
 "@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
-        $status = (mise bootstrap services status --json | Out-String | ConvertFrom-Json)[0]
+        $json = mise bootstrap services status --json | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $status = ($json | ConvertFrom-Json)[0]
         $status.action | Should -Be 'remove'
         mise bootstrap services apply --yes 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0

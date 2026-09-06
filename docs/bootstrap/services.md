@@ -45,7 +45,10 @@ One declaration is rendered for the platform's user service manager:
   is `Restart=`; on macOS `KeepAlive` (`{ SuccessfulExit = false }` for
   on-failure). Task Scheduler restarts only failed runs, so on Windows
   `"always"` and `"on-failure"` both restart up to three times a minute apart
-  after a failure and run again at logon; a clean exit is not restarted.
+  after a failure and run again at logon (when `enabled = true`); a clean
+  exit is not restarted. Strict `"always"` semantics are a Linux and macOS
+  feature; a service that must survive a clean exit on Windows should loop
+  inside its own program.
 - `environment` and `working_directory` map directly to the platform
   definition. On Windows, environment variables are set through `cmd.exe`,
   so values containing characters it would reinterpret (`%`, `"`, `&`, `|`,

@@ -538,7 +538,7 @@ struct BootstrapServicesApply {
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapServicesRemove {
-    /// The service name as declared in `[bootstrap.services]`
+    /// The installed user-service name to remove (declared or not)
     name: String,
 
     /// Print what would change without changing anything
@@ -2727,9 +2727,11 @@ impl BootstrapServicesRemove {
 
     async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
-        let declared = system::user_services::requests_from_config(&config)?
-            .iter()
-            .any(|request| request.name == self.name);
+        // best effort: a broken declaration must not block removal, which is
+        // the recovery path for exactly that state
+        let declared = system::user_services::requests_from_config(&config)
+            .map(|requests| requests.iter().any(|request| request.name == self.name))
+            .unwrap_or(false);
         let removed = system::user_services::remove_named(&self.name, self.dry_run).await?;
         let manager = system::user_services::manager_name();
         if !removed {

@@ -207,7 +207,7 @@ ssh "${ssh_args[@]}" \
    systemctl is-active --quiet docker.service
    nft list table inet mise_bootstrap | grep -q mise-bootstrap
    docker compose --project-directory /opt/mise-case --file /opt/mise-case/compose.yaml --project-name mise-bootstrap-smoke ps --status running --quiet | grep -q .
-   if systemctl --user is-system-running >/dev/null 2>&1; then
+   if systemctl --user show-environment >/dev/null 2>&1; then
      test -f "$HOME/.config/systemd/user/dev.mise.mise-case-user.service"
      systemctl --user is-active --quiet dev.mise.mise-case-user.service
    else

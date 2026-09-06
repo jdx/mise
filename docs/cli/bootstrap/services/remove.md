@@ -12,7 +12,7 @@ or task in place; this removes it once. The next `mise bootstrap`
 recreates it if it is still declared.
 
 ## Arguments
-- **`<NAME>`** — The service name as declared in `[bootstrap.services]`
+- **`<NAME>`** — The installed user-service name to remove (declared or not)
 
 ## Flags
 - **`-n --dry-run`** — Print what would change without changing anything

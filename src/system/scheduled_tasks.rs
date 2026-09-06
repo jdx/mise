@@ -306,35 +306,61 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
     let user_id = current_user_id();
     for req in requests {
         let path = definition_path(&req.name);
+        // the definition is registered from a staging file and stored only
+        // once Task Scheduler accepted it, so a failed create never leaves a
+        // definition on disk that status would take for the registered one
+        let staging = path.with_extension("xml.new");
+        let rendered = render_definition(req, &user_id)?;
         let create = [
             "/create".to_string(),
             "/tn".to_string(),
             req.task.clone(),
             "/xml".to_string(),
-            path.display().to_string(),
+            staging.display().to_string(),
             "/f".to_string(),
         ];
-        let run_or_end = if req.start {
-            ["/run".to_string(), "/tn".to_string(), req.task.clone()]
-        } else {
-            ["/end".to_string(), "/tn".to_string(), req.task.clone()]
-        };
+        let end = ["/end".to_string(), "/tn".to_string(), req.task.clone()];
+        let run = ["/run".to_string(), "/tn".to_string(), req.task.clone()];
+        // what is registered now: a running instance keeps its old process
+        // (`IgnoreNew`), so a changed definition or a stop ends it first, and
+        // a task that is not running is never ended (its message is
+        // localized, so it is not parsed)
+        let registered = query(&req.task).await?;
+        let running = registered.as_ref().is_some_and(|query| query.running);
+        let changed = registered.is_some()
+            && std::fs::read(&path).ok().as_deref() != Some(rendered.as_slice());
+        let end_first = running && (!req.start || changed);
+        let start = req.start && (!running || changed);
         if dry_run {
             miseprintln!("write {}", shell_words::join([path.display().to_string()]));
             miseprintln!("schtasks {}", shell_words::join(&create));
-            miseprintln!("schtasks {}", shell_words::join(&run_or_end));
+            if end_first {
+                miseprintln!("schtasks {}", shell_words::join(&end));
+            }
+            if start {
+                miseprintln!("schtasks {}", shell_words::join(&run));
+            }
             continue;
         }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&path, render_definition(req, &user_id)?)?;
-        schtasks(&create).await?;
-        match schtasks(&run_or_end).await {
-            Ok(()) => {}
-            // ending a task that is not running is not an error worth failing on
-            Err(err) if !req.start && end_error_is_noop(&err.to_string()) => {}
-            Err(err) => return Err(err),
+        std::fs::write(&staging, &rendered)?;
+        if let Err(err) = schtasks(&create).await {
+            let _ = std::fs::remove_file(&staging);
+            return Err(err);
+        }
+        std::fs::rename(&staging, &path)?;
+        if end_first {
+            match schtasks(&end).await {
+                Ok(()) => {}
+                // it exited between the query and now
+                Err(err) if end_error_is_noop(&err.to_string()) => {}
+                Err(err) => return Err(err),
+            }
+        }
+        if start {
+            schtasks(&run).await?;
         }
     }
     Ok(())

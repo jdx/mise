@@ -564,10 +564,12 @@ pub(crate) async fn apply(
     }
     let statuses = status(requests).await?;
     let mut targets = vec![];
+    let mut skipped = 0;
     for status in &statuses {
         match status.action {
             ResourceAction::Noop => {}
             ResourceAction::Unknown => {
+                skipped += 1;
                 warn!(
                     "user service {}: {}; not written",
                     status.name, status.current
@@ -576,7 +578,7 @@ pub(crate) async fn apply(
             _ => targets.push(status.request.clone()),
         }
     }
-    let applied = statuses.len() - targets.len();
+    let applied = statuses.len() - targets.len() - skipped;
     if applied > 0 {
         info!("user services: {applied} service(s) already applied");
     }
@@ -806,6 +808,25 @@ mod tests {
         assert!(task.start);
         let xml = scheduled_tasks::render_xml(&task, "me").unwrap();
         assert!(xml.contains("<Command>C:\\Tools\\agent.exe</Command>"));
+    }
+
+    #[test]
+    fn windows_restarts_failed_runs_only_for_always_and_on_failure() {
+        // Task Scheduler cannot restart a clean exit: both policies become
+        // "restart failed runs" (documented), and `never` sets nothing
+        for restart in [ServiceRestart::Always, ServiceRestart::OnFailure] {
+            let mut config = user_config("agent --serve");
+            config.restart = Some(restart);
+            let task = request(config).scheduled_task_request();
+            assert!(task.restart_on_failure, "{restart:?}");
+            let xml = scheduled_tasks::render_xml(&task, "me").unwrap();
+            assert!(xml.contains("<RestartOnFailure>"), "{restart:?}");
+        }
+        let mut config = user_config("agent --serve");
+        config.restart = Some(ServiceRestart::Never);
+        let task = request(config).scheduled_task_request();
+        let xml = scheduled_tasks::render_xml(&task, "me").unwrap();
+        assert!(!xml.contains("<RestartOnFailure>"));
     }
 
     #[test]
