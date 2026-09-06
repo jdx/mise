@@ -8,7 +8,9 @@ mise uses a dependency graph to manage task execution order and parallelism. Thi
 
 ### Dependency Graph Resolution
 
-When you run `mise run build`, mise creates a directed acyclic graph (DAG) of all tasks and their dependencies:
+When you run a task, mise builds a directed graph of the selected tasks and their
+declared dependencies, then rejects cycles. In this example, selecting `deploy`
+includes all of the prerequisites shown; arrows point from prerequisite to dependent:
 
 ```mermaid
 graph TD
@@ -59,7 +61,9 @@ task used as both a regular dependency and a post-dependency is executed separat
 
 #### `wait_for` - Soft Dependencies
 
-Tasks that should run first if they're part of the current execution, but whose absence doesn't cause a failure:
+Tasks that must finish first if they are already scheduled. `wait_for` does not
+schedule them. A missing task definition still causes an error unless the reference
+sets `optional = true`; see [`wait_for`](./task-configuration.html#wait-for).
 
 ```toml
 [tasks.integration-test]
@@ -120,11 +124,15 @@ Time →
 
 ### Task Sources
 
-mise discovers tasks from multiple sources in this order:
+mise loads inline TOML tasks, included task files, and executable file tasks from
+the active configuration hierarchy. A child configuration can override a parent
+configuration. An inline metadata-only definition can also add properties to an
+existing command or file task.
 
-1. **File tasks**: Executable files in task directories
-2. **TOML tasks**: Defined in `mise.toml` files
-3. **Parent directory tasks**: Available from parent directories
+There is no single source-type ordering that describes every combination. See
+[`task_config.includes`](./task-configuration.html#task_config.includes) for include
+ordering, command replacement, and metadata overlays. Use `mise tasks info <task>`
+to inspect the selected definition.
 
 ### Task Resolution Process
 
@@ -167,7 +175,7 @@ npm test
 '''
 ```
 
-The shebang ensures the script runs under bash on every platform. Without
+The shebang selects Bash, which must be installed on the host. Without
 it, mise uses the platform default inline shell (`sh -c` on Unix,
 `cmd /c` on Windows), so the bash `[ ... ]` test would fail to parse on a
 Windows host. For richer argument handling, prefer the
@@ -176,7 +184,9 @@ parameters.
 
 ### Dynamic Dependencies
 
-Tasks can specify dependencies at runtime:
+A script can invoke another task conditionally. These nested invocations are
+separate runs; they are not added to the original dependency graph and do not
+appear in `mise tasks deps`:
 
 ```bash
 #!/usr/bin/env bash
@@ -192,13 +202,14 @@ npm start
 
 ### Cross-Project Dependencies
 
-Reference tasks from other directories:
+Enable [monorepo mode](./monorepo.html#configuration) and declare the project
+roots before referencing their tasks. For projects named `api` and `frontend`:
 
 ```toml
 [tasks.deploy-all]
 depends = [
-  "../api:build",
-  "../frontend:build",
+  "//api:build",
+  "//frontend:build",
   "deploy-infrastructure"
 ]
 run = "echo 'All services deployed'"
@@ -236,7 +247,7 @@ mise run --force build     # Always run, ignore source changes
 Use `mise watch` for continuous development:
 
 ```bash
-mise watch              # Watch all task sources
+mise watch              # Watch the default task
 mise watch build test   # Watch specific tasks
 ```
 
@@ -266,7 +277,9 @@ mise run --dry-run build       # Show what would run without executing
 Error: Circular dependency detected: test → build → test
 ```
 
-Solution: Remove the circular reference or use `wait_for` instead of `depends`.
+Solution: Remove the cycle or split the shared work into a separate prerequisite.
+`wait_for` also creates ordering constraints when both tasks are scheduled, so it
+is not a general way to break a cycle.
 
 **Missing Dependencies**:
 
@@ -281,5 +294,3 @@ Solution: Define the missing task or remove the dependency.
 - Check if tasks have unnecessary dependencies
 - Use `mise tasks deps` to verify the declared dependency graph (`depends`, `wait_for`, `depends_post`)
 - Consider increasing `--jobs` if you have spare CPU cores
-
-The task architecture is designed to scale from simple single-task projects to complex multi-service applications with intricate build dependencies.

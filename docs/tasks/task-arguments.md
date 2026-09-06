@@ -1,12 +1,15 @@
 # Task Arguments
 
-Task arguments let you pass parameters to tasks, making them more flexible and reusable. There are three ways to define task arguments in mise, but only two are recommended.
+Define arguments when a task needs named inputs, validation, help, or completions.
+Without a usage specification, mise forwards extra command-line arguments to the
+underlying command; see [argument forwarding](./running-tasks.html).
 
 ## Recommended Methods
 
 ### 1. Usage Field (Preferred) {#usage-field}
 
-The **usage field** is the recommended approach for defining task arguments. It provides a clean, declarative syntax that works with both TOML tasks and file tasks.
+Use `usage` in TOML tasks and `#USAGE` comments in file tasks. Both define the
+same argument specification, which mise uses for parsing, help, and completion.
 
 See [Complete Usage Specification Reference](#complete-usage-specification-reference) for more details.
 
@@ -24,9 +27,11 @@ flag "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
 '''
 
 run = '''
-echo "Deploying to ${usage_environment?} in ${usage_region?}"
-[[ "${usage_verbose:-false}" == "true" ]] && set -x
-./deploy.sh "${usage_environment?}" "${usage_region?}"
+#!/usr/bin/env bash
+if [ "${usage_verbose:-false}" = "true" ]; then
+  echo "Verbose mode enabled"
+fi
+printf 'Selected environment: %s; region: %s\n' "${usage_environment?}" "${usage_region?}"
 '''
 ```
 
@@ -109,11 +114,13 @@ Options:
 
 ### 2. File Task Headers {#file-task-headers}
 
-For file tasks, you can define arguments directly in the file using special `#MISE` or `#USAGE` comment syntax:
+For file tasks, put argument declarations in `#USAGE` comments. `#MISE` comments
+configure task properties as TOML. This example assumes Bash and an existing
+`scripts/deploy.sh` in the project:
 
 ```bash [.mise/tasks/deploy]
 #!/usr/bin/env bash
-#MISE description "Deploy application"
+#MISE description="Deploy application"
 #USAGE arg "<environment>" help="Deployment environment" {
 #USAGE   choices "dev" "staging" "prod"
 #USAGE }
@@ -133,7 +140,8 @@ fi
 ```
 
 ::: tip Syntax Options
-Use `#MISE` (uppercase, recommended) or `#USAGE` to define arguments in file tasks. `# [MISE]` and `# [USAGE]` are also accepted as workarounds for formatters.
+Use `#MISE key=value` for task properties and `#USAGE` for the usage specification.
+`# [MISE]` and `# [USAGE]` are also accepted as workarounds for formatters.
 :::
 
 #### Mounting Generated Specs
@@ -388,6 +396,10 @@ flag "--internal-debug" hide=#true
 
 ### Combining Features Example
 
+This is an application-specific example: it assumes `npm test`, `mycli`, and
+shell functions named `deploy_service` and `deploy_all` are available. The smaller
+[quick example](#quick-example) can be run without those application components.
+
 ```mise-toml [mise.toml]
 [tasks.deploy]
 description = "Deploy application to cloud"
@@ -457,7 +469,8 @@ fi
 # Deploy services
 if [[ -n "${usage_services?}" ]]; then
   echo "Deploying services: ${usage_services?}"
-  for service in ${usage_services?}; do
+  eval "services=(${usage_services?})"
+  for service in "${services[@]}"; do
     deploy_service "$service" "$ENVIRONMENT" "$REGION" "$DRY_RUN"
   done
 else
@@ -473,13 +486,13 @@ When accessing usage-defined variables in bash scripts, use parameter expansion 
 
 ### Common Patterns
 
-| Syntax            | Behavior                     | Use Case                                           | Example                       |
-| ----------------- | ---------------------------- | -------------------------------------------------- | ----------------------------- |
-| `${var?}`         | Error if unset               | Required args or flags with defaults in usage spec | `${usage_profile?}`           |
-| `${var:?}`        | Error if unset or empty      | When you need to ensure non-empty values           | `${usage_target:?}`           |
-| `${var:-default}` | Use default if unset         | Boolean flags without `default=` in usage spec     | `${usage_clean:-false}`       |
-| `${var:=default}` | Set and use default if unset | When you want to set the variable for later use    | `${usage_dir:=.}`             |
-| `${var:+value}`   | Use value if set             | Conditional flag passing                           | `${usage_verbose:+--verbose}` |
+| Syntax            | Behavior                              | Use Case                                           | Example                       |
+| ----------------- | ------------------------------------- | -------------------------------------------------- | ----------------------------- |
+| `${var?}`         | Error if unset                        | Required args or flags with defaults in usage spec | `${usage_profile?}`           |
+| `${var:?}`        | Error if unset or empty               | When you need to ensure non-empty values           | `${usage_target:?}`           |
+| `${var:-default}` | Use default if unset or empty         | Boolean flags without `default=` in usage spec     | `${usage_clean:-false}`       |
+| `${var:=default}` | Set and use default if unset or empty | When you want to set the variable for later use    | `${usage_dir:=.}`             |
+| `${var:+value}`   | Use value if set and non-empty        | Optional string values                             | `${usage_output:+has-output}` |
 
 ### Guidelines for Usage Variables
 
@@ -488,7 +501,7 @@ When accessing usage-defined variables in bash scripts, use parameter expansion 
 Use `${usage_var?}`, since usage guarantees they are set:
 
 ```bash
-# --profile has default="debug" in usage spec
+# --profile has default="dev" in usage spec
 cargo build --profile "${usage_profile?}"
 ```
 
@@ -514,12 +527,19 @@ cargo build --target "${usage_target:?}"
 
 #### Conditional Flags
 
-Use `${usage_var:+value}` to pass flags only when set:
+Compare boolean values explicitly. The non-empty string `"false"` still satisfies
+`${var:+value}`, so that expansion does not test whether a flag is enabled:
 
 ```bash
-# Only add --verbose if the flag was provided
-mycli deploy ${usage_verbose:+--verbose}
+args=()
+if [ "${usage_verbose:-false}" = "true" ]; then
+  args+=(--verbose)
+fi
+mycli deploy "${args[@]}"
 ```
+
+This example requires Bash. `${var:+value}` is useful for optional string values,
+not for interpreting `true` and `false`.
 
 These expansions help [shellcheck](https://www.shellcheck.net/) understand your script and prevent warnings about potentially unset variables, while preserving proper error handling.
 
@@ -527,8 +547,8 @@ These expansions help [shellcheck](https://www.shellcheck.net/) understand your 
 
 ### Tera Template Functions <Badge type="danger" text="deprecated" /> {#tera-templates}
 
-::: danger Deprecated - Removal in 2026.11.0
-The Tera template method for defining task arguments is **deprecated** and will be **removed in mise 2026.11.0**.
+::: danger Deprecated - Removal in 2027.5.0
+The Tera template method for defining task arguments is **deprecated** and will be **removed in mise 2027.5.0**.
 
 **Why it's being removed:**
 
@@ -537,7 +557,7 @@ The Tera template method for defining task arguments is **deprecated** and will 
 - **Inconsistent behavior**: Behaves differently in TOML and file tasks
 - **Poor user experience**: Mixes argument definitions with script logic
 
-**Migration required:** Migrate to the [usage field](#usage-field) method before 2026.11.0.
+**Migration required:** Migrate to the [usage field](#usage-field) method before 2027.5.0.
 
 **Opt-out setting:** To disable the two-pass parsing behavior now, before removal, set:
 
@@ -599,13 +619,15 @@ Here's how to migrate from Tera templates to the usage field:
 
 #### Example 1: Simple Arguments
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+::: code-group
 
-<div>
+```mise-toml [Usage]
+[tasks.test]
+usage = 'arg "<file>" help="Test file" default="all"'
+run = 'cargo test ${usage_file?}'
+```
 
-**Old (Deprecated):**
-
-```mise-toml
+```mise-toml [Deprecated]
 [tasks.test]
 run = '''
 cargo test {{arg(
@@ -616,69 +638,57 @@ cargo test {{arg(
 '''
 ```
 
-</div>
-
-<div>
-
-**New (Preferred):**
-
-```mise-toml
-[tasks.test]
-usage = 'arg "<file>" help="Test file" default="all"'
-run = 'cargo test ${usage_file?}'
-```
-
-</div>
-
-</div>
+:::
 
 #### Example 2: Multiple Arguments with Flags
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+::: code-group
 
-<div>
-
-**Old (Deprecated):**
-
-```mise-toml
-[tasks.build]
-run = [
-  'cargo build {{arg(name="target", default="debug")}}',
-  './package.sh {{flag(name="verbose")}}'
-]
-```
-
-</div>
-
-<div>
-
-**New (Preferred):**
-
-```mise-toml
+```mise-toml [Usage]
 [tasks.build]
 usage = '''
-arg "<target>" default="debug"
+arg "<profile>" default="dev"
 flag "-v --verbose"
 '''
 run = [
-  'cargo build ${usage_target?}',
+  'cargo build --profile "${usage_profile?}"',
   './package.sh ${usage_verbose:-false}'
 ]
 ```
 
-</div>
+```mise-toml [Deprecated]
+[tasks.build]
+run = [
+  'cargo build --profile {{arg(name="profile", default="dev")}}',
+  './package.sh {{flag(name="verbose")}}'
+]
+```
 
-</div>
+:::
 
 #### Example 3: Options with Choices
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+::: code-group
 
-<div>
+```mise-toml [Usage]
+[tasks.deploy]
+usage = '''
+flag "--env <env>" {
+  choices "dev" "prod"
+}
+flag "--force"
+'''
+run = '''
+#!/usr/bin/env bash
+args=(--env "${usage_env?}")
+if [ "${usage_force:-false}" = "true" ]; then
+  args+=(--force)
+fi
+deploy "${args[@]}"
+'''
+```
 
-**Old (Deprecated):**
-
-```mise-toml
+```mise-toml [Deprecated]
 [tasks.deploy]
 run = '''
 deploy {{option(
@@ -688,55 +698,28 @@ deploy {{option(
 '''
 ```
 
-</div>
-
-<div>
-
-**New (Preferred):**
-
-```mise-toml
-[tasks.deploy]
-usage = '''
-flag "--env <env>" {
-  choices "dev" "prod"
-}
-flag "--force"
-'''
-run = 'deploy --env ${usage_env?} ${usage_force:+--force}'
-```
-
-</div>
-
-</div>
+:::
 
 #### Example 4: Variadic Arguments
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+::: code-group
 
-<div>
+```mise-toml [Usage]
+[tasks.lint]
+usage = 'arg "<files>" var=#true'
+run = '''
+#!/usr/bin/env bash
+eval "files=(${usage_files?})"
+eslint "${files[@]}"
+'''
+```
 
-**Old (Deprecated):**
-
-```mise-toml
+```mise-toml [Deprecated]
 [tasks.lint]
 run = 'eslint {{arg(name="files", var=true)}}'
 ```
 
-</div>
-
-<div>
-
-**New (Preferred):**
-
-```mise-toml
-[tasks.lint]
-usage = 'arg "<files>" var=#true'
-run = 'eslint ${usage_files?}'
-```
-
-</div>
-
-</div>
+:::
 
 ::: tip Handling Arguments with Spaces
 If your variadic arguments may contain spaces, convert the variable to a bash array:
@@ -745,6 +728,7 @@ If your variadic arguments may contain spaces, convert the variable to a bash ar
 [tasks.process]
 usage = 'arg "<files>" var=#true'
 run = '''
+#!/usr/bin/env bash
 eval "files=($usage_files)"
 for f in "${files[@]}"; do
   process "$f"

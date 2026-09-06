@@ -4,7 +4,10 @@
 > Remote build caching is experimental. This document defines protocol version 1 for mise task
 > artifact caching.
 
-The protocol provides a secure, content-addressed cache for task executions and their outputs. It
+This page is for implementers of a remote cache client or server. To configure
+caching for a project, start with [Task caching](./caching.html).
+
+The protocol defines a content-addressed cache for task executions and their outputs. It
 does not expose mise's local cache directories, manifests, or archive formats. Local storage is an
 implementation detail and may use archives or packs without changing the remote protocol.
 
@@ -47,7 +50,7 @@ The URL prefix `/v1` is the protocol's major version. Compatible additions are a
 capabilities and do not require a new URL prefix. An incompatible wire or integrity change requires
 a new major protocol; version 1 must not be used as an alias for an incompatible implementation.
 
-Servers must ignore unknown JSON response fields. Clients must not send unknown request fields
+Clients must ignore unknown JSON response fields. Clients must not send unknown request fields
 unless a negotiated capability permits them.
 
 GitHub Actions protected-branch `push` jobs and GitLab protected-branch push pipelines may use the

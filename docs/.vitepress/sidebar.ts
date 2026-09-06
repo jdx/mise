@@ -212,6 +212,7 @@ export const sidebar: SidebarItem[] = [
       { text: "File Tasks", link: "/tasks/file-tasks" },
       { text: "Task Arguments", link: "/tasks/task-arguments" },
       { text: "Task Configuration", link: "/tasks/task-configuration" },
+      { text: "Task Caching", link: "/tasks/caching" },
       { text: "Remote Cache Protocol", link: "/tasks/remote-cache-protocol" },
       { text: "Task Templates", link: "/tasks/templates" },
       { text: "Monorepo Tasks", link: "/tasks/monorepo" },

@@ -1,50 +1,81 @@
 # Tasks
 
-> Define and run project _tasks_ for building, testing, linting, deploying, and
-> everyday development workflows.
+A task is a named command or script that runs with your project's tools and
+environment variables. Use tasks for builds, tests, linters, development servers,
+and other commands you want teammates and CI to run consistently.
 
-You can define tasks in `mise.toml` files or as standalone shell scripts. They are useful for
-running linters, tests, builds, servers, and other commands that are specific to a
-project. Tasks launched with mise include the mise environment—the tools and env vars defined
-in `mise.toml`.
+## Run your first task
 
-Here are my favorite features of mise's task runner:
+Create this file in a project directory:
 
-- building dependencies in parallel—by default, with no configuration required
-- last-modified checking to avoid rebuilding when there are no changes—requires minimal config
-- [mise watch](./running-tasks.html#watching-files) to automatically rebuild on changes—no configuration required, but it helps
-- the ability to write tasks as actual bash script files rather than inside yml/json/toml strings, which lack
-  syntax highlighting and linting/checking support
+```toml [mise.toml]
+[tasks.hello]
+description = "Check that task execution works"
+run = "echo hello from mise"
+```
 
-There are 2 ways to define tasks: [inside of `mise.toml` files](./toml-tasks.html) or as [standalone shell scripts](./file-tasks.html). You can also use [task templates](./templates.html) to create reusable task definitions.
+```sh
+mise run hello
+# hello from mise
+```
+
+Shell activation is not required. mise loads the configuration for the task and,
+by default, installs any missing configured tools before starting it.
+Use `mise tasks ls` to list tasks and `mise tasks info hello` to inspect one.
+
+## Choose a task format
+
+| Format                             | Use it when                                                          | Configuration                                       |
+| ---------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------- |
+| [TOML tasks](./toml-tasks.html)    | Commands are short or mostly configure dependencies and options.     | `[tasks.<name>]` in `mise.toml`                     |
+| [File tasks](./file-tasks.html)    | A script benefits from its language's editor support and lint tools. | A script in `mise-tasks/` or another task directory |
+| [Task templates](./templates.html) | Several tasks share configuration.                                   | `[task_templates.<name>]`, selected with `extends`  |
+
+The formats use the same task runner. Start with TOML and move longer scripts into
+files as they grow.
 
 ## Tasks in `mise.toml` files
 
-Tasks are defined in the `[tasks]` section of the `mise.toml` file.
+A dependency-only task can group other tasks. Prerequisites may run in parallel;
+their order in `depends` does not establish a sequence:
 
 ```toml [mise.toml]
-[tasks.build]
-description = "Build the CLI"
-run = "cargo build"
+[tasks.check]
+depends = ["format", "test"]
+
+[tasks.format]
+run = "echo checking formatting"
+
+[tasks.test]
+run = "echo running tests"
 ```
 
-You can then run the task with `mise run build` (or `mise build` if it doesn't conflict with an existing command).
-
-- See [TOML tasks](./toml-tasks.html) for more information.
-- See [Running Tasks](./running-tasks.html) to learn how to run tasks.
+`mise run check` runs both prerequisites. Replace the `echo` commands with your
+project's checks. Use a [run array](./running-tasks.html#execution-order) when one
+step must finish before the next starts.
 
 ## File Tasks
 
-You can also define tasks as standalone shell scripts. All you have to do is create an `executable` file in a specific directory like `mise-tasks`.
+Save a script as `mise-tasks/hello`:
 
-```sh [mise-tasks/build]
+```sh [mise-tasks/hello]
 #!/usr/bin/env bash
-#MISE description="Build the CLI"
-cargo build
+#MISE description="Check that task execution works"
+echo "hello from a file task"
 ```
 
-You can then run the task with `mise run build`, as with TOML tasks.
-See the [file tasks reference](./file-tasks.html) for more information.
+On macOS and Linux, make it executable with `chmod +x mise-tasks/hello`, then run
+`mise run hello`. This is an alternative to the TOML task above. The
+[file task guide](./file-tasks.html#windows) explains Windows detection and interpreters.
+
+## Build a task workflow
+
+- [Running tasks](./running-tasks.html): arguments, wildcards, parallelism, and execution order.
+- [Task arguments](./task-arguments.html): define a CLI with validation, help, and completions.
+- [Task configuration](./task-configuration.html): find a specific property and its scope.
+- [Task caching](./caching.html): choose freshness checks or cached outputs and declare their inputs.
+- [Monorepo tasks](./monorepo.html): run tasks across configured project roots.
+- [Task architecture](./architecture.html): understand discovery, scheduling, and failures.
 
 ## Environment variables passed to tasks
 

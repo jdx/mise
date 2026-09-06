@@ -5,6 +5,7 @@ Tasks can be defined in `mise.toml` files in different ways. Trivial tasks can b
 ## Trivial task examples
 
 ```mise-toml [mise.toml]
+[tasks]
 build = "cargo build"
 test = "cargo test"
 lint = "cargo clippy"
@@ -79,7 +80,7 @@ mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit
 
 adds the following to `mise.toml`:
 
-```shell
+```toml
 [tasks.pre-commit]
 depends = ["test", "render"]
 run = "echo pre-commit"
@@ -198,8 +199,10 @@ its [template](../templates.md).
 
 ### Confirmation
 
-A message to show before running the task. The user is prompted to confirm before the task runs.
-Set the `confirm` key to the message to display.
+Set `confirm` to prompt before the task's own command runs. Its `depends` tasks
+have already run at this point. To prompt before starting that work, put the
+confirmation on those tasks or invoke them through a `run` array. See
+[`confirm`](./task-configuration.html#confirm).
 
 ```mise-toml
 [tasks.release]
@@ -467,7 +470,7 @@ arg "<file>" help="Test file to run" default="all"
 flag "--format <format>" help="Output format" default="text"
 flag "-v --verbose" help="Enable verbose output"
 '''
-run = 'cargo test ${usage_file?} --format ${usage_format?}'
+run = 'echo "Testing ${usage_file?} with format ${usage_format?}"'
 ```
 
 Arguments defined in the usage field are available as environment variables prefixed with `usage_`.

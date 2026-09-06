@@ -4,7 +4,12 @@ mise supports monorepo-style task organization with target path syntax. This let
 
 ## Overview
 
-When `monorepo_root` is enabled in your root `mise.toml`, mise automatically discovers tasks in subdirectories and prefixes them with their relative path from the monorepo root. This creates a unified task namespace across your entire repository.
+Set `monorepo_root = true` and list project directories in
+`[monorepo].config_roots`. mise loads their tasks into a shared namespace, with
+each task prefixed by its path relative to the monorepo root. Configuration roots
+and the experimental [workspace project graph](#workspace-project-graph-experimental)
+are separate: the former locate task configuration; the latter infer relationships
+from package metadata.
 
 ::: tip
 The directory containing a `mise.toml` file is called the **config_root**. In monorepo mode, each project can have its own config_root with its own configuration, separate from the monorepo root. If you use one of the alternate paths in a subdirectory, such as `./projects/frontend/.mise/config.toml`, the config_root is `./projects/frontend`, not `./projects/frontend/.mise`.
@@ -16,17 +21,20 @@ The directory containing a `mise.toml` file is called the **config_root**. In mo
 - **Clear task namespacing**: Tasks are prefixed with their location from the monorepo root
 - **Pattern-based execution**: Use wildcards to run tasks across multiple projects
 - **Tool and environment layering**: Subdirectory tasks use tools and environment variables from parent configs, but can also define their own in their config_root
-- **Automatic trust propagation**: When the monorepo root is trusted, all descendant configs are automatically trusted
+- **Shared trust boundary**: In normal mode, trusting a monorepo root also trusts descendant configs. Review them as part of the repository; [paranoid mode](/paranoid.html) requires explicit trust.
 
 ## Configuration
 
 ### Enabling Monorepo Mode
 
-Add `monorepo_root = true` to your root `mise.toml`:
+Declare the root and its project directories in the repository's `mise.toml`:
 
 ```toml
 # /myproject/mise.toml
 monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/frontend", "projects/backend"]
 
 [tools]
 # Tools defined here apply to all subdirectories
@@ -112,9 +120,8 @@ mise build       # Also works (for migration compatibility)
 run = "eslint ."
 
 [tasks.build]
-depends = [":lint"]  # Recommended: Explicit and clear
-# OR
-depends = ["lint"]   # Also works (for migration compatibility)
+depends = [":lint"]  # Explicit reference to this config root
+# Alternatively, replace the line above with: depends = ["lint"]
 run = "webpack build"
 ```
 
@@ -182,8 +189,8 @@ You can combine both types of wildcards for powerful patterns:
 # Run all tasks in all projects (idk why you'd ever want to do this, but you can)
 mise '//...:*'
 
-# Run all test tasks in all projects
-mise '//...:test*'
+# Run test and nested test groups in all projects
+mise run '//...:test' ::: '//...:test:**'
 
 # Run build tasks in all frontend-related projects
 mise //.../frontend:build
@@ -735,7 +742,8 @@ run = "npm run test:unit"
 run = "npm run test:e2e"
 ```
 
-Then run all test tasks: `mise '//...:test*'`
+Then run the named test task and nested test groups:
+`mise run '//...:test' ::: '//...:test:**'`.
 
 ### 4. Group Related Projects
 
@@ -761,78 +769,27 @@ mise //apps/...:test       # Test all apps
 
 ## Comparison to Other Tools
 
-The monorepo ecosystem offers many excellent tools, each with different strengths. Here's how mise's Monorepo Tasks compares:
+Choose mise when you want project-specific tools, environment variables, and task
+commands in the same configuration. Existing package scripts and build systems
+can remain responsible for compilation; a mise task invokes them with the selected
+environment.
 
-### Simple Task Runners
+Decide which layer owns each behavior before combining task runners:
 
-**Taskfile** and **Just** are fantastic for single-project task automation. They're lightweight and easy to set up, but they weren't designed with monorepos in mind. While you can have multiple Taskfiles/Justfiles in a repo, they don't provide unified task discovery, cross-project wildcards, or automatic tool/environment layering across projects.
-
-**mise's advantage:** Automatic task discovery across the entire monorepo with a unified namespace and powerful wildcard patterns.
-
-### JavaScript-Focused Tools
-
-**Nx**, **Turborepo**, and **Lerna** are powerful tools specifically designed for JavaScript/TypeScript monorepos.
-
-- **Nx** offers incredible features like dependency graph visualization, affected project detection, code generation, and computation caching. It has a massive plugin ecosystem and excels at frontend monorepos.
-- **Turborepo** focuses on blazing-fast task caching and parallel execution with minimal configuration.
-- **Lerna** pioneered JavaScript monorepo management with package versioning and publishing workflows.
-
-**mise's advantage:** Language-agnostic support. While these tools excel in JS/TS ecosystems, mise works equally well with Rust, Go, Python, Ruby, or any mix of languages. You also get unified tool version management (not just tasks) and environment variables across your entire stack.
-
-### Large-Scale Build Systems
-
-**Bazel** (Google) and **Buck2** (Meta) are industrial-strength build systems designed for massive, multi-language monorepos at companies with thousands of engineers.
-
-- **Bazel** offers distributed caching, remote execution, and hermetic builds with fine-grained dependency tracking.
-- **Buck2** is a modern rewrite with a clean architecture and impressive performance optimizations.
-
-Both are extremely powerful but come with significant complexity:
-
-- Hermetic builds that require strict isolation and complete dependency control
-- A steep learning curve with specialized DSLs (Starlark, etc.)
-- Complex configuration that requires dedicated build engineers
-- Heavy infrastructure investment for remote caching
-- Strict constraints on how you structure your code
-
-**mise's advantage:** Simplicity through non-hermetic builds. mise doesn't try to control your entire build environment in isolation - instead, it manages tools and tasks in a flexible, practical way. This non-hermetic approach means you can adopt mise without restructuring your codebase or learning a new language. You get powerful monorepo task management with simple TOML configuration - enough for most teams, without the enterprise-level complexity that hermetic builds require.
-
-### Other Notable Tools
-
-**Rush** (Microsoft) offers strict dependency management and build orchestration for JavaScript monorepos, with a focus on safety and convention adherence.
-
-**Moon** is a newer Rust-based build system that aims to be developer-friendly while supporting multiple languages.
-
-### The mise Sweet Spot
-
-mise's Monorepo Tasks aims to hit the sweet spot between simplicity and power:
-
-| Feature                 | Simple Runners | JS-Focused | Build Systems | mise |
-| ----------------------- | -------------- | ---------- | ------------- | ---- |
-| Multi-language support  | ✅             | ❌         | ✅            | ✅   |
-| Easy to learn           | ✅             | ⚠️         | ❌            | ✅   |
-| Unified task discovery  | ❌             | ✅         | ✅            | ✅   |
-| Wildcard patterns       | ❌             | ⚠️         | ✅            | ✅   |
-| Tool version management | ❌             | ❌         | ⚠️            | ✅   |
-| Environment layering    | ❌             | ⚠️         | ❌            | ✅   |
-| Minimal setup           | ✅             | ⚠️         | ❌            | ✅   |
-| Task caching            | ❌             | ✅         | ✅            | ✅   |
-
-**When to choose mise:**
-
-- ✅ Polyglot monorepos (multiple languages)
-- ✅ You want unified tool + task management
-- ✅ You prefer simplicity over maximum performance
-- ✅ You're already using mise for tool management
-
-**When to consider alternatives:**
-
-- You're exclusively JavaScript/TypeScript → Nx or Turborepo might offer more JS-specific features
-- You're at Google/Meta scale with thousands of engineers → Bazel or Buck2 offer distributed build infrastructure
-- You need advanced task caching → Nx, Turborepo, or Bazel offer sophisticated caching systems
-
-The best tool is the one that fits your team's needs. mise's Monorepo Tasks is designed for teams that want powerful monorepo management without the complexity overhead, especially when working across multiple languages.
+- **Dependency ordering:** declare prerequisites in mise, or delegate the complete
+  build graph to an existing build system. Avoid duplicating conflicting graphs.
+- **Caching:** declare all relevant inputs and outputs before enabling mise's
+  [artifact cache](./caching.html). A task wrapper does not make an arbitrary
+  command deterministic.
+- **Package management:** mise can select the runtime and package manager; the
+  project's package manager still installs application dependencies.
+- **Isolation:** use [sandboxing](/sandboxing.html) for supported restrictions.
+  Tool version selection alone does not isolate filesystem or network access.
 
 ## Task Templates
+
+The following Python example assumes a uv project with `pytest` and `pytest-cov`
+in its development dependencies.
 
 For monorepos with similar task patterns across projects, [task templates](/tasks/templates) let you define reusable task definitions at the monorepo root:
 
@@ -840,13 +797,16 @@ For monorepos with similar task patterns across projects, [task templates](/task
 # Root mise.toml
 monorepo_root = true
 
+[monorepo]
+config_roots = ["packages/api"]
+
 [task_templates."python:build"]
 run = "uv build"
 tools = { python = "3.12", uv = "latest" }
 
 [task_templates."python:test"]
-run = "pytest"
-tools = { python = "3.12" }
+run = "uv run pytest"
+tools = { python = "3.12", uv = "latest" }
 depends = ["build"]
 ```
 
@@ -859,7 +819,7 @@ extends = "python:build"
 
 [tasks.test]
 extends = "python:test"
-run = "pytest --cov"  # Override with coverage
+run = "uv run pytest --cov"  # Override with coverage
 ```
 
 See [Task Templates](/tasks/templates) for complete documentation.
