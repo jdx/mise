@@ -501,11 +501,17 @@ async fn schtasks(args: &[String]) -> Result<()> {
         .await
         .map_err(|_| eyre!("`schtasks {}` timed out", shell_words::join(args)))??;
     if !output.status.success() {
-        bail!(
-            "`schtasks {}` failed: {}",
-            shell_words::join(args),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+        // schtasks writes its SUCCESS and ERROR lines to stdout
+        let printed = [
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        ]
+        .iter()
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+        bail!("`schtasks {}` failed: {printed}", shell_words::join(args));
     }
     Ok(())
 }
