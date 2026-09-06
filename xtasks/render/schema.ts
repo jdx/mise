@@ -17,6 +17,10 @@ type Props = {
   deprecated?: string;
   enum?: EnumItem[];
   rc?: boolean;
+  /// Value schema for a map setting whose values are not plain strings.
+  /// Emitted verbatim as `additionalProperties`, so it is written in
+  /// settings.toml as the JSON Schema fragment it becomes.
+  value_schema?: JsonObject;
 };
 
 type SettingsNode = Props | { [key: string]: SettingsNode };
@@ -33,9 +37,7 @@ type Element = {
     type: string | string[];
     enum?: EnumValue[];
   };
-  additionalProperties?: {
-    type: string;
-  };
+  additionalProperties?: JsonObject | { type: string };
 };
 
 type NestedElement = {
@@ -170,7 +172,10 @@ function buildElement(key: string, props: Props): Element {
   }
 
   if (type === "object") {
-    element.additionalProperties = {
+    // A map's values are strings unless the setting says otherwise. Declaring
+    // the shape in settings.toml keeps this generator from having to know about
+    // any particular setting.
+    element.additionalProperties = props.value_schema ?? {
       type: "string",
     };
   }

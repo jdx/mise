@@ -153,6 +153,41 @@ as this feature can redirect tool downloads to arbitrary locations.
 >
 > **Bad**: `"regex:github\\.com"` (matches `evil-github.com`)
 > **Good**: `"regex:^https://github\\.com"` (only matches actual GitHub URLs)
+>
+> If a replacement points at a server that should **not** receive the header — a
+> mirror allowing anonymous reads, say, which would reject a forwarded forge
+> token — set `forward_auth = false` on that replacement:
+>
+> ```toml
+> [settings.url_replacements]
+> # relays to the upstream forge, so it needs the token
+> "https://api.github.com/enterprise" = "https://proxy.internal/github"
+> # a mirror that must not receive it
+> 'regex:^https://api\.github\.com/repos/acme' = { url = "https://artifactory.example.com/acme", forward_auth = false }
+> ```
+>
+> It is per replacement rather than global because one configuration can contain
+> both kinds. A rewrite within the **same origin** keeps the header either way,
+> since the credential is still valid there. Origin means scheme, host and port
+> together, so an https-to-http downgrade or a port change counts as a different
+> server even under the same hostname.
+>
+> Note what `forward_auth = false` actually does: it drops **any** `Authorization`
+> header on that request. mise cannot tell which credential a caller supplied or
+> what it was built for. The header is dropped before `.netrc` is consulted, so an
+> entry for the new host can still supply the credentials it does want.
+>
+> **The caller's `Authorization` never survives a downgrade from HTTPS**, whatever
+> `forward_auth` says. That header was built for the original host, so a downgrade
+> would put it in the clear on the way to a different one. Whether a given server
+> may see it is what `forward_auth` decides; whether it travels unencrypted to a
+> server it was not issued for is not something a configuration opts into.
+>
+> `.netrc` is not covered by that rule. Its entries are written by you against the
+> host actually being contacted rather than carried over from somewhere else, and
+> mise already applies them to a plain `http://` URL that no replacement touched --
+> so refusing them only after a downgrade would not keep anything off the wire. If
+> a credential should never travel unencrypted, leave that host out of `.netrc`.
 
 ## Authentication
 
