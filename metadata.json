@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1W2WERYFVYMD011EDGNA4AB",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-restack-8",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "src/system/history/watch/runtime.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 170993,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6004992,
+    "output_tokens": 25508,
+    "api_call_count": 59
+  }
+}
