@@ -8,7 +8,17 @@ const TASK_PLACEHOLDER_END: &str = "<!-- /mise-tasks -->";
 
 /// Generate documentation for tasks in a project
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise generate task-docs --style detailed
+mise generate task-docs --output TASKS.md"###
+    ),
+    example(
+        r###"mise generate task-docs --inject --output README.md"###,
+        help = r###"README.md must already contain both mise-tasks marker comments"###
+    )
+)]
 pub(super) struct TaskDocs {
     /// Insert the documentation into an existing file
     ///
@@ -148,13 +158,6 @@ fn inject_task_docs(contents: &str, doc: &str, output: &Path) -> eyre::Result<St
     contents.replace_range(body_start..end, doc);
     Ok(contents)
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise generate task-docs</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

@@ -8,7 +8,14 @@ use crate::config::Config;
 /// This is the contents of a tool_alias.<TOOL> entry in ~/.config/mise/config.toml
 ///
 #[derive(Debug, usage_rs::Args)]
-#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    example(
+        r###"mise tool-alias set node project 20
+mise tool-alias get node project
+20"###
+    ),
+    verbatim_doc_comment
+)]
 pub(super) struct ToolAliasGet {
     /// The tool to show the alias for
     #[usage(value_name = "TOOL")]
@@ -32,11 +39,3 @@ impl ToolAliasGet {
         }
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise tool-alias get node lts-hydrogen</bold>
-    20.0.0
-"#
-);

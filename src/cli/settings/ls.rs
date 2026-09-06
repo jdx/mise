@@ -14,7 +14,14 @@ use tabled::{Table, Tabled};
 /// Note that aliases are also stored in this file
 /// but managed separately with `mise tool-alias`
 #[derive(Debug, usage_rs::Args)]
-#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    example(
+        r###"mise settings ls
+mise settings ls --all
+mise settings ls python --json-extended"###
+    ),
+    verbatim_doc_comment
+)]
 pub(crate) struct SettingsLs {
     /// Name of setting
     pub setting: Option<String>,
@@ -162,19 +169,6 @@ impl SettingsLs {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise settings ls</bold>
-    idiomatic_version_file = false
-    ...
-
-    $ <bold>mise settings ls python</bold>
-    default_packages_file = "~/.default-python-packages"
-    ...
-"#
-);
 
 #[derive(Debug, Tabled)]
 #[tabled(rename_all = "PascalCase")]

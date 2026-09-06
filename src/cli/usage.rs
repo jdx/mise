@@ -16,9 +16,9 @@ fn prepare_task_runner(command: &mut usage::SpecCommand) {
         flag.required_if.retain(|selector| selector != "TASK");
         flag.required_unless.retain(|selector| selector != "TASK");
     }
-    command
-        .mounts
-        .push(usage::SpecMount::new("mise tasks --usage".to_string()));
+    let mut mount = usage::SpecMount::new("mise tasks --usage".to_string());
+    mount.synopsis = Some("[TASK] [ARGS]…".to_string());
+    command.mounts.push(mount);
     command.restart_token = Some(":::".to_string());
 }
 
@@ -65,6 +65,8 @@ pub(super) fn spec() -> usage::Spec {
         // so it is applied to the derived spec; see command_effects.
         crate::cli::command_effects::apply(&mut spec);
 
+        spec.restamp();
+
         spec
     }
 }
@@ -82,10 +84,85 @@ impl Usage {
     pub(crate) fn run(self) -> Result<()> {
         // 3.6 added `effect=` (jdx/usage#739), 4.0 added it on flags and args
         // (jdx/usage#742), and 6.6 added flags scoped to implicit clauses
-        // (jdx/usage#1343). Older `usage` CLIs reject the spec outright, so this
+        // (jdx/usage#1343). 6.8 adds mount synopsis metadata (jdx/usage#1393).
+        // Older `usage` CLIs reject the spec outright, so this
         // moves in lockstep with the fields and layouts the spec actually carries.
-        let min_version = r#"min_usage_version "6.6""#;
+        let min_version = r#"min_usage_version "6.8""#;
         println!("{min_version}\n{}", completion_spec().to_string().trim());
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn example_descriptions_are_not_shell_input() {
+        let spec = super::spec();
+        for name in ["prune", "set", "watch", "en", "registry", "reshim"] {
+            for example in &spec.cmd.subcommands[name].examples {
+                for line in example.code.lines() {
+                    assert!(
+                        !line.starts_with("rm -rf ")
+                            && !line.starts_with("Runs the ")
+                            && !line.starts_with("Skip loading ")
+                            && !line.starts_with("Enter value for ")
+                            && line != "v20.0.0"
+                            && line != "core:node"
+                            && !line.ends_with("Encryption:"),
+                        "{name}: {line}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn task_mounts_describe_arguments_without_discovery() {
+        let spec = super::spec();
+        for cmd in [
+            &spec.cmd.subcommands["run"],
+            &spec.cmd.subcommands["tasks"].subcommands["run"],
+        ] {
+            assert_eq!(cmd.mounts[0].synopsis.as_deref(), Some("[TASK] [ARGS]…"));
+            assert!(cmd.usage.ends_with("[TASK] [ARGS]…"), "{}", cmd.usage);
+            let page = usage::docs::markdown::MarkdownRenderer::new(spec.clone())
+                .with_link_extension(".html")
+                .render_cmd(cmd)
+                .unwrap();
+            assert!(page.contains("[TASK] [ARGS]…"), "{page}");
+        }
+    }
+
+    #[test]
+    fn command_examples_reach_the_spec_and_renderers() {
+        let spec = super::spec();
+        let markdown = usage::docs::markdown::MarkdownRenderer::new(spec.clone());
+        for name in ["activate", "run", "install", "env", "use"] {
+            let cmd = &spec.cmd.subcommands[name];
+            assert!(
+                !cmd.examples.is_empty(),
+                "{name} has no structured examples"
+            );
+            let help = usage::docs::cli::render_help(&spec, cmd, true);
+            assert_eq!(help.matches("Examples:").count(), 1, "{help}");
+            let page = markdown.render_cmd(cmd).unwrap();
+            assert_eq!(page.matches("## Examples").count(), 1, "{page}");
+            for example in &cmd.examples {
+                assert!(!example.code.contains("<bold>"));
+                assert!(!example.code.contains('\u{1b}'));
+                assert!(page.contains(&example.code), "{name}: {}", example.code);
+            }
+        }
+        let reparsed: usage::Spec = spec.to_string().parse().unwrap();
+        assert_eq!(
+            reparsed.cmd.subcommands["run"].examples.len(),
+            spec.cmd.subcommands["run"].examples.len()
+        );
+        assert!(
+            usage::docs::manpage::ManpageRenderer::new(spec)
+                .render()
+                .unwrap()
+                .contains("Examples")
+        );
     }
 }

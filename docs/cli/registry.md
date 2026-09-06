@@ -23,14 +23,16 @@ For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
   Requires --json. Security info is de-duplicated across all of a tool's backends. This can add noticeable time for large listings since each backend's security info is resolved individually.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+List the registry, then inspect node. The second command prints `core:node`.
 
 ```
-$ mise registry
-node    core:node
-poetry  asdf:mise-plugins/mise-poetry
-ubi     cargo:ubi-cli
+mise registry
+mise registry node
+```
 
-$ mise registry poetry
-asdf:mise-plugins/mise-poetry
+```
+mise registry --backend aqua
+mise registry --json
 ```

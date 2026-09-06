@@ -23,14 +23,11 @@ Can also show remotely available plugins to install.
   to show core and user plugins
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise plugins ls
-cmake
-poetry
-
-$ mise plugins ls --urls
-cmake     https://github.com/mise-plugins/vfox-cmake.git
-poetry    https://github.com/mise-plugins/vfox-poetry.git
+mise plugins ls
+mise plugins ls --urls
+mise plugins ls --core --user
+mise plugins ls --outdated
 ```

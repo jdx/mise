@@ -37,19 +37,26 @@ Generate shell completions
   without being rewritten.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Install for your shell; follow any printed one-time setup instructions
 
 ```
-# put it where the shell looks, and print any one-time line it still needs
-$ mise completion zsh --install
+mise completion zsh --install
+mise completion bash --install
+mise completion fish --install
+mise completion powershell --install
+```
 
-# a tool's completion, from the packslip it was installed from
-$ mise completion zsh --tool rg
-$ mise completion zsh --tool rg --install
+Print a completion script to inspect or save at a custom path
 
-# or choose the path yourself
-$ mise completion bash > ~/.local/share/bash-completion/completions/mise
-$ mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
-$ mise completion fish > ~/.config/fish/completions/mise.fish
-$ mise completion powershell >> $PROFILE
+```
+mise completion zsh
+```
+
+For a tool installed through Packslip with completion resources
+
+```
+mise completion zsh --tool rg
+mise completion zsh --tool rg --install
 ```

@@ -19,7 +19,7 @@ Add a Homebrew tap URL to [bootstrap.brew.taps]
   **Aliases:** `--file`
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise bootstrap packages brew tap railwaycat/emacsmacport

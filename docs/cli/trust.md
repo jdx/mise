@@ -40,12 +40,16 @@ worktrees can check out branches with different config contents.
 - **`--untrust`** — Remove explicit trust for this config
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+trusts ~/some_dir/mise.toml
 
 ```
-# trusts ~/some_dir/mise.toml
-$ mise trust ~/some_dir/mise.toml
+mise trust ~/some_dir/mise.toml
+```
 
-# trusts mise.toml in the current or parent directory
-$ mise trust
+trusts mise.toml in the current or parent directory
+
+```
+mise trust
 ```

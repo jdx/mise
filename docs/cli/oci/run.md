@@ -45,18 +45,24 @@ one of: `podman`, `docker`.
 - **`-w --workdir <WORKDIR>`** — Working directory inside the container
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Build the current mise.toml and drop into bash:
 
 ```
-Build the current mise.toml and drop into bash:
-$ mise oci run -it -- bash
+mise oci run -it -- bash
+```
 
-Run a one-shot command with env + volume (note: `-v` is reserved
-for --verbose, so use `--volume`):
-$ mise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test
+Run a one-shot command with env + volume (note: `-v` is reserved for --verbose, so use `--volume`):
+
+```
+mise oci run -e DEBUG=1 --volume "$PWD:/work" -w /work -- npm test
+```
 
 Re-use a previously built layout (skip the build step):
-$ mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'
+
+```
+mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'
 ```
 
 Engines:

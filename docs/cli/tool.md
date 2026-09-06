@@ -21,10 +21,10 @@ Show information about a tool
 - **`--tool-options`** — Only show tool options
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise tool node
+mise tool node
 Backend:            core
 Installed Versions: 20.0.0 22.0.0
 Active Version:     20.0.0

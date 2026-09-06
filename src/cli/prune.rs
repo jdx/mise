@@ -31,7 +31,13 @@ use super::trust::Trust;
 ///
 /// You can list prunable tools with `mise ls --prunable`
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise prune --dry-run",
+        help = "Preview unused versions without deleting them. Example output: `rm -rf ~/.local/share/mise/installs/node/20.0.0` and `rm -rf ~/.local/share/mise/installs/node/20.0.1`."
+    )
+)]
 pub(crate) struct Prune {
     /// Prune only these tools
     #[usage()]
@@ -240,12 +246,3 @@ fn explain_removal(tv: &ToolVersion, needed: &NeededVersions) {
         kept.join("; ")
     );
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise prune --dry-run</bold>
-    rm -rf ~/.local/share/mise/versions/node/20.0.0
-    rm -rf ~/.local/share/mise/versions/node/20.0.1
-"#
-);

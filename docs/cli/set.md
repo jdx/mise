@@ -46,34 +46,56 @@ Use `-E <env>` to create/modify environment-specific config files like `mise.<en
   When using --stdin, provide a single key without a value. The value will be read from stdin until EOF.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise set NODE_ENV=production
+mise set NODE_ENV=production
+```
 
-$ mise set NODE_ENV
-production
+Read NODE_ENV; example output: `production`.
 
-$ mise set -E staging NODE_ENV=staging
-# creates or modifies mise.staging.toml
+```
+mise set NODE_ENV
+```
 
-$ mise set
-key       value       source
-NODE_ENV  production  ~/.config/mise/config.toml
+Create or modify mise.staging.toml.
 
-$ mise set --prompt PASSWORD
-Enter value for PASSWORD: [hidden input]
+```
+mise set -E staging NODE_ENV=staging
+```
 
-Multiline Values (--stdin):
+List keys, values, and source files.
 
-$ cat private.key | mise set --stdin MY_KEY
+```
+mise set
+```
 
-$ printf "line1\nline2" | mise set --stdin MY_KEY
+Prompt for PASSWORD with hidden input.
 
-[experimental] Age Encryption:
+```
+mise set --prompt PASSWORD
+```
 
-$ mise set --age-encrypt API_KEY=secret
+Read a multiline value from stdin.
 
-$ mise set --age-encrypt --prompt API_KEY
-Enter value for API_KEY: [hidden input]
+```
+cat private.key | mise set --stdin MY_KEY
+```
+
+Store a multiline value from a pipeline.
+
+```
+printf "line1\nline2" | mise set --stdin MY_KEY
+```
+
+Encrypt the value with age (experimental).
+
+```
+mise set --age-encrypt API_KEY=secret
+```
+
+Prompt with hidden input and encrypt with age (experimental).
+
+```
+mise set --age-encrypt --prompt API_KEY
 ```

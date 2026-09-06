@@ -23,7 +23,15 @@ use crate::system::packages::PackageRequest;
 /// `brew-cask:temurin@17`), where `@` is part of the Homebrew name rather than
 /// a mise version selector. mas uses numeric ADAM IDs and does not support pins.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "u", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "u",
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap packages use brew:jq brew-cask:firefox
+mise bootstrap packages use -g brew:postgresql@17
+mise bootstrap packages use apt:curl@8.5.0-2"###
+    )
+)]
 pub(crate) struct SystemUse {
     /// Packages in `manager:package[@version]` form
     #[usage(value_name = "PACKAGE", required = true)]
@@ -145,12 +153,3 @@ impl SystemUse {
         driver::run(mgrs, Action::Install, &opts).await
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835</bold>
-    $ <bold>mise bootstrap packages use -g brew:postgresql@17</bold>
-    $ <bold>mise bootstrap packages use apt:curl@8.5.0-2</bold>
-"#
-);

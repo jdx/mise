@@ -45,8 +45,15 @@ use std::sync::Arc;
 ///
 /// Note: This is primarily intended for integration with AI assistants like Claude,
 /// Cursor, or other tools that support the Model Context Protocol.
+/// See https://mise.jdx.dev/mcp.html for client configuration and access controls.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise -C /path/to/project mcp"###,
+        help = r###"Start from the project directory; an MCP client handles the protocol exchange"###
+    )
+)]
 pub(crate) struct Mcp {}
 
 #[derive(Clone)]
@@ -517,42 +524,6 @@ impl Mcp {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # Start the MCP server (typically used by AI assistant tools)
-    $ <bold>mise mcp</bold>
-
-    # Example integration with Claude Desktop (add to claude_desktop_config.json):
-    {
-      "mcpServers": {
-        "mise": {
-          "command": "mise",
-          "args": ["mcp"],
-          "env": {}
-        }
-      }
-    }
-
-    # Interactive testing with JSON-RPC commands:
-    $ <bold>echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | mise mcp</bold>
-
-    # Resources you can query:
-    - <bold>mise://tools</bold> - List active tools
-    - <bold>mise://tools?include_inactive=true</bold> - List all installed tools
-    - <bold>mise://tasks</bold> - List all tasks
-    - <bold>mise://env</bold> - List environment variables
-    - <bold>mise://config</bold> - Show configuration info
-
-    # Tools available:
-    - <bold>list_commands</bold> - Every mise command and what running it does
-      Example: {"include_hidden": false}
-    - <bold>install_tool</bold> - Install a tool (not yet implemented)
-    - <bold>run_task</bold> - Execute a mise task with optional arguments
-      Example: {"task": "build", "args": ["--verbose"]}
-"#
-);
 
 #[cfg(test)]
 mod tests {

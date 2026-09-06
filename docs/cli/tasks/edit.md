@@ -16,7 +16,7 @@ The task will be created as a standalone script if it does not already exist.
 - **`-p --path`** — Display the path to the task instead of editing it
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise tasks edit build

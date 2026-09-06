@@ -32,7 +32,7 @@ See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
 - **`--silent`** — Do not print the command or its output
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit

@@ -29,13 +29,16 @@ use path_absolutize::Absolutize;
 ///
 /// The installed version is also removed unless another config still uses it or `--no-prune` is passed.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_aliases = ["rm", "remove"], after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, visible_aliases = ["rm", "remove"], example(r###"mise unuse node@18.0.0"###, help = r###"remove node@18.0.0 from mise.toml and uninstall it"###),
+    example(r###"mise unuse -g node@18.0.0"###, help = r###"remove it from the global config instead"###),
+    example(r###"mise unuse --env local node@20"###, help = r###"remove the literal node@20 request from mise.local.toml"###),
+    example(r###"mise unuse --env staging node@20"###, help = r###"remove the literal node@20 request from mise.staging.toml"###))]
 pub(crate) struct Unuse {
     /// Tool(s) to remove
     #[usage(value_name = "INSTALLED_TOOL@VERSION", required = true)]
     installed_tool: Vec<ToolArg>,
 
-    /// Create/modify an environment-specific config file like .mise.<env>.toml
+    /// Create/modify an environment-specific config file like mise.<env>.toml
     #[usage(long, short, overrides = & ["global", "path"])]
     env: Option<String>,
 
@@ -184,20 +187,3 @@ impl Unuse {
         config_file::parse_or_init(&path).await
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # remove node@18.0.0 from mise.toml and uninstall it
-    $ <bold>mise unuse node@18.0.0</bold>
-
-    # remove it from the global config instead
-    $ <bold>mise unuse -g node@18.0.0</bold>
-
-    # remove node@20 from .mise.local.toml
-    $ <bold>mise unuse --env local node@20</bold>
-
-    # remove node@20 from .mise.staging.toml
-    $ <bold>mise unuse --env staging node@20</bold>
-"#
-);

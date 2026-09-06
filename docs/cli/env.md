@@ -25,7 +25,7 @@ your shell rc file. It is not needed in shells where mise is already activated.
 - **`--values`** — Only show values of environment variables
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 eval "$(mise env -s bash)"

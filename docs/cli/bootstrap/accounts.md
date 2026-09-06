@@ -12,5 +12,5 @@ Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
 
 ## Subcommands
 
-- [`mise bootstrap accounts apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/accounts/apply.md)
-- [`mise bootstrap accounts status [-J --json] [--missing]`](/cli/bootstrap/accounts/status.md)
+- [`mise bootstrap accounts apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/accounts/apply.html)
+- [`mise bootstrap accounts status [-J --json] [--missing]`](/cli/bootstrap/accounts/status.html)

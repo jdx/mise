@@ -12,5 +12,5 @@ Manage the Linux host firewall from `[bootstrap.linux.firewall]`
 
 ## Subcommands
 
-- [`mise bootstrap firewall apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/firewall/apply.md)
-- [`mise bootstrap firewall status [-J --json] [--missing]`](/cli/bootstrap/firewall/status.md)
+- [`mise bootstrap firewall apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/firewall/apply.html)
+- [`mise bootstrap firewall status [-J --json] [--missing]`](/cli/bootstrap/firewall/status.html)

@@ -123,7 +123,16 @@ impl BackendProvider for MiseBackendProvider {
 
 /// Edit mise.toml interactively
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise edit             # edit mise.toml interactively
+mise edit .mise.toml  # edit a specific file
+mise edit -g          # edit the global config file
+mise edit -y          # skip interactive editor
+mise edit -n          # preview without writing"###
+    )
+)]
 pub(crate) struct Edit {
     /// Edit the global config file (~/.config/mise/config.toml)
     // Rejected alongside a path rather than resolved in its favour: "edit the global config
@@ -411,14 +420,3 @@ fn extract_version(tool: &str, path: &Path) -> Option<String> {
         _ => None,
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise edit</bold>             <dim># edit mise.toml interactively</dim>
-    $ <bold>mise edit .mise.toml</bold>  <dim># edit a specific file</dim>
-    $ <bold>mise edit -g</bold>          <dim># edit the global config file</dim>
-    $ <bold>mise edit -y</bold>          <dim># skip interactive editor</dim>
-    $ <bold>mise edit -n</bold>          <dim># preview without writing</dim>
-"#
-);

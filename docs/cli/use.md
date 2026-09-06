@@ -73,29 +73,46 @@ Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_glo
 - **`-h --help`** — Print help
 - **`--postinstall <COMMAND>`** — Command to run after installing this tool
 
-Examples:
+## Examples
+
+run with no arguments to use the interactive selector
 
 ```
-# run with no arguments to use the interactive selector
-$ mise use
+mise use
+```
 
-# set the current version of node to 20.x in mise.toml of current directory
-# will write the fuzzy version (e.g.: 20)
-$ mise use node@20
+set the current version of node to 20.x in the selected project config will write the fuzzy version (e.g.: 20)
 
-# run a command after installing a tool
-$ mise use --postinstall "mbx setup --defaults" mr-boxington
+```
+mise use node@20
+```
 
-# associate a different postinstall command with each tool
-$ mise use --postinstall "setup-a" tool-a --postinstall "setup-b" tool-b
+run a command after installing a tool
 
-# set the current version of node to 20.x in ~/.config/mise/config.toml
-# will write the precise version (e.g.: 20.0.0)
-$ mise use -g --pin node@20
+```
+mise use --postinstall "mbx setup --defaults" mr-boxington
+```
 
-# sets .mise.local.toml (which is intended not to be committed to a project)
-$ mise use --env local node@20
+associate a different postinstall command with each tool
 
-# sets .mise.staging.toml (which is used if MISE_ENV=staging)
-$ mise use --env staging node@20
+```
+mise use --postinstall "setup-a" tool-a --postinstall "setup-b" tool-b
+```
+
+set the current version of node to 20.x in ~/.config/mise/config.toml will write the precise version (e.g.: 20.0.0)
+
+```
+mise use -g --pin node@20
+```
+
+writes mise.local.toml (preserving .mise.local.toml if it already exists)
+
+```
+mise use --env local node@20
+```
+
+writes mise.staging.toml (loaded with MISE_ENV=staging)
+
+```
+mise use --env staging node@20
 ```

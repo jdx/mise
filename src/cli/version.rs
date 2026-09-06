@@ -95,7 +95,16 @@ impl SelfUpdateSource {
 ///
 /// If the version is out of date, it will display a warning.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_alias = "v", after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    visible_alias = "v",
+    example(
+        r###"mise version
+mise --version
+mise -v
+mise -V"###
+    )
+)]
 pub(crate) struct Version {
     /// Print the version information in JSON format
     #[usage(short = 'J', long)]
@@ -177,16 +186,6 @@ pub(crate) static VERSION: Lazy<String> = Lazy::new(|| {
     let v = &*VERSION_PLAIN;
     format!("{v} {os}-{arch} ({build_time})", os = *OS, arch = *ARCH)
 });
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise version</bold>
-    $ <bold>mise --version</bold>
-    $ <bold>mise -v</bold>
-    $ <bold>mise -V</bold>
-"#
-);
 
 pub(crate) static V: Lazy<Versioning> =
     Lazy::new(|| Versioning::new(env!("CARGO_PKG_VERSION")).unwrap());

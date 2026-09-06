@@ -19,7 +19,11 @@ use serde::Serialize;
 
 /// Validate tasks for common errors and issues
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
+    example(r###"mise tasks validate"###, help = r###"Validate all tasks"###),
+    example(r###"mise tasks validate build test"###, help = r###"Validate specific tasks"###),
+    example(r###"mise tasks validate --json"###, help = r###"Output results as JSON"###),
+    example(r###"mise tasks validate --errors-only"###, help = r###"Only show errors (skip warnings)"###))]
 pub(super) struct TasksValidate {
     /// Tasks to validate
     /// If not specified, validates all tasks
@@ -809,21 +813,7 @@ fn graph_error_issue(task: &str, details: String) -> ValidationIssue {
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # Validate all tasks
-    $ <bold>mise tasks validate</bold>
-
-    # Validate specific tasks
-    $ <bold>mise tasks validate build test</bold>
-
-    # Output results as JSON
-    $ <bold>mise tasks validate --json</bold>
-
-    # Only show errors (skip warnings)
-    $ <bold>mise tasks validate --errors-only</bold>
-
-<bold><underline>Validation Checks:</underline></bold>
+    r###"<bold><underline>Validation Checks:</underline></bold>
 
 The validate command performs the following checks:
 
@@ -836,8 +826,7 @@ The validate command performs the following checks:
   • <bold>Directory Templates</bold>: Validates directory paths and templates
   • <bold>Shell Commands</bold>: Checks shell executables exist
   • <bold>Glob Patterns</bold>: Validates source and output patterns
-  • <bold>Run Entries</bold>: Ensures tasks reference valid dependencies
-"#
+  • <bold>Run Entries</bold>: Ensures tasks reference valid dependencies"###
 );
 
 #[cfg(test)]

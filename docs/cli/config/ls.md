@@ -14,10 +14,10 @@ List config files currently in use
 - **`--tracked-configs`** — List all tracked config files
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise config ls
+mise config ls
 Path                        Tools
 ~/.config/mise/config.toml  pitchfork
 ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-insta

@@ -9,7 +9,14 @@ use taplo::formatter::Options;
 ///
 /// Sorts keys and cleans up whitespace in mise.toml
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise fmt
+mise fmt --check
+cat mise.toml | mise fmt --stdin"###
+    )
+)]
 pub(crate) struct Fmt {
     /// Format every config file mise currently loads, not just those in the current directory
     #[usage(short, long)]
@@ -133,10 +140,3 @@ fn format(toml: String) -> Result<String> {
 
     Ok(tmp)
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise fmt</bold>
-"#
-);

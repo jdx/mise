@@ -15,7 +15,14 @@ use crate::ui::table;
 ///     [tool_alias.node.versions]
 ///     lts = "22.0.0"
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    visible_alias = "list",
+    example(
+        r###"mise tool-alias ls
+node  lts-jod      22"###
+    ),
+    verbatim_doc_comment
+)]
 pub(super) struct ToolAliasLs {
     /// Show aliases for <TOOL>
     #[usage()]
@@ -61,11 +68,3 @@ struct Row {
     alias: String,
     version: String,
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise tool-alias ls</bold>
-    node  lts-jod      22
-"#
-);

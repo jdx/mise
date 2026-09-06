@@ -18,7 +18,16 @@ use crate::ui::prompt;
 /// tracked configs. Plugin packages that were already installed before mise
 /// first applied them are never claimed or removed.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap packages prune --manager brew
+mise bootstrap packages prune --manager brew --dry-run
+mise bootstrap packages prune --manager brew --yes
+mise bootstrap packages prune --manager brew-cask --dry-run
+mise bootstrap packages prune --manager vscode --dry-run"###
+    )
+)]
 pub(crate) struct SystemPrune {
     /// Only prune packages for this manager
     #[usage(long, short, default = "brew")]
@@ -216,14 +225,3 @@ impl SystemPrune {
         bail!("brew-cask prune is not supported on windows")
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages prune --manager brew</bold>
-    $ <bold>mise bootstrap packages prune --manager brew --dry-run</bold>
-    $ <bold>mise bootstrap packages prune --manager brew --yes</bold>
-    $ <bold>mise bootstrap packages prune --manager brew-cask --dry-run</bold>
-    $ <bold>mise bootstrap packages prune --manager vscode --dry-run</bold>
-"#
-);

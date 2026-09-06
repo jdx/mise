@@ -12,7 +12,19 @@ use crate::{dirs, file};
 ///
 /// This is used for developing a plugin.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "ln",
+    verbatim_doc_comment,
+    example(r###"mise plugins link my-tool ./mise-my-tool"###),
+    example(
+        r###"mise plugins link ./mise-my-tool"###,
+        help = r###"Alternative: infer the name "my-tool""###
+    ),
+    example(
+        r###"mise ls-remote my-tool"###,
+        help = r###"List versions through the linked plugin"###
+    )
+)]
 pub(super) struct PluginsLink {
     /// The name of the plugin
     /// e.g.: cmake, poetry
@@ -66,14 +78,3 @@ fn get_name_from_path(path: &Path) -> String {
     let name = name.strip_prefix("vfox-").unwrap_or(name);
     unalias_backend(name).to_string()
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # essentially just `ln -s ./vfox-cmake ~/.local/share/mise/plugins/cmake`
-    $ <bold>mise plugins link cmake ./vfox-cmake</bold>
-
-    # infer plugin name as "cmake"
-    $ <bold>mise plugins link ./vfox-cmake</bold>
-"#
-);

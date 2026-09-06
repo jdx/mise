@@ -31,27 +31,33 @@ See `mise upgrade` to upgrade these versions.
 - **`--no-header`** — Don't show table header
 - **`-h --help`** — Print help
 
+## Examples
+
+```
+mise outdated
+Plugin  Requested  Current  Latest
+python  3.11       3.11.0   3.11.1
+node    20         20.0.0   20.1.0
+```
+
+```
+mise outdated node
+Plugin  Requested  Current  Latest
+node    20         20.0.0   20.1.0
+```
+
+```
+mise outdated --json
+{"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
+```
+
+```
+mise outdated --local
+Plugin  Requested  Current  Latest
+node    20         20.0.0   20.1.0
+```
+
 Deprecation:
 
 The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
 After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
-
-Examples:
-
-```
-$ mise outdated
-Plugin  Requested  Current  Latest
-python  3.11       3.11.0   3.11.1
-node    20         20.0.0   20.1.0
-
-$ mise outdated node
-Plugin  Requested  Current  Latest
-node    20         20.0.0   20.1.0
-
-$ mise outdated --json
-{"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
-
-$ mise outdated --local
-Plugin  Requested  Current  Latest
-node    20         20.0.0   20.1.0
-```

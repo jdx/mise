@@ -20,14 +20,23 @@ Supports prefixes such as `node@20` to get the latest version of node 20.
   Overrides per-tool `minimum_release_age` options and the global `minimum_release_age` setting.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Resolve a Node 20 release, or the backend's latest stable release
 
 ```
-$ mise latest node@20  # get the latest version of node 20
-20.0.0
+mise latest node@20
+mise latest node
+```
 
-$ mise latest node     # get the latest stable version of node
-20.0.0
+Restrict resolution to installed versions
 
-$ mise latest node --minimum-release-age 2024-01-01  # latest stable node released before 2024-01-01
+```
+mise latest node@20 --installed
+```
+
+Exclude releases newer than the requested age
+
+```
+mise latest node --minimum-release-age 30d
 ```

@@ -18,7 +18,7 @@ use tokio::task::JoinSet;
 /// Includes newly published releases by disabling the global minimum release age
 /// for this command.
 #[derive(Debug, Clone, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, example(r###"mise test-tool ripgrep"###))]
 pub(crate) struct TestTool {
     /// Tool(s) to test
     #[usage(required_unless = ["all", "all_config"])]
@@ -512,13 +512,6 @@ struct TestToolResult {
     error: Option<String>,
     status_logged: bool,
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise test-tool ripgrep</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

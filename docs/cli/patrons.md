@@ -18,7 +18,7 @@ To appear here, become a patron at &lt;<https://jdx.dev/sponsors.html>>.
 - **`--refresh`** — Bypass the local cache and re-fetch
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise patrons

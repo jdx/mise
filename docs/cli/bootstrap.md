@@ -30,29 +30,19 @@ Runs the bootstrap steps for the current config in order:
 9. `mise bootstrap mise-shell-activate apply` — configure shell activation
    from `[bootstrap.mise_shell_activate]`
 10. `mise bootstrap macos defaults apply` — write
-```
-`[bootstrap.macos.defaults]` entries (macOS)
-surrounded by `pre-defaults`/`post-defaults` hooks
-```
+    `[bootstrap.macos.defaults]` entries (macOS)
+    surrounded by `pre-defaults`/`post-defaults` hooks
 11. `mise bootstrap macos launchd-agents apply` — install/load
-```
-`[bootstrap.macos.launchd.agents]`
-```
+    `[bootstrap.macos.launchd.agents]`
 12. `mise bootstrap linux systemd-units apply` — install/start
-```
-`[bootstrap.linux.systemd.units]`
-```
+    `[bootstrap.linux.systemd.units]`
 13. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
-```
-(Unix)
-surrounded by `pre-user`/`post-user` hooks
-```
+    (Unix)
+    surrounded by `pre-user`/`post-user` hooks
 14. `mise install` — install missing tools from `[tools]`
-```
-surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
-from `[bootstrap.packages]` install afterward, followed by
-`[bootstrap.hooks.post-packages]`
-```
+    surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
+    from `[bootstrap.packages]` install afterward, followed by
+    `[bootstrap.hooks.post-packages]`
 15. `mise run bootstrap` — if a task named `bootstrap` is defined
 16. `[bootstrap.hooks.final]` — optional final hook
 
@@ -87,26 +77,8 @@ cannot be used together.
   **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
 - **`--update`** — Refresh package manager metadata and update configured repos
 - **`-h --help`** — Print help
-- [`mise bootstrap accounts <SUBCOMMAND>`](/cli/bootstrap/accounts.md)
-- [`mise bootstrap compose <SUBCOMMAND>`](/cli/bootstrap/compose.md)
-- [`mise bootstrap config-roots [-J --json]`](/cli/bootstrap/config-roots.md)
-- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.md)
-- [`mise bootstrap files <SUBCOMMAND>`](/cli/bootstrap/files.md)
-- [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.md)
-- [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.md)
-- [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.md)
-- [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.md)
-- [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.md)
-- [`mise bootstrap plan [FLAGS]`](/cli/bootstrap/plan.md)
-- [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.md)
-- [`mise bootstrap remote [FLAGS] [TARGET]…`](/cli/bootstrap/remote.md)
-- [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.md)
-- [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.md)
-- [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.md)
-- [`mise bootstrap status [FLAGS]`](/cli/bootstrap/status.md)
-- [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.md)
 
-Examples:
+## Examples
 
 ```
 mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
@@ -126,3 +98,24 @@ mise bootstrap macos launchd-agents apply --dry-run
 mise bootstrap linux systemd-units apply --dry-run
 mise bootstrap user apply --dry-run
 ```
+
+## Subcommands
+
+- [`mise bootstrap accounts <SUBCOMMAND>`](/cli/bootstrap/accounts.html)
+- [`mise bootstrap compose <SUBCOMMAND>`](/cli/bootstrap/compose.html)
+- [`mise bootstrap config-roots [-J --json]`](/cli/bootstrap/config-roots.html)
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html)
+- [`mise bootstrap files <SUBCOMMAND>`](/cli/bootstrap/files.html)
+- [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.html)
+- [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.html)
+- [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.html)
+- [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.html)
+- [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.html)
+- [`mise bootstrap plan [FLAGS]`](/cli/bootstrap/plan.html)
+- [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.html)
+- [`mise bootstrap remote [FLAGS] [TARGET]…`](/cli/bootstrap/remote.html)
+- [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.html)
+- [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.html)
+- [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.html)
+- [`mise bootstrap status [FLAGS]`](/cli/bootstrap/status.html)
+- [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.html)

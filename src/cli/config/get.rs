@@ -7,7 +7,13 @@ use std::path::PathBuf;
 
 /// Display a value from a mise.toml file
 #[derive(Debug, usage_rs::Args)]
-#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    example(
+        r###"mise config get tools.python
+3.12"###
+    ),
+    verbatim_doc_comment
+)]
 pub(super) struct ConfigGet {
     /// Dotted key path to display, e.g. `tools.python`; omit to print the whole file
     pub key: Option<String>,
@@ -95,11 +101,3 @@ impl ConfigGet {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise toml get tools.python</bold>
-    3.12
-"#
-);

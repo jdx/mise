@@ -32,20 +32,15 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
   Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Run on a Linux host with the target architecture
 
 ```
-Build with defaults (debian:bookworm-slim base):
-$ mise oci build
-
-Build with a specific base image and tag:
-$ mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img
-
-Inspect the result with skopeo:
-$ skopeo inspect oci:./mise-oci
-
-Push to a registry:
-$ mise oci push --image-dir ./mise-oci ghcr.io/me/dev:latest
+mise oci build
+mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img
+skopeo inspect oci:./img
+mise oci run --image-dir ./img -- /bin/sh
 ```
 
 Notes:

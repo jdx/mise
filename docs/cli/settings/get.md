@@ -19,9 +19,9 @@ but managed separately with `mise tool-alias get`
 - **`-l --local`** — Use the local config file instead of the global one
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise settings get idiomatic_version_file
-true
+mise settings get jobs
+mise settings get python.compile
 ```

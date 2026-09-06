@@ -24,18 +24,28 @@ their own `depends`.
 - **`--hidden`** — Show hidden tasks
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Show dependencies for all tasks
 
 ```
-# Show dependencies for all tasks
-$ mise tasks deps
+mise tasks deps
+```
 
-# Show dependencies for the "lint", "test" and "check" tasks
-$ mise tasks deps lint test check
+Show dependencies for the "lint", "test" and "check" tasks
 
-# Show dependencies in DOT format
-$ mise tasks deps --dot
+```
+mise tasks deps lint test check
+```
 
-# Collapse repeated dependencies
-$ mise tasks deps --compact
+Show dependencies in DOT format
+
+```
+mise tasks deps --dot
+```
+
+Collapse repeated dependencies
+
+```
+mise tasks deps --compact
 ```

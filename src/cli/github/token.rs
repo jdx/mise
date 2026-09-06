@@ -5,7 +5,22 @@ use crate::cli::token::github::Github;
 /// Shows which token source mise would use, useful for debugging
 /// authentication issues. The token is masked by default.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, hide = true)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise github token
+github.com: ghp_…xxxx (source: GITHUB_TOKEN)"###
+    ),
+    example(
+        r###"mise github token --unmask
+github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)"###
+    ),
+    example(
+        r###"mise github token github.mycompany.com
+github.mycompany.com: (none)"###
+    ),
+    hide = true
+)]
 pub(crate) struct Token {
     /// GitHub hostname
     #[usage(default = "github.com")]
@@ -46,17 +61,3 @@ impl From<Token> for Github {
         }
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise github token</bold>
-    github.com: ghp_…xxxx (source: GITHUB_TOKEN)
-
-    $ <bold>mise github token --unmask</bold>
-    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)
-
-    $ <bold>mise github token github.mycompany.com</bold>
-    github.mycompany.com: (none)
-"#
-);

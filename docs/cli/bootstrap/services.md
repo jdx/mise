@@ -12,5 +12,5 @@ Manage Linux system services from `[bootstrap.services]`
 
 ## Subcommands
 
-- [`mise bootstrap services apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/services/apply.md)
-- [`mise bootstrap services status [-J --json] [--missing]`](/cli/bootstrap/services/status.md)
+- [`mise bootstrap services apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/services/apply.html)
+- [`mise bootstrap services status [-J --json] [--missing]`](/cli/bootstrap/services/status.html)

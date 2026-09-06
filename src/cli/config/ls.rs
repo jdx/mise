@@ -8,7 +8,15 @@ use itertools::Itertools;
 
 /// List config files currently in use
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise config ls
+Path                        Tools
+~/.config/mise/config.toml  pitchfork
+~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-insta"###
+    )
+)]
 pub(crate) struct ConfigLs {
     /// Output in JSON format
     #[usage(short = 'J', long, verbatim_doc_comment)]
@@ -119,13 +127,3 @@ impl ConfigLs {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise config ls</bold>
-    Path                        Tools
-    ~/.config/mise/config.toml  pitchfork
-    ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-insta
-"#
-);

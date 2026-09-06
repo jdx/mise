@@ -8,7 +8,15 @@ use crate::ui::table::MiseTable;
 
 /// Show the status of system packages from `[bootstrap.packages]`
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "ls",
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap packages status
+mise bootstrap packages status --json
+mise bootstrap packages status --missing # exit 1 if anything is out of sync"###
+    )
+)]
 pub(crate) struct SystemStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
@@ -167,12 +175,3 @@ impl SystemStatus {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages status</bold>
-    $ <bold>mise bootstrap packages status --json</bold>
-    $ <bold>mise bootstrap packages status --missing</bold> # exit 1 if anything is out of sync
-"#
-);

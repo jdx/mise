@@ -28,7 +28,28 @@ pub(crate) enum MatchType {
 /// By default, it will show all tools that fuzzy match the search term. For
 /// non-fuzzy matches, use the `--match-type` flag.
 #[derive(Debug, usage_rs::Args)]
-#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    example(
+        r###"mise search jq
+Tool  Description
+jq    Command-line JSON processor. https://github.com/jqlang/jq
+jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
+gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq"###
+    ),
+    example(
+        r###"mise search --interactive
+Tool
+Search a tool
+❯ jq    Command-line JSON processor. https://github.com/jqlang/jq
+  jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+  jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
+  gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
+/jq
+esc clear filter • enter confirm"###
+    ),
+    verbatim_doc_comment
+)]
 pub(crate) struct Search {
     /// The tool to search for
     name: Option<String>,
@@ -205,28 +226,6 @@ impl Search {
             .collect_vec()
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise search jq</bold>
-    Tool  Description
-    jq    Command-line JSON processor. https://github.com/jqlang/jq
-    jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
-    jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
-    gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
-
-    $ <bold>mise search --interactive</bold>
-    Tool
-    Search a tool
-    ❯ jq    Command-line JSON processor. https://github.com/jqlang/jq
-      jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
-      jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
-      gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
-    /jq 
-    esc clear filter • enter confirm
-"#
-);
 
 fn filter_enabled(short: &str) -> bool {
     let settings = Settings::get();

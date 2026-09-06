@@ -65,53 +65,35 @@ to incrementally build cross-platform tool stubs.
   **Default:** `latest`
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Download and inspect a real archive to detect its binary and checksum
 
 ```
-Generate a tool stub for a single URL:
-$ mise generate tool-stub ./bin/gh --url "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
+mise generate tool-stub ./bin/node --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
+```
 
-Generate a tool stub with platform-specific URLs:
-$ mise generate tool-stub ./bin/rg \
-    --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \
-    --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz
+Add a Linux artifact to the same stub
 
-Append additional platforms to an existing stub:
-$ mise generate tool-stub ./bin/rg \
-    --platform-url linux-x64:https://example.com/rg-linux.tar.gz
-$ mise generate tool-stub ./bin/rg \
-    --platform-url darwin-arm64:https://example.com/rg-darwin.tar.gz
-# The stub now contains both platforms
+```
+mise generate tool-stub ./bin/node --platform-url linux-x64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-x64.tar.gz
+```
 
-Use auto-detection for platform from URL:
-$ mise generate tool-stub ./bin/node \
-    --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
-# Platform 'macos-arm64' will be auto-detected from the URL
+Create a draft for your own artifact without fetching the placeholder URL
 
-Generate with platform-specific binary paths:
-$ mise generate tool-stub ./bin/tool \
-    --platform-url linux-x64:https://example.com/tool-linux.tar.gz \
-    --platform-url windows-x64:https://example.com/tool-windows.zip \
-    --platform-bin windows-x64:tool.exe
+```
+mise generate tool-stub ./bin/my-tool --url https://example.com/my-tool.tar.gz --skip-download
+# Replace the URL with a real artifact before fetching metadata or executing it
+```
 
-Generate without downloading (faster):
-$ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --skip-download
+Fill missing checksums and sizes in an existing stub
 
-Fetch checksums for an existing stub:
-$ mise generate tool-stub ./bin/jq --fetch
-# This will read the existing stub and download files to fill in any missing checksums/sizes
+```
+mise generate tool-stub ./bin/node --fetch
+```
 
-Generate a bootstrap stub that installs mise if needed:
-$ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap
-# The stub will check for mise and install it automatically before running the tool
+For an existing registry-backed stub, resolve and embed version/platform lock data
 
-Generate a bootstrap stub with a pinned mise version:
-$ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap --bootstrap-version 2025.1.0
-
-Lock an existing tool stub with pinned version and platform URLs/checksums:
-$ mise generate tool-stub ./bin/node --lock
-
-Bump the version in a locked stub:
-$ mise generate tool-stub ./bin/node --lock --version 22
-# Resolves the latest node 22.x, pins it, and updates platform URLs/checksums
+```
+mise generate tool-stub ./bin/registry-node --lock --version 22
 ```

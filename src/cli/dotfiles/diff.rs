@@ -5,7 +5,13 @@ use crate::system;
 
 /// Show the changes needed to apply dotfiles from `[dotfiles]`
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap dotfiles diff
+mise bootstrap dotfiles diff ~/.zshrc"###
+    )
+)]
 pub(crate) struct DotfilesDiff {
     /// Only show these targets
     #[usage(value_name = "TARGET")]
@@ -31,11 +37,3 @@ impl DotfilesDiff {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles diff</bold>
-    $ <bold>mise bootstrap dotfiles diff ~/.zshrc</bold>
-"#
-);

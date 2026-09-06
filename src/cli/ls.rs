@@ -26,7 +26,34 @@ use crate::ui::table::MiseTable;
 /// Lists the tools mise knows about: versions that are installed, and versions requested
 /// by a config file (active) whether or not they are installed.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "list",
+    verbatim_doc_comment,
+    example(
+        r###"mise ls"###,
+        help = r###"Show installed versions and requests from active configuration"###
+    ),
+    example(
+        r###"mise ls --current"###,
+        help = r###"Show only versions requested by the current configuration"###
+    ),
+    example(
+        r###"mise ls --missing"###,
+        help = r###"Find configured versions that need installation"###
+    ),
+    example(
+        r###"mise ls --json"###,
+        help = r###"Machine-readable output: an object keyed by tool name"###
+    ),
+    example(
+        r###"mise ls node --json"###,
+        help = r###"With a tool argument, JSON output is an array of its version records"###
+    ),
+    example(
+        r###"mise ls --all-sources"###,
+        help = r###"Include references from every tracked configuration file"###
+    )
+)]
 pub(crate) struct Ls {
     /// Only show tool versions from [TOOL]
     #[usage(conflicts = "tool_flag")]
@@ -755,39 +782,6 @@ async fn resolve_version_status(
         }
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise ls</bold>
-    node    20.0.0 ~/src/myapp/.tool-versions latest
-    python  3.11.0 ~/.tool-versions           3.10
-    python  3.10.0
-
-    $ <bold>mise ls --current</bold>
-    node    20.0.0 ~/src/myapp/.tool-versions 20
-    python  3.11.0 ~/.tool-versions           3.11.0
-
-    $ <bold>mise ls --json</bold>
-    {
-      "node": [
-        {
-          "version": "20.0.0",
-          "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
-          "source": {
-            "type": "mise.toml",
-            "path": "/Users/jdx/mise.toml"
-          }
-        }
-      ],
-      "python": [...]
-    }
-
-    $ <bold>mise ls --all-sources</bold>
-    node    20.0.0  ~/src/myapp/mise.toml  20
-                    ~/.config/mise/config.toml  latest
-"#
-);
 
 #[cfg(test)]
 mod tests {

@@ -17,9 +17,9 @@ This modifies the contents of ~/.config/mise/config.toml
 ## Flags
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-mise tool-alias unset maven
-mise tool-alias unset node lts-jod
+mise tool-alias unset ripgrep
+mise tool-alias unset node project
 ```

@@ -16,10 +16,10 @@ directory, with the version it belongs to and the directory holding its
 - **`-J --json`** — Output in JSON format
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise skills ls
+mise skills ls
 Skill  Tool                        Version  Path
 mise   packslip:github.com/jdx/mise  2026.9.1  ~/.local/share/mise/installs/.../skills/mise
 ```

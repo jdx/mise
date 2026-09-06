@@ -24,12 +24,16 @@ directory or a link of your own at a skill's name is left alone and reported.
 - **`--prune`** — Remove links mise made for skills that are no longer active
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+into the project's .claude/skills, or wherever skills.dir says
 
 ```
-# into the project's .claude/skills, or wherever skills.dir says
-$ mise skills sync
+mise skills sync
+```
 
-# somewhere else, and drop links for skills that are no longer active
-$ mise skills sync --dir .agents/skills --prune
+somewhere else, and drop links for skills that are no longer active
+
+```
+mise skills sync --dir .agents/skills --prune
 ```

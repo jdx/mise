@@ -6,7 +6,21 @@ use crate::tokens;
 /// Shows which token source mise would use, useful for debugging
 /// authentication issues. The token is masked by default.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise token forgejo
+codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)"###
+    ),
+    example(
+        r###"mise token forgejo --unmask
+codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)"###
+    ),
+    example(
+        r###"mise token forgejo forgejo.mycompany.com
+forgejo.mycompany.com: (none)"###
+    )
+)]
 pub(super) struct Forgejo {
     /// Forgejo hostname
     #[usage(default = "codeberg.org")]
@@ -35,17 +49,3 @@ impl Forgejo {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise token forgejo</bold>
-    codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)
-
-    $ <bold>mise token forgejo --unmask</bold>
-    codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)
-
-    $ <bold>mise token forgejo forgejo.mycompany.com</bold>
-    forgejo.mycompany.com: (none)
-"#
-);

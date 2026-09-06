@@ -14,7 +14,16 @@ use indexmap::IndexSet;
 /// Use this to load the environment into one shell without adding `mise activate` to
 /// your shell rc file. It is not needed in shells where mise is already activated.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "e",
+    verbatim_doc_comment,
+    example(
+        r###"eval "$(mise env -s bash)"
+eval "$(mise env -s zsh)"
+mise env -s fish | source
+execx($(mise env -s xonsh))"###
+    )
+)]
 pub(crate) struct Env {
     /// Tool(s) to include in addition to those in config, e.g. node@20
     #[usage(value_name = "TOOL@VERSION")]
@@ -271,16 +280,6 @@ fn fallback_shell() -> ShellType {
         false => ShellType::Bash,
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>eval "$(mise env -s bash)"</bold>
-    $ <bold>eval "$(mise env -s zsh)"</bold>
-    $ <bold>mise env -s fish | source</bold>
-    $ <bold>execx($(mise env -s xonsh))</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

@@ -213,26 +213,18 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
     - 'path | file_size' returns the size of the file at path, or null if it does not exist.
 
     - 'path | file_read(bytes)' returns a string with the first n bytes of the file at path.
-  ```
-  If the file is smaller than n bytes, the whole file is returned. There is no filter to
-  read the whole file at once to encourage limiting the amount of data read and processed.
-  ```
+      If the file is smaller than n bytes, the whole file is returned. There is no filter to
+      read the whole file at once to encourage limiting the amount of data read and processed.
 
     - 'string | hash', and 'path | file_hash' return the hash of the string or file at path.
-  ```
-  No guarantee is made about the algorithm used: treat it as an opaque value.
-  ```
+      No guarantee is made about the algorithm used: treat it as an opaque value.
 
     - 'any | kv_store(key)', 'kv_fetch(key)', and 'kv_clear' provide a simple key-value store.
-  ```
-  Data is kept in memory only, there is no persistence. Consistency is not guaranteed.
-  ```
+      Data is kept in memory only, there is no persistence. Consistency is not guaranteed.
 
     - 'any | printout', 'any | printerr', and 'any | log(level)' will print or log any given
-  ```
-  value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and
-  pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
-  ```
+      value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and
+      pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
 
   All filtering done with such programs, and especially those using kv or filesystem access, is much slower than the other filtering methods. If filtering is too slow, events will back up and stall watchexec. Take care when designing your filters.
 
@@ -376,27 +368,25 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 
   ```json
     {
-  ```
-  "tags": [
-    {
-      "kind": "path",
-      "absolute": "/home/user/your/new-folder",
-      "filetype": "dir"
-    },
-    {
-      "kind": "fs",
-      "simple": "create",
-      "full": "Create(Folder)"
-    },
-    {
-      "kind": "source",
-      "source": "filesystem",
-    }
-  ],
-  "metadata": {
-    "notify-backend": "inotify"
-  }
-  ```
+      "tags": [
+        {
+          "kind": "path",
+          "absolute": "/home/user/your/new-folder",
+          "filetype": "dir"
+        },
+        {
+          "kind": "fs",
+          "simple": "create",
+          "full": "Create(Folder)"
+        },
+        {
+          "kind": "source",
+          "source": "filesystem",
+        }
+      ],
+      "metadata": {
+        "notify-backend": "inotify"
+      }
     }
   ```
 
@@ -404,25 +394,23 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 
     - `tags`, structured event data.
     - `tags[].kind`, which can be:
-  ```
-  * 'path', along with:
-    + `absolute`, an absolute path.
-    + `filetype`, a file type if known ('dir', 'file', 'symlink', 'other').
-  * 'fs':
-    + `simple`, the "simple" event type ('access', 'create', 'modify', 'remove', or 'other').
-    + `full`, the "full" event type, which is too complex to fully describe here, but looks like 'General(Precise(Specific))'.
-  * 'source', along with:
-    + `source`, the source of the event ('filesystem', 'keyboard', 'mouse', 'os', 'time', 'internal').
-  * 'keyboard', along with:
-    + `keycode`. Currently only the value 'eof' is supported.
-  * 'process', for events caused by processes:
-    + `pid`, the process ID.
-  * 'signal', for signals sent to Watchexec:
-    + `signal`, the normalised signal name ('hangup', 'interrupt', 'quit', 'terminate', 'user1', 'user2').
-  * 'completion', for when a command ends:
-    + `disposition`, the exit disposition ('success', 'error', 'signal', 'stop', 'exception', 'continued').
-    + `code`, the exit, signal, stop, or exception code.
-  ```
+      * 'path', along with:
+        + `absolute`, an absolute path.
+        + `filetype`, a file type if known ('dir', 'file', 'symlink', 'other').
+      * 'fs':
+        + `simple`, the "simple" event type ('access', 'create', 'modify', 'remove', or 'other').
+        + `full`, the "full" event type, which is too complex to fully describe here, but looks like 'General(Precise(Specific))'.
+      * 'source', along with:
+        + `source`, the source of the event ('filesystem', 'keyboard', 'mouse', 'os', 'time', 'internal').
+      * 'keyboard', along with:
+        + `keycode`. Currently only the value 'eof' is supported.
+      * 'process', for events caused by processes:
+        + `pid`, the process ID.
+      * 'signal', for signals sent to Watchexec:
+        + `signal`, the normalised signal name ('hangup', 'interrupt', 'quit', 'terminate', 'user1', 'user2').
+      * 'completion', for when a command ends:
+        + `disposition`, the exit disposition ('success', 'error', 'signal', 'stop', 'exception', 'continued').
+        + `code`, the exit, signal, stop, or exception code.
     - `metadata`, additional information about the event.
 
   The 'json-stdio' mode will emit JSON events to the standard input of the command, one per
@@ -481,20 +469,28 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 
   This shows the manual page for Watchexec, if the output is a terminal and the 'man' program is available. If not, the manual page is printed to stdout in ROFF format (suitable for writing to a watchexec.1 file).
 
-Examples:
+## Examples
+
+Run the build task and rerun it whenever its sources change.
 
 ```
-$ mise watch build
-Runs the "build" task and reruns it whenever one of its sources changes.
-The task's "sources" determine which files are watched.
+mise watch build
+```
 
-$ mise watch build --glob 'src/**/*.rs'
-Runs the "build" task, watching the files matched by the glob instead of
-the task's "sources".
+Watch the glob instead of the task's sources.
 
-$ mise watch build --clear
-Extra arguments are passed to watchexec. See `watchexec --help` for details.
+```
+mise watch build --glob 'src/**/*.rs'
+```
 
-$ mise watch serve --watch src --exts rs --restart
-Starts an API server, watching "*.rs" files in "./src", and restarts the server when they change.
+Extra arguments go to watchexec; see `watchexec --help`.
+
+```
+mise watch build --clear
+```
+
+Start an API server and restart it when Rust files in ./src change.
+
+```
+mise watch serve --watch src --exts rs --restart
 ```

@@ -18,7 +18,7 @@ This modifies ~/.config/mise/config.toml by default, or the local config with `-
 - **`-l --local`** — Use the local config file instead of the global one
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise settings add disable_hints python_multi

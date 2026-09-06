@@ -15,7 +15,9 @@ use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_t
 ///
 /// Note: this updates the plugin itself, not the tool versions it manages
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_aliases = ["up", "upgrade"], after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, visible_aliases = ["up", "upgrade"], example(r###"mise plugins update              # update all installed plugins
+mise plugins update my-tool      # update one Git plugin
+mise plugins update my-tool#main # select an upstream ref"###))]
 pub(super) struct Update {
     /// Plugin(s) to update
     #[usage()]
@@ -66,12 +68,3 @@ impl Update {
         join_plugin_tasks(jset, task_names, "update").await
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise plugins update</bold>              # update all plugins
-    $ <bold>mise plugins update cmake</bold>       # update only cmake
-    $ <bold>mise plugins update cmake#beta</bold>  # specify a ref
-"#
-);

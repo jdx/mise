@@ -17,10 +17,10 @@ This won't overwrite managed installs, runtime aliases, or links from other prov
 - **`--nvm`** — Get tool versions from nvm
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-brew install node@18 node@20
+brew install node@20
 mise sync node --brew
-mise use -g node@18 - uses Homebrew-provided node
+mise use -g node@20 # uses Homebrew-provided node
 ```

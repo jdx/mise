@@ -10,7 +10,15 @@ use crate::ui::table;
 /// directory, with the version it belongs to and the directory holding its
 /// `SKILL.md`.
 #[derive(Debug, Default, usage_rs::Args)]
-#[usage(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "list",
+    verbatim_doc_comment,
+    example(
+        r###"mise skills ls
+Skill  Tool                        Version  Path
+mise   packslip:github.com/jdx/mise  2026.9.1  ~/.local/share/mise/installs/.../skills/mise"###
+    )
+)]
 pub(super) struct SkillsLs {
     /// Output in JSON format
     #[usage(long, short = 'J')]
@@ -51,12 +59,3 @@ impl SkillsLs {
         table::print(&mut table, false)
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise skills ls</bold>
-    Skill  Tool                        Version  Path
-    mise   packslip:github.com/jdx/mise  2026.9.1  ~/.local/share/mise/installs/.../skills/mise
-"#
-);

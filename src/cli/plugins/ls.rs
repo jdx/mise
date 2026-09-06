@@ -14,7 +14,16 @@ use crate::ui::table;
 ///
 /// Can also show remotely available plugins to install.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    visible_alias = "list",
+    example(
+        r###"mise plugins ls
+mise plugins ls --urls
+mise plugins ls --core --user
+mise plugins ls --outdated"###
+    ),
+    verbatim_doc_comment
+)]
 pub(super) struct PluginsLs {
     /// List all available remote plugins
     /// Same as `mise plugins ls-remote`
@@ -198,16 +207,3 @@ struct OutdatedRow {
     local: String,
     remote: String,
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise plugins ls</bold>
-    cmake
-    poetry
-
-    $ <bold>mise plugins ls --urls</bold>
-    cmake     https://github.com/mise-plugins/vfox-cmake.git
-    poetry    https://github.com/mise-plugins/vfox-poetry.git
-"#
-);

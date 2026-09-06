@@ -8,7 +8,15 @@ use crate::git::Git;
 /// This command generates a GitHub Action workflow file that runs a mise task like `mise run ci`
 /// when you push changes to your repository.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise generate github-action --task=ci
+mise generate github-action --write --task=ci
+git add .github/workflows/ci.yml"###,
+        help = r###"Preview before writing the workflow"###
+    )
+)]
 pub(super) struct GithubAction {
     /// The task to run when the workflow is triggered
     #[usage(long, short, default = "ci")]
@@ -69,12 +77,3 @@ jobs:
         ))
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise generate github-action --write --task=ci</bold>
-    $ <bold>git commit -m "feat: add new feature"</bold>
-    $ <bold>git push</bold> <dim># runs `mise run ci` on GitHub</dim>
-"#
-);

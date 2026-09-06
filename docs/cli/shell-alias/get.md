@@ -13,9 +13,9 @@ Show the command for a shell alias
 ## Flags
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise shell-alias get ll
+mise shell-alias get ll
 ls -la
 ```

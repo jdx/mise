@@ -30,16 +30,19 @@ Set a value in a mise.toml file
   **Default:** `infer`
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise config set tools.python 3.12
-$ mise config set settings.always_keep_download true
-$ mise config set env.TEST_ENV_VAR ABC
-$ mise config set settings.disable_tools node,rust
-$ mise config set --append env._.path ~/.local/bin
-$ mise config set --remove env._.path ~/.local/bin
+mise config set tools.python 3.12
+mise config set settings.always_keep_download true
+mise config set env.TEST_ENV_VAR ABC
+mise config set settings.disable_tools node,rust
+mise config set --append env._.path ~/.local/bin
+mise config set --remove env._.path ~/.local/bin
+```
 
-# Type for `settings` is inferred
-$ mise config set settings.jobs 4
+Type for `settings` is inferred
+
+```
+mise config set settings.jobs 4
 ```

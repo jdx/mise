@@ -23,7 +23,16 @@ pub(crate) struct BootstrapApplyReport {
 /// the config. Explicit packages and `--manager` scope the run to packages
 /// only. `install` is accepted as an alias for this command.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "i",
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap packages apply
+mise bootstrap packages apply brew:jq brew-cask:firefox
+mise bootstrap packages apply --dry-run
+mise bootstrap packages apply --manager apt --yes"###
+    )
+)]
 pub(crate) struct SystemInstall {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
@@ -450,13 +459,3 @@ pub(crate) async fn apply_systemd_with_report(
         skipped_reason: None,
     })
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages apply</bold>
-    $ <bold>mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835</bold>
-    $ <bold>mise bootstrap packages apply --dry-run</bold>
-    $ <bold>mise bootstrap packages apply --manager apt --yes</bold>
-"#
-);

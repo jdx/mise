@@ -21,16 +21,23 @@ Unlike an activated shell, changing directories does not update the environment.
   Defaults to $SHELL
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Start a shell and check node. Example output: `v20.0.0`.
 
 ```
-$ mise en .
-$ node -v
-v20.0.0
+mise en .
+node -v
+```
 
-Skip loading bashrc:
-$ mise en -s "bash --norc"
+Skip loading bashrc.
 
-Skip loading zshrc:
-$ mise en -s "zsh -f"
+```
+mise en -s "bash --norc"
+```
+
+Skip loading zshrc.
+
+```
+mise en -s "zsh -f"
 ```

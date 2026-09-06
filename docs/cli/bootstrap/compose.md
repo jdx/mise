@@ -12,5 +12,5 @@ Manage Docker Compose projects from `[bootstrap.compose]`
 
 ## Subcommands
 
-- [`mise bootstrap compose apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/compose/apply.md)
-- [`mise bootstrap compose status [-J --json] [--missing]`](/cli/bootstrap/compose/status.md)
+- [`mise bootstrap compose apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/compose/apply.html)
+- [`mise bootstrap compose status [-J --json] [--missing]`](/cli/bootstrap/compose/status.html)

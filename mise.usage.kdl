@@ -1,4 +1,4 @@
-min_usage_version "6.6"
+min_usage_version "6.8"
 name mise
 bin mise
 author "Jeff Dickey <@jdx>"
@@ -46,7 +46,6 @@ mise installs the dev tools your projects need, sets their environment variables
 
 Tools, env vars, and tasks are declared in mise.toml. `mise use <TOOL>` adds a tool to the project in the current directory, `mise install` installs everything the config asks for, and `mise run <TASK>` runs a task. Docs: https://mise.jdx.dev
 """#
-after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise install node@20.0.0\u{1b}[22m       Install a specific node version\n    $ \u{1b}[1mmise install node@20\u{1b}[22m           Install a version matching a prefix\n    $ \u{1b}[1mmise install node\u{1b}[22m              Install the node version defined in config\n    $ \u{1b}[1mmise install\u{1b}[22m                   Install all plugins/tools defined in config\n\n    $ \u{1b}[1mmise install cargo:ripgrep\u{1b}[22m     Install something via cargo\n    $ \u{1b}[1mmise install npm:prettier\u{1b}[22m      Install something via npm\n\n    $ \u{1b}[1mmise use node@20\u{1b}[22m               Use node-20.x in current project\n    $ \u{1b}[1mmise use -g node@20\u{1b}[22m            Use node-20.x as default\n    $ \u{1b}[1mmise use node@latest\u{1b}[22m           Use latest node in current directory\n\n    $ \u{1b}[1mmise up --interactive\u{1b}[22m          Show a menu to upgrade tools\n\n    $ \u{1b}[1mmise x -- npm install\u{1b}[22m          `npm install` w/ config loaded into PATH\n    $ \u{1b}[1mmise x node@20 -- node app.js\u{1b}[22m  `node app.js` w/ config + node-20.x on PATH\n\n    $ \u{1b}[1mmise set NODE_ENV=production\u{1b}[22m   Set NODE_ENV=production in config\n\n    $ \u{1b}[1mmise run build\u{1b}[22m                 Run `build` tasks\n    $ \u{1b}[1mmise watch build\u{1b}[22m               Run `build` tasks repeatedly when files change\n\n    $ \u{1b}[1mmise settings\u{1b}[22m                  Show settings in use\n    $ \u{1b}[1mmise settings color=0\u{1b}[22m          Disable color by modifying global config file\n"
 unknown_flags error
 default_subcommand run
 flag "-c --continue-on-error" help="Continue running tasks even if one fails" hide=#true
@@ -157,6 +156,23 @@ Shorthand for `mise tasks run <TASK>`.
 """# required=#false double_dash=automatic
 arg "[TASK_ARGS]…" help="Task arguments" required=#false var=#true hide=#true
 arg "[-- TASK_ARGS_LAST]…" required=#false var=#true hide=#true
+example "mise install node@20.0.0" help="Install a specific node version"
+example "mise install node@20" help="Install a version matching a prefix"
+example "mise install node" help="Install the node version defined in config"
+example "mise install" help="Install all plugins/tools defined in config"
+example "mise install cargo:ripgrep" help="Install something via cargo"
+example "mise install npm:prettier" help="Install something via npm"
+example "mise use node@20" help="Use node-20.x in current project"
+example "mise use -g node@20" help="Use node-20.x as default"
+example "mise use node@latest" help="Use latest node in current directory"
+example "mise up --interactive" help="Show a menu to upgrade tools"
+example "mise x -- npm install" help="Run npm install with config loaded into PATH"
+example "mise x node@20 -- node app.js" help="Run node app.js with config and node-20.x on PATH"
+example "mise set NODE_ENV=production" help="Set NODE_ENV=production in config"
+example "mise run build" help="Run build tasks"
+example "mise watch build" help="Run build tasks repeatedly when files change"
+example "mise settings" help="Show settings in use"
+example "mise settings color=0" help="Disable color by modifying global config file"
 complete dir type=dir
 complete alias run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
 complete config_file type=file
@@ -235,7 +251,6 @@ specify the full path like this:
 
 Customize status output with `status` settings.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1meval \"$(mise activate bash)\"\u{1b}[22m\n    $ \u{1b}[1meval \"$(mise activate zsh)\"\u{1b}[22m\n    $ \u{1b}[1mmise activate fish | source\u{1b}[22m\n    $ \u{1b}[1mexecx($(mise activate xonsh))\u{1b}[22m\n    $ \u{1b}[1m(&mise activate pwsh) | Out-String | Invoke-Expression\u{1b}[22m\n"
     flag "-q --quiet" help="Suppress non-error messages"
     flag "-s --shell" help="Shell type to generate the script for" hide=#true {
         arg <SHELL> {
@@ -286,6 +301,11 @@ See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
             }
         }
     }
+    example "eval \"$(mise activate bash)\"" help="Activate mise in Bash."
+    example "eval \"$(mise activate zsh)\"" help="Activate mise in Zsh."
+    example "mise activate fish | source" help="Activate mise in Fish."
+    example "execx($(mise activate xonsh))" help="Activate mise in Xonsh."
+    example "(&mise activate pwsh) | Out-String | Invoke-Expression" help="Activate mise in PowerShell."
 }
 cmd tool-alias help="Manage tool version aliases" effect=read {
     alias alias aliases
@@ -301,10 +321,14 @@ Show an alias for a tool
 
 This is the contents of a tool_alias.<TOOL> entry in ~/.config/mise/config.toml
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise tool-alias get node lts-hydrogen\u{1b}[22m\n    20.0.0\n"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <TOOL> help="The tool to show the alias for"
         arg <ALIAS> help="The alias to show"
+        example #"""
+mise tool-alias set node project 20
+mise tool-alias get node project
+20
+"""#
     }
     cmd ls help="List tool version aliases" effect=read {
         alias list
@@ -318,10 +342,13 @@ In user config, aliases are defined like the following in `~/.config/mise/config
     [tool_alias.node.versions]
     lts = "22.0.0"
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise tool-alias ls\u{1b}[22m\n    node  lts-jod      22\n"
         flag --no-header help="Don't show table header"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TOOL]" help="Show aliases for <TOOL>" required=#false
+        example #"""
+mise tool-alias ls
+node  lts-jod      22
+"""#
     }
     cmd set help="Add/update an alias for a tool/backend" effect=write {
         alias add create
@@ -330,11 +357,14 @@ Add/update an alias for a tool/backend
 
 This modifies the contents of ~/.config/mise/config.toml
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise tool-alias set maven asdf:mise-plugins/mise-maven\u{1b}[22m\n    $ \u{1b}[1mmise tool-alias set node lts-jod 22.0.0\u{1b}[22m\n"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <TOOL> help="The tool/backend to set the alias for"
         arg <ALIAS> help="The alias to set"
         arg "[VALUE]" help="The value to set the alias to" required=#false
+        example #"""
+mise tool-alias set ripgrep aqua:BurntSushi/ripgrep
+mise tool-alias set node project 20
+"""#
     }
     cmd unset help="Clear an alias for a tool/backend" effect=write {
         alias rm remove delete del
@@ -343,10 +373,13 @@ Clear an alias for a tool/backend
 
 This modifies the contents of ~/.config/mise/config.toml
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise tool-alias unset maven\u{1b}[22m\n    $ \u{1b}[1mmise tool-alias unset node lts-jod\u{1b}[22m\n"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <TOOL> help="The tool/backend to remove the alias from"
         arg "[ALIAS]" help="The alias to remove" required=#false
+        example #"""
+mise tool-alias unset ripgrep
+mise tool-alias unset node project
+"""#
     }
 }
 cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf\" internally" {
@@ -360,8 +393,11 @@ cmd backends help="Manage backends" effect=read {
     flag "-h --help" help="Print help" action=help builtin=#true
     cmd ls help="List built-in backends" effect=read {
         alias list
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise backends ls\u{1b}[22m\n    aqua\n    asdf\n    cargo\n    core\n    dotnet\n    gem\n    go\n    npm\n    pipx\n    spm\n    ubi\n    vfox\n"
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise backends ls
+mise plugins ls
+"""# help="Installed plugin availability and built-in backends are separate lists"
     }
 }
 cmd bin-paths help="List all the active runtime bin paths" effect=read {
@@ -426,7 +462,6 @@ Use `--skip <part>` to skip named parts, or `--only <part>` to run just
 named parts. Both flags can be repeated or comma-separated, but they
 cannot be used together.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap\u{1b}[22m                    # packages + repos + dotfiles + tools + bootstrap task\n    $ \u{1b}[1mmise -E work bootstrap --from git@github.com:example/dotfiles.git --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap --from-git git@github.com:example/mise-config.git --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap --force-dotfiles\u{1b}[22m   # replace conflicting dotfile targets\n    $ \u{1b}[1mmise bootstrap --skip tools,task\u{1b}[22m  # skip tool installation and the bootstrap task\n    $ \u{1b}[1mmise bootstrap --only tools\u{1b}[22m       # run just tool installation\n    $ \u{1b}[1mmise bootstrap status --missing\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages apply --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap repos status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap repos apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap mise-shell-activate apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap macos defaults status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap macos launchd-agents apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap linux systemd-units apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap user apply --dry-run\u{1b}[22m\n"
     flag --from help="Clone a git repository and bootstrap from its configuration" {
         arg <GIT_URL>
     }
@@ -573,7 +608,6 @@ If the target is already managed, this updates its source from the live
 target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 under `dotfiles.root` unless `--source` is provided.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles add ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --mode copy ~/.config/starship.toml\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --changed\u{1b}[22m\n"
             flag --changed help="Update the sources of every changed file managed in copy mode"
             flag "-f --force" help="Overwrite existing sources without prompting"
             flag "-g --global" help="Write to the global config" {
@@ -597,6 +631,12 @@ under `dotfiles.root` unless `--source` is provided.
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Targets to add or update" required=#false var=#true
+            example #"""
+mise bootstrap dotfiles add ~/.zshrc
+mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
+mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
+mise bootstrap dotfiles add --changed
+"""#
         }
         cmd apply help="Apply dotfiles from `[dotfiles]`" effect=write {
             long_help #"""
@@ -607,20 +647,26 @@ desired state. Whole-file entries may symlink, copy, or render templates.
 Edit entries manage a marker-delimited block or a single line in a file
 mise doesn't otherwise own.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles apply\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles apply --force --yes\u{1b}[22m\n"
             flag "-f --force" help="Overwrite existing files that conflict with whole-file dotfile entries"
             flag "-n --dry-run" help="Print the actions that would run without writing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
+            example #"""
+mise bootstrap dotfiles apply
+mise bootstrap dotfiles apply --dry-run
+mise bootstrap dotfiles apply --force --yes
+"""#
         }
         cmd diff help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles diff\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles diff ~/.zshrc\u{1b}[22m\n"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
+            example #"""
+mise bootstrap dotfiles diff
+mise bootstrap dotfiles diff ~/.zshrc
+"""#
         }
         cmd edit help="Edit a managed dotfile source" effect=write {
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles edit ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles edit --apply ~/.config/starship.toml\u{1b}[22m\n"
             flag --apply help="Apply this target after the editor exits"
             flag "-m --mode" help="Dotfile mode to use if the target is not yet managed" {
                 arg <MODE>
@@ -631,10 +677,13 @@ mise doesn't otherwise own.
             flag "-y --yes" help="Skip the confirmation prompt when adding an unmanaged target"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <TARGET> help="Target to edit"
+            example #"""
+mise bootstrap dotfiles edit ~/.zshrc
+mise bootstrap dotfiles edit --apply ~/.config/starship.toml
+"""#
         }
         cmd status help="Show the status of dotfiles from `[dotfiles]`" effect=read {
             alias ls
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status --json\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status --missing\u{1b}[22m # exit 1 if anything is out of sync\n"
             flag "-J --json" help="Output in JSON format"
             flag --missing help=#"""
 Exit with code 1 if any configured dotfiles are not in their desired
@@ -642,6 +691,12 @@ state (missing, source missing, differs)
 """#
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
+            example #"""
+mise bootstrap dotfiles status
+mise bootstrap dotfiles status ~/.zshrc
+mise bootstrap dotfiles status --json
+mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
+"""#
         }
         cmd unapply help="Remove dotfiles applied from `[dotfiles]`" effect=destructive {
             long_help #"""
@@ -651,12 +706,17 @@ Removes configured whole-file entries and edits while preserving files
 mise cannot identify as managed. Modified copies, templates, and plain-line
 edits require `--force`.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles unapply\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles unapply ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles unapply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles unapply --force --yes\u{1b}[22m\n"
             flag "-f --force" help="Remove modified or otherwise ambiguous managed files and lines"
             flag "-n --dry-run" help="Print the actions that would run without writing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only unapply these targets" required=#false var=#true
+            example #"""
+mise bootstrap dotfiles unapply
+mise bootstrap dotfiles unapply ~/.zshrc
+mise bootstrap dotfiles unapply --dry-run
+mise bootstrap dotfiles unapply --force --yes
+"""#
         }
     }
     cmd files subcommand_required=#true help="Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`" effect=read {
@@ -790,7 +850,6 @@ Packages can also be given explicitly in `manager:package` form (e.g.
 the config. Explicit packages and `--manager` scope the run to packages
 only. `install` is accepted as an alias for this command.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap packages apply\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages apply --manager apt --yes\u{1b}[22m\n"
             flag "-m --manager" help="Only install packages for this built-in or plugin manager" {
                 arg <MANAGER>
             }
@@ -799,6 +858,12 @@ only. `install` is accepted as an alias for this command.
             flag --update help="Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
+            example #"""
+mise bootstrap packages apply
+mise bootstrap packages apply brew:jq brew-cask:firefox
+mise bootstrap packages apply --dry-run
+mise bootstrap packages apply --manager apt --yes
+"""#
         }
         cmd brew subcommand_required=#true help="Manage Homebrew taps used by bootstrap packages" effect=read {
             long_help #"""
@@ -809,7 +874,6 @@ can be fetched directly by mise without a Homebrew installation.
 """#
             flag "-h --help" help="Print help" action=help builtin=#true
             cmd tap help="Add a Homebrew tap URL to [bootstrap.brew.taps]" effect=write {
-                after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap packages brew tap railwaycat/emacsmacport\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git\u{1b}[22m\n"
                 flag "-l --local" help="Write to the local config instead of the global config"
                 flag "-n --dry-run" help="Print the config change without writing it"
                 flag "-p --path --file" help="Write to this config file or directory" conflicts=--local {
@@ -818,11 +882,14 @@ can be fetched directly by mise without a Homebrew installation.
                 flag "-h --help" help="Print help" action=help builtin=#true
                 arg <TAP> help="Tap name, e.g. `owner/repo`"
                 arg "[URL]" help="GitHub URL for the tap. Defaults to https://github.com/<owner>/homebrew-<repo>.git" required=#false
+                example #"""
+mise bootstrap packages brew tap railwaycat/emacsmacport
+mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git
+"""#
                 complete url type=url
             }
             cmd untap help="Remove Homebrew tap URLs from [bootstrap.brew.taps]" effect=write {
                 alias remove rm
-                after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap packages brew untap railwaycat/emacsmacport\u{1b}[22m\n"
                 flag "-l --local" help="Write to the local config instead of the global config"
                 flag "-n --dry-run" help="Print the config change without writing it"
                 flag "-p --path --file" help="Write to this config file or directory" conflicts=--local {
@@ -830,6 +897,7 @@ can be fetched directly by mise without a Homebrew installation.
                 }
                 flag "-h --help" help="Print help" action=help builtin=#true
                 arg <TAPS>… help="Tap name(s), e.g. `owner/repo`" var=#true
+                example "mise bootstrap packages brew untap railwaycat/emacsmacport"
             }
         }
         cmd import help="Import installed system packages into `[bootstrap.packages]`" effect=write {
@@ -840,7 +908,6 @@ Currently supports Homebrew formulae only. By default, imports linked
 formulae whose active keg receipt says they were installed on request.
 Pass `--all` to import every linked formula, including dependencies.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap packages import --manager brew\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages import --manager brew --all\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages import --manager brew --global\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages import --manager brew --dry-run\u{1b}[22m\n"
             flag "-e --env" help="Write to the config file for this environment (mise.<ENV>.toml)" {
                 conflicts "--global" "--path"
                 arg <ENV>
@@ -859,6 +926,12 @@ Pass `--all` to import every linked formula, including dependencies.
                 arg <PATH>
             }
             flag "-h --help" help="Print help" action=help builtin=#true
+            example #"""
+mise bootstrap packages import --manager brew
+mise bootstrap packages import --manager brew --all
+mise bootstrap packages import --manager brew --global
+mise bootstrap packages import --manager brew --dry-run
+"""#
         }
         cmd prune help="Prune installed system packages no longer declared in `[bootstrap.packages]`" effect=destructive {
             long_help #"""
@@ -870,20 +943,30 @@ Pruning keeps packages needed by the current config or by trusted, loadable
 tracked configs. Plugin packages that were already installed before mise
 first applied them are never claimed or removed.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew-cask --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages prune --manager vscode --dry-run\u{1b}[22m\n"
             flag "-m --manager" help="Only prune packages for this manager" default=brew {
                 arg <MANAGER>
             }
             flag "-n --dry-run" help="Print what would be removed without deleting anything"
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
+            example #"""
+mise bootstrap packages prune --manager brew
+mise bootstrap packages prune --manager brew --dry-run
+mise bootstrap packages prune --manager brew --yes
+mise bootstrap packages prune --manager brew-cask --dry-run
+mise bootstrap packages prune --manager vscode --dry-run
+"""#
         }
         cmd status help="Show the status of system packages from `[bootstrap.packages]`" effect=read {
             alias ls
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap packages status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages status --json\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages status --missing\u{1b}[22m # exit 1 if anything is out of sync\n"
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 if any configured packages are not in their desired state"
             flag "-h --help" help="Print help" action=help builtin=#true
+            example #"""
+mise bootstrap packages status
+mise bootstrap packages status --json
+mise bootstrap packages status --missing # exit 1 if anything is out of sync
+"""#
         }
         cmd upgrade help="Upgrade installed bootstrap packages from `[bootstrap.packages]`" effect=write {
             alias up
@@ -901,7 +984,6 @@ those.
 
 Packages can also be given explicitly in `manager:package` form.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap packages upgrade\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages upgrade brew:postgresql@17\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages upgrade --manager brew-cask\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages upgrade --manager mas\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages upgrade --manager apt --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages upgrade --dry-run\u{1b}[22m\n"
             flag "-m --manager" help="Only upgrade packages for this built-in or plugin manager" {
                 arg <MANAGER>
             }
@@ -909,6 +991,14 @@ Packages can also be given explicitly in `manager:package` form.
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
+            example #"""
+mise bootstrap packages upgrade
+mise bootstrap packages upgrade brew:postgresql@17
+mise bootstrap packages upgrade --manager brew-cask
+mise bootstrap packages upgrade --manager mas
+mise bootstrap packages upgrade --manager apt --yes
+mise bootstrap packages upgrade --dry-run
+"""#
         }
         cmd use help="Add bootstrap packages to [bootstrap.packages] and install them" effect=write {
             alias u
@@ -925,7 +1015,6 @@ version through their names instead (for example `brew:postgresql@17`,
 `brew-cask:temurin@17`), where `@` is part of the Homebrew name rather than
 a mise version selector. mas uses numeric ADAM IDs and does not support pins.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages use -g brew:postgresql@17\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages use apt:curl@8.5.0-2\u{1b}[22m\n"
             flag "-e --env" help="Write to the config file for this environment (mise.<ENV>.toml)" {
                 conflicts "--global" "--path"
                 arg <ENV>
@@ -938,6 +1027,11 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
+            example #"""
+mise bootstrap packages use brew:jq brew-cask:firefox
+mise bootstrap packages use -g brew:postgresql@17
+mise bootstrap packages use apt:curl@8.5.0-2
+"""#
         }
     }
     cmd plan help="Show the changes declarative bootstrap resources would make" effect=read {
@@ -1187,6 +1281,24 @@ Defaults to `~/.local/bin/mise`; pass `--install-mise=<PATH>` for another path.
             flag "-h --help" help="Print help" action=help builtin=#true
         }
     }
+    example #"""
+mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
+mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
+mise bootstrap --from-git git@github.com:example/mise-config.git --yes
+mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
+mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
+mise bootstrap --only tools       # run just tool installation
+mise bootstrap status --missing
+mise bootstrap packages apply --yes
+mise bootstrap repos status
+mise bootstrap repos apply --dry-run
+mise bootstrap dotfiles status
+mise bootstrap mise-shell-activate apply --dry-run
+mise bootstrap macos defaults status
+mise bootstrap macos launchd-agents apply --dry-run
+mise bootstrap linux systemd-units apply --dry-run
+mise bootstrap user apply --dry-run
+"""#
 }
 cmd cache help="Manage the mise cache" effect=read {
     long_help #"""
@@ -1230,7 +1342,6 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 }
 cmd completion help="Generate shell completions" effect=read {
     alias complete completions
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # put it where the shell looks, and print any one-time line it still needs\n    $ \u{1b}[1mmise completion zsh --install\u{1b}[22m\n\n    # a tool's completion, from the packslip it was installed from\n    $ \u{1b}[1mmise completion zsh --tool rg\u{1b}[22m\n    $ \u{1b}[1mmise completion zsh --tool rg --install\u{1b}[22m\n\n    # or choose the path yourself\n    $ \u{1b}[1mmise completion bash > ~/.local/share/bash-completion/completions/mise\u{1b}[22m\n    $ \u{1b}[1mmise completion zsh  > /usr/local/share/zsh/site-functions/_mise\u{1b}[22m\n    $ \u{1b}[1mmise completion fish > ~/.config/fish/completions/mise.fish\u{1b}[22m\n    $ \u{1b}[1mmise completion powershell >> $PROFILE\u{1b}[22m\n"
     flag "-s --shell" help="Shell type to generate completions for" hide=#true {
         arg <SHELL> {
             choices {
@@ -1291,6 +1402,17 @@ without being rewritten.
             choice zsh
         }
     }
+    example #"""
+mise completion zsh --install
+mise completion bash --install
+mise completion fish --install
+mise completion powershell --install
+"""# help="Install for your shell; follow any printed one-time setup instructions"
+    example "mise completion zsh" help="Print a completion script to inspect or save at a custom path"
+    example #"""
+mise completion zsh --tool rg
+mise completion zsh --tool rg --install
+"""# help="For a tool installed through Packslip with completion resources"
 }
 cmd config help="Manage config files" effect=read {
     alias cfg toml
@@ -1301,7 +1423,6 @@ cmd config help="Manage config files" effect=read {
     flag --tracked-configs help="List all tracked config files"
     flag "-h --help" help="Print help" action=help builtin=#true
     cmd get help="Display a value from a mise.toml file" effect=read {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise toml get tools.python\u{1b}[22m\n    3.12\n"
         flag "-f --file --path" help="The path to the mise.toml file to read" {
             long_help #"""
 The path to the mise.toml file to read
@@ -1320,20 +1441,28 @@ If not provided, the nearest mise.toml file will be used
         }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[KEY]" help="Dotted key path to display, e.g. `tools.python`; omit to print the whole file" required=#false
+        example #"""
+mise config get tools.python
+3.12
+"""#
         complete file type=path
     }
     cmd ls help="List config files currently in use" effect=read {
         alias list
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise config ls\u{1b}[22m\n    Path                        Tools\n    ~/.config/mise/config.toml  pitchfork\n    ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-insta\n"
         flag "-J --json" help="Output in JSON format"
         flag --no-header help="Do not print table header" {
             alias "--no-headers" hide=#true
         }
         flag --tracked-configs help="List all tracked config files"
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise config ls
+Path                        Tools
+~/.config/mise/config.toml  pitchfork
+~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-insta
+"""#
     }
     cmd set help="Set a value in a mise.toml file" effect=write {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise config set tools.python 3.12\u{1b}[22m\n    $ \u{1b}[1mmise config set settings.always_keep_download true\u{1b}[22m\n    $ \u{1b}[1mmise config set env.TEST_ENV_VAR ABC\u{1b}[22m\n    $ \u{1b}[1mmise config set settings.disable_tools node,rust\u{1b}[22m\n    $ \u{1b}[1mmise config set --append env._.path ~/.local/bin\u{1b}[22m\n    $ \u{1b}[1mmise config set --remove env._.path ~/.local/bin\u{1b}[22m\n\n    # Type for `settings` is inferred\n    $ \u{1b}[1mmise config set settings.jobs 4\u{1b}[22m\n"
         flag "-f --file --path" help="The path to the mise.toml file to edit" {
             long_help #"""
 The path to the mise.toml file to edit
@@ -1368,6 +1497,15 @@ If not provided, the nearest mise.toml file will be used
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <KEY> help="Dotted key path to set, e.g. `tools.python`"
         arg "[VALUE]" help="The value to set the key to (optional if provided as KEY=VALUE)" required=#false
+        example #"""
+mise config set tools.python 3.12
+mise config set settings.always_keep_download true
+mise config set env.TEST_ENV_VAR ABC
+mise config set settings.disable_tools node,rust
+mise config set --append env._.path ~/.local/bin
+mise config set --remove env._.path ~/.local/bin
+"""#
+        example "mise config set settings.jobs 4" help="Type for `settings` is inferred"
         complete file type=path
     }
 }
@@ -1378,9 +1516,23 @@ Shows current active and installed runtime versions
 This is similar to `mise ls --current`, but this only shows the runtime
 and/or version. It's designed to fit into scripts more easily.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # outputs `.tool-versions` compatible format\n    $ \u{1b}[1mmise current\u{1b}[22m\n    python 3.11.0 3.10.0\n    shfmt 3.6.0\n    shellcheck 0.9.0\n    node 20.0.0\n\n    $ \u{1b}[1mmise current node\u{1b}[22m\n    20.0.0\n\n    # can output multiple versions\n    $ \u{1b}[1mmise current python\u{1b}[22m\n    3.11.0 3.10.0\n"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[PLUGIN]" help="Plugin to show versions of e.g.: ruby, node, cargo:eza, npm:prettier, etc." required=#false
+    example #"""
+mise current
+python 3.11.0 3.10.0
+shfmt 3.6.0
+shellcheck 0.9.0
+node 20.0.0
+"""# help="outputs `.tool-versions` compatible format"
+    example #"""
+mise current node
+20.0.0
+"""#
+    example #"""
+mise current python
+3.11.0 3.10.0
+"""# help="can output multiple versions"
 }
 cmd deactivate help="Disable mise for current shell session" effect=read {
     long_help #"""
@@ -1388,8 +1540,9 @@ Disable mise for current shell session
 
 This can be used to temporarily disable mise in a shell session.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise deactivate\u{1b}[22m\n"
     flag "-h --help" help="Print help" action=help builtin=#true
+    example "eval \"$(command mise deactivate)\"" help="Bash or Zsh, calling the executable rather than the activation function"
+    example "command mise deactivate | source" help=Fish
 }
 cmd direnv hide=#true help="Output direnv function to use mise inside direnv" effect=read {
     long_help #"""
@@ -1412,8 +1565,12 @@ Because this generates the idiomatic files based on currently installed plugins,
 you should run this command after installing new plugins. Otherwise
 direnv may not know to update environment variables when idiomatic file versions change.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise direnv activate > ~/.config/direnv/lib/use_mise.sh\u{1b}[22m\n    $ \u{1b}[1mecho 'use mise' > .envrc\u{1b}[22m\n    $ \u{1b}[1mdirenv allow\u{1b}[22m\n"
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise direnv activate > ~/.config/direnv/lib/use_mise.sh
+echo 'use mise' > .envrc
+direnv allow
+"""#
     }
     cmd envrc hide=#true help=#"""
 [internal] This is an internal command that writes an envrc file
@@ -1443,7 +1600,6 @@ If the target is already managed, this updates its source from the live
 target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 under `dotfiles.root` unless `--source` is provided.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles add ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --mode copy ~/.config/starship.toml\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --changed\u{1b}[22m\n"
         flag --changed help="Update the sources of every changed file managed in copy mode"
         flag "-f --force" help="Overwrite existing sources without prompting"
         flag "-g --global" help="Write to the global config" {
@@ -1467,6 +1623,12 @@ under `dotfiles.root` unless `--source` is provided.
         flag "-y --yes" help="Skip the confirmation prompt"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Targets to add or update" required=#false var=#true
+        example #"""
+mise bootstrap dotfiles add ~/.zshrc
+mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
+mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
+mise bootstrap dotfiles add --changed
+"""#
     }
     cmd apply hide=#true help="Apply dotfiles from `[dotfiles]`" effect=write {
         long_help #"""
@@ -1477,20 +1639,26 @@ desired state. Whole-file entries may symlink, copy, or render templates.
 Edit entries manage a marker-delimited block or a single line in a file
 mise doesn't otherwise own.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles apply\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles apply --force --yes\u{1b}[22m\n"
         flag "-f --force" help="Overwrite existing files that conflict with whole-file dotfile entries"
         flag "-n --dry-run" help="Print the actions that would run without writing anything"
         flag "-y --yes" help="Skip the confirmation prompt"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
+        example #"""
+mise bootstrap dotfiles apply
+mise bootstrap dotfiles apply --dry-run
+mise bootstrap dotfiles apply --force --yes
+"""#
     }
     cmd diff hide=#true help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles diff\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles diff ~/.zshrc\u{1b}[22m\n"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only show these targets" required=#false var=#true
+        example #"""
+mise bootstrap dotfiles diff
+mise bootstrap dotfiles diff ~/.zshrc
+"""#
     }
     cmd edit hide=#true help="Edit a managed dotfile source" effect=write {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles edit ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles edit --apply ~/.config/starship.toml\u{1b}[22m\n"
         flag --apply help="Apply this target after the editor exits"
         flag "-m --mode" help="Dotfile mode to use if the target is not yet managed" {
             arg <MODE>
@@ -1501,10 +1669,13 @@ mise doesn't otherwise own.
         flag "-y --yes" help="Skip the confirmation prompt when adding an unmanaged target"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <TARGET> help="Target to edit"
+        example #"""
+mise bootstrap dotfiles edit ~/.zshrc
+mise bootstrap dotfiles edit --apply ~/.config/starship.toml
+"""#
     }
     cmd status hide=#true help="Show the status of dotfiles from `[dotfiles]`" effect=read {
         alias ls
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status --json\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status --missing\u{1b}[22m # exit 1 if anything is out of sync\n"
         flag "-J --json" help="Output in JSON format"
         flag --missing help=#"""
 Exit with code 1 if any configured dotfiles are not in their desired
@@ -1512,6 +1683,12 @@ state (missing, source missing, differs)
 """#
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only show these targets" required=#false var=#true
+        example #"""
+mise bootstrap dotfiles status
+mise bootstrap dotfiles status ~/.zshrc
+mise bootstrap dotfiles status --json
+mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
+"""#
     }
     cmd unapply hide=#true help="Remove dotfiles applied from `[dotfiles]`" effect=destructive {
         long_help #"""
@@ -1521,25 +1698,34 @@ Removes configured whole-file entries and edits while preserving files
 mise cannot identify as managed. Modified copies, templates, and plain-line
 edits require `--force`.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles unapply\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles unapply ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles unapply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles unapply --force --yes\u{1b}[22m\n"
         flag "-f --force" help="Remove modified or otherwise ambiguous managed files and lines"
         flag "-n --dry-run" help="Print the actions that would run without writing anything"
         flag "-y --yes" help="Skip the confirmation prompt"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only unapply these targets" required=#false var=#true
+        example #"""
+mise bootstrap dotfiles unapply
+mise bootstrap dotfiles unapply ~/.zshrc
+mise bootstrap dotfiles unapply --dry-run
+mise bootstrap dotfiles unapply --force --yes
+"""#
     }
 }
 cmd doctor help="Check mise installation for possible problems" effect=read {
     alias dr
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise doctor\u{1b}[22m\n    [WARN] plugin node is not installed\n"
     flag "-J --json" help="Output in JSON format"
     flag "-h --help" help="Print help" action=help builtin=#true
     cmd path help="Print the current PATH entries mise is providing" effect=read {
         alias paths
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    Get the current PATH entries mise is providing\n    $ mise doctor path\n    /home/user/.local/share/mise/installs/node/24.0.0/bin\n    /home/user/.local/share/mise/installs/rust/1.90.0/bin\n    /home/user/.local/share/mise/installs/python/3.10.0/bin\n"
         flag "-f --full" help="Print all entries including those not provided by mise"
         flag "-h --help" help="Print help" action=help builtin=#true
+        example "mise doctor path" help="Get the PATH entries mise provides, such as `/home/user/.local/share/mise/installs/node/24.0.0/bin`, `/home/user/.local/share/mise/installs/rust/1.90.0/bin`, and `/home/user/.local/share/mise/installs/python/3.10.0/bin`."
     }
+    example #"""
+mise doctor
+mise doctor --json
+mise doctor path --full
+"""#
 }
 cmd en help="Start a new shell with the mise environment built from the current configuration" {
     long_help #"""
@@ -1549,7 +1735,6 @@ This is an alternative to `mise activate` for starting a mise session explicitly
 The new shell has the tools and environment variables from the config loaded.
 Unlike an activated shell, changing directories does not update the environment.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise en .\u{1b}[22m\n    $ \u{1b}[1mnode -v\u{1b}[22m\n    v20.0.0\n\n    Skip loading bashrc:\n    $ \u{1b}[1mmise en -s \"bash --norc\"\u{1b}[22m\n\n    Skip loading zshrc:\n    $ \u{1b}[1mmise en -s \"zsh -f\"\u{1b}[22m\n"
     flag "-s --shell" help="Shell to start" {
         long_help #"""
 Shell to start
@@ -1560,6 +1745,12 @@ Defaults to $SHELL
     }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[DIR]" help="Directory to start the shell in" required=#false default=.
+    example #"""
+mise en .
+node -v
+"""# help="Start a shell and check node. Example output: `v20.0.0`."
+    example "mise en -s \"bash --norc\"" help="Skip loading bashrc."
+    example "mise en -s \"zsh -f\"" help="Skip loading zshrc."
     complete dir type=dir
 }
 cmd env help="Export env vars to activate mise a single time" effect=read {
@@ -1570,7 +1761,6 @@ Export env vars to activate mise a single time
 Use this to load the environment into one shell without adding `mise activate` to
 your shell rc file. It is not needed in shells where mise is already activated.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1meval \"$(mise env -s bash)\"\u{1b}[22m\n    $ \u{1b}[1meval \"$(mise env -s zsh)\"\u{1b}[22m\n    $ \u{1b}[1mmise env -s fish | source\u{1b}[22m\n    $ \u{1b}[1mexecx($(mise env -s xonsh))\u{1b}[22m\n"
     flag "-D --dotenv" help="Output in dotenv format" overrides=--shell
     flag "-J --json" help="Output in JSON format" overrides=--shell
     flag "-s --shell" help="Shell type to generate environment variables for" overrides=--json {
@@ -1593,6 +1783,12 @@ your shell rc file. It is not needed in shells where mise is already activated.
     flag --values help="Only show values of environment variables"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL@VERSION]…" help="Tool(s) to include in addition to those in config, e.g. node@20" required=#false var=#true
+    example #"""
+eval "$(mise env -s bash)"
+eval "$(mise env -s zsh)"
+mise env -s fish | source
+execx($(mise env -s xonsh))
+"""#
 }
 cmd exec help="Execute a command with tool(s) set" {
     alias x
@@ -1608,7 +1804,6 @@ tools you name are overridden: if `mise.toml` includes `node = "20"` and you run
 
 The "--" separates tools from the command to pass along to the subprocess.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise exec node@20 -- node ./app.js\u{1b}[22m  # launch app.js using node-20.x\n    $ \u{1b}[1mmise x node@20 -- node ./app.js\u{1b}[22m     # shorter alias\n\n    # Specify command as a string:\n    $ \u{1b}[1mmise exec node@20 python@3.11 --command \"node -v && python -V\"\u{1b}[22m\n\n    # Run a command in a different directory:\n    $ \u{1b}[1mmise x -C /path/to/project node@20 -- node ./app.js\u{1b}[22m\n"
     flag "-c --command" help="Command string to execute" conflicts=COMMAND {
         arg <COMMAND>
     }
@@ -1648,6 +1843,12 @@ macOS only in v1; on Linux falls back to allowing all network
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL@VERSION]…" help="Tool(s) to load e.g.: node@20 python@3.10" required=#false var=#true
     arg "[-- COMMAND]…" help="Command string to execute (same as --command)" required=#false var=#true conflicts=--command required_unless=--command
+    example #"""
+mise exec node@20 -- node ./app.js
+mise x node@20 -- node ./app.js
+"""# help="Launch app.js using node-20.x, with the full command or its shorter alias."
+    example "mise exec node@20 python@3.11 --command \"node -v && python -V\"" help="Specify command as a string:"
+    example "mise x -C /path/to/project node@20 -- node ./app.js" help="Run a command in a different directory:"
     complete command type=command
 }
 cmd fmt help="Format mise.toml" effect=write {
@@ -1656,11 +1857,15 @@ Format mise.toml
 
 Sorts keys and cleans up whitespace in mise.toml
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise fmt\u{1b}[22m\n"
     flag "-a --all" help="Format every config file mise currently loads, not just those in the current directory"
     flag "-c --check" help="Check whether the configs are formatted without rewriting them; exits 1 if any are not"
     flag "-s --stdin" help="Read config from stdin and write its formatted version into stdout"
     flag "-h --help" help="Print help" action=help builtin=#true
+    example #"""
+mise fmt
+mise fmt --check
+cat mise.toml | mise fmt --stdin
+"""#
 }
 cmd generate subcommand_required=#true help="Generate files for various tools/services" effect=read {
     alias gen g
@@ -1674,7 +1879,6 @@ This is designed to be used in a project where contributors may not have mise in
 Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap` (machine
 setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise\u{1b}[22m\n    $ \u{1b}[1m./bin/mise install\u{1b}[22m                                    \u{1b}[2m# downloads mise to .mise if not already installed\u{1b}[22m\n\n    \u{1b}[2m# add a launcher for contributors who clone the project on Windows\u{1b}[22m\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise --windows\u{1b}[22m  \u{1b}[2m# also writes bin/mise.cmd\u{1b}[22m\n    $ \u{1b}[1m.\\bin\\mise.cmd install\u{1b}[22m\n"
         flag "-l --localize" help="Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)" {
             long_help #"""
 Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)
@@ -1704,10 +1908,17 @@ carry two files.
 """#
         }
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise generate install-script --write ./bin/mise
+./bin/mise install
+"""# help="Download mise to .mise if it is not already installed."
+        example #"""
+mise generate install-script --write ./bin/mise --windows
+.\bin\mise.cmd install
+"""# help="Write bin/mise.cmd as a launcher for contributors who clone the project on Windows."
         complete localized_dir type=dir
     }
     cmd config help="Generate a mise.toml file" effect=write {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate config\u{1b}[22m             \u{1b}[2m# generate mise.toml interactively\u{1b}[22m\n    $ \u{1b}[1mmise generate config .mise.toml\u{1b}[22m  \u{1b}[2m# generate a specific file\u{1b}[22m\n    $ \u{1b}[1mmise generate config -g\u{1b}[22m          \u{1b}[2m# generate the global config file\u{1b}[22m\n    $ \u{1b}[1mmise generate config -y\u{1b}[22m          \u{1b}[2m# skip interactive editor\u{1b}[22m\n    $ \u{1b}[1mmise generate config -n\u{1b}[22m          \u{1b}[2m# preview without writing\u{1b}[22m\n"
         flag "-g --global" help="Generate the global config file (~/.config/mise/config.toml)" conflicts=PATH
         flag "-n --dry-run" help="Show what would be generated without writing to file"
         flag "-t --tool-versions" help="Path to a .tool-versions file to import tools from" {
@@ -1715,11 +1926,17 @@ carry two files.
         }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[PATH]" help="Path to the config file to create" required=#false
+        example #"""
+mise generate config             # generate mise.toml interactively
+mise generate config .mise.toml  # generate a specific file
+mise generate config -g          # generate the global config file
+mise generate config -y          # skip interactive editor
+mise generate config -n          # preview without writing
+"""#
         complete path type=path
         complete tool_versions type=path
     }
     cmd devcontainer help="Generate a devcontainer to execute mise" effect=write {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate devcontainer\u{1b}[22m\n"
         flag "-i --image" help="The image to use for the devcontainer" {
             arg <IMAGE>
         }
@@ -1729,6 +1946,7 @@ carry two files.
         }
         flag "-w --write" help="Write to .devcontainer/devcontainer.json"
         flag "-h --help" help="Print help" action=help builtin=#true
+        example "mise generate devcontainer"
     }
     cmd git-pre-commit help="Generate a git pre-commit hook" effect=write {
         alias pre-commit
@@ -1742,7 +1960,6 @@ Staged files are passed to the task as `STAGED`.
 
 For more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate git-pre-commit --write --task=pre-commit\u{1b}[22m\n    $ \u{1b}[1mgit commit -m \"feat: add new feature\"\u{1b}[22m \u{1b}[2m# runs `mise run pre-commit`\u{1b}[22m\n\n    \u{1b}[2m# config lives in a subdirectory, so the hook has to change into it first\u{1b}[22m\n    $ \u{1b}[1mmise generate git-pre-commit --write -- -C subdir\u{1b}[22m\n"
         flag "-t --task" help="The task to run when the pre-commit hook is triggered" default=pre-commit {
             arg <TASK>
         }
@@ -1758,6 +1975,11 @@ These are inserted between `mise` and `run`, so the hook carries the same contex
 would pass on the command line. Useful when the config is not at the repository root,
 since git runs hooks from the top level: `-- -C subdir` makes the hook find it.
 """# required=#false var=#true
+        example #"""
+mise generate git-pre-commit --write --task=pre-commit
+git commit -m "feat: add new feature"
+"""# help="Install the hook; committing then runs `mise run pre-commit`."
+        example "mise generate git-pre-commit --write -- -C subdir" help="config lives in a subdirectory, so the hook has to change into it first"
     }
     cmd github-action help="Generate a GitHub Action workflow file" effect=write {
         long_help #"""
@@ -1766,7 +1988,6 @@ Generate a GitHub Action workflow file
 This command generates a GitHub Action workflow file that runs a mise task like `mise run ci`
 when you push changes to your repository.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate github-action --write --task=ci\u{1b}[22m\n    $ \u{1b}[1mgit commit -m \"feat: add new feature\"\u{1b}[22m\n    $ \u{1b}[1mgit push\u{1b}[22m \u{1b}[2m# runs `mise run ci` on GitHub\u{1b}[22m\n"
         flag "-t --task" help="The task to run when the workflow is triggered" default=ci {
             arg <TASK>
         }
@@ -1775,6 +1996,11 @@ when you push changes to your repository.
             arg <NAME>
         }
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise generate github-action --task=ci
+mise generate github-action --write --task=ci
+git add .github/workflows/ci.yml
+"""# help="Preview before writing the workflow"
     }
     cmd install-script help="Generate a script to download+execute mise" effect=write {
         long_help #"""
@@ -1785,7 +2011,6 @@ This is designed to be used in a project where contributors may not have mise in
 Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap` (machine
 setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise\u{1b}[22m\n    $ \u{1b}[1m./bin/mise install\u{1b}[22m                                    \u{1b}[2m# downloads mise to .mise if not already installed\u{1b}[22m\n\n    \u{1b}[2m# add a launcher for contributors who clone the project on Windows\u{1b}[22m\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise --windows\u{1b}[22m  \u{1b}[2m# also writes bin/mise.cmd\u{1b}[22m\n    $ \u{1b}[1m.\\bin\\mise.cmd install\u{1b}[22m\n"
         flag "-l --localize" help="Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)" {
             long_help #"""
 Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)
@@ -1815,10 +2040,17 @@ carry two files.
 """#
         }
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise generate install-script --write ./bin/mise
+./bin/mise install
+"""# help="Download mise to .mise if it is not already installed."
+        example #"""
+mise generate install-script --write ./bin/mise --windows
+.\bin\mise.cmd install
+"""# help="Write bin/mise.cmd as a launcher for contributors who clone the project on Windows."
         complete localized_dir type=dir
     }
     cmd task-docs help="Generate documentation for tasks in a project" effect=write {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate task-docs\u{1b}[22m\n"
         flag "-i --inject" help="Insert the documentation into an existing file" {
             long_help #"""
 Insert the documentation into an existing file
@@ -1846,6 +2078,11 @@ The file must already contain both comments; mise errors instead of modifying th
             }
         }
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise generate task-docs --style detailed
+mise generate task-docs --output TASKS.md
+"""#
+        example "mise generate task-docs --inject --output README.md" help="README.md must already contain both mise-tasks marker comments"
         complete root type=dir
     }
     cmd task-stubs help="Generate shims to run mise tasks" effect=write {
@@ -1856,7 +2093,6 @@ By default, this will build shims like ./bin/<task>. These can be paired with `m
 so contributors to a project can execute mise tasks without installing mise into their system.
 When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise tasks add test -- echo 'running tests'\u{1b}[22m\n    $ \u{1b}[1mmise generate task-stubs\u{1b}[22m\n    $ \u{1b}[1m./bin/test\u{1b}[22m\n    running tests\n"
         flag "-d --dir" help="Directory to create task stubs inside of" default=bin {
             arg <DIR>
         }
@@ -1893,6 +2129,12 @@ normally committed.
             }
         }
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise tasks add test -- echo 'running tests'
+mise generate task-stubs
+./bin/test
+running tests
+"""#
         complete dir type=dir
     }
     cmd tool-stub help="Generate a tool stub for HTTP-based tools" effect=write {
@@ -1907,7 +2149,6 @@ When generating stubs with platform-specific URLs, the command will append new
 platforms to existing stub files rather than overwriting them. This allows you
 to incrementally build cross-platform tool stubs.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    Generate a tool stub for a single URL:\n    $ \u{1b}[1mmise generate tool-stub ./bin/gh --url \"https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz\"\u{1b}[22m\n\n    Generate a tool stub with platform-specific URLs:\n    $ \u{1b}[1mmise generate tool-stub ./bin/rg \\\n        --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \\\n        --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz\u{1b}[22m\n\n    Append additional platforms to an existing stub:\n    $ \u{1b}[1mmise generate tool-stub ./bin/rg \\\n        --platform-url linux-x64:https://example.com/rg-linux.tar.gz\u{1b}[22m\n    $ \u{1b}[1mmise generate tool-stub ./bin/rg \\\n        --platform-url darwin-arm64:https://example.com/rg-darwin.tar.gz\u{1b}[22m\n    # The stub now contains both platforms\n\n    Use auto-detection for platform from URL:\n    $ \u{1b}[1mmise generate tool-stub ./bin/node \\\n        --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz\u{1b}[22m\n    # Platform 'macos-arm64' will be auto-detected from the URL\n\n    Generate with platform-specific binary paths:\n    $ \u{1b}[1mmise generate tool-stub ./bin/tool \\\n        --platform-url linux-x64:https://example.com/tool-linux.tar.gz \\\n        --platform-url windows-x64:https://example.com/tool-windows.zip \\\n        --platform-bin windows-x64:tool.exe\u{1b}[22m\n\n    Generate without downloading (faster):\n    $ \u{1b}[1mmise generate tool-stub ./bin/tool --url \"https://example.com/tool.tar.gz\" --skip-download\u{1b}[22m\n\n    Fetch checksums for an existing stub:\n    $ \u{1b}[1mmise generate tool-stub ./bin/jq --fetch\u{1b}[22m\n    # This will read the existing stub and download files to fill in any missing checksums/sizes\n\n    Generate a bootstrap stub that installs mise if needed:\n    $ \u{1b}[1mmise generate tool-stub ./bin/tool --url \"https://example.com/tool.tar.gz\" --bootstrap\u{1b}[22m\n    # The stub will check for mise and install it automatically before running the tool\n\n    Generate a bootstrap stub with a pinned mise version:\n    $ \u{1b}[1mmise generate tool-stub ./bin/tool --url \"https://example.com/tool.tar.gz\" --bootstrap --bootstrap-version 2025.1.0\u{1b}[22m\n\n    Lock an existing tool stub with pinned version and platform URLs/checksums:\n    $ \u{1b}[1mmise generate tool-stub ./bin/node --lock\u{1b}[22m\n\n    Bump the version in a locked stub:\n    $ \u{1b}[1mmise generate tool-stub ./bin/node --lock --version 22\u{1b}[22m\n    # Resolves the latest node 22.x, pins it, and updates platform URLs/checksums\n"
         flag "-b --bin" help="Binary path within the extracted archive" {
             long_help #"""
 Binary path within the extracted archive
@@ -1997,6 +2238,14 @@ Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.t
         }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <OUTPUT> help="Output file path for the tool stub"
+        example "mise generate tool-stub ./bin/node --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz" help="Download and inspect a real archive to detect its binary and checksum"
+        example "mise generate tool-stub ./bin/node --platform-url linux-x64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-x64.tar.gz" help="Add a Linux artifact to the same stub"
+        example #"""
+mise generate tool-stub ./bin/my-tool --url https://example.com/my-tool.tar.gz --skip-download
+# Replace the URL with a real artifact before fetching metadata or executing it
+"""# help="Create a draft for your own artifact without fetching the placeholder URL"
+        example "mise generate tool-stub ./bin/node --fetch" help="Fill missing checksums and sizes in an existing stub"
+        example "mise generate tool-stub ./bin/registry-node --lock --version 22" help="For an existing registry-backed stub, resolve and embed version/platform lock data"
         complete output type=path
     }
 }
@@ -2009,13 +2258,24 @@ Display the GitHub token mise will use for a given host
 Shows which token source mise would use, useful for debugging
 authentication issues. The token is masked by default.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise github token\u{1b}[22m\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ \u{1b}[1mmise github token --unmask\u{1b}[22m\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ \u{1b}[1mmise github token github.mycompany.com\u{1b}[22m\n    github.mycompany.com: (none)\n"
         flag --oauth help="Force native GitHub OAuth device flow instead of normal token resolution"
         flag --raw help="Print only the token value"
         flag --refresh help="Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow" requires=--oauth
         flag --unmask help="Show the full unmasked token"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
+        example #"""
+mise github token
+github.com: ghp_…xxxx (source: GITHUB_TOKEN)
+"""#
+        example #"""
+mise github token --unmask
+github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)
+"""#
+        example #"""
+mise github token github.mycompany.com
+github.mycompany.com: (none)
+"""#
     }
 }
 cmd global hide=#true help="Sets/gets the global tool version(s)" effect=write {
@@ -2031,7 +2291,6 @@ Use MISE_ASDF_COMPAT=1 to default the global config to ~/.tool-versions
 
 Use `mise local` to set a tool version locally in the current directory.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n    # set the current version of node to 20.x\n    # will use a fuzzy version (e.g.: 20) in .tool-versions file\n    $ \u{1b}[1mmise global --fuzzy node@20\u{1b}[22m\n\n    # set the current version of node to 20.x\n    # will use a precise version (e.g.: 20.0.0) in .tool-versions file\n    $ \u{1b}[1mmise global --pin node@20\u{1b}[22m\n\n    # show the current version of node in ~/.tool-versions\n    $ \u{1b}[1mmise global node\u{1b}[22m\n    20.0.0\n"
     flag --fuzzy help=#"""
 Save fuzzy version to `~/.tool-versions`
 e.g.: `mise global --fuzzy node@20` will save `node 20` to ~/.tool-versions
@@ -2053,6 +2312,12 @@ e.g.: node@20
 If this is a single tool with no version, the current value of the global
 .tool-versions will be displayed
 """# required=#false var=#true
+    example "mise global --fuzzy node@20" help="set the current version of node to 20.x will use a fuzzy version (e.g.: 20) in .tool-versions file"
+    example "mise global --pin node@20" help="set the current version of node to 20.x will use a precise version (e.g.: 20.0.0) in .tool-versions file"
+    example #"""
+mise global node
+20.0.0
+"""# help="show the current version of node in ~/.tool-versions"
 }
 cmd hook-env hide=#true help="[internal] called by activate hook to update env vars directory change" effect=read {
     flag "-f --force" help="Skip early exit check"
@@ -2113,7 +2378,6 @@ The config directory is kept unless `--config` is passed.
     flag "-h --help" help="Print help" action=help builtin=#true
 }
 cmd edit help="Edit mise.toml interactively" effect=write {
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise edit\u{1b}[22m             \u{1b}[2m# edit mise.toml interactively\u{1b}[22m\n    $ \u{1b}[1mmise edit .mise.toml\u{1b}[22m  \u{1b}[2m# edit a specific file\u{1b}[22m\n    $ \u{1b}[1mmise edit -g\u{1b}[22m          \u{1b}[2m# edit the global config file\u{1b}[22m\n    $ \u{1b}[1mmise edit -y\u{1b}[22m          \u{1b}[2m# skip interactive editor\u{1b}[22m\n    $ \u{1b}[1mmise edit -n\u{1b}[22m          \u{1b}[2m# preview without writing\u{1b}[22m\n"
     flag "-g --global" help="Edit the global config file (~/.config/mise/config.toml)" conflicts=PATH
     flag "-n --dry-run" help="Show what would be generated without writing to file"
     flag "-t --tool-versions" help="Path to a .tool-versions file to import tools from" {
@@ -2121,6 +2385,13 @@ cmd edit help="Edit mise.toml interactively" effect=write {
     }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[PATH]" help="Path to the config file to create" required=#false
+    example #"""
+mise edit             # edit mise.toml interactively
+mise edit .mise.toml  # edit a specific file
+mise edit -g          # edit the global config file
+mise edit -y          # skip interactive editor
+mise edit -n          # preview without writing
+"""#
     complete path type=path
     complete tool_versions type=path
 }
@@ -2139,7 +2410,6 @@ To run a tool once without touching any config, use `mise exec <TOOL>@<VERSION> 
 
 Tools are installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise install node@20.0.0\u{1b}[22m  # install a specific node version\n    $ \u{1b}[1mmise install node@20\u{1b}[22m      # install the latest node 20.x\n    $ \u{1b}[1mmise install node\u{1b}[22m         # install the version specified in mise.toml\n    $ \u{1b}[1mmise install\u{1b}[22m              # install everything specified in mise.toml\n    $ \u{1b}[1mmise install --include-lazy\u{1b}[22m # also install tools configured for lazy installation\n    $ \u{1b}[1mmise install --include-task-tools\u{1b}[22m # also install tools required by tasks\n"
     flag "-f --force" help=#"""
 Force reinstall even if already installed
 With no tools specified, reinstall all configured tools
@@ -2218,6 +2488,14 @@ May require elevated permissions (e.g. sudo).
     }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL@VERSION]…" help="Tool(s) to install e.g.: node@20" required=#false var=#true
+    example #"""
+mise install node@20.0.0  # install a specific node version
+mise install node@20      # install the latest node 20.x
+mise install node         # install the version specified in mise.toml
+mise install              # install everything specified in mise.toml
+mise install --include-lazy # also install tools configured for lazy installation
+mise install --include-task-tools # also install tools required by tasks
+"""#
     complete shared type=dir
 }
 cmd install-into help="Install a tool version to a specific path" effect=write {
@@ -2226,10 +2504,13 @@ Install a tool version to a specific path
 
 Used for building a tool to a directory for use outside of mise
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # install node@20.0.0 into ./mynode\n    $ \u{1b}[1mmise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v\u{1b}[22m\n    20.0.0\n"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL@VERSION> help="Tool to install e.g.: node@20"
     arg <PATH> help="Path to install the tool into"
+    example #"""
+mise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v
+v20.0.0
+"""# help="install node@20.0.0 into ./mynode"
     complete path type=dir
 }
 cmd latest help="Get the latest available version of a tool" effect=read {
@@ -2238,7 +2519,6 @@ Get the latest available version of a tool
 
 Supports prefixes such as `node@20` to get the latest version of node 20.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise latest node@20\u{1b}[22m  # get the latest version of node 20\n    20.0.0\n\n    $ \u{1b}[1mmise latest node\u{1b}[22m     # get the latest stable version of node\n    20.0.0\n\n    $ \u{1b}[1mmise latest node --minimum-release-age 2024-01-01\u{1b}[22m  # latest stable node released before 2024-01-01\n"
     flag "-i --installed" help="Show latest installed instead of available version"
     flag --minimum-release-age help="Only consider versions released before this date or older than this duration" conflicts=--installed {
         alias "--before" hide=#true
@@ -2253,6 +2533,12 @@ Overrides per-tool `minimum_release_age` options and the global `minimum_release
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL@VERSION> help="Tool to get the latest version of"
     arg "[ASDF_VERSION]" help="The version prefix to use when querying the latest version same as the first argument after the \"@\" used for asdf compatibility" required=#false hide=#true
+    example #"""
+mise latest node@20
+mise latest node
+"""# help="Resolve a Node 20 release, or the backend's latest stable release"
+    example "mise latest node@20 --installed" help="Restrict resolution to installed versions"
+    example "mise latest node --minimum-release-age 30d" help="Exclude releases newer than the requested age"
 }
 cmd link help="Symlink a tool version into mise" effect=write {
     alias ln
@@ -2261,7 +2547,6 @@ Symlink a tool version into mise
 
 Use this to register an install that was compiled by hand or built with another tool.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # build node-20.0.0 with node-build and link it into mise\n    $ \u{1b}[1mnode-build 20.0.0 ~/.nodes/20.0.0\u{1b}[22m\n    $ \u{1b}[1mmise link node@20.0.0 ~/.nodes/20.0.0\u{1b}[22m\n\n    # have mise use the node version provided by Homebrew\n    $ \u{1b}[1mbrew install node\u{1b}[22m\n    $ \u{1b}[1mmise link node@brew $(brew --prefix node)\u{1b}[22m\n    $ \u{1b}[1mmise use node@brew\u{1b}[22m\n"
     flag "-f --force" help="Overwrite an existing tool version if it exists"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL@VERSION> help="Tool name and version to create a symlink for"
@@ -2269,6 +2554,15 @@ Use this to register an install that was compiled by hand or built with another 
 The local path to the tool version
 e.g.: ~/.nvm/versions/node/v20.0.0
 """#
+    example #"""
+node-build 20.0.0 ~/.nodes/20.0.0
+mise link node@20.0.0 ~/.nodes/20.0.0
+"""# help="build node-20.0.0 with node-build and link it into mise"
+    example #"""
+brew install node
+mise link node@brew "$(brew --prefix node)"
+mise use node@brew
+"""# help="have mise use the node version provided by Homebrew"
     complete path type=dir
 }
 cmd local hide=#true help="Sets/gets tool version in local .tool-versions or mise.toml" effect=write {
@@ -2281,7 +2575,6 @@ Use `mise global` to set a tool version globally
 This uses `.tool-version` by default unless there is a `mise.toml` file or if `MISE_USE_TOML`
 is set. A future v2 release of mise will default to using `mise.toml`.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n    # set the current version of node to 20.x for the current directory\n    # will use a precise version (e.g.: 20.0.0) in .tool-versions file\n    $ \u{1b}[1mmise local node@20\u{1b}[22m\n\n    # set node to 20.x for the current project (recurses up to find .tool-versions)\n    $ \u{1b}[1mmise local -p node@20\u{1b}[22m\n\n    # set the current version of node to 20.x for the current directory\n    # will use a fuzzy version (e.g.: 20) in .tool-versions file\n    $ \u{1b}[1mmise local --fuzzy node@20\u{1b}[22m\n\n    # removes node from .tool-versions\n    $ \u{1b}[1mmise local --remove=node\u{1b}[22m\n\n    # show the current version of node in .tool-versions\n    $ \u{1b}[1mmise local node\u{1b}[22m\n    20.0.0\n"
     flag "-p --parent" help=#"""
 Recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the tool in the current directory ("$PWD/.tool-versions")
@@ -2303,6 +2596,11 @@ e.g.: node@20
 if this is a single tool with no version,
 the current value of .tool-versions/mise.toml will be displayed
 """# required=#false var=#true
+    example "mise local --pin node@20" help="set the current version of node to 20.x for the current directory will use a precise version (e.g.: 20.0.0) in .tool-versions file"
+    example "mise local -p node@20" help="set node to 20.x for the current project (recurses up to find .tool-versions)"
+    example "mise local --fuzzy node@20" help="set the current version of node to 20.x for the current directory will use a fuzzy version (e.g.: 20) in .tool-versions file"
+    example "mise local --remove=node" help="removes node from .tool-versions"
+    example "mise local node" help="show the current version of node in .tool-versions; example output: `20.0.0`"
 }
 cmd lock help="Update lockfile checksums and URLs for all specified platforms" effect=write {
     long_help #"""
@@ -2314,7 +2612,6 @@ including tools declared by tasks.
 This allows you to refresh lockfile data for platforms other than the one you're currently on.
 Operates on the lockfile in the current config root. Use TOOL arguments to target specific tools.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise lock\u{1b}[22m                       # update lockfile for all common platforms\n    $ \u{1b}[1mmise lock node python\u{1b}[22m           # update only node and python\n    $ \u{1b}[1mmise lock --platform linux-x64\u{1b}[22m  # update only linux-x64 platform\n    $ \u{1b}[1mmise lock --dry-run\u{1b}[22m             # show what would be updated\n    $ \u{1b}[1mmise lock --bump\u{1b}[22m                # re-resolve selectors like \"latest\" or \"20\" to the latest matching versions\n    $ \u{1b}[1mmise lock --bump --dry-run --json\u{1b}[22m   # list available updates as JSON without writing\n    $ \u{1b}[1mmise lock --minimum-release-age 2024-01-01\u{1b}[22m   # lock latest/fuzzy versions released before 2024-01-01\n    $ \u{1b}[1mmise lock --local\u{1b}[22m               # update mise.local.lock for local configs\n    $ \u{1b}[1mmise lock --global\u{1b}[22m              # update only global config lockfiles\n"
     flag "-g --global" help=#"""
 Target only global config lockfiles (~/.config/mise/mise.lock and system config)
 By default, only the active project config root is locked
@@ -2392,6 +2689,15 @@ Tool(s) to update in lockfile
 e.g.: node python
 If not specified, all configured and task-specific tools will be updated
 """# required=#false var=#true
+    example "mise lock" help="create or refresh the project lockfile"
+    example "mise lock node python" help="update only node and python"
+    example "mise lock --platform linux-x64" help="update only linux-x64 platform"
+    example "mise lock --dry-run" help="show what would be updated"
+    example "mise lock --bump" help="re-resolve selectors like \"latest\" or \"20\" to the latest matching versions"
+    example "mise lock --bump --dry-run --json" help="list available updates as JSON without writing"
+    example "mise lock --minimum-release-age 2024-01-01" help="lock latest/fuzzy versions released before 2024-01-01"
+    example "mise lock --local" help="update mise.local.lock for local configs"
+    example "mise lock --global" help="update only global config lockfiles"
 }
 cmd ls help="List installed and active tool versions" effect=read {
     alias list
@@ -2401,7 +2707,6 @@ List installed and active tool versions
 Lists the tools mise knows about: versions that are installed, and versions requested
 by a config file (active) whether or not they are installed.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise ls\u{1b}[22m\n    node    20.0.0 ~/src/myapp/.tool-versions latest\n    python  3.11.0 ~/.tool-versions           3.10\n    python  3.10.0\n\n    $ \u{1b}[1mmise ls --current\u{1b}[22m\n    node    20.0.0 ~/src/myapp/.tool-versions 20\n    python  3.11.0 ~/.tool-versions           3.11.0\n\n    $ \u{1b}[1mmise ls --json\u{1b}[22m\n    {\n      \"node\": [\n        {\n          \"version\": \"20.0.0\",\n          \"install_path\": \"/Users/jdx/.mise/installs/node/20.0.0\",\n          \"source\": {\n            \"type\": \"mise.toml\",\n            \"path\": \"/Users/jdx/mise.toml\"\n          }\n        }\n      ],\n      \"python\": [...]\n    }\n\n    $ \u{1b}[1mmise ls --all-sources\u{1b}[22m\n    node    20.0.0  ~/src/myapp/mise.toml  20\n                    ~/.config/mise/config.toml  latest\n"
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml" conflicts=--local
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
@@ -2434,6 +2739,12 @@ Uses the active MISE_ENV and requires monorepo_root = true plus explicit
     flag --prunable help="List only tools that can be pruned with `mise prune`"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[INSTALLED_TOOL]…" help="Only show tool versions from [TOOL]" required=#false var=#true conflicts=--plugin
+    example "mise ls" help="Show installed versions and requests from active configuration"
+    example "mise ls --current" help="Show only versions requested by the current configuration"
+    example "mise ls --missing" help="Find configured versions that need installation"
+    example "mise ls --json" help="Machine-readable output: an object keyed by tool name"
+    example "mise ls node --json" help="With a tool argument, JSON output is an array of its version records"
+    example "mise ls --all-sources" help="Include references from every tracked configuration file"
 }
 cmd ls-remote help="List tool versions available to install" effect=read {
     alias list-all list-remote
@@ -2442,7 +2753,6 @@ List tool versions available to install
 
 Results may be cached; run `mise cache clear` to fetch fresh results.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise ls-remote node\u{1b}[22m\n    18.0.0\n    20.0.0\n\n    $ \u{1b}[1mmise ls-remote node@20\u{1b}[22m\n    20.0.0\n    20.1.0\n\n    $ \u{1b}[1mmise ls-remote node 20\u{1b}[22m\n    20.0.0\n    20.1.0\n\n    $ \u{1b}[1mmise ls-remote node --minimum-release-age 2024-01-01\u{1b}[22m\n    20.0.0\n\n    $ \u{1b}[1mmise ls-remote github:cli/cli --json\u{1b}[22m\n    [{\"version\":\"2.62.0\",\"created_at\":\"2024-11-14T15:40:35Z\",\"prerelease\":false},{\"version\":\"2.61.0\",\"created_at\":\"2024-10-23T19:22:15Z\",\"prerelease\":false}]\n"
     flag --all help="Show all installed plugins and versions" {
         conflicts TOOL@VERSION PREFIX
     }
@@ -2480,6 +2790,13 @@ when a backend's metadata-producing upstream request fails.
 The version prefix to use when querying the latest version
 same as the first argument after the "@"
 """# required=#false
+    example #"""
+mise ls-remote node
+mise ls-remote node@20
+mise ls-remote node 20
+mise ls-remote node --minimum-release-age 30d
+mise ls-remote github:cli/cli --json
+"""#
 }
 cmd mcp help="Run Model Context Protocol (MCP) server" {
     long_help #"""
@@ -2508,9 +2825,10 @@ Tools available:
 
 Note: This is primarily intended for integration with AI assistants like Claude,
 Cursor, or other tools that support the Model Context Protocol.
+See https://mise.jdx.dev/mcp.html for client configuration and access controls.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Start the MCP server (typically used by AI assistant tools)\n    $ \u{1b}[1mmise mcp\u{1b}[22m\n\n    # Example integration with Claude Desktop (add to claude_desktop_config.json):\n    {\n      \"mcpServers\": {\n        \"mise\": {\n          \"command\": \"mise\",\n          \"args\": [\"mcp\"],\n          \"env\": {}\n        }\n      }\n    }\n\n    # Interactive testing with JSON-RPC commands:\n    $ \u{1b}[1mecho '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}' | mise mcp\u{1b}[22m\n\n    # Resources you can query:\n    - \u{1b}[1mmise://tools\u{1b}[22m - List active tools\n    - \u{1b}[1mmise://tools?include_inactive=true\u{1b}[22m - List all installed tools\n    - \u{1b}[1mmise://tasks\u{1b}[22m - List all tasks\n    - \u{1b}[1mmise://env\u{1b}[22m - List environment variables\n    - \u{1b}[1mmise://config\u{1b}[22m - Show configuration info\n\n    # Tools available:\n    - \u{1b}[1mlist_commands\u{1b}[22m - Every mise command and what running it does\n      Example: {\"include_hidden\": false}\n    - \u{1b}[1minstall_tool\u{1b}[22m - Install a tool (not yet implemented)\n    - \u{1b}[1mrun_task\u{1b}[22m - Execute a mise task with optional arguments\n      Example: {\"task\": \"build\", \"args\": [\"--verbose\"]}\n"
     flag "-h --help" help="Print help" action=help builtin=#true
+    example "mise -C /path/to/project mcp" help="Start from the project directory; an MCP client handles the protocol exchange"
 }
 cmd oci subcommand_required=#true help="[experimental] Build OCI container images from a mise.toml" effect=read {
     long_help #"""
@@ -2537,7 +2855,7 @@ the OCI image-layout spec and can be consumed by `skopeo`, `crane`, or
 
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    Build with defaults (debian:bookworm-slim base):\n    $ \u{1b}[1mmise oci build\u{1b}[22m\n\n    Build with a specific base image and tag:\n    $ \u{1b}[1mmise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img\u{1b}[22m\n\n    Inspect the result with skopeo:\n    $ \u{1b}[1mskopeo inspect oci:./mise-oci\u{1b}[22m\n\n    Push to a registry:\n    $ \u{1b}[1mmise oci push --image-dir ./mise-oci ghcr.io/me/dev:latest\u{1b}[22m\n\n\u{1b}[1m\u{1b}[4mNotes:\u{1b}[22m\u{1b}[24m\n\n    - The image only contains tools from the project's mise config (and\n      any configs at-or-below the project root). Tools from\n      `~/.config/mise/config.toml` are not included; pass --include-global\n      to package them too.\n    - asdf and vfox plugins are not supported in v1; use a different backend\n      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.\n    - The host mise binary is embedded at /usr/local/bin/mise by default;\n      build on the same OS/arch as your target image (or pass --no-mise).\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mNotes:\u{1b}[22m\u{1b}[24m\n\n    - The image only contains tools from the project's mise config (and\n      any configs at-or-below the project root). Tools from\n      `~/.config/mise/config.toml` are not included; pass --include-global\n      to package them too.\n    - asdf and vfox plugins are not supported in v1; use a different backend\n      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.\n    - The host mise binary is embedded at /usr/local/bin/mise by default;\n      build on the same OS/arch as your target image (or pass --no-mise).\n"
         flag --copy help="Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)" var=#true {
             arg <HOST_PATH:IMAGE_PATH>
         }
@@ -2570,6 +2888,12 @@ Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it
             arg "<UID[:GID]>"
         }
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise oci build
+mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img
+skopeo inspect oci:./img
+mise oci run --image-dir ./img -- /bin/sh
+"""# help="Run on a Linux host with the target architecture"
         complete output type=dir
     }
     cmd push help="[experimental] Build an OCI image and push it to a registry" effect=write {
@@ -2594,7 +2918,7 @@ is all the setup needed.
 
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    Build and push to GHCR:\n    $ \u{1b}[1mmise oci push ghcr.io/me/devenv:latest\u{1b}[22m\n\n    Push an image built earlier:\n    $ \u{1b}[1mmise oci build -o ./img\u{1b}[22m\n    $ \u{1b}[1mmise oci push --image-dir ./img ghcr.io/me/devenv:v1\u{1b}[22m\n\n\u{1b}[1m\u{1b}[4mAuth:\u{1b}[22m\u{1b}[24m\n\n    Credentials are resolved the same way docker/podman resolve them:\n    \u{1b}[1m$REGISTRY_AUTH_FILE\u{1b}[22m, \u{1b}[1m$XDG_RUNTIME_DIR/containers/auth.json\u{1b}[22m,\n    \u{1b}[1m~/.config/containers/auth.json\u{1b}[22m, then \u{1b}[1m~/.docker/config.json\u{1b}[22m\n    (inline auths and credential helpers). Log in with either:\n    $ \u{1b}[1mdocker login ghcr.io\u{1b}[22m\n    $ \u{1b}[1mpodman login ghcr.io\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mAuth:\u{1b}[22m\u{1b}[24m\n\n    Credentials are resolved the same way docker/podman resolve them:\n    \u{1b}[1m$REGISTRY_AUTH_FILE\u{1b}[22m, \u{1b}[1m$XDG_RUNTIME_DIR/containers/auth.json\u{1b}[22m,\n    \u{1b}[1m~/.config/containers/auth.json\u{1b}[22m, then \u{1b}[1m~/.docker/config.json\u{1b}[22m\n    (inline auths and credential helpers). Log in with either:\n    $ \u{1b}[1mdocker login ghcr.io\u{1b}[22m\n    $ \u{1b}[1mpodman login ghcr.io\u{1b}[22m"
         flag --cache-from help="Reuse unchanged tool layers from this image instead of the destination ref" {
             long_help #"""
 Reuse unchanged tool layers from this image instead of the destination ref
@@ -2640,6 +2964,11 @@ Pushes this build's manifest by digest and points the tag at an OCI image index 
         }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <REF> help="Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)"
+        example "mise oci push ghcr.io/me/devenv:latest" help="Build and push to GHCR:"
+        example #"""
+mise oci build -o ./img
+mise oci push --image-dir ./img ghcr.io/me/devenv:v1
+"""# help="Push an image built earlier:"
         complete image_dir type=dir
     }
     cmd run help="[experimental] Build an OCI image from the current mise.toml and run a command in it" {
@@ -2654,7 +2983,7 @@ given command is executed inside it with stdin/stdout/stderr inherited.
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and
 one of: `podman`, `docker`.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    Build the current mise.toml and drop into bash:\n    $ \u{1b}[1mmise oci run -it -- bash\u{1b}[22m\n\n    Run a one-shot command with env + volume (note: `-v` is reserved\n    for --verbose, so use `--volume`):\n    $ \u{1b}[1mmise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test\u{1b}[22m\n\n    Re-use a previously built layout (skip the build step):\n    $ \u{1b}[1mmise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'\u{1b}[22m\n\n\u{1b}[1m\u{1b}[4mEngines:\u{1b}[22m\u{1b}[24m\n\n    Prefers \u{1b}[1mpodman\u{1b}[22m (loads OCI layouts natively). Falls back to \u{1b}[1mdocker\u{1b}[22m\n    (loaded via \u{1b}[1mdocker load\u{1b}[22m). Pass \u{1b}[1m--engine podman\u{1b}[22m or \u{1b}[1m--engine docker\u{1b}[22m to override.\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mEngines:\u{1b}[22m\u{1b}[24m\n\n    Prefers \u{1b}[1mpodman\u{1b}[22m (loads OCI layouts natively). Falls back to \u{1b}[1mdocker\u{1b}[22m\n    (loaded via \u{1b}[1mdocker load\u{1b}[22m). Pass \u{1b}[1m--engine podman\u{1b}[22m or \u{1b}[1m--engine docker\u{1b}[22m to override."
         flag --engine help="Container engine to use (`auto`, `podman`, or `docker`)" default=auto {
             arg <ENGINE> {
                 choices {
@@ -2716,6 +3045,9 @@ Note: unlike `docker run -v`, there's no `-v` short flag here because mise reser
         }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[-- CMD]…" help="Command and arguments to run inside the container (after `--`)" required=#false var=#true
+        example "mise oci run -it -- bash" help="Build the current mise.toml and drop into bash:"
+        example "mise oci run -e DEBUG=1 --volume \"$PWD:/work\" -w /work -- npm test" help="Run a one-shot command with env + volume (note: `-v` is reserved for --verbose, so use `--volume`):"
+        example "mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'" help="Re-use a previously built layout (skip the build step):"
         complete image_dir type=dir
     }
 }
@@ -2754,7 +3086,7 @@ Show outdated tool versions
 
 See `mise upgrade` to upgrade these versions.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mDeprecation:\u{1b}[22m\u{1b}[24m\n\nThe `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.\nAfter removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.\n\n\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise outdated\u{1b}[22m\n    Plugin  Requested  Current  Latest\n    python  3.11       3.11.0   3.11.1\n    node    20         20.0.0   20.1.0\n\n    $ \u{1b}[1mmise outdated node\u{1b}[22m\n    Plugin  Requested  Current  Latest\n    node    20         20.0.0   20.1.0\n\n    $ \u{1b}[1mmise outdated --json\u{1b}[22m\n    {\"python\": {\"requested\": \"3.11\", \"current\": \"3.11.0\", \"latest\": \"3.11.1\"}, ...}\n\n    $ \u{1b}[1mmise outdated --local\u{1b}[22m\n    Plugin  Requested  Current  Latest\n    node    20         20.0.0   20.1.0\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mDeprecation:\u{1b}[22m\u{1b}[24m\n\nThe `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.\nAfter removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead."
     flag "-b --bump" help="Compare against the latest versions available, not just those matching the current config" {
         long_help #"""
 Compare against the latest versions available, not just those matching the current config
@@ -2788,6 +3120,26 @@ Tool(s) to show outdated versions for
 e.g.: node@20 python@3.10
 If not specified, all tools in global and local configs will be shown
 """# required=#false var=#true
+    example #"""
+mise outdated
+Plugin  Requested  Current  Latest
+python  3.11       3.11.0   3.11.1
+node    20         20.0.0   20.1.0
+"""#
+    example #"""
+mise outdated node
+Plugin  Requested  Current  Latest
+node    20         20.0.0   20.1.0
+"""#
+    example #"""
+mise outdated --json
+{"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
+"""#
+    example #"""
+mise outdated --local
+Plugin  Requested  Current  Latest
+node    20         20.0.0   20.1.0
+"""#
 }
 cmd patrons help="Show the individuals supporting mise as Patron-tier members" effect=read {
     long_help #"""
@@ -2799,10 +3151,14 @@ name as a clickable link via OSC 8 hyperlinks.
 
 To appear here, become a patron at <https://jdx.dev/sponsors.html>.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise patrons\u{1b}[22m\n    $ \u{1b}[1mmise patrons -J\u{1b}[22m\n    $ \u{1b}[1mmise patrons --refresh\u{1b}[22m"
     flag "-J --json" help="Output in JSON format"
     flag --refresh help="Bypass the local cache and re-fetch"
     flag "-h --help" help="Print help" action=help builtin=#true
+    example #"""
+mise patrons
+mise patrons -J
+mise patrons --refresh
+"""#
 }
 cmd plugins help="Manage plugins" effect=read {
     alias p plugin plugin-list
@@ -2845,7 +3201,6 @@ Note that mise installs plugins automatically when you install a tool that needs
 e.g.: `mise install cmake@3.30` installs the cmake plugin first. This command is only
 needed to install a plugin ahead of time or from a custom git URL.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # install the poetry via shorthand\n    $ \u{1b}[1mmise plugins install poetry\u{1b}[22m\n\n    # install the poetry plugin using a specific git url\n    $ \u{1b}[1mmise plugins install poetry https://github.com/mise-plugins/mise-poetry.git\u{1b}[22m\n\n    # install the poetry plugin using the git url only\n    # (poetry is inferred from the url)\n    $ \u{1b}[1mmise plugins install https://github.com/mise-plugins/mise-poetry.git\u{1b}[22m\n\n    # install the poetry plugin using a specific ref\n    $ \u{1b}[1mmise plugins install poetry https://github.com/mise-plugins/mise-poetry.git#11d0c1e\u{1b}[22m\n"
         flag "-a --all" help=#"""
 Install all missing plugins
 This will only install plugins that have matching shorthands.
@@ -2869,6 +3224,9 @@ Can specify multiple plugins: `mise plugins install cmake poetry`
 """# required=#false required_unless=--all
         arg "[GIT_URL]" help="The git url of the plugin" required=#false
         arg "[REST]…" required=#false var=#true hide=#true
+        example "mise plugins install postgres https://github.com/smashedtoatoms/asdf-postgres.git" help="Install an asdf-compatible plugin from its upstream repository"
+        example "mise plugins install my-tool file:///path/to/mise-my-tool#v1.0.0" help="Use a local plugin repository at a tag you created"
+        example "mise plugins install --all" help="Install missing plugins that have configured shorthands"
         complete git_url type=url
     }
     cmd link help="Symlink a plugin into mise" effect=write {
@@ -2878,7 +3236,6 @@ Symlink a plugin into mise
 
 This is used for developing a plugin.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # essentially just `ln -s ./vfox-cmake ~/.local/share/mise/plugins/cmake`\n    $ \u{1b}[1mmise plugins link cmake ./vfox-cmake\u{1b}[22m\n\n    # infer plugin name as \"cmake\"\n    $ \u{1b}[1mmise plugins link ./vfox-cmake\u{1b}[22m\n"
         flag "-f --force" help="Overwrite existing plugin"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <NAME> help=#"""
@@ -2889,6 +3246,9 @@ e.g.: cmake, poetry
 The local path to the plugin
 e.g.: ./vfox-cmake
 """# required=#false
+        example "mise plugins link my-tool ./mise-my-tool"
+        example "mise plugins link ./mise-my-tool" help="Alternative: infer the name \"my-tool\""
+        example "mise ls-remote my-tool" help="List versions through the linked plugin"
         complete dir type=dir
     }
     cmd ls help="List installed plugins" effect=read {
@@ -2898,7 +3258,6 @@ List installed plugins
 
 Can also show remotely available plugins to install.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise plugins ls\u{1b}[22m\n    cmake\n    poetry\n\n    $ \u{1b}[1mmise plugins ls --urls\u{1b}[22m\n    cmake     https://github.com/mise-plugins/vfox-cmake.git\n    poetry    https://github.com/mise-plugins/vfox-poetry.git\n"
         flag "-a --all" help=#"""
 List all available remote plugins
 Same as `mise plugins ls-remote`
@@ -2930,6 +3289,12 @@ to show core and user plugins
 """#
         }
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise plugins ls
+mise plugins ls --urls
+mise plugins ls --core --user
+mise plugins ls --outdated
+"""#
     }
     cmd ls-remote help="List all available remote plugins" effect=read {
         alias list-remote list-all
@@ -2938,18 +3303,18 @@ List all available remote plugins
 
 These are the shorthand names from the registry: https://github.com/jdx/mise/blob/main/registry/
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise plugins ls-remote\u{1b}[22m\n"
         flag "-u --urls" help="Show the git url for each plugin, e.g. https://github.com/mise-plugins/mise-poetry.git"
         flag --only-names help="Only show the name of each plugin, without the \"*\" marking installed plugins"
         flag "-h --help" help="Print help" action=help builtin=#true
+        example "mise plugins ls-remote"
     }
     cmd uninstall help="Remove a plugin" effect=destructive {
         alias remove rm
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise plugins uninstall cmake\u{1b}[22m\n"
         flag "-a --all" help="Remove all plugins" conflicts=PLUGIN
         flag "-p --purge" help="Also remove the plugin's installs, downloads, and cache"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[PLUGIN]…" help="Plugin(s) to remove" required=#false var=#true
+        example "mise plugins uninstall my-tool"
     }
     cmd update help="Update a plugin to the latest version" effect=write {
         alias up upgrade
@@ -2958,7 +3323,6 @@ Update a plugin to the latest version
 
 Note: this updates the plugin itself, not the tool versions it manages
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise plugins update\u{1b}[22m              # update all plugins\n    $ \u{1b}[1mmise plugins update cmake\u{1b}[22m       # update only cmake\n    $ \u{1b}[1mmise plugins update cmake#beta\u{1b}[22m  # specify a ref\n"
         flag "-j --jobs" help=#"""
 Number of jobs to run in parallel
 Values below 1 are treated as 1
@@ -2968,6 +3332,11 @@ Defaults to the `jobs` setting
         }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[PLUGIN]…" help="Plugin(s) to update" required=#false var=#true
+        example #"""
+mise plugins update              # update all installed plugins
+mise plugins update my-tool      # update one Git plugin
+mise plugins update my-tool#main # select an upstream ref
+"""#
     }
 }
 cmd deps help="[experimental] Manage project dependencies" effect=write {
@@ -2983,7 +3352,7 @@ if needed.
 Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
 unless skipped with the --no-deps flag.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise deps\u{1b}[22m                    # Install all project dependencies\n    $ \u{1b}[1mmise deps install\u{1b}[22m            # Same as bare `mise deps`\n    $ \u{1b}[1mmise deps install --force\u{1b}[22m    # Force reinstall even if fresh\n    $ \u{1b}[1mmise deps install --dry-run\u{1b}[22m  # Show what would run\n    $ \u{1b}[1mmise deps --monorepo\u{1b}[22m         # Install deps from explicit monorepo config roots\n    $ \u{1b}[1mmise deps add npm:react\u{1b}[22m      # Add a dependency\n    $ \u{1b}[1mmise deps add -D npm:vitest\u{1b}[22m  # Add a dev dependency\n    $ \u{1b}[1mmise deps remove npm:lodash\u{1b}[22m  # Remove a dependency\n\n\u{1b}[1m\u{1b}[4mConfiguration:\u{1b}[22m\u{1b}[24m\n\n```toml\n# Built-in npm provider (auto-detects lockfile)\n[deps.npm]\nauto = true              # Auto-run before mise x/run\n\n# Custom provider\n[deps.codegen]\nauto = true\nsources = [\"schema/*.graphql\"]\noutputs = [\"src/generated/\"]\nrun = \"npm run codegen\"\n\n[deps]\ndisable = [\"npm\"]        # Disable specific providers at runtime\n```\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mConfiguration:\u{1b}[22m\u{1b}[24m\n\n```toml\n# Built-in npm provider (auto-detects lockfile)\n[deps.npm]\nauto = true              # Auto-run before mise x/run\n\n# Custom provider\n[deps.codegen]\nauto = true\nsources = [\"schema/*.graphql\"]\noutputs = [\"src/generated/\"]\nrun = \"npm run codegen\"\n\n# To disable npm instead, add `disable = [\"npm\"]` under [deps].\n```"
     flag --explain help="Show why a provider is fresh or stale (requires a provider argument)"
     flag "-f --force" help="Force run all deps steps even if outputs are fresh"
     flag "-n --dry-run" help="Only check if deps install is needed, don't run commands"
@@ -3053,6 +3422,16 @@ Package specs use the format `ecosystem:package`, e.g., `npm:lodash`.
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <PACKAGES>… help="Package(s) to remove (e.g., npm:lodash)" var=#true
     }
+    example #"""
+mise deps                    # Install all project dependencies
+mise deps install            # Same as bare `mise deps`
+mise deps install --force    # Force reinstall even if fresh
+mise deps install --dry-run  # Show what would run
+mise deps --monorepo         # Install deps from explicit monorepo config roots
+mise deps add npm:react      # Add a dependency
+mise deps add -D npm:vitest  # Add a dev dependency
+mise deps remove npm:lodash  # Remove a dependency
+"""#
 }
 cmd prune help="Delete unused versions of tools" effect=destructive {
     long_help #"""
@@ -3068,7 +3447,6 @@ Versions still referenced by a tracked stub are not deleted.
 
 You can list prunable tools with `mise ls --prunable`
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise prune --dry-run\u{1b}[22m\n    rm -rf ~/.local/share/mise/versions/node/20.0.0\n    rm -rf ~/.local/share/mise/versions/node/20.0.1\n"
     flag "-n --dry-run" help="Do not actually delete anything"
     flag --configs help="Prune only tracked and trusted configuration links that point to nonexistent configurations"
     flag --dry-run-code help="Like --dry-run but exits with code 1 if there are tools to prune" {
@@ -3082,6 +3460,7 @@ This is useful for scripts to check if tools need to be pruned.
     flag --tools help="Prune only unused versions of tools"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
+    example "mise prune --dry-run" help="Preview unused versions without deleting them. Example output: `rm -rf ~/.local/share/mise/installs/node/20.0.0` and `rm -rf ~/.local/share/mise/installs/node/20.0.1`."
 }
 cmd registry help="List available tools to install" effect=read {
     long_help #"""
@@ -3091,7 +3470,6 @@ This command lists the tools available in the registry as shorthand names.
 
 For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise registry\u{1b}[22m\n    node    core:node\n    poetry  asdf:mise-plugins/mise-poetry\n    ubi     cargo:ubi-cli\n\n    $ \u{1b}[1mmise registry poetry\u{1b}[22m\n    asdf:mise-plugins/mise-poetry\n"
     flag "-b --backend" help="Show only tools for this backend" {
         arg <BACKEND>
     }
@@ -3107,6 +3485,14 @@ Requires --json. Security info is de-duplicated across all of a tool's backends.
     }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[NAME]" help="Show only the specified tool's full name" required=#false
+    example #"""
+mise registry
+mise registry node
+"""# help="List the registry, then inspect node. The second command prints `core:node`."
+    example #"""
+mise registry --backend aqua
+mise registry --json
+"""#
 }
 cmd render-help hide=#true help="internal command to generate markdown from help" effect=write {
     flag "-h --help" help="Print help" action=help builtin=#true
@@ -3132,12 +3518,15 @@ automatically (it's really fast so you don't need to worry about overhead):
 Note that this creates shims for _all_ installed tools, not just the ones that are
 currently active in mise.toml.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise reshim\u{1b}[22m\n    $ \u{1b}[1m~/.local/share/mise/shims/node -v\u{1b}[22m\n    v20.0.0\n"
     flag "-f --force" help="Rebuild all mise-owned shims"
     flag --system help="Rebuild the system shim farm"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL]" required=#false hide=#true
     arg "[VERSION]" required=#false hide=#true
+    example #"""
+mise reshim
+~/.local/share/mise/shims/node -v
+"""# help="Rebuild shims, then check node. Example output: `v20.0.0`."
 }
 cmd run disable_help_flag=#true restart_token=::: help="Run task(s)" unknown_flags=value {
     alias r
@@ -3167,7 +3556,6 @@ The name of the script becomes the name of the task.
     EOF
     $ mise run build
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Run the \"lint\" task, defined either in mise.toml or as a standalone script.\n    $ \u{1b}[1mmise run lint\u{1b}[22m\n\n    # Force the \"build\" task to run even if its sources are up to date.\n    $ \u{1b}[1mmise run --force build\u{1b}[22m\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ \u{1b}[1mmise run --raw test\u{1b}[22m\n\n    # Run the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ \u{1b}[1mmise run lint ::: test ::: check\u{1b}[22m\n\n    # Run multiple tasks, each with its own arguments.\n    $ \u{1b}[1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\u{1b}[22m\n"
     flag --affected help="Run matching tasks only for projects affected by Git changes"
     flag --affected-base help=#"""
 Git base revision for --affected
@@ -3308,7 +3696,12 @@ Show the elapsed time after each task completes
 Set `MISE_TASK_TIMINGS=1` to show it by default
 """#
     }
-    mount run="mise tasks --usage"
+    mount run="mise tasks --usage" synopsis="[TASK] [ARGS]…"
+    example "mise run lint" help="Run the \"lint\" task, defined either in mise.toml or as a standalone script."
+    example "mise run --force build" help="Force the \"build\" task to run even if its sources are up to date."
+    example "mise run --raw test" help="Run \"test\" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."
+    example "mise run lint ::: test ::: check" help="Run the \"lint\", \"test\", and \"check\" tasks in parallel."
+    example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run multiple tasks, each with its own arguments."
     complete cd type=dir
 }
 cmd search help="Search for tools in the registry" effect=read {
@@ -3320,7 +3713,6 @@ Searches the registry for tools matching NAME.
 By default, it will show all tools that fuzzy match the search term. For
 non-fuzzy matches, use the `--match-type` flag.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise search jq\u{1b}[22m\n    Tool  Description\n    jq    Command-line JSON processor. https://github.com/jqlang/jq\n    jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp\n    jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq\n    gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq\n\n    $ \u{1b}[1mmise search --interactive\u{1b}[22m\n    Tool\n    Search a tool\n    ❯ jq    Command-line JSON processor. https://github.com/jqlang/jq\n      jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp\n      jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq\n      gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq\n    /jq \n    esc clear filter • enter confirm\n"
     flag "-i --interactive" help="Show an interactive search menu" {
         conflicts "--match-type" "--no-header"
     }
@@ -3338,6 +3730,25 @@ non-fuzzy matches, use the `--match-type` flag.
     }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[NAME]" help="The tool to search for" required=#false
+    example #"""
+mise search jq
+Tool  Description
+jq    Command-line JSON processor. https://github.com/jqlang/jq
+jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
+gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
+"""#
+    example #"""
+mise search --interactive
+Tool
+Search a tool
+❯ jq    Command-line JSON processor. https://github.com/jqlang/jq
+  jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+  jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
+  gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
+/jq
+esc clear filter • enter confirm
+"""#
 }
 cmd self-update help="Update mise itself" effect=write {
     long_help #"""
@@ -3369,7 +3780,6 @@ See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 
 Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise set NODE_ENV=production\u{1b}[22m\n\n    $ \u{1b}[1mmise set NODE_ENV\u{1b}[22m\n    production\n\n    $ \u{1b}[1mmise set -E staging NODE_ENV=staging\u{1b}[22m\n    # creates or modifies mise.staging.toml\n\n    $ \u{1b}[1mmise set\u{1b}[22m\n    key       value       source\n    NODE_ENV  production  ~/.config/mise/config.toml\n\n    $ \u{1b}[1mmise set --prompt PASSWORD\u{1b}[22m\n    Enter value for PASSWORD: [hidden input]\n\n    \u{1b}[1m\u{1b}[4mMultiline Values (--stdin):\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mcat private.key | mise set --stdin MY_KEY\u{1b}[22m\n\n    $ \u{1b}[1mprintf \"line1\\nline2\" | mise set --stdin MY_KEY\u{1b}[22m\n\n    \u{1b}[1m\u{1b}[4m[experimental] Age Encryption:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise set --age-encrypt API_KEY=secret\u{1b}[22m\n\n    $ \u{1b}[1mmise set --age-encrypt --prompt API_KEY\u{1b}[22m\n    Enter value for API_KEY: [hidden input]\n"
     flag "-E --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         overrides "--global" "--file"
         arg <ENV>
@@ -3435,11 +3845,19 @@ When using --stdin, provide a single key without a value. The value will be read
 Environment variable(s) to set
 e.g.: NODE_ENV=production
 """# required=#false var=#true
+    example "mise set NODE_ENV=production"
+    example "mise set NODE_ENV" help="Read NODE_ENV; example output: `production`."
+    example "mise set -E staging NODE_ENV=staging" help="Create or modify mise.staging.toml."
+    example "mise set" help="List keys, values, and source files."
+    example "mise set --prompt PASSWORD" help="Prompt for PASSWORD with hidden input."
+    example "cat private.key | mise set --stdin MY_KEY" help="Read a multiline value from stdin."
+    example "printf \"line1\\nline2\" | mise set --stdin MY_KEY" help="Store a multiline value from a pipeline."
+    example "mise set --age-encrypt API_KEY=secret" help="Encrypt the value with age (experimental)."
+    example "mise set --age-encrypt --prompt API_KEY" help="Prompt with hidden input and encrypt with age (experimental)."
     complete path type=path
     complete file type=path
 }
 cmd settings help="Manage settings" effect=write {
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n    # list all settings\n    $ \u{1b}[1mmise settings\u{1b}[22m\n\n    # get the value of the setting \"always_keep_download\"\n    $ \u{1b}[1mmise settings always_keep_download\u{1b}[22m\n\n    # set the value of the setting \"always_keep_download\" to \"true\"\n    $ \u{1b}[1mmise settings always_keep_download=true\u{1b}[22m\n\n    # set the value of the setting \"node.mirror_url\" to \"https://npmmirror.com/mirrors/node/\"\n    $ \u{1b}[1mmise settings node.mirror_url https://npmmirror.com/mirrors/node/\u{1b}[22m\n"
     flag "-a --all" help="List all settings"
     flag "-J --json" help="Output in JSON format"
     flag "-l --local" help="Use the local config file instead of the global one" global=#true
@@ -3457,11 +3875,11 @@ Append a value to an array setting
 Adds the value to an array setting such as `disable_hints`, keeping existing entries.
 This modifies ~/.config/mise/config.toml by default, or the local config with `--local`.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise settings add disable_hints python_multi\u{1b}[22m\n"
         flag "-l --local" help="Use the local config file instead of the global one"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <SETTING> help="The setting to set"
         arg "[VALUE]" help="The value to set (optional if provided as KEY=VALUE)" required=#false
+        example "mise settings add disable_hints python_multi"
     }
     cmd get help="Show a current setting" effect=read {
         long_help #"""
@@ -3472,10 +3890,13 @@ This is the contents of a single entry in ~/.config/mise/config.toml
 Note that aliases are also stored in this file
 but managed separately with `mise tool-alias get`
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise settings get idiomatic_version_file\u{1b}[22m\n    true\n"
         flag "-l --local" help="Use the local config file instead of the global one"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <SETTING> help="The setting to show"
+        example #"""
+mise settings get jobs
+mise settings get python.compile
+"""#
     }
     cmd ls help="Show current settings" effect=read {
         alias list
@@ -3487,7 +3908,6 @@ This is the contents of ~/.config/mise/config.toml
 Note that aliases are also stored in this file
 but managed separately with `mise tool-alias`
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise settings ls\u{1b}[22m\n    idiomatic_version_file = false\n    ...\n\n    $ \u{1b}[1mmise settings ls python\u{1b}[22m\n    default_packages_file = \"~/.default-python-packages\"\n    ...\n"
         flag "-a --all" help="List all settings"
         flag "-J --json" help="Output in JSON format"
         flag "-l --local" help="Use the local config file instead of the global one" global=#true
@@ -3497,6 +3917,11 @@ but managed separately with `mise tool-alias`
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[SETTING]" help="Name of setting" required=#false
         group output "--json" "--toml" "--json-extended"
+        example #"""
+mise settings ls
+mise settings ls --all
+mise settings ls python --json-extended
+"""#
     }
     cmd set help="Add/update a setting" effect=write {
         alias create
@@ -3507,11 +3932,11 @@ This modifies the contents of ~/.config/mise/config.toml by default.
 With `--local`, modifies the local config file instead.
 See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise settings idiomatic_version_file=true\u{1b}[22m\n"
         flag "-l --local" help="Use the local config file instead of the global one"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <SETTING> help="The setting to set"
         arg "[VALUE]" help="The value to set (optional if provided as KEY=VALUE)" required=#false
+        example "mise settings set jobs 4"
     }
     cmd unset help="Clear a setting" effect=write {
         alias rm remove delete del
@@ -3520,11 +3945,15 @@ Clear a setting
 
 This modifies ~/.config/mise/config.toml by default, or the local config with `--local`.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise settings unset idiomatic_version_file\u{1b}[22m\n"
         flag "-l --local" help="Use the local config file instead of the global one"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <KEY> help="The setting to remove"
+        example "mise settings unset jobs"
     }
+    example "mise settings" help="list explicitly configured settings"
+    example "mise settings always_keep_download" help="get the value of the setting \"always_keep_download\""
+    example "mise settings always_keep_download=true" help="set the value of the setting \"always_keep_download\" to \"true\""
+    example "mise settings node.mirror_url https://npmmirror.com/mirrors/node/" help="set the value of the setting \"node.mirror_url\" to \"https://npmmirror.com/mirrors/node/\""
 }
 cmd shell help="Set a tool version for the current shell session" effect=read {
     alias sh
@@ -3536,7 +3965,6 @@ Only works in a session where mise is already activated.
 This works by setting environment variables for the current shell session
 such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise shell node@20\u{1b}[22m\n    $ \u{1b}[1mnode -v\u{1b}[22m\n    v20.0.0\n"
     flag "-j --jobs" help=#"""
 Number of jobs to run in parallel
 Values below 1 are treated as 1
@@ -3548,6 +3976,11 @@ Defaults to the `jobs` setting
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`" overrides=--jobs
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL@VERSION>… help="Tool(s) to use" var=#true
+    example #"""
+mise shell node@20
+node -v
+v20.0.0
+"""#
 }
 cmd ssh help="Open an SSH session, optionally borrowing read-only GitHub access" {
     flag "-i --identity-file" help="SSH identity file" {
@@ -3595,9 +4028,12 @@ cmd shell-alias help="Manage shell aliases" effect=read {
     flag --no-header help="Don't show table header"
     flag "-h --help" help="Print help" action=help builtin=#true
     cmd get help="Show the command for a shell alias" effect=read {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise shell-alias get ll\u{1b}[22m\n    ls -la\n"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <shell_alias> help="The alias to show"
+        example #"""
+mise shell-alias get ll
+ls -la
+"""#
     }
     cmd ls help="List shell aliases" effect=read {
         alias list
@@ -3607,9 +4043,14 @@ List shell aliases
 Shows the shell aliases that are set in the current directory.
 These are defined in `mise.toml` under the `[shell_alias]` section.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise shell-alias ls\u{1b}[22m\n    alias    command\n    ll       ls -la\n    gs       git status\n"
         flag --no-header help="Don't show table header"
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise shell-alias ls
+alias    command
+ll       ls -la
+gs       git status
+"""#
     }
     cmd set help="Add/update a shell alias" effect=write {
         alias add create
@@ -3618,10 +4059,13 @@ Add/update a shell alias
 
 This modifies the contents of ~/.config/mise/config.toml
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise shell-alias set ll \"ls -la\"\u{1b}[22m\n    $ \u{1b}[1mmise shell-alias set gs \"git status\"\u{1b}[22m\n"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <shell_alias> help="The alias name"
         arg "[COMMAND]" help="The command to run (optional if provided as ALIAS=COMMAND)" required=#false
+        example #"""
+mise shell-alias set ll "ls -la"
+mise shell-alias set gs "git status"
+"""#
     }
     cmd unset help="Remove a shell alias" effect=write {
         alias rm remove delete del
@@ -3630,9 +4074,9 @@ Remove a shell alias
 
 This modifies the contents of ~/.config/mise/config.toml
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise shell-alias unset ll\u{1b}[22m\n"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <shell_alias> help="The alias to remove"
+        example "mise shell-alias unset ll"
     }
 }
 cmd skills help="Agent skills the active tools ship, from their packslips" effect=read {
@@ -3655,9 +4099,13 @@ Each line is a skill of a tool that is installed and active in the current
 directory, with the version it belongs to and the directory holding its
 `SKILL.md`.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise skills ls\u{1b}[22m\n    Skill  Tool                        Version  Path\n    mise   packslip:github.com/jdx/mise  2026.9.1  ~/.local/share/mise/installs/.../skills/mise\n"
         flag "-J --json" help="Output in JSON format"
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise skills ls
+Skill  Tool                        Version  Path
+mise   packslip:github.com/jdx/mise  2026.9.1  ~/.local/share/mise/installs/.../skills/mise
+"""#
     }
     cmd sync help="Link the active tools' skills where an agent looks for them" effect=write {
         long_help #"""
@@ -3674,13 +4122,14 @@ Only links mise made, which point into its installs directory, are ever
 replaced or, with --prune or the `skills.prune` setting, removed. A real
 directory or a link of your own at a skill's name is left alone and reported.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # into the project's .claude/skills, or wherever skills.dir says\n    $ \u{1b}[1mmise skills sync\u{1b}[22m\n\n    # somewhere else, and drop links for skills that are no longer active\n    $ \u{1b}[1mmise skills sync --dir .agents/skills --prune\u{1b}[22m\n"
         flag --dir help="The directory to link skills into" {
             arg <DIR>
         }
         flag "-g --global" help="Link into ~/.claude/skills instead of the project's directory" conflicts=--dir
         flag --prune help="Remove links mise made for skills that are no longer active"
         flag "-h --help" help="Print help" action=help builtin=#true
+        example "mise skills sync" help="into the project's .claude/skills, or wherever skills.dir says"
+        example "mise skills sync --dir .agents/skills --prune" help="somewhere else, and drop links for skills that are no longer active"
         complete dir type=dir
     }
 }
@@ -3697,12 +4146,16 @@ Use this to make versions installed by another version manager available to mise
 
 This won't overwrite managed installs, runtime aliases, or links from other providers.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mbrew install node@18 node@20\u{1b}[22m\n    $ \u{1b}[1mmise sync node --brew\u{1b}[22m\n    $ \u{1b}[1mmise use -g node@18\u{1b}[22m - uses Homebrew-provided node\n"
         flag --brew help="Get tool versions from Homebrew"
         flag --nodenv help="Get tool versions from nodenv"
         flag --nvm help="Get tool versions from nvm"
         flag "-h --help" help="Print help" action=help builtin=#true
         group sync-node-type "--brew" "--nodenv" "--nvm" required=#true multiple=#true
+        example #"""
+brew install node@20
+mise sync node --brew
+mise use -g node@20 # uses Homebrew-provided node
+"""#
     }
     cmd python help="Symlink python versions installed by pyenv or uv into mise" effect=write {
         long_help #"""
@@ -3712,15 +4165,30 @@ Use this to make versions installed by another version manager available to mise
 
 This won't overwrite managed installs, runtime aliases, or links from other providers.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mpyenv install 3.11.0\u{1b}[22m\n    $ \u{1b}[1mmise sync python --pyenv\u{1b}[22m\n    $ \u{1b}[1mmise use -g python@3.11.0\u{1b}[22m - uses pyenv-provided python\n    \n    $ \u{1b}[1muv python install 3.11.0\u{1b}[22m\n    $ \u{1b}[1mmise install python@3.10.0\u{1b}[22m\n    $ \u{1b}[1mmise sync python --uv\u{1b}[22m\n    $ \u{1b}[1mmise x python@3.11.0 -- python -V\u{1b}[22m - uses uv-provided python\n    $ \u{1b}[1muv run -p 3.10.0 -- python -V\u{1b}[22m - uses mise-provided python\n"
         flag --pyenv help="Get tool versions from pyenv"
         flag --uv help="Sync tool versions with uv (2-way sync)"
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+pyenv install 3.11.0
+mise sync python --pyenv
+mise use -g python@3.11.0 # uses pyenv-provided python
+"""#
+        example #"""
+uv python install 3.11.0
+mise install python@3.10.0
+mise sync python --uv
+mise x python@3.11.0 -- python -V # uses uv-provided python
+uv run -p 3.10.0 -- python -V # uses mise-provided python
+"""#
     }
     cmd ruby help="Symlink ruby versions installed by Homebrew into mise" effect=write {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mbrew install ruby\u{1b}[22m\n    $ \u{1b}[1mmise sync ruby --brew\u{1b}[22m\n    $ \u{1b}[1mmise use -g ruby\u{1b}[22m - Use the latest version of Ruby installed by Homebrew\n"
         flag --brew help="Get tool versions from Homebrew" required=#true
         flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+brew install ruby
+mise sync ruby --brew
+mise ls ruby --installed # inspect linked versions, then select one with mise use
+"""#
     }
 }
 cmd tasks help="Manage tasks" effect=read {
@@ -3769,7 +4237,6 @@ Create a new task
 Adds a task to the local mise.toml file.
 See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise tasks add pre-commit --depends \"test\" --depends \"render\" -- echo pre-commit\u{1b}[22m\n"
         flag "-a --alias" help="Other names for the task" var=#true {
             arg <ALIAS>
         }
@@ -3808,6 +4275,7 @@ See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <TASK> help="Name of the task to add"
         arg "[-- RUN]…" help="Command to run, given after `--`" required=#false var=#true
+        example "mise tasks add pre-commit --depends \"test\" --depends \"render\" -- echo pre-commit"
     }
     cmd deps help="Display a tree visualization of a dependency graph" effect=read {
         long_help #"""
@@ -3819,7 +4287,6 @@ and `wait_for`. Task references inside a `run` or `run_windows` array
 edges, so they do not appear here. Those nested tasks still run, including
 their own `depends`.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Show dependencies for all tasks\n    $ \u{1b}[1mmise tasks deps\u{1b}[22m\n\n    # Show dependencies for the \"lint\", \"test\" and \"check\" tasks\n    $ \u{1b}[1mmise tasks deps lint test check\u{1b}[22m\n\n    # Show dependencies in DOT format\n    $ \u{1b}[1mmise tasks deps --dot\u{1b}[22m\n\n    # Collapse repeated dependencies\n    $ \u{1b}[1mmise tasks deps --compact\u{1b}[22m\n"
         flag --compact help="Collapse repeated dependencies after their first occurrence" conflicts=--dot
         flag --dot help="Display dependencies in DOT format"
         flag --hidden help="Show hidden tasks"
@@ -3829,6 +4296,10 @@ Tasks to show dependencies for
 Can specify multiple tasks by separating with spaces
 e.g.: mise tasks deps lint test check
 """# required=#false var=#true
+        example "mise tasks deps" help="Show dependencies for all tasks"
+        example "mise tasks deps lint test check" help="Show dependencies for the \"lint\", \"test\" and \"check\" tasks"
+        example "mise tasks deps --dot" help="Show dependencies in DOT format"
+        example "mise tasks deps --compact" help="Collapse repeated dependencies"
     }
     cmd edit help="Edit a task with $EDITOR" effect=write {
         long_help #"""
@@ -3836,25 +4307,31 @@ Edit a task with $EDITOR
 
 The task will be created as a standalone script if it does not already exist.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise tasks edit build\u{1b}[22m\n    $ \u{1b}[1mmise tasks edit test\u{1b}[22m\n"
         flag "-p --path" help="Display the path to the task instead of editing it"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <TASK> help="Task to edit"
+        example #"""
+mise tasks edit build
+mise tasks edit test
+"""#
     }
     cmd graph help="[experimental] Inspect the workspace project graph" effect=read {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Inspect projects and their dependency edges\n    $ \u{1b}[1mmise tasks graph\u{1b}[22m\n\n    # Emit the project graph as JSON\n    $ \u{1b}[1mmise tasks graph --json\u{1b}[22m\n\n    # Explain where inferred projects and task fields came from\n    $ \u{1b}[1mmise tasks graph --explain\u{1b}[22m\n"
         flag "-J --json" help="Output the project graph as JSON"
         flag --explain help="Explain provider attribution for inferred projects and tasks" conflicts=--json
         flag --no-header help="Do not print table headers" {
             alias "--no-headers" hide=#true
         }
         flag "-h --help" help="Print help" action=help builtin=#true
+        example "mise tasks graph" help="Inspect projects and their dependency edges"
+        example "mise tasks graph --json" help="Emit the project graph as JSON"
+        example "mise tasks graph --explain" help="Explain where inferred projects and task fields came from"
     }
     cmd info help="Get information about a task" effect=read {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise tasks info\u{1b}[22m\n    Name: test\n    Aliases: t\n    Description: Test the application\n    Source: ~/src/myproj/mise.toml\n\n    $ \u{1b}[1mmise tasks info test --json\u{1b}[22m\n    {\n      \"name\": \"test\",\n      \"aliases\": \"t\",\n      \"description\": \"Test the application\",\n      \"source\": \"~/src/myproj/mise.toml\",\n      \"config_sources\": [\"~/src/myproj/mise.toml\"],\n      \"depends\": [],\n      \"env\": {},\n      \"dir\": null,\n      \"hide\": false,\n      \"raw\": false,\n      \"sources\": [],\n      \"outputs\": [],\n      \"run\": [\n        \"echo \\\"testing!\\\"\"\n      ],\n      \"file\": null,\n      \"usage_spec\": {}\n    }\n"
         flag "-J --json" help="Output in JSON format"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <TASK> help="Name of the task to get information about"
+        example "mise tasks info test" help="Inspect the selected definition and its source file"
+        example "mise tasks info test --json" help="Get the full structured task definition"
     }
     cmd ls help="List available tasks" effect=read {
         long_help #"""
@@ -3867,7 +4344,6 @@ So if you have global tasks in `~/.config/mise/tasks/*` and project-specific tas
 ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 tasks will override the global ones if they have the same name.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise tasks ls\u{1b}[22m\n"
         flag "-g --global" help="Only show global tasks" overrides=--local
         flag "-J --json" help="Output in JSON format"
         flag "-l --local" help="Only show non-global tasks" overrides=--global
@@ -3904,6 +4380,7 @@ By default, only tasks from the current directory hierarchy are loaded.
         }
         flag --usage hide=#true
         flag "-h --help" help="Print help" action=help builtin=#true
+        example "mise tasks ls"
     }
     cmd run disable_help_flag=#true restart_token=::: help="Run task(s)" unknown_flags=value {
         alias r
@@ -3933,7 +4410,6 @@ The name of the script becomes the name of the task.
     EOF
     $ mise run build
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Run the \"lint\" task, defined either in mise.toml or as a standalone script.\n    $ \u{1b}[1mmise run lint\u{1b}[22m\n\n    # Force the \"build\" task to run even if its sources are up to date.\n    $ \u{1b}[1mmise run --force build\u{1b}[22m\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ \u{1b}[1mmise run --raw test\u{1b}[22m\n\n    # Run the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ \u{1b}[1mmise run lint ::: test ::: check\u{1b}[22m\n\n    # Run multiple tasks, each with its own arguments.\n    $ \u{1b}[1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\u{1b}[22m\n"
         flag --affected help="Run matching tasks only for projects affected by Git changes"
         flag --affected-base help=#"""
 Git base revision for --affected
@@ -4074,11 +4550,16 @@ Show the elapsed time after each task completes
 Set `MISE_TASK_TIMINGS=1` to show it by default
 """#
         }
-        mount run="mise tasks --usage"
+        mount run="mise tasks --usage" synopsis="[TASK] [ARGS]…"
+        example "mise run lint" help="Run the \"lint\" task, defined either in mise.toml or as a standalone script."
+        example "mise run --force build" help="Force the \"build\" task to run even if its sources are up to date."
+        example "mise run --raw test" help="Run \"test\" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."
+        example "mise run lint ::: test ::: check" help="Run the \"lint\", \"test\", and \"check\" tasks in parallel."
+        example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run multiple tasks, each with its own arguments."
         complete cd type=dir
     }
     cmd validate help="Validate tasks for common errors and issues" effect=read {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Validate all tasks\n    $ \u{1b}[1mmise tasks validate\u{1b}[22m\n\n    # Validate specific tasks\n    $ \u{1b}[1mmise tasks validate build test\u{1b}[22m\n\n    # Output results as JSON\n    $ \u{1b}[1mmise tasks validate --json\u{1b}[22m\n\n    # Only show errors (skip warnings)\n    $ \u{1b}[1mmise tasks validate --errors-only\u{1b}[22m\n\n\u{1b}[1m\u{1b}[4mValidation Checks:\u{1b}[22m\u{1b}[24m\n\nThe validate command performs the following checks:\n\n  • \u{1b}[1mCircular Dependencies\u{1b}[22m: Detects dependency cycles\n  • \u{1b}[1mMissing References\u{1b}[22m: Finds references to nonexistent tasks\n  • \u{1b}[1mUsage Spec Parsing\u{1b}[22m: Validates #USAGE directives and specs\n  • \u{1b}[1mTimeout Format\u{1b}[22m: Checks timeout values are valid durations\n  • \u{1b}[1mAlias Conflicts\u{1b}[22m: Detects duplicate aliases across tasks\n  • \u{1b}[1mFile Existence\u{1b}[22m: Verifies file-based tasks exist\n  • \u{1b}[1mDirectory Templates\u{1b}[22m: Validates directory paths and templates\n  • \u{1b}[1mShell Commands\u{1b}[22m: Checks shell executables exist\n  • \u{1b}[1mGlob Patterns\u{1b}[22m: Validates source and output patterns\n  • \u{1b}[1mRun Entries\u{1b}[22m: Ensures tasks reference valid dependencies\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mValidation Checks:\u{1b}[22m\u{1b}[24m\n\nThe validate command performs the following checks:\n\n  • \u{1b}[1mCircular Dependencies\u{1b}[22m: Detects dependency cycles\n  • \u{1b}[1mMissing References\u{1b}[22m: Finds references to nonexistent tasks\n  • \u{1b}[1mUsage Spec Parsing\u{1b}[22m: Validates #USAGE directives and specs\n  • \u{1b}[1mTimeout Format\u{1b}[22m: Checks timeout values are valid durations\n  • \u{1b}[1mAlias Conflicts\u{1b}[22m: Detects duplicate aliases across tasks\n  • \u{1b}[1mFile Existence\u{1b}[22m: Verifies file-based tasks exist\n  • \u{1b}[1mDirectory Templates\u{1b}[22m: Validates directory paths and templates\n  • \u{1b}[1mShell Commands\u{1b}[22m: Checks shell executables exist\n  • \u{1b}[1mGlob Patterns\u{1b}[22m: Validates source and output patterns\n  • \u{1b}[1mRun Entries\u{1b}[22m: Ensures tasks reference valid dependencies"
         flag --errors-only help="Only show errors (skip warnings)"
         flag --json help="Output validation results in JSON format"
         flag "-h --help" help="Print help" action=help builtin=#true
@@ -4086,6 +4567,10 @@ Set `MISE_TASK_TIMINGS=1` to show it by default
 Tasks to validate
 If not specified, validates all tasks
 """# required=#false var=#true
+        example "mise tasks validate" help="Validate all tasks"
+        example "mise tasks validate build test" help="Validate specific tasks"
+        example "mise tasks validate --json" help="Output results as JSON"
+        example "mise tasks validate --errors-only" help="Only show errors (skip warnings)"
     }
 }
 cmd test-tool help="Test that a tool installs and runs" {
@@ -4095,7 +4580,6 @@ Test that a tool installs and runs
 Includes newly published releases by disabling the global minimum release age
 for this command.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise test-tool ripgrep\u{1b}[22m\n"
     flag "-a --all" help="Test every tool specified in registry/" {
         conflicts TOOLS "--all-config"
     }
@@ -4115,6 +4599,7 @@ Values below 1 are treated as 1
     arg "[TOOLS]…" help="Tool(s) to test" required=#false var=#true {
         required_unless "--all" "--all-config"
     }
+    example "mise test-tool ripgrep"
 }
 cmd token subcommand_required=#true help="Display git provider tokens mise will use" effect=read {
     flag "-h --help" help="Print help" action=help builtin=#true
@@ -4125,10 +4610,21 @@ Display the Forgejo token mise will use for a given host
 Shows which token source mise would use, useful for debugging
 authentication issues. The token is masked by default.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise token forgejo\u{1b}[22m\n    codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)\n\n    $ \u{1b}[1mmise token forgejo --unmask\u{1b}[22m\n    codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)\n\n    $ \u{1b}[1mmise token forgejo forgejo.mycompany.com\u{1b}[22m\n    forgejo.mycompany.com: (none)\n"
         flag --unmask help="Show the full unmasked token"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[HOST]" help="Forgejo hostname" required=#false default=codeberg.org
+        example #"""
+mise token forgejo
+codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)
+"""#
+        example #"""
+mise token forgejo --unmask
+codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)
+"""#
+        example #"""
+mise token forgejo forgejo.mycompany.com
+forgejo.mycompany.com: (none)
+"""#
     }
     cmd github help="Show the GitHub token mise will use" effect=read {
         long_help #"""
@@ -4137,13 +4633,28 @@ Display the GitHub token mise will use for a given host
 Shows which token source mise would use, useful for debugging
 authentication issues. The token is masked by default.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise token github\u{1b}[22m\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ \u{1b}[1mmise token github --unmask\u{1b}[22m\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ \u{1b}[1mmise token github github.mycompany.com\u{1b}[22m\n    github.mycompany.com: (none)\n\n    $ \u{1b}[1mmise token github --oauth --refresh\u{1b}[22m\n    github.com: gho_…xxxx (source: GitHub OAuth)\n"
         flag --oauth help="Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources"
         flag --raw help="Print only the token value"
         flag --refresh help="Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire" requires=--oauth
         flag --unmask help="Show the full unmasked token"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
+        example #"""
+mise token github
+github.com: ghp_…xxxx (source: GITHUB_TOKEN)
+"""#
+        example #"""
+mise token github --unmask
+github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)
+"""#
+        example #"""
+mise token github github.mycompany.com
+github.mycompany.com: (none)
+"""#
+        example #"""
+mise token github --oauth --refresh
+github.com: gho_…xxxx (source: GitHub OAuth)
+"""#
     }
     cmd gitlab help="Show the GitLab token mise will use" effect=read {
         long_help #"""
@@ -4152,14 +4663,24 @@ Display the GitLab token mise will use for a given host
 Shows which token source mise would use, useful for debugging
 authentication issues. The token is masked by default.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise token gitlab\u{1b}[22m\n    gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)\n\n    $ \u{1b}[1mmise token gitlab --unmask\u{1b}[22m\n    gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)\n\n    $ \u{1b}[1mmise token gitlab gitlab.mycompany.com\u{1b}[22m\n    gitlab.mycompany.com: (none)\n"
         flag --unmask help="Show the full unmasked token"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[HOST]" help="GitLab hostname" required=#false default=gitlab.com
+        example #"""
+mise token gitlab
+gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)
+"""#
+        example #"""
+mise token gitlab --unmask
+gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)
+"""#
+        example #"""
+mise token gitlab gitlab.mycompany.com
+gitlab.mycompany.com: (none)
+"""#
     }
 }
 cmd tool help="Show information about a tool" effect=read {
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise tool node\u{1b}[22m\n    Backend:            core\n    Installed Versions: 20.0.0 22.0.0\n    Active Version:     20.0.0\n    Requested Version:  20\n    Config Source:      ~/.config/mise/mise.toml\n    Tool Options:       [none]\n"
     flag "-J --json" help="Output in JSON format"
     flag --active help="Only show active versions"
     flag --backend help="Only show backend field"
@@ -4171,6 +4692,15 @@ cmd tool help="Show information about a tool" effect=read {
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL> help="Tool name to get information about"
     group tool-info-filter "--active" "--backend" "--config-source" "--description" "--installed" "--requested" "--tool-options"
+    example #"""
+mise tool node
+Backend:            core
+Installed Versions: 20.0.0 22.0.0
+Active Version:     20.0.0
+Requested Version:  20
+Config Source:      ~/.config/mise/mise.toml
+Tool Options:       [none]
+"""#
 }
 cmd tool-stub disable_help_flag=#true disable_version_flag=#true help="Execute a tool stub" {
     long_help #"""
@@ -4237,7 +4767,6 @@ worktree is trusted when the equivalent path in the repository's main
 checkout has been trusted. Paranoid mode disables this sharing since
 worktrees can check out branches with different config contents.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # trusts ~/some_dir/mise.toml\n    $ \u{1b}[1mmise trust ~/some_dir/mise.toml\u{1b}[22m\n\n    # trusts mise.toml in the current or parent directory\n    $ \u{1b}[1mmise trust\u{1b}[22m\n"
     flag "-a --all" help="Trust all config files in the current directory, its parents, and its subdirectories" {
         long_help #"""
 Trust all config files in the current directory, its parents, and its subdirectories
@@ -4255,6 +4784,8 @@ Does not trust or untrust any files.
     flag --untrust help="Remove explicit trust for this config"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[CONFIG_FILE]" help="The config file whose trust status to change" required=#false
+    example "mise trust ~/some_dir/mise.toml" help="trusts ~/some_dir/mise.toml"
+    example "mise trust" help="trusts mise.toml in the current or parent directory"
     complete config_file type=path
 }
 cmd uninstall help="Remove installed tool versions" effect=destructive {
@@ -4264,7 +4795,6 @@ Remove installed tool versions
 This only removes the installed version; it does not modify mise.toml.
 Use `mise unuse` to remove a tool from mise.toml and uninstall it.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # uninstall a specific version\n    $ \u{1b}[1mmise uninstall node@18.0.0\u{1b}[22m\n\n    # uninstall the current node version (if only one version is installed)\n    $ \u{1b}[1mmise uninstall node\u{1b}[22m\n\n    # uninstall every installed version of node\n    $ \u{1b}[1mmise uninstall --all node\u{1b}[22m\n"
     flag "-a --all" help="Delete all installed versions"
     flag "-n --dry-run" help="Do not actually delete anything"
     flag --dry-run-code help="Like --dry-run but exits with code 1 if there are tools to uninstall" {
@@ -4276,6 +4806,9 @@ This is useful for scripts to check if tools need to be uninstalled.
     }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[INSTALLED_TOOL@VERSION]…" help="Tool(s) to remove" required=#false var=#true required_unless=--all
+    example "mise uninstall node@18.0.0" help="uninstall a specific version"
+    example "mise uninstall node" help="uninstall the current node version (if only one version is installed)"
+    example "mise uninstall --all node" help="uninstall every installed version of node"
 }
 cmd unset help="Remove environment variable(s) from the config file" effect=write {
     long_help #"""
@@ -4283,7 +4816,6 @@ Remove environment variable(s) from the config file
 
 By default, this command modifies `mise.toml` in the current directory.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Remove NODE_ENV from the current directory's config\n    $ \u{1b}[1mmise unset NODE_ENV\u{1b}[22m\n\n    # Remove NODE_ENV from the global config\n    $ \u{1b}[1mmise unset NODE_ENV -g\u{1b}[22m\n"
     flag "-f --file --path" help="Specify a file to use instead of `mise.toml`" {
         long_help #"""
 Specify a file to use instead of `mise.toml`
@@ -4300,6 +4832,8 @@ Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.
 Environment variable(s) to remove
 e.g.: NODE_ENV
 """# required=#false var=#true
+    example "mise unset NODE_ENV" help="Remove NODE_ENV from the selected project config"
+    example "mise unset NODE_ENV -g" help="Remove NODE_ENV from the global config"
     complete file type=path
 }
 cmd untrust help="Remove explicit trust for a config" effect=write {
@@ -4329,8 +4863,7 @@ Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_glo
 
 The installed version is also removed unless another config still uses it or `--no-prune` is passed.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # remove node@18.0.0 from mise.toml and uninstall it\n    $ \u{1b}[1mmise unuse node@18.0.0\u{1b}[22m\n\n    # remove it from the global config instead\n    $ \u{1b}[1mmise unuse -g node@18.0.0\u{1b}[22m\n\n    # remove node@20 from .mise.local.toml\n    $ \u{1b}[1mmise unuse --env local node@20\u{1b}[22m\n\n    # remove node@20 from .mise.staging.toml\n    $ \u{1b}[1mmise unuse --env staging node@20\u{1b}[22m\n"
-    flag "-e --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
+    flag "-e --env" help="Create/modify an environment-specific config file like mise.<env>.toml" {
         overrides "--global" "--path"
         arg <ENV>
     }
@@ -4349,6 +4882,10 @@ If a directory is specified, it will look for a config file in that directory fo
     flag --no-prune help="Do not also prune the installed version"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <INSTALLED_TOOL@VERSION>… help="Tool(s) to remove" var=#true
+    example "mise unuse node@18.0.0" help="remove node@18.0.0 from mise.toml and uninstall it"
+    example "mise unuse -g node@18.0.0" help="remove it from the global config instead"
+    example "mise unuse --env local node@20" help="remove the literal node@20 request from mise.local.toml"
+    example "mise unuse --env staging node@20" help="remove the literal node@20 request from mise.staging.toml"
     complete path type=path
 }
 cmd upgrade help="Upgrade outdated tools" effect=write {
@@ -4362,7 +4899,7 @@ rewrite the version in mise.toml.
 
 This also updates mise.lock if lockfiles are enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mDeprecation:\u{1b}[22m\u{1b}[24m\n\nThe `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.\nAfter removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.\n\n\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Upgrades node to the latest version matching the range in mise.toml\n    $ \u{1b}[1mmise upgrade node\u{1b}[22m\n\n    # Upgrades node to the latest version and bumps the version in mise.toml\n    $ \u{1b}[1mmise upgrade node --bump\u{1b}[22m\n\n    # Upgrades all tools to the latest versions\n    $ \u{1b}[1mmise upgrade\u{1b}[22m\n\n    # Upgrades all tools to the latest versions and bumps the version in mise.toml\n    $ \u{1b}[1mmise upgrade --bump\u{1b}[22m\n\n    # Just print what would be done, don't actually do it\n    $ \u{1b}[1mmise upgrade --dry-run\u{1b}[22m\n\n    # Upgrades node and python to the latest versions\n    $ \u{1b}[1mmise upgrade node python\u{1b}[22m\n\n    # Upgrade all tools except go\n    $ \u{1b}[1mmise upgrade --exclude go\u{1b}[22m\n\n    # Show a multiselect menu to choose which tools to upgrade\n    $ \u{1b}[1mmise upgrade --interactive\u{1b}[22m\n\n    # Only upgrade tools defined in local mise.toml, not global ones\n    $ \u{1b}[1mmise upgrade --local\u{1b}[22m\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mDeprecation:\u{1b}[22m\u{1b}[24m\n\nThe `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.\nAfter removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead."
     flag "-b --bump" help="Upgrade to the latest version available, bumping the version in mise.toml" {
         long_help #"""
 Upgrade to the latest version available, bumping the version in mise.toml
@@ -4445,6 +4982,15 @@ Tool(s) to upgrade
 e.g.: node@20 python@3.10
 If not specified, all current tools will be upgraded
 """# required=#false var=#true
+    example "mise upgrade node" help="Upgrades node to the latest version matching the range in mise.toml"
+    example "mise upgrade node --bump" help="Upgrades node to the latest version and bumps the version in mise.toml"
+    example "mise upgrade" help="Upgrades all configured tools within their current requests"
+    example "mise upgrade --bump" help="Upgrades all tools to the latest versions and bumps the version in mise.toml"
+    example "mise upgrade --dry-run" help="Just print what would be done, don't actually do it"
+    example "mise upgrade node python" help="Upgrades node and python within their current requests"
+    example "mise upgrade --exclude go" help="Upgrade all tools except go"
+    example "mise upgrade --interactive" help="Show a multiselect menu to choose which tools to upgrade"
+    example "mise upgrade --local" help="Only upgrade tools defined in local mise.toml, not global ones"
 }
 cmd usage hide=#true help="Generate a usage CLI spec" effect=read {
     long_help #"""
@@ -4475,7 +5021,6 @@ In the following order:
 
 Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # run with no arguments to use the interactive selector\n    $ \u{1b}[1mmise use\u{1b}[22m\n\n    # set the current version of node to 20.x in mise.toml of current directory\n    # will write the fuzzy version (e.g.: 20)\n    $ \u{1b}[1mmise use node@20\u{1b}[22m\n\n    # run a command after installing a tool\n    $ \u{1b}[1mmise use --postinstall \"mbx setup --defaults\" mr-boxington\u{1b}[22m\n\n    # associate a different postinstall command with each tool\n    $ \u{1b}[1mmise use --postinstall \"setup-a\" tool-a --postinstall \"setup-b\" tool-b\u{1b}[22m\n\n    # set the current version of node to 20.x in ~/.config/mise/config.toml\n    # will write the precise version (e.g.: 20.0.0)\n    $ \u{1b}[1mmise use -g --pin node@20\u{1b}[22m\n\n    # sets .mise.local.toml (which is intended not to be committed to a project)\n    $ \u{1b}[1mmise use --env local node@20\u{1b}[22m\n\n    # sets .mise.staging.toml (which is used if MISE_ENV=staging)\n    $ \u{1b}[1mmise use --env staging node@20\u{1b}[22m\n"
     flag "-e --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         overrides "--global" "--path"
         arg <ENV>
@@ -4559,6 +5104,13 @@ Tool options can be set with this syntax:
     mise use "cargo:ripgrep[features=pcre2]"
 """#
     }
+    example "mise use" help="run with no arguments to use the interactive selector"
+    example "mise use node@20" help="set the current version of node to 20.x in the selected project config will write the fuzzy version (e.g.: 20)"
+    example "mise use --postinstall \"mbx setup --defaults\" mr-boxington" help="run a command after installing a tool"
+    example "mise use --postinstall \"setup-a\" tool-a --postinstall \"setup-b\" tool-b" help="associate a different postinstall command with each tool"
+    example "mise use -g --pin node@20" help="set the current version of node to 20.x in ~/.config/mise/config.toml will write the precise version (e.g.: 20.0.0)"
+    example "mise use --env local node@20" help="writes mise.local.toml (preserving .mise.local.toml if it already exists)"
+    example "mise use --env staging node@20" help="writes mise.staging.toml (loaded with MISE_ENV=staging)"
     complete path type=path
 }
 cmd version help="Display the version of mise" effect=read {
@@ -4570,9 +5122,14 @@ Displays the version, os, architecture, and the date of the build.
 
 If the version is out of date, it will display a warning.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise version\u{1b}[22m\n    $ \u{1b}[1mmise --version\u{1b}[22m\n    $ \u{1b}[1mmise -v\u{1b}[22m\n    $ \u{1b}[1mmise -V\u{1b}[22m\n"
     flag "-J --json" help="Print the version information in JSON format"
     flag "-h --help" help="Print help" action=help builtin=#true
+    example #"""
+mise version
+mise --version
+mise -v
+mise -V
+"""#
 }
 cmd watch help="Run task(s) and rerun them when files change" unknown_flags=value {
     alias w
@@ -4585,7 +5142,6 @@ watchexec must be installed; `mise use -g watchexec@latest` installs it.
 For more advanced process management (daemon management, auto-restart, readiness checks,
 cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise watch build\u{1b}[22m\n    Runs the \"build\" task and reruns it whenever one of its sources changes.\n    The task's \"sources\" determine which files are watched.\n\n    $ \u{1b}[1mmise watch build --glob 'src/**/*.rs'\u{1b}[22m\n    Runs the \"build\" task, watching the files matched by the glob instead of\n    the task's \"sources\".\n\n    $ \u{1b}[1mmise watch build --clear\u{1b}[22m\n    Extra arguments are passed to watchexec. See `watchexec --help` for details.\n\n    $ \u{1b}[1mmise watch serve --watch src --exts rs --restart\u{1b}[22m\n    Starts an API server, watching \"*.rs\" files in \"./src\", and restarts the server when they change.\n"
     flag "-t --task-flag" help="Tasks to run" var=#true hide=#true {
         arg <TASK_FLAG>
     }
@@ -5252,6 +5808,10 @@ e.g.: `mise watch task1 arg1 arg2 ::: task2 arg1 arg2`
 Defaults to `default`
 """# required=#false
     arg "[ARGS]…" help="Task and arguments to run" required=#false double_dash=automatic var=#true
+    example "mise watch build" help="Run the build task and rerun it whenever its sources change."
+    example "mise watch build --glob 'src/**/*.rs'" help="Watch the glob instead of the task's sources."
+    example "mise watch build --clear" help="Extra arguments go to watchexec; see `watchexec --help`."
+    example "mise watch serve --watch src --exts rs --restart" help="Start an API server and restart it when Rust files in ./src change."
     complete path type=path
     complete directory type=dir
 }
@@ -5261,7 +5821,6 @@ Display the installation path for a tool
 
 The tool must be installed for this to work.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Show the latest installed node 20.x\n    # Errors if no matching version is installed\n    $ \u{1b}[1mmise where node@20\u{1b}[22m\n    /home/jdx/.local/share/mise/installs/node/20.0.0\n\n    # Show the install directory of the active node, or of the latest\n    # installed version if no config requests node\n    # Errors if no matching version is installed\n    $ \u{1b}[1mmise where node\u{1b}[22m\n    /home/jdx/.local/share/mise/installs/node/20.0.0\n"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL@VERSION> help=#"""
 Tool to look up
@@ -5274,6 +5833,14 @@ the version prefix to use when querying the latest version
 same as the first argument after the "@"
 used for asdf compatibility
 """# required=#false hide=#true
+    example #"""
+mise where node@20
+/home/jdx/.local/share/mise/installs/node/20.0.0
+"""# help="Show the latest installed node 20.x Errors if no matching version is installed"
+    example #"""
+mise where node
+/home/jdx/.local/share/mise/installs/node/20.0.0
+"""# help="Show the install directory of the active node, or of the latest installed version if no config requests node Errors if no matching version is installed"
 }
 cmd which help="Show the path a tool's executable resolves to" effect=read {
     long_help #"""
@@ -5281,7 +5848,6 @@ Show the path a tool's executable resolves to
 
 Use this to figure out what version of a tool is currently active.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise which node\u{1b}[22m\n    /home/username/.local/share/mise/installs/node/20.0.0/bin/node\n\n    $ \u{1b}[1mmise which node --plugin\u{1b}[22m\n    node\n\n    $ \u{1b}[1mmise which node --version\u{1b}[22m\n    20.0.0\n"
     flag "-t --tool" help=#"""
 Use a specific tool@version
 e.g.: `mise which npm --tool=node@20`
@@ -5293,4 +5859,16 @@ e.g.: `mise which npm --tool=node@20`
     flag --version help="Show the version instead of the path" conflicts=--plugin
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[BIN_NAME]" help="The executable to look up" required=#false required_unless=--complete
+    example #"""
+mise which node
+/home/username/.local/share/mise/installs/node/20.0.0/bin/node
+"""#
+    example #"""
+mise which node --plugin
+node
+"""#
+    example #"""
+mise which node --version
+20.0.0
+"""#
 }

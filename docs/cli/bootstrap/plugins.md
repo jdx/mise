@@ -12,5 +12,5 @@ Manage package manager plugins declared in `[bootstrap.plugins]`
 
 ## Subcommands
 
-- [`mise bootstrap plugins apply [-n --dry-run]`](/cli/bootstrap/plugins/apply.md)
-- [`mise bootstrap plugins status [--missing]`](/cli/bootstrap/plugins/status.md)
+- [`mise bootstrap plugins apply [-n --dry-run]`](/cli/bootstrap/plugins/apply.html)
+- [`mise bootstrap plugins status [--missing]`](/cli/bootstrap/plugins/status.html)

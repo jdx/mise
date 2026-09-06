@@ -20,8 +20,8 @@ See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
 - **`-l --local`** — Use the local config file instead of the global one
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-mise settings idiomatic_version_file=true
+mise settings set jobs 4
 ```

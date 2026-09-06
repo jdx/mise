@@ -16,9 +16,10 @@ This is the contents of a tool_alias.&lt;TOOL> entry in ~/.config/mise/config.to
 ## Flags
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise tool-alias get node lts-hydrogen
-20.0.0
+mise tool-alias set node project 20
+mise tool-alias get node project
+20
 ```

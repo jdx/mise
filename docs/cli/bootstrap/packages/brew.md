@@ -15,5 +15,5 @@ can be fetched directly by mise without a Homebrew installation.
 
 ## Subcommands
 
-- [`mise bootstrap packages brew tap [FLAGS] <TAP> [URL]`](/cli/bootstrap/packages/brew/tap.md)
-- [`mise bootstrap packages brew untap [FLAGS] <TAPS>…`](/cli/bootstrap/packages/brew/untap.md)
+- [`mise bootstrap packages brew tap [FLAGS] <TAP> [URL]`](/cli/bootstrap/packages/brew/tap.html)
+- [`mise bootstrap packages brew untap [FLAGS] <TAPS>…`](/cli/bootstrap/packages/brew/untap.html)

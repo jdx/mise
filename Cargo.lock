@@ -7760,6 +7760,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulldown-cmark"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
+dependencies = [
+ "bitflags 2.13.1",
+ "memchr",
+ "unicase",
+]
+
+[[package]]
 name = "purl"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11118,15 +11129,15 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-argv"
-version = "6.7.1"
+version = "6.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64ab89a0a6974bb82b87d9b3dbdced288b934ac9a91ebe01f66304efd9214dbe"
+checksum = "80dcf875185d0520e1a0675f6d413749e5050fde359eede97e45d0b9690eedbd"
 
 [[package]]
 name = "usage-cli"
-version = "6.7.1"
+version = "6.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "047a55467ad7aab097334b623f6eda0104a26569b68b328e9df9367e5dd606d7"
+checksum = "e754b3f0af28ad0538a7da948fa33d17df75f29927710bbad3e1b629536b0c4c"
 dependencies = [
  "env_logger",
  "exec",
@@ -11149,9 +11160,9 @@ dependencies = [
 
 [[package]]
 name = "usage-derive"
-version = "6.7.1"
+version = "6.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4b06744009f786ea4d38a8136e38af3da3ea86b0515ddb24ca8bd176c3d2324"
+checksum = "778373c082248ae6050e96beb69c817cf109b8c8e925fbcbdf2155a12e517442"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -11160,14 +11171,15 @@ dependencies = [
 
 [[package]]
 name = "usage-lib"
-version = "6.7.1"
+version = "6.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99c8cc45cd9014fdedce0790f49499bf6af8967ae3a87ec8eb58185d2e7248b7"
+checksum = "f8ea1e705ea3b3bd5198d1e31110df5bc5465078421c57f6a312c2ffda59cff3"
 dependencies = [
  "indexmap 2.14.1",
  "itertools 0.15.0",
  "log",
  "num-traits",
+ "pulldown-cmark",
  "regex",
  "roff",
  "semver",
@@ -11181,9 +11193,9 @@ dependencies = [
 
 [[package]]
 name = "usage-rs"
-version = "6.7.1"
+version = "6.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "794778bdd02b146ab233017d8ae8ad0093e599706d1611c44674bad63faf3357"
+checksum = "894bcecc06869ce740fde1135ac8ee60d82bf33e88f34e4fee434a62e98e15e8"
 dependencies = [
  "usage-argv",
  "usage-derive",
@@ -11193,18 +11205,18 @@ dependencies = [
 
 [[package]]
 name = "usage-test"
-version = "6.7.1"
+version = "6.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22dbf6dc9f3b971cf87b184b2e522e6f03b1a85662e0db324a1f2168be33aa30"
+checksum = "e75d170ba4aad33319a2a9ffc77494143559ec6173eef287750d439aab006169"
 dependencies = [
  "usage-argv",
 ]
 
 [[package]]
 name = "usage-validation"
-version = "6.7.1"
+version = "6.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb5bbb1880e6172ea673806410bce683d5df0a3661bda387fb56f078ec4b5ddb"
+checksum = "9ebdffbd14e4c6c8267340f697842c6cd30b6cd56a8c4f83154e6f6ecace9ad9"
 dependencies = [
  "expr-lang",
 ]

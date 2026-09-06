@@ -14,7 +14,7 @@ Generate a devcontainer to execute mise
 - **`-w --write`** — Write to .devcontainer/devcontainer.json
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise generate devcontainer

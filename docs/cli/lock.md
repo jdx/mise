@@ -64,16 +64,58 @@ Operates on the lockfile in the current config root. Use TOOL arguments to targe
   combined with tool arguments.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+create or refresh the project lockfile
 
 ```
-mise lock                       # update lockfile for all common platforms
-mise lock node python           # update only node and python
-mise lock --platform linux-x64  # update only linux-x64 platform
-mise lock --dry-run             # show what would be updated
-mise lock --bump                # re-resolve selectors like "latest" or "20" to the latest matching versions
-mise lock --bump --dry-run --json   # list available updates as JSON without writing
-mise lock --minimum-release-age 2024-01-01   # lock latest/fuzzy versions released before 2024-01-01
-mise lock --local               # update mise.local.lock for local configs
-mise lock --global              # update only global config lockfiles
+mise lock
+```
+
+update only node and python
+
+```
+mise lock node python
+```
+
+update only linux-x64 platform
+
+```
+mise lock --platform linux-x64
+```
+
+show what would be updated
+
+```
+mise lock --dry-run
+```
+
+re-resolve selectors like "latest" or "20" to the latest matching versions
+
+```
+mise lock --bump
+```
+
+list available updates as JSON without writing
+
+```
+mise lock --bump --dry-run --json
+```
+
+lock latest/fuzzy versions released before 2024-01-01
+
+```
+mise lock --minimum-release-age 2024-01-01
+```
+
+update mise.local.lock for local configs
+
+```
+mise lock --local
+```
+
+update only global config lockfiles
+
+```
+mise lock --global
 ```

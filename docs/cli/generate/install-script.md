@@ -31,13 +31,18 @@ setup). The old name still works but is deprecated and will be removed in mise 2
   carry two files.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Download mise to .mise if it is not already installed.
 
 ```
-$ mise generate install-script --write ./bin/mise
-$ ./bin/mise install                                    # downloads mise to .mise if not already installed
+mise generate install-script --write ./bin/mise
+./bin/mise install
+```
 
-# add a launcher for contributors who clone the project on Windows
-$ mise generate install-script --write ./bin/mise --windows  # also writes bin/mise.cmd
-$ .\bin\mise.cmd install
+Write bin/mise.cmd as a launcher for contributors who clone the project on Windows.
+
+```
+mise generate install-script --write ./bin/mise --windows
+.\bin\mise.cmd install
 ```

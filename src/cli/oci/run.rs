@@ -19,7 +19,10 @@ use crate::oci::{BuildOptions, LayerOwner};
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and
 /// one of: `podman`, `docker`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
+    example(r###"mise oci run -it -- bash"###, help = r###"Build the current mise.toml and drop into bash:"###),
+    example(r###"mise oci run -e DEBUG=1 --volume "$PWD:/work" -w /work -- npm test"###, help = r###"Run a one-shot command with env + volume (note: `-v` is reserved for --verbose, so use `--volume`):"###),
+    example(r###"mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'"###, help = r###"Re-use a previously built layout (skip the build step):"###))]
 pub(super) struct Run {
     // Long-only flags, kept alphabetical (asserted by
     // `cli::tests::test_subcommands_are_sorted`).
@@ -305,21 +308,8 @@ fn load_image(engine: Engine, image_dir: &Path) -> Result<String> {
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    Build the current mise.toml and drop into bash:
-    $ <bold>mise oci run -it -- bash</bold>
-
-    Run a one-shot command with env + volume (note: `-v` is reserved
-    for --verbose, so use `--volume`):
-    $ <bold>mise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test</bold>
-
-    Re-use a previously built layout (skip the build step):
-    $ <bold>mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'</bold>
-
-<bold><underline>Engines:</underline></bold>
+    r###"<bold><underline>Engines:</underline></bold>
 
     Prefers <bold>podman</bold> (loads OCI layouts natively). Falls back to <bold>docker</bold>
-    (loaded via <bold>docker load</bold>). Pass <bold>--engine podman</bold> or <bold>--engine docker</bold> to override.
-"#
+    (loaded via <bold>docker load</bold>). Pass <bold>--engine podman</bold> or <bold>--engine docker</bold> to override."###
 );

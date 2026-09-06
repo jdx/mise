@@ -19,15 +19,19 @@ Use this to figure out what version of a tool is currently active.
 - **`--version`** — Show the version instead of the path
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise which node
+mise which node
 /home/username/.local/share/mise/installs/node/20.0.0/bin/node
+```
 
-$ mise which node --plugin
+```
+mise which node --plugin
 node
+```
 
-$ mise which node --version
+```
+mise which node --version
 20.0.0
 ```

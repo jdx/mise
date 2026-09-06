@@ -17,7 +17,7 @@ Edit a managed dotfile source
 - **`-y --yes`** — Skip the confirmation prompt when adding an unmanaged target
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise bootstrap dotfiles edit ~/.zshrc

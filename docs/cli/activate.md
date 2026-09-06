@@ -48,12 +48,34 @@ Customize status output with `status` settings.
   See <https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path> for more information
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Activate mise in Bash.
 
 ```
 eval "$(mise activate bash)"
+```
+
+Activate mise in Zsh.
+
+```
 eval "$(mise activate zsh)"
+```
+
+Activate mise in Fish.
+
+```
 mise activate fish | source
+```
+
+Activate mise in Xonsh.
+
+```
 execx($(mise activate xonsh))
+```
+
+Activate mise in PowerShell.
+
+```
 (&mise activate pwsh) | Out-String | Invoke-Expression
 ```

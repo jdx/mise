@@ -16,7 +16,7 @@ Generate a mise.toml file
 - **`-t --tool-versions <TOOL_VERSIONS>`** — Path to a .tool-versions file to import tools from
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise generate config             # generate mise.toml interactively

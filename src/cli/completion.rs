@@ -84,7 +84,13 @@ fn complete_spec(
 
 /// Generate shell completions
 #[derive(Debug, usage_rs::Args)]
-#[usage(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(aliases = ["complete", "completions"], verbatim_doc_comment, example(r###"mise completion zsh --install
+mise completion bash --install
+mise completion fish --install
+mise completion powershell --install"###, help = r###"Install for your shell; follow any printed one-time setup instructions"###),
+    example(r###"mise completion zsh"###, help = r###"Print a completion script to inspect or save at a custom path"###),
+    example(r###"mise completion zsh --tool rg
+mise completion zsh --tool rg --install"###, help = r###"For a tool installed through Packslip with completion resources"###))]
 pub(crate) struct Completion {
     /// Shell type to generate completions for
     #[usage(required_unless = "shell_type", value_enum)]
@@ -235,24 +241,6 @@ impl Completion {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # put it where the shell looks, and print any one-time line it still needs
-    $ <bold>mise completion zsh --install</bold>
-
-    # a tool's completion, from the packslip it was installed from
-    $ <bold>mise completion zsh --tool rg</bold>
-    $ <bold>mise completion zsh --tool rg --install</bold>
-
-    # or choose the path yourself
-    $ <bold>mise completion bash > ~/.local/share/bash-completion/completions/mise</bold>
-    $ <bold>mise completion zsh  > /usr/local/share/zsh/site-functions/_mise</bold>
-    $ <bold>mise completion fish > ~/.config/fish/completions/mise.fish</bold>
-    $ <bold>mise completion powershell >> $PROFILE</bold>
-"#
-);
 
 #[derive(Debug, Clone, Copy, EnumString, strum::Display, usage_rs::ValueEnum)]
 #[strum(serialize_all = "snake_case")]

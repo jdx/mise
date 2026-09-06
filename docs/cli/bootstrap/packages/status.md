@@ -13,7 +13,7 @@ Show the status of system packages from `[bootstrap.packages]`
 - **`--missing`** — Exit with code 1 if any configured packages are not in their desired state
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise bootstrap packages status

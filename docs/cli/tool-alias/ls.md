@@ -24,9 +24,9 @@ lts = "22.0.0"
 - **`--no-header`** — Don't show table header
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise tool-alias ls
+mise tool-alias ls
 node  lts-jod      22
 ```

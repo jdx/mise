@@ -16,7 +16,21 @@ use crate::{config, dirs, exit, file};
 /// This only removes the installed version; it does not modify mise.toml.
 /// Use `mise unuse` to remove a tool from mise.toml and uninstall it.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise uninstall node@18.0.0"###,
+        help = r###"uninstall a specific version"###
+    ),
+    example(
+        r###"mise uninstall node"###,
+        help = r###"uninstall the current node version (if only one version is installed)"###
+    ),
+    example(
+        r###"mise uninstall --all node"###,
+        help = r###"uninstall every installed version of node"###
+    )
+)]
 pub(crate) struct Uninstall {
     /// Tool(s) to remove
     #[usage(value_name = "INSTALLED_TOOL@VERSION", required_unless = "all")]
@@ -177,17 +191,3 @@ impl Uninstall {
         Ok(tool_versions)
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # uninstall a specific version
-    $ <bold>mise uninstall node@18.0.0</bold>
-
-    # uninstall the current node version (if only one version is installed)
-    $ <bold>mise uninstall node</bold>
-
-    # uninstall every installed version of node
-    $ <bold>mise uninstall --all node</bold>
-"#
-);

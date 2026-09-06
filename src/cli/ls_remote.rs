@@ -29,7 +29,11 @@ struct VersionOutputAll {
 ///
 /// Results may be cached; run `mise cache clear` to fetch fresh results.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"]
+#[usage(verbatim_doc_comment, example(r###"mise ls-remote node
+mise ls-remote node@20
+mise ls-remote node 20
+mise ls-remote node --minimum-release-age 30d
+mise ls-remote github:cli/cli --json"###), aliases = ["list-all", "list-remote"]
 )]
 pub(crate) struct LsRemote {
     /// Tool to get versions for
@@ -243,29 +247,6 @@ fn filter_versions_by_date(
         None => versions,
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise ls-remote node</bold>
-    18.0.0
-    20.0.0
-
-    $ <bold>mise ls-remote node@20</bold>
-    20.0.0
-    20.1.0
-
-    $ <bold>mise ls-remote node 20</bold>
-    20.0.0
-    20.1.0
-
-    $ <bold>mise ls-remote node --minimum-release-age 2024-01-01</bold>
-    20.0.0
-
-    $ <bold>mise ls-remote github:cli/cli --json</bold>
-    [{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z","prerelease":false},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z","prerelease":false}]
-"#
-);
 
 #[cfg(test)]
 mod tests {

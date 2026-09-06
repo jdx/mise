@@ -25,23 +25,25 @@ non-fuzzy matches, use the `--match-type` flag.
 - **`--no-header`** — Don't display headers
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise search jq
+mise search jq
 Tool  Description
 jq    Command-line JSON processor. https://github.com/jqlang/jq
 jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
 jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
 gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
+```
 
-$ mise search --interactive
+```
+mise search --interactive
 Tool
 Search a tool
 ❯ jq    Command-line JSON processor. https://github.com/jqlang/jq
   jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
   jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
   gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
-/jq 
+/jq
 esc clear filter • enter confirm
 ```

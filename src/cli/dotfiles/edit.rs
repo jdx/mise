@@ -11,7 +11,13 @@ use crate::ui::prompt;
 
 /// Edit a managed dotfile source
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap dotfiles edit ~/.zshrc
+mise bootstrap dotfiles edit --apply ~/.config/starship.toml"###
+    )
+)]
 pub(crate) struct DotfilesEdit {
     /// Target to edit
     #[usage(value_name = "TARGET")]
@@ -180,11 +186,3 @@ async fn apply_target(target: &str) -> Result<()> {
     }
     Ok(())
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles edit ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles edit --apply ~/.config/starship.toml</bold>
-"#
-);

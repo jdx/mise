@@ -12,12 +12,10 @@ Print the current PATH entries mise is providing
 - **`-f --full`** — Print all entries including those not provided by mise
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Get the PATH entries mise provides, such as `/home/user/.local/share/mise/installs/node/24.0.0/bin`, `/home/user/.local/share/mise/installs/rust/1.90.0/bin`, and `/home/user/.local/share/mise/installs/python/3.10.0/bin`.
 
 ```
-Get the current PATH entries mise is providing
-$ mise doctor path
-/home/user/.local/share/mise/installs/node/24.0.0/bin
-/home/user/.local/share/mise/installs/rust/1.90.0/bin
-/home/user/.local/share/mise/installs/python/3.10.0/bin
+mise doctor path
 ```

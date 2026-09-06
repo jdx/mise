@@ -9,7 +9,16 @@ use crate::ui::table::MiseTable;
 
 /// Show the status of dotfiles from `[dotfiles]`
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "ls",
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap dotfiles status
+mise bootstrap dotfiles status ~/.zshrc
+mise bootstrap dotfiles status --json
+mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync"###
+    )
+)]
 pub(crate) struct DotfilesStatus {
     /// Only show these targets
     #[usage(value_name = "TARGET")]
@@ -173,13 +182,3 @@ impl DotfilesStatus {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles status</bold>
-    $ <bold>mise bootstrap dotfiles status ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles status --json</bold>
-    $ <bold>mise bootstrap dotfiles status --missing</bold> # exit 1 if anything is out of sync
-"#
-);

@@ -11,7 +11,18 @@ use crate::ui::table;
 
 /// Show information about a tool
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise tool node
+Backend:            core
+Installed Versions: 20.0.0 22.0.0
+Active Version:     20.0.0
+Requested Version:  20
+Config Source:      ~/.config/mise/mise.toml
+Tool Options:       [none]"###
+    )
+)]
 pub(crate) struct Tool {
     /// Tool name to get information about
     tool: BackendArg,
@@ -294,16 +305,3 @@ struct ToolInfo {
     tool_options: ToolVersionOptions,
     security: Vec<SecurityFeature>,
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise tool node</bold>
-    Backend:            core
-    Installed Versions: 20.0.0 22.0.0
-    Active Version:     20.0.0
-    Requested Version:  20
-    Config Source:      ~/.config/mise/mise.toml
-    Tool Options:       [none]
-"#
-);

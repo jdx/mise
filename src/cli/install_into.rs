@@ -18,7 +18,14 @@ use tokio::sync::OnceCell;
 ///
 /// Used for building a tool to a directory for use outside of mise
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v
+v20.0.0"###,
+        help = r###"install node@20.0.0 into ./mynode"###
+    )
+)]
 pub(crate) struct InstallInto {
     /// Tool to install
     /// e.g.: node@20
@@ -106,12 +113,3 @@ fn path_has_contents(path: &Path) -> bool {
         Err(_) => path.exists(),
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # install node@20.0.0 into ./mynode
-    $ <bold>mise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v</bold>
-    20.0.0
-"#
-);

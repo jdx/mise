@@ -21,7 +21,7 @@ mise doesn't otherwise own.
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise bootstrap dotfiles apply

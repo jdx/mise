@@ -27,7 +27,10 @@ use crate::oci::{BuildOptions, LayerOwner, registry};
 ///
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
+    example(r###"mise oci push ghcr.io/me/devenv:latest"###, help = r###"Build and push to GHCR:"###),
+    example(r###"mise oci build -o ./img
+mise oci push --image-dir ./img ghcr.io/me/devenv:v1"###, help = r###"Push an image built earlier:"###))]
 pub(super) struct Push {
     /// Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
     #[usage(value_name = "REF")]
@@ -195,22 +198,12 @@ impl Push {
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    Build and push to GHCR:
-    $ <bold>mise oci push ghcr.io/me/devenv:latest</bold>
-
-    Push an image built earlier:
-    $ <bold>mise oci build -o ./img</bold>
-    $ <bold>mise oci push --image-dir ./img ghcr.io/me/devenv:v1</bold>
-
-<bold><underline>Auth:</underline></bold>
+    r###"<bold><underline>Auth:</underline></bold>
 
     Credentials are resolved the same way docker/podman resolve them:
     <bold>$REGISTRY_AUTH_FILE</bold>, <bold>$XDG_RUNTIME_DIR/containers/auth.json</bold>,
     <bold>~/.config/containers/auth.json</bold>, then <bold>~/.docker/config.json</bold>
     (inline auths and credential helpers). Log in with either:
     $ <bold>docker login ghcr.io</bold>
-    $ <bold>podman login ghcr.io</bold>
-"#
+    $ <bold>podman login ghcr.io</bold>"###
 );

@@ -10,7 +10,12 @@ use toml_edit::Item;
 /// Adds a task to the local mise.toml file.
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit"###
+    )
+)]
 pub(super) struct TasksAdd {
     /// Name of the task to add
     #[usage()]
@@ -225,10 +230,3 @@ impl TasksAdd {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit</bold>
-"#
-);

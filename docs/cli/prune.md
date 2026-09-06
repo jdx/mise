@@ -30,10 +30,10 @@ You can list prunable tools with `mise ls --prunable`
 - **`--tools`** — Prune only unused versions of tools
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Preview unused versions without deleting them. Example output: `rm -rf ~/.local/share/mise/installs/node/20.0.0` and `rm -rf ~/.local/share/mise/installs/node/20.0.1`.
 
 ```
-$ mise prune --dry-run
-rm -rf ~/.local/share/mise/versions/node/20.0.0
-rm -rf ~/.local/share/mise/versions/node/20.0.1
+mise prune --dry-run
 ```

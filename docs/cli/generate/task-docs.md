@@ -25,8 +25,15 @@ Generate documentation for tasks in a project
   **Default:** `simple`
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-mise generate task-docs
+mise generate task-docs --style detailed
+mise generate task-docs --output TASKS.md
+```
+
+README.md must already contain both mise-tasks marker comments
+
+```
+mise generate task-docs --inject --output README.md
 ```
