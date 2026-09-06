@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TX3K31V6NVYG10B1W756DX",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T08:24:40.85672Z",
+  "branch": "codex/docs-reference-links",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/mise-cookbook/python.md",
+    "docs/tasks/caching.md",
+    "settings.toml"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ed0ac62e3c6f",
+  "checkpoint_transcript_start": 4406,
+  "transcript_lines_at_start": 4406,
+  "compact_transcript_start": 552,
+  "token_usage": {
+    "input_tokens": 4591,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 619776,
+    "output_tokens": 2086,
+    "api_call_count": 4
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T08:24:40.088901Z",
+    "agent_lines": 7,
+    "agent_removed": 7,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 7,
+    "total_lines_changed": 14,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
