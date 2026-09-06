@@ -479,7 +479,10 @@ if (-not (Test-Path $PROFILE)) {
     New-Item -ItemType Directory -Force (Split-Path -Parent $PROFILE) | Out-Null
     New-Item -ItemType File -Path $PROFILE | Out-Null
 }
-Add-Content $PROFILE '(&mise activate pwsh) | Out-String | Invoke-Expression'
+$activation = '(&mise activate pwsh) | Out-String | Invoke-Expression'
+if (-not (Select-String -Path $PROFILE -SimpleMatch $activation -Quiet)) {
+    Add-Content $PROFILE $activation
+}
 ```
 
 See [PowerShell profiles](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles)
