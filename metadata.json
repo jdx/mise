@@ -1,0 +1,22 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TWZAMBK4W4EPQCS0NAY2E8",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-security-guides",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/paranoid.md",
+    "docs/public/llms.txt",
+    "docs/security.md",
+    "docs/url-replacements.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
