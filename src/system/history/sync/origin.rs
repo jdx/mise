@@ -499,7 +499,7 @@ fn reset_sync_state(
 /// checkpoints stay.
 pub(crate) fn remove() -> Result<()> {
     let state_dir: &std::path::Path = &crate::dirs::STATE;
-    let _sync_lock = run::lock_in(state_dir)?;
+    let _sync_lock = run::lock_wait(state_dir, run::STATUS_LOCK_WAIT)?;
     let mut status = run::read_status(state_dir)?;
     remove_locked(state_dir, &mut status)
 }

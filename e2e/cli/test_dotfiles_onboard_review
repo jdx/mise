@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+require_cmd git
+export MISE_EXPERIMENTAL=1
+printf 'original\n' >~/.onboard-review
+assert_succeed 'mise bootstrap dotfiles track ~/.onboard-review'
+origin="$PWD/origin.git"
+git init -q --bare "$origin"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync fetch-only --yes"
+assert 'mise settings get history.sync' 'fetch-only'
+assert_succeed 'mise settings set history.sync manual'
+assert 'mise settings get history.sync' 'manual'
+assert_contains 'mise bootstrap dotfiles status' 'mode manual'
+assert_succeed 'mise settings set history.sync sync'
+assert 'mise settings get history.sync' 'sync'
+assert_succeed 'mise settings unset history.sync'
+assert 'mise settings get history.sync' 'sync'
+assert_succeed 'mise bootstrap dotfiles sync'
+
+# A broken local store must not turn a marked repository into a plain clone.
+broken="$PWD/broken-state"
+mkdir -p "$broken/history"
+printf 'not a repository\n' >"$broken/history/repo.git"
+assert_fail "MISE_STATE_DIR=$broken mise bootstrap --from-git file://$origin --yes" 'history is unavailable'
+assert_fail 'test -d ~/.config/mise/.git'

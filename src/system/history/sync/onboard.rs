@@ -50,16 +50,10 @@ pub(crate) struct Outcome {
 pub(crate) async fn from_git(url: &str, yes: bool, dry_run: bool) -> Result<Option<Outcome>> {
     // Detect marked repositories without creating persistent tracking state
     // for users of the released, ordinary --from-git workflow.
-    let probe_dir = (!crate::config::Settings::get().experimental)
-        .then(tempfile::tempdir)
-        .transpose()?;
-    let store = match &probe_dir {
-        Some(dir) => Store::open_in(dir.path())?,
-        None => Store::open()?,
-    };
+    let probe_dir = tempfile::tempdir()?;
+    let store = Store::open_in(probe_dir.path())?;
     if let Some(reason) = store.unavailable() {
-        debug!("history: {url} is not probed for a setup repository: {reason}");
-        return Ok(None);
+        bail!("cannot determine whether {url} is a setup repository: {reason}");
     }
     let repo = store
         .repo()
@@ -67,11 +61,15 @@ pub(crate) async fn from_git(url: &str, yes: bool, dry_run: bool) -> Result<Opti
     let Some(branch) = default_branch(&Remote::new(repo, url))? else {
         return Ok(None);
     };
-    refuse_other_connection(&store, url, &branch)?;
     if !matches!(probe(&store, url, &branch)?, RepoState::Marked(_)) {
         return Ok(None);
     }
     crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
+    let store = Store::open()?;
+    if let Some(reason) = store.unavailable() {
+        bail!("cannot onboard this setup repository: history is unavailable: {reason}");
+    }
+    refuse_other_connection(&store, url, &branch)?;
     let outcome = run(
         &store,
         &Onboarding {
@@ -237,7 +235,10 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     let applied = apply::apply(store, &tracked, &ApplyRequest::automatic()).await?;
     // a conflict (a file that exists here and differs) is not pending: it
     // waits for a decision, like a path held with its group
-    let undecided = applied.held + synced.conflicts;
+    let undecided = run::read_status(store.state_dir())?
+        .conflicts
+        .len()
+        .max(applied.held);
     // configuration among them: nothing to bootstrap from yet
     let configuration_held = {
         let status = run::read_status(state_dir)?;

@@ -471,19 +471,23 @@ pub(crate) fn update_status(
     wait: Duration,
     mutate: impl FnOnce(&mut SyncStatus),
 ) -> Result<()> {
+    let _lock = lock_wait(state_dir, wait)?;
+    let mut status = read_status(state_dir)?;
+    mutate(&mut status);
+    write_status(state_dir, &status)
+}
+
+pub(crate) fn lock_wait(state_dir: &Path, wait: Duration) -> Result<fslock::LockFile> {
     let deadline = Instant::now() + wait;
-    let _lock = loop {
+    loop {
         if let Some(lock) = crate::lock_file::LockFile::new(&lock_path(state_dir)).try_lock()? {
-            break lock;
+            return Ok(lock);
         }
         if Instant::now() >= deadline {
             bail!("another setup sync or pull is running; retry shortly");
         }
         std::thread::sleep(STATUS_LOCK_POLL);
-    };
-    let mut status = read_status(state_dir)?;
-    mutate(&mut status);
-    write_status(state_dir, &status)
+    }
 }
 
 /// A desktop notification for conflicts that newly need a decision, when
