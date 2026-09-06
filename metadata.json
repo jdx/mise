@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1VR23A7SM6RKCJ6YK6WBXWB",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-project-guides",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/test-impl.yml",
+    "e2e/cli/test_system_upgrade_brew_cask_auto_updates",
+    "e2e/cli/test_system_upgrade_brew_cask_auto_updates_macos",
+    "e2e/cli/test_watch_terminal_restore_on_signal",
+    "e2e/cli/test_watch_terminal_restore_on_signal_macos"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1282,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 595712,
+    "output_tokens": 323,
+    "api_call_count": 4
+  }
+}

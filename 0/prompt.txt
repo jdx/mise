@@ -1,0 +1,26 @@
+we should remove the rtx references/guide, fix that in this pr [https://github.com/jdx/mise/pull/12877/changes](https://github.com/jdx/mise/pull/12877/changes)
+
+remove all rtx references in all docs and code
+
+---
+
+rebase, update the pr title/desc
+
+---
+
+use a worktree
+
+---
+
+fix failinig pr check
+
+---
+
+why do we add things like this?&#x20;
+```
+  - run: mise run test:e2e e2e/cli/test_system_upgrade_brew_cask_auto_updates
+```
+
+---
+
+improve this in this pr to do something more maintainable
