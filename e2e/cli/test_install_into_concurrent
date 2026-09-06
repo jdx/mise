@@ -33,15 +33,23 @@ chmod +x "$plugin_dir/bin/list-all" "$plugin_dir/bin/install"
 mkdir -p "$MISE_CACHE_DIR/lockfiles"
 echo preserved >"$MISE_CACHE_DIR/lockfiles/keep.txt"
 ln -s "$MISE_CACHE_DIR" cache-alias
+# A lock-directory entry that is itself a symlink pointing outward: reached
+# through the alias, resolving the whole path leads out of the lock directory,
+# but replacement would still unlink the entry sitting inside it.
+mkdir -p outside
+ln -s "$PWD/outside" "$MISE_CACHE_DIR/lockfiles/outward"
 for destination in \
   "$MISE_CACHE_DIR" \
   "$MISE_CACHE_DIR/lockfiles" \
   "$MISE_CACHE_DIR/lockfiles/keep.txt" \
   "$MISE_CACHE_DIR/lockfiles/nested/destination" \
   "$PWD/cache-alias/lockfiles" \
-  "$PWD/cache-alias/lockfiles/keep.txt"; do
+  "$PWD/cache-alias/lockfiles/keep.txt" \
+  "$PWD/cache-alias/lockfiles/outward" \
+  "$PWD/cache-alias/lockfiles/nested/destination"; do
   assert_fail_contains "mise install-into asdf:install-into-race@1.0.0 '$destination' --yes" "overlaps mise's lock directory"
   assert "cat '$MISE_CACHE_DIR/lockfiles/keep.txt'" preserved
+  assert "test -L '$MISE_CACHE_DIR/lockfiles/outward' && echo intact" intact
 done
 
 python3 - <<'PY'

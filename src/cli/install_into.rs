@@ -68,20 +68,13 @@ impl InstallInto {
             before_date,
             dependency_context: OnceCell::new(),
         };
-        // Replacement deletes the destination, so refuse a destination that
-        // overlaps the lock directory in either direction: an ancestor would
-        // take the whole directory with it, and a descendant could unlink an
-        // active lock file, letting the next process create a fresh one and
-        // install alongside the holder.
+        // Refuse before anything is created, so a rejected destination leaves
+        // no directories behind inside the lock directory.
         let lock_dir = crate::dirs::CACHE.join("lockfiles");
         if crate::file::path_starts_with_resolved(&lock_dir, &install_path)
             || crate::file::path_starts_with_resolved(&install_path, &lock_dir)
         {
-            bail!(
-                "install-into destination {} overlaps mise's lock directory {}; choose a different destination",
-                display_path(&install_path),
-                display_path(&lock_dir)
-            );
+            return Err(lock_dir_overlap(&install_path, &lock_dir));
         }
         // Resolve parent aliases once, then install into and lock that one
         // path. Binding both to the same resolved destination keeps the lock
@@ -93,13 +86,29 @@ impl InstallInto {
         // otherwise take two different locks for one destination. The install
         // creates this parent regardless. Do not resolve the final component:
         // installation replaces that entry, even if it is a symlink.
+        // `dunce::simplified` drops the extended-length prefix `canonicalize`
+        // adds on Windows wherever the plain path names the same file. The
+        // destination reaches backends and plugins as `MISE_INSTALL_PATH`, and
+        // mise itself rejects `\\?\` paths as tool paths, so the resolved
+        // spelling has to stay one mise would accept back.
         let install_path = match (install_path.parent(), install_path.file_name()) {
             (Some(parent), Some(name)) => {
                 crate::file::create_dir_all(parent)?;
-                crate::file::desymlink_path(parent).join(name)
+                dunce::simplified(&crate::file::desymlink_path(parent).join(name)).to_path_buf()
             }
-            _ => crate::file::desymlink_path(&install_path),
+            _ => dunce::simplified(&crate::file::desymlink_path(&install_path)).to_path_buf(),
         };
+        // The final component above is deliberately left unresolved, so a
+        // destination reached through an alias whose own last component is a
+        // symlink pointing out of the lock directory slips past the resolving
+        // check. Re-check what will actually be replaced.
+        let resolved_lock_dir =
+            dunce::simplified(&crate::file::desymlink_path(&lock_dir)).to_path_buf();
+        if install_path.starts_with(&resolved_lock_dir)
+            || resolved_lock_dir.starts_with(&install_path)
+        {
+            return Err(lock_dir_overlap(&install_path, &lock_dir));
+        }
         tv.install_path = Some(install_path.clone());
         tv.install_path_is_exact = true;
         tv.install_path_is_explicit = true;
@@ -150,6 +159,18 @@ impl InstallInto {
         backend.install_version(install_ctx, tv).await?;
         Ok(())
     }
+}
+
+/// Replacement deletes the destination, so one that overlaps the lock directory
+/// in either direction is refused: an ancestor would take the whole directory
+/// with it, and a descendant could unlink an active lock file, letting the next
+/// process create a replacement and install alongside the holder.
+fn lock_dir_overlap(destination: &Path, lock_dir: &Path) -> eyre::Report {
+    eyre!(
+        "install-into destination {} overlaps mise's lock directory {}; choose a different destination",
+        display_path(destination),
+        display_path(lock_dir)
+    )
 }
 
 /// True if `path` exists and is anything other than an empty directory
