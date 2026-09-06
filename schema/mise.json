@@ -526,18 +526,18 @@
           "unevaluatedProperties": false,
           "properties": {
             "identity_files": {
-              "description": "List of age identity files to use for decryption (encrypted machine backups, and the experimental `[env]` age directives).",
+              "description": "List of age identity files to use for decryption (encrypted shared dotfiles, encrypted machine backups, and the experimental `[env]` age directives).",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "key_file": {
-              "description": "Path to the age private key file to use for encryption/decryption: the default recipient and identity for encrypted machine backups, and the key for the experimental `[env]` age directives.",
+              "description": "Path to the age private key file to use for encryption/decryption: the default recipient and identity for encrypted shared dotfiles, encrypted machine backups, and the key for the experimental `[env]` age directives.",
               "type": "string"
             },
             "ssh_identity_files": {
-              "description": "List of SSH identity files to use for age decryption (encrypted machine backups, and the experimental `[env]` age directives).",
+              "description": "List of SSH identity files to use for age decryption (encrypted shared dotfiles, encrypted machine backups, and the experimental `[env]` age directives).",
               "type": "array",
               "items": {
                 "type": "string"

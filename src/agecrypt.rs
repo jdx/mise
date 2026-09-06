@@ -340,6 +340,13 @@ pub(crate) async fn resolve_recipient_arg(arg: &str) -> Result<Vec<String>> {
 
 /// `age1…` or `ssh-…`; `None` for anything else.
 pub(crate) fn parse_recipient(recipient_str: &str) -> Result<Option<Box<dyn Recipient + Send>>> {
+    parse_recipient_mode(recipient_str, true)
+}
+
+pub(crate) fn parse_recipient_mode(
+    recipient_str: &str,
+    interactive: bool,
+) -> Result<Option<Box<dyn Recipient + Send>>> {
     let trimmed = recipient_str.trim();
     if trimmed.starts_with("age1tag1") {
         return trimmed
@@ -359,6 +366,11 @@ pub(crate) fn parse_recipient(recipient_str: &str) -> Result<Option<Box<dyn Reci
             Err(e) => Err(eyre!("invalid SSH recipient: {e:?}")),
         }
     } else if let Ok(recipient) = trimmed.parse::<age::plugin::Recipient>() {
+        if !interactive {
+            return Err(eyre!(
+                "plugin-dependent age recipients require interactive synchronization; use a native age, SSH, or tagged public recipient for background encryption"
+            ));
+        }
         let plugin = age::plugin::RecipientPluginV1::new(
             recipient.plugin(),
             std::slice::from_ref(&recipient),
@@ -883,6 +895,12 @@ mod plugin_tests {
             .to_string();
         vars.set("MISE_AGE_KEY", &identity);
         let recipient = "age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak";
+        let refused = parse_recipient_mode(recipient, false).err().unwrap();
+        assert!(
+            refused
+                .to_string()
+                .contains("require interactive synchronization")
+        );
         let software = age::x25519::Identity::generate();
         let recipients: Vec<Box<dyn Recipient + Send>> = vec![
             parse_recipient(recipient).unwrap().unwrap(),

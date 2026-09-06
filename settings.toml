@@ -30,7 +30,7 @@ env = "MISE_ACTIVATE_AGGRESSIVE"
 type = "Bool"
 
 [age.identity_files]
-description = "List of age identity files to use for decryption (encrypted machine backups, and the experimental `[env]` age directives)."
+description = "List of age identity files to use for decryption (encrypted shared dotfiles, encrypted machine backups, and the experimental `[env]` age directives)."
 env = "MISE_AGE_IDENTITY_FILES"
 optional = true
 parse_env = "list_by_os_path_separator"
@@ -39,13 +39,13 @@ type = "ListPath"
 
 [age.key_file]
 default_docs = "~/.config/mise/age.txt"
-description = "Path to the age private key file to use for encryption/decryption: the default recipient and identity for encrypted machine backups, and the key for the experimental `[env]` age directives."
+description = "Path to the age private key file to use for encryption/decryption: the default recipient and identity for encrypted shared dotfiles, encrypted machine backups, and the key for the experimental `[env]` age directives."
 env = "MISE_AGE_KEY_FILE"
 optional = true
 type = "Path"
 
 [age.ssh_identity_files]
-description = "List of SSH identity files to use for age decryption (encrypted machine backups, and the experimental `[env]` age directives)."
+description = "List of SSH identity files to use for age decryption (encrypted shared dotfiles, encrypted machine backups, and the experimental `[env]` age directives)."
 env = "MISE_AGE_SSH_IDENTITY_FILES"
 optional = true
 parse_env = "list_by_os_path_separator"

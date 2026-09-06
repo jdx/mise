@@ -265,7 +265,10 @@ pub(crate) fn sync(
     // resolved before anything is fetched; an unusable declaration skips
     // uploads below rather than failing the sync (publication and fetching
     // do not depend on it)
-    let encryption = backup::BackupEncryption::resolve(&origin);
+    let encryption = backup::BackupEncryption::resolve(
+        &origin,
+        request.capture && console::user_attended_stderr(),
+    );
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("synchronizing requires git"))?;

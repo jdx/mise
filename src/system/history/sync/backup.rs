@@ -48,7 +48,7 @@ impl BackupEncryption {
     /// `None` for a plaintext connection. An error when encryption is on
     /// but cannot be done (no recipients, or one that does not parse):
     /// the caller skips uploads rather than falling back to plaintext.
-    pub(crate) fn resolve(origin: &OriginTomlConfig) -> Result<Option<Self>> {
+    pub(crate) fn resolve(origin: &OriginTomlConfig, interactive: bool) -> Result<Option<Self>> {
         if !origin.encrypt_backups {
             return Ok(None);
         }
@@ -61,7 +61,7 @@ impl BackupEncryption {
         let mut recipients = vec![];
         let mut strings = vec![];
         for declared in &origin.recipients {
-            match crate::agecrypt::parse_recipient(declared)? {
+            match crate::agecrypt::parse_recipient_mode(declared, interactive)? {
                 Some(recipient) => {
                     recipients.push(recipient);
                     strings.push(declared.trim().to_string());
@@ -592,23 +592,26 @@ mod tests {
     #[test]
     fn resolve_refuses_encryption_without_usable_recipients() {
         assert!(
-            BackupEncryption::resolve(&origin(false, &[]))
+            BackupEncryption::resolve(&origin(false, &[]), false)
                 .unwrap()
                 .is_none()
         );
-        let err = BackupEncryption::resolve(&origin(true, &[]))
+        let err = BackupEncryption::resolve(&origin(true, &[]), false)
             .unwrap_err()
             .to_string();
         assert!(err.contains("names no recipients"), "{err}");
         assert!(!err.contains("experimental"), "{err}");
-        let err = BackupEncryption::resolve(&origin(true, &["not-a-key"]))
+        let err = BackupEncryption::resolve(&origin(true, &["not-a-key"]), false)
             .unwrap_err()
             .to_string();
         assert!(err.contains("neither an age public key"), "{err}");
-        let resolved = BackupEncryption::resolve(&origin(
-            true,
-            &["age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"],
-        ))
+        let resolved = BackupEncryption::resolve(
+            &origin(
+                true,
+                &["age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"],
+            ),
+            false,
+        )
         .unwrap()
         .unwrap();
         assert_eq!(resolved.recipients.len(), 1);

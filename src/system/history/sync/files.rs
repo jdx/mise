@@ -203,7 +203,7 @@ pub(crate) fn publication(
     let recipients: Vec<_> = strings
         .iter()
         .map(|s| {
-            agecrypt::parse_recipient(s)?
+            agecrypt::parse_recipient_mode(s, interactive)?
                 .ok_or_else(|| eyre::eyre!("invalid encrypted-file recipient"))
         })
         .collect::<Result<_>>()?;

@@ -462,16 +462,17 @@ mod tests {
         assert_eq!(header.recipients, 1);
 
         // without a key: refused, not silently empty
-        env::remove_var("MISE_AGE_KEY");
+        let mut environment = crate::test::EnvVarGuard::new();
+        environment.remove("MISE_AGE_KEY");
         let no_key = materialize(&repo, &commit).await;
         assert!(
             matches!(no_key, Err(ReadError::Decrypt(DecryptError::NoIdentities))),
             "{no_key:?}"
         );
 
-        env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
+        environment.set("MISE_AGE_KEY", key.to_string().expose_secret());
         let plain = materialize(&repo, &commit).await;
-        env::remove_var("MISE_AGE_KEY");
+        environment.remove("MISE_AGE_KEY");
         let plain = plain.unwrap();
         let restored = repo.read_meta(&plain).unwrap();
         assert_eq!(restored.description, "secret description");
@@ -500,9 +501,10 @@ mod tests {
         let key = age::x25519::Identity::generate();
         let header = BackupHeader::new(&checkpoint, 1);
         let commit = write_commit(&repo, &header, b"this is not an age file").unwrap();
-        env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
+        let mut environment = crate::test::EnvVarGuard::new();
+        environment.set("MISE_AGE_KEY", key.to_string().expose_secret());
         let result = read_payload(&repo, &commit).await;
-        env::remove_var("MISE_AGE_KEY");
+        environment.remove("MISE_AGE_KEY");
         assert!(matches!(result, Err(ReadError::Corrupt(_))), "{result:?}");
 
         // a plaintext wrapper is not encrypted
@@ -515,8 +517,6 @@ mod tests {
             Err(ReadError::NotEncrypted)
         ));
     }
-
-    use crate::env;
 }
 
 #[cfg(test)]
