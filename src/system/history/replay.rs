@@ -789,20 +789,61 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
         for path in &target.paths {
             let tree_path = display_to_tree_path(&path.to_string_lossy());
             let mut files: BTreeSet<String> = BTreeSet::new();
+            let mut live_files: BTreeSet<String> = BTreeSet::new();
+            let mut snapshot_files: BTreeSet<String> = BTreeSet::new();
+            // nested repositories in either tree: what is inside one is its
+            // own, never written into or removed by a rollback
+            let mut gitlinks: BTreeSet<String> = BTreeSet::new();
             for tree in [snapshot.as_str(), live] {
                 match repo.object_at(tree, &tree_path)? {
                     Some((mode, _)) if mode == "040000" => {
                         for entry in repo.ls_tree(&format!("{tree}:{tree_path}"))? {
-                            files.insert(format!("{tree_path}/{}", entry.path));
+                            let file = format!("{tree_path}/{}", entry.path);
+                            if entry.mode == "160000" {
+                                gitlinks.insert(file.clone());
+                            }
+                            if tree == live {
+                                live_files.insert(file.clone());
+                            } else {
+                                snapshot_files.insert(file.clone());
+                            }
+                            files.insert(file);
                         }
                     }
-                    Some(_) => {
+                    Some((mode, _)) => {
+                        if mode == "160000" {
+                            gitlinks.insert(tree_path.clone());
+                        }
                         files.insert(tree_path.clone());
                     }
                     None => {}
                 }
             }
+            let inside_gitlink = |file: &str| {
+                gitlinks.iter().any(|link| {
+                    file.strip_prefix(link.as_str())
+                        .is_some_and(|rest| rest.starts_with('/'))
+                })
+            };
+            let first_step = steps.len();
             for file in files {
+                if inside_gitlink(&file) {
+                    continue;
+                }
+                // a repository on disk the trees may not show (no commit
+                // yet, say) is one too
+                let abs_now = PathBuf::from(
+                    tree_path_to_display(&file)
+                        .replace("~/", &format!("{}/", crate::dirs::HOME.display())),
+                );
+                if abs_now
+                    .ancestors()
+                    .skip(1)
+                    .take_while(|dir| dir.starts_with(path))
+                    .any(|dir| dir.join(".git").exists())
+                {
+                    continue;
+                }
                 let abs = PathBuf::from(
                     tree_path_to_display(&file)
                         .replace("~/", &format!("{}/", crate::dirs::HOME.display())),
@@ -866,6 +907,59 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                     to,
                     bits,
                     dir_bits,
+                });
+            }
+            // a directory the checkpoint knows nothing of (the named path
+            // itself, or one below it) whose every file the plan deletes
+            // goes with them: returning to a known absence leaves no empty
+            // folder behind
+            let deleted: BTreeSet<String> = steps[first_step..]
+                .iter()
+                .filter(|step| matches!(step.action, Action::Delete))
+                .map(|step| step.tree_path.clone())
+                .collect();
+            let under = |file: &str, dir: &str| {
+                file.strip_prefix(dir)
+                    .is_some_and(|rest| rest.starts_with('/'))
+            };
+            let mut emptied: BTreeSet<String> = BTreeSet::new();
+            for file in &deleted {
+                let mut dir = file.as_str();
+                while let Some((parent, _)) = dir.rsplit_once('/') {
+                    if parent.len() < tree_path.len() {
+                        break;
+                    }
+                    emptied.insert(parent.to_string());
+                    dir = parent;
+                }
+            }
+            for dir in emptied {
+                if snapshot_files.iter().any(|file| under(file, &dir))
+                    || repo.object_at(snapshot, &dir)?.is_some()
+                    || live_files
+                        .iter()
+                        .any(|file| under(file, &dir) && !deleted.contains(file))
+                    || gitlinks
+                        .iter()
+                        .any(|link| under(link, &dir) || *link == dir)
+                {
+                    continue;
+                }
+                let abs = normalize_target(&PathBuf::from(
+                    tree_path_to_display(&dir)
+                        .replace("~/", &format!("{}/", crate::dirs::HOME.display())),
+                ));
+                if !abs.is_dir() || abs.is_symlink() {
+                    continue;
+                }
+                steps.push(Step {
+                    path: abs,
+                    tree_path: dir,
+                    action: Action::Delete,
+                    from: "a directory".into(),
+                    to: "missing".into(),
+                    bits: None,
+                    dir_bits: vec![],
                 });
             }
         }

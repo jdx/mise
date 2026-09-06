@@ -20,6 +20,36 @@ assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/new.conf --yes"
 assert_fail "test -e ~/.config/hypr/new.conf"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.affected | join(\",\")'" "~/.config/hypr/new.conf"
 
+# a directory created after a checkpoint returns to missing with its files,
+# and undo brings it back
+mkdir -p ~/.config/hypr/later/deep
+echo 'l' >~/.config/hypr/later/deep/l.conf
+assert_succeed "mise bootstrap dotfiles save"
+assert_contains "mise bootstrap dotfiles rollback ~/.config/hypr/later --dry-run 2>&1" "later/deep  "
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/later --yes"
+assert_fail "test -e ~/.config/hypr/later"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.config/hypr/later/deep/l.conf" "l"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/later --yes"
+assert_fail "test -e ~/.config/hypr/later"
+
+# a nested repository is never written into or removed by a rollback, even
+# where a checkpoint held plain files
+mkdir -p ~/.config/hypr/plugin
+echo 'old' >~/.config/hypr/plugin/old.txt
+assert_succeed "mise bootstrap dotfiles save"
+plain_id="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+rm -r ~/.config/hypr/plugin
+git init -q ~/.config/hypr/plugin
+echo 'new' >~/.config/hypr/plugin/new.txt
+git -C ~/.config/hypr/plugin add new.txt
+git -C ~/.config/hypr/plugin -c user.name=t -c user.email=t@t commit -q -m init
+assert_succeed "mise bootstrap dotfiles save"
+assert_contains "mise bootstrap dotfiles rollback ~/.config/hypr/plugin --to $plain_id --dry-run 2>&1" "nested repository"
+assert_not_contains "mise bootstrap dotfiles rollback ~/.config/hypr/plugin --to $plain_id --dry-run 2>&1" "old.txt"
+assert_fail "test -e ~/.config/hypr/plugin/old.txt"
+assert "cat ~/.config/hypr/plugin/new.txt" "new"
+
 # --force replaces a file with the directory a checkpoint holds, and undo
 # reverses that type change exactly
 mkdir -p ~/.config/hypr/sub
