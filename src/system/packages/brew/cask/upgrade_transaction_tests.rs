@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::{Settings, settings::SettingsPartial};
-use crate::system::packages::PackageDesiredState;
+use crate::system::packages::{PackageDesiredState, PackageUpgradeOutcome};
 use confique::Layer;
 
 struct UpgradeFixture {
@@ -184,6 +184,79 @@ impl UpgradeFixture {
             ))
     }
 
+    fn run_report(
+        &self,
+        dry_run: bool,
+        hook: impl FnMut(InstallTestEvent) -> Result<()>,
+    ) -> Result<PackageUpgradeOutcome> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(BrewCaskManager::new().upgrade_one_with_test_hook(
+                &self.request,
+                &InstallOpts {
+                    dry_run,
+                    update: false,
+                },
+                hook,
+            ))
+    }
+
+    fn sibling(
+        &mut self,
+        suffix: &str,
+        live: &str,
+        auto_updates: bool,
+        homebrew: bool,
+        gets: usize,
+    ) -> Result<PackageRequest> {
+        let token = format!("{}-{suffix}", self.request.name);
+        let app_name = format!("{suffix}.app");
+        let app = self.prefix().join("Applications").join(&app_name);
+        write_app(&app, live, "sibling original")?;
+        let mut receipt: CaskReceipt = toml::from_str(&std::fs::read_to_string(&self.receipt)?)?;
+        receipt.apps = vec![app.clone()];
+        receipt.metadata_only_apps = vec![app.clone()];
+        receipt.binaries.clear();
+        receipt.auto_updates = auto_updates;
+        receipt.targets = vec![CaskTargetRecord {
+            path: app.clone(),
+            fingerprint: cask_target_fingerprint(&app)?,
+            uninstall: None,
+        }];
+        let caskroom = caskroom_version_dir(&token, "9.2.6");
+        std::fs::create_dir_all(&caskroom)?;
+        std::os::unix::fs::symlink(&app, caskroom.join(&app_name))?;
+        std::fs::write(
+            caskroom.join(".mise-cask.toml"),
+            toml::to_string_pretty(&receipt)?,
+        )?;
+        if homebrew {
+            std::fs::create_dir_all(caskroom_token_dir(&token).join(".metadata"))?;
+        }
+        let artifacts = if homebrew {
+            serde_json::json!([{"unsupported_future_artifact": ["ignored"]}])
+        } else {
+            serde_json::json!([{"app": [app_name]}])
+        };
+        let metadata = serde_json::json!({"token": token, "version": "9.2.6", "auto_updates": auto_updates,
+            "url": format!("{}/app.zip", self.server.url()), "sha256": "no_check", "artifacts": artifacts});
+        self.mocks.push(
+            self.server
+                .mock("GET", format!("/api/cask/{token}.json").as_str())
+                .with_header("content-type", "application/json")
+                .with_body(metadata.to_string())
+                .expect(gets)
+                .create(),
+        );
+        Ok(PackageRequest {
+            name: token,
+            version: None,
+            tap_url: None,
+            desired: PackageDesiredState::Present,
+        })
+    }
+
     fn assert_requests(&self) {
         for mock in &self.mocks {
             mock.assert();
@@ -248,7 +321,7 @@ fn upgrade_cancels_observed_live_changes_before_lock_and_activation() -> Result<
             let receipt = std::fs::read(&fixture.receipt)?;
             let mut observed = Vec::new();
             let mut temporary_paths = Vec::new();
-            fixture.run(InstallMode::Upgrade, false, |event| {
+            let outcome = fixture.run_report(false, |event| {
                 let (phase, stage, prepared) = event_paths(event);
                 observed.push(phase);
                 temporary_paths.push(stage);
@@ -267,6 +340,18 @@ fn upgrade_cancels_observed_live_changes_before_lock_and_activation() -> Result<
                 }
                 Ok(())
             })?;
+            match (change, outcome) {
+                ("equal", PackageUpgradeOutcome::UpToDate { version }) => {
+                    assert_eq!(version, "9.2.6")
+                }
+                ("newer", PackageUpgradeOutcome::Skipped { reason }) => {
+                    assert!(reason.contains("newer"), "{reason}")
+                }
+                ("unreadable" | "missing", PackageUpgradeOutcome::Skipped { reason }) => {
+                    assert!(!reason.is_empty())
+                }
+                (_, outcome) => panic!("{boundary:?}, {change}: unexpected outcome {outcome:?}"),
+            }
             assert!(observed.contains(&boundary), "{boundary:?}, {change}");
             if boundary == Boundary::BeforeLock {
                 assert_eq!(observed, vec![Boundary::BeforeLock]);
@@ -394,7 +479,7 @@ fn upgrade_replaces_app_with_equal_receipt_and_preserves_metadata_only_ownership
         let mut fixture = UpgradeFixture::new("9.2.3", recorded, "09.002.006")?;
         fixture.publish(1);
         let mut temporary_paths = Vec::new();
-        fixture.run(InstallMode::Upgrade, false, |event| {
+        let outcome = fixture.run_report(false, |event| {
             let (phase, stage, prepared) = event_paths(event);
             temporary_paths.push(stage);
             temporary_paths.extend(prepared);
@@ -404,6 +489,7 @@ fn upgrade_replaces_app_with_equal_receipt_and_preserves_metadata_only_ownership
                     std::fs::read_to_string(fixture.app().join("Contents/payload"))?,
                     "original"
                 );
+                write_app(&fixture.app(), "9.2.4", "self-updated but still older")?;
             }
             Ok(())
         })?;
@@ -411,6 +497,13 @@ fn upgrade_replaces_app_with_equal_receipt_and_preserves_metadata_only_ownership
             std::fs::read_to_string(fixture.app().join("Contents/payload"))?,
             "distribution"
         );
+        match outcome {
+            PackageUpgradeOutcome::Upgraded { from, to } => {
+                assert_eq!(from, "9.2.4");
+                assert_eq!(to, "9.2.6");
+            }
+            other => panic!("same-receipt replacement must report upgraded: {other:?}"),
+        }
         let caskroom = caskroom_version_dir(&fixture.request.name, "9.2.6");
         let receipt: CaskReceipt =
             toml::from_str(&std::fs::read_to_string(caskroom.join(".mise-cask.toml"))?)?;
@@ -565,7 +658,16 @@ fn explicit_upgrade_keeps_auto_updating_dependencies_in_install_mode() -> Result
             .create(),
     );
     fixture.publish(1);
-    fixture.run(InstallMode::Upgrade, false, |_| Ok(()))?;
+    let results = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(BrewCaskManager::new().upgrade_with_report(
+            std::slice::from_ref(&fixture.request),
+            &InstallOpts::default(),
+        ))?
+        .expect("brew-cask supplies reports");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].request, fixture.request);
     assert_eq!(std::fs::read_to_string(&receipt_path)?, receipt_bytes);
     assert_eq!(
         std::fs::read_to_string(app.join("Contents/payload"))?,
@@ -648,6 +750,100 @@ fn cancellation_cleanup_failure_propagates_without_changing_owned_artifacts() ->
         "self-updated"
     );
     fixture.assert_links_unchanged()?;
+    fixture.assert_requests();
+    Ok(())
+}
+
+#[test]
+fn manager_reports_every_request_in_order_for_mixed_and_dry_run_batches() -> Result<()> {
+    let _lock = ENV_LOCK.lock().unwrap();
+    for dry_run in [false, true] {
+        let mut fixture = UpgradeFixture::new("9.2.3", "9.2.6", "9.2.6")?;
+        let normal = fixture.sibling("normal", "9.2.6", false, false, 1)?;
+        let unknown = fixture.sibling("unknown", "9.2.6,123", true, false, 1)?;
+        let external = fixture.sibling("external", "9.2.3", true, true, 1)?;
+        fixture.publish(usize::from(!dry_run));
+        let requests = vec![normal, fixture.request.clone(), unknown, external];
+        let results = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(BrewCaskManager::new().upgrade_with_report(
+                &requests,
+                &InstallOpts {
+                    dry_run,
+                    update: false,
+                },
+            ))?
+            .expect("brew-cask supplies reports");
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| &result.request)
+                .collect::<Vec<_>>(),
+            requests.iter().collect::<Vec<_>>()
+        );
+        assert!(
+            matches!(&results[0].outcome, PackageUpgradeOutcome::UpToDate { version } if version == "9.2.6")
+        );
+        match (&results[1].outcome, dry_run) {
+            (PackageUpgradeOutcome::Upgraded { from, to }, false)
+            | (PackageUpgradeOutcome::WouldUpgrade { from, to }, true) => {
+                assert_eq!(from, "9.2.3");
+                assert_eq!(to, "9.2.6");
+            }
+            (outcome, _) => panic!("dry_run={dry_run}: {outcome:?}"),
+        }
+        assert!(
+            matches!(&results[2].outcome, PackageUpgradeOutcome::Skipped { reason } if reason.contains("compar"))
+        );
+        assert!(
+            matches!(&results[3].outcome, PackageUpgradeOutcome::Skipped { reason } if reason.contains("Homebrew"))
+        );
+        fixture.assert_requests();
+    }
+    Ok(())
+}
+
+#[test]
+fn manager_partial_error_logs_completed_result_once_and_stops_batch() -> Result<()> {
+    let _lock = ENV_LOCK.lock().unwrap();
+    let mut fixture = UpgradeFixture::new("9.2.3", "9.2.6", "9.2.6")?;
+    let after = fixture.sibling("after", "9.2.6", false, false, 0)?;
+    let mut failed = fixture.request.clone();
+    failed.name.push_str("-failure");
+    let mut metadata = fixture.metadata.clone();
+    metadata["token"] = failed.name.clone().into();
+    metadata["artifacts"] = serde_json::json!([{"unsupported_future_artifact": ["fail"]}]);
+    fixture.mocks.push(
+        fixture
+            .server
+            .mock("GET", format!("/api/cask/{}.json", failed.name).as_str())
+            .with_header("content-type", "application/json")
+            .with_body(metadata.to_string())
+            .expect(1)
+            .create(),
+    );
+    fixture.publish(1);
+    let start = crate::output::tests::STDERR.lock().unwrap().len();
+    let result = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(BrewCaskManager::new().upgrade_with_report(
+            &[fixture.request.clone(), failed, after],
+            &InstallOpts::default(),
+        ));
+    assert!(result.is_err());
+    let output = crate::output::tests::STDERR.lock().unwrap()[start..].join("\n");
+    let completed = format!(
+        "brew-cask:{}: upgraded 9.2.3 -> 9.2.6",
+        fixture.request.name
+    );
+    assert_eq!(output.matches(&completed).count(), 1, "{output}");
+    assert!(!output.contains("already up to date"), "{output}");
+    assert!(
+        !output.contains("up to date, "),
+        "partial failure must not emit success summary: {output}"
+    );
     fixture.assert_requests();
     Ok(())
 }

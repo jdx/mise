@@ -331,3 +331,7 @@ mod tests {
         assert_eq!(unavailable_package_reason(&manager_opts, &statuses), None);
     }
 }
+
+#[cfg(test)]
+#[path = "driver_upgrade_tests.rs"]
+mod upgrade_tests;
