@@ -269,7 +269,7 @@ mise lock                    # refresh existing platforms, or the default set fo
 mise lock --platform linux-x64,macos-arm64  # or specific platforms
 ```
 
-The check only covers backends that can record a URL. `asdf`, `cargo`, `gem`, `go`, `npm`, `pipx`, `pkgx`, `ubi`, `core:dotnet`, `core:rust`, and `core:swift` install through an external tool or resolve their download at install time, and vfox _backend_ plugins cannot yet report one, so strict mode skips them instead of failing — a config that mixes them with lockable tools still installs. vfox _tool_ plugins do record a URL and are checked like any other lockable backend. Tools resolved from a [tool stub](/dev-tools/tool-stubs) are skipped as well. See [Backend Support](#backend-support) for what each backend records.
+The check only covers backends that can record a URL. `asdf`, `cargo`, `gem`, `go`, `npm`, `pipx`, `ubi`, `core:dotnet`, `core:rust`, and `core:swift` install through an external tool or resolve their download at install time, and vfox _backend_ plugins cannot yet report one, so strict mode skips them instead of failing — a config that mixes them with lockable tools still installs. vfox _tool_ plugins do record a URL and are checked like any other lockable backend. Tools resolved from a [tool stub](/dev-tools/tool-stubs) are skipped as well. See [Backend Support](#backend-support) for what each backend records.
 
 Use strict mode in CI to catch incomplete lock entries for supported backends.
 Verification and authenticated downloads may still make API requests.
