@@ -46,6 +46,9 @@ impl Roots {
         variant: Option<&str>,
     ) -> Option<String> {
         local.to_str()?;
+        if variant.is_some_and(|name| name.is_empty() || name.contains(['/', '@'])) {
+            return None;
+        }
         let path = self.unchecked_branch_path(kind, local, variant)?;
         is_safe_branch_path(&path).then_some(path)
     }
@@ -375,6 +378,28 @@ mod tests {
         assert_eq!(
             r.branch_path(EntryKind::Output, Path::new("/home/u/.gitconfig"), None),
             None
+        );
+    }
+
+    #[test]
+    fn variants_cannot_change_the_stream_or_local_path() {
+        let roots = roots();
+        let local = roots.home.join(".zshrc");
+        for variant in ["", "a/b", "a@b", "bad:variant"] {
+            assert_eq!(
+                roots.branch_path(EntryKind::Track, &local, Some(variant)),
+                None
+            );
+        }
+        let branch = roots
+            .branch_path(EntryKind::Track, &local, Some("work"))
+            .unwrap();
+        assert_eq!(
+            roots.locate(&branch),
+            Located::Tracked {
+                path: local,
+                variant: Some("work".into()),
+            }
         );
     }
 
