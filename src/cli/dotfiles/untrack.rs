@@ -87,13 +87,14 @@ impl DotfilesUntrack {
                         .entries
                         .iter()
                         .filter(|entry| {
-                            entry.kind == EntryKind::Source && entry.path.starts_with(&path)
+                            entry.kind == EntryKind::Source
+                                && (entry.path.starts_with(&path) || path.starts_with(&entry.path))
                         })
                         .map(|entry| entry.display())
                         .collect();
                     if !sources.is_empty() {
                         bail!(
-                            "{target_raw} holds the source of a `[dotfiles]` entry ({}); history captures a source while a declaration references it. Remove or change that entry, or untrack a narrower path",
+                            "{target_raw} holds or is part of the source of a `[dotfiles]` entry ({}); history captures a source while a declaration references it. Remove or change that entry instead",
                             sources.join(", ")
                         );
                     }

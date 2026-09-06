@@ -173,7 +173,12 @@ fi
 # refused; a directory holding a source a declaration references cannot be
 # excluded that way (an exclusion wins over everything, so it would drop the
 # source)
-assert_fail "mise bootstrap dotfiles untrack ~/.config/mise/templates" "holds the source of a"
+assert_fail "mise bootstrap dotfiles untrack ~/.config/mise/templates" "holds or is part of the source of a"
+assert_fail "mise bootstrap dotfiles untrack ~/.config/mise/templates/gitconfig.tera" "holds or is part of the source of a"
+# an exclusion written by hand over a referenced source is reported, never silent
+printf '\n[history]\nexclude = ["~/.config/mise/templates/**"]\n' >>"$config"
+assert_contains "mise bootstrap dotfiles paths 2>&1" "excluded by [history] exclude although a [dotfiles] entry references it"
+sed -i.bak '/^\[history\]$/,$d' "$config" && rm -f "$config.bak"
 assert_not_contains "cat '$config'" 'exclude = ["~/.config/mise/templates/**"]'
 mkdir -p "$MISE_CONFIG_DIR/scratch"
 echo n >"$MISE_CONFIG_DIR/scratch/notes.txt"

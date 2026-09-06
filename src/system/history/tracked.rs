@@ -592,6 +592,18 @@ fn walk_entry(
             continue;
         }
         if exclude.is_match(path) {
+            // under a source a `[dotfiles]` entry references: said once
+            // per excluded subtree, never silently dropped
+            if entry.kind == EntryKind::Source
+                && !path.parent().is_some_and(|parent| exclude.is_match(parent))
+            {
+                walk.omitted.push(PathReason {
+                    path: display_path(path),
+                    reason:
+                        "excluded by [history] exclude although a [dotfiles] entry references it"
+                            .to_string(),
+                });
+            }
             continue;
         }
         let file_type = candidate.file_type();
