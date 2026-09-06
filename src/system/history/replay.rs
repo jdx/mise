@@ -26,7 +26,9 @@ use super::journal;
 use super::scope::OperationScope;
 use super::shadow::HistoryRepo;
 use super::store::{Checkpoint, Entry, OperationKind, OperationSource, OperationStatus, Summary};
-use super::tracked::{TrackedSet, display_to_tree_path, normalize, tree_path_to_display};
+use super::tracked::{
+    TrackedSet, display_to_tree_path, normalize, normalize_target, tree_path_to_display,
+};
 use crate::file::{self, display_path};
 use crate::ui::prompt;
 use crate::ui::table::MiseTable;
@@ -100,6 +102,7 @@ struct Target {
 }
 
 pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
+    ensure_enabled()?;
     if req.paths.is_empty() && !(req.to.is_some() && req.all) {
         bail!(
             "name the paths to roll back, or `--to <ref> --all` for everything the checkpoint covers"
@@ -113,7 +116,11 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
         .repo()
         .ok_or_else(|| eyre::eyre!("rolling back requires git"))?;
     let live = live_tree(repo, &tracked)?;
-    let paths: Vec<PathBuf> = req.paths.iter().map(|path| normalize(path)).collect();
+    let paths: Vec<PathBuf> = req
+        .paths
+        .iter()
+        .map(|path| normalize_target(path))
+        .collect();
     for path in &paths {
         if tracked.entry_for(path).is_none() {
             bail!(
@@ -207,6 +214,7 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
 }
 
 pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
+    ensure_enabled()?;
     let (store, tracked, entries) = crate::cli::dotfiles::history::open().await?;
     let repo = store
         .repo()
@@ -290,7 +298,7 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
     let paths: Vec<PathBuf> = op
         .affected
         .iter()
-        .map(|path| normalize(Path::new(path)))
+        .map(|path| normalize_target(Path::new(path)))
         .collect();
     let message = format!(
         "undid {} {} ({})",
@@ -301,7 +309,7 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
     let restore_dirs: BTreeSet<PathBuf> = op
         .directories
         .iter()
-        .map(|path| normalize(Path::new(path)))
+        .map(|path| normalize_target(Path::new(path)))
         .collect();
     let targets = vec![Target {
         entry: before.clone(),
@@ -331,6 +339,14 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
         live,
     )
     .await
+}
+
+/// Restoring needs the store, which `history.enabled = false` closes.
+fn ensure_enabled() -> Result<()> {
+    if !crate::config::Settings::get().history.enabled {
+        bail!("history is disabled (history.enabled = false); nothing can be restored");
+    }
+    Ok(())
 }
 
 struct Execution {
@@ -745,7 +761,8 @@ fn plan(repo: &HistoryRepo, targets: &[Target], live: &str, force: bool) -> Resu
                     tree_path_to_display(&file)
                         .replace("~/", &format!("{}/", crate::dirs::HOME.display())),
                 );
-                let abs = normalize(&abs);
+                // the link itself, never its destination
+                let abs = normalize_target(&abs);
                 let saved = repo.object_at(snapshot, &file)?;
                 let mut current = repo.object_at(live, &file)?;
                 // an empty directory is invisible to the tree; a directory
@@ -1047,7 +1064,7 @@ fn covered_paths(checkpoint: &Checkpoint) -> Vec<PathBuf> {
         .entries
         .iter()
         .filter(|entry| entry.mode != "private")
-        .map(|entry| normalize(Path::new(&entry.path)))
+        .map(|entry| normalize_target(Path::new(&entry.path)))
         .collect()
 }
 
@@ -1130,7 +1147,14 @@ fn restore_dir_modes(step: &Step) {
 }
 
 #[cfg(not(unix))]
-fn restore_dir_modes(_step: &Step) {}
+fn restore_dir_modes(step: &Step) {
+    if step.bits.is_some() || !step.dir_bits.is_empty() {
+        debug!(
+            "history: {}: recorded permission bits are not restored on this platform",
+            display_path(&step.path)
+        );
+    }
+}
 
 fn remove(path: &Path) -> Result<()> {
     if path.is_symlink() || path.is_file() {

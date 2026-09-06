@@ -23,9 +23,7 @@ use super::store::{
     self, Annotation, Changes, Checkpoint, DescriptionSource, Entry, Index, IndexEntry, Machine,
     Operation, SavedRecord, TreeInfo, Trigger,
 };
-use super::tracked::{
-    TrackedEntry, TrackedSet, display_to_tree_path, normalize, tree_path_to_display,
-};
+use super::tracked::{TrackedEntry, TrackedSet, display_to_tree_path, tree_path_to_display};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 
@@ -830,7 +828,7 @@ fn under_entry(path: &str, entry: &str) -> bool {
 #[cfg(unix)]
 fn file_modes(walk: &super::tracked::Walk) -> BTreeMap<String, u32> {
     use std::os::unix::fs::PermissionsExt;
-    let home = normalize(&crate::dirs::HOME);
+    let home = super::tracked::normalize(&crate::dirs::HOME);
     let mut modes = BTreeMap::new();
     let mut dirs = BTreeSet::new();
     for path in walk.files.keys() {
