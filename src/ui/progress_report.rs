@@ -70,6 +70,16 @@ pub(crate) trait SingleReport: Send + Sync + std::fmt::Debug {
     /// Then each set_length() call will allocate 33.33% of the total progress
     fn start_operations(&self, _count: usize) {}
 
+    /// Declare the operations with a relative cost for each, in the order they
+    /// run, when the backend can estimate them better than "all equal".
+    ///
+    /// This only paces a progress display. The numbers are estimates — a
+    /// download's share of an install varies with the artifact and the network
+    /// — so nothing may depend on them being right.
+    fn start_operations_weighted(&self, weights: &[f64]) {
+        self.start_operations(weights.len());
+    }
+
     /// Advance to the next operation
     /// Call this before each new stage (after the first one)
     fn next_operation(&self) {}
