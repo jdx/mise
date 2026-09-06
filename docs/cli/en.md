@@ -41,3 +41,11 @@ Skip loading zshrc.
 ```
 mise en -s "zsh -f"
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Shell activation](/getting-started.html#activate-mise).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

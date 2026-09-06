@@ -13,3 +13,11 @@ Inspect bootstrap secret inputs without revealing their values
 ## Subcommands
 
 - [`mise bootstrap secrets status [-J --json] [--missing]`](/cli/bootstrap/secrets/status.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Bootstrap secrets](/bootstrap/secrets.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

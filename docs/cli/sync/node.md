@@ -24,3 +24,11 @@ brew install node@20
 mise sync node --brew
 mise use -g node@20 # uses Homebrew-provided node
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Node.js](/lang/node.html).
+- [`mise sync <SUBCOMMAND>`](/cli/sync.html).
+- [Global flags and argument syntax](/cli/#global-flags).

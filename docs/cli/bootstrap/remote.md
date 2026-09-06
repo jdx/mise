@@ -7,6 +7,10 @@
 
 Bootstrap one or more machines over OpenSSH
 
+Select inventory hosts by name, tag, or `--all`, or supply ad-hoc `--host` targets.
+The source is staged on each target and bootstrap runs there. `--from-git` instead
+installs persistent global configuration; preview that choice with `--dry-run`.
+
 ## Arguments
 - **`[TARGET]…`** — Inventory host names from `[bootstrap.remote.hosts]`
 
@@ -54,3 +58,11 @@ Bootstrap one or more machines over OpenSSH
 - **`--update`** — Refresh package manager metadata and update configured repos remotely
 - **`-y --yes`** — Skip remote confirmation prompts
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Remote bootstrap](/bootstrap/remote.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

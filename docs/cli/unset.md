@@ -7,7 +7,8 @@
 
 Remove environment variable(s) from the config file
 
-By default, this command modifies `mise.toml` in the current directory.
+By default, this command selects the nearest configuration directory and
+modifies its lowest-precedence TOML file, creating `mise.toml` here if none exists.
 
 ## Arguments
 - **`[ENV_KEY]…`** — Environment variable(s) to remove
@@ -37,3 +38,11 @@ Remove NODE_ENV from the global config
 ```
 mise unset NODE_ENV -g
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Environment variables](/environments/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

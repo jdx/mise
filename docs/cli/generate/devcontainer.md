@@ -5,7 +5,10 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/generate/devcontainer.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/devcontainer.rs)
 
-Generate a devcontainer to execute mise
+Generate devcontainer configuration for mise
+
+Prints JSON by default. `--write` saves .devcontainer/devcontainer.json;
+review the image, mounts, and generated setup commands before opening it.
 
 ## Flags
 - **`-i --image <IMAGE>`** — The image to use for the devcontainer
@@ -19,3 +22,11 @@ Generate a devcontainer to execute mise
 ```
 mise generate devcontainer
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [IDE integration](/ide-integration.html).
+- [`mise generate <SUBCOMMAND>`](/cli/generate.html).
+- [Global flags and argument syntax](/cli/#global-flags).

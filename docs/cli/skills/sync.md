@@ -37,3 +37,11 @@ somewhere else, and drop links for skills that are no longer active
 ```
 mise skills sync --dir .agents/skills --prune
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Skills and other Packslip resources](/dev-tools/packslip-resources.html).
+- [`mise skills [SUBCOMMAND]`](/cli/skills.html).
+- [Global flags and argument syntax](/cli/#global-flags).

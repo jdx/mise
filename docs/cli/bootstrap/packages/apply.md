@@ -35,3 +35,11 @@ mise bootstrap packages apply brew:jq brew-cask:firefox
 mise bootstrap packages apply --dry-run
 mise bootstrap packages apply --manager apt --yes
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Host packages](/bootstrap/packages/).
+- [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.html).
+- [Global flags and argument syntax](/cli/#global-flags).

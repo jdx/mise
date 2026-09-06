@@ -8,9 +8,11 @@ use crate::backend::unalias_backend;
 use crate::file::{make_symlink, remove_all};
 use crate::{dirs, file};
 
-/// Symlink a plugin into mise
+/// Link a local plugin directory into mise for development
 ///
-/// This is used for developing a plugin.
+/// Edits in the source directory take effect without reinstalling the plugin. Pass
+/// both a name and directory, or only a directory to infer the name after stripping
+/// a known prefix such as `mise-` or `vfox-`. This does not install a tool version.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "ln",
@@ -27,12 +29,12 @@ use crate::{dirs, file};
 )]
 pub(super) struct PluginsLink {
     /// The name of the plugin
-    /// e.g.: cmake, poetry
+    /// With one argument, this is the plugin directory and the name is inferred
     #[usage(verbatim_doc_comment)]
     name: String,
 
     /// The local path to the plugin
-    /// e.g.: ./vfox-cmake
+    /// e.g.: ./mise-my-tool
     #[usage(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
     dir: Option<PathBuf>,
 

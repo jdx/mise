@@ -24,3 +24,11 @@ mise --version
 mise -v
 mise -V
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Troubleshooting](/troubleshooting.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

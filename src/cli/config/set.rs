@@ -8,7 +8,16 @@ use crate::toml::dedup_toml_array;
 use eyre::bail;
 use std::path::PathBuf;
 
-/// Set a value in a mise.toml file
+/// Set a value in one mise TOML file
+///
+/// Edits the highest-precedence loaded TOML file by default, which may be an
+/// environment-specific override. Use `--file` to select an existing project file,
+/// or `--global`/`--system` to edit or create those config files.
+///
+/// This edits configuration without installing tools. Use `mise use` to install and
+/// select a version together. Known settings use their declared type; other values
+/// are strings or booleans unless `--type` is given. Use `--type string` when a value
+/// such as `true` should remain literal text.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(
@@ -36,7 +45,7 @@ pub(super) struct ConfigSet {
     ///
     /// Can be a file path or directory. If a directory is provided, the config file in that directory is used.
     ///
-    /// If not provided, the nearest mise.toml file will be used
+    /// If not provided, the highest-precedence loaded TOML file is used
     #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
 

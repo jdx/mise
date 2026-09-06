@@ -37,3 +37,11 @@ tasks will override the global ones if they have the same name.
 ```
 mise tasks ls
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Task configuration](/tasks/task-configuration.html).
+- [`mise tasks [FLAGS] [TASK] [SUBCOMMAND]`](/cli/tasks.html).
+- [Global flags and argument syntax](/cli/#global-flags).

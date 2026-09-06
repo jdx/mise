@@ -47,3 +47,11 @@ Search a tool
 /jq
 esc clear filter • enter confirm
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Registry and explicit backends](/registry.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

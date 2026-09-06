@@ -37,3 +37,11 @@ Preview unused versions without deleting them. Example output: `rm -rf ~/.local/
 ```
 mise prune --dry-run
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Development tools](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

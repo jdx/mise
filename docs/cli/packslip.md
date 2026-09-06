@@ -20,3 +20,11 @@ one that drops build provenance is refused until a person says so.
 
 - [`mise packslip forget <PROJECT>`](/cli/packslip/forget.html)
 - [`mise packslip pins [-J --json]`](/cli/packslip/pins.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Signer verification](/dev-tools/packslip-verification.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

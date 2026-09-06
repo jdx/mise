@@ -39,3 +39,11 @@ Manage tasks
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.html)
 - [`mise tasks run [FLAGS] [TASK] [ARGS]…`](/cli/tasks/run.html)
 - [`mise tasks validate [--errors-only] [--json] [TASKS]…`](/cli/tasks/validate.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Task configuration](/tasks/task-configuration.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

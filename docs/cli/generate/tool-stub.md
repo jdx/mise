@@ -97,3 +97,11 @@ For an existing registry-backed stub, resolve and embed version/platform lock da
 ```
 mise generate tool-stub ./bin/registry-node --lock --version 22
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Portable tool stubs](/dev-tools/tool-stubs.html).
+- [`mise generate <SUBCOMMAND>`](/cli/generate.html).
+- [Global flags and argument syntax](/cli/#global-flags).

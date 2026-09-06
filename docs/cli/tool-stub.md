@@ -40,3 +40,11 @@ For more information, see: <https://mise.jdx.dev/dev-tools/tool-stubs.html>
 - **`[ARGS]…`** — Arguments to pass to the tool
 
   All arguments after the stub file path will be forwarded to the underlying tool. Use '--' to separate mise arguments from tool arguments if needed.
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Portable tool stubs](/dev-tools/tool-stubs.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

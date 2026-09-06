@@ -11,3 +11,13 @@ Install and load LaunchAgents from `[bootstrap.macos.launchd.agents]`
 - **`-n --dry-run`** — Print the commands that would run without running them
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+This is a compatibility spelling. Use [`mise bootstrap macos launchd-agents apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/macos/launchd-agents/apply.html) in new scripts.
+
+## Related documentation
+
+- [LaunchAgents](/bootstrap/launchd.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

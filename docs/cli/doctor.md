@@ -23,3 +23,11 @@ mise doctor path --full
 ## Subcommands
 
 - [`mise doctor path [-f --full]`](/cli/doctor/path.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Troubleshooting](/troubleshooting.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

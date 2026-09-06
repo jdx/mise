@@ -19,3 +19,11 @@ Manage bootstrap system packages from `[bootstrap.packages]`
 - [`mise bootstrap packages status [-J --json] [--missing]`](/cli/bootstrap/packages/status.html)
 - [`mise bootstrap packages upgrade [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/upgrade.html)
 - [`mise bootstrap packages use [FLAGS] <PACKAGE>…`](/cli/bootstrap/packages/use.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Host packages](/bootstrap/packages/).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

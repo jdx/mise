@@ -16,3 +16,11 @@ Package specs use the format `ecosystem:package`, e.g., `npm:react` or `npm:@typ
 ## Flags
 - **`-D --dev`** — Add as a development dependency
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Project dependencies](/dev-tools/deps.html).
+- [`mise deps [FLAGS] [PROVIDER] [SUBCOMMAND]`](/cli/deps.html).
+- [Global flags and argument syntax](/cli/#global-flags).

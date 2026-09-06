@@ -6,10 +6,15 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/env.rs`](https://github.com/jdx/mise/blob/main/src/cli/env.rs)
 
-Export env vars to activate mise a single time
+Print the environment for the current configuration
 
-Use this to load the environment into one shell without adding `mise activate` to
-your shell rc file. It is not needed in shells where mise is already activated.
+Evaluate the shell output to load tools and variables once, without installing
+prompt hooks. Changing directories afterward does not recompute this environment.
+Use `mise exec -- command` to apply it to one child process instead.
+
+JSON, dotenv, and shell output contain actual variable values, including secrets.
+`--redacted` selects variables marked for redaction; it does not mask their values.
+Environment construction may install missing tools according to mise's settings.
 
 ## Arguments
 - **`[TOOL@VERSION]…`** — Tool(s) to include in addition to those in config, e.g. node@20
@@ -21,7 +26,7 @@ your shell rc file. It is not needed in shells where mise is already activated.
 
   **Choices:** `bash`, `elvish`, `fish`, `nu`, `xonsh`, `zsh`, `pwsh`, `powershell`
 - **`--json-extended`** — Output in JSON format with additional information (source, tool)
-- **`--redacted`** — Only show redacted environment variables
+- **`--redacted`** — Only include variables marked for redaction; their values are printed unmasked
 - **`--values`** — Only show values of environment variables
 - **`-h --help`** — Print help
 
@@ -33,3 +38,11 @@ eval "$(mise env -s zsh)"
 mise env -s fish | source
 execx($(mise env -s xonsh))
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Environment variables](/environments/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

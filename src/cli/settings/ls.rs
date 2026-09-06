@@ -7,12 +7,12 @@ use eyre::Result;
 use std::path::{Path, PathBuf};
 use tabled::{Table, Tabled};
 
-/// Show current settings
+/// List configured settings and their sources
 ///
-/// This is the contents of ~/.config/mise/config.toml
-///
-/// Note that aliases are also stored in this file
-/// but managed separately with `mise tool-alias`
+/// By default, list explicit settings from loaded TOML files. `--all` also includes
+/// effective defaults. Use `--local` to restrict output to the selected local file,
+/// and `--json-extended` to include source information in machine-readable output.
+/// Use `mise settings get KEY` when you need one effective value.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(

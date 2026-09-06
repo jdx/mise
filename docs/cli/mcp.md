@@ -4,17 +4,16 @@
 - **Usage:** `mise mcp`
 - **Source code:** [`src/cli/mcp.rs`](https://github.com/jdx/mise/blob/main/src/cli/mcp.rs)
 
-Run Model Context Protocol (MCP) server
+Run the Model Context Protocol server over stdin/stdout
 
-This command starts an MCP server that exposes mise functionality
-to AI assistants over stdin/stdout using JSON-RPC protocol.
+Exposes project tools, tasks, environment, and configuration to an MCP client.
+Resources use `mise://tools`, `mise://tasks`, `mise://env`, and `mise://config`.
+`mise://tools?include_inactive=true` also includes inactive installations.
 
-The MCP server provides access to:
-- Installed and available tools
-- Task definitions and execution
-- Environment variables
-- Configuration information
-- Task execution via the run_task tool
+The `list_commands` tool describes commands and their declared effects. `run_task`
+executes project tasks with the user's permissions and can change files or invoke
+external services. `install_tool` is advertised but currently returns an error.
+Environment resources contain real values, including secrets.
 
 Resources available:
 - mise://tools - List all tools (use ?include_inactive=true to include inactive tools)
@@ -41,3 +40,11 @@ Start from the project directory; an MCP client handles the protocol exchange
 ```
 mise -C /path/to/project mcp
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [MCP integration](/mcp.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

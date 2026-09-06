@@ -71,3 +71,11 @@ Engines:
 Prefers podman (loads OCI layouts natively). Falls back to docker
 (loaded via docker load). Pass --engine podman or --engine docker to override.
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Building and running OCI images](/dev-tools/mise-oci.html).
+- [`mise oci <SUBCOMMAND>`](/cli/oci.html).
+- [Global flags and argument syntax](/cli/#global-flags).

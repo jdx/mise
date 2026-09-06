@@ -34,3 +34,11 @@ mise bootstrap packages import --manager brew --all
 mise bootstrap packages import --manager brew --global
 mise bootstrap packages import --manager brew --dry-run
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Host packages](/bootstrap/packages/).
+- [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.html).
+- [Global flags and argument syntax](/cli/#global-flags).

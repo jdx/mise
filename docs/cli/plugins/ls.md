@@ -6,9 +6,11 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/plugins/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/ls.rs)
 
-List installed plugins
+List installed external plugins
 
-Can also show remotely available plugins to install.
+Use `--core` for built-in runtimes or `--core --user` for both groups. `--outdated`
+queries Git remotes for plugin updates; it does not compare installed tool versions.
+Use `mise plugins ls-remote` for registry plugin sources and `mise ls` for tools.
 
 ## Flags
 - **`-c --core`** — Only show built-in (core) plugins
@@ -31,3 +33,11 @@ mise plugins ls --urls
 mise plugins ls --core --user
 mise plugins ls --outdated
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Plugin selection and maintenance](/plugin-usage.html).
+- [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -3,9 +3,9 @@
 # Test mise mcp command
 
 # Test that mcp command exists and shows help
-assert_contains "mise mcp --help" "Run Model Context Protocol (MCP) server"
-assert_contains "mise mcp --help" "This command starts an MCP server that exposes mise functionality"
-assert_contains "mise mcp --help" "to AI assistants over stdin/stdout using JSON-RPC protocol."
+assert_contains "mise mcp --help" "Run the Model Context Protocol server over stdin/stdout"
+assert_contains "mise mcp --help" "Exposes project tools, tasks, environment, and configuration to an MCP client."
+assert_contains "mise mcp --help" "Environment resources contain real values, including secrets."
 
 # Test that mcp server can be invoked (even if it errors without proper initialization)
 # The server requires proper initialization sequence, so we just test that the command exists

@@ -8,6 +8,9 @@
 
 Manage systemd user services from `[bootstrap.linux.systemd.units]`
 
+Installs unit files and reconciles services in the current user manager. This is
+separate from system services declared in `[bootstrap.services]`.
+
 ## Flags
 - **`-h --help`** — Print help
 
@@ -15,3 +18,11 @@ Manage systemd user services from `[bootstrap.linux.systemd.units]`
 
 - [`mise bootstrap linux systemd-units apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/linux/systemd-units/apply.html)
 - [`mise bootstrap linux systemd-units status [-J --json] [--missing]`](/cli/bootstrap/linux/systemd-units/status.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [systemd user units](/bootstrap/systemd.html).
+- [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.html).
+- [Global flags and argument syntax](/cli/#global-flags).

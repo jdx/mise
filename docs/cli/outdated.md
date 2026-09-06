@@ -61,3 +61,11 @@ Deprecation:
 
 The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
 After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Upgrading tools](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

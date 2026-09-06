@@ -35,3 +35,11 @@ codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)
 mise token forgejo forgejo.mycompany.com
 forgejo.mycompany.com: (none)
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Git provider authentication](/dev-tools/github-tokens.html).
+- [`mise token <SUBCOMMAND>`](/cli/token.html).
+- [Global flags and argument syntax](/cli/#global-flags).

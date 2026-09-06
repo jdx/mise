@@ -19,3 +19,11 @@ Deprecation:
 
 The `mise b` alias is deprecated and will be removed in mise 2027.4.0.
 Use `mise backends` instead.
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Choosing backends](/dev-tools/backends/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

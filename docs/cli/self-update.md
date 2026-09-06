@@ -23,3 +23,11 @@ package manager instead. See
 - **`-y --yes`** — Skip confirmation prompt
 - **`--no-plugins`** — Disable auto-updating plugins
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Installing and updating mise](/installing-mise.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

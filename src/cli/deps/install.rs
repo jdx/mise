@@ -6,8 +6,9 @@ use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 
 /// Install all project dependencies
 ///
-/// Checks if dependency lockfiles are newer than installed outputs
-/// and runs install commands if needed.
+/// Uses each provider's freshness rules to compare configured inputs and outputs,
+/// then runs its installation command when needed. `--force` bypasses that check;
+/// `--explain PROVIDER` shows why a provider is considered fresh or stale.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct DepsInstall {

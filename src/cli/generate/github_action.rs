@@ -6,7 +6,9 @@ use crate::git::Git;
 /// Generate a GitHub Action workflow file
 ///
 /// This command generates a GitHub Action workflow file that runs a mise task like `mise run ci`
-/// when you push changes to your repository.
+/// on pull requests, tags, manual dispatch, and pushes to the current Git branch.
+/// Prints YAML by default; `--write` saves it under .github/workflows. Define
+/// the selected task and review the generated triggers before committing.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,

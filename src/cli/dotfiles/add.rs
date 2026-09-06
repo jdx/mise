@@ -18,7 +18,9 @@ use crate::ui::prompt;
 ///
 /// If the target is already managed, this updates its source from the live
 /// target. Otherwise it creates a `[dotfiles]` entry and seeds the source
-/// under `dotfiles.root` unless `--source` is provided.
+/// under `dotfiles.root` unless `--source` is provided. Captured entries are
+/// applied unless `--no-apply` is passed. Use `--dry-run` to preview both the
+/// source capture and config write without making those changes.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,

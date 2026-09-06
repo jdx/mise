@@ -10,3 +10,11 @@ Show the cache directory path
 
 ## Flags
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Cache behavior](/cache-behavior.html).
+- [`mise cache [SUBCOMMAND]`](/cli/cache.html).
+- [Global flags and argument syntax](/cli/#global-flags).

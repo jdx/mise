@@ -11,3 +11,13 @@ Show whether macOS defaults match `[bootstrap.macos.defaults]`
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 if any configured defaults are not in their desired state
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+This is a compatibility spelling. Use [`mise bootstrap macos defaults status [-J --json] [--missing]`](/cli/bootstrap/macos/defaults/status.html) in new scripts.
+
+## Related documentation
+
+- [macOS defaults](/bootstrap/macos-defaults.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

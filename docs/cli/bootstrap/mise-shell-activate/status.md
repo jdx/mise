@@ -11,3 +11,11 @@ Show whether shell activation matches `[bootstrap.mise_shell_activate]`
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 if any configured shell activation is not in its desired state
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Shell setup](/bootstrap/shell.html).
+- [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -8,7 +8,8 @@
 
 Set environment variables in mise.toml
 
-By default, this command modifies `mise.toml` in the current directory.
+By default, this command selects the nearest configuration directory and
+modifies its lowest-precedence TOML file, creating `mise.toml` here if none exists.
 If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 the lowest precedence file (`mise.toml`) will be used.
 See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
@@ -99,3 +100,11 @@ Prompt with hidden input and encrypt with age (experimental).
 ```
 mise set --age-encrypt --prompt API_KEY
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Environment variables](/environments/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

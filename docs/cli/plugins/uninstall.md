@@ -6,7 +6,10 @@
 - **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/plugins/uninstall.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/uninstall.rs)
 
-Remove a plugin
+Remove an installed plugin
+
+Tool installations are retained by default. Pass `--purge` to also remove
+installs, downloads, and cache associated with the selected plugins.
 
 ## Arguments
 - **`[PLUGIN]…`** — Plugin(s) to remove
@@ -21,3 +24,11 @@ Remove a plugin
 ```
 mise plugins uninstall my-tool
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Plugin selection and maintenance](/plugin-usage.html).
+- [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
+- [Global flags and argument syntax](/cli/#global-flags).

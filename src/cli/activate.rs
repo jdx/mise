@@ -11,22 +11,21 @@ use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, env};
 use eyre::Result;
 
-/// Initialize mise in the current shell session
+/// Print the script to activate mise in an interactive shell
 ///
-/// Add this to your shell's rc or profile file so it runs in every new shell.
-/// Otherwise, it only takes effect in the current session.
-/// (e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish, or $PROFILE for powershell)
+/// Evaluate this command's output with the syntax for your shell; running it alone
+/// only prints the script. Activation updates tools and environment variables as
+/// this shell changes directories.
 ///
-/// Typically, this can be added with something like the following:
+/// Add the appropriate example below once to your interactive startup file:
+/// ~/.bashrc for Bash, ~/.zshrc for Zsh, ~/.config/fish/config.fish for Fish,
+/// or $PROFILE for PowerShell. See the getting-started guide for other shells.
 ///
-///     echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+/// The mise executable must be on PATH before that line runs. Otherwise use its
+/// absolute path, for example `eval "$(~/.local/bin/mise activate zsh)"`.
 ///
-/// However, this requires that "mise" is in your PATH. If it is not, you need to
-/// specify the full path like this:
-///
-///     echo 'eval "$(/path/to/mise activate zsh)"' >> ~/.zshrc
-///
-/// Customize status output with `status` settings.
+/// Use `mise exec -- command` for scripts and CI that do not need interactive hooks.
+/// Customize status output with the `status` settings.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,

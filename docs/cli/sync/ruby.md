@@ -18,3 +18,11 @@ brew install ruby
 mise sync ruby --brew
 mise ls ruby --installed # inspect linked versions, then select one with mise use
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Ruby](/lang/ruby.html).
+- [`mise sync <SUBCOMMAND>`](/cli/sync.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -8,15 +8,16 @@
 
 List tool versions available to install
 
-Results may be cached; run `mise cache clear` to fetch fresh results.
+Results may be cached; run `mise cache clear TOOL` to refresh one tool
+before querying it again. Version formats and ordering are backend-specific.
 
 ## Arguments
 - **`[TOOL@VERSION]`** — Tool to get versions for
-- **`[PREFIX]`** — The version prefix to use when querying the latest version
-  same as the first argument after the "@"
+- **`[PREFIX]`** — Filter the available versions by this prefix
+  Equivalent to the version selector after `@` in the first argument
 
 ## Flags
-- **`--all`** — Show all installed plugins and versions
+- **`--all`** — List available versions for every backend/tool currently known to mise
 - **`--minimum-release-age <MINIMUM_RELEASE_AGE>`** — Only show versions released before this age or date
 
   Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
@@ -43,3 +44,11 @@ mise ls-remote node 20
 mise ls-remote node --minimum-release-age 30d
 mise ls-remote github:cli/cli --json
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Version requests](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

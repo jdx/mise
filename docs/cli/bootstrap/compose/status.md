@@ -11,3 +11,11 @@ Show configured Docker Compose project state
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 when any Compose project is not converged
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Compose projects](/bootstrap/compose.html).
+- [`mise bootstrap compose <SUBCOMMAND>`](/cli/bootstrap/compose.html).
+- [Global flags and argument syntax](/cli/#global-flags).

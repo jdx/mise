@@ -21,23 +21,21 @@ use crate::toolset::{
 use crate::ui::ctrlc;
 use crate::{config, env, exit, file};
 
-/// Install a tool and add it to mise.toml
+/// Install a tool and add it to configuration
 ///
-/// Installs the tool version if it is not already installed, then writes it to a config file.
-/// By default, this is `mise.toml` in the current directory.
-/// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
-/// the lowest precedence file (`mise.toml`) will be used.
+/// Installs missing tool versions and records the requests in a config file.
+/// By default, mise selects the nearest directory with a supported config and writes
+/// to its lowest-precedence file, such as `mise.toml` rather than `mise.local.toml`.
+/// If no project config exists, it creates one in the current directory. Running from
+/// your home directory targets global configuration.
+///
+/// Use `--path` for an explicit file/directory, `--global` for personal defaults, or
+/// `--env` to write `mise.ENV.toml` in the current directory (preserving an existing
+/// `.mise.ENV.toml`). These selectors override one another; use one per command.
+///
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
-///
-/// In the following order:
-///   - If `--global` is set, it will use the global config file.
-///   - If `--path` is set, it will use the config file at the given path.
-///   - If `--env` is set, it will use `mise.<env>.toml`.
-///   - If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
-///   - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will use the first from that list.
-///   - Otherwise just "mise.toml" or global config if cwd is home directory.
-///
-/// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+/// for filename overrides and configuration precedence. Selection takes effect in
+/// an activated shell on its next prompt, or immediately in `mise exec` commands.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
@@ -101,7 +99,7 @@ pub(crate) struct Use {
     /// Specify a path to a config file or directory
     ///
     /// If a directory is specified, it will look for a config file in that directory following
-    /// the rules above.
+    /// the target-file selection rules.
     // No `--file` alias here: `-f` on this command is `--force`, so offering `--file`
     // invites `-f <path>`, which is a different action. See `mise unset --path` for the
     // commands where the short form is free.

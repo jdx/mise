@@ -5,34 +5,29 @@
 - **Aliases:** `r`
 - **Source code:** [`src/cli/run.rs`](https://github.com/jdx/mise/blob/main/src/cli/run.rs)
 
-Run task(s)
+Run tasks and their dependencies
 
-Runs one task, or several tasks in parallel.
-Tasks may depend on other tasks and on source files.
-If a task has `sources` configured, it only runs when those files have changed.
+Use `mise run TASK [ARGS...]` for one task, or separate task invocations with `:::`
+to schedule several. Put mise flags before the task name; following arguments are
+passed to that task. With no task, mise runs `default` when defined or opens the
+task selector in an interactive terminal.
 
-Tasks can be defined in mise.toml or as standalone scripts.
-In mise.toml, tasks take this form:
+Tasks are defined in `mise.toml` or task directories. A task with `sources` and
+`outputs` can skip execution when its outputs are fresh. `--force` bypasses
+freshness checks; task output caching has separate `--task-cache` controls.
 
-```
+For a project that already has npm build scripts and its dependencies installed:
+
+```toml
 [tasks.build]
 run = "npm run build"
-sources = ["src/**/*.ts"]
+sources = ["src/**/*.ts", "package.json", "package-lock.json"]
 outputs = ["dist/**/*.js"]
 ```
 
-Alternatively, tasks can be defined as standalone scripts.
-These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
-`.config/mise/tasks`.
-The name of the script becomes the name of the task.
-
-```
-$ cat .mise/tasks/build<<EOF
-#!/usr/bin/env bash
-npm run build
-EOF
-$ mise run build
-```
+To create a standalone script task, use `mise tasks add --file hello -- echo hello`.
+Then run `mise run hello`. See <https://mise.jdx.dev/tasks/> for task directories,
+arguments, caching, and dependency configuration.
 
 ## Flags
 - **`--affected`** — Run matching tasks only for projects affected by Git changes
@@ -81,10 +76,13 @@ $ mise run build
 - **`--allow-env <VAR>`** — Allow specific env var through (implies --deny-env for everything else)
   Supports wildcards, e.g. --allow-env='MYAPP_*'
 - **`--allow-net <HOST>`** — Allow network to specific host (implies --deny-net for everything else)
+  Per-host filtering is unsupported on Linux and returns an error.
+  See the sandboxing guide for current macOS host-filter limitations.
+  On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 - **`--allow-read <PATH>`** — Allow reads from specific path (implies --deny-read for everything else)
 - **`--allow-write <PATH>`** — Allow writes to specific path (implies --deny-write for everything else)
 - **`--deny-all`** — Block reads, writes, network, and env vars
-- **`--deny-env`** — Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+- **`--deny-env`** — Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
 - **`--deny-net`** — Block all network access
 - **`--deny-read`** — Block filesystem reads (system libs and tool dirs still accessible)
 - **`--deny-write`** — Block all filesystem writes
@@ -153,3 +151,11 @@ Run multiple tasks, each with its own arguments.
 ```
 mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Running tasks](/tasks/running-tasks.html).
+- [`mise tasks [FLAGS] [TASK] [SUBCOMMAND]`](/cli/tasks.html).
+- [Global flags and argument syntax](/cli/#global-flags).

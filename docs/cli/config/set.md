@@ -5,7 +5,16 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/config/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/config/set.rs)
 
-Set a value in a mise.toml file
+Set a value in one mise TOML file
+
+Edits the highest-precedence loaded TOML file by default, which may be an
+environment-specific override. Use `--file` to select an existing project file,
+or `--global`/`--system` to edit or create those config files.
+
+This edits configuration without installing tools. Use `mise use` to install and
+select a version together. Known settings use their declared type; other values
+are strings or booleans unless `--type` is given. Use `--type string` when a value
+such as `true` should remain literal text.
 
 ## Arguments
 - **`<KEY>`** — Dotted key path to set, e.g. `tools.python`
@@ -16,7 +25,7 @@ Set a value in a mise.toml file
 
   Can be a file path or directory. If a directory is provided, the config file in that directory is used.
 
-  If not provided, the nearest mise.toml file will be used
+  If not provided, the highest-precedence loaded TOML file is used
 
   **Aliases:** `--path`
 - **`-g --global`** — Edit the global config file.
@@ -46,3 +55,11 @@ Type for `settings` is inferred
 ```
 mise config set settings.jobs 4
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Configuration](/configuration.html).
+- [`mise config [FLAGS] [SUBCOMMAND]`](/cli/config.html).
+- [Global flags and argument syntax](/cli/#global-flags).

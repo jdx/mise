@@ -53,3 +53,11 @@ trusts mise.toml in the current or parent directory
 ```
 mise trust
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Configuration trust](/security.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

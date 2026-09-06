@@ -15,3 +15,11 @@ Pull the latest changes into configured git repos
 - **`-y --yes`** — Skip the confirmation prompt
 - **`--skip-dirty`** — Skip repos with local changes instead of failing
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Repository checkouts](/bootstrap/repos.html).
+- [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.html).
+- [Global flags and argument syntax](/cli/#global-flags).

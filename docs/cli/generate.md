@@ -21,3 +21,11 @@ Generate files for various tools/services
 - [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.html)
 - [`mise generate task-stubs [FLAGS]`](/cli/generate/task-stubs.html)
 - [`mise generate tool-stub [FLAGS] <OUTPUT>`](/cli/generate/tool-stub.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Tasks and automation](/tasks/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

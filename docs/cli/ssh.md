@@ -22,3 +22,11 @@ Open an SSH session, optionally borrowing read-only GitHub access
 - **`--github-relay-log-format <FORMAT>`** — Relay log and summary format: text or jsonl
 - **`--github-relay-max-duration <DURATION>`** — Expire borrowed access after a duration such as 1h (0s: session lifetime)
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Git provider authentication](/dev-tools/github-tokens.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

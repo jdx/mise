@@ -10,11 +10,14 @@ use serde::Serialize;
 use std::sync::Arc;
 use tokio::{sync::Semaphore, task::JoinSet};
 
-/// List available tools to install
+/// List registry shorthand names and their backends
 ///
-/// This command lists the tools available in the registry as shorthand names.
+/// The registry maps short names to installation backends. For example, `node`
+/// uses the built-in Node backend. A tool may have multiple candidates; explicit
+/// backend syntax and configuration can override registry selection.
 ///
-/// For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
+/// This is not a list of every tool mise can install. Use an explicit identifier
+/// such as `github:owner/repo` for a supported source without a registry shorthand.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(

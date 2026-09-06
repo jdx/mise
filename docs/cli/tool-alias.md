@@ -19,3 +19,11 @@ Manage tool version aliases
 - [`mise tool-alias ls [--no-header] [TOOL]`](/cli/tool-alias/ls.html)
 - [`mise tool-alias set <ARGS>…`](/cli/tool-alias/set.html)
 - [`mise tool-alias unset <TOOL> [ALIAS]`](/cli/tool-alias/unset.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Tool version aliases](/dev-tools/aliases.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

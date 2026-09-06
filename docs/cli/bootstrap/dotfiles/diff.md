@@ -19,3 +19,11 @@ Show the changes needed to apply dotfiles from `[dotfiles]`
 mise bootstrap dotfiles diff
 mise bootstrap dotfiles diff ~/.zshrc
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -32,3 +32,11 @@ Explain where inferred projects and task fields came from
 ```
 mise tasks graph --explain
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Monorepo projects](/tasks/monorepo.html).
+- [`mise tasks [FLAGS] [TASK] [SUBCOMMAND]`](/cli/tasks.html).
+- [Global flags and argument syntax](/cli/#global-flags).

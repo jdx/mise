@@ -11,3 +11,11 @@ Apply the configured Linux host firewall
 - **`-n --dry-run`** — Print what would change without changing anything
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Host firewall](/bootstrap/firewall.html).
+- [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.html).
+- [Global flags and argument syntax](/cli/#global-flags).

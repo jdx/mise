@@ -23,3 +23,11 @@ Edit a managed dotfile source
 mise bootstrap dotfiles edit ~/.zshrc
 mise bootstrap dotfiles edit --apply ~/.config/starship.toml
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

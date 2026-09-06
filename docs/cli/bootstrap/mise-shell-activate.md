@@ -8,6 +8,9 @@
 
 Manage mise shell activation from `[bootstrap.mise_shell_activate]`
 
+Writes managed activation blocks into the declared shell startup files. The
+current shell is not reactivated by this command; open a new shell afterward.
+
 ## Flags
 - **`-h --help`** — Print help
 
@@ -15,3 +18,11 @@ Manage mise shell activation from `[bootstrap.mise_shell_activate]`
 
 - [`mise bootstrap mise-shell-activate apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/mise-shell-activate/apply.html)
 - [`mise bootstrap mise-shell-activate status [-J --json] [--missing]`](/cli/bootstrap/mise-shell-activate/status.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Shell setup](/bootstrap/shell.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

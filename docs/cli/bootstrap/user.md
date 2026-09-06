@@ -7,6 +7,9 @@
 
 Manage current-user bootstrap settings from `[bootstrap.user]`
 
+Currently manages the login shell. Apply as the intended user; changing the login
+shell affects future sessions, not the shell running this command.
+
 ## Flags
 - **`-h --help`** — Print help
 
@@ -14,3 +17,11 @@ Manage current-user bootstrap settings from `[bootstrap.user]`
 
 - [`mise bootstrap user apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/user/apply.html)
 - [`mise bootstrap user status [-J --json] [--missing]`](/cli/bootstrap/user/status.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Current-user settings](/bootstrap/user.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

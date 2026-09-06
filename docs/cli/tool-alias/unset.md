@@ -23,3 +23,11 @@ This modifies the contents of ~/.config/mise/config.toml
 mise tool-alias unset ripgrep
 mise tool-alias unset node project
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Tool version aliases](/dev-tools/aliases.html).
+- [`mise tool-alias [-p --tool <TOOL>] [--no-header] [SUBCOMMAND]`](/cli/tool-alias.html).
+- [Global flags and argument syntax](/cli/#global-flags).

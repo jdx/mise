@@ -12,3 +12,11 @@ Remove explicit trust for a config
 
 ## Flags
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Configuration trust](/security.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -25,3 +25,11 @@ mise generate config -g          # generate the global config file
 mise generate config -y          # skip interactive editor
 mise generate config -n          # preview without writing
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Configuration](/configuration.html).
+- [`mise generate <SUBCOMMAND>`](/cli/generate.html).
+- [Global flags and argument syntax](/cli/#global-flags).

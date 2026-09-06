@@ -8,7 +8,8 @@ use crate::ui::prompt;
 ///
 /// Removes configured whole-file entries and edits while preserving files
 /// mise cannot identify as managed. Modified copies, templates, and plain-line
-/// edits require `--force`.
+/// edits require `--force`. Source files and configuration entries are retained.
+/// Run this before deleting a declaration so mise can still identify its targets.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,

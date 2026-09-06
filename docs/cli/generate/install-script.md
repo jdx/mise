@@ -13,9 +13,10 @@ Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap`
 setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 
 ## Flags
-- **`-l --localize`** — Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)
+- **`-l --localize`** — Keep mise data and cache in a project-local directory (`.mise` by default)
 
-  This is necessary if users may use a different version of mise outside the project.
+  Use `--localized-dir` to choose its location. This isolates mise state;
+  it is not an OS sandbox for commands the generated script runs.
 - **`-V --version <VERSION>`** — Specify mise version to fetch
 - **`-w --write [WRITE]`** — Write the script to a file and make it executable instead of printing it to stdout
 - **`--localized-dir <LOCALIZED_DIR>`** — Directory to put localized data into
@@ -46,3 +47,11 @@ Write bin/mise.cmd as a launcher for contributors who clone the project on Windo
 mise generate install-script --write ./bin/mise --windows
 .\bin\mise.cmd install
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Project installation scripts](/dev-tools/).
+- [`mise generate <SUBCOMMAND>`](/cli/generate.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -5,9 +5,11 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/tool_alias/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/tool_alias/get.rs)
 
-Show an alias for a tool
+Show a configured version alias for a tool
 
-This is the contents of a tool_alias.&lt;TOOL> entry in ~/.config/mise/config.toml
+Reads the merged `[tool_alias.TOOL.versions]` configuration. This prints the
+stored request, which may itself be a prefix. Backend-provided aliases are listed
+by `mise tool-alias ls`; they are not entries returned by this command.
 
 ## Arguments
 - **`<TOOL>`** — The tool to show the alias for
@@ -23,3 +25,11 @@ mise tool-alias set node project 20
 mise tool-alias get node project
 20
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Tool version aliases](/dev-tools/aliases.html).
+- [`mise tool-alias [-p --tool <TOOL>] [--no-header] [SUBCOMMAND]`](/cli/tool-alias.html).
+- [Global flags and argument syntax](/cli/#global-flags).

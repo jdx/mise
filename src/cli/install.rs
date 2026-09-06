@@ -29,7 +29,7 @@ use std::path::PathBuf;
 /// Installing alone does not add the tool to your config, so a tool that is not
 /// already configured will not be on PATH.
 /// To install and activate in one command, use `mise use`, which also writes the version to
-/// `mise.toml` in the current directory so the tool is active inside it.
+/// the selected project config so the tool is active in that configuration scope.
 /// To run a tool once without touching any config, use `mise exec <TOOL>@<VERSION> -- <COMMAND>`.
 ///
 /// Tools are installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`.

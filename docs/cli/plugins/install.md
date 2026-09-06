@@ -6,16 +6,18 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/plugins/install.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/install.rs)
 
-Install a plugin
+Install a plugin from a configured source, Git URL, or supported archive
 
-Note that mise installs plugins automatically when you install a tool that needs one,
-e.g.: `mise install cmake@3.30` installs the cmake plugin first. This command is only
-needed to install a plugin ahead of time or from a custom git URL.
+Most registry tools use built-in backends and need no plugin. When a selected
+backend does require a plugin, mise normally installs it with the tool.
+Use this command to install it ahead of time or choose a custom source.
+
+A Git URL may end in `#ref` to select a plugin commit, tag, or branch. This selects
+the plugin implementation, separately from the tool version installed by `mise use`.
 
 ## Arguments
 - **`[NEW_PLUGIN]`** — The name of the plugin to install
-  e.g.: cmake, poetry
-  Can specify multiple plugins: `mise plugins install cmake poetry`
+  Use a configured plugin name, or supply a source URL below
 - **`[GIT_URL]`** — The git url of the plugin
 
 ## Flags
@@ -47,3 +49,11 @@ Install missing plugins that have configured shorthands
 ```
 mise plugins install --all
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Plugin selection and maintenance](/plugin-usage.html).
+- [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -15,3 +15,11 @@ List all the active runtime bin paths
 - **`--bin-names`** — Output executable names instead of bin directories
 - **`-J --json`** — Output executable entries in JSON format (implies --bin-names)
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Shims and executable lookup](/dev-tools/shims.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

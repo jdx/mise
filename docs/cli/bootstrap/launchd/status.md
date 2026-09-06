@@ -11,3 +11,13 @@ Show the state of LaunchAgents from `[bootstrap.macos.launchd.agents]`
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 if any configured LaunchAgent is not in its desired state
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+This is a compatibility spelling. Use [`mise bootstrap macos launchd-agents status [-J --json] [--missing]`](/cli/bootstrap/macos/launchd-agents/status.html) in new scripts.
+
+## Related documentation
+
+- [LaunchAgents](/bootstrap/launchd.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

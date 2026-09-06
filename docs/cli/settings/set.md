@@ -25,3 +25,11 @@ See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
 ```
 mise settings set jobs 4
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Settings reference](/configuration/settings.html).
+- [`mise settings [FLAGS] [SETTING] [VALUE] [SUBCOMMAND]`](/cli/settings.html).
+- [Global flags and argument syntax](/cli/#global-flags).

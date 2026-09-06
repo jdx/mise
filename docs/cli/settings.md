@@ -54,3 +54,11 @@ mise settings node.mirror_url https://npmmirror.com/mirrors/node/
 - [`mise settings ls [FLAGS] [SETTING]`](/cli/settings/ls.html)
 - [`mise settings set [-l --local] <SETTING> [VALUE]`](/cli/settings/set.html)
 - [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Settings reference](/configuration/settings.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

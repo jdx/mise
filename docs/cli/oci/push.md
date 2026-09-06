@@ -73,3 +73,11 @@ $REGISTRY_AUTH_FILE, $XDG_RUNTIME_DIR/containers/auth.json,
 $ docker login ghcr.io
 $ podman login ghcr.io
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Building and running OCI images](/dev-tools/mise-oci.html).
+- [`mise oci <SUBCOMMAND>`](/cli/oci.html).
+- [Global flags and argument syntax](/cli/#global-flags).

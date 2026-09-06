@@ -20,3 +20,11 @@ These are the shorthand names from the registry: <https://github.com/jdx/mise/bl
 ```
 mise plugins ls-remote
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Plugin selection and maintenance](/plugin-usage.html).
+- [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
+- [Global flags and argument syntax](/cli/#global-flags).

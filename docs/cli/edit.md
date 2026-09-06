@@ -25,3 +25,11 @@ mise edit -g          # edit the global config file
 mise edit -y          # skip interactive editor
 mise edit -n          # preview without writing
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Configuration](/configuration.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

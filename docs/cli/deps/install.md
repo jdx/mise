@@ -7,8 +7,9 @@
 
 Install all project dependencies
 
-Checks if dependency lockfiles are newer than installed outputs
-and runs install commands if needed.
+Uses each provider's freshness rules to compare configured inputs and outputs,
+then runs its installation command when needed. `--force` bypasses that check;
+`--explain PROVIDER` shows why a provider is considered fresh or stale.
 
 ## Arguments
 - **`[PROVIDER]`** — Provider to operate on (runs only this provider, or use with --explain)
@@ -27,3 +28,11 @@ and runs install commands if needed.
 - **`--only <ONLY>`** — Run specific deps rule(s) only
 - **`--skip <SKIP>`** — Skip specific deps rule(s)
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Project dependencies](/dev-tools/deps.html).
+- [`mise deps [FLAGS] [PROVIDER] [SUBCOMMAND]`](/cli/deps.html).
+- [Global flags and argument syntax](/cli/#global-flags).

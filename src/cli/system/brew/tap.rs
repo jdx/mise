@@ -21,7 +21,7 @@ pub(crate) struct SystemBrewTap {
     /// Tap name, e.g. `owner/repo`
     tap: String,
 
-    /// GitHub URL for the tap. Defaults to https://github.com/<owner>/homebrew-<repo>.git
+    /// Repository URL for the tap; defaults to GitHub's owner/homebrew-repo.git naming
     #[usage(value_hint = usage_rs::ValueHint::Url)]
     url: Option<String>,
 

@@ -35,3 +35,11 @@ gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)
 mise token gitlab gitlab.mycompany.com
 gitlab.mycompany.com: (none)
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Git provider authentication](/dev-tools/github-tokens.html).
+- [`mise token <SUBCOMMAND>`](/cli/token.html).
+- [Global flags and argument syntax](/cli/#global-flags).

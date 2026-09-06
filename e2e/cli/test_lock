@@ -216,7 +216,7 @@ assert_contains "echo '$output'" "Dry run - would update"
 assert_not_contains "echo '$output'" "Dry run - would prune"
 
 echo "=== Testing help output ==="
-assert_contains "mise lock --help" "Update lockfile checksums and URLs"
+assert_contains "mise lock --help" "Create or refresh lockfile versions, checksums, and download URLs"
 assert_contains "mise lock --help" "--platform"
 assert_contains "mise lock --help" "--dry-run"
 assert_contains "mise lock --help" "--jobs"

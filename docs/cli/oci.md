@@ -23,3 +23,11 @@ in future releases.
 - [`mise oci build [FLAGS]`](/cli/oci/build.html)
 - [`mise oci push [FLAGS] <REF>`](/cli/oci/push.html)
 - [`mise oci run [FLAGS] [-- CMD]…`](/cli/oci/run.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Building and running OCI images](/dev-tools/mise-oci.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

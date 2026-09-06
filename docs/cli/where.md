@@ -33,3 +33,11 @@ Show the install directory of the active node, or of the latest installed versio
 mise where node
 /home/jdx/.local/share/mise/installs/node/20.0.0
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Development tools](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

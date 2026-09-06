@@ -40,3 +40,11 @@ uninstall every installed version of node
 ```
 mise uninstall --all node
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Development tools](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -5,9 +5,11 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/latest.rs`](https://github.com/jdx/mise/blob/main/src/cli/latest.rs)
 
-Get the latest available version of a tool
+Resolve the latest matching version request for a tool
 
-Supports prefixes such as `node@20` to get the latest version of node 20.
+Supports prefixes such as `node@20`. The selected backend decides how channels,
+refs, and non-SemVer versions resolve; "latest" is not a generic sort of strings.
+This prints a version without installing it or changing configuration.
 
 ## Arguments
 - **`<TOOL@VERSION>`** — Tool to get the latest version of
@@ -40,3 +42,11 @@ Exclude releases newer than the requested age
 ```
 mise latest node --minimum-release-age 30d
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Version requests](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

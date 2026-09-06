@@ -19,3 +19,11 @@ Installed plugin availability and built-in backends are separate lists
 mise backends ls
 mise plugins ls
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Choosing backends](/dev-tools/backends/).
+- [`mise backends [SUBCOMMAND]`](/cli/backends.html).
+- [Global flags and argument syntax](/cli/#global-flags).

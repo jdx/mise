@@ -6,12 +6,12 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/settings/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/ls.rs)
 
-Show current settings
+List configured settings and their sources
 
-This is the contents of ~/.config/mise/config.toml
-
-Note that aliases are also stored in this file
-but managed separately with `mise tool-alias`
+By default, list explicit settings from loaded TOML files. `--all` also includes
+effective defaults. Use `--local` to restrict output to the selected local file,
+and `--json-extended` to include source information in machine-readable output.
+Use `mise settings get KEY` when you need one effective value.
 
 ## Arguments
 - **`[SETTING]`** — Name of setting
@@ -31,3 +31,11 @@ mise settings ls
 mise settings ls --all
 mise settings ls python --json-extended
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Settings reference](/configuration/settings.html).
+- [`mise settings [FLAGS] [SETTING] [VALUE] [SUBCOMMAND]`](/cli/settings.html).
+- [Global flags and argument syntax](/cli/#global-flags).
