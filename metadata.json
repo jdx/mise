@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TND6YMP9GN5TC6V38HV88K",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-bootstrap-packages",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/bootstrap/packages/apk.md",
+    "docs/bootstrap/packages/apt.md",
+    "docs/bootstrap/packages/aur.md",
+    "docs/bootstrap/packages/brew.md",
+    "docs/bootstrap/packages/dnf.md",
+    "docs/bootstrap/packages/flatpak.md",
+    "docs/bootstrap/packages/index.md",
+    "docs/bootstrap/packages/mas.md",
+    "docs/bootstrap/packages/pacman.md",
+    "docs/bootstrap/packages/plugins.md",
+    "docs/public/llms.txt"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 37667,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1924608,
+    "output_tokens": 8509,
+    "api_call_count": 12
+  }
+}

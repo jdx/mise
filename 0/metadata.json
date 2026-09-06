@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TND6YMP9GN5TC6V38HV88K",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T06:10:06.623188Z",
+  "branch": "codex/docs-bootstrap-packages",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/bootstrap/packages/apk.md",
+    "docs/bootstrap/packages/apt.md",
+    "docs/bootstrap/packages/aur.md",
+    "docs/bootstrap/packages/brew.md",
+    "docs/bootstrap/packages/dnf.md",
+    "docs/bootstrap/packages/flatpak.md",
+    "docs/bootstrap/packages/index.md",
+    "docs/bootstrap/packages/mas.md",
+    "docs/bootstrap/packages/pacman.md",
+    "docs/bootstrap/packages/plugins.md",
+    "docs/public/llms.txt"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ed0ac62e3c6f",
+  "checkpoint_transcript_start": 2507,
+  "transcript_lines_at_start": 2507,
+  "compact_transcript_start": 309,
+  "token_usage": {
+    "input_tokens": 37667,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1924608,
+    "output_tokens": 8509,
+    "api_call_count": 12
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T06:10:06.207168Z",
+    "agent_lines": 284,
+    "agent_removed": 124,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 284,
+    "total_lines_changed": 408,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
