@@ -1,0 +1,25 @@
+description = "Meta's Muse Code AI coding agent"
+os = ["linux", "macos", "windows"]
+test = { cmd = "muse --version", expected = "{{version}}" }
+version_order = "source"
+
+bins = ["muse"]
+[[backends]]
+full = "http:muse"
+
+[backends.options]
+bin = "muse"
+checksum_expr = '"sha256:" + fromJSON(body).artifacts[(arch == "x64" ? "x86" : "aarch64") + "_" + os].checksum'
+checksum_url = "https://lookaside.facebook.com/lookaside/muse/download/?channel=muse&version={{ version }}&file=manifest.json"
+url = 'https://lookaside.facebook.com/lookaside/muse/download/?channel=muse&version={{ version }}&file=muse-{{ arch(x64="x86", arm64="aarch64") }}-{{ os() }}'
+# The stable channel publishes the current release rather than a version history.
+version_json_path = ".version"
+version_list_url = "https://api.meta.ai/muse-code/channels/muse-stable"
+
+[backends.options.platforms.windows-arm64]
+bin = "muse.exe"
+url = "https://lookaside.facebook.com/lookaside/muse/download/?channel=muse&version={{ version }}&file=muse-aarch64-windows.exe"
+
+[backends.options.platforms.windows-x64]
+bin = "muse.exe"
+url = "https://lookaside.facebook.com/lookaside/muse/download/?channel=muse&version={{ version }}&file=muse-x86-windows.exe"
