@@ -304,6 +304,8 @@ where
             .with_extension(format!("part-{}", random_string(8)));
         let mut zlib = ZlibEncoder::new(File::create(&partial_path)?, Compression::fast());
         zlib.write_all(&rmp_serde::to_vec_named(&val)?[..])?;
+        // Finish compression and close the file before publishing it to readers.
+        drop(zlib.finish()?);
         file::rename(&partial_path, &self.cache_file_path)?;
 
         Ok(())
