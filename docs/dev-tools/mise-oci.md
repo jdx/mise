@@ -480,7 +480,7 @@ jobs:
       MISE_EXPERIMENTAL: "1"
     steps:
       - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
       - name: Authenticate to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
