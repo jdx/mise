@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1W3HX53E4V11J5950QQW25G",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-restack-8",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/cli/bootstrap.md",
+    "docs/cli/bootstrap/dotfiles.md",
+    "docs/cli/bootstrap/dotfiles/history.md",
+    "docs/cli/bootstrap/dotfiles/watch.md",
+    "docs/cli/bootstrap/services.md",
+    "docs/cli/index.md",
+    "man/man1/mise.1",
+    "mise.usage.kdl",
+    "src/cli/dotfiles/exclude.rs",
+    "src/cli/dotfiles/history_status.rs",
+    "src/cli/dotfiles/watch.rs",
+    "src/system/history/watch/runtime.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1717,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 207360,
+    "output_tokens": 1306,
+    "api_call_count": 1
+  }
+}
