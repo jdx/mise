@@ -1,10 +1,12 @@
-# Installing Mise
+# Installing mise
 
 If you are new to `mise`, follow the [Getting Started](/getting-started) guide first.
 
 ## Installation Methods
 
-This page lists various ways to install `mise` on your system.
+Choose one installation method, verify the executable, then configure your
+shell if you want automatic project activation. Use the same package manager
+for future updates when it owns your mise installation.
 
 | Platform         | Recommended    | Alternative     |
 | ---------------- | -------------- | --------------- |
@@ -20,7 +22,9 @@ with `mise self-update`. Prefer them over third-party package builds: the Homebr
 substantially slower and larger, and package-manager releases may also trail a mise release.
 
 ::: tip Which methods auto-update?
-Package managers (apt, dnf, brew, pacman, etc.) update mise when you update system packages. Other methods can be updated with `mise self-update`.
+Package managers (apt, dnf, brew, pacman, etc.) update mise when you update system packages. Official standalone installations support `mise self-update`; a build or
+package may disable it. Updating mise itself is separate from `mise upgrade`,
+which updates managed tools.
 
 For installations that support `mise self-update`, automatic updates can be enabled globally:
 
@@ -33,7 +37,7 @@ updating plugins, and re-runs the original command with the new binary. Configur
 [`auto_update_check_duration`](/configuration/settings.html#auto_update_check_duration).
 
 Organizations can direct manual and automatic self-updates to a curated GitHub release mirror by
-setting [`self_update.repository`](/configuration/settings.html#self_updaterepository). Private
+setting [`self_update.repository`](/configuration/settings.html#self_update.repository). Private
 repositories and GitHub Enterprise use mise's existing GitHub token resolution. Mirrored archives
 must retain the official file names and embedded mise signatures. The API URL must use HTTPS:
 
@@ -50,7 +54,9 @@ configuration.
 ::: tip Keep mise up to date
 mise connects to many external registries and backends, such as aqua, GitHub releases, language package registries, and system package managers. Those services change over time, so mise works best when the CLI is kept on a recent version.
 
-Projects and organizations should generally set a [`min_version`](/configuration.html#minimum-mise-version) when they need a newer mise feature instead of locking every user to a specific mise executable. While there are ways to pin or bootstrap a particular mise version, locking users to one mise version is generally discouraged. Pinning mise back is like preventing `apt update` or `brew update` from refreshing package metadata: it can hide deprecation messages and cause bit rot with upstream integrations like aqua-registry. Breaking changes are avoided unless they go through a long deprecation process, so staying current should usually be low risk.
+Projects and organizations should generally set a [`min_version`](/configuration.html#minimum-mise-version) when they need a newer mise feature instead of locking every user to a specific mise executable. While there are ways to pin or bootstrap a particular mise version, locking users to one mise version is generally discouraged. A fixed mise version can be useful in controlled CI builds, but it needs a
+planned update process as upstream registries evolve. `min_version` lets a
+project require a feature while allowing users to keep their CLI current.
 :::
 
 ### <https://mise.run> {#mise-run}
@@ -59,13 +65,13 @@ Projects and organizations should generally set a [`min_version`](/configuration
 mise adds itself to `PATH` automatically.
 
 ```sh
-curl https://mise.run | sh
+curl -fsSL https://mise.run | sh
 ```
 
-or with options
+To choose another executable path (its parent must be writable by your user):
 
 ```sh
-curl https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
+curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
 ```
 
 #### Shell-specific installation + activation
@@ -75,17 +81,17 @@ For a more streamlined setup, use the shell-specific endpoints, which install mi
 ::: code-group
 
 ```sh [zsh]
-curl https://mise.run/zsh | sh
+curl -fsSL https://mise.run/zsh | sh
 # Installs mise and adds activation to ~/.zshrc
 ```
 
 ```sh [bash]
-curl https://mise.run/bash | sh
+curl -fsSL https://mise.run/bash | sh
 # Installs mise and adds activation to ~/.bashrc
 ```
 
 ```sh [fish]
-curl https://mise.run/fish | sh
+curl -fsSL https://mise.run/fish | sh
 # Installs mise and adds activation to ~/.config/fish/config.fish
 ```
 
@@ -94,8 +100,11 @@ curl https://mise.run/fish | sh
 These shell-specific installers will:
 
 - Install mise using the same logic as the main installer
-- Automatically detect your shell's configuration file
-- Add the activation line if it's not already present (safe to run multiple times)
+- Append activation to the selected shell's configuration (`ZDOTDIR` is honored for zsh; fish uses `~/.config/fish/config.fish`)
+- Skip that append when the same shell installer's marker is already present
+
+If activation was added manually or by a package manager, inspect the file
+first: the installer marker check does not detect every equivalent hook.
 
 Options:
 
@@ -109,8 +118,15 @@ To verify the install script hasn't been tampered with:
 
 ```sh
 gpg --keyserver hkps://keys.openpgp.org --recv-keys 24853EC9F655CE80B48E6C3A8B81C9D17413A06D
-curl https://mise.jdx.dev/install.sh.sig | gpg --decrypt > install.sh
-# ensure the above is signed with the mise release key
+curl -fsSL -o install.sh.sig https://mise.jdx.dev/install.sh.sig
+gpg --output install.sh --decrypt install.sh.sig
+```
+
+Confirm that GPG reports a valid signature by the release key with fingerprint
+`24853EC9F655CE80B48E6C3A8B81C9D17413A06D`. If download or verification fails,
+stop; do not run the output. After successful verification:
+
+```sh
 sh ./install.sh
 ```
 
@@ -128,8 +144,6 @@ Supported OS/arch:
 - `linux-x64-musl`
 - `linux-arm64`
 - `linux-arm64-musl`
-- `linux-armv6`
-- `linux-armv6-musl`
 - `linux-armv7`
 - `linux-armv7-musl`
 
@@ -184,7 +198,9 @@ sudo pacman -S mise
 
 ### Cargo
 
-Build from source with Cargo:
+Source builds need a Rust toolchain meeting the selected release's
+`rust-version` and the platform's compiler and native library prerequisites.
+See [contributing](/contributing.html) for the build dependencies. Build with Cargo:
 
 ```sh
 cargo install --locked mise
@@ -193,14 +209,14 @@ cargo install --locked mise
 Do it faster with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
 ```sh
-cargo install cargo-binstall
+cargo install --locked cargo-binstall
 cargo binstall mise
 ```
 
 Build from the latest commit on main:
 
 ```sh
-cargo install mise --git https://github.com/jdx/mise --branch main
+cargo install --locked mise --git https://github.com/jdx/mise --branch main
 ```
 
 ### dnf
@@ -208,8 +224,8 @@ cargo install mise --git https://github.com/jdx/mise --branch main
 #### Fedora 41+, CentOS Stream 9+, RHEL 10+
 
 ```sh
-dnf copr enable jdxcode/mise
-dnf install mise
+sudo dnf copr enable jdxcode/mise
+sudo dnf install mise
 ```
 
 #### RHEL 9 / AlmaLinux 9 / Rocky 9
@@ -219,8 +235,8 @@ minimum supported Rust version. Use the CentOS Stream 9 build instead — the
 resulting binary works on RHEL 9 derivatives:
 
 ```sh
-dnf copr enable jdxcode/mise centos-stream+epel-next-9
-dnf install mise
+sudo dnf copr enable jdxcode/mise centos-stream+epel-next-9
+sudo dnf install mise
 ```
 
 [COPR package page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/)
@@ -239,21 +255,29 @@ See the [Docker cookbook](/mise-cookbook/docker) for tips on using mise with Doc
 
 ::: details Example Dockerfile
 
+Put a `mise.toml` declaring `node = "24"` under `[tools]` in the Docker build
+context. This example copies that configuration, installs its tools, and uses
+`mise exec` for the container command. Add any other configuration files,
+lockfile, hook inputs, or application files that your real project needs.
+
 ```dockerfile
 FROM debian:13-slim
 
 RUN apt-get update \
-    && apt-get -y --no-install-recommends install sudo curl git ca-certificates build-essential \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-ENV MISE_DATA_DIR="/mise"
-ENV MISE_CONFIG_DIR="/mise"
-ENV MISE_CACHE_DIR="/mise/cache"
-ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
-ENV PATH="/mise/shims:$PATH"
-RUN curl https://mise.run | sh
-RUN mise trust -a && mise install
+ENV MISE_INSTALL_PATH=/usr/local/bin/mise
+RUN curl -fsSL https://mise.run -o /tmp/install-mise.sh \
+    && sh /tmp/install-mise.sh \
+    && rm /tmp/install-mise.sh
+
+WORKDIR /app
+COPY mise.toml ./mise.toml
+RUN mise trust && mise install
+
+ENTRYPOINT ["mise", "exec", "--"]
+CMD ["node", "--version"]
 ```
 
 :::
@@ -281,10 +305,11 @@ via npm. This is useful for JS projects that want to set up mise via `package.js
 npm install -g mise
 ```
 
-Use npx to try it out for a single command without fully installing:
+Use npx to run mise without adding it as a permanent global npm package. npm
+caches its download, and any tools mise installs remain in mise's data directory:
 
 ```sh
-npx mise exec python@3.11 -- python some_script.py
+npx --yes mise exec python@3.14 -- python --version
 ```
 
 [npm package](https://www.npmjs.com/package/mise)
@@ -293,11 +318,26 @@ The legacy [`@jdxcode/mise`](https://www.npmjs.com/package/@jdxcode/mise) packag
 
 ### GitHub Releases
 
-Download the latest release from [GitHub](https://github.com/jdx/mise/releases).
+Choose a version and the matching OS/architecture artifact from
+[GitHub Releases](https://github.com/jdx/mise/releases). For example, to download
+a Linux x64 executable to a temporary working directory:
 
 ```sh
-curl -L https://github.com/jdx/mise/releases/download/v2025.12.0/mise-v2025.12.0-linux-x64 > /usr/local/bin/mise
-chmod +x /usr/local/bin/mise
+mise_version=2026.9.1
+mise_platform=linux-x64
+curl -fL -o mise "https://github.com/jdx/mise/releases/download/v${mise_version}/mise-v${mise_version}-${mise_platform}"
+```
+
+Change both values for your chosen release and platform. Verify the artifact
+against that release's checksum/signature metadata before installing it. The
+`mise.run` installer handles platform selection and checksum checking for you.
+
+After verifying a downloaded Unix executable, install it to a user-writable path:
+
+```sh
+mkdir -p ~/.local/bin
+install -m 755 ./mise ~/.local/bin/mise
+~/.local/bin/mise --version
 ```
 
 ### MacPorts
@@ -313,12 +353,15 @@ sudo port install mise
 For the Nix package manager, at release 24.05 or later:
 
 ```sh
-nix-env -iA mise
+nix-env -iA nixpkgs.mise
 ```
 
-You can also import the package directly using
-`mise-flake.packages.${system}.mise`. It supports all default Nix
-systems.
+To try the Nixpkgs package without a persistent installation, run
+`nix-shell -p mise --run "mise --version"`.
+
+This repository also exposes a flake package at
+`inputs.mise.packages.${system}.mise` when your flake declares a `mise` input
+pointing to `github:jdx/mise`. The attribute is a Nix expression, not a shell command.
 
 ::: warning NixOS source-build default is deprecated
 NixOS currently compiles tools from source by default. This automatic behavior is deprecated:
@@ -331,9 +374,9 @@ change. To keep compiling from source, set
 ### yum (RHEL 8, CentOS Stream 8, Amazon Linux 2)
 
 ```sh
-yum install -y yum-utils
-yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
-yum install -y mise
+sudo yum install -y yum-utils
+sudo yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
+sudo yum install -y mise
 ```
 
 ### zypper
@@ -346,7 +389,9 @@ sudo zypper install mise
 
 ### Windows - Scoop
 
-This is the recommended way to install mise on Windows. It automatically adds your shims to PATH.
+Scoop exposes the `mise` executable through its own command shim. Configure
+[shell activation](#shells) or [mise's tool shims](/dev-tools/shims.html) separately;
+the current Scoop manifest does not add mise's tool-shims directory to PATH.
 
 ```sh
 scoop install mise
@@ -365,7 +410,8 @@ winget install jdx.mise
 ### Windows - Chocolatey
 
 ::: info
-The Chocolatey package is currently outdated.
+Check the [Chocolatey package](https://community.chocolatey.org/packages/mise)
+version before choosing it; it can lag official releases.
 :::
 
 ```sh
@@ -379,7 +425,23 @@ to your PATH.
 
 If your shell does not support `mise activate`, add the shims directory (by default `%LOCALAPPDATA%\mise\shims`) to PATH.
 
+## Verify the executable
+
+```sh
+mise --version
+mise doctor
+```
+
+For the default `mise.run` installation before activation, use
+`~/.local/bin/mise --version`. If the version is unexpected, check which copy is
+running with `command -v mise` on Unix or `Get-Command mise` in PowerShell.
+Having two installation methods on PATH can leave an older binary in use.
+
 ## Shells
+
+The examples assume `mise` is on PATH. For a default `mise.run` installation,
+use `~/.local/bin/mise` in the activation line instead. Add one activation line
+to the startup file you actually use; avoid appending duplicates.
 
 ### Bash
 
@@ -396,6 +458,7 @@ echo 'eval "$(mise activate zsh)"' >> "${ZDOTDIR-$HOME}/.zshrc"
 ### Fish
 
 ```sh
+mkdir -p ~/.config/fish
 echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 
@@ -408,61 +471,54 @@ See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise-fish-auto-activate-1) for 
 
 ### PowerShell
 
-::: warning
-See the [about_Profiles](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles) docs to find your actual profile location.
-Create the parent directory first if it does not exist.
-:::
+Use PowerShell's `$PROFILE` variable for the current host's profile. Create it
+when missing, then add the activation line once:
 
 ```powershell
-echo '(&mise activate pwsh) | Out-String | Invoke-Expression' >> $HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
+if (-not (Test-Path $PROFILE)) {
+    New-Item -ItemType Directory -Force (Split-Path -Parent $PROFILE) | Out-Null
+    New-Item -ItemType File -Path $PROFILE | Out-Null
+}
+Add-Content $PROFILE '(&mise activate pwsh) | Out-String | Invoke-Expression'
 ```
+
+See [PowerShell profiles](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles)
+when you use different profiles for terminals, editors, or PowerShell versions.
 
 ### Nushell
 
-Nu does [not support `eval`](https://www.nushell.sh/book/how_nushell_code_gets_run.html#eval-function).
-Install mise by appending to `env.nu` and `config.nu`:
+Nushell loads activation as a generated module. Add this to `env.nu` (located
+at `$nu.env-path`) so the module exists before `config.nu` is parsed:
 
 ```nushell
-'
 let mise_path = $nu.default-config-dir | path join mise.nu
 ^mise activate nu | save $mise_path --force
-' | save $nu.env-path --append
-"\nuse ($nu.default-config-dir | path join mise.nu)" | save $nu.config-path --append
 ```
 
-If you prefer to keep your dotfiles clean, save it to a different directory and then
-update `$env.NU_LIB_DIRS`:
+Add this to `config.nu` (located at `$nu.config-path`):
 
 ```nushell
-"\n$env.NU_LIB_DIRS ++= ($mise_path | path dirname | to nuon)" | save $nu.env-path --append
+use ($nu.default-config-dir | path join mise.nu)
 ```
+
+Restart Nushell after saving both files. If `mise` is not on PATH, use its
+absolute executable path in the `env.nu` command. The module is regenerated at
+startup so it follows mise upgrades.
 
 ### Xonsh
 
-Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953), you can shave a
-bit off startup time by using a pure Python import: add the code below to a config file such as
-`~/.config/xonsh/mise.py` and `import mise` in `~/.config/xonsh/rc.xsh`:
+Add the following to `~/.xonshrc` or the Xonsh config file you use:
 
-```python
-import subprocess
-from pathlib import Path
-from xonsh.built_ins import XSH
-
-ctx = XSH.ctx
-mise_init = subprocess.run([Path('~/bin/mise').expanduser(),'activate','xonsh'],capture_output=True,encoding="UTF-8").stdout
-XSH.builtins.execx(mise_init,'exec',ctx,filename='mise')
+```xonsh
+execx($(mise activate xonsh))
 ```
 
-Or continue to use `rc.xsh`/`.xonshrc`:
+For a default `mise.run` installation before mise is on PATH, use
+`execx($(~/.local/bin/mise activate xonsh))` instead. Restart Xonsh after saving.
 
-```sh
-echo 'execx($(~/bin/mise activate xonsh))' >> ~/.config/xonsh/rc.xsh # or ~/.xonshrc
-```
-
-Because `mise` replaces both the shell env `$PATH` and the OS environ `PATH`, make sure your configs
-don't set these two differently (you might add
-`os.environ['PATH'] = xonsh.built_ins.XSH.env.get_detyped('PATH')` at the end of a config to
-make sure they match).
+mise updates Xonsh's environment and the process environment. If your own
+startup code changes PATH, keep those views consistent so subprocesses resolve
+the same commands as the shell.
 
 ### Elvish
 
@@ -503,10 +559,10 @@ The generated scripts are self-contained and do not require the separate `usage`
 The simplest way to install the completion script is:
 
 ```shell
-mise completion <shell> --install
+mise completion bash --install
 ```
 
-Replace `<shell>` with `bash`, `zsh`, `fish`, or `powershell`. Alternatively, choose the path yourself:
+Replace `bash` with `zsh`, `fish`, or `powershell` for your shell. Alternatively, choose the path yourself:
 
 ::: code-group
 
@@ -517,18 +573,18 @@ mise completion bash > ~/.local/share/bash-completion/completions/mise
 ```
 
 ```sh [zsh]
-# If you use oh-my-zsh, there is a `mise` plugin. Update your .zshrc file with:
-# plugins=(... mise)
+# Generate into a directory owned by your user:
+mkdir -p ~/.zfunc
+mise completion zsh > ~/.zfunc/_mise
 
-# Otherwise, look where zsh searches for completions with
-echo $fpath | tr ' ' '\n'
-
-# if you installed zsh with `apt-get` for example, this will work:
-mkdir -p /usr/local/share/zsh/site-functions
-mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
+# Add these to .zshrc, with fpath before your existing compinit call:
+# fpath=(~/.zfunc $fpath)
+# autoload -Uz compinit
+# compinit
 ```
 
 ```sh [fish]
+mkdir -p ~/.config/fish/completions
 mise completion fish > ~/.config/fish/completions/mise.fish
 ```
 
@@ -548,13 +604,19 @@ This diagnoses common problems with your mise setup. See [mise doctor](/cli/doct
 
 ## Uninstalling
 
-Use `mise implode` to uninstall mise. This removes the mise binary and all of its data. Use
-`mise implode --help` for more information.
+Use the package manager that installed mise to remove a package-managed CLI.
+For a standalone installation, preview the removal first:
 
-Alternatively, manually remove the following directories to fully clean up:
+```sh
+mise implode --dry-run
+```
 
-- `~/.local/share/mise` (can also be `MISE_DATA_DIR` or `XDG_DATA_HOME/mise`)
-- `~/.local/state/mise` (can also be `MISE_STATE_DIR` or `XDG_STATE_HOME/mise`)
-- `~/.config/mise` (can also be `MISE_CONFIG_DIR` or `XDG_CONFIG_HOME/mise`)
-- on Linux: `~/.cache/mise` (can also be `MISE_CACHE_DIR` or `XDG_CACHE_HOME/mise`)
-- on macOS: `~/Library/Caches/mise` (can also be `MISE_CACHE_DIR`)
+`mise implode` removes the CLI, installed tools, cache, and state, including the
+system data directory when present. It keeps the user configuration directory
+unless `--config` is passed. Inspect the listed paths before running without
+`--dry-run`; these may be customized by environment variables.
+
+Remove activation lines from shell startup files and any completion files you
+installed separately. Project `mise.toml` files and host packages installed by
+bootstrap are separate from mise's tool data. See [directories](/directories.html)
+for the configured storage paths.

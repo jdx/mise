@@ -91,6 +91,9 @@ mise exec node@24 -- node --version
 This installs Node.js if needed and runs it for this command, without changing
 your project configuration. No shell activation is required.
 
+For an existing project that already has a reviewed `mise.toml`, run `mise install`
+from its directory and `mise tasks ls` to discover its tasks.
+
 ### 3. Give a project its own environment
 
 In a project directory, create `mise.toml`:
@@ -104,7 +107,7 @@ NODE_ENV = "development"
 
 [tasks.hello]
 description = "Print the project's Node.js version and environment"
-run = "node -e \"console.log(process.version, process.env.NODE_ENV)\""
+run = '''node -e "console.log(process.version, process.env.NODE_ENV)"'''
 ```
 
 Run the task:
@@ -117,7 +120,7 @@ mise installs the configured tool if needed, loads `NODE_ENV`, and runs the task
 The output includes the Node.js version and `development`. Commit `mise.toml` so
 teammates and CI can run the same command.
 
-To add tools later, run `mise use python@3.13` from the project directory.
+To add tools later, run `mise use python@3.14` from the project directory.
 Use `mise use --global` to set personal defaults. Version requests such as `"24"`
 select a release in that series; use [exact pins or a lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html)
 when you need everyone to use the same resolved version.
@@ -147,6 +150,18 @@ Restart your shell, then run `node --version` inside the project. For PowerShell
 and other installation methods, follow the
 [shell setup guide](https://mise.jdx.dev/getting-started.html#activate-mise).
 
+## Check your project setup
+
+```sh
+mise config ls
+mise ls --current
+mise exec -- node --version
+```
+
+These show which configuration files are loaded, which versions are selected,
+and whether the tool runs in the project environment. If `mise exec` works but
+`node --version` does not, check shell activation with `mise doctor`.
+
 ## Where to go next
 
 | I want to…                             | Read                                                                                                                                      |
@@ -168,15 +183,12 @@ A [text transcript](https://mise.jdx.dev/demo.html) is also available.
 
 ## GitHub Issues & Discussions
 
-Due to the volume of issue submissions mise received, using GitHub Issues became unsustainable for
-the project. Instead, mise uses GitHub Discussions which provide a more community-centric platform
-for communication and require less management on the part of the maintainers.
+Use [GitHub Discussions](https://github.com/jdx/mise/discussions) for support and
+feature requests. GitHub Issues are not used for new reports.
 
-Please note the following discussion categories, which match how issues are often used:
-
-- [Announcements](https://github.com/jdx/mise/discussions/categories/announcements)
-- [Ideas](https://github.com/jdx/mise/discussions/categories/ideas): for feature requests, etc.
-- [Troubleshooting & Bug Reports](https://github.com/jdx/mise/discussions/categories/troubleshooting-and-bug-reports)
+- [Troubleshooting & Bug Reports](https://github.com/jdx/mise/discussions/categories/troubleshooting-and-bug-reports): include a minimal config, the command you ran, expected behavior, and relevant error output. See the [troubleshooting guide](https://mise.jdx.dev/troubleshooting.html) first.
+- [Ideas](https://github.com/jdx/mise/discussions/categories/ideas): suggest a feature or describe a workflow mise could support.
+- [Announcements](https://github.com/jdx/mise/discussions/categories/announcements): follow project updates.
 
 ## Special Thanks
 

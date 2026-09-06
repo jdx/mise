@@ -8,123 +8,78 @@ The following demo shows:
 
 <video style="max-width: 100%; height: auto;" controls="controls" src="./tapes/demo.mp4" />
 
-## Transcript
+## Guided transcript {#transcript}
 
-`mise exec <tool> -- <command>` lets you run any tool with mise.
+This follows the recording's workflow. Commands and release requests below are
+kept usable for current mise; exact versions, paths, and output in the recording
+may differ. To follow along, [install mise](/installing-mise.html) and use a Bash
+shell. The demo changes global tool defaults; use a scratch environment if you
+do not want those selections in your normal config.
 
-```shell
-mise exec node@26 -- node -v
-# mise node@26.x.x ✓ installed
-# v26.x.x
+### Run one command
+
+```sh
+mise exec node@26 -- node --version
+mise exec terraform -- terraform version
 ```
 
-`node` is only available in the mise environment, not globally.
+`mise exec` installs a missing tool and makes it available to that child command.
+It does not select the tool for the calling shell or save it in `mise.toml`.
+A subsequent plain `node --version` uses whatever Node.js was already on the
+shell's PATH, if any.
 
-```shell
-node -v
-# bash: node: command not found
-```
+### Activate and choose global defaults
 
----
-
-Here is another example where we run terraform with `mise exec`.
-
-```shell
-mise exec terraform -- terraform -v
-# mise terraform@1.11.3 ✓ installed
-# Terraform v1.11.3
-```
-
----
-
-`mise exec` is great for running one-off commands, but it can be more convenient to activate mise. When activated, mise automatically updates your `PATH` to include the tools you have installed, making them available directly.
-
-We start by installing node@lts and making it the global default.
-
-```shell
+```bash
+eval "$(mise activate bash)"
 mise use --global node@lts
-# v22.14.0
-```
-
-```shell
-node -v
-# v22.14.0
-```
-
-```shell
+node --version
 which node
-# /root/.local/share/mise/installs/node/lts/bin/node
 ```
 
-We get back the path to the real node here, not a shim.
+After the prompt updates, activation puts the selected Node.js installation on
+PATH. `lts` is a release request resolved by the Node.js backend, so its exact
+version changes over time. `which node` shows the executable chosen by this
+shell; with PATH activation, that is normally the real installed binary.
 
----
+Add other global tools and inspect their selection:
 
-We can also install other tools with mise. For example, let's install terraform, jq, and go.
-
-```shell
-mise use -g terraform jq go
-# mise jq@1.7.1 ✓ installed
-# mise terraform@1.11.3 ✓ installed
-# mise go@1.24.1 ✓ installed
-# mise ~/.config/mise/config.toml tools: go@1.24.1, jq@1.7.1, terraform@1.11.3
-```
-
-```shell
-terraform -v
-# Terraform v1.11.3
-```
-
-```shell
+```sh
+mise use --global terraform jq go
+terraform version
 jq --version
-# jq-1.7
-```
-
-```shell
 go version
-# go version go1.24.1 linux/amd64
+mise ls --current
 ```
 
-```shell
-mise ls
-# Tool       Version  Source                      Requested
-# go         1.24.1   ~/.config/mise/config.toml  latest
-# jq         1.7.1    ~/.config/mise/config.toml  latest
-# node       22.14.0  ~/.config/mise/config.toml  lts
-# terraform  1.11.3   ~/.config/mise/config.toml  latest
-```
+### Override defaults in a project
 
----
-
-Let's enter a project directory where we will set up node@26.
-
-```shell
+```sh
+mkdir myproj
 cd myproj
 mise use node@26 pnpm@10
-# mise node@26.x.x ✓ installed
-# mise pnpm@10.7.0 ✓ installed
-```
-
-```shell
-node -v
-# v26.x.x
-pnpm -v
-# 10.7.0
-```
-
-As expected, `node -v` is now v26.x.
-
-```shell
+node --version
+pnpm --version
 cat mise.toml
-# [tools]
-# node = "26"
-# pnpm = "10"
 ```
 
-When we leave this directory, the node version reverts to the global LTS version.
+The project config contains:
 
-```shell
+```toml
+[tools]
+node = "26"
+pnpm = "10"
+```
+
+Within this project, Node.js 26 overrides the global `lts` request. Leave the
+project and wait for the next shell prompt to restore the global selection:
+
+```sh
 cd ..
-node -v
-# v22.14.0
+node --version
+mise ls --current
 ```
+
+For a first project with tools, environment variables, and tasks, continue with
+[getting started](/getting-started.html). For configuration overrides and
+upgrades, use the [walkthrough](/walkthrough.html).
