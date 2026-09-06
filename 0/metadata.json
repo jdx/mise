@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1WBXQP442HKJF7NF08XVY8E",
   "session_id": "01a07177-9855-71a2-89cd-4a9a37cdbfcb",
   "strategy": "manual-commit",
-  "created_at": "2026-09-06T22:04:45.461895Z",
+  "created_at": "2026-09-06T22:10:59.176308Z",
   "branch": "codex/dotfiles-launch-readiness",
   "checkpoints_count": 1,
   "save_step_count": 1,
@@ -14,21 +14,21 @@
   "agent": "Codex",
   "model": "gpt-6-astra",
   "turn_id": "8c5e5f0f6f5c",
-  "checkpoint_transcript_start": 9314,
-  "transcript_lines_at_start": 9314,
-  "compact_transcript_start": 1214,
+  "checkpoint_transcript_start": 9349,
+  "transcript_lines_at_start": 9349,
+  "compact_transcript_start": 1219,
   "token_usage": {
-    "input_tokens": 9054,
+    "input_tokens": 79831,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 1086976,
-    "output_tokens": 1135,
-    "api_call_count": 5
+    "cache_read_tokens": 1476736,
+    "output_tokens": 5440,
+    "api_call_count": 23
   },
   "session_metrics": {
     "turn_count": 36
   },
   "initial_attribution": {
-    "calculated_at": "2026-09-06T22:04:43.378684Z",
+    "calculated_at": "2026-09-06T22:10:57.818789Z",
     "agent_lines": 852,
     "agent_removed": 0,
     "human_added": 604,
