@@ -4,9 +4,29 @@ Many tools in mise are hosted on GitHub. For public releases, mise uses [mise-ve
 
 GitHub tokens are still useful when mise has to fall back to GitHub's API, when `MISE_USE_VERSIONS_HOST=0` is set, or when installing tools from private repositories, GitHub Enterprise, or custom GitHub API hosts. Unauthenticated requests are subject to low [rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api), which can cause `403 Forbidden` errors. This page explains how to configure GitHub authentication in mise.
 
+## Start with token diagnostics
+
+Check which source mise selects without printing the full credential:
+
+```sh
+mise token github
+mise token github github.mycompany.com
+```
+
+The second command is for an Enterprise host; replace the hostname. A selected
+token is not proof that it has access to a particular repository. If an install
+fails, check its permissions and expiry as well as the source shown here.
+
+If you already use `gh auth login` with a system keyring, configure a
+[credential command](#git-credential-helpers). mise's direct `hosts.yml` reader
+cannot retrieve a token stored only in that keyring.
+
 ## Token Priority
 
-mise checks the following sources in order. The first token found wins:
+mise checks the following sources in order. The first available token wins; a
+wrong or expired higher-priority token can hide a working lower-priority source.
+`GH_TOKEN` is not a direct mise token source, although a configured `gh auth
+token` credential command can use it.
 
 **github.com:**
 
@@ -39,13 +59,20 @@ The github.com env vars (`MISE_GITHUB_TOKEN`, etc.) are also used as a fallback 
 
 ## Setting a Token via Environment Variable
 
-Create a [personal access token](https://github.com/settings/tokens/new?description=MISE_GITHUB_TOKEN) (no scopes required) and set it:
+For public release access, a classic personal access token does not need private
+repository scopes. For private repositories, grant the token access to the
+repository and the permissions the API requires; a fine-grained token needs
+**Contents: read** to [download release assets](https://docs.github.com/en/rest/releases/assets#get-a-release-asset).
+Create a [personal access token](https://github.com/settings/tokens) and make it
+available to the process running mise:
 
 ```sh
 export MISE_GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
 ```
 
-Or, if you already have `GITHUB_TOKEN` set (common in GitHub Actions), mise uses it automatically.
+The value above is a placeholder. Prefer a secret manager or your CI secret
+store for the actual value. An existing `GITHUB_TOKEN` also works when no
+higher-priority source overrides it; see [GitHub Actions](/dev-tools/github-tokens.html#ci-github-actions).
 
 ## Token File (`github_tokens.toml`)
 
@@ -60,18 +87,24 @@ token = "ghp_xxxxxxxxxxxx"
 token = "ghp_yyyyyyyyyyyy"
 ```
 
-This file is checked after environment variables and `credential_command` but before the gh CLI's `hosts.yml`, making it useful when:
+This file is checked after environment variables, `credential_command`, and
+native OAuth, but before the gh CLI file. It is useful when:
 
 - You don't use the gh CLI, or
 - The gh CLI token has restricted scope (e.g., Coder-provisioned tokens scoped to specific orgs) and you need a broader token for mise, or
 - You want mise-specific tokens that don't interfere with other tools.
 
 The file location follows `MISE_CONFIG_DIR` (defaults to `~/.config/mise`).
-No additional settings are required — mise auto-discovers the file if it exists.
+No additional setting is required. The file contains plaintext credentials; keep
+it outside shared project configuration and readable only by your user. On Unix:
+
+```sh
+chmod 600 "${MISE_CONFIG_DIR:-$HOME/.config/mise}/github_tokens.toml"
+```
 
 ## gh CLI Integration
 
-If you use the [GitHub CLI](https://cli.github.com/) (`gh`), mise can read tokens directly from its `hosts.yml` config file. This is enabled by default and is used when no token environment variable is set.
+If you use the [GitHub CLI](https://cli.github.com/) (`gh`), mise can read tokens directly from its `hosts.yml` config file. This is enabled by default and is used when no higher-priority source resolves a token.
 
 mise looks for `hosts.yml` in these locations (first match wins):
 
@@ -106,9 +139,11 @@ gh_cli_tokens = false
 
 ## Credential Command
 
-You can configure a custom shell command that mise runs to obtain a GitHub token. This is useful when you want a credential source that only mise uses, without affecting git:
+Configure a custom command in your **global** settings to obtain a GitHub token.
+`github.credential_command` is global-only; a project cannot choose a command to
+read your credentials. For example:
 
-```toml
+```toml [~/.config/mise/config.toml]
 [settings.github]
 credential_command = "op read 'op://Private/GitHub Token/credential'"
 ```
@@ -128,14 +163,14 @@ Run `ghtkn get` once manually before relying on it from mise so any browser-base
 The credential command runs with mise shims removed from `PATH` to avoid recursive mise invocations. If you install `ghtkn` with mise, use `mise which` to find the real executable path and store that in `credential_command` instead of relying on the shim:
 
 ```sh
-mise settings set github.credential_command="$(mise which ghtkn) get -m 1h"
+mise settings set github.credential_command="\"$(mise which ghtkn)\" get -m 1h"
 ```
 
 Do not make the credential command run `mise x`, `mise exec`, or another command that may need GitHub access to resolve or install `ghtkn`, since that can loop while mise is trying to obtain the GitHub token.
 
 If `ghtkn` is already available without relying on a mise shim, you can also set it directly:
 
-```toml
+```toml [~/.config/mise/config.toml]
 [settings.github]
 credential_command = "ghtkn get -m 1h"
 ```
@@ -164,18 +199,33 @@ Authorize once:
 mise token github --oauth
 ```
 
-After that, mise reuses the cached token for its own GitHub API calls and refreshes it when GitHub returns a refresh token. While the cached token is valid, mise also exports it to your shell as `GITHUB_TOKEN` (via `mise activate` / `mise hook-env` / `mise env` / `mise exec`) so tools like `gh`, `git`, and `cargo publish` see it without any extra wiring:
+After that, mise reuses the cached token for its own GitHub API calls and refreshes it when GitHub returns a refresh token. While the cached token is valid, mise also exports it to your shell as `GITHUB_TOKEN` (via `mise activate` / `mise hook-env` / `mise env` / `mise exec`) so tools that read `GITHUB_TOKEN`, such as `gh`, can use it:
 
 ```sh
-gh pr list # uses the OAuth token automatically
+mise exec -- gh pr list
 ```
+
+mise does not replace an existing value of the export variable. Git credential
+helpers and Cargo registry authentication have their own configuration; exporting
+`GITHUB_TOKEN` does not configure them automatically.
 
 To use a different variable name (for example, `gh`'s preferred `GH_TOKEN`), set `github.oauth_export_env`. Setting it to an empty string disables the auto-export.
 
 You can still print a raw token explicitly when you need to pipe it somewhere:
 
 ```sh
-export MISE_GITHUB_TOKEN="$(mise token github --oauth --raw)"
+mise token github --oauth --raw
+```
+
+The raw form prints a secret. Use it only when another command needs the token
+value; normal diagnostics are masked. Copying the value into `MISE_GITHUB_TOKEN`
+also makes that environment value take precedence over future OAuth resolution.
+
+After changing the GitHub App's permissions or installation access, request a
+fresh token:
+
+```sh
+mise token github --oauth --refresh
 ```
 
 Optional settings:
@@ -209,14 +259,14 @@ This is especially useful for:
 
   On macOS and Linux:
 
-  ```toml
+  ```toml [~/.config/mise/config.toml]
   [settings.github]
   credential_command = 'gh auth token --hostname "$MISE_CREDENTIAL_HOST"'
   ```
 
   On Windows, `cmd` is the default inline shell and does not expand `$VAR`:
 
-  ```toml
+  ```toml [~/.config/mise/config.toml]
   [settings.github]
   credential_command = 'gh auth token --hostname %MISE_CREDENTIAL_HOST%'
   ```
@@ -234,13 +284,23 @@ use_git_credentials = true
 
 ## Debugging Token Resolution
 
-Use `mise token github` to see which token mise would use for a given host:
+Use the masked output to distinguish configuration problems from API failures:
 
 ```sh
-mise token github                           # check github.com (masked)
-mise token github --unmask                  # show full token
-mise token github github.mycompany.com      # check a GHE host
+mise token github
+mise token github github.mycompany.com
 ```
+
+| Result or symptom                                      | What to check                                                                                                   |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| An unexpected environment variable is selected         | Remove or correct that override in the process environment; lower-priority sources are not consulted            |
+| `(none)` but `gh auth status` works                    | gh may use a system keyring; configure a host-aware credential command or opt into git credential helpers       |
+| A token is selected but the repository is inaccessible | Check repository access, token expiry, organization authorization, and the API host                             |
+| `403` or `429` from GitHub                             | Inspect the response for rate-limit details; `403` can also be a permissions failure                            |
+| OAuth refresh is rejected                              | Check the configured GitHub App client ID and request `mise token github --oauth --refresh` after correcting it |
+
+`mise token github --unmask` and `--raw` reveal the credential. They are not needed
+to identify its source and should not be included in shared diagnostic logs.
 
 ## GitHub Enterprise
 
@@ -261,35 +321,52 @@ For authentication, mise checks (in order):
 6. gh CLI token for the API hostname
 7. `git credential fill` for the API hostname
 
-If you have **multiple** GHE instances, `MISE_GITHUB_ENTERPRISE_TOKEN` (a single value) won't work. Use `github_tokens.toml`, the gh CLI integration, `credential_command`, or git credential helpers instead:
+If different GHE instances require different tokens, one
+`MISE_GITHUB_ENTERPRISE_TOKEN` value cannot represent them. Use `github_tokens.toml`, the gh CLI integration, `credential_command`, or git credential helpers instead:
 
 ```sh
 gh auth login --hostname github.mycompany.com
 gh auth login --hostname github.other-company.com
 ```
 
-## Avoiding Tokens Entirely with Lockfiles
+## Reducing API Requests with Lockfiles {#avoiding-tokens-entirely-with-lockfiles}
 
-If you use [`mise.lock`](/dev-tools/mise-lock.html), mise stores exact download URLs and checksums. Future installs use the lockfile directly — no GitHub API calls needed:
+A [lockfile](/dev-tools/mise-lock.html) can avoid release-discovery requests when
+it records the required artifact URLs and checksums:
 
 ```sh
-mise settings lockfile=true
 mise lock
+mise install
 ```
 
-This is the best approach for CI where you want deterministic builds without configuring tokens. See [mise.lock Lockfile](/dev-tools/mise-lock.html) for details.
+This reduces token requirements for public downloads. It does not make private
+artifacts public or guarantee an offline install. Missing platform metadata,
+provenance verification, and Packslip policy checks can still need network access
+or authentication. Keep required credentials available in CI even when using a
+lockfile.
 
 ## CI / GitHub Actions
 
-In GitHub Actions, `GITHUB_TOKEN` is automatically available. mise picks it up with no extra configuration:
+GitHub provides a workflow token through the `secrets.GITHUB_TOKEN` and
+`github.token` contexts. To make it available to a shell command running mise,
+pass it as an environment variable:
 
 ```yaml
-- uses: jdx/mise-action@v2
+# Step after checkout and mise setup
+- name: Install development tools
+  run: mise install
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-For private repos or higher rate limits, use a [fine-grained personal access token](https://github.com/settings/tokens?type=beta) stored as a repository secret.
+[`jdx/mise-action`](https://github.com/jdx/mise-action) has its own token input
+and install step. Check the action's configuration when using it rather than a
+separate `run` step.
+
+The workflow token's permissions and repository scope still apply. Access to a
+private tool in another repository may require a GitHub App token or a personal
+access token with access to that repository, stored as an Actions secret. See
+[GitHub's workflow authentication guide](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token).
 
 ## .netrc
 
