@@ -8,8 +8,8 @@
 - [Demo](https://mise.jdx.dev/demo.html): The following demo shows.
 - [Walkthrough](https://mise.jdx.dev/walkthrough.html): Use this guide to add mise to an existing project and maintain its configuration: select tools, share defaults, upgrade versions, and run everyday commands.
 - [Installing mise](https://mise.jdx.dev/installing-mise.html): If you are new to mise, follow the Getting Started guide first.
-- [IDE Integration](https://mise.jdx.dev/ide-integration.html): Code editors and IDEs work differently from interactive shells.
-- [Continuous Integration](https://mise.jdx.dev/continuous-integration.html): You can use mise in continuous integration (CI) environments to provision the tools your project needs. We recommend pinning tools to specific versions so the environment is reproducible.
+- [IDE Integration](https://mise.jdx.dev/ide-integration.html): An editor's terminal, language server, debugger, and extension host can use different environments. First identify which process needs a tool or variable, then choose an integration.
+- [Continuous Integration](https://mise.jdx.dev/continuous-integration.html): Use the same mise.toml in CI and development so both environments select the same tools. Run commands with mise exec or mise run to load those tools and the project's environment variables.
 
 ## Configuration
 
@@ -158,7 +158,7 @@
 - [Paranoid](https://mise.jdx.dev/paranoid.html): Paranoid mode is an optional behavior that locks mise down further to make it harder for a bad actor to compromise your system.
 - [Templates](https://mise.jdx.dev/templates.html): Use Tera expressions to derive configuration values from the project directory, environment, or [vars]. mise renders those expressions when it resolves configuration or prepares a task.
 - [URL Replacements](https://mise.jdx.dev/url-replacements.html): mise does not include a built-in registry for downloading artifacts. Instead, it retrieves remote registry manifests, which specify the URLs for downloading tools.
-- [Model Context Protocol](https://mise.jdx.dev/mcp.html): The Model Context Protocol (MCP) is a standard protocol that enables AI assistants to interact with development tools and access project context.
+- [Model Context Protocol](https://mise.jdx.dev/mcp.html): The mise MCP server lets an AI assistant inspect a project's tools, tasks, environment, and configuration, and run mise tasks. It uses the Model Context Protocol over stdin/stdout.
 - [Directory Structure](https://mise.jdx.dev/directories.html): mise separates configuration, installed tools, disposable metadata, and machine-local state. Use the table to locate files, then see the sections below for what is safe to share or remove.
 - [Cache Behavior](https://mise.jdx.dev/cache-behavior.html): mise caches version metadata, computed environments, and task results separately. Start with the cache related to the symptom: clearing a version list does not reinstall a tool, and clearing an…
 

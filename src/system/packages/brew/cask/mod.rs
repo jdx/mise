@@ -31,6 +31,7 @@ use crate::system::sudo;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::{ProgressIcon, SingleReport};
 
+mod app_version;
 mod artifacts;
 mod fetch;
 mod flight;
@@ -38,6 +39,7 @@ mod model;
 mod paths;
 mod state;
 
+use app_version::*;
 use artifacts::*;
 use fetch::*;
 use flight::*;
@@ -58,6 +60,62 @@ const APP_DIR_ENV: &str = "MISE_BREW_CASK_OPT_APPDIR";
 const MAX_NESTED_CASK_ARCHIVES: usize = 16;
 
 pub(crate) struct BrewCaskManager {}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InstallMode {
+    Install,
+    Upgrade,
+}
+
+/// Preserves matching recorded versions in both modes and self-updating casks
+/// during installation; explicit upgrades may assess their live bundle versions.
+fn should_skip_installed(cask: &Cask, version: &str, mode: InstallMode) -> bool {
+    version == cask.version || (mode == InstallMode::Install && cask.auto_updates)
+}
+
+/// Returns a user-facing reason to preserve an installed cask, or `None` to proceed.
+/// Self-updating upgrades require a single owned app with readable, outdated live
+/// metadata. Receipt lookup failures propagate as errors.
+fn installed_skip_reason(
+    cask: &Cask,
+    artifacts: &CaskArtifacts,
+    version: Option<&str>,
+    mode: InstallMode,
+) -> Result<Option<&'static str>> {
+    if mode == InstallMode::Upgrade && cask.version == "latest" {
+        return Ok(Some("skipped: cask version is latest"));
+    }
+    if version.is_some_and(|version| should_skip_installed(cask, version, mode)) {
+        return Ok(Some(if mode == InstallMode::Install {
+            "already installed"
+        } else {
+            "already up to date"
+        }));
+    }
+    if mode != InstallMode::Upgrade || !cask.auto_updates {
+        return Ok(None);
+    }
+    let Some(receipt) = previous_receipt(cask)? else {
+        return Ok(Some("skipped: no installed app ownership record"));
+    };
+    if receipt.version == cask.version {
+        return Ok(Some("already up to date"));
+    }
+    let [app] = artifacts.apps.as_slice() else {
+        return Ok(Some("skipped: requires a single owned app"));
+    };
+    let app_path = app_target_path(app.target_name())?;
+    if receipt.apps.as_slice() != [app_path.clone()] {
+        return Ok(Some("skipped: app target differs from ownership record"));
+    }
+    let Ok(live) = read_app_version(&app_path) else {
+        return Ok(Some("skipped: installed app version is unreadable"));
+    };
+    Ok(
+        (!app_version_outdated(&cask.version, live.short.as_deref(), live.build.as_deref()))
+            .then_some("skipped: installed app is current, newer, or incomparable"),
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AppArtifact {
@@ -422,11 +480,15 @@ impl BrewCaskManager {
         Self {}
     }
 
+    /// Processes current-version cask requests in the selected install mode.
+    /// Dry runs report decisions without staging; real runs report per-cask progress
+    /// and stop at the first failure. Explicit version requests return an error.
     async fn install_with_manager_options(
         &self,
         pkgs: &[PackageRequest],
         opts: &InstallOpts,
         manager_options: &ManagerPackageOptions,
+        mode: InstallMode,
     ) -> Result<()> {
         if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
             bail!("brew casks are installed at their current version ('{p}')");
@@ -434,7 +496,8 @@ impl BrewCaskManager {
         if opts.dry_run {
             prefix::bootstrap(true)?;
             for pkg in pkgs {
-                self.install_one(pkg, opts, None, manager_options).await?;
+                self.install_one(pkg, opts, None, manager_options, mode)
+                    .await?;
             }
             return Ok(());
         }
@@ -443,7 +506,7 @@ impl BrewCaskManager {
         for pkg in pkgs {
             let pr: Box<dyn SingleReport> = mpr.add(&format!("brew-cask:{}", pkg.name));
             match self
-                .install_one(pkg, opts, Some(&*pr), manager_options)
+                .install_one(pkg, opts, Some(&*pr), manager_options, mode)
                 .await
             {
                 Ok(version) => {
@@ -461,17 +524,23 @@ impl BrewCaskManager {
         Ok(())
     }
 
+    /// Starts a top-level cask operation with an empty dependency ancestry.
+    /// Returns the installed version or a message explaining why it was skipped.
     async fn install_one(
         &self,
         req: &PackageRequest,
         opts: &InstallOpts,
         pr: Option<&dyn SingleReport>,
         manager_options: &ManagerPackageOptions,
+        mode: InstallMode,
     ) -> Result<String> {
-        self.install_one_with_ancestors(req, opts, pr, &BTreeSet::new(), manager_options)
+        self.install_one_with_ancestors(req, opts, pr, &BTreeSet::new(), manager_options, mode)
             .await
     }
 
+    /// Installs a cask while detecting dependency cycles and preserving ownership.
+    /// Dependencies use install mode. The requested cask's eligibility is checked
+    /// before staging and again under the installation lock before replacement.
     async fn install_one_with_ancestors(
         &self,
         req: &PackageRequest,
@@ -479,6 +548,7 @@ impl BrewCaskManager {
         pr: Option<&dyn SingleReport>,
         ancestors: &BTreeSet<String>,
         manager_options: &ManagerPackageOptions,
+        mode: InstallMode,
     ) -> Result<String> {
         let cask = fetch_cask(req, !opts.dry_run).await?;
         if ancestors.contains(&cask.token) {
@@ -496,11 +566,11 @@ impl BrewCaskManager {
         let artifacts = cask_artifacts(&cask)?;
         validate_platform_support(&cask, &artifacts)?;
         let installed_version = mise_installed_cask_version(&cask)?;
-        if let Some(version) = installed_version.as_ref()
-            && (cask.auto_updates || version == &cask.version)
+        if let Some(reason) =
+            installed_skip_reason(&cask, &artifacts, installed_version.as_deref(), mode)?
         {
-            info!("brew-cask:{}: already installed", cask.token);
-            return Ok(version.clone());
+            info!("brew-cask:{}: {reason}", cask.token);
+            return Ok(reason.to_string());
         }
         for conflict in &cask.conflicts_with.cask {
             if !installed_versions(conflict).is_empty() {
@@ -540,6 +610,7 @@ impl BrewCaskManager {
                 None,
                 &ancestors,
                 manager_options,
+                InstallMode::Install,
             ))
             .await?;
         }
@@ -556,11 +627,15 @@ impl BrewCaskManager {
         let _caskroom_lock = lock_caskroom()?;
         recover_flight_backups()?;
         ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
-        if let Some(version) = mise_installed_cask_version(&cask)?
-            && (cask.auto_updates || version == cask.version)
-        {
+        if let Some(reason) = installed_skip_reason(
+            &cask,
+            &artifacts,
+            mise_installed_cask_version(&cask)?.as_deref(),
+            mode,
+        )? {
             file::remove_all(stage)?;
-            return Ok(version);
+            info!("brew-cask:{}: {reason}", cask.token);
+            return Ok(reason.to_string());
         }
         let previous_binaries = previous_binary_targets(&cask)?;
         let previous_fonts = previous_font_targets(&cask)?;
@@ -876,23 +951,37 @@ impl SystemPackageManager for BrewCaskManager {
         Ok(statuses)
     }
 
+    /// Installs casks with default manager options, preserving installed self-updaters.
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        self.install_with_manager_options(pkgs, opts, &ManagerPackageOptions::None)
-            .await
+        self.install_with_manager_options(
+            pkgs,
+            opts,
+            &ManagerPackageOptions::None,
+            InstallMode::Install,
+        )
+        .await
     }
 
+    /// Installs casks with caller-supplied manager options and install-mode skip rules.
     async fn install_with_options(
         &self,
         pkgs: &[PackageRequest],
         opts: &InstallOpts,
         manager_options: &ManagerPackageOptions,
     ) -> Result<()> {
-        self.install_with_manager_options(pkgs, opts, manager_options)
+        self.install_with_manager_options(pkgs, opts, manager_options, InstallMode::Install)
             .await
     }
 
+    /// Explicitly upgrades casks, assessing live versions for owned self-updating apps.
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        self.install(pkgs, opts).await
+        self.install_with_manager_options(
+            pkgs,
+            opts,
+            &ManagerPackageOptions::None,
+            InstallMode::Upgrade,
+        )
+        .await
     }
 }
 

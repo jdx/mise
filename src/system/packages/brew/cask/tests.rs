@@ -7398,3 +7398,211 @@ fn git_only_path_rejects_symlink_escape() -> Result<()> {
     assert!(git_only_path_source(&cask, &checkout, Path::new("escaped")).is_err());
     Ok(())
 }
+
+/// Verifies receipt equality and install mode independently govern skip decisions.
+#[test]
+fn installed_cask_skip_depends_on_mode_and_receipt_equality() {
+    let mut cask = test_cask("example", "release,build");
+    for (auto_updates, recorded, mode, expected) in [
+        (true, "release", InstallMode::Install, true),
+        (true, "release", InstallMode::Upgrade, false),
+        (true, "release,build", InstallMode::Install, true),
+        (true, "release,build", InstallMode::Upgrade, true),
+        (false, "release", InstallMode::Install, false),
+        (false, "release", InstallMode::Upgrade, false),
+        (false, "release,build", InstallMode::Install, true),
+        (false, "release,build", InstallMode::Upgrade, true),
+    ] {
+        cask.auto_updates = auto_updates;
+        assert_eq!(
+            should_skip_installed(&cask, recorded, mode),
+            expected,
+            "auto_updates={auto_updates}, recorded={recorded}, upgrade={}",
+            mode == InstallMode::Upgrade,
+        );
+    }
+}
+
+/// Checks Homebrew token precedence, comparability, and symmetric ordering,
+/// including trailing tokens reached after the two token indexes diverge.
+#[test]
+fn auto_updates_compares_homebrew_version_tokens_with_matching_component_counts() {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+
+    for (live, current, expected) in [
+        ("1", "2", Some(Less)),
+        ("1.9", "1.10", Some(Less)),
+        ("2.0", "1.99", Some(Greater)),
+        ("1.02", "01.2", Some(Equal)),
+        ("0.000", "00.0", Some(Equal)),
+        (
+            "999999999999999999999999999999",
+            "1000000000000000000000000000000",
+            Some(Less),
+        ),
+        ("1", "1.0", None),
+        ("", "1", None),
+        ("1.", "1.0", None),
+        ("1..0", "1.0.0", Some(Equal)),
+        ("1.0-p1", "1.p1", Some(Equal)),
+        ("1.0a", "1a.0-0-1", Some(Less)),
+        ("1.0a", "1a.0-0-0", Some(Equal)),
+        ("1.2.3alpha4", "1.2.3A4", Some(Equal)),
+        ("1.2.3beta2", "1.2.3B2", Some(Equal)),
+        ("1.2.3pre9", "1.2.3PRE9", Some(Equal)),
+        ("1.2.3rc3", "1.2.3RC3", Some(Equal)),
+        ("1.2.3-p34", "1.2.3-P34", Some(Equal)),
+        ("1.2.3alpha4", "1.2.3beta2", Some(Less)),
+        ("1.2.3beta2", "1.2.3pre3", Some(Less)),
+        ("1.2.3pre3", "1.2.3rc2", Some(Less)),
+        ("1.2.3rc3", "1.2.3", Some(Less)),
+        ("1.2.3", "1.2.3a", Some(Less)),
+        ("1.2.3", "1.2.3-p34", Some(Less)),
+        ("1.2.3.post34", "1.2.3.post35", Some(Less)),
+        ("1.2.3.post34", "1.2.3", None),
+        ("HEAD-abcdef", "HEAD-fedcba", Some(Equal)),
+        ("HEAD", "2", Some(Greater)),
+        ("1.", "1", Some(Equal)),
+        ("1.0-beta", "1.0", Some(Less)),
+        ("1,2", "1.2", None),
+        ("foo", "goo", Some(Less)),
+        (" 1", "2", Some(Less)),
+        ("+1", "2", Some(Less)),
+    ] {
+        assert_eq!(
+            compare_app_versions(live, current),
+            expected,
+            "{live:?}, {current:?}"
+        );
+        assert_eq!(
+            compare_app_versions(current, live),
+            expected.map(std::cmp::Ordering::reverse)
+        );
+    }
+}
+
+/// Covers upgrade eligibility across short, build, combined, and unavailable
+/// bundle versions, including casks with multiple version candidates.
+#[test]
+fn auto_updates_matches_homebrew_short_build_decisions() {
+    for (current, short, build, expected) in [
+        ("2.61", Some("2.57"), Some("2057"), true),
+        ("2.61", Some("2.62"), Some("2057"), false),
+        ("2.61", Some("2.61"), Some("2057"), false),
+        ("2057", Some("2.61"), Some("2057"), false),
+        ("2.61,3000", Some("2.61"), Some("2057"), false),
+        ("2.61,3000,2057", Some("2.61"), Some("2057"), false),
+        ("2.61-2057", Some("2.61"), Some("2057"), false),
+        ("2.61-2057", Some("2.61"), Some("2058"), false),
+        ("2.61-2057", Some("2.61"), Some("2056"), true),
+        ("3.6.4-28955b81", Some("3.6.4"), Some("3.6.4"), false),
+        ("2.61,2057", Some("2057"), Some("3000"), false),
+        ("2.61,2056,2055", Some("2.61"), Some("2057"), false),
+        ("2.61,3000", None, Some("2057"), true),
+        ("2.61,3000,2057", None, Some("2057"), false),
+        ("2.61,3000", None, Some("3001"), false),
+        ("1.0", Some("1"), Some("200"), false),
+        ("2", None, None, false),
+        ("2", Some("0"), Some("0.0"), false),
+        ("2", Some("0.0"), Some("1"), true),
+        ("2", Some("1"), Some("0"), true),
+        ("2", Some(" \t"), Some("1"), true),
+        ("2", Some("1"), None, true),
+        ("2.5.2,4000", Some("2.5.2(3329)"), Some("3329"), false),
+        ("2.5.2,4.4", Some("2.5.2 (3.3)"), Some("3.3"), false),
+        ("2.5.2,4000", Some("2.5.2 \t(3329)"), Some("3329"), false),
+        ("2.5.3,4000", Some("2.5.2(3329)"), Some("3329"), true),
+        ("1.2.3", Some("1.2.3rc3"), None, true),
+        ("1.2.3", Some("1.2.3-p34"), None, false),
+        ("1a.0-0-1", Some("1.0a"), None, true),
+        ("latest", Some("1"), Some("1"), false),
+    ] {
+        assert_eq!(
+            app_version_outdated(current, short, build),
+            expected,
+            "current={current}, short={short:?}, build={build:?}"
+        );
+    }
+}
+
+/// Verifies both plist encodings preserve optional version strings and that
+/// malformed, missing, or directory-backed plist inputs return errors.
+#[test]
+fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let app = tmp.path().join("Example.app");
+    file::create_dir_all(app.join("Contents"))?;
+    let path = app.join("Contents/Info.plist");
+    for binary in [false, true] {
+        for (short, build) in [
+            (Some("1.02"), None),
+            (None, Some("2057")),
+            (Some("2.5.2(3329)"), Some("3329")),
+            (None, None),
+        ] {
+            let mut dict = plist::Dictionary::new();
+            for (key, value) in [
+                ("CFBundleShortVersionString", short),
+                ("CFBundleVersion", build),
+            ] {
+                if let Some(value) = value {
+                    dict.insert(key.into(), plist::Value::String(value.into()));
+                }
+            }
+            let plist = plist::Value::Dictionary(dict);
+            if binary {
+                plist.to_file_binary(&path)?;
+            } else {
+                plist.to_file_xml(&path)?;
+            }
+            let version = read_app_version(&app)?;
+            assert_eq!(version.short.as_deref(), short);
+            assert_eq!(version.build.as_deref(), build);
+        }
+    }
+    file::write(&path, "invalid plist")?;
+    assert!(read_app_version(&app).is_err());
+    std::fs::remove_file(&path)?;
+    assert!(read_app_version(&app).is_err());
+    file::create_dir_all(&path)?;
+    assert!(read_app_version(&app).is_err());
+    assert!(read_app_version(&tmp.path().join("Missing.app")).is_err());
+    Ok(())
+}
+
+/// Checks that symlinked bundle components and FIFO plists are rejected before
+/// live version data can be trusted or a FIFO read can block the caller.
+#[cfg(unix)]
+#[test]
+fn auto_updates_refuses_symlinked_and_nonregular_plist_paths() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let original = tmp.path().join("Original.app");
+    file::create_dir_all(original.join("Contents"))?;
+    let mut dict = plist::Dictionary::new();
+    dict.insert(
+        "CFBundleShortVersionString".into(),
+        plist::Value::String("1".into()),
+    );
+    plist::Value::Dictionary(dict).to_file_xml(original.join("Contents/Info.plist"))?;
+    for component in ["", "Contents", "Contents/Info.plist"] {
+        let app = tmp.path().join(format!("Linked-{}.app", component.len()));
+        let destination = if component.is_empty() {
+            app.clone()
+        } else {
+            app.join(component)
+        };
+        file::create_dir_all(destination.parent().unwrap())?;
+        std::os::unix::fs::symlink(original.join(component), destination)?;
+        assert!(read_app_version(&app).is_err(), "component={component}");
+    }
+    let fifo_app = tmp.path().join("Fifo.app");
+    file::create_dir_all(fifo_app.join("Contents"))?;
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(fifo_app.join("Contents/Info.plist"))
+            .status()?
+            .success()
+    );
+    assert!(read_app_version(&fifo_app).is_err());
+    Ok(())
+}
