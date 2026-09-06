@@ -1,0 +1,1 @@
+address this by removing the version number from claude.md, push commit [https://github.com/jdx/mise/pull/12854#discussion\_r3942562236](https://github.com/jdx/mise/pull/12854#discussion_r3942562236)
