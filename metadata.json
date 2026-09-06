@@ -4,7 +4,10 @@
   "strategy": "manual-commit",
   "checkpoints_count": 12,
   "files_touched": [
-    "src/github/sigstore.rs"
+    "docs/public/llms.txt",
+    "docs/url-replacements.md",
+    "src/github/sigstore.rs",
+    "src/http.rs"
   ],
   "sessions": [
     {
@@ -30,10 +33,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 622176,
+    "input_tokens": 614148,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 30964480,
-    "output_tokens": 66750,
-    "api_call_count": 545
+    "cache_read_tokens": 29993728,
+    "output_tokens": 65749,
+    "api_call_count": 537
   }
 }
