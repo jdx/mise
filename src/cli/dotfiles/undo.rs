@@ -25,6 +25,7 @@ pub(crate) struct DotfilesUndo {
 
 impl DotfilesUndo {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         replay::undo(UndoRequest {
             reference: self.reference,
             dry_run: self.dry_run,

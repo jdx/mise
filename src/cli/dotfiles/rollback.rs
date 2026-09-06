@@ -41,6 +41,7 @@ pub(crate) struct DotfilesRollback {
 
 impl DotfilesRollback {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         replay::rollback(RollbackRequest {
             paths: self.paths,
             to: self.to,
