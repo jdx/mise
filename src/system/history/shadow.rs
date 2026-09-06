@@ -541,7 +541,9 @@ impl HistoryRepo {
                     if mode == "040000" {
                         let prefix = format!("--prefix={}/", overlay.path);
                         self.git.run(
-                            PlumbingCall::new(["read-tree", &prefix, oid]).index_file(&index),
+                            PlumbingCall::new(["read-tree", &prefix, oid])
+                                .work_tree(self.dir())
+                                .index_file(&index),
                         )?;
                     } else {
                         let info = format!("{mode},{oid},{}", overlay.path);
@@ -584,6 +586,34 @@ impl HistoryRepo {
         args.push(old);
         self.git.run(PlumbingCall::new(args))?;
         Ok(commit)
+    }
+
+    /// Squashes the promotion chain to one parentless commit holding the
+    /// current promoted state. Every promoted version a retained checkpoint
+    /// needs is in that checkpoint's own snapshot, so nothing else keeps
+    /// expired versions alive and `gc` can free them.
+    pub(crate) fn compact_promotions(&self) -> Result<bool> {
+        let Some(head) = self.promoted_head()? else {
+            return Ok(false);
+        };
+        let depth = self.output_str(PlumbingCall::new(["rev-list", "--count", &head]))?;
+        if depth == "1" {
+            return Ok(false);
+        }
+        let tree = self.output_tree_of(&head)?;
+        let commit = self.output_str(PlumbingCall::new([
+            "commit-tree",
+            &tree,
+            "-m",
+            "promoted state (compacted)",
+        ]))?;
+        self.git.run(PlumbingCall::new([
+            "update-ref",
+            Self::PROMOTED_REF,
+            &commit,
+            &head,
+        ]))?;
+        Ok(true)
     }
 
     pub(crate) const NOTES_REF: &'static str = "refs/notes/mise-history";

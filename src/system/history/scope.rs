@@ -262,6 +262,7 @@ impl Writer {
                     reason: store.unavailable().map(str::to_string),
                     roots: vec![],
                     coverage: Default::default(),
+                    modes: Default::default(),
                 },
                 changes: Changes::default(),
                 operation: Some(operation),

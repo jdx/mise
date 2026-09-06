@@ -529,6 +529,11 @@ fn walk_entry(
         }
     };
     if !meta.is_dir() {
+        // an exclusion wins over a direct declaration as it does over a
+        // directory walk: what the user excluded never enters a snapshot
+        if exclude.is_match(&entry.path) {
+            return;
+        }
         match classify_file(&meta) {
             Ok(_) => {
                 if meta.file_type().is_symlink() {

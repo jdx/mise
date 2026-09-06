@@ -211,3 +211,19 @@ mode = "track"
 enabled = false
 TOML
 assert_not_contains "mise bootstrap dotfiles paths" "~/.linkrc"
+
+# an exclusion wins over a direct declaration: an excluded file leaves the
+# snapshots even though it is tracked by name
+echo secret >~/.excluded-rc
+assert_succeed "mise bootstrap dotfiles track ~/.excluded-rc"
+assert_contains "mise bootstrap dotfiles history show latest --files" "~/.excluded-rc"
+cat <<'TOML' >>"$local_config"
+
+[history]
+exclude = ["~/.excluded-rc"]
+TOML
+echo secret2 >~/.excluded-rc
+assert_succeed "mise bootstrap dotfiles save --description excluded"
+assert_contains "mise bootstrap dotfiles history show latest" "D ~/.excluded-rc"
+assert_not_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "~/.excluded-rc"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.excluded-rc\") | .files'" "0"

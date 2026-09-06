@@ -444,7 +444,6 @@ impl PathState {
     }
 }
 
-#[cfg(unix)]
 /// The sha256 of a file, streamed so a large managed file is never read
 /// into memory whole.
 fn hash_file(path: &Path) -> std::io::Result<String> {
@@ -463,6 +462,7 @@ fn hash_file(path: &Path) -> std::io::Result<String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
+#[cfg(unix)]
 fn mode_of(metadata: &std::fs::Metadata) -> u32 {
     use std::os::unix::fs::PermissionsExt;
     metadata.permissions().mode() & 0o7777

@@ -153,10 +153,15 @@ pub(crate) fn prune(store: &Store) -> Result<Vec<u64>> {
     }
     if !ids.is_empty() {
         debug!("history: pruned checkpoints {ids:?}");
-        if let Some(repo) = store.repo()
-            && let Err(err) = repo.gc()
-        {
-            warn!("history: gc failed: {err:#}");
+        if let Some(repo) = store.repo() {
+            // old promoted versions stay reachable through the chain's
+            // ancestry otherwise, however many checkpoints were pruned
+            if let Err(err) = repo.compact_promotions() {
+                warn!("history: could not compact the promotion chain: {err:#}");
+            }
+            if let Err(err) = repo.gc() {
+                warn!("history: gc failed: {err:#}");
+            }
         }
     }
     Ok(ids)

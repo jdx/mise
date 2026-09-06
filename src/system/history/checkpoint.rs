@@ -365,6 +365,7 @@ impl Store {
                 reason,
                 roots,
                 coverage,
+                modes: file_modes(&walk),
             },
             changes,
             operation: draft.operation.clone(),
@@ -445,34 +446,65 @@ impl Store {
                 None => repo.empty_object("tree")?,
             };
             let mut promoted_overlays = vec![];
+            // entries promoted by subtree: the snapshot must hold their
+            // promoted version, not the live one
+            let mut partial = vec![];
             let now = store::now_rfc3339();
             for index in &manual.promote {
                 let entry = &entries[*index];
                 let tree_path = display_to_tree_path(&entry.display());
-                let object = repo.object_at(live_tree, &tree_path)?;
-                promoted_overlays.push(Overlay {
-                    path: format!("promoted/{tree_path}"),
-                    object: object.clone(),
-                });
-                match object {
-                    Some(_) => {
-                        saved.insert(
-                            entry.display(),
-                            SavedRecord {
-                                tree_path,
-                                promotion: String::new(),
-                                promoted_at: now.clone(),
-                                trigger: draft.trigger(),
-                                checkpoint: uuid.to_string(),
-                            },
-                        );
+                // a path named inside a manual-save directory promotes that
+                // subtree only; the rest of the entry keeps its saved version
+                let children: Vec<&PathBuf> = draft
+                    .explicit_paths
+                    .iter()
+                    .filter(|path| path.starts_with(&entry.path) && **path != entry.path)
+                    .collect();
+                let whole = children.is_empty()
+                    || draft
+                        .explicit_paths
+                        .iter()
+                        .any(|path| entry.path.starts_with(path));
+                let present = if whole {
+                    let object = repo.object_at(live_tree, &tree_path)?;
+                    let present = object.is_some();
+                    promoted_overlays.push(Overlay {
+                        path: format!("promoted/{tree_path}"),
+                        object,
+                    });
+                    present
+                } else {
+                    for child in children {
+                        let child_path = display_to_tree_path(&display_path(child));
+                        promoted_overlays.push(Overlay {
+                            path: format!("promoted/{child_path}"),
+                            object: repo.object_at(live_tree, &child_path)?,
+                        });
                     }
-                    None => {
-                        saved.remove(&entry.display());
-                    }
-                }
+                    partial.push(tree_path.clone());
+                    true
+                };
+                // a saved deletion is remembered: the path is not "never
+                // promoted" once it is recreated
+                saved.insert(
+                    entry.display(),
+                    SavedRecord {
+                        tree_path,
+                        promotion: String::new(),
+                        promoted_at: now.clone(),
+                        trigger: draft.trigger(),
+                        checkpoint: uuid.to_string(),
+                        absent: !present,
+                    },
+                );
             }
             let mut tree = repo.compose(&base, &promoted_overlays)?;
+            for tree_path in partial {
+                overlays.push(Overlay {
+                    object: repo.object_at(&tree, &format!("promoted/{tree_path}"))?,
+                    path: tree_path,
+                });
+            }
             // promotions.json mirrors the saved index inside the chain
             let listing = serde_json::to_string_pretty(&saved)?;
             let blob = repo.hash_blob(listing.as_bytes())?;
@@ -669,6 +701,29 @@ fn manual_plan(
     plan
 }
 
+/// The permission bits of captured regular files that git cannot record
+/// (anything but `0644` and `0755`), so a restore can put them back.
+#[cfg(unix)]
+fn file_modes(walk: &super::tracked::Walk) -> BTreeMap<String, u32> {
+    use std::os::unix::fs::PermissionsExt;
+    walk.files
+        .keys()
+        .filter_map(|path| {
+            let meta = std::fs::symlink_metadata(path).ok()?;
+            if !meta.is_file() {
+                return None;
+            }
+            let mode = meta.permissions().mode() & 0o777;
+            (mode != 0o644 && mode != 0o755).then(|| (display_path(path), mode))
+        })
+        .collect()
+}
+
+#[cfg(not(unix))]
+fn file_modes(_walk: &super::tracked::Walk) -> BTreeMap<String, u32> {
+    BTreeMap::new()
+}
+
 fn changes_from(
     repo: &HistoryRepo,
     from: Option<&str>,
@@ -800,6 +855,7 @@ pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint 
             reason: None,
             roots: vec![],
             coverage: Default::default(),
+            modes: Default::default(),
         },
         changes: Changes::default(),
         operation: None,

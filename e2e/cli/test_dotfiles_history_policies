@@ -87,6 +87,48 @@ echo hand2 >~/.config/other/state.json
 assert_succeed "mise bootstrap dotfiles save --description unrelated"
 assert "$snapshot_of latest .config/other/state.json" "hand"
 
+# a saved deletion is a saved absence, not a fresh start: the recreated file
+# stays unsaved until the user saves it again
+rm ~/.config/other/state.json
+assert_succeed "mise bootstrap dotfiles save ~/.config/other/state.json"
+assert "jq -r '.[\"~/.config/other/state.json\"].absent' '$MISE_STATE_DIR/history/index/saved.json'" "true"
+assert_fail "$snapshot_of latest .config/other/state.json"
+echo recreated >~/.config/other/state.json
+assert_succeed "mise bootstrap dotfiles save --description unrelated-again"
+assert_fail "$snapshot_of latest .config/other/state.json"
+assert_succeed "mise bootstrap dotfiles save ~/.config/other/state.json"
+assert "$snapshot_of latest .config/other/state.json" "recreated"
+
+# naming one child of a manual-save directory promotes that child only
+mkdir -p ~/.config/manual-dir
+echo a1 >~/.config/manual-dir/a
+echo b1 >~/.config/manual-dir/b
+cat <<'EOF2' >>"$MISE_CONFIG_DIR/config.toml"
+"~/.config/manual-dir" = { mode = "track", autosave = false }
+EOF2
+assert_succeed "mise bootstrap dotfiles save --description manual-dir"
+assert "$snapshot_of latest .config/manual-dir/b" "b1"
+echo a2 >~/.config/manual-dir/a
+echo b2 >~/.config/manual-dir/b
+assert_succeed "mise bootstrap dotfiles save ~/.config/manual-dir/a"
+assert "$snapshot_of latest .config/manual-dir/a" "a2"
+assert "$snapshot_of latest .config/manual-dir/b" "b1"
+assert_succeed "mise bootstrap dotfiles save --description unrelated-dir"
+assert "$snapshot_of latest .config/manual-dir/a" "a2"
+assert "$snapshot_of latest .config/manual-dir/b" "b1"
+
 # a template's rendered output is tracked locally and never shared
 assert "mise bootstrap dotfiles history show latest --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.gitconfig\") | \"\\(.mode) \\(.share) \\(.backup)\"'" "template false false"
 assert_contains "mise bootstrap dotfiles history show latest --files" "~/.gitconfig"
+
+# pruning compacts the promotion chain, so a promoted version no retained
+# checkpoint holds is freed instead of staying reachable forever
+v1="$(printf 'v1\n' | git --git-dir="$repo" hash-object --stdin)"
+assert_succeed "git --git-dir='$repo' cat-file -e $v1"
+assert "git --git-dir='$repo' rev-list --count refs/promoted | awk '{print (\$1 > 1)}'" "1"
+echo final >~/.config/app/state.json
+assert_succeed "MISE_HISTORY_KEEP_COUNT=1 mise bootstrap dotfiles save ~/.config/app/state.json"
+assert "$count" "1"
+assert "git --git-dir='$repo' rev-list --count refs/promoted" "1"
+assert_fail "git --git-dir='$repo' cat-file -e $v1"
+assert "$snapshot_of latest .config/app/state.json" "final"

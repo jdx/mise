@@ -293,6 +293,11 @@ pub(crate) struct TreeInfo {
     pub reason: Option<String>,
     pub roots: Vec<RootRecord>,
     pub coverage: Coverage,
+    /// Unix permission bits (`0o600`, `0o700`, …) of captured regular files
+    /// whose mode is not one git records (`0644`, `0755`), by display path,
+    /// so a restore puts a private file back private.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub modes: BTreeMap<String, u32>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -601,6 +606,11 @@ pub(crate) struct SavedRecord {
     pub trigger: Trigger,
     /// The checkpoint recorded together with the promotion.
     pub checkpoint: String,
+    /// The saved version is "absent": the deletion was saved explicitly. A
+    /// file recreated afterwards stays unsaved until the user saves it again,
+    /// unlike a path that was never promoted.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub absent: bool,
 }
 
 pub(crate) fn saved_index_in(state_dir: &Path) -> PathBuf {

@@ -5,7 +5,7 @@ use eyre::{Result, bail};
 use crate::file::display_path;
 use crate::system::history::checkpoint::{Draft, Outcome};
 use crate::system::history::store::{DescriptionSource, Trigger};
-use crate::system::history::tracked::normalize;
+use crate::system::history::tracked::normalize_target;
 
 /// Save a checkpoint of the tracked files now
 ///
@@ -70,9 +70,17 @@ impl DotfilesSave {
         if !self.paths.is_empty() {
             let walk = tracked.walk()?;
             for path in &self.paths {
-                let path = normalize(path);
+                let path = normalize_target(path);
                 let captured = walk.files.keys().any(|file| file.starts_with(&path));
                 if !captured {
+                    // saving a deleted manual-save path saves the deletion
+                    let deletion = tracked
+                        .entry_for(&path)
+                        .is_some_and(|entry| !entry.policy.autosave)
+                        && std::fs::symlink_metadata(&path).is_err();
+                    if deletion {
+                        continue;
+                    }
                     let reason = if tracked.entry_for(&path).is_some() {
                         "it is excluded, missing, or omitted from capture"
                     } else {
@@ -83,7 +91,11 @@ impl DotfilesSave {
             }
         }
         let mut draft = Draft::new(trigger);
-        draft.explicit_paths = self.paths.iter().map(|path| normalize(path)).collect();
+        draft.explicit_paths = self
+            .paths
+            .iter()
+            .map(|path| normalize_target(path))
+            .collect();
         draft.description = self.description.clone();
         draft.description_source = Some(if trigger == Trigger::Agent {
             DescriptionSource::Agent
