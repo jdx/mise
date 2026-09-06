@@ -351,6 +351,11 @@ installs the history watcher like any other user service. With `--dry-run` the
 target shows that plan (the files it would write, and any held for a decision),
 records no connection, and keeps no fetched branch:
 
+Tracking-enabled setup repositories are experimental. Before using one,
+install mise on the target if necessary and run `mise settings experimental=true`
+there. Enabling experimental locally does not enable it on the remote host.
+Ordinary repository-based bootstrap does not require this opt-in.
+
 ```sh
 mise bootstrap remote --host devbox --install-mise --from-git jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles

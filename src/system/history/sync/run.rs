@@ -911,7 +911,7 @@ mod status_tests {
     }
 
     #[test]
-    fn an_older_record_loads_without_the_failure_run() {
+    fn omitted_failure_fields_default_to_no_failures() {
         let status: SyncStatus = serde_json::from_str("{}").unwrap();
         assert_eq!(status.failing_since, None);
         assert_eq!(status.consecutive_failures, 0);
