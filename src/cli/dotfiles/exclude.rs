@@ -15,6 +15,7 @@ pub(crate) struct DotfilesExclude {
 
 impl DotfilesExclude {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         super::paths::edit_exclude(&self.glob, true)
     }
 }
@@ -31,6 +32,7 @@ pub(crate) struct DotfilesInclude {
 
 impl DotfilesInclude {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         super::paths::edit_exclude(&self.glob, false)
     }
 }

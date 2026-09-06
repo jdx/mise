@@ -874,6 +874,13 @@ async fn stop_disabled(capture: &mut Capture, tracked: &TrackedSet) {
     capture
         .out
         .emit("disabled", "history was disabled; stopping", json!({}));
+    if !Settings::get().experimental {
+        // Keep pending work for a later explicit opt-in, without taking a
+        // final checkpoint after permission to use tracking was withdrawn.
+        capture.persist_schedule();
+        capture.write_health();
+        return;
+    }
     finish(capture, tracked, Restart::Final).await;
 }
 

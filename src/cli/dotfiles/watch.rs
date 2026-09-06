@@ -2,7 +2,7 @@ use eyre::Result;
 
 use crate::system::history::watch::runtime::{self, WatchOptions};
 
-/// Save tracked files as they change
+/// Save tracked files as they change (experimental)
 ///
 /// Runs in the foreground: installs filesystem watches for every autosaved
 /// tracked entry, saves a checkpoint once a changed file has been quiet for

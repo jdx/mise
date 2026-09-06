@@ -707,7 +707,7 @@ better tracked with `--no-autosave` and saved explicitly.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <GLOB> help="A glob such as `~/.config/hypr/plugins/**`"
         }
-        cmd history help="Browse the checkpoints of your dotfiles" effect=read {
+        cmd history help="Browse the checkpoints of your dotfiles (experimental)" effect=read {
             long_help #"""
 Browse the checkpoints of your dotfiles (experimental)
 
@@ -944,9 +944,9 @@ existing checkpoints are left exactly as they are.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PATH>… help="Paths to stop tracking" var=#true
         }
-        cmd watch help="Save tracked files as they change" effect=write {
+        cmd watch help="Save tracked files as they change (experimental)" effect=write {
             long_help #"""
-Save tracked files as they change
+Save tracked files as they change (experimental)
 
 Runs in the foreground: installs filesystem watches for every autosaved
 tracked entry, saves a checkpoint once a changed file has been quiet for

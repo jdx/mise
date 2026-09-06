@@ -254,7 +254,7 @@ Reverse a rollback or undo
 Stop tracking a file or directory
 .TP
 \fBbootstrap dotfiles watch\fR
-Save tracked files as they change
+Save tracked files as they change (experimental)
 .TP
 \fBbootstrap files\fR
 Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
@@ -1513,6 +1513,13 @@ Print help
 .TP
 \fB<TARGET>\fR
 Target to edit
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap dotfiles edit ~/.zshrc
+mise bootstrap dotfiles edit \-\-apply ~/.config/starship.toml
+.RE
 .SH "MISE BOOTSTRAP DOTFILES EXCLUDE"
 Never capture paths matching a glob
 
@@ -1945,7 +1952,7 @@ Print help
 \fB<PATH>\fR
 Paths to stop tracking
 .SH "MISE BOOTSTRAP DOTFILES WATCH"
-Save tracked files as they change
+Save tracked files as they change (experimental)
 
 Runs in the foreground: installs filesystem watches for every autosaved
 tracked entry, saves a checkpoint once a changed file has been quiet for

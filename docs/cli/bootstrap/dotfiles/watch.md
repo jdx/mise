@@ -5,7 +5,7 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/dotfiles/watch.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/watch.rs)
 
-Save tracked files as they change
+Save tracked files as they change (experimental)
 
 Runs in the foreground: installs filesystem watches for every autosaved
 tracked entry, saves a checkpoint once a changed file has been quiet for
