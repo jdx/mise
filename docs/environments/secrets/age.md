@@ -1,6 +1,6 @@
 # Direct age Encryption <Badge type="warning" text="experimental" />
 
-Encrypt individual environment variable values directly in `mise.toml` using [age](https://github.com/FiloSottile/age) encryption. The age tool is not required—support is built into mise.
+Encrypt individual environment variable values directly in `mise.toml` using [age](https://github.com/FiloSottile/age) encryption. Encryption and decryption are built into mise. The optional `age-keygen` command below comes from the separate age CLI.
 
 This is a simple way to store encrypted environment variables directly in `mise.toml`. Run `mise set --age-encrypt <key>=<value>` to use it. By default, mise uses your SSH key (`~/.ssh/id_ed25519` or `~/.ssh/id_rsa`) if one exists.
 
@@ -16,12 +16,19 @@ This is a simple way to store encrypted environment variables directly in `mise.
 mise settings set experimental=true
 ```
 
-2. (Optional) Generate an age key if you don't want to use your SSH key:
+2. Use an existing SSH identity, or install age and generate a dedicated identity.
+   Skip key generation if `age.txt` already contains an identity you want to keep:
 
 ```bash
-age-keygen -o ~/.config/mise/age.txt
-# Note the public key output for encryption
+mise use -g age
+mkdir -p ~/.config/mise
+mise exec -- age-keygen -o ~/.config/mise/age.txt
+# Public key: age1...
 ```
+
+The public key is a **recipient**: share it with people who need to encrypt for
+you. `age.txt` contains the private **identity** needed to decrypt; keep it outside
+the repository.
 
 3. Encrypt a value:
 
@@ -31,7 +38,7 @@ mise set --age-encrypt --prompt DB_PASSWORD
 ```
 
 ::: warning
-Use `--prompt` to avoid accidentally exposing the value in your shell history. It is optional, though: you can also run `mise set --age-encrypt DB_PASSWORD="password123"`.
+Use `--prompt` so the plaintext does not become part of the command or shell history.
 :::
 
 4. Values are stored encrypted in `mise.toml` as an age directive:
@@ -41,11 +48,15 @@ Use `--prompt` to avoid accidentally exposing the value in your shell history. I
 DB_PASSWORD = { age = { value = "<base64>" } }
 ```
 
-5. Decryption happens automatically:
+5. Run a command or task that needs the value. mise decrypts it before starting the process:
 
 ```bash
-mise env  # Variables are decrypted automatically
+# Bash example: checks availability without printing the password
+mise exec -- bash -c 'test -n "$DB_PASSWORD" && echo "DB_PASSWORD is available"'
 ```
+
+`mise env` and `mise set DB_PASSWORD` print the decrypted value. Use them only when
+that plaintext output is intended; see [redaction](/environments/#redactions).
 
 ## CLI flags
 
@@ -59,7 +70,8 @@ If no recipients are provided explicitly, mise tries the defaults (see below).
 
 ## Storage format
 
-Encrypted values are stored as base64 along with a `format` field:
+The stored payload is base64-encoded ciphertext, not an encoded plaintext secret.
+The `format` field identifies the payload representation:
 
 - `format = "raw"` — uncompressed ciphertext (typically for small values)
 - `format = "zstd"` — zstd-compressed ciphertext (used when ciphertext > 1KB)

@@ -1,10 +1,11 @@
 # Templates
 
-Templates in mise provide a powerful way to configure different aspects of
-your environment and project settings.
+Use Tera expressions to derive configuration values from the project directory,
+environment, or [`[vars]`](/configuration/vars.html). mise renders those expressions
+when it resolves configuration or prepares a task.
 
-A template is a string that contains variables, expressions, and control structures.
-When rendered, the template engine (`tera`) replaces the variables with their values.
+This page covers string templates. For reusable task definitions with `extends`,
+see [Task Templates](/tasks/templates.html).
 
 You can define and use templates in the following locations:
 
@@ -19,7 +20,7 @@ Here is an example of a `mise.toml` file that uses templates:
 
 ```toml
 [env]
-PROJECT_NAME = "{{ cwd | basename }}"
+PROJECT_NAME = "{{ config_root | basename }}"
 TERRAFORM_VERSION = "1.0.0"
 
 [tools]
@@ -29,7 +30,9 @@ terraform = "{{ env.TERRAFORM_VERSION }}"
 node = "{{ get_env(name='NODE_VERSION', default='20') }}"
 ```
 
-You will find more examples in the [cookbook](./mise-cookbook/index.md).
+`config_root` stays at the project root when you run mise from a subdirectory;
+`cwd` follows the invocation directory. Use the former for project-relative paths.
+See the [cookbook](./mise-cookbook/index.md) for recipes.
 
 ## Template Rendering
 
@@ -226,7 +229,10 @@ specification (see [Task Arguments](/tasks/task-arguments#usage-field)):
 
 The keys are the argument/flag names as written in the usage spec. If the name
 contains `-`, use bracket access, e.g. <span v-pre>`{{ usage["dry-run"] }}`</span>.
-Examples:
+For a POSIX shell, quote string values before inserting them into a command.
+Double quotes around an unescaped template expression do not prevent its value
+from becoming shell syntax. This example uses `quote` and converts booleans to
+strings explicitly:
 
 ```mise-toml
 [tasks.deploy]
@@ -236,11 +242,11 @@ flag "-v --verbose" help="Enable verbose output"
 arg "[tags]" var=#true
 '''
 run = '''
-echo "env={{ usage.environment }}"
-echo "verbose={{ usage.verbose }}"
-echo "tag count={{ usage.tags | length }}"
+printf 'env=%s\n' {{ usage.environment | quote }}
+printf 'verbose=%s\n' {{ usage.verbose | str | quote }}
+printf 'tag count=%s\n' {{ usage.tags | length | str | quote }}
 {% for tag in usage.tags %}
-  echo "tag={{ tag }}"
+  printf 'tag=%s\n' {{ tag | quote }}
 {% endfor %}
 '''
 ```
@@ -282,9 +288,10 @@ mise offers many useful functions in addition to tera's built-ins.
 
 ##### General Functions
 
-These functions are available in all tasks and always behave the same way regardless
-of the task definition they are used in. In other words, their return values are consistent
-across task definitions.
+These helpers are available in regular configuration and task templates. Their
+results depend on the rendering context: `exec()` observes the process environment
+and working directory, and `read_file()` observes the file's current contents.
+See the [early-init limitations](#miserc-template-support) for `.miserc.toml`.
 
 - `exec(command) -> String` – Runs a shell command and returns its output as a string.
 - `get_env(name, [default]) -> String` – Returns the original process environment
@@ -312,10 +319,7 @@ template functions. Keep commands passed to `exec()` free of side effects.
 
 ##### Task-Specific Functions
 
-These functions are task-specific and behave differently depending on the task they are used
-in. In other words, their return values **_may_** (but are not guaranteed to) be consistent
-across executions of a given _task_, and should be expected to differ across
-task definitions.
+These helpers use the current task's configuration and execution state.
 
 For example, `task_source_files()` returns a different set of file paths depending on the [`sources`](https://mise.jdx.dev/tasks/task-configuration.html#sources) of the task it's called from.
 
@@ -340,7 +344,7 @@ For example, `task_source_files()` returns a different set of file paths dependi
 
 ```toml
 # Using exec to get command output
-[alias.node.versions]
+[tool_alias.node.versions]
 current = "{{ exec(command='node --version') }}"
 
 # Using read_file to include content from a file
@@ -352,7 +356,7 @@ VERSION = "{{ read_file(path='VERSION') | trim }}"
 sources = ["src/**/*.ts", "package.json"]
 run = '''
 {% for file in task_source_files() %}
-  echo "Processing: {{ file }}"
+  printf 'Processing: %s\n' {{ file | quote }}
 {% endfor %}
 '''
 
@@ -397,9 +401,9 @@ Some filters:
 - `str | trim_start -> String` – Removes leading whitespace.
 - `str | trim_end -> String` – Removes trailing whitespace.
 - `str | truncate -> String` – Truncates a string to the indicated length.
-- `str | first -> String` – Returns the first element in an array or string.
-- `str | last -> String` – Returns the last element in an array or string.
-- `str | join(sep) -> String` – Joins an array of strings with a separator,
+- `array | first -> Value` – Returns the first element in an array.
+- `array | last -> Value` – Returns the last element in an array.
+- `array | join(sep) -> String` – Joins an array of strings with a separator,
   such as <span v-pre>`{{ ["a", "b", "c"] | join(sep=", ") }}`</span>
   to produce `a, b, c`.
 - `str | length -> usize` – Returns the length of a string or array.
@@ -533,7 +537,7 @@ only information available at the OS level can be used.
 - `config_root: PathBuf` – Directory containing the `.miserc.toml` file
 - `cwd: PathBuf` – Current working directory
 - `xdg_cache_home`, `xdg_config_home`, `xdg_data_home`, `xdg_state_home` – XDG base directories
-- All [functions](#functions): `arch()`, `os()`, `os_family()`, `num_cpus()`, `choice()`, etc.
+- Context-independent [functions](#functions), including `arch()`, `os()`, `os_family()`, `num_cpus()`, and `choice()`; exclusions are listed below.
 - All [filters](#filters): `absolute`, `dirname`, `basename`, `hash`, etc.
 
 ### Not available

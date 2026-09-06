@@ -1,15 +1,46 @@
 # Config Environments
 
-It's possible to have separate `mise.toml` files in the same directory for different
-environments like `development` and `production`. To enable this, set `MISE_ENV` to an
-environment name using one of these methods:
+Config environments select additional files such as `mise.development.toml` and
+`mise.production.toml`. The base `mise.toml` still loads, and the selected file
+overrides values at the same directory level.
+
+For variables passed to your application, use [`[env]`](/environments/). Selecting
+a mise config environment does not set application variables such as `NODE_ENV`
+unless you define them.
+
+## Try an environment
+
+```toml [mise.toml]
+[env]
+APP_MODE = "development"
+```
+
+```toml [mise.production.toml]
+[env]
+APP_MODE = "production"
+```
+
+```sh
+mise exec -- sh -c 'echo "$APP_MODE"'                # development
+mise -E production exec -- sh -c 'echo "$APP_MODE"'  # production
+mise -E production config                          # inspect loaded files
+```
+
+## Select environments
+
+Select an environment using one of these methods:
 
 - CLI flag: `-E development` or `--env development`
 - Environment variable: `MISE_ENV=development`
 - `.miserc.toml` file: `env = ["development"]`
 
-mise then looks for a `mise.{MISE_ENV}.toml` file in the current directory,
-parent directories, and the `MISE_CONFIG_DIR` directory.
+mise looks for matching files throughout the configuration hierarchy. Project
+files use names such as `mise.production.toml`; the global config uses
+`config.production.toml` in `MISE_CONFIG_DIR`.
+
+Multiple environments can be specified, for example `mise -E ci,test run build`.
+Within the same directory, the last environment takes precedence. Use
+`mise -E ci,test config` to inspect the combined selection.
 
 ## Setting MISE_ENV in .miserc.toml
 
@@ -52,6 +83,8 @@ File locations searched (in order of precedence):
 
 `MISE_ENV` cannot be set in `mise.toml` because it determines which config
 files are loaded in the first place.
+
+## Local overrides
 
 mise also looks for "local" files like `mise.local.toml` and `mise.{MISE_ENV}.local.toml`
 in the current directory and parent directories.
@@ -105,8 +138,6 @@ Use `mise config` to see which files are being used.
 The rules for which file is written to are different, because one file ultimately has to be chosen. See
 the docs for [`mise use`](/cli/use.html) for more information.
 
-Multiple environments can be specified, e.g. `MISE_ENV=ci,test`, with the last one taking precedence.
-
 ## Platform environments
 
 With the [`auto_env` setting](/configuration/settings.html#auto_env) enabled, mise automatically
@@ -139,12 +170,10 @@ that would be newly loaded. To control the behavior explicitly:
 
 ```toml
 # .miserc.toml
-auto_env = true # adopt the new behavior now
-# or
 auto_env = false # keep the old behavior and silence the warning
 ```
 
-Alternatively, set `MISE_AUTO_ENV=true` / `MISE_AUTO_ENV=false`. Like `MISE_ENV`, this is an early-init
-setting: it must be set in `.miserc.toml` or via the environment variable — setting it in
-`mise.toml` has no effect because config file discovery has already happened by the time
-`mise.toml` is read.
+Set `auto_env = true` instead to adopt the new behavior now. Alternatively, set
+`MISE_AUTO_ENV=true` / `MISE_AUTO_ENV=false`. Like `MISE_ENV`, this is an early-init setting: it must
+be set in `.miserc.toml` or via the environment variable — setting it in `mise.toml` has no effect
+because config file discovery has already happened by the time `mise.toml` is read.
