@@ -10,6 +10,7 @@ Describe 'shim_exec_recursion' {
     BeforeAll {
         $script:originalPath = Get-Location
         $script:originalEnvPath = $env:PATH
+        $script:originalTrustedConfigPaths = [Environment]::GetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', 'Process')
         Set-Location TestDrive:
         $env:MISE_TRUSTED_CONFIG_PATHS = $TestDrive
 
@@ -41,10 +42,35 @@ echo SHIM_NOT_REAL
 
     AfterAll {
         Remove-Item -Path (Join-Path $script:shimPath "mytool.cmd") -ErrorAction SilentlyContinue
-        Remove-Item -Path $script:toolDir -Recurse -ErrorAction SilentlyContinue
         Set-Location $script:originalPath
         $env:PATH = $script:originalEnvPath
-        Remove-Item -Path Env:\MISE_TRUSTED_CONFIG_PATHS -ErrorAction SilentlyContinue
+        if ($null -eq $script:originalTrustedConfigPaths) {
+            Remove-Item -Path Env:\MISE_TRUSTED_CONFIG_PATHS -ErrorAction SilentlyContinue
+        } else {
+            [Environment]::SetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', $script:originalTrustedConfigPaths, 'Process')
+        }
+
+        # Windows can briefly retain an executable's file lock after its output
+        # stream closes. Wait for exclusive write access without changing files,
+        # then leave fixture removal to Pester's TestDrive teardown.
+        foreach ($executable in Get-ChildItem -LiteralPath $TestDrive -Recurse -File -Filter '*.exe') {
+            for ($attempt = 0; ; $attempt++) {
+                try {
+                    $stream = [System.IO.File]::Open($executable.FullName, 'Open', 'ReadWrite', 'None')
+                    $stream.Dispose()
+                    break
+                } catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+                    # File.Open wraps the Windows error in MethodInvocationException.
+                    # Mapped executables can report ERROR_ACCESS_DENIED (5) as well
+                    # as ERROR_SHARING_VIOLATION (32) / ERROR_LOCK_VIOLATION (33).
+                    $errorCode = $_.Exception.GetBaseException().HResult -band 0xffff
+                    if ($errorCode -notin @(5, 32, 33) -or $attempt -ge 20) {
+                        throw
+                    }
+                    Start-Sleep -Milliseconds 100
+                }
+            }
+        }
     }
 
     It 'mise x resolves real tool, not shim' {
