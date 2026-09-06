@@ -46,6 +46,8 @@ wait_until 150 "grep -q '\"event\":\"started\"' a.log"
 # interval: well under the 15-second first fetch, reconcile ticks or not
 echo 'bind = SUPER, Q, exec, alacritty' >~/.config/hypr/bindings.lua
 wait_until 50 "git --git-dir=$origin show main:tracked/home/.config/hypr/bindings.lua | grep -q alacritty"
-assert_contains "cat a.log" '"published":"'
+# The remote ref becomes visible before the sync's remaining work and its
+# completion event finish. Wait for the event rather than racing that work.
+wait_until 50 "grep -q '\"published\":\"' a.log"
 # reconciliation did run meanwhile (each tick reloads the configuration)
 assert "grep -c '\"reason\":\"reconcile\"' a.log | awk '{print (\$1 >= 2) ? \"yes\" : \"no\"}'" "yes"
