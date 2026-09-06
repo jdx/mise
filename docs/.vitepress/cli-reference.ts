@@ -1,22 +1,18 @@
-// Add website navigation and normalize presentation after usage generates docs/cli.
+// Add mise-specific website navigation after usage generates docs/cli.
 // Command prose, arguments, flags, and visibility still come from mise.usage.kdl.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import MarkdownIt from "markdown-it";
 
 export interface Command {
   full_cmd: string[];
   usage: string;
   help?: string;
-  subcommand_required?: boolean;
   hide: boolean;
   subcommands: Record<string, Command>;
-  mounts: { run: string }[];
 }
 
-const markdown = new MarkdownIt();
 const docsDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const navigationMarker = "<!-- generated reference navigation -->";
 
@@ -159,55 +155,6 @@ const categories = [
   ["Integrations and community", "mcp skills patrons sponsors"],
 ];
 
-export function synopsis(cmd: Command): string {
-  let usage = cmd.usage;
-  if (Object.keys(cmd.subcommands).length && !cmd.subcommand_required) {
-    usage = usage.replace("<SUBCOMMAND>", "[SUBCOMMAND]");
-  }
-  // The completion spec replaces run's arguments with a dynamic project-task mount.
-  if (
-    cmd.mounts.some((mount) => mount.run === "mise tasks --usage") &&
-    !usage.includes("[TASK]")
-  ) {
-    usage += " [TASK] [ARGS]…";
-  }
-  return `mise ${usage}`.trim();
-}
-
-/** Fence only real indented code tokens, preserving lists and existing fences. */
-export function fenceCodeBlocks(source: string): string {
-  const lines = source.split("\n");
-  const blocks = markdown
-    .parse(source, {})
-    .filter((token) => token.type === "code_block");
-  for (const token of blocks.reverse()) {
-    const [start, end] = token.map!;
-    const content = token.content.replace(/\n$/, "");
-    const contentLines = content.split("\n");
-    const firstContentLine = contentLines.findIndex((line) => line.trim());
-    const sourceLine = lines[start + Math.max(0, firstContentLine)] ?? "";
-    const sourceIndent = sourceLine.match(/^ */)?.[0].length ?? 0;
-    const contentIndent =
-      contentLines[Math.max(0, firstContentLine)]?.match(/^ */)?.[0].length ??
-      0;
-    const indent = Math.max(0, sourceIndent - 4 - contentIndent);
-    const prefix = " ".repeat(indent);
-    const longest = Math.max(
-      2,
-      ...[...content.matchAll(/`+/g)].map((match) => match[0].length),
-    );
-    const fence = "`".repeat(longest + 1);
-    lines.splice(
-      start,
-      end - start,
-      prefix + fence,
-      ...contentLines.map((line) => prefix + line),
-      prefix + fence,
-    );
-  }
-  return lines.join("\n");
-}
-
 export function commandIndex(root: Command): string {
   const remaining = new Map(
     Object.entries(root.subcommands).filter(([, cmd]) => !cmd.hide),
@@ -257,7 +204,7 @@ function main() {
       throw new Error(`Missing guide: ${label} (${url})`);
   }
   let count = 0;
-  for (const [name, cmd] of commands) {
+  for (const name of commands.keys()) {
     const file = resolve(
       docsDir,
       "cli",
@@ -266,17 +213,6 @@ function main() {
     if (!existsSync(file)) continue; // usage excludes hidden commands' own pages.
     let page = readFileSync(file, "utf8").split(navigationMarker)[0].trimEnd();
     if (name) {
-      page = page.replace(
-        /^- \*\*Usage:\*\* `[^\n]+`/m,
-        `- **Usage:** \`${synopsis(cmd)}\``,
-      );
-      // When the first child is hidden, usage omits the subcommand heading.
-      if (!page.includes("## Subcommands")) {
-        page = page.replace(
-          /\n- \[`mise [^\n]+\]\(\/cli\//,
-          (match) => "\n\n## Subcommands\n" + match,
-        );
-      }
       const parts = name.split(" ");
       let guide: [string, string] | undefined;
       for (let i = parts.length; i > 0 && !guide; i--)
@@ -288,8 +224,10 @@ function main() {
         !existsSync(resolve(docsDir, "cli", parent.join("/") + ".md"))
       )
         parent.pop();
+      const parentUsage =
+        commands.get(parent.join(" "))?.usage ?? parent.join(" ");
       const parentLink = parent.length
-        ? `[\`mise ${parent.join(" ")}\`](/cli/${parent.join("/")}.html)`
+        ? `[\`mise ${parentUsage}\`](/cli/${parent.join("/")}.html)`
         : "[All commands](/cli/)";
       const hiddenParent = parts
         .slice(0, -1)
@@ -301,7 +239,7 @@ function main() {
           .replace("bootstrap systemd", "bootstrap linux systemd-units")
           .replace("bootstrap macos-defaults", "bootstrap macos defaults");
         if (canonical !== name && commands.has(canonical))
-          compatibility = `\nThis is a compatibility spelling. Use [\`mise ${canonical}\`](/cli/${canonical.replaceAll(" ", "/")}.html) in new scripts.\n`;
+          compatibility = `\nThis is a compatibility spelling. Use [\`mise ${commands.get(canonical)!.usage}\`](/cli/${canonical.replaceAll(" ", "/")}.html) in new scripts.\n`;
       }
       page += `\n\n${navigationMarker}\n${compatibility}\n## Related documentation\n\n- [${guide[0]}](${guide[1]}).\n- ${parentLink}.\n- [Global flags and argument syntax](/cli/#global-flags).\n`;
     } else {
@@ -323,17 +261,6 @@ function main() {
         "## Global Flags\n\nThese flags provide shared context. A command can define its own flag with the same\nname, so consult that command's page for placement and meaning. Effect labels describe\nthe command's intended operation; configuration evaluation, caches, and required tool\ninstallation can still have side effects. They are not sandbox guarantees.\n",
       );
     }
-    // Keep every linked synopsis consistent with the command's own page.
-    if (name)
-      page = page.replace(
-        /\[`mise [^\n]+?`\]\(\/cli\/([^)]*)\.(?:md|html)\)/g,
-        (match, path: string) => {
-          const child = commands.get(path.replaceAll("/", " "));
-          return child ? `[\`${synopsis(child)}\`](/cli/${path}.html)` : match;
-        },
-      );
-    page = page.replace(/^Examples:\s*$/gm, "## Examples");
-    page = fenceCodeBlocks(page);
     writeFileSync(file, page.trimEnd() + "\n");
     count++;
   }

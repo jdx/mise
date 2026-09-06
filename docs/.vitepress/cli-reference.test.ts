@@ -1,12 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import MarkdownIt from "markdown-it";
-import {
-  commandIndex,
-  fenceCodeBlocks,
-  synopsis,
-  type Command,
-} from "./cli-reference";
+import { commandIndex, type Command } from "./cli-reference";
 
 function command(usage: string, overrides: Partial<Command> = {}): Command {
   return {
@@ -14,95 +8,9 @@ function command(usage: string, overrides: Partial<Command> = {}): Command {
     usage,
     hide: false,
     subcommands: {},
-    mounts: [],
     ...overrides,
   };
 }
-
-test("synopses distinguish optional subcommands and dynamic task arguments", () => {
-  const config = command("config <SUBCOMMAND>", {
-    subcommands: { ls: command("config ls") },
-  });
-  assert.equal(synopsis(config), "mise config [SUBCOMMAND]");
-  assert.equal(
-    synopsis({ ...config, subcommand_required: true }),
-    "mise config <SUBCOMMAND>",
-  );
-  assert.equal(
-    synopsis(
-      command("run [FLAGS]", { mounts: [{ run: "mise tasks --usage" }] }),
-    ),
-    "mise run [FLAGS] [TASK] [ARGS]…",
-  );
-  assert.equal(
-    synopsis(
-      command("run [FLAGS] [TASK] [ARGS]…", {
-        mounts: [{ run: "mise tasks --usage" }],
-      }),
-    ),
-    "mise run [FLAGS] [TASK] [ARGS]…",
-  );
-  assert.equal(synopsis(command("use <TOOL>…")), "mise use <TOOL>…");
-});
-
-test("fencing preserves nested lists and fenced TOML 1.1 and JSON examples", () => {
-  const source = [
-    "- First phase",
-    "  - Nested description",
-    "    continuation of the description",
-    "",
-    "```toml",
-    "node = {",
-    '  version = "22", # TOML 1.1 comment and trailing comma',
-    "}",
-    "```",
-    "",
-    "```json",
-    "{",
-    '  "tags": [',
-    '    {"kind": "path"}',
-    "  ]",
-    "}",
-    "```",
-    "",
-    "    mise run build",
-    "    mise exec -- node -v",
-    "",
-  ].join("\n");
-  const output = fenceCodeBlocks(source);
-  assert.equal(
-    new MarkdownIt().render(output),
-    new MarkdownIt().render(source),
-  );
-  assert.ok(output.includes("```\nmise run build\nmise exec -- node -v\n```"));
-  assert.equal(fenceCodeBlocks(output), output);
-});
-
-test("code nested in a list and literal backtick fences remain code", () => {
-  const source =
-    "- Example:\n\n      literal ``` fence\n      {{ template }}\n\n- Next item\n";
-  const output = fenceCodeBlocks(source);
-  assert.equal(
-    new MarkdownIt().render(output),
-    new MarkdownIt().render(source),
-  );
-  assert.ok(output.includes("````"));
-});
-
-test("nested code preserves blank first lines and intentional indentation", () => {
-  const source =
-    "- Example:\n\n      \n        intentionally indented\n      plain\n\n- Next item\n";
-  const output = fenceCodeBlocks(source);
-  assert.equal(
-    new MarkdownIt().render(output),
-    new MarkdownIt().render(source),
-  );
-  assert.ok(
-    output.includes(
-      "      \n  ```\n    intentionally indented\n  plain\n  ```",
-    ),
-  );
-});
 
 test("command index hides compatibility commands and includes uncategorized additions", () => {
   const root = command("", {

@@ -71,24 +71,6 @@ impl InstallInto {
         tv.install_path = Some(install_path.clone());
         tv.install_path_is_exact = true;
         tv.install_path_is_explicit = true;
-        // Serialize every `install-into` writer targeting this destination,
-        // including different tools or versions whose ordinary tool-version
-        // locks would not overlap. Keep the lock through confirmation and the
-        // backend replacement so no cooperating writer can populate the path
-        // between the occupancy check and deletion.
-        let lock_path = install_path.clone();
-        let lock_display_path = install_path.clone();
-        let _destination_lock = tokio::task::spawn_blocking(move || {
-            crate::lock_file::LockFile::new(&lock_path)
-                .with_callback(move |_| {
-                    debug!(
-                        "waiting for install-into destination lock on {}",
-                        display_path(&lock_display_path)
-                    );
-                })
-                .lock()
-        })
-        .await??;
         // install-into force-reinstalls, which uninstalls (rm -rf) whatever
         // already exists at the install path. Check immediately before the
         // install performs that deletion (rather than at the start of `run`) so
