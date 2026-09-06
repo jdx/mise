@@ -351,6 +351,11 @@ impl SingleReport for TtyToolProgress {
         self.sync_child();
     }
 
+    fn set_items(&self, done: u64, total: u64) {
+        self.with_tool(|tool| tool.set_items(done, total));
+        self.sync_child();
+    }
+
     fn println(&self, message: String) {
         let prefix = self.state.lock().unwrap().tools[self.index].prefix.clone();
         for line in message.lines() {

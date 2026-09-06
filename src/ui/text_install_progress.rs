@@ -46,11 +46,14 @@ pub(super) struct Tool {
     pub(super) fraction: f64,
 }
 
-/// Byte progress for the operation currently running.
+/// Progress through the operation currently running: bytes of a download, or
+/// whole items when a package manager counts packages instead.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Transfer {
     pub(super) done: u64,
     pub(super) total: u64,
+    /// Bytes get sizes and a rate; items get neither.
+    pub(super) bytes: bool,
     started: Instant,
     /// Bytes already on disk when this transfer began, from a resumed
     /// download. Excluded from the rate so a resume does not report a
@@ -63,6 +66,17 @@ impl Transfer {
         Self {
             done: 0,
             total,
+            bytes: true,
+            started: Instant::now(),
+            resumed_at: 0,
+        }
+    }
+
+    fn items(done: u64, total: u64) -> Self {
+        Self {
+            done,
+            total,
+            bytes: false,
             started: Instant::now(),
             resumed_at: 0,
         }
@@ -76,6 +90,9 @@ impl Transfer {
     /// snapshot only lands every few seconds, so a sampled rate would report
     /// whichever moment it happened to catch.
     fn rate(&self, now: Instant) -> Option<f64> {
+        if !self.bytes {
+            return None;
+        }
         let seconds = now.saturating_duration_since(self.started).as_secs_f64();
         let moved = self.done.saturating_sub(self.resumed_at);
         (seconds > 0.5 && moved > 0).then(|| moved as f64 / seconds)
@@ -230,6 +247,14 @@ impl Tool {
         self.detail = (!detail.trim().is_empty()).then_some(detail);
     }
 
+    /// Whole-item progress through the current operation. Replaces whatever
+    /// transfer was there: a package manager that switches from resolving to
+    /// fetching reports a new tally against a new total.
+    pub(super) fn set_items(&mut self, done: u64, total: u64) {
+        self.transfer = Some(Transfer::items(done, total));
+        self.advance();
+    }
+
     pub(super) fn set_skipped(&mut self, skipped: bool) {
         self.skipped = skipped;
     }
@@ -244,14 +269,23 @@ impl Tool {
     }
 
     /// `42.1/78.3 MB · 12.4 MB/s`, dropping whichever half is unknown. A server
-    /// that sends no content-length still gets a running byte count. Falls
-    /// back to non-transfer detail such as a package count.
+    /// that sends no content-length still gets a running byte count.
+    ///
+    /// Explicit detail wins over the transfer: a package manager reports its
+    /// tally through `set_detail` and drives the bar with counts, and those
+    /// counts must not be printed as bytes.
     pub(super) fn transfer_detail(&self, now: Instant) -> String {
+        if let Some(detail) = &self.detail {
+            return detail.clone();
+        }
         let Some(transfer) = self.transfer else {
-            return self.detail.clone().unwrap_or_default();
+            return String::new();
         };
         if transfer.done == 0 && transfer.total == 0 {
-            return self.detail.clone().unwrap_or_default();
+            return String::new();
+        }
+        if !transfer.bytes {
+            return format!("{}/{}", transfer.done, transfer.total);
         }
         let bytes = if transfer.total > 0 {
             format!(
@@ -736,6 +770,10 @@ impl SingleReport for TextToolProgress {
         self.with_tool(|tool| tool.set_detail(detail));
     }
 
+    fn set_items(&self, done: u64, total: u64) {
+        self.with_tool(|tool| tool.set_items(done, total));
+    }
+
     /// A child process's own output is the diagnostic value of an install log,
     /// so it stays immediate. Only the phase messages a backend generates are
     /// folded into the periodic snapshot.
@@ -810,6 +848,7 @@ mod tests {
         Transfer {
             done,
             total,
+            bytes: true,
             started,
             resumed_at: 0,
         }
@@ -981,7 +1020,24 @@ mod tests {
         let tool = &mut state.tools[0];
         tool.set_detail("32/48 pkgs".into());
         assert_eq!(tool.transfer_detail(start), "32/48 pkgs");
-        // Bytes take precedence while they are moving.
+        // Items driving the bar must not print as bytes, with or without
+        // explicit detail, and never contribute a transfer rate.
+        tool.set_items(32, 48);
+        assert_eq!(tool.transfer_detail(start), "32/48 pkgs");
+        assert_eq!(
+            tool.transfer.unwrap().rate(start + Duration::from_secs(5)),
+            None
+        );
+        tool.set_detail(String::new());
+        assert_eq!(tool.transfer_detail(start), "32/48");
+        // Items fill the current operation exactly as bytes would. (The
+        // fraction is monotonic, so this tally must not fall below the 32/48
+        // already reported above.)
+        tool.start_operations(&[1.0]);
+        tool.set_items(36, 48);
+        assert!((tool.fraction - 0.75).abs() < 1e-9, "{}", tool.fraction);
+        // Without explicit detail, the transfer is bytes.
+        tool.set_detail(String::new());
         tool.transfer = Some(transfer(500, 1000, start));
         assert_eq!(tool.transfer_detail(start), "0.5/1 kB");
     }

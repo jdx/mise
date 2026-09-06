@@ -285,6 +285,18 @@ fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
 
 #[async_trait]
 impl Backend for NPMBackend {
+    /// The embedded installer reports resolve → fetch → link through
+    /// [`AubeProgress`]; these are aube's own bar weights for those phases.
+    /// The subprocess package managers never advance operations, so for them
+    /// the bar simply waits for the worker like any plugin backend.
+    async fn install_operation_weights(
+        &self,
+        _tv: &ToolVersion,
+        _ctx: &InstallContext,
+    ) -> Vec<f64> {
+        AUBE_OPERATION_WEIGHTS.to_vec()
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Npm
     }
@@ -1106,16 +1118,17 @@ impl NPMBackend {
         // Drain events alongside the install rather than after it: the
         // reporter only enqueues (it must never wait on us while holding an
         // install worker), so nothing renders unless someone is pulling.
+        let mut progress = AubeProgress::default();
         let result = loop {
             tokio::select! {
                 res = &mut install => break res,
-                Some(event) = rx.recv() => apply_aube_event(event, ctx.pr.as_ref()),
+                Some(event) = rx.recv() => progress.apply(event, ctx.pr.as_ref()),
             }
         };
         // Events queued between the last poll and the install returning —
         // notably the terminal `Complete` snapshot.
         while let Ok(event) = rx.try_recv() {
-            apply_aube_event(event, ctx.pr.as_ref());
+            progress.apply(event, ctx.pr.as_ref());
         }
         result.map_err(|e| self.format_aube_install_error(e))?;
         Ok(())
@@ -1536,6 +1549,49 @@ fn aube_prompt_message(prompt: &aube::embed::InstallPrompt) -> String {
 /// anything fetches them. The result is a bar pinned near 15% with an ETA
 /// swinging between 5s and 30s. The package tally below is the honest number,
 /// and mise's spinner already says the work is live.
+/// Resolving fills a small leading slice, fetching most of the rest, and
+/// linking holds the tail — the shape aube's own bar uses.
+const AUBE_OPERATION_WEIGHTS: [f64; 3] = [0.15, 0.80, 0.05];
+
+/// Turns aube's event stream into the reporter's phase and progress calls.
+///
+/// Aube reports the phase on every snapshot rather than as transitions, so
+/// this remembers the last phase seen and advances the reporter's operation
+/// when it changes. One instance per install.
+#[derive(Default)]
+struct AubeProgress {
+    operation: Option<usize>,
+}
+
+impl AubeProgress {
+    fn apply(&mut self, event: aube::embed::InstallEvent, pr: &dyn SingleReport) {
+        use aube::embed::{InstallEvent, InstallPhase};
+
+        if let InstallEvent::Progress(snap) = &event {
+            // Complete sits past the last declared operation, which the model
+            // reads as "all declared work done, waiting for the worker".
+            let operation = match snap.phase {
+                Some(InstallPhase::Resolving) | None => 0,
+                Some(InstallPhase::Fetching) => 1,
+                Some(InstallPhase::Linking) => 2,
+                Some(InstallPhase::Complete) => AUBE_OPERATION_WEIGHTS.len(),
+            };
+            let current = match self.operation {
+                Some(current) => current,
+                None => {
+                    pr.start_operations_weighted(&AUBE_OPERATION_WEIGHTS);
+                    0
+                }
+            };
+            for _ in current..operation {
+                pr.next_operation();
+            }
+            self.operation = Some(operation.max(current));
+        }
+        apply_aube_event(event, pr);
+    }
+}
+
 fn apply_aube_event(event: aube::embed::InstallEvent, pr: &dyn SingleReport) {
     use aube::embed::{InstallEvent, InstallOutputLevel, InstallPhase};
 
@@ -1582,13 +1638,12 @@ fn apply_aube_event(event: aube::embed::InstallEvent, pr: &dyn SingleReport) {
                         .to_string(),
                 );
             }
-            // The phase is the message; the tally is detail, so a reporter with
-            // room for it can show the two apart and one without can fold them.
-            if detail.is_empty() {
-                pr.set_message(label.to_string());
-            } else {
-                pr.set_message(format!("{label} {detail}"));
-                pr.set_detail(detail);
+            // The phase is the message; the tally is detail. Reporters with room
+            // show them apart; those with one status line fold them back.
+            pr.set_message(label.to_string());
+            pr.set_detail(detail);
+            if total > 0 && snap.phase != Some(InstallPhase::Complete) {
+                pr.set_items(cur as u64, total as u64);
             }
         }
         // Text aube would have written to stderr itself. Warnings are the
@@ -3161,6 +3216,92 @@ pkg@1.2.0 '1.2.0'
         // Hyphen only inside build metadata (not legal semver, but be defensive)
         // — we treat it as stable since the version core has no pre-release.
         assert!(!is_semver_prerelease("1.0.0+build-5"));
+    }
+
+    /// Records the progress calls a reporter receives, in order.
+    #[derive(Debug, Default)]
+    struct ProgressRecorder(std::sync::Mutex<Vec<String>>);
+
+    impl SingleReport for ProgressRecorder {
+        fn start_operations_weighted(&self, weights: &[f64]) {
+            self.0.lock().unwrap().push(format!("start {:?}", weights));
+        }
+        fn next_operation(&self) {
+            self.0.lock().unwrap().push("next".into());
+        }
+        fn set_items(&self, done: u64, total: u64) {
+            self.0.lock().unwrap().push(format!("items {done}/{total}"));
+        }
+    }
+
+    fn snapshot(
+        phase: Option<aube::embed::InstallPhase>,
+        resolved: usize,
+        total: usize,
+        fetched: usize,
+    ) -> aube::embed::InstallEvent {
+        aube::embed::InstallEvent::Progress(aube::embed::InstallProgressSnapshot {
+            phase,
+            resolved,
+            total,
+            reused: 0,
+            downloaded: fetched,
+            downloaded_bytes: 0,
+            estimated_bytes: 0,
+        })
+    }
+
+    #[test]
+    fn aube_snapshots_drive_operations_and_item_progress() {
+        use aube::embed::InstallPhase;
+        let report = ProgressRecorder::default();
+        let mut progress = AubeProgress::default();
+
+        // The first snapshot declares the plan; resolving counts against a
+        // frontier that can still grow.
+        progress.apply(snapshot(Some(InstallPhase::Resolving), 3, 10, 0), &report);
+        progress.apply(snapshot(Some(InstallPhase::Resolving), 12, 10, 0), &report);
+        // Fetching is the next operation; the tally is packages in place.
+        progress.apply(snapshot(Some(InstallPhase::Fetching), 12, 12, 5), &report);
+        progress.apply(snapshot(Some(InstallPhase::Fetching), 12, 12, 12), &report);
+        // Skipping straight to Complete still advances past every operation,
+        // once, and reports no tally for a phase with nothing left to count.
+        progress.apply(snapshot(Some(InstallPhase::Complete), 12, 12, 12), &report);
+        progress.apply(snapshot(Some(InstallPhase::Complete), 12, 12, 12), &report);
+
+        assert_eq!(
+            *report.0.lock().unwrap(),
+            [
+                "start [0.15, 0.8, 0.05]",
+                "items 3/10",
+                "items 12/12",
+                "next",
+                "items 5/12",
+                "items 12/12",
+                "next",
+                "next",
+            ]
+        );
+    }
+
+    #[test]
+    fn aube_progress_never_walks_operations_backwards() {
+        use aube::embed::InstallPhase;
+        let report = ProgressRecorder::default();
+        let mut progress = AubeProgress::default();
+        progress.apply(snapshot(Some(InstallPhase::Linking), 4, 4, 4), &report);
+        // A late resolving snapshot must not rewind the operation.
+        progress.apply(snapshot(Some(InstallPhase::Resolving), 4, 4, 4), &report);
+        assert_eq!(
+            *report.0.lock().unwrap(),
+            [
+                "start [0.15, 0.8, 0.05]",
+                "next",
+                "next",
+                "items 4/4",
+                "items 4/4"
+            ]
+        );
     }
 
     #[test]
