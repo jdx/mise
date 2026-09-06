@@ -1768,7 +1768,7 @@ impl<'a> CmdLineRunner<'a> {
             .or(self.pr_arc.as_ref().map(|arc| arc.as_ref().as_ref()))
         {
             if !line.trim().is_empty() {
-                pr.set_message(line)
+                pr.set_process_output(line)
             }
         } else {
             let mut stdout = std::io::stdout().lock();
@@ -1816,11 +1816,12 @@ impl<'a> CmdLineRunner<'a> {
         {
             Some(pr) => {
                 error!("{} failed", self.get_program());
-                if self.on_stdout.is_none() {
+                if self.on_stdout.is_none() && !pr.shows_process_output() {
                     // Stdout was hidden behind the progress indicator
-                    // (pr.set_message) so replay it on failure. Only replay
+                    // (pr.set_process_output) so replay it on failure. Only replay
                     // stdout — stderr was already printed during execution
-                    // via pr.println.
+                    // via pr.println. Reporters that already showed stdout as it
+                    // arrived would only duplicate it here.
                     let stdout_only: String = output
                         .into_iter()
                         .filter(|(_, source)| matches!(source, OutputSource::Stdout))

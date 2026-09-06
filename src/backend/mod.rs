@@ -3366,6 +3366,10 @@ pub(crate) trait Backend: Debug + Send + Sync {
             (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
         if install_satisfied && !will_uninstall {
+            ctx.pr.finish_with_icon(
+                "already installed".into(),
+                crate::ui::progress_report::ProgressIcon::Skipped,
+            );
             return Ok(tv);
         }
 
@@ -3375,14 +3379,14 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // backend and tool-level hooks.
         ctx.dependency_context(&tv.request).await?;
 
-        // Query backend for operation count and set up progress tracking
-        let install_ops = self.install_operation_count(&tv, &ctx).await;
-        let total_ops = if will_uninstall {
-            install_ops + 1
-        } else {
-            install_ops
-        };
-        ctx.pr.start_operations(total_ops);
+        // Query backend for its operation plan and set up progress tracking
+        let mut weights = self.install_operation_weights(&tv, &ctx).await;
+        if will_uninstall {
+            // Removing the old install is bookkeeping next to fetching the new
+            // one, so it leads the plan with a small share.
+            weights.insert(0, UNINSTALL_OPERATION_WEIGHT);
+        }
+        ctx.pr.start_operations_weighted(&weights);
 
         if will_uninstall {
             self.uninstall_version_unlocked(&ctx.config, &tv, ctx.pr.as_ref(), false)
@@ -3435,7 +3439,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
         if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr
-                .finish_with_message("running custom postinstall hook".to_string());
+                .set_message("running custom postinstall hook".to_string());
             self.run_postinstall_hook(&ctx, &tv, script).await?;
         }
         ctx.pr.finish_with_message("installed".to_string());
@@ -3578,6 +3582,17 @@ pub(crate) trait Backend: Debug + Send + Sync {
     /// Default is 3: download, checksum, extract
     async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         3
+    }
+
+    /// Relative cost of each install operation, in the order they run.
+    ///
+    /// Only used to pace a progress display, so an estimate is fine and nothing
+    /// may depend on it. The default assumes the shape almost every backend
+    /// here has — fetch the artifact, then verify and unpack it — and weights
+    /// the fetch accordingly. Override it where that does not hold, such as a
+    /// backend that compiles from source.
+    async fn install_operation_weights(&self, tv: &ToolVersion, ctx: &InstallContext) -> Vec<f64> {
+        default_operation_weights(self.install_operation_count(tv, ctx).await)
     }
 
     /// Whether this version could install here at all, judged without downloading anything.
@@ -5267,6 +5282,29 @@ mod latest_version_tests {
 
 /// Helper function for calculating install operation count in HTTP/S3-style backends.
 /// Used by HttpBackend and S3Backend to avoid code duplication.
+/// Share of an install the initial fetch is assumed to take when a backend has
+/// not said otherwise. Downloading is normally the long pole; verification and
+/// extraction split what is left.
+const DOWNLOAD_OPERATION_WEIGHT: f64 = 0.7;
+
+/// Replacing an existing install before the new one is fetched.
+const UNINSTALL_OPERATION_WEIGHT: f64 = 0.05;
+
+/// Weight the first operation as the fetch and split the remainder evenly over
+/// whatever verification and unpacking steps the backend declared.
+pub(crate) fn default_operation_weights(count: usize) -> Vec<f64> {
+    match count {
+        0 => vec![],
+        1 => vec![1.0],
+        n => {
+            let rest = (1.0 - DOWNLOAD_OPERATION_WEIGHT) / (n - 1) as f64;
+            std::iter::once(DOWNLOAD_OPERATION_WEIGHT)
+                .chain(std::iter::repeat_n(rest, n - 1))
+                .collect()
+        }
+    }
+}
+
 pub(crate) fn http_install_operation_count(
     has_checksum_opt: bool,
     platform_key: &str,

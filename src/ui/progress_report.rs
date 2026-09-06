@@ -17,9 +17,6 @@ pub(crate) enum ProgressIcon {
     Skipped,
     #[allow(dead_code)]
     Warning,
-    // Constructed only by the brew package managers (`#[cfg(unix)]`), so it reads
-    // as never-constructed on the windows build.
-    #[cfg_attr(windows, allow(dead_code))]
     Error,
 }
 
@@ -37,6 +34,22 @@ impl Display for ProgressIcon {
 pub(crate) trait SingleReport: Send + Sync + std::fmt::Debug {
     fn println(&self, _message: String) {}
     fn set_message(&self, _message: String) {}
+
+    /// A line of a child process's stdout, as opposed to a phase message a
+    /// backend produced itself.
+    ///
+    /// Reporters that only have room for one status line fold it in and rely on
+    /// [`crate::cmd::CmdLineRunner`] replaying the whole stream when the command
+    /// fails. Reporters that show it as it arrives say so with
+    /// [`Self::shows_process_output`], which suppresses that replay.
+    fn set_process_output(&self, message: String) {
+        self.set_message(message);
+    }
+
+    /// Whether [`Self::set_process_output`] reaches the user immediately.
+    fn shows_process_output(&self) -> bool {
+        false
+    }
     fn inc(&self, _delta: u64) {}
     fn set_position(&self, _delta: u64) {}
     fn set_length(&self, _length: u64) {}
@@ -56,6 +69,16 @@ pub(crate) trait SingleReport: Send + Sync + std::fmt::Debug {
     ///
     /// Then each set_length() call will allocate 33.33% of the total progress
     fn start_operations(&self, _count: usize) {}
+
+    /// Declare the operations with a relative cost for each, in the order they
+    /// run, when the backend can estimate them better than "all equal".
+    ///
+    /// This only paces a progress display. The numbers are estimates — a
+    /// download's share of an install varies with the artifact and the network
+    /// — so nothing may depend on them being right.
+    fn start_operations_weighted(&self, weights: &[f64]) {
+        self.start_operations(weights.len());
+    }
 
     /// Advance to the next operation
     /// Call this before each new stage (after the first one)
@@ -195,6 +218,16 @@ impl VerboseReport {
 impl SingleReport for VerboseReport {
     fn println(&self, message: String) {
         safe_eprintln!("{message}");
+    }
+    fn set_process_output(&self, message: String) {
+        // Not set_message: its dedup collapses repeated phase text, which would
+        // silently drop a child's repeated stdout lines now that
+        // `shows_process_output` suppresses the failure replay.
+        let prefix = pad_prefix(self.pad, &self.prefix);
+        log::info!("{prefix} {message}");
+    }
+    fn shows_process_output(&self) -> bool {
+        true
     }
     fn set_message(&self, message: String) {
         let mut prev_message = self.prev_message.lock().unwrap();

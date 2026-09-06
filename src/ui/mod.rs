@@ -8,6 +8,7 @@ pub(crate) mod progress_report;
 pub(crate) mod prompt;
 pub(crate) mod style;
 pub(crate) mod table;
+pub(crate) mod text_install_progress;
 pub(crate) mod theme;
 pub(crate) mod time;
 pub(crate) mod tree;

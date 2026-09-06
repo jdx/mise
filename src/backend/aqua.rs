@@ -2484,6 +2484,9 @@ impl AquaBackend {
     ) -> Result<()> {
         let tarball_path = tv.download_path().join(filename);
         if tarball_path.exists() {
+            // Say so: a reporter that only sees the fetch vanish would show a
+            // suspiciously instant install, and the download cache is why.
+            ctx.pr.set_message(format!("cached {filename}"));
             return Ok(());
         }
         ctx.pr.set_message(format!("download {filename}"));

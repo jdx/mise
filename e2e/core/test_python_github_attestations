@@ -7,7 +7,7 @@ export MISE_PYTHON_GITHUB_ATTESTATIONS=1
 
 # Use a recent Python version that has attestations in python-build-standalone.
 # Older releases (e.g. 3.12.3) predate GitHub attestation support and will fail.
-output=$(mise install python@3.13.5 2>&1) || true
+output=$(mise install --verbose python@3.13.5 2>&1) || true
 echo "$output"
 
 # Verify attestation verification was attempted and succeeded

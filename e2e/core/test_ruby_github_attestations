@@ -11,7 +11,7 @@ echo "=== Testing Ruby GitHub Artifact Attestations Verification ==="
 # Test: Install Ruby with GitHub artifact attestations verification enabled
 echo "Installing Ruby with GitHub artifact attestations verification enabled..."
 
-output=$(mise install ruby@3.4.8 2>&1) || true
+output=$(mise install --verbose ruby@3.4.8 2>&1) || true
 echo "$output"
 
 # Check if attestation verification was attempted

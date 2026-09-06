@@ -612,6 +612,8 @@ impl Backend for JavaPlugin {
                             .await?;
                         // Optionally verify checksum if present
                         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+                    } else {
+                        ctx.pr.set_message(format!("cached {filename}"));
                     }
 
                     // Fetch metadata for installation (for install/move logic)
