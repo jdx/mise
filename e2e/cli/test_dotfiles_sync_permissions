@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Mode-only versions and content merges preserve both chmod +x and chmod -x.
+require_cmd git
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+B="$(dirname "$HOME")/permissions-b"
+mkdir -p "$B/.config/mise"
+cat <<EOF >"$PWD/b"
+#!/usr/bin/env bash
+export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
+  MISE_STATE_DIR="$B/.local/state/mise" MISE_DATA_DIR="$B/.local/share/mise" \\
+  MISE_CACHE_DIR="$B/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$B"
+cd "\$HOME" && exec mise "\$@"
+EOF
+chmod +x "$PWD/b"
+b="$PWD/b"
+
+printf 'first\nmiddle\nlast\n' >~/.script
+chmod 644 ~/.script
+assert_succeed "mise bootstrap dotfiles track ~/.script"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
+assert_succeed "$b bootstrap dotfiles origin set file://$origin --yes"
+assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/mise/config.toml --yes"
+assert_fail "test -x $B/.script"
+
+# Identical bytes, different mode: publish and apply the mode-only edit.
+chmod +x ~/.script
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles sync"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_succeed "$b bootstrap dotfiles pull --yes"
+assert_succeed "test -x $B/.script"
+assert_contains "git --git-dir=$origin ls-tree main tracked/home/.script" "100755"
+
+# A removes +x while both machines edit different lines. Neither direction
+# may restore +x just because one side of a clean text merge still has it.
+printf 'local\nmiddle\nlast\n' >~/.script
+chmod -x ~/.script
+printf 'first\nmiddle\nremote\n' >"$B/.script"
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "$b bootstrap dotfiles save"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_succeed "mise bootstrap dotfiles sync"
+assert_succeed "mise bootstrap dotfiles pull --yes"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_succeed "$b bootstrap dotfiles pull --yes"
+assert "cat ~/.script" $'local\nmiddle\nremote'
+assert "cat $B/.script" $'local\nmiddle\nremote'
+assert_fail "test -x ~/.script"
+assert_fail "test -x $B/.script"
+assert_contains "git --git-dir=$origin ls-tree main tracked/home/.script" "100644"

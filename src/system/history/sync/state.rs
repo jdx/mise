@@ -10,7 +10,7 @@
 //! - **applied** (L): the version mise last wrote to the live file (or
 //!   observed there at adoption).
 //!
-//! Each is a blob id or `None` for a known absence.
+//! Each is a (git mode, blob id) pair or `None` for a known absence.
 
 use std::collections::BTreeMap;
 
@@ -24,11 +24,11 @@ pub(crate) const STATE_REF: &str = "refs/sync/state";
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct SyncRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub acknowledged: Option<String>,
+    pub acknowledged: Option<super::reconcile::Object>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reconciled: Option<String>,
+    pub reconciled: Option<super::reconcile::Object>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub applied: Option<String>,
+    pub applied: Option<super::reconcile::Object>,
     /// The upstream commit `reconciled` came from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upstream_commit: Option<String>,

@@ -277,7 +277,7 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
             }
             journal::commit_changes(pending);
             let mut next = step.pending.next.clone();
-            let oid = step.pending.object.as_ref().map(|(_, oid)| oid.clone());
+            let oid = step.pending.object.clone();
             next.applied = oid.clone();
             next.acknowledged = oid;
             sync_state.insert(step.pending.branch_path.clone(), next);
@@ -408,13 +408,13 @@ fn hold_reason(
     step: &Step,
     take_remote: bool,
 ) -> Result<Option<String>> {
-    let expected = step.pending.local.as_ref().map(|(_, oid)| oid.clone());
-    if saved_oid(repo, tracked, &step.path)? != expected {
+    let expected = step.pending.local.clone();
+    if saved_object(repo, tracked, &step.path)? != expected {
         return Ok(Some(
             "local saved version changed since planning; run sync again".into(),
         ));
     }
-    if !take_remote && live_oid(repo, &step.path)? != expected {
+    if !take_remote && live_object(repo, &step.path)? != expected {
         return Ok(Some(
             "local file changed since planning; save or resolve it first".into(),
         ));
@@ -454,7 +454,7 @@ fn hold_reason(
             return Ok(Some("needs decision: staged git changes".into()));
         }
         let unstaged = status.chars().nth(1).is_some_and(|c| c != ' ');
-        if !take_remote && unstaged && live_oid(repo, &step.path)? != applied {
+        if !take_remote && unstaged && live_object(repo, &step.path)? != applied {
             return Ok(Some("needs decision: local git changes".into()));
         }
         return Ok(None);
@@ -464,11 +464,11 @@ fn hold_reason(
     }
     // a genuine local edit: the live file is neither what mise last wrote
     // nor the saved version
-    let live = live_oid(repo, &step.path)?;
+    let live = live_object(repo, &step.path)?;
     if live == applied {
         return Ok(None);
     }
-    let saved = saved_oid(repo, tracked, &step.path)?;
+    let saved = saved_object(repo, tracked, &step.path)?;
     if live == saved {
         return Ok(None);
     }
@@ -515,24 +515,11 @@ pub(super) fn live_object(
     )))
 }
 
-fn live_oid(
-    repo: &crate::system::history::shadow::HistoryRepo,
-    path: &Path,
-) -> Result<Option<String>> {
-    Ok(match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            Some(repo.hash_blob(std::fs::read_link(path)?.to_string_lossy().as_bytes())?)
-        }
-        Ok(meta) if meta.is_file() => Some(repo.hash_blob(&std::fs::read(path)?)?),
-        _ => None,
-    })
-}
-
-fn saved_oid(
+fn saved_object(
     repo: &crate::system::history::shadow::HistoryRepo,
     _tracked: &TrackedSet,
     path: &Path,
-) -> Result<Option<String>> {
+) -> Result<Option<Object>> {
     let store = Store::open()?;
     let Some(latest) = store.list()?.into_iter().last() else {
         return Ok(None);
@@ -541,7 +528,7 @@ fn saved_oid(
         return Ok(None);
     };
     let tree_path = crate::system::history::tracked::display_to_tree_path(&display_path(path));
-    Ok(repo.object_at(&snapshot, &tree_path)?.map(|(_, oid)| oid))
+    repo.object_at(&snapshot, &tree_path)
 }
 
 /// The porcelain status of `path` in the user's checkout that contains

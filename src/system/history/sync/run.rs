@@ -481,11 +481,8 @@ fn prepare(
                     plan.conflict = Some(Conflict {
                         branch_path: plan.branch_path.clone(),
                         kind: reconcile::ConflictKind::InvalidIncoming,
-                        local: shared.get(&plan.branch_path).map(|(_, oid)| oid.clone()),
-                        remote: upstream
-                            .files
-                            .get(&plan.branch_path)
-                            .map(|(_, oid)| oid.clone()),
+                        local: shared.get(&plan.branch_path).cloned(),
+                        remote: upstream.files.get(&plan.branch_path).cloned(),
                         base: plan.next.acknowledged.clone(),
                     });
                     plan.publish = None;
@@ -531,11 +528,11 @@ fn apply_resolutions(
             if choice.take_remote {
                 plan.publish = None;
                 plan.apply = Some(choice.remote.clone());
-                plan.next.reconciled = choice.remote.as_ref().map(|(_, oid)| oid.clone());
+                plan.next.reconciled = choice.remote.clone();
             } else {
                 plan.apply = None;
                 plan.publish = Some(choice.local.clone());
-                let oid = choice.local.as_ref().map(|(_, oid)| oid.clone());
+                let oid = choice.local.clone();
                 plan.next.acknowledged = oid.clone();
                 plan.next.reconciled = oid.clone();
                 plan.next.applied = oid;
@@ -589,11 +586,8 @@ fn apply_resolutions(
             plan.conflict = Some(Conflict {
                 branch_path: plan.branch_path.clone(),
                 kind,
-                local: shared.get(&plan.branch_path).map(|(_, oid)| oid.clone()),
-                remote: upstream
-                    .files
-                    .get(&plan.branch_path)
-                    .map(|(_, oid)| oid.clone()),
+                local: shared.get(&plan.branch_path).cloned(),
+                remote: upstream.files.get(&plan.branch_path).cloned(),
                 base: plan.next.acknowledged.clone(),
             });
             plan.publish = None;
@@ -658,16 +652,16 @@ fn unsaved_paths(
         if policy.autosave {
             continue;
         }
-        let live = match std::fs::symlink_metadata(&file.local) {
-            Ok(meta) if meta.file_type().is_symlink() => repo.hash_blob(
-                std::fs::read_link(&file.local)?
-                    .to_string_lossy()
-                    .as_bytes(),
-            )?,
-            Ok(meta) if meta.is_file() => repo.hash_blob(&std::fs::read(&file.local)?)?,
-            _ => continue,
+        let live = match super::apply::live_object(repo, &file.local) {
+            Ok(live) => live,
+            Err(_) => {
+                // A changed type or unreadable live file must hold incoming
+                // application, not abort fetching and eligible backups.
+                unsaved.insert(branch_path.clone());
+                continue;
+            }
         };
-        if live != file.oid {
+        if live != Some((file.mode.clone(), file.oid.clone())) {
             debug!(
                 "history sync: {} has unsaved edits (checkpoint {})",
                 display_path(&file.local),
