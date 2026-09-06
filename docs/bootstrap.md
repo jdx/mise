@@ -315,6 +315,10 @@ The `pre-dotfiles` and `post-dotfiles` phases also wrap
 
 ## Common workflows
 
+The whole path from installing mise to a second machine that shares the
+same setup, with the output each step prints, is
+[Set up a machine](/bootstrap/setup.html).
+
 ### New machine
 
 ```sh

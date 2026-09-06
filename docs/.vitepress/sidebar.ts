@@ -112,6 +112,7 @@ export const sidebar: SidebarItem[] = [
     text: "Bootstrap",
     items: [
       { text: "Overview", link: "/bootstrap" },
+      { text: "Set Up a Machine", link: "/bootstrap/setup" },
       {
         text: "Remote Hosts",
         link: "/bootstrap/remote",

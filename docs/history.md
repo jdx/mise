@@ -271,7 +271,8 @@ applying anything, or prompting:
 
 One setup repository holds the shared setup and every machine's recovery
 refs. Connect it once per machine; nothing else is ever done with git by
-hand:
+hand ([Set up a machine](/bootstrap/setup.html) walks through connecting,
+editing, resolving a conflict, and setting up the next machine):
 
 ```sh
 mise bootstrap dotfiles origin set https://github.com/you/setup.git --name laptop

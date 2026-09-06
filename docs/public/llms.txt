@@ -70,6 +70,7 @@
 ## Bootstrap
 
 - [Overview](https://mise.jdx.dev/bootstrap.html): mise bootstrap applies the machine setup declared in your mise configuration: packages, files, services, repositories, shell setup, tools, and a final task.
+- [Set Up a Machine](https://mise.jdx.dev/bootstrap/setup.html): The recommended way to run mise on a workstation: keep editing your configuration files where they are, let mise save every change and share the ones you choose, and recreate the whole setup on the…
 - [Remote Hosts](https://mise.jdx.dev/bootstrap/remote.html): mise bootstrap remote applies a bootstrap project to one or more machines through the locally installed OpenSSH client.
 - [Bootstrap Packages](https://mise.jdx.dev/bootstrap/packages/): Declare shared host packages in [bootstrap.packages], then apply them with mise bootstrap packages apply or the full bootstrap.
 - [apk](https://mise.jdx.dev/bootstrap/packages/apk.html): System packages for Alpine Linux.
