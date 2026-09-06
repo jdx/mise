@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1W88X5JRS92GSDVAMNVARH8",
+  "strategy": "manual-commit",
+  "branch": "bootstrap/11-encrypted-backups",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "src/system/history/sync/files.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 62778,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6320384,
+    "output_tokens": 9798,
+    "api_call_count": 35
+  }
+}
