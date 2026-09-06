@@ -12,6 +12,9 @@ use eyre::{Result, WrapErr};
 
 use std::collections::BTreeSet;
 
+/// A subtree promotion: the entry's index and the children that were named.
+type PartialPromotion = (usize, Vec<PathBuf>);
+
 /// How many checkpoints back the modes of a carried entry are looked for.
 const CARRIED_MODES_LOOKBACK: usize = 200;
 
@@ -249,48 +252,8 @@ impl Store {
                 .iter()
                 .map(|index| walk.entries[*index].display())
                 .collect();
-            // newest first, the first record of a path wins. A checkpoint
-            // contributes an entry's modes only where it recorded that
-            // entry as a manual-save entry with its saved bits (carried
-            // forward, or promoted by an explicit save): a protective
-            // record holds the live bits, and a checkpoint that tracked
-            // the path as autosaved, or not at all, says nothing about its
-            // saved version. The walk goes back past those (the entry may
-            // have been untracked for a while) until every carried entry
-            // has been seen, within a bound
-            let mut seen: BTreeSet<String> = BTreeSet::new();
-            for entry in index.entries.iter().rev().take(CARRIED_MODES_LOOKBACK) {
-                if seen.len() == carried.len() {
-                    break;
-                }
-                let Some(checkpoint) = store::read_meta_cache_in(&self.state_dir, &entry.uuid)
-                    .ok()
-                    .flatten()
-                else {
-                    continue;
-                };
-                let contributing: Vec<&str> = checkpoint
-                    .tree
-                    .coverage
-                    .entries
-                    .iter()
-                    .filter(|record| {
-                        carried.contains(&record.path)
-                            && !seen.contains(&record.path)
-                            && !record.autosave
-                            && record.state != "protective"
-                    })
-                    .map(|record| record.path.as_str())
-                    .collect();
-                if contributing.is_empty() {
-                    continue;
-                }
-                for (path, bits) in &checkpoint.tree.modes {
-                    if contributing.iter().any(|entry| under_entry(path, entry)) {
-                        modes.entry(path.clone()).or_insert(*bits);
-                    }
-                }
-                seen.extend(contributing.into_iter().map(str::to_string));
+            for (path, bits) in self.saved_modes(&index, &carried) {
+                modes.entry(path).or_insert(bits);
             }
         }
         let mut coverage = tracked.coverage(&walk);
@@ -305,7 +268,7 @@ impl Store {
                     for warning in &result.warnings {
                         warn!("history: {warning}");
                     }
-                    let composed = self.compose_manual(
+                    let (composed, partial) = self.compose_manual(
                         repo,
                         &result.tree,
                         ManualContext {
@@ -317,6 +280,21 @@ impl Store {
                         },
                         &mut promotion,
                     )?;
+                    // a subtree promotion keeps the saved modes of the
+                    // siblings it did not name, like their content
+                    for (entry_index, children) in &partial {
+                        let entry = walk.entries[*entry_index].display();
+                        let named: Vec<String> =
+                            children.iter().map(crate::file::display_path).collect();
+                        let is_named =
+                            |path: &str| named.iter().any(|child| under_entry(path, child));
+                        modes.retain(|path, _| !under_entry(path, &entry) || is_named(path));
+                        for (path, bits) in self.saved_modes(&index, std::slice::from_ref(&entry)) {
+                            if !is_named(&path) {
+                                modes.entry(path).or_insert(bits);
+                            }
+                        }
+                    }
                     (Some(composed), result.roots, true, None)
                 }
                 Err(err) => {
@@ -352,6 +330,7 @@ impl Store {
             && let Some((previous_checkpoint, tree)) = &previous_tree
             && snapshot.as_deref() == Some(tree.as_str())
             && previous_checkpoint.tree.coverage == coverage
+            && previous_checkpoint.tree.modes == modes
         {
             debug!(
                 "history: nothing changed since checkpoint {}",
@@ -477,7 +456,7 @@ impl Store {
         live_tree: &str,
         context: ManualContext<'_>,
         promotion: &mut Option<String>,
-    ) -> Result<String> {
+    ) -> Result<(String, Vec<PartialPromotion>)> {
         let ManualContext {
             entries,
             manual,
@@ -486,6 +465,8 @@ impl Store {
             uuid,
         } = context;
         let mut overlays = vec![];
+        // entries promoted by subtree, with the children that were named
+        let mut partial_entries: Vec<PartialPromotion> = vec![];
         for index in &manual.carry {
             let tree_path = display_to_tree_path(&entries[*index].display());
             let object = match promoted_head {
@@ -535,7 +516,7 @@ impl Store {
                     });
                     present
                 } else {
-                    for child in children {
+                    for child in &children {
                         let child_path = display_to_tree_path(&display_path(child));
                         promoted_overlays.push(Overlay {
                             path: format!("promoted/{child_path}"),
@@ -543,6 +524,7 @@ impl Store {
                         });
                     }
                     partial.push(tree_path.clone());
+                    partial_entries.push((*index, children.into_iter().cloned().collect()));
                     true
                 };
                 // a saved deletion is remembered: the path is not "never
@@ -594,7 +576,55 @@ impl Store {
             store::write_saved_index_in(&self.state_dir, &saved)?;
             *promotion = Some(commit);
         }
-        repo.compose(live_tree, &overlays)
+        Ok((repo.compose(live_tree, &overlays)?, partial_entries))
+    }
+
+    /// The saved modes of manual-save entries, from the checkpoints that
+    /// recorded them. Newest first, the first record of a path wins. A
+    /// checkpoint contributes an entry's modes only where it recorded that
+    /// entry as a manual-save entry with its saved bits (carried forward,
+    /// or promoted by an explicit save): a protective record holds the live
+    /// bits, and a checkpoint that tracked the path as autosaved, or not at
+    /// all, says nothing about its saved version. The walk goes back past
+    /// those (the entry may have been untracked for a while) until every
+    /// entry has been seen, within a bound.
+    fn saved_modes(&self, index: &store::Index, entries: &[String]) -> BTreeMap<String, u32> {
+        let mut modes = BTreeMap::new();
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for entry in index.entries.iter().rev().take(CARRIED_MODES_LOOKBACK) {
+            if seen.len() == entries.len() {
+                break;
+            }
+            let Some(checkpoint) = store::read_meta_cache_in(&self.state_dir, &entry.uuid)
+                .ok()
+                .flatten()
+            else {
+                continue;
+            };
+            let contributing: Vec<&str> = checkpoint
+                .tree
+                .coverage
+                .entries
+                .iter()
+                .filter(|record| {
+                    entries.contains(&record.path)
+                        && !seen.contains(&record.path)
+                        && !record.autosave
+                        && record.state != "protective"
+                })
+                .map(|record| record.path.as_str())
+                .collect();
+            if contributing.is_empty() {
+                continue;
+            }
+            for (path, bits) in &checkpoint.tree.modes {
+                if contributing.iter().any(|entry| under_entry(path, entry)) {
+                    modes.entry(path.clone()).or_insert(*bits);
+                }
+            }
+            seen.extend(contributing.into_iter().map(str::to_string));
+        }
+        modes
     }
 
     /// Removes a checkpoint: its ref, cached record, and index line.
