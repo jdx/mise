@@ -46,6 +46,7 @@ struct PathRow {
 
 impl DotfilesPaths {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::system::history::ensure_experimental()?;
         let tracked = match &self.preview {
             Some(path) => {
                 let mut set = TrackedSet {

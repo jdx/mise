@@ -13,6 +13,7 @@ EOF
 assert_fail "mise bootstrap dotfiles track ~/.native" 'dotfile tracking is experimental'
 assert_fail "mise bootstrap dotfiles save" 'dotfile tracking is experimental'
 assert_fail "mise bootstrap dotfiles history" 'dotfile tracking is experimental'
+assert_fail "mise bootstrap dotfiles paths" 'dotfile tracking is experimental'
 assert "cat ~/.native" original
 assert_fail "grep 'mode = \"track\"' '$MISE_CONFIG_DIR/config.toml'"
 assert_succeed "mise bootstrap dotfiles apply --yes"
