@@ -8,7 +8,7 @@ that addresses the operation you are running:
 | Download verification                  | Supported tool installations                    | Check artifact integrity and available signatures or provenance. |
 | [Configuration trust](/cli/trust.html) | Loading project configuration                   | Decide which configuration mise may execute or apply.            |
 | [Safe mode](#safe-mode)                | Processing untrusted project configuration      | Disable project code execution and environment injection.        |
-| [Paranoid mode](/paranoid.html)        | Trust and supported installation verification   | Require content-bound trust and recheck recorded provenance.     |
+| [Paranoid mode](/paranoid.html)        | Trust and supported installation verification   | Bind direct file trust to content and recheck provenance.        |
 | [Sandboxing](/sandboxing.html)         | Commands launched by `mise exec` and `mise run` | Restrict child-process access on supported platforms.            |
 
 These controls have different scopes. For example, trusting configuration does not verify

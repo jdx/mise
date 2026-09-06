@@ -1,9 +1,9 @@
 # Paranoid
 
-Paranoid mode requires explicit content-bound trust for non-global configuration and rechecks supported
-provenance during installation. Use it when you want configuration edits to require renewed
-approval. It does not sandbox a command after you approve it; see [Security](/security.html)
-for the scope of each control.
+Paranoid mode disables automatic and CI trust, binds direct file approvals to configuration content,
+and rechecks supported provenance during installation. Configurations accepted through
+`trusted_config_paths` or inherited monorepo-root trust remain path-based exceptions. It does not
+sandbox a command after you approve it; see [Security](/security.html) for the scope of each control.
 
 Enable it for one invocation with `MISE_PARANOID=1`, or persist it globally:
 
@@ -21,10 +21,10 @@ as `mise run`, `mise install`, and `mise exec` automatically trust their active 
 Other commands may prompt, fail, or skip an untrusted file depending on how they discover it.
 See [`mise trust`](/cli/trust.html) for normal-mode rules.
 
-Paranoid mode requires explicit trust for every non-global config file, including formats
-that normally do not need it. It hashes the contents, so editing a file requires renewed
-trust. Automatic trust for execution commands and the usual CI trust exemption are disabled.
-Trust is not shared between Git worktrees in this mode.
+Paranoid mode requires explicit trust for non-global config files, including formats that normally
+do not need it. Direct file approval hashes the contents, so editing the file requires renewed trust.
+Automatic trust for execution commands and the usual CI trust exemption are disabled. Trust is not
+shared between Git worktrees in this mode.
 
 Inspect the file before accepting it:
 
@@ -33,9 +33,10 @@ mise trust --show
 mise trust path/to/mise.toml
 ```
 
-Replace the path with the configuration you reviewed. Trusting a broad directory is not a
-substitute for content-bound approval in paranoid mode. Global and system configuration is
-operator-owned and remains exempt, allowing paranoid mode itself to be set globally.
+Replace the path with the configuration you reviewed. Paths allowed by the global
+`trusted_config_paths` setting and descendants covered by trusted monorepo roots bypass the
+content-hash check, so changes there do not require renewed approval. Global and system
+configuration is operator-owned and remains exempt, allowing paranoid mode itself to be set globally.
 
 [Safe mode](/security.html#safe-mode) takes precedence if both modes are enabled. It suppresses
 project execution and environment injection, so the configuration can load without a trust
