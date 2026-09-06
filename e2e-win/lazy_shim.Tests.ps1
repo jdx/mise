@@ -46,7 +46,7 @@ jq = { version = "1.7.1", lazy = true, lazy_bins = ["JQ.EXE"] }
         Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\jq\1.7.1') | Should -BeFalse
 
         $output = & $shim --version 2>&1
-        $LASTEXITCODE | Should -Be 0
+        $LASTEXITCODE | Should -Be 0 -Because "native shim output: $($output | Out-String)"
         ($output | Out-String) | Should -Match 'jq-1\.7.1'
         Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\jq\1.7.1') | Should -BeTrue
 
@@ -64,7 +64,7 @@ jq = { version = "1.7.1", lazy = true, lazy_bins = ["JQ.EXE"] }
         Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\jq\1.7.1') | Should -BeFalse
 
         $output = & $shim --version 2>&1
-        $LASTEXITCODE | Should -Be 0
+        $LASTEXITCODE | Should -Be 0 -Because "hardlink shim output: $($output | Out-String)"
         ($output | Out-String) | Should -Match 'jq-1\.7\.1'
         Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\jq\1.7.1') | Should -BeTrue
     }

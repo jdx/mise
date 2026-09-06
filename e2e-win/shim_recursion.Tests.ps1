@@ -41,10 +41,28 @@ echo SHIM_NOT_REAL
 
     AfterAll {
         Remove-Item -Path (Join-Path $script:shimPath "mytool.cmd") -ErrorAction SilentlyContinue
-        Remove-Item -Path $script:toolDir -Recurse -ErrorAction SilentlyContinue
         Set-Location $script:originalPath
         $env:PATH = $script:originalEnvPath
         Remove-Item -Path Env:\MISE_TRUSTED_CONFIG_PATHS -ErrorAction SilentlyContinue
+
+        # Windows can briefly retain an executable's file lock after its output
+        # stream closes. Remove our fixture directories before Pester tears down
+        # TestDrive, allowing a bounded retry for that transient lock only.
+        foreach ($directory in Get-ChildItem -LiteralPath $TestDrive -Directory) {
+            for ($attempt = 0; ; $attempt++) {
+                try {
+                    Remove-Item -LiteralPath $directory.FullName -Recurse -Force -ErrorAction Stop
+                    break
+                } catch [System.IO.IOException] {
+                    # ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION only.
+                    $errorCode = $_.Exception.HResult -band 0xffff
+                    if ($errorCode -notin @(32, 33) -or $attempt -ge 20) {
+                        throw
+                    }
+                    Start-Sleep -Milliseconds 100
+                }
+            }
+        }
     }
 
     It 'mise x resolves real tool, not shim' {
