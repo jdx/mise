@@ -1,77 +1,101 @@
 # Deps <Badge type="warning" text="experimental" />
 
-The `mise deps` command manages project dependencies by hashing source files
-(e.g., `package-lock.json`) and running install commands when changes are detected.
-It can also add and remove individual packages.
+`mise deps` runs project dependency installers when tracked inputs change or
+outputs go missing. It compares source hashes with the last successful run, then
+invokes the configured package manager. Use `[tools]` to install the package
+manager itself; use `[deps]` to install the project's packages.
 
 ## Quick Start
 
-```bash
-# Enable experimental features
-export MISE_EXPERIMENTAL=1
+For an existing npm project with `package.json` and `package-lock.json`, add:
 
-# Install all project dependencies
-mise deps
+```toml [mise.toml]
+[settings]
+experimental = true
 
-# Add a package
-mise deps add npm:react
+[tools]
+node = "24"
 
-# Add a dev dependency
-mise deps add -D npm:vitest
-
-# Remove a package
-mise deps remove npm:lodash
+[deps.npm]
+auto = true
 ```
+
+Inspect the provider, install its dependencies, and explain the freshness result:
+
+```sh
+mise install
+mise deps install --list
+mise deps install npm
+mise deps install npm --explain
+```
+
+With `auto = true`, subsequent `mise exec` and `mise run` commands also check
+this provider. If the project has no lockfile yet, create one with its package
+manager first, for example `mise exec --no-deps -- npm install`.
 
 ## Configuration
 
-Configure deps providers in `mise.toml`:
+Enable only the providers your project uses. An empty table selects a built-in
+provider without making it automatic:
 
 ```toml
-# Built-in npm provider (auto-detects lockfile)
-[deps.npm]
-auto = true  # Auto-run before mise x/run
-
-# Built-in providers for other package managers
-[deps.yarn]
-[deps.pnpm]
-[deps.bun]
-[deps.deno]
-[deps.aube]
-[deps.go]
-[deps.pip]
-[deps.poetry]
 [deps.uv]
-[deps.bundler]
-[deps.composer]
+```
 
-# Disable specific providers
+To disable a provider, for example one inherited from another configuration:
+
+```toml
 [deps]
 disable = ["npm"]
 ```
 
+This prevents the provider from running; it does not remove installed packages.
+Use `mise deps install --list` to inspect the effective providers.
+
 ## Built-in Providers
 
-mise includes built-in providers for common package managers:
+Each provider supplies defaults for sources, outputs, and the install command:
 
-| Provider   | Sources                                                | Outputs               | Command                              |
-| ---------- | ------------------------------------------------------ | --------------------- | ------------------------------------ |
-| `npm`      | `package.json`, `package-lock.json`                    | `node_modules/`       | `npm install`                        |
-| `yarn`     | `package.json`, `yarn.lock`                            | `node_modules/`       | `yarn install`                       |
-| `pnpm`     | `package.json`, `pnpm-lock.yaml`                       | `node_modules/`       | `pnpm install`                       |
-| `bun`      | `package.json`, `bun.lock`, `bun.lockb`                | `node_modules/`       | `bun install`                        |
-| `deno`     | `deno.json`, `deno.jsonc`, `package.json`, `deno.lock` | `node_modules/`       | `deno install`                       |
-| `aube`     | `package.json`, `aube-lock.yaml`                       | `node_modules/`       | `aube install`                       |
-| `go`       | `go.mod`                                               | `vendor/` or `go.sum` | `go mod vendor` or `go mod download` |
-| `pip`      | `requirements.txt`                                     | `.venv/`              | `pip install -r requirements.txt`    |
-| `poetry`   | `pyproject.toml`, `poetry.lock`                        | `.venv/`              | `poetry install`                     |
-| `uv`       | `pyproject.toml`, `uv.lock`                            | `.venv/`              | `uv sync`                            |
-| `bundler`  | `Gemfile`, `Gemfile.lock`                              | `vendor/bundle/`      | `bundle install`                     |
-| `composer` | `composer.json`, `composer.lock`                       | `vendor/`             | `composer install`                   |
-| `dart`     | `pubspec.yaml`, `pubspec.lock`                         | `.dart_tool/`         | `dart pub get`                       |
-| `flutter`  | `pubspec.yaml`, `pubspec.lock`                         | `.dart_tool/`         | `flutter pub get`                    |
+| Provider        | Sources                                                | Tracked output                   | Default command                                                  |
+| --------------- | ------------------------------------------------------ | -------------------------------- | ---------------------------------------------------------------- |
+| `npm`           | `package.json`, `package-lock.json`                    | `node_modules/`                  | `npm install`                                                    |
+| `yarn`          | `package.json`, `yarn.lock`                            | `node_modules/`                  | `yarn install`                                                   |
+| `pnpm`          | `package.json`, `pnpm-lock.yaml`                       | `node_modules/`                  | `pnpm install`                                                   |
+| `bun`           | `package.json`, `bun.lock` or `bun.lockb`              | `node_modules/`                  | `bun install`                                                    |
+| `deno`          | `deno.json`, `deno.jsonc`, `package.json`, `deno.lock` | Optional `node_modules/`         | `deno install`                                                   |
+| `aube`          | `package.json`, `aube-lock.yaml`                       | `node_modules/`                  | `aube install`                                                   |
+| `go`            | `go.mod`, `go.sum`                                     | Optional `vendor/`               | `go mod vendor` if `vendor/` exists, otherwise `go mod download` |
+| `pip`           | `requirements.txt`                                     | Optional `.venv/`                | `pip install -r requirements.txt`                                |
+| `poetry`        | `pyproject.toml`, `poetry.lock`                        | Optional `.venv/`                | `poetry install`                                                 |
+| `uv`            | `pyproject.toml`, `uv.lock`                            | Optional `.venv/`                | `uv sync`                                                        |
+| `bundler`       | `Gemfile`, `Gemfile.lock`                              | Optional `vendor/bundle/`        | `bundle install`                                                 |
+| `composer`      | `composer.json`, `composer.lock`                       | `vendor/`                        | `composer install`                                               |
+| `dart`          | `pubspec.yaml`, `pubspec.lock`                         | `.dart_tool/package_config.json` | `dart pub get`                                                   |
+| `flutter`       | `pubspec.yaml`, `pubspec.lock`                         | `.dart_tool/package_config.json` | `flutter pub get`                                                |
+| `git-submodule` | `.gitmodules`                                          | Declared submodule directories   | `git submodule update --init --recursive`                        |
 
-Built-in providers are active only when they are explicitly configured in `mise.toml` and their lockfile exists.
+Providers must be configured explicitly and have the required project input.
+Most require their lockfile. The exceptions are `go` (`go.mod`), `pip`
+(`requirements.txt`), Dart/Flutter (`pubspec.yaml`), and `git-submodule`
+(a nonempty `.gitmodules`). Pub workspace members track the workspace's package
+configuration file.
+
+An **optional output** is checked for deletion only after mise has observed it
+following a successful run. This supports package managers that install outside
+the project by default. In particular, the pip provider does not create or select
+a virtualenv: configure [Python virtualenv activation](/lang/python.html#automatic-virtualenv-activation)
+first if pip should install into `.venv`.
+
+These defaults are ordinary install commands, not necessarily frozen-lockfile
+installs. To require npm's clean, lockfile-based installation, override `run`:
+
+```toml
+[deps.npm]
+run = "npm ci"
+```
+
+The freshness check still decides whether to run it. Use `--force` when you need
+the command to execute even if its tracked state is unchanged.
 
 ## Monorepos
 
@@ -89,7 +113,7 @@ config_roots = ["apps/*", "packages/*"]
 mise deps --monorepo
 ```
 
-This requires explicit [`[monorepo].config_roots`](/tasks/monorepo.html#explicit-config-roots);
+This requires explicit [`[monorepo].config_roots`](/tasks/monorepo.html#config-roots);
 mise does not search arbitrary subdirectories for dependency providers.
 Providers in the monorepo root config are also included because that config is
 part of every selected config root's hierarchy, matching the behavior of
@@ -136,7 +160,9 @@ supported for add/remove are `npm`, `yarn`, `pnpm`, `bun`, `deno`, `aube`, `dart
 
 ## Custom Providers
 
-Create custom providers for project-specific build steps:
+Create custom providers for project-specific build steps. These examples assume
+`@graphql-codegen/cli` and `prisma` are already project dependencies and the
+corresponding scripts/configuration exist:
 
 ```toml
 [deps.codegen]
@@ -199,8 +225,11 @@ sources = ["{{ config_root }}/schemas/$SCHEMA_NAME.graphql"]
 outputs = ["{{ config_root }}/generated/${SCHEMA_NAME:-default}/"]
 dir = "{{ config_root }}"
 env = { OUTPUT_PACKAGE = "{{ vars.package }}-$BUILD_MODE" }
-run = "npm run codegen -- $OUTPUT_PACKAGE"
+run = 'npm run codegen -- "$OUTPUT_PACKAGE"'
 ```
+
+Set `SCHEMA_NAME` and `BUILD_MODE` in the environment before running this example.
+Quote shell expansions in `run` when a value should remain one argument.
 
 `$VAR` expressions in `run` are left for the provider's shell to expand at execution time. This
 allows `run` to use values from the provider's `env` table. Tera expressions in `run` are rendered
@@ -223,13 +252,22 @@ and working directory; raw command and environment values are not stored in stat
 3. Compare against stored hashes from the last successful run
 4. Mark the provider stale if a source or the effective command was added, removed, or changed
 
-This means:
+Required outputs must exist. Optional outputs must continue to exist once they
+have been observed. With source tracking, the first run is stale and changes to
+sources or the effective command trigger another run.
 
-- If you modify `package-lock.json`, `node_modules/` is considered stale
-- If `node_modules/` doesn't exist, the provider is always stale
-- If sources don't exist, the provider is considered fresh (nothing to do)
-- On first run (no stored state), the provider is always considered stale
-- State created before command hashing is migrated by running each provider once
+For custom providers with no sources, existing outputs are enough to be fresh;
+command changes alone do not invalidate them. A provider with neither sources
+nor outputs runs every time. Configure real input files when a command's result
+depends on their contents.
+
+Freshness checks do not inspect every installed package, query for newer upstream
+releases, or detect removal of an untracked external package cache. Use
+`mise deps install <provider> --explain` to see the decision, and `--force` to
+repair dependencies whose files changed outside the tracked state.
+
+State created before command hashing is migrated by running source-tracked
+providers once.
 
 ## Auto-Install
 
@@ -238,7 +276,9 @@ When `auto = true` is set on a provider, it runs automatically before:
 - `mise run` (task execution)
 - `mise x` (exec command)
 
-This ensures dependencies are always up to date before running tasks or commands.
+Automatic checks use the same sources and outputs as `mise deps`; they ensure
+tracked changes are handled before execution. They do not upgrade packages to
+the newest upstream versions.
 
 To skip auto-install for a single invocation:
 
@@ -308,7 +348,10 @@ sources = ["requirements.yml"]
 outputs = [".galaxy-installed"]
 ```
 
-In this example, `ansible-galaxy` waits for `uv` to finish before starting.
+This assumes the uv project declares `ansible-core` and its virtualenv is on
+`PATH` (for example through `_.python.venv`). The `ansible-galaxy` provider waits
+for `uv` to finish before starting. A `depends` entry orders configured providers;
+it does not declare a missing provider or install a package manager.
 
 Providers without `depends` run in parallel. If a dependency fails, all providers
 that depend on it are skipped. Circular dependencies are detected and the affected providers
@@ -328,28 +371,40 @@ jobs = 4  # Run up to 4 providers in parallel
 
 ## Example: Full-Stack Project
 
-```toml
-# mise.toml for a project with Node.js frontend and Python backend
+This example assumes a repository with npm and uv projects in its root, both
+lockfiles committed, Prisma installed as a project dependency, and an npm
+`codegen` script:
+
+```toml [mise.toml]
+[settings]
+experimental = true
+
+[tools]
+node = "24"
+python = "3.14"
+uv = "latest"
 
 [deps.npm]
 auto = true
 
-[deps.poetry]
+[deps.uv]
 auto = true
 
 [deps.prisma]
 auto = true
-depends = ["npm"]  # needs node_modules first
-sources = ["prisma/schema.prisma"]
+depends = ["npm"]
+sources = ["prisma/schema.prisma", "package-lock.json"]
 outputs = ["node_modules/.prisma/"]
-run = "npx prisma generate"
+run = "npx --no-install prisma generate"
 
 [deps.frontend-codegen]
-depends = ["npm"]  # needs node_modules first
-sources = ["schema.graphql", "codegen.ts"]
+depends = ["npm"]
+sources = ["schema.graphql", "codegen.ts", "package-lock.json"]
 outputs = ["src/generated/"]
 run = "npm run codegen"
 ```
 
-Running `mise deps` installs npm and poetry dependencies in parallel, then runs prisma
-and frontend-codegen (also in parallel, since they depend only on npm, not on each other).
+`mise deps` runs stale npm and uv providers in parallel. Prisma and frontend
+codegen wait for npm, then can run in parallel with each other. The codegen
+provider has no `auto = true`, so it runs through explicit `mise deps` commands,
+not automatically before every `mise exec` or task invocation.

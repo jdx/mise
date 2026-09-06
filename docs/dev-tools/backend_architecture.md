@@ -1,248 +1,203 @@
 # Backend Architecture
 
-Understanding how mise's backend system works can help you choose the right backend for your tools and troubleshoot issues when they arise. Most users don't need to choose backends explicitly because the [mise registry](../registry.md) defines sensible defaults, but understanding the system helps when you need specific tools or want to optimize performance.
+A backend resolves a tool's versions, installs it, and supplies its executable
+paths and environment. The [registry](/registry.html) maps short names such as
+`node` and `ripgrep` to backends. Start with those names; choose an explicit
+backend when you need a particular distribution or a tool outside the registry.
 
 ## What are Backends?
 
-Backends are mise's way of supporting different tool installation methods. Each backend knows how to:
+In `github:BurntSushi/ripgrep`, `github` is the backend and
+`BurntSushi/ripgrep` identifies the upstream project. These are separate from
+the version request after `@`:
 
-- List available versions of tools
-- Download and install specific versions
-- Set up the environment for installed tools
-- Manage tool lifecycles (updates, uninstalls)
+```sh
+mise ls-remote github:BurntSushi/ripgrep
+mise use github:BurntSushi/ripgrep@latest
+mise exec -- rg --version
+```
 
-Think of backends as "adapters" that let mise work with different package managers and installation systems.
+Installing a tool through a backend does not add a new entry to mise's registry.
+Explicit backend syntax works directly in your own configuration.
 
 ## The Backend Trait System
 
-All backends implement a common interface (called a "trait" in Rust), which means they all provide the same basic functionality:
+Built-in backends implement the Rust
+[`Backend` trait](https://github.com/jdx/mise/blob/main/src/backend/mod.rs).
+The installation flow uses that interface to:
 
-```rust
-pub trait Backend {
-    async fn list_remote_versions(&self) -> Result<Vec<String>>;
-    async fn install_version(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()>;
-    async fn uninstall_version(&self, tv: &ToolVersion) -> Result<()>;
-    // ... other methods
-}
-```
+1. List versions or resolve a request such as a prefix or channel.
+2. Identify installation dependencies and tool options.
+3. Download or build the requested version and perform the verification supported
+   by that distribution.
+4. Record the installation and expose executable paths and environment variables.
 
-This design allows mise to treat all backends uniformly while each backend handles the specifics of its installation method.
+Version strings are not necessarily semantic versions. Backends can support date
+releases, vendor prefixes, tags, and rolling channels; the backend determines what
+`latest` means. A lockfile records a concrete resolution. See
+[version ordering](/dev-tools/#version-ordering) and [mise.lock](/dev-tools/mise-lock.html).
+
+For extension APIs, see [tool plugins](/tool-plugin-development.html) and
+[backend plugins](/backend-plugin-development.html). Their hook interfaces are
+separate from the internal Rust trait.
 
 ## Backend Types
 
-### Core Tools
+| Distribution method          | Examples                                            | What to check                                                                  |
+| ---------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Built-in language support    | Node.js, Python, Java, Rust                         | Language-specific options, system libraries, and any build tools required      |
+| Signed release manifests     | `packslip:`                                         | Published manifest, trusted signer, and supported platform                     |
+| Registry-described downloads | `aqua:`                                             | Package entry and its per-version download/verification rules                  |
+| Forge releases               | `github:`, `gitlab:`, `forgejo:`                    | Matching release assets for the target platform                                |
+| Direct artifacts             | `http:`, `s3:`                                      | Artifact location, authentication, platform mapping, and integrity information |
+| Language packages            | `npm:`, `pipx:`, `cargo:`, `gem:`, `go:`, `dotnet:` | Required runtime or toolchain and package-manager behavior                     |
+| Other package sources        | `conda:`, `pkgx:`, `spm:`                           | Backend-specific platform support and dependencies                             |
+| External plugins             | asdf, vfox tool plugins, backend plugins            | Plugin code, prerequisites, and supported platforms                            |
 
-Built directly into mise, written in Rust for performance and reliability:
-
-- **Node.js, Python, Ruby, Go, Java, etc.** - Native implementations
-- **Benefits**: Fastest performance, no external dependencies, best integration
-- **Drawbacks**: Require much more maintenance; new core tool contributions are likely to be rejected unless they're for very popular tools like Node.js, Python, or Go
-
-::: info
-Core tools like Node.js and Java are implemented as backends even though they represent single tools. This consistency lets mise handle all tools uniformly, whether they're complex ecosystems or individual tools.
-:::
-
-### Language Package Managers
-
-These backends use existing language ecosystems:
-
-- **npm** - npm packages (`npm:prettier`, `npm:typescript`)
-- **pipx** - Python packages (`pipx:black`, `pipx:poetry`)
-- **cargo** - Rust crates (`cargo:ripgrep`, `cargo:fd-find`)
-- **gem** - Ruby gems (`gem:bundler`, `gem:rails`)
-- **go** - Go modules (`go:github.com/golangci/golangci-lint/cmd/golangci-lint`)
-
-### Universal Installers
-
-#### aqua - Comprehensive Package Manager
-
-Registry-based package manager with strong security features:
-
-- **Usage**: `aqua:golangci/golangci-lint`
-- **Requirements**: Tools must be available in the [aqua registry](https://github.com/aquaproj/aqua-registry)
-- **Sources**: Primarily GitHub but supports other sources through registry configuration
-- **Security**: Comprehensive checksums, signatures, and verification
-
-#### ubi - Universal Binary Installer (Deprecated)
-
-::: warning
-The ubi backend is deprecated. Use the [github backend](/dev-tools/backends/github) instead.
-:::
-
-Zero-configuration installer that works with any GitHub/GitLab repository following standard conventions:
-
-- **Usage**: `ubi:BurntSushi/ripgrep` → migrate to `github:BurntSushi/ripgrep`
-- **Requirements**: Repository must follow standard release tarball conventions
-- **Sources**: Primarily GitHub releases, with GitLab support (rarely used in mise)
-- **Configuration**: None required - automatically detects and downloads appropriate binaries
-
-### Plugin Systems
-
-Support for external plugin ecosystems:
-
-- **Tool Plugins** - Hook-based plugins for single tools (`my-tool`) - a superset of vfox plugin functionality
-- **asdf Plugins** - Legacy plugin ecosystem (`asdf:postgres`, `asdf:redis`) - generally Linux/macOS only
-- **Backend Plugins** - Enhanced plugins using the `plugin:tool` format (`my-plugin:some-tool`) - enable private/custom tools with backend methods
+The [backend reference](/dev-tools/backends/) lists available backends and their
+options. Built-in language guides are under **Languages** in the sidebar.
 
 ## How Backend Selection Works
 
-When you specify a tool, mise determines the backend using this priority:
+An explicit identifier such as `core:node` expresses a backend choice. A short
+name such as `node` also depends on configuration and local state:
 
-1. **Explicit backend**: `mise use aqua:golangci/golangci-lint`
-2. **Environment variable override**: `MISE_BACKENDS_<TOOL>` (see below)
-3. **Registry lookup**: `mise use golangci-lint` → checks registry for default backend
-4. **Core tools**: `mise use node` → uses built-in core backend
-5. **Fallback**: If not found, suggests available backends
+- `[tool_alias]` and `[plugins]` can select another source.
+- A matching lockfile entry can preserve the backend used for that resolution.
+- An installed external plugin can override a registry shorthand, including a
+  built-in language tool. Disabled backends and existing installations also affect
+  this choice.
+- Otherwise, the registry supplies the preferred available backend, which can
+  depend on the requested version and platform.
 
-The [mise registry](../registry.md) defines a priority order of backends for each tool, so end users typically don't need to choose a backend unless they want a tool that isn't in the registry or want to override the default selection.
+Use `mise tool <name>` to inspect the effective backend instead of inferring it
+from the tool's short name. The
+[resolution implementation](https://github.com/jdx/mise/blob/main/src/cli/args/backend_arg.rs)
+contains the detailed precedence rules.
 
 ### Environment Variable Overrides
 
-You can override the backend for any tool using the `MISE_BACKENDS_<TOOL>` environment variable pattern. The tool name is converted to SHOUTY_SNAKE_CASE (uppercase with underscores replacing hyphens).
+`MISE_BACKENDS_<TOOL>` overrides the backend for that identifier. Convert the
+name to uppercase and replace hyphens with underscores. For example, in a POSIX
+shell:
 
-```bash
-# Use vfox backend for php
-export MISE_BACKENDS_PHP='vfox:mise-plugins/vfox-php'
-mise install php@latest
+```sh
+MISE_BACKENDS_NODE=core:node mise tool node
 ```
+
+An exported override affects subsequent commands and can override configuration
+choices. Check your environment when two machines resolve the same shorthand
+differently.
 
 ### Registry System
 
-The [registry](../registry.md) (`mise registry`) maps short names to full backend specifications with a preferred priority order:
+Inspect a registry mapping with `mise registry node`. To commit a backend choice
+without changing the registry, use an [alias](/dev-tools/aliases.html):
 
-```toml
-# ~/.config/mise/config.toml
+```toml [mise.toml]
 [tool_alias]
-go = "core:go"                    # Use core backend
-terraform = "aqua:hashicorp/terraform"  # Use aqua backend
+node = "core:node"
+
+[tools]
+node = "24"
 ```
 
 ## Backend Capabilities Comparison
 
-| Feature                   | Core | npm/pipx/cargo | aqua | ubi | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
-| ------------------------- | ---- | -------------- | ---- | --- | --------------- | ------------------- | --------------------- |
-| **Speed**                 | ✅   | ⚠️             | ✅   | ✅  | ⚠️              | ⚠️                  | ⚠️                    |
-| **Security**              | ✅   | ⚠️             | ✅   | ⚠️  | ⚠️              | ⚠️                  | ⚠️                    |
-| **Windows Support**       | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
-| **Env Var Support**       | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
-| **Custom Scripts**        | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
-| **Built-in Modules**      | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ❌                    |
-| **Security Attestations** | ❌   | ❌             | ✅   | ❌  | ✅              | ✅                  | ❌                    |
-| **Multi-tool Plugins**    | ❌   | ❌             | ❌   | ❌  | ✅              | ❌                  | ❌                    |
-| **Progress/Logging**      | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
+Verification and platform support depend on both the backend and the particular
+tool. A backend supporting Windows does not imply every package it installs has
+a Windows release. Likewise, downloading a checksum does not establish the
+publisher's identity unless that checksum is authenticated.
+
+Consult each backend's verification options and the
+[security guide](/security.html). For example, packslip verifies signed manifests,
+and aqua can apply the verification methods declared by its registry entry.
+External plugin code runs locally and must be trusted along with the tool itself.
 
 ## When to Use Each Backend
 
-### Use **Core Tools** when
+Start with a registry shorthand for supported tools. For another source:
 
-- Available for your tool (check the [registry](../registry.md))
-- You want the fastest performance
-- You're using major programming languages
+- Use `packslip:` when the publisher provides signed release manifests.
+- Use `aqua:` when its registry describes the required tool and releases.
+- Use a forge backend for release assets, or `http:` or `s3:` for artifacts
+  you distribute directly.
+- Use a language package backend when you need that ecosystem's package and can
+  supply its runtime or build dependencies.
+- Use a plugin when installation or environment setup needs custom logic.
 
-Use core tools whenever they're available; they provide the best performance and integration with mise.
-
-### Use **Language Package Managers** when
-
-- Installing tools specific to that language ecosystem
-- The tool is primarily distributed through that package manager
-- You want automatic dependency management
-
-### Use **aqua** when
-
-- Installing pre-compiled binaries or static packages (no compilation needed)
-- You want comprehensive security features (checksums, signatures)
-- You need Windows support
-- The tool is already available in the [aqua registry](https://github.com/aquaproj/aqua-registry)
-- You're willing to contribute tools that aren't yet in the aqua registry
-
-### Use **github** when
-
-- Installing pre-compiled binaries from GitHub releases
-- The repository follows standard conventions for release tarballs
-- You want zero configuration - no registry setup required
-- You need simple, fast binary installation
-- The tool doesn't require complex build processes or environment setup
-
-::: info
-The `ubi` backend still works but is deprecated in favor of `github`. Replace `ubi:owner/repo` with `github:owner/repo`.
+::: warning Deprecated backend
+`ubi:` is deprecated. Use the corresponding `github:` or `gitlab:` backend and
+review its options when migrating; see the [ubi migration guide](/dev-tools/backends/ubi.html).
 :::
-
-### Use **Backend Plugins** when
-
-- You need to manage multiple tools with one plugin
-- You want enhanced backend methods for better performance
-- You need the `plugin:tool` format for flexibility
-- You're working with custom or private tools
-- You want a modern plugin architecture with backend methods
-
-### Use **Tool Plugins** when
-
-- You're creating traditional single-tool plugins
-- You need fine-grained control over installation hooks
-- You want to use the vfox hook system
-- The tool requires complex installation logic or build processes
-- The tool requires environment variable setup (like `JAVA_HOME`, `GOROOT`, etc.)
-- You need cross-platform support, including Windows
-
-### Use **asdf Plugins** when
-
-- The tool requires compilation from source
-- You need complex installation logic or build processes
-- The tool requires environment variable setup (like `JAVA_HOME`, `GOROOT`, etc.)
-- No other backend supports the tool
-- You're migrating from an existing asdf setup
-- You're working on Linux/macOS (no Windows support)
 
 ## Backend Dependencies
 
-Some backends depend on other tools:
+Backends may need another tool during installation. Declare the required tools
+alongside the package so mise can install them in order:
 
-```mermaid
-graph TD
-    A[npm backend] --> B[Node.js]
-    C[pipx backend] --> D[pipx]
-    E[cargo backend] --> F[Rust]
-    G[gem backend] --> H[Ruby]
+```toml [mise.toml]
+[tools]
+node = "24"
+"npm:prettier" = "3"
 ```
 
-mise automatically handles these dependencies, installing Node.js before npm tools, pipx before pipx tools, etc.
+A dependency relationship does not automatically add missing tools to your
+configuration. A matching configured tool is installed first; an unconfigured
+dependency may be satisfied by a suitable executable on the existing `PATH`.
+Otherwise installation fails. See [tool dependencies](/dev-tools/#tool-dependencies)
+for explicit `depends` declarations.
 
 ## Configuration and Overrides
 
 ### Disable Backends
 
-```toml
-# ~/.config/mise/config.toml
+Use the global settings file to prevent installation through selected backends:
+
+```toml [~/.config/mise/config.toml]
 [settings]
-disable_backends = ["asdf", "vfox"] # Don't use these backends
+disable_backends = ["asdf", "vfox"]
 ```
+
+This is an installation restriction, not an uninstall operation. Existing tools
+can still report the backend that installed them.
 
 ### Force Backend for Tool
 
-```toml
-# mise.toml
+An explicit identifier can be used directly as a tool key:
+
+```toml [mise.toml]
 [tools]
-"core:node" = "20"     # Explicitly use core backend
-"aqua:yarn" = "latest" # Use aqua backend instead of default (vfox)
+"core:node" = "24"
+"aqua:BurntSushi/ripgrep" = "latest"
 ```
 
 ### Backend-Specific Settings
 
-Some backends support additional configuration:
+Read the selected backend's reference before adding options. For example, this
+selects an optional extra from a Python package:
 
-```toml
-# mise.toml
+```toml [mise.toml]
 [tools]
-python = { version = "3.12", virtualenv = ".venv" }  # Core backend options
-black = { version = "latest", python = "3.12" }      # pipx backend options
+python = "3.14"
+uv = "latest"
+"pipx:black" = { version = "latest", extras = ["jupyter"] }
 ```
+
+The [pipx backend](/dev-tools/backends/pipx.html) can use uv or pipx. Backend options
+are not interchangeable with options for another distribution of the same tool.
 
 ## Troubleshooting Backend Issues
 
 ### Debug Backend Selection
 
-```bash
-mise doctor                   # Check backend configuration
-mise tool python              # See which backend is used for a tool
-mise config get tools         # Verify tool configurations
+```sh
+mise tool node       # effective backend and tool information
+mise plugins ls      # external plugins that may override defaults
+mise config ls       # configuration files contributing to this directory
+mise ls --current    # selected versions and their sources
+mise doctor          # installation and activation diagnostics
 ```
+
+If selection is correct but installation fails, check the backend's prerequisites,
+platform support, and authentication requirements. `MISE_DEBUG=1 mise install node` adds diagnostic output; review logs for credentials before sharing them.
