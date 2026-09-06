@@ -8,69 +8,49 @@ Plugins for [vfox](https://github.com/version-fox/vfox) can be used in mise to i
 
 ## Why vfox?
 
-- **Cross-platform** — plugins work on Windows, macOS, and Linux without platform-specific code
+- **Cross-platform** — Lua hooks run on Windows, macOS, and Linux; plugins still need compatible artifacts and platform handling
 - **Built-in modules** — HTTP, JSON, HTML parsing, archive extraction, semver comparison, and logging are all available out of the box, with no external dependencies needed
 - **Security** — [tool plugins](../../tool-plugin-development.md) support attestation verification (GitHub artifact attestations, cosign signatures, SLSA provenance) for downloaded artifacts. When a tool plugin's `PreInstall` hook returns an `attestation` table, mise verifies it during install and records the result in `mise.lock`, protecting against downgrade attacks on subsequent installs. Backend plugins do not currently support attestation
-- **Modern architecture** — structured hooks with typed contexts, backend plugins for multi-tool management, rolling version checksums, and lock file support
+- **Structured hooks** — contexts for version discovery, installation, and environment setup; backend plugins can manage multiple tools
 
 The code for this is inside the mise repository at [`./src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).
 
 ## Dependencies
 
-No extra system packages are required to _run_ the vfox backend. vfox Lua code is executed by the interpreter built into mise.
+The Lua interpreter is built into mise. A plugin may still invoke external
+commands or install software that needs system libraries. Read that plugin's
+requirements; the built-in interpreter does not make every plugin portable.
 
 ## Usage
 
-The following installs the latest version of cmake and sets it as the active version on PATH:
+Install cmake from an explicit vfox plugin and verify the selected executable:
 
 ```sh
-$ mise use -g vfox:version-fox/vfox-cmake
-$ cmake --version
-cmake version 3.21.3
+mise use vfox:version-fox/vfox-cmake
+mise exec -- cmake --version
 ```
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+This writes the following project configuration. Add `-g` for a global tool.
 
 ```toml
 [tools]
 "vfox:version-fox/vfox-cmake" = "latest"
 ```
 
+The explicit prefix selects that plugin even if the `cmake` registry shorthand
+prefers another backend.
+
 ## Default plugin backend
 
-On Windows, mise uses vfox plugins by default.
-To use vfox plugins by default on Linux/macOS as well, run the following:
-
-```sh
-mise settings add disable_backends asdf
-```
-
-Now you can list available plugins with `mise registry`:
-
-```sh
-$ mise registry | grep vfox:
-clang                         vfox:mise-plugins/vfox-clang
-cmake                         vfox:mise-plugins/vfox-cmake
-crystal                       vfox:mise-plugins/vfox-crystal
-dart                          vfox:mise-plugins/vfox-dart
-dotnet                        vfox:mise-plugins/vfox-dotnet
-etcd                          aqua:etcd-io/etcd vfox:mise-plugins/vfox-etcd
-flutter                       vfox:mise-plugins/vfox-flutter
-gradle                        aqua:gradle/gradle vfox:mise-plugins/vfox-gradle
-groovy                        vfox:mise-plugins/vfox-groovy
-kotlin                        vfox:mise-plugins/vfox-kotlin
-maven                         aqua:apache/maven vfox:mise-plugins/vfox-maven
-php                           vfox:mise-plugins/vfox-php
-scala                         vfox:mise-plugins/vfox-scala
-terraform                     aqua:hashicorp/terraform vfox:mise-plugins/vfox-terraform
-```
-
-They are installed when you run commands such as `mise use -g cmake`, without needing to
-specify `vfox:cmake`.
+Windows excludes asdf from default backend selection. On Linux and macOS, you
+can exclude it with `mise settings add disable_backends asdf`, but this does not
+make vfox take precedence over built-in, Packslip, Aqua, or release backends.
+Check `mise registry cmake` for the shorthand's available sources, or use an
+explicit `vfox:` identifier when you intend to use a particular plugin.
 
 ## Plugins
 
-In addition to the standard vfox plugins, mise supports modern plugins that can manage multiple tools using the `plugin:tool` format. These plugins are well suited to:
+In addition to the standard vfox tool plugins, mise supports backend plugins that can manage multiple tools using the `plugin:tool` format. These plugins are well suited to:
 
 - Installing tools from private repositories
 - Package managers (npm, pip, etc.)
@@ -80,7 +60,7 @@ In addition to the standard vfox plugins, mise supports modern plugins that can 
 
 ```bash
 # Install a plugin
-mise plugin install my-plugin https://github.com/username/my-plugin
+mise plugins install my-plugin https://github.com/username/my-plugin
 
 # Use the plugin:tool format
 mise install my-plugin:some-tool@1.0.0
@@ -89,11 +69,13 @@ mise use my-plugin:some-tool@latest
 
 ### Install from Zip File
 
+Replace `PLUGIN_NAME` and `HTTPS_ZIP_URL` with the plugin name and archive URL.
+
 ```bash
 # Install a plugin from a zip file over HTTPS
-mise plugin install <plugin-name> <zip-url>
+mise plugins install PLUGIN_NAME HTTPS_ZIP_URL
 # Example: Installing a plugin from a zip file
-mise plugin install vfox-cmake https://github.com/mise-plugins/vfox-cmake/archive/refs/heads/main.zip
+mise plugins install vfox-cmake https://github.com/mise-plugins/vfox-cmake/archive/refs/heads/main.zip
 ```
 
 For more information, see:

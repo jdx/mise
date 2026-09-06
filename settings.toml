@@ -604,13 +604,14 @@ type = "ListString"
 
 [dotnet.registry_url]
 default = "https://api.nuget.org/v3/index.json"
-description = "URL to fetch dotnet tools from."
+description = "NuGet service index used to discover dotnet tool versions."
 docs = """
-URL to fetch dotnet tools from. This is used when installing dotnet tools.
+URL of the NuGet service index used to discover tool versions. The default is
+the public [NuGet service index](https://api.nuget.org/v3/index.json).
 
-By default, mise will use the [nuget](https://api.nuget.org/v3/index.json) API to fetch.
-
-However, you can set this to a different URL if you have a custom feed or want to use a different source.
+Installation runs `dotnet tool install`, which reads its own `NuGet.Config` and
+credentials. Configure a private feed there as well; this setting does not add
+an installation source to the dotnet CLI.
 """
 env = "MISE_DOTNET_REGISTRY_URL"
 type = "Url"
@@ -2038,7 +2039,7 @@ as `cafile`, client certificates, or an auth token helper). When enabled, npm
 must be installed.
 
 This applies to the default/`auto` package manager. Explicitly selecting a
-package manager with [`npm.package_manager`](#npm-package-manager) (`aube_cli`,
+package manager with [`npm.package_manager`](/configuration/settings.html#npm.package_manager) (`aube_cli`,
 `bun`, `pnpm`, or `npm`) always shells out to that tool regardless of this
 setting.
 """

@@ -1,31 +1,34 @@
 # gem Backend
 
-mise can be used to install CLIs from RubyGems. The code for this is inside of the mise repository at [`./src/backend/gem.rs`](https://github.com/jdx/mise/blob/main/src/backend/gem.rs).
+The `gem` backend installs Ruby command-line applications from RubyGems into
+separate tool directories. Keep application gems in your project's `Gemfile` and
+install them with Bundler. The code for this is inside of the mise repository at [`./src/backend/gem.rs`](https://github.com/jdx/mise/blob/main/src/backend/gem.rs).
 
 ## Dependencies
 
-This backend relies on `gem` (provided with Ruby) being installed. You can install it with or without mise.
-To install `ruby` with mise:
-
-```sh
-mise use -g ruby
-```
+This backend needs Ruby and its `gem` command. Gems with native extensions also
+need the compiler and libraries required by that gem.
 
 ## Usage
 
-The following installs the latest version of [rubocop](https://rubygems.org/gems/rubocop) and sets it as the active version on PATH:
+Declare Ruby and RuboCop in the same project:
 
 ```sh
-mise use -g gem:rubocop
-rubocop --version
+mise use ruby@3.4 gem:rubocop
+mise exec -- rubocop --version
 ```
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+This writes both entries to `mise.toml`. Add `-g` for global configuration.
 
 ```toml
 [tools]
+ruby = "3.4"
 "gem:rubocop" = "latest"
 ```
+
+mise's wrappers set `GEM_HOME` for the selected tool. A RuboCop configuration
+that uses project-specific plugins may be better run with `bundle exec rubocop`
+from a Gemfile that declares those plugins.
 
 ## Ruby upgrades
 
@@ -36,11 +39,10 @@ reinstall the gem. This can be done with:
 mise install -f gem:rubocop
 ```
 
-Or you can reinstall all gems with:
-
-```sh
-mise install -f "gem:*"
-```
+Reinstall under the Ruby version you intend to use. On Unix, mise-managed Ruby
+shebangs follow a minor-version path so patch upgrades can keep working; moving
+to another minor version or changing native-extension compatibility can still
+require a reinstall.
 
 ## Settings
 
@@ -58,9 +60,10 @@ go in `[tools]` in `mise.toml`.
 
 ### `install_env`
 
-Set environment variables for the `gem install` command:
+Set environment variables for the `gem install` command. For gems that build
+native extensions, `MAKEFLAGS` controls parallel make jobs:
 
 ```toml
 [tools]
-"gem:rubocop" = { version = "latest", install_env = { GEM_HOST_API_KEY = "..." } }
+"gem:rubocop" = { version = "latest", install_env = { MAKEFLAGS = "-j4" } }
 ```

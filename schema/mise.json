@@ -810,7 +810,7 @@
             },
             "registry_url": {
               "default": "https://api.nuget.org/v3/index.json",
-              "description": "URL to fetch dotnet tools from.",
+              "description": "NuGet service index used to discover dotnet tool versions.",
               "type": "string"
             }
           }
