@@ -127,6 +127,29 @@ pub(crate) fn global_directory() -> PathBuf {
         .to_path_buf()
 }
 
+/// The branch of a transferred bundle whose tree carries the setup
+/// repository marker (`.mise-history/format.toml`); `None` for an ordinary
+/// repository.
+pub(crate) fn history_branch(bundle: &Path, revision: &str) -> Result<Option<String>> {
+    let temporary = tempfile::tempdir()?;
+    let checkout = temporary.path().join("checkout");
+    let mut command = Command::new("git");
+    crate::git::sanitize_git_command(&mut command);
+    let output = command
+        .args(["clone", "--no-checkout", "--"])
+        .arg(bundle)
+        .arg(&checkout)
+        .output()?;
+    if !output.status.success() {
+        bail!("invalid transferred repository bundle");
+    }
+    let marker = format!("{revision}:.mise-history/format.toml");
+    if git(&checkout, &["cat-file", "-e", &marker]).is_err() {
+        return Ok(None);
+    }
+    Ok(Some(git(&checkout, &["symbolic-ref", "--short", "HEAD"])?))
+}
+
 pub(crate) fn install(
     bundle: &Path,
     origin: &str,

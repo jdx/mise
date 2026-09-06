@@ -76,6 +76,31 @@ impl Ssh {
             let revision = self
                 .repository_revision
                 .ok_or_else(|| eyre::eyre!("missing repository revision"))?;
+            // a history-managed setup repository is set up from, never
+            // checked out into the configuration directory
+            if let Some(branch) =
+                crate::system::remote_repository::history_branch(&bundle, &revision)?
+            {
+                use crate::system::history::sync::onboard;
+                let store = crate::system::history::checkpoint::Store::open()?;
+                if let Some(reason) = store.unavailable() {
+                    bail!("cannot set up from a setup repository: {reason}");
+                }
+                let fetch_from = bundle.to_string_lossy().into_owned();
+                onboard::probe(&store, &fetch_from, &branch)?;
+                onboard::run(
+                    &store,
+                    &onboard::Onboarding {
+                        fetch_from,
+                        origin,
+                        branch,
+                        yes: self.repository_yes,
+                        dry_run: false,
+                    },
+                )
+                .await?;
+                return Ok(());
+            }
             crate::system::remote_repository::install(
                 &bundle,
                 &origin,

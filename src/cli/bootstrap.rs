@@ -1864,6 +1864,25 @@ impl Bootstrap {
             .as_deref()
             .map(crate::github_relay::expand_repository)
             .transpose()?;
+        // a history-managed setup repository is not cloned into the
+        // configuration directory: its branch goes into mise's own store and
+        // its files are written by the same recoverable pull as any other
+        // incoming change; the ordinary bootstrap then runs from them
+        if let Some(url) = expanded.as_deref()
+            && config::Settings::get().history.enabled
+            && let Some(outcome) =
+                system::history::sync::onboard::from_git(url, self.yes, self.dry_run).await?
+        {
+            if self.dry_run {
+                return Ok(());
+            }
+            let config_dir = system::history::tracked::global_config_dir();
+            self.run_child_bootstrap(config_dir).await?;
+            if !outcome.durable_access {
+                warn!("ongoing synchronization still needs credentials on this host (see above)");
+            }
+            return Ok(());
+        }
         let (url, checkout) = if let Some(url) = expanded.as_deref() {
             let checkout = crate::env::MISE_GLOBAL_CONFIG_FILE
                 .as_deref()
@@ -1921,6 +1940,12 @@ impl Bootstrap {
             return Ok(());
         }
 
+        self.run_child_bootstrap(checkout).await
+    }
+
+    /// Runs the bootstrap itself as a child process from `checkout` (the
+    /// global configuration directory for `--from-git`), trusted for it.
+    async fn run_child_bootstrap(&self, checkout: PathBuf) -> Result<()> {
         let checkout = dunce::canonicalize(&checkout)?;
         let mut command = Command::new(std::env::current_exe()?);
         command.args(bootstrap_from_child_args(

@@ -295,6 +295,18 @@ git. A history-enabled repository carries
 repository (its `--from`/`--from-git` behaviour is unchanged) until you
 confirm its adoption, and a newer format stops with an upgrade message.
 
+**Another machine.** `mise bootstrap --from-git <url>` on a machine that has
+nothing yet recognizes the marker and sets the machine up from the
+repository: the branch goes into mise's own store (no checkout in
+`~/.config/mise`), the shared configuration, its sources, and this machine's
+tracked files are written by one recoverable pull (the configuration first,
+then what it declares; a file that already exists and differs is held for a
+decision), the connection is remembered, and the ordinary bootstrap runs:
+packages, tools, templates rendered from the sources that just arrived, the
+watcher service. From then on the machine syncs like any other. Over SSH the
+same happens through `mise bootstrap remote`; see
+[remote bootstrap](/bootstrap/remote.html).
+
 **How a sync decides.** For every path the saved version here (ours is
 always the saved version, never a live edit in progress), the fetched
 upstream version, and the recorded acknowledged/reconciled/applied versions

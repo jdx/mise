@@ -340,6 +340,25 @@ changes.
 copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and
 `--exclude` flags cannot be combined with it.
 
+A **setup repository** (one connected with `mise bootstrap dotfiles origin set`,
+carrying `.mise-history/format.toml`) is set up from rather than checked out:
+the remote host fetches the transferred branch into its own history store,
+writes the shared configuration and this machine's tracked files with a
+recoverable pull, records the connection, and the bootstrap that follows
+installs the history watcher like any other user service:
+
+```sh
+mise bootstrap remote --host devbox --install-mise --from-git jdx/dotfiles \
+  --github-relay-read-only --github-relay-repo jdx/dotfiles
+```
+
+The borrowed GitHub access is read-only and ends with the session: the remote
+host can fetch through it but never publish. When the setup succeeded but the
+host cannot reach the repository on its own afterwards, the bootstrap says
+so; give the host credentials of its own for ongoing synchronization
+(`mise x gh -- gh auth login` and `mise x gh -- gh auth setup-git` there, or
+an SSH url through `mise bootstrap dotfiles origin set`).
+
 The relay is separate from this initial transfer. Enable it when bootstrap needs
 additional private GitHub content, authorizing each required repository with a
 repeated `--github-relay-repo`. Shorthand never enables or expands relay access.

@@ -15,6 +15,7 @@ pub(crate) mod format;
 pub(crate) mod layout;
 pub(crate) mod machines;
 pub(crate) mod network;
+pub(crate) mod onboard;
 pub(crate) mod origin;
 mod preflight;
 pub(crate) mod privacy;

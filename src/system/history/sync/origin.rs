@@ -425,8 +425,11 @@ fn origin_file() -> Result<PathBuf> {
     crate::cli::dotfiles::track::declaration_file(true)
 }
 
-fn write_config(url: &str, branch: &str, mode: Option<SyncMode>) -> Result<()> {
+pub(super) fn write_config(url: &str, branch: &str, mode: Option<SyncMode>) -> Result<()> {
     let global = origin_file()?;
+    if let Some(parent) = global.parent() {
+        crate::file::create_dir_all(parent)?;
+    }
     let mut doc = crate::cli::dotfiles::track::read_document(&global)?;
     let history = doc
         .entry("history")

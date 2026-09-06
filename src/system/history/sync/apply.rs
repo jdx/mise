@@ -38,6 +38,9 @@ pub(crate) struct ApplyRequest {
     /// The watcher applying in the background: no prompt, no plan on
     /// stdout, and held paths are a count, not a failure.
     pub automatic: bool,
+    /// With `dry_run`: the plan is shown before a question, so no
+    /// "nothing was changed" note.
+    pub plan_only: bool,
 }
 
 impl ApplyRequest {
@@ -49,6 +52,7 @@ impl ApplyRequest {
             take_remote: vec![],
             keep_local: vec![],
             automatic: true,
+            plan_only: false,
         }
     }
 }
@@ -272,7 +276,9 @@ pub(crate) async fn apply(
         table.print()?;
     }
     if req.dry_run {
-        miseprintln!("history: dry run; nothing was changed");
+        if !req.plan_only {
+            miseprintln!("history: dry run; nothing was changed");
+        }
         return Ok(ApplyOutcome::default());
     }
     if ready.is_empty() {

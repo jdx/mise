@@ -68,6 +68,7 @@ impl DotfilesPull {
                 take_remote: self.take_remote.clone(),
                 keep_local: self.keep_local.clone(),
                 automatic: false,
+                plan_only: false,
             },
         )
         .await?;
