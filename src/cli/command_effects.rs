@@ -322,6 +322,10 @@ pub(super) const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[
 pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
     ("asdf", "proxies whatever asdf command a plugin invoked"),
     (
+        "bootstrap dotfiles capture",
+        "runs an arbitrary command while recording file history",
+    ),
+    (
         "bootstrap repos exec",
         "runs an arbitrary command in each repo",
     ),

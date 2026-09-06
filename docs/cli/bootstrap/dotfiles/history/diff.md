@@ -16,6 +16,9 @@ against the one before it. With two, compares the two states.
 - **`[B]`** — Compare `A` with this checkpoint instead of its predecessor
 
 ## Flags
+- **`--operation`** — Compare an operation with its recorded protective checkpoint
+
+  With no reference, use the newest operation, ignoring later saves. With one reference, use that operation. Fails if its before checkpoint is unavailable instead of comparing an unrelated preceding save.
 - **`-p --patch`** — Print the full patch instead of a per-file summary
 - **`--path <PATH>`** — Restrict to one path (a file or a directory)
 - **`--exit-code`** — Exit 1 when the two sides differ

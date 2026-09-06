@@ -15,6 +15,7 @@ List checkpoints, newest first
   **Default:** `20`
 - **`--path <PATH>`** — Only checkpoints where this path (or something under it) changed
 - **`--trigger <TRIGGER>`** — Only checkpoints with this trigger (edit, save, bootstrap, …)
+- **`--label <LABEL>`** — Only checkpoints with this label
 - **`--pending`** — Only checkpoints recorded by operations that did not finish
 - **`-h --help`** — Print help
 

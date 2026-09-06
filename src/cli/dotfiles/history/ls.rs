@@ -24,6 +24,10 @@ pub(crate) struct HistoryLs {
     #[usage(long, value_name = "TRIGGER")]
     trigger: Option<String>,
 
+    /// Only checkpoints with this label
+    #[usage(long, value_name = "LABEL")]
+    label: Option<String>,
+
     /// Only checkpoints recorded by operations that did not finish
     #[usage(long)]
     pending: bool,
@@ -45,6 +49,9 @@ impl HistoryLs {
                 .collect();
         }
         entries.reverse();
+        if let Some(label) = &self.label {
+            entries.retain(|entry| entry.checkpoint.labels.contains(label));
+        }
         if let Some(path) = &self.path {
             let path = display_arg(path);
             entries.retain(|entry| entry.checkpoint.changes.touches(&path));

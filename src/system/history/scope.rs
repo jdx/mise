@@ -200,6 +200,26 @@ impl OperationScope {
         }
     }
 
+    /// External commands cannot journal individual writes. Capture all tracked
+    /// entries live (including manual-save files) and keep the label on the
+    /// pending record so crash recovery can identify the operation too.
+    pub(crate) fn prepare_capture(&self, label: Option<&str>) {
+        if let Some(shared) = &self.0 {
+            let mut writer = lock_unpoisoned(shared);
+            writer.promote = writer
+                .tracked
+                .entries
+                .iter()
+                .map(|entry| entry.path.clone())
+                .collect();
+            writer.pending.checkpoint.labels = label.into_iter().map(str::to_owned).collect();
+            writer.operation_mut().message = label.map(str::to_owned);
+            if let Err(err) = writer.write_pending() {
+                warn!("history: could not persist the capture label: {err:#}");
+            }
+        }
+    }
+
     /// The protective checkpoint this operation took, if any.
     pub(crate) fn before(&self) -> Option<(u64, String)> {
         self.0
@@ -480,6 +500,7 @@ impl Writer {
         let operation = self.operation().clone();
         let mut draft = Draft::new(checkpoint.trigger);
         draft.uuid = Some(checkpoint.uuid.clone());
+        draft.labels = checkpoint.labels.clone();
         draft.operation = Some(operation.clone());
         draft.blobs = self.pending.blobs.clone();
         draft.explicit_paths = self.promote.clone();
@@ -512,7 +533,8 @@ impl Writer {
         // carried-forward manual-save entries already discounted.
         // Keep abandoned operations for recovery diagnostics, but an ordinary
         // rejected request with proven unchanged files is not useful history.
-        let noop = (operation.status == OperationStatus::Completed || !retain_empty_failure)
+        let noop = operation.kind != OperationKind::Capture
+            && (operation.status == OperationStatus::Completed || !retain_empty_failure)
             && operation.journal.is_empty()
             && operation.affected.is_empty()
             && entry.checkpoint.tree.snapshot.is_some()
@@ -618,6 +640,19 @@ pub(crate) fn recover_stale(store: &Store, tracked: &TrackedSet) -> Result<()> {
         }
         let mut draft = Draft::new(record.checkpoint.trigger);
         draft.uuid = Some(record.checkpoint.uuid.clone());
+        draft.labels = record.checkpoint.labels.clone();
+        if record
+            .checkpoint
+            .operation
+            .as_ref()
+            .is_some_and(|op| op.kind == OperationKind::Capture)
+        {
+            draft.explicit_paths = tracked
+                .entries
+                .iter()
+                .map(|entry| entry.path.clone())
+                .collect();
+        }
         draft.operation = record.checkpoint.operation.clone();
         draft.blobs = record.blobs.clone();
         // the record is the only trace of what the crashed run changed:
@@ -639,6 +674,7 @@ pub(crate) fn recover_stale(store: &Store, tracked: &TrackedSet) -> Result<()> {
 
 fn before_trigger(kind: OperationKind) -> Trigger {
     match kind {
+        OperationKind::Capture => Trigger::CaptureBefore,
         OperationKind::Bootstrap => Trigger::BootstrapBefore,
         OperationKind::Rollback | OperationKind::BootstrapRollback => Trigger::RollbackBefore,
         OperationKind::Undo => Trigger::UndoBefore,
@@ -648,6 +684,7 @@ fn before_trigger(kind: OperationKind) -> Trigger {
 
 fn outcome_trigger(kind: OperationKind) -> Trigger {
     match kind {
+        OperationKind::Capture => Trigger::Capture,
         OperationKind::Bootstrap => Trigger::Bootstrap,
         OperationKind::Rollback | OperationKind::BootstrapRollback => Trigger::Rollback,
         OperationKind::Undo => Trigger::Undo,

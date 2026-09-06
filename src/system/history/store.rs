@@ -208,6 +208,8 @@ pub(crate) enum Trigger {
     Save,
     Agent,
     Baseline,
+    CaptureBefore,
+    Capture,
     BootstrapBefore,
     Bootstrap,
     RollbackBefore,
@@ -226,6 +228,8 @@ impl Trigger {
             Self::Save => "save",
             Self::Agent => "agent",
             Self::Baseline => "baseline",
+            Self::CaptureBefore => "capture-before",
+            Self::Capture => "capture",
             Self::BootstrapBefore => "bootstrap-before",
             Self::Bootstrap => "bootstrap",
             Self::RollbackBefore => "rollback-before",
@@ -244,6 +248,8 @@ impl Trigger {
             "save" => Self::Save,
             "agent" => Self::Agent,
             "baseline" => Self::Baseline,
+            "capture-before" => Self::CaptureBefore,
+            "capture" => Self::Capture,
             "bootstrap-before" => Self::BootstrapBefore,
             "bootstrap" => Self::Bootstrap,
             "rollback-before" => Self::RollbackBefore,
@@ -277,6 +283,7 @@ pub(crate) enum DescriptionSource {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum OperationKind {
+    Capture,
     Bootstrap,
     Rollback,
     Undo,
@@ -287,6 +294,7 @@ pub(crate) enum OperationKind {
 impl OperationKind {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
+            Self::Capture => "capture",
             Self::Bootstrap => "bootstrap",
             Self::Rollback => "rollback",
             Self::Undo => "undo",

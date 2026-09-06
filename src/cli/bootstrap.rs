@@ -10,10 +10,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::dotfiles::{
-    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesExclude, DotfilesHistory,
-    DotfilesInclude, DotfilesMachines, DotfilesOrigin, DotfilesPaths, DotfilesPull,
-    DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesSync, DotfilesTrack, DotfilesUnapply,
-    DotfilesUndo, DotfilesUntrack, DotfilesWatch,
+    DotfilesAdd, DotfilesApply, DotfilesCapture, DotfilesDiff, DotfilesEdit, DotfilesExclude,
+    DotfilesHistory, DotfilesInclude, DotfilesMachines, DotfilesOrigin, DotfilesPaths,
+    DotfilesPull, DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesSync, DotfilesTrack,
+    DotfilesUnapply, DotfilesUndo, DotfilesUntrack, DotfilesWatch,
 };
 use super::install::Install;
 use super::plugins::install::install_plugin;
@@ -844,6 +844,7 @@ struct BootstrapDotfiles {
 enum BootstrapDotfilesCommands {
     Add(DotfilesAdd),
     Apply(BootstrapDotfilesApply),
+    Capture(DotfilesCapture),
     Diff(DotfilesDiff),
     Edit(DotfilesEdit),
     Exclude(DotfilesExclude),
@@ -4182,6 +4183,7 @@ impl BootstrapDotfiles {
     async fn run(self) -> Result<()> {
         match self.command {
             BootstrapDotfilesCommands::Add(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Capture(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Diff(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,

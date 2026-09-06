@@ -166,6 +166,37 @@ forced, and an empty directory it replaced. It refuses when that checkpoint
 was pruned. Undoing an undo re-applies the operation; an undo that changed
 nothing does not count as having reversed it.
 
+## Capturing an external command
+
+```sh
+mise bootstrap dotfiles capture --label "omarchy update" -- omarchy-update
+mise bootstrap dotfiles history --label "omarchy update"
+mise bootstrap dotfiles history diff --operation --patch
+mise bootstrap dotfiles history diff 42 --operation --patch
+```
+
+`capture` saves tracked files before and after the command and records the link
+between those checkpoints, the label, and whether the command succeeded. It runs
+the command directly with inherited input, output, and environment; command
+arguments are recorded as provenance, so pass secrets through the environment
+instead. Use
+`-- sh -c '...'` for shell syntax. Capture failures warn and the command still
+runs with its own exit status. No-op and failed runs retain their checkpoint
+pairs. Files with `autosave = false` are explicitly saved by this command too.
+
+`history diff --operation` compares the newest operation with its own protective
+checkpoint, even if later saves exist. Supply one checkpoint reference to select
+an older operation. It fails if the protective checkpoint has been pruned.
+
+The operation lock keeps the watcher and other history writers from inserting
+checkpoints into the pair. Concurrent changes by editors or other programs are
+still part of the observed interval. An abruptly terminated wrapper leaves a
+pending record, finalized as failed by the next history mutation. Capture does
+not journal external writes individually, so it does not support selective
+`undo`: use `history show` to find its **Before** checkpoint, then
+`rollback <path> --to <before-ref>` to restore selected files. Package changes,
+service restarts, and files outside the tracked set are not restored.
+
 ## Automatic saves
 
 `mise bootstrap dotfiles watch` saves tracked files as they change, whatever
