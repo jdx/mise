@@ -2,39 +2,39 @@
 
 Like `pyenv`, `mise` can manage multiple versions of Python on the same system. It can also automatically create virtual environments for your projects and integrates with `uv`.
 
-> The following are instructions for using the python mise core plugin. It is used when no
-> plugin named "python" has been installed manually with `mise plugins install python [GIT_URL]`.
-
-The code for this is inside the mise repository
-at [`./src/plugins/core/python.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/python.rs).
-
 ## Usage
 
-The following installs the latest version of python-3.15.x and makes it the global
-default:
+Select Python for the current project and verify the interpreter:
 
 ```sh
-mise use -g python@3.15
+mise use python@3.14
+mise exec -- python --version
 ```
+
+Use `mise use -g python@3.14` for a personal default. Installing Python supplies
+the runtime; use a project virtualenv for dependencies.
 
 You can also use multiple versions of python at the same time:
 
 ```sh
-$ mise use -g python@3.14 python@3.15
-$ python -V
-3.14.0
-$ python3.15 -V
-3.15.0
+mise use python@3.13 python@3.14
+mise exec -- python --version     # the first configured version, 3.13.x
+mise exec -- python3.14 --version # the versioned executable, 3.14.x
 ```
 
 You can also install a specific python flavour. To get the latest version of a flavour, use the
 flavour prefix alone:
 
 ```sh
-mise use -g python@anaconda         # latest version of anaconda
+mise use python@anaconda         # latest version of anaconda
 ```
 
 See the [Python Cookbook](/mise-cookbook/python.html) for common tasks and examples.
+
+These instructions use mise's built-in python support. An installed external
+plugin with the same name can change the behavior; use `mise plugins ls` to
+check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/python.rs)
+for backend details.
 
 ## Tool Options
 
@@ -68,7 +68,15 @@ prefer the default unless you need this as an install workaround.
 
 ## `.python-version` support
 
-`.python-version`/`.python-versions` files are supported by mise. See [idiomatic version files](/configuration.html#idiomatic-version-files).
+`.python-version`/`.python-versions` files are supported after you enable discovery:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools python
+```
+
+Keep one authoritative project version source. A conflicting Python declaration
+in `mise.toml` takes precedence over an idiomatic file. See
+[idiomatic version files](/configuration.html#idiomatic-version-files).
 
 ## Automatic virtualenv activation
 
@@ -95,26 +103,35 @@ The legacy `virtualenv` tool option (`python = { version = "3.15", virtualenv = 
 
 Use `_.python.venv` in the `[env]` section of `mise.toml`:
 
-```toml
+```toml [mise.toml]
 [tools]
-python = "3.15" # [optional] will be used for the venv
+python = "3.14"
 
 [env]
-_.python.venv = ".venv" # relative to this file's directory
-_.python.venv = "/root/.venv" # can be absolute
-_.python.venv = "{{env.HOME}}/.cache/venv/myproj" # can use templates
-_.python.venv = { path = ".venv", create = true } # create the venv if it doesn't exist
-_.python.venv = { path = ".venv", create = true, python = "3.15" } # use a specific python version
-_.python.venv = {
-  path = ".venv", create = true,
-  python_create_args = ["--without-pip"], # pass args to python -m venv
-}
-_.python.venv = {
-  path = ".venv", create = true,
-  uv_create_args = ["--system-site-packages"], # pass args to uv venv
-}
-# Install seed packages (pip, setuptools, and wheel) into the virtual environment.
-_.python.venv = { path = ".venv", create = true, uv_create_args = ['--seed'] }
+_.python.venv = { path = ".venv", create = true }
+```
+
+Run `mise exec -- python -c 'import sys; print(sys.executable)'` to verify that
+Python comes from `.venv`. Add `.venv/` to `.gitignore`.
+
+Choose one declaration for the virtualenv. A string such as `_.python.venv =
+".venv"` activates an existing environment; the object form accepts these options:
+
+| Option               | Purpose                                                                         |
+| -------------------- | ------------------------------------------------------------------------------- |
+| `path`               | Environment directory, relative to the config root or an absolute/template path |
+| `create`             | Create the environment when missing                                             |
+| `python`             | Python version to use when creating it                                          |
+| `python_create_args` | Arguments for `python -m venv`, such as `["--without-pip"]`                     |
+| `uv_create_args`     | Arguments for `uv venv`, such as `["--seed"]` or `["--system-site-packages"]`   |
+
+For example, when uv is installed and you need pip inside the virtualenv:
+
+```toml
+[env._.python.venv]
+path = ".venv"
+create = true
+uv_create_args = ["--seed"]
 ```
 
 Unless `create=true` is set, you need to create the venv manually with `python -m venv /path/to/venv`.
@@ -132,7 +149,7 @@ For uv-managed projects (those with a `uv.lock` file), you can use the `python.u
 [settings]
 python.uv_venv_auto = "source"        # activate existing .venv
 # or
-python.uv_venv_auto = "create|source" # create .venv if missing, then activate
+# python.uv_venv_auto = "create|source" # create .venv if missing, then activate
 ```
 
 mise respects uv's `UV_PROJECT_ENVIRONMENT` variable when choosing the environment path. A relative
@@ -284,35 +301,15 @@ try installing Python with the following command:
 ```sh
 CFLAGS="-I$(brew --prefix openssl)/include" \
 LDFLAGS="-L$(brew --prefix openssl)/lib" \
-mise install python@latest;
+MISE_PYTHON_COMPILE=1 mise install python@latest
 ```
 
 Homebrew installs its own OpenSSL version, which may collide with the one the system expects.
-You could add these variables to your
-`.profile`,
-`.bashrc`,
-or `.zshrc`
-to avoid setting them every time.
-
-If you encounter issues with python-build,
-you may also benefit from unlinking pkg-config before installing
-([reason](https://github.com/pyenv/pyenv/issues/2823#issuecomment-1769081965)):
-
-```sh
-brew unlink pkg-config
-mise install python@latest
-brew link pkg-config
-```
-
-The entire script would then look like this:
-
-```sh
-brew unlink pkg-config
-CFLAGS="-I$(brew --prefix openssl)/include" \
-  LDFLAGS="-L$(brew --prefix openssl)/lib" \
-  mise install python@latest
-brew link pkg-config
-```
+Keep compiler flags scoped to the installation command so they do not affect
+unrelated builds. If the failure comes from python-build, inspect its build log
+and consult the [upstream build-environment guidance](https://github.com/pyenv/pyenv/wiki#suggested-build-environment)
+for your macOS and Python versions. Precompiled installs do not use these compiler
+flags; set `MISE_PYTHON_COMPILE=1` when intentionally testing a source build.
 
 ## Settings
 

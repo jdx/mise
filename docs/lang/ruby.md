@@ -2,27 +2,29 @@
 
 Like `rvm`, `rbenv`, or `asdf`, `mise` can manage multiple versions of [Ruby](https://www.ruby-lang.org/) on the same system.
 
-> The following are instructions for using the ruby mise core plugin. It is used when no
-> git plugin named "ruby" is installed. If you want to use [asdf-ruby](https://github.com/asdf-vm/asdf-ruby) instead,
-> run `mise plugins install ruby GIT_URL`.
-
-The code for this is inside the mise repository at
-[`./src/plugins/core/ruby.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/ruby.rs).
-
 ## Usage
 
-The following installs the latest version of ruby-3.2.x (if some version of 3.2.x is not already
-installed) and makes it the global default:
+Select Ruby for the current project and check its executable:
 
 ```sh
-mise use -g ruby@3.2
+mise use ruby@3.4
+mise exec -- ruby --version
 ```
+
+Use `mise use -g ruby@3.4` for a personal default. For an existing Bundler project,
+run `mise exec -- bundle install`, then prefix application commands with
+`mise exec -- bundle exec`. See the [Ruby cookbook](/mise-cookbook/ruby.html).
 
 By default, mise installs a precompiled Ruby binary when one is available and falls back to
 compiling from source with [`ruby-build`](https://github.com/rbenv/ruby-build). Source builds require
 the necessary [dependencies](https://github.com/rbenv/ruby-build/wiki#suggested-build-environment).
 See the ruby-build [README](https://github.com/rbenv/ruby-build/blob/master/README.md) for additional
 settings and troubleshooting.
+
+These instructions use mise's built-in ruby support. An installed external
+plugin with the same name can change the behavior; use `mise plugins ls` to
+check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/ruby.rs)
+for backend details.
 
 ## Precompiled Binaries
 
@@ -191,10 +193,11 @@ However, it can also read the ruby-specific version files `.ruby-version` and `G
 Create a `.ruby-version` file for the current version of ruby:
 
 ```sh
-ruby -v > .ruby-version
+mise exec -- ruby -e 'puts RUBY_VERSION' > .ruby-version
 ```
 
-Enable idiomatic version file reading for ruby:
+Write only the version number, not the full `ruby -v` banner. Then enable
+idiomatic version file reading:
 
 ```sh
 mise settings add idiomatic_version_file_enable_tools ruby

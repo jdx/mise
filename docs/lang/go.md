@@ -2,35 +2,46 @@
 
 `mise` can be used to install and manage multiple versions of [go](https://golang.org/) on the same system.
 
-> The following are instructions for using the go mise core plugin. It is used when no
-> git plugin named "go" is installed. If you want to use [asdf-golang](https://github.com/kennyp/asdf-golang) instead,
-> run `mise plugins install go GIT_URL`.
-
-The code for this is inside the mise repository at
-[`./src/plugins/core/go.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/go.rs).
-
 ## Usage
 
-The following installs the latest version of go-1.21.x (if some version of 1.21.x is not already
-installed) and makes it the global default:
+Select a Go release series for the current project:
 
 ```sh
-mise use -g go@1.21
+mise use go@1.25
+mise exec -- go version
 ```
+
+Use `mise use -g go@1.25` for a personal default. `mise ls-remote go` lists
+available versions; `mise upgrade go` updates within the configured request.
 
 Minor go versions 1.20 and below require specifying `prefix` before the version number because the
 first version of each series was released without a `.0` suffix, making 1.20 an exact version match:
 
 ```sh
-mise use -g go@prefix:1.20
+mise use go@prefix:1.20
 ```
+
+These instructions use mise's built-in go support. An installed external
+plugin with the same name can change the behavior; use `mise plugins ls` to
+check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/go.rs)
+for backend details.
 
 ## `.go-version` file support
 
-mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions.
-However, it can also read go-specific version files named `.go-version`.
+Enable Go's idiomatic files explicitly:
 
-See [idiomatic version files](/configuration.html#idiomatic-version-files).
+```sh
+mise settings add idiomatic_version_file_enable_tools go
+```
+
+mise can read `.go-version` or the `toolchain goX.Y.Z` declaration in `go.mod`.
+The `go` directive is a minimum compatibility requirement; reading it as a version
+request is [deprecated](/configuration.html#which-fields-mise-reads).
+
+Go also has its own [toolchain selection](https://go.dev/doc/toolchain), controlled
+by `GOTOOLCHAIN` and module/workspace declarations. It may use a different
+toolchain after mise starts it. Compare `mise exec -- go version` with
+`mise exec -- go env GOTOOLCHAIN` when investigating unexpected versions.
 
 ## Default packages
 

@@ -5,8 +5,10 @@ installed side-by-side under a shared `DOTNET_ROOT` directory, matching .NET's n
 This means `dotnet --list-sdks` shows every version you've installed through mise.
 
 Unlike most tools, the SDKs don't live inside `~/.local/share/mise/installs` because they share a
-common root. mise symlinks the install path to `DOTNET_ROOT` and sets environment variables so the
-correct SDK is picked up.
+common root. mise symlinks its tracking path to `DOTNET_ROOT` and puts that shared installation
+on `PATH`. The .NET SDK resolver then chooses an SDK, using `global.json` when
+present. Without it, .NET normally uses the highest installed SDK; a mise version
+declaration alone does not isolate SDK selection in shared mode.
 
 ::: info
 This plugin manages the **.NET SDK** itself. To install .NET global tools (e.g., `dotnet-ef`),
@@ -15,46 +17,52 @@ use the [`dotnet` backend](/dev-tools/backends/dotnet.html) with `dotnet:ToolNam
 
 ## Usage
 
-Use the latest .NET SDK:
+Install the latest SDK for the current project and inspect the shared installation:
 
 ```sh
-mise use -g dotnet@latest
-dotnet --version
+mise use dotnet@latest
+mise exec -- dotnet --list-sdks
+mise exec -- dotnet --version
 ```
 
-Use a specific version:
+Use `mise use -g dotnet@latest` for a personal default. To install another SDK
+without replacing the project's version request, use `mise install`:
 
 ```sh
-mise use -g dotnet@8.0.400
-dotnet --version
+mise install dotnet@8.0.400
+mise exec -- dotnet --list-sdks
 ```
 
-Install multiple SDKs side-by-side for multi-targeting:
-
-```sh
-mise use dotnet@8
-mise use dotnet@9
-dotnet --list-sdks
-```
+For a project that must build with a particular SDK, configure `global.json` below,
+or enable [isolated mode](#isolated-mode) before installation.
 
 ## `global.json` support
 
-mise recognizes `global.json` as an idiomatic version file. If your project contains a `global.json`
-with an SDK version, mise will automatically use it:
+Enable discovery so mise installs the SDK declared by the project, preserving any
+other tools already enabled for idiomatic files:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools dotnet
+```
+
+For example, this file requests an exact SDK and disables .NET's roll-forward
+behavior:
 
 ```json
 {
   "sdk": {
-    "version": "8.0.100"
+    "version": "8.0.400",
+    "rollForward": "disable"
   }
 }
 ```
 
-Enable idiomatic version file support:
-
-```sh
-mise settings set idiomatic_version_file_enable_tools=dotnet
-```
+Run `mise install`, then `mise exec -- dotnet --version` from the project.
+mise reads `sdk.version` to install the requested SDK. .NET itself interprets
+`rollForward` and other SDK selection policy; see Microsoft's
+[`global.json` reference](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json).
+Do not keep a conflicting `dotnet` version in `mise.toml` if `global.json` is the
+project's version source.
 
 ## Isolated Mode
 
@@ -67,6 +75,9 @@ isolated mode:
 ```sh
 mise settings set dotnet.isolated=true
 ```
+
+Choose this mode before installing the versions you need. Changing the setting
+alone does not move existing shared installations into isolated directories.
 
 In isolated mode each SDK version is installed under `~/.local/share/mise/installs/dotnet/<version>/`,
 just like most other mise-managed tools. `dotnet --list-sdks` will only report the currently active
@@ -83,8 +94,8 @@ version.
 By default, mise installs the full .NET SDK. If you only need to _run_ .NET applications, without building them or the overhead of the SDK, install just the runtime with the `runtime` inline option:
 
 ```sh
-mise use dotnet[runtime=dotnet]@8.0.14
-dotnet --list-runtimes
+mise use "dotnet[runtime=dotnet]@8.0.14"
+mise exec -- dotnet --list-runtimes
 ```
 
 ### Valid runtime values

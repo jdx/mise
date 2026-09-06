@@ -4,12 +4,20 @@
 
 ## Usage
 
-Use the latest stable version of swift:
+Install Swift for the current project and check the selected toolchain:
 
 ```sh
-mise use -g swift
-swift --version
+mise use swift@latest
+mise exec -- swift --version
 ```
+
+Use `mise use -g swift@latest` for a personal default. In an existing Swift package
+with `Package.swift`, run `mise exec -- swift build` to build it.
+
+On Linux, Swift archives target specific distributions and require compatible
+system libraries. mise records the selected distribution in lockfile options;
+use a lock entry built for your target distribution. The Swift core plugin does
+not currently support Windows.
 
 See [a mise guide for Swift developers](https://tuist.dev/blog/2025/02/04/mise) for how to use `mise` with `swift`.
 

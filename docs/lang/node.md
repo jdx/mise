@@ -1,23 +1,27 @@
-# Node
+# Node.js
 
 Like `nvm` (or `volta`, `fnm`, or `asdf`), `mise` can manage multiple versions of Node.js on the same system.
 
-> The following are instructions for using the node mise core plugin. It is used when no
-> git plugin named "node" is installed. If you want to use [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs) instead,
-> run `mise plugins install node https://github.com/asdf-vm/asdf-nodejs`.
-
-The code for this is inside the mise repository at [`./src/plugins/core/node.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/node.rs).
-
 ## Usage
 
-The following installs the latest version of node-26.x and makes it the global
-default:
+Select Node.js for the current project and verify it without depending on shell
+activation:
 
 ```sh
-mise use -g node@26
+mise use node@26
+mise exec -- node --version
 ```
 
+Use `mise use -g node@26` for a personal default. Project versions override that
+default when you enter the project with shell activation, run a task, or use
+`mise exec`. Use `mise upgrade node` to update within the configured request.
+
 See the [Node.js Cookbook](/mise-cookbook/nodejs.html) for common tasks and examples.
+
+These instructions use mise's built-in node support. An installed external
+plugin with the same name can change the behavior; use `mise plugins ls` to
+check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/node.rs)
+for backend details.
 
 ## Run projects with aube
 
@@ -30,7 +34,7 @@ Install it with mise, then run an existing package script:
 
 ```sh
 mise use aube
-aubr test
+mise exec -- aubr test
 ```
 
 See [aube's security overview](https://aube.jdx.dev/security) for its release-cooling, trust-policy, malicious-package,
@@ -69,16 +73,14 @@ To pin both to exact versions:
 mise use --pin node@lts npm@latest
 ```
 
-This resolves aliases like `lts` and `latest` to exact version numbers in `mise.toml`, e.g.:
+This writes the resolved concrete versions to `mise.toml`. The numbers depend on
+the current releases; inspect the result with `mise ls --current` or read the
+config file.
 
-```toml [mise.toml]
-[tools]
-node = "26.1.0"
-npm = "11.12.1"
-```
-
-The pinned npm version takes precedence over the one bundled with Node, so `npm --version` will
-always return the version specified in `mise.toml`.
+The separately configured npm takes precedence over Node's bundled npm inside
+the mise environment. Check it with `mise exec -- npm --version`. This selects
+the package-manager executable; the project's dependency lockfile still controls
+its npm packages.
 
 ## `.nvmrc`, `.node-version` and `package.json` support
 
@@ -86,7 +88,7 @@ By default, mise uses a `mise.toml` file for auto-switching between software ver
 
 It also supports `.tool-versions` files for asdf compatibility. `.nvmrc`, `.node-version`, and the `devEngines` field in `package.json` are also supported but must be explicitly enabled (see the tip below).
 
-This makes it a drop-in replacement for `nvm`. See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
+See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
 
 ::: tip
 Idiomatic version files (`.nvmrc`, `.node-version`, `devEngines` field in `package.json`) are disabled by default and must be explicitly enabled:
@@ -139,9 +141,8 @@ version. To use this legacy feature, provide a `$HOME/.default-npm-packages` fil
 package per line, for example:
 
 ```text
-lodash
-request
-express
+typescript
+eslint
 ```
 
 You can specify a different location for this file with the `MISE_NODE_DEFAULT_PACKAGES_FILE` variable.

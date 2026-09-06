@@ -27,25 +27,30 @@ version, and asks rustup to install any configured components or targets when yo
 
 ## Usage
 
-Use the latest stable version of Rust:
+Install the latest stable toolchain for the current project and verify it:
 
 ```sh
-mise use -g rust
-cargo build
+mise use rust
+mise exec -- rustc --version
+mise exec -- cargo --version
 ```
+
+In a Cargo project, use `mise exec -- cargo build` or a mise task. Add `-g` to
+`mise use` for a personal default. These examples select the toolchain through
+mise; they do not require shell activation.
 
 Use the latest beta version of Rust:
 
 ```sh
-mise use -g rust@beta
-cargo build
+mise use rust@beta
+mise exec -- cargo build
 ```
 
 Use the rolling nightly channel:
 
 ```sh
-mise use -g rust@nightly
-cargo build
+mise use rust@nightly
+mise exec -- cargo build
 ```
 
 The configuration remains `nightly`, while mise resolves the current Rust channel manifest to a concrete
@@ -55,7 +60,7 @@ locked installs reproducible. Run `mise upgrade rust` or `mise lock --bump` to a
 To keep a specific nightly instead, configure its date explicitly:
 
 ```sh
-mise use -g rust@nightly-2026-08-13
+mise use rust@nightly-2026-08-13
 ```
 
 An explicitly dated nightly is an exact pin. Commands using `--bump`, such as `mise upgrade --bump rust`, can replace
@@ -64,9 +69,24 @@ that pin with the current nightly.
 Use a specific version of Rust:
 
 ```sh
-mise use -g rust@1.82
-cargo build
+mise use rust@1.82
+mise exec -- cargo build
 ```
+
+## Existing rustup projects
+
+If the project already uses `rust-toolchain.toml`, enable idiomatic-file discovery
+instead of duplicating a conflicting Rust version in `mise.toml`:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools rust
+mise install
+mise exec -- rustup show active-toolchain
+```
+
+mise sets `RUSTUP_TOOLCHAIN` for its selected toolchain. Use `mise exec` when
+comparing selection with a standalone rustup invocation, since the environment
+can change which override rustup sees.
 
 ## Share Cargo builds with Mr Boxington
 
@@ -147,10 +167,7 @@ be given as an array or as a comma-separated string.
 
 ```toml
 [tools]
-"rust" = {
-  version = "1.83.0",
-  targets = ["wasm32-unknown-unknown", "thumbv7em-none-eabi"],
-}
+rust = { version = "1.83.0", targets = ["wasm32-unknown-unknown", "thumbv7em-none-eabi"] }
 ```
 
 If the Rust toolchain is already installed, `mise install` will still add any missing configured targets.

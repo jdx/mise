@@ -2,26 +2,28 @@
 
 `mise` can be used to install and manage multiple versions of [deno](https://deno.land/) on the same system.
 
-> The following are instructions for using the deno mise core plugin. It is used when no
-> git plugin named "deno" is installed. If you want to use [asdf-deno](https://github.com/asdf-community/asdf-deno) instead,
-> run `mise plugins install deno https://github.com/asdf-community/asdf-deno`.
-
-The code for this is inside the mise repository at
-[`./src/plugins/core/deno.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/deno.rs).
-
 ## Usage
 
-The following installs deno and makes it the global default:
+Install Deno for the current project and verify the selected executable:
 
 ```sh
-mise use -g deno@1       # install deno 1.x
-mise use -g deno@latest  # install latest deno
+mise use deno@latest
+mise exec -- deno --version
 ```
+
+Use `mise use -g deno@latest` for a personal default outside projects. A specific
+version request such as `deno@2` keeps the project within that release series.
 
 See available versions with `mise ls-remote deno`.
 
 > [!NOTE]
-> Avoid upgrading with `deno upgrade`, as `mise` will not be aware of the change.
+> Update with `mise upgrade deno`. Running `deno upgrade` changes the installed
+> binary without updating mise's recorded version.
+
+These instructions use mise's built-in deno support. An installed external
+plugin with the same name can change the behavior; use `mise plugins ls` to
+check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/deno.rs)
+for backend details.
 
 ## Tool Options
 
