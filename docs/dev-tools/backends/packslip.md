@@ -100,13 +100,23 @@ release. Keep the request in `mise.toml` and commit a generated lockfile when yo
 team needs to install the same version:
 
 ```sh
-mise lock
+mise install
+git add mise.toml mise.lock
+```
+
+The first installation records the version, signer, and artifact commitments in
+`mise.lock`; commit that file with `mise.toml`. Teammates and CI can then enforce
+those commitments after checking out the project:
+
+```sh
 mise install --locked
 ```
 
-The lockfile carries version, signer, and artifact commitments. Installation still
-needs the artifacts or usable cached copies and must satisfy current verification
-policy. See [mise.lock](/dev-tools/mise-lock.html) for target platforms and updates.
+`mise lock` can resolve the Packslip version without installing it, but it cannot
+record the selected artifact's commitments before the first installation.
+Installation still needs the artifacts or usable cached copies and must satisfy
+current verification policy. See [mise.lock](/dev-tools/mise-lock.html) for target
+platforms and updates.
 
 ## Completions and skills {#completions}
 
