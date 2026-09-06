@@ -1,0 +1,20 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TWZJJCTQQFD3M5WY6J6W3E",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-plugin-guides",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/plugin-usage.md",
+    "docs/plugins.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
