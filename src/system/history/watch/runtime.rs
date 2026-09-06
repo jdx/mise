@@ -676,7 +676,10 @@ impl Capture {
                 .and_then(|meta| meta.modified())
                 .ok()
                 .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-                .is_some_and(|modified| modified.as_secs() > saved);
+                // not strictly after: both are whole seconds, and a change
+                // in the same second as the save must count as pending (a
+                // false positive only holds the file until its save is due)
+                .is_some_and(|modified| modified.as_secs() >= saved);
             if changed_since && schedule.get(&path).is_some_and(|s| !s.pending()) {
                 schedule.note(path, now);
             }
