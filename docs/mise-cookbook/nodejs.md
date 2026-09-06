@@ -1,6 +1,7 @@
-# Mise + Node.js Cookbook
+# Node.js Cookbook
 
-Here are some tips on managing [Node.js](/lang/node.html) projects with mise.
+Use mise to select [Node.js](/lang/node.html) and your package manager, then run
+the scripts and dependencies declared by the project.
 
 ## Getting started with Node.js
 
@@ -28,7 +29,7 @@ mise use -g node@26
 When you install Node.js packages listed in `package.json`, you typically need `npx` or the full path to run their binaries. For example:
 
 ```shell
-npm install --save eslint
+mise exec -- npm install --save-dev eslint
 eslint --version # doesn't work
 npx eslint --version # works
 ```
@@ -43,72 +44,61 @@ _.path = ['{{config_root}}/node_modules/.bin']
 Example:
 
 ```shell
-npm install --save eslint
-eslint --version # works
+mise exec -- npm install --save-dev eslint
+mise exec -- eslint --version # works without shell activation
 ```
+
+With shell activation, `eslint --version` also works directly.
 
 ## Example Node.js Project
 
+This recipe expects a `package.json` with `start`, `lint`, `test`, and `build`
+scripts, plus a committed `package-lock.json`. Keep ESLint, TypeScript, and test
+runners in the project's `devDependencies`, so npm's lockfile controls their
+versions alongside the packages they use.
+
 ```toml [mise.toml]
-min_version = "2024.9.5"
+[tools]
+node = "24"
 
 [env]
-_.path = ['{{config_root}}/node_modules/.bin']
-
-# Use the project name derived from the current directory
-PROJECT_NAME = "{{ config_root | basename }}"
-
-# Set up the path for node module binaries
-BIN_PATH = "{{ config_root }}/node_modules/.bin"
-
-NODE_ENV = "{{ env.NODE_ENV | default(value='development') }}"
-
-[tools]
-# Install Node.js using the specified version
-node = "{{ env['NODE_VERSION'] | default(value='lts') }}"
-
-# Install some npm packages globally if needed
-"npm:typescript" = "latest"
-"npm:eslint" = "latest"
-"npm:jest" = "latest"
+NODE_ENV = { default = "development" }
 
 [tasks.install]
+description = "Install the locked npm dependency tree"
 alias = "i"
-description = "Install npm dependencies"
-run = "npm install"
+run = "npm ci"
 
 [tasks.start]
-alias = "s"
 description = "Start the development server"
+alias = "s"
 run = "npm run start"
 
 [tasks.lint]
+description = "Run the project's lint script"
 alias = "l"
-description = "Run ESLint"
-run = "eslint src/"
+run = "npm run lint"
 
 [tasks.test]
-description = "Run tests"
+description = "Run the project's tests"
 alias = "t"
-run = "jest"
+run = "npm test"
 
 [tasks.build]
 description = "Build the project"
 alias = "b"
 run = "npm run build"
-
-[tasks.info]
-description = "Print project information"
-run = '''
-echo "Project: $PROJECT_NAME"
-echo "NODE_ENV: $NODE_ENV"
-'''
 ```
+
+Run `mise run install` after cloning the repository, then `mise run test` or
+`mise run start`. npm scripts already put `node_modules/.bin` on `PATH`, so these
+tasks do not need a separate path directive. For a new project without a lockfile,
+run `mise exec -- npm install` once and commit the resulting lockfile.
 
 ## Example with `pnpm`
 
-This example uses `pnpm` as the package manager. It expects
-`devEngines.packageManager` in `package.json` to pin the pnpm version:
+This example uses `pnpm` as the package manager. Merge the following field into
+your existing `package.json`, which must also define a `dev` script:
 
 ```json [package.json]
 {
@@ -148,11 +138,15 @@ run = 'node --run dev'
 depends = ['pnpm-install']
 ```
 
-With this setup, getting started in a Node.js project is as simple as running `mise dev`:
+Run `mise run dev` to install the selected tools and prepare dependencies before
+starting the existing application:
 
 - `mise` will install the correct version of Node.js
 - `mise` will install the `pnpm` version declared in `package.json`
-- `pnpm install` will be run before `node --run dev`
+- `pnpm install` runs when its sources or outputs are stale, before `node --run dev`
+
+The timestamp check does not verify every file in `node_modules`. If dependencies
+are missing or damaged, run `mise run --force pnpm-install`.
 
 ## Replacing Corepack
 

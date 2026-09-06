@@ -1,6 +1,10 @@
-# Mise + Ruby Cookbook
+# Ruby Cookbook
 
-Here are some tips on managing Ruby projects with mise.
+Use mise to select Ruby and tasks to run the application's Bundler and Rails
+commands. This recipe assumes an existing Rails project with `Gemfile`,
+`Gemfile.lock`, and `bin/rails`. Add RuboCop to the development bundle before using
+the lint task. Install Ruby's platform dependencies as described in the
+[Ruby guide](/lang/ruby.html).
 
 ## A Ruby on Rails Project
 
@@ -22,15 +26,20 @@ run = "bundle install"
 [tasks.server]
 description = "Start the Rails server"
 alias = "s"
-run = "rails server"
+run = "bundle exec rails server"
 
 [tasks.test]
 description = "Run tests"
 alias = "t"
-run = "rails test"
+run = "bundle exec rails test"
 
 [tasks.lint]
 description = "Run lint using Rubocop"
 alias = "l"
-run = "rubocop"
+run = "bundle exec rubocop"
 ```
+
+Run `mise run bundle:install` after cloning, then `mise run test` or
+`mise run server`. `bundle exec` selects the executables from the project's bundle,
+including its locked Rails and RuboCop versions. Application setup such as database
+creation remains part of the Rails project's own instructions.

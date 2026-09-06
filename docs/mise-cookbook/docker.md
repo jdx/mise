@@ -1,6 +1,8 @@
-# Mise + Docker Cookbook
+# Docker Cookbook
 
-Here are some tips on using Docker with mise.
+Install mise inside an image, use it to run project commands, or preinstall tools
+outside user home directories for shared development containers. Building these
+examples requires Docker and a running container engine.
 
 ## Docker image with mise
 
@@ -12,7 +14,7 @@ FROM debian:13-slim
 RUN apt-get update  \
     && apt-get -y --no-install-recommends install  \
         # install any other dependencies you might need
-        sudo curl git ca-certificates build-essential \
+        curl git ca-certificates build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -23,7 +25,7 @@ ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
 ENV PATH="/mise/shims:$PATH"
 # ENV MISE_VERSION="..."
 
-RUN curl https://mise.run | sh
+RUN curl --fail --show-error --silent --location https://mise.run | sh
 ```
 
 Build and run the Docker image:
@@ -32,6 +34,21 @@ Build and run the Docker image:
 docker build -t debian-mise .
 docker run -it --rm debian-mise
 ```
+
+The image above installs mise itself. To install project tools as a build layer,
+copy the project config before its source files:
+
+```Dockerfile
+WORKDIR /app
+COPY mise.toml ./
+RUN mise install
+COPY . .
+```
+
+Also copy `mise.lock` if the project uses a lockfile, plus any files the config
+reads. If an install hook needs application files, copy those before `mise install`.
+Use `mise exec -- <command>` or `mise run <task>` in `RUN` and `CMD` instructions;
+Docker build shells do not run interactive activation hooks.
 
 ## Shared tools in multi-user containers
 
@@ -65,10 +82,12 @@ EOF
 RUN mise install --system node@26 python@3.15
 ```
 
-Users in the container will see these tools automatically:
+Users can inspect the shared installations with `mise ls --installed`. The
+versions below illustrate the output; patch versions depend on when the image
+was built:
 
 ```shell
-$ mise ls
+$ mise ls --installed
 node    26.0.0 (system)
 python  3.15.0 (system)
 ```
@@ -120,17 +139,17 @@ This is useful for reproducing a mise issue in a clean environment.
 
 ```toml [mise.toml]
 [tasks.docker]
+interactive = true
 run = "docker run -it --rm debian-mise"
 ```
 
 Build the image first (see above), then:
 
 ```shell
-❯ mise docker
-[docker] $ docker run -it --rm debian-mise
-root@75f179a190a1:/# eval "$(mise activate bash)"
-# overwrite configuration and prune to give us a clean state
-root@75f179a190a1:/# echo "" > /mise/config.toml
-root@75f179a190a1:/# mise prune --yes
-# ...
+mise run docker
 ```
+
+Inside the disposable container, run `mise doctor` or create a small `mise.toml`
+that reproduces the issue. Activate mise with `eval "$(mise activate bash)"` only
+when testing interactive shell behavior. Exiting the shell removes the container
+because the task uses `--rm`.
