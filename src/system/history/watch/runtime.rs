@@ -130,7 +130,6 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         // the restored schedule applies to this capture too: a throttled
         // file whose save is not due is held, not read live
         let outcome = capture.reconcile(&state.tracked, "startup reconcile");
-        capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
         capture.write_health();
         return Ok(match outcome {
             Attempt::Done => 0,
@@ -191,7 +190,6 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     // landing between the two reaches the scheduler instead of waiting for
     // the next reconcile
     capture.reconcile(&state.tracked, "startup reconcile");
-    capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
     capture.out.emit(
         "started",
         &format!(
@@ -362,6 +360,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                                 .filter(|path| !path.starts_with(&config_dir))
                                 .collect();
                             if capture.attempt(&state.tracked, "configuration changed", &held) == Attempt::Done {
+                                capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
                                 for path in capture.schedule.due_paths(now).into_iter().chain(
                                     capture
                                         .schedule
@@ -374,7 +373,6 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                                 capture.schedule.prune(now);
                                 capture.persist_schedule();
                             }
-                            capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
                             capture.write_health();
                         }
                         Ok(false) => {
@@ -415,7 +413,6 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         ),
                     }
                     capture.reconcile(&state.tracked, "rescan");
-                    capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
                     capture.write_health();
                 } else if pending_appeared || anchor_changed {
                     match state.reload().await {
@@ -457,7 +454,6 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                     // during reinstallation even if periodic reconciliation is
                     // disabled, while preserving the noisy-file schedule.
                     capture.reconcile(&state.tracked, "watches updated");
-                    capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
                     capture.out.emit(
                         "replan",
                         &format!("a tracked path appeared; watching {} anchor(s)", installed.len()),
@@ -542,7 +538,6 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                     ),
                 }
                 capture.reconcile(&state.tracked, "reconcile");
-                capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
                 capture.write_health();
             }
             _ = shutdown.wait() => {
@@ -1098,6 +1093,7 @@ impl Capture {
         let due = self.schedule.due_paths(now);
         let outcome = self.attempt(tracked, reason, &held);
         if outcome == Attempt::Done {
+            self.health.watcher.last_reconcile = Some(store::now_rfc3339());
             for path in &due {
                 self.schedule.saved(path, now);
             }
@@ -1365,6 +1361,35 @@ mod tests {
     use super::*;
     use crate::system::files::{FileMode, FilePolicy};
     use crate::system::history::tracked::{EntryKind, TrackedEntry};
+
+    #[test]
+    fn unfinished_reconciliation_preserves_success_timestamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in(dir.path()).unwrap();
+        let mut capture = Capture::new(
+            store,
+            Output { json: false },
+            Limits {
+                base: Duration::from_secs(2),
+                max: Duration::from_secs(86400),
+            },
+        );
+        let tracked = TrackedSet {
+            entries: vec![],
+            exclude: vec![],
+            invalid: vec![],
+        };
+        capture.health.watcher.last_reconcile = Some("previous success".into());
+        capture.retry_at = Some(Instant::now() + Duration::from_secs(60));
+        for outcome in [Attempt::Deferred, Attempt::Failed] {
+            capture.retry_kind = Some(outcome);
+            assert_eq!(capture.reconcile(&tracked, "watches updated"), outcome);
+            assert_eq!(
+                capture.health.watcher.last_reconcile.as_deref(),
+                Some("previous success")
+            );
+        }
+    }
 
     #[test]
     fn parent_activity_is_not_an_anchor_replacement() {
