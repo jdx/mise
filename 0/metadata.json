@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TKHJT3K1CM7DYE7TWGH7PW",
+  "session_id": "01a0751c-803c-71c3-8477-fa566f432cfe",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T05:37:32.211145Z",
+  "branch": "codex/docs-restore-toml11",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/index.md",
+    "docs/environments/index.md",
+    "docs/lang/python.md",
+    "docs/lang/rust.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "9abf8291549d",
+  "checkpoint_transcript_start": 673,
+  "transcript_lines_at_start": 673,
+  "compact_transcript_start": 100,
+  "token_usage": {
+    "input_tokens": 5438,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1146752,
+    "output_tokens": 566,
+    "api_call_count": 5
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T05:37:32.134875Z",
+    "agent_lines": 97,
+    "agent_removed": 100,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 97,
+    "total_lines_changed": 197,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
