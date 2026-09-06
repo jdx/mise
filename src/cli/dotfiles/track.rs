@@ -177,6 +177,16 @@ impl DotfilesTrack {
         let mut variants: Vec<Variant> =
             existing.map(|req| req.variants.clone()).unwrap_or_default();
         if self.os.is_some() || self.profile.is_some() {
+            // Adding a specialization must not remove the stream that
+            // already serves machines without that specialization.
+            if existing.is_some() && variants.is_empty() {
+                variants.push(Variant {
+                    os: vec![],
+                    profile: None,
+                    default: true,
+                    share: None,
+                });
+            }
             let variant = Variant {
                 os: self.os.iter().cloned().collect(),
                 profile: self.profile.clone(),

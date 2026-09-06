@@ -38,11 +38,18 @@ assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path 
 assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.config/mise/templates/gitconfig.tera\") | .mode'" "source"
 
 # tracked files coexist with shell activation and managed blocks on the same file
+assert_succeed "mise bootstrap dotfiles track ~/.zshrc --no-autosave"
+echo original >~/.manual
+assert_succeed "mise bootstrap dotfiles track ~/.manual --no-autosave"
+echo unsaved >~/.manual
 cat <<'EOF2' >>"$config"
 "~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }
 EOF2
 assert_succeed "mise bootstrap dotfiles apply --yes"
 assert_contains "cat ~/.zshrc" "mise activate zsh"
+assert_succeed "mise bootstrap dotfiles history diff --path ~/.zshrc --exit-code"
+latest_uuid="$(mise bootstrap dotfiles history show latest --json | jq -r .uuid)"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git show refs/checkpoints/$latest_uuid:snapshot/home/.manual" "original"
 assert_contains "cat ~/.zshrc" "export A=1"
 assert_fail "test -L ~/.zshrc"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].trigger'" "bootstrap"
@@ -75,7 +82,7 @@ case "$(uname -s)" in
 esac
 assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $this_os"
 assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $other_os"
-assert "grep -c 'variants = \[{ os = \"$this_os\" }, { os = \"$other_os\" }\]' '$config'" "1"
+assert "grep -c 'variants = \[{ default = true }, { os = \"$this_os\" }, { os = \"$other_os\" }\]' '$config'" "1"
 assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.zshrc\") | .variant'" "$this_os"
 # a machine matching no variant keeps local protection but has no shared stream
 cat <<EOF2 >>"$config"
@@ -96,7 +103,7 @@ assert_contains "mise bootstrap dotfiles paths" "invalid: ~/.ambiguous (ambiguou
 
 # a local policy override restates the effective entry with only the changed field
 assert_succeed "mise bootstrap dotfiles track ~/.zshrc --local --no-share"
-assert "grep -c 'variants = \[{ os = \"$this_os\" }, { os = \"$other_os\" }\]' '$local_config'" "1"
+assert "grep -c 'variants = \[{ default = true }, { os = \"$this_os\" }, { os = \"$other_os\" }\]' '$local_config'" "1"
 assert "grep -c 'share = false' '$local_config'" "1"
 assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.zshrc\") | \"\\(.share) \\(.variant) \\(.declared_in)\"'" "false $this_os ~/.config/mise/config.local.toml"
 # untracking through a local override removes the user's own declaration underneath too

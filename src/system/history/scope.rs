@@ -392,6 +392,20 @@ impl Writer {
         draft.uuid = Some(checkpoint.uuid.clone());
         draft.operation = Some(operation.clone());
         draft.blobs = self.pending.blobs.clone();
+        // Bootstrap writes are explicit saves of the paths it actually
+        // changed, including manual-save destinations. Do not promote
+        // unrelated manual edits merely because an operation ran.
+        draft
+            .explicit_paths
+            .extend(operation.journal.iter().filter_map(|entry| {
+                let JournalEntry::Committed { seq, .. } = entry else {
+                    return None;
+                };
+                match operation.journal.get(*seq as usize) {
+                    Some(JournalEntry::PathChanged { path, .. }) => Some(path.clone()),
+                    _ => None,
+                }
+            }));
         let outcome = self
             .store
             .attempt_locked(&self.tracked, draft, Some(self.pending.id))?;
