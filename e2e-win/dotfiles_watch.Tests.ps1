@@ -1,5 +1,7 @@
 Describe 'history watch' {
     BeforeAll {
+        $script:OriginalExperimental = [Environment]::GetEnvironmentVariable('MISE_EXPERIMENTAL', 'Process')
+        $env:MISE_EXPERIMENTAL = '1'
         $script:OriginalDir = Get-Location
         Set-Location TestDrive:
 
@@ -18,6 +20,7 @@ Describe 'history watch' {
     AfterAll {
         Set-Location $script:OriginalDir
         foreach ($pair in @(
+                @('MISE_EXPERIMENTAL', $script:OriginalExperimental),
                 @('MISE_TRUSTED_CONFIG_PATHS', $script:OriginalTrusted),
                 @('MISE_CONFIG_DIR', $script:OriginalConfigDir),
                 @('MISE_STATE_DIR', $script:OriginalStateDir))) {
@@ -26,6 +29,17 @@ Describe 'history watch' {
             } else {
                 [Environment]::SetEnvironmentVariable($pair[0], $pair[1], 'Process')
             }
+        }
+    }
+
+    It 'requires experimental opt-in before tracking' {
+        $env:MISE_EXPERIMENTAL = '0'
+        try {
+            $output = mise bootstrap dotfiles track $script:Tracked 2>&1 | Out-String
+            $LASTEXITCODE | Should -Not -Be 0
+            $output | Should -Match 'dotfile tracking is experimental'
+        } finally {
+            $env:MISE_EXPERIMENTAL = '1'
         }
     }
 
