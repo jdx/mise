@@ -10,6 +10,9 @@ use crate::system::history::sync::run::{self, SyncRequest};
 /// checkpoints, and records incoming changes to apply and conflicts to
 /// decide. Live files are never changed here: `mise bootstrap dotfiles pull` does
 /// that. In `fetch-only` mode nothing is published.
+///
+/// The history watcher does this on its own in `sync` and `fetch-only` mode
+/// (`settings.history.sync`); this command is for right now.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct DotfilesSync {
@@ -43,13 +46,7 @@ impl DotfilesSync {
         if let Some(reason) = store.unavailable() {
             bail!("cannot synchronize: {reason}");
         }
-        let outcome = run::sync(
-            &store,
-            &tracked,
-            &SyncRequest {
-                fetch_only: self.fetch_only,
-            },
-        )?;
+        let outcome = run::sync(&store, &tracked, &SyncRequest::new(self.fetch_only))?;
         crate::system::history::sync::origin::report(&outcome);
         Ok(())
     }

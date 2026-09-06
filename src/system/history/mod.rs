@@ -13,6 +13,7 @@ pub(crate) mod checkpoint;
 pub(crate) mod config;
 pub(crate) mod health;
 pub(crate) mod journal;
+pub(crate) mod notify;
 pub(crate) mod replay;
 pub(crate) mod retention;
 pub(crate) mod scope;

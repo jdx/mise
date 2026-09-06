@@ -98,6 +98,14 @@ pub(crate) struct SyncStatus {
     pub origin_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_branch: Option<String>,
+    /// Conflicts a desktop notification was shown for, so a retry of the
+    /// same conflict never notifies again.
+    #[serde(default)]
+    pub notified_conflicts: Vec<String>,
+    /// `origin --remove` was run: the recorded repository no longer stands
+    /// in for a declaration.
+    #[serde(default)]
+    pub disconnected: bool,
 }
 
 pub(crate) fn status_path(state_dir: &Path) -> PathBuf {
@@ -164,16 +172,50 @@ pub(crate) struct SyncOutcome {
 
 pub(crate) struct SyncRequest {
     pub fetch_only: bool,
+    /// Save the tracked set first, so what is published is what is on
+    /// disk. The watcher passes `false`: it saves on its own schedule, and a
+    /// throttled file's held version or a manual-save entry's unsaved edits
+    /// must not reach the repository through a sync.
+    pub capture: bool,
+    /// The repository to use instead of `[history.origin]` (onboarding,
+    /// before the configuration that declares it is in place).
+    pub origin: Option<OriginTomlConfig>,
+    /// No network: reconcile against the branch as last fetched and record
+    /// what is pending (after an incoming configuration declared more).
+    pub offline: bool,
+}
+
+impl SyncRequest {
+    pub(crate) fn new(fetch_only: bool) -> Self {
+        Self {
+            fetch_only,
+            capture: true,
+            origin: None,
+            offline: false,
+        }
+    }
 }
 
 /// The connected origin, or why there is none.
 pub(crate) fn origin() -> Result<OriginTomlConfig> {
-    match crate::system::history::config::origin()? {
-        Some((_, origin)) => Ok(origin),
-        None => bail!(
-            "no setup repository is connected; `mise bootstrap dotfiles origin set <url>` connects one"
-        ),
+    if let Some((_, origin)) = crate::system::history::config::origin()? {
+        return Ok(origin);
     }
+    // recorded when it was connected: a fresh machine's declaration may
+    // still be on its way in the configuration being pulled
+    let status = read_status(&crate::dirs::STATE);
+    if let (Some(url), Some(branch), false) =
+        (status.origin_url, status.origin_branch, status.disconnected)
+    {
+        return Ok(OriginTomlConfig {
+            url,
+            branch,
+            encrypt_backups: false,
+        });
+    }
+    bail!(
+        "no setup repository is connected; `mise bootstrap dotfiles origin set <url>` connects one"
+    )
 }
 
 /// Runs one synchronization.
@@ -184,7 +226,10 @@ pub(crate) fn sync(
 ) -> Result<SyncOutcome> {
     crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
     let _sync_lock = lock(store)?;
-    let origin = origin()?;
+    let origin = match &request.origin {
+        Some(origin) => origin.clone(),
+        None => origin()?,
+    };
     if origin.encrypt_backups {
         bail!("[history.origin] encrypt_backups is not supported yet; set it to false");
     }
@@ -199,22 +244,24 @@ pub(crate) fn sync(
     let mut outcome = SyncOutcome::default();
 
     let result = (|| -> Result<()> {
-        // a branch that vanished from a repository this machine had synced
-        // with is not an empty upstream: reading it as one would queue the
-        // deletion of every file it held
-        let found = remote.fetch_pruning(&origin.branch)?;
-        if !found && status.upstream_commit.is_some() {
-            bail!(
-                "the setup branch `{}` is not at {} any more (renamed, or deleted?); nothing was changed. `mise bootstrap dotfiles origin set {} --branch <name>` follows a renamed branch",
-                origin.branch,
-                origin.url,
-                origin.url
-            );
+        if !request.offline {
+            // a branch that vanished from a repository this machine had
+            // synced with is not an empty upstream: reading it as one would
+            // queue the deletion of every file it held
+            let found = remote.fetch_pruning(&origin.branch)?;
+            if !found && status.upstream_commit.is_some() {
+                bail!(
+                    "the setup branch `{}` is not at {} any more (renamed, or deleted?); nothing was changed. `mise bootstrap dotfiles origin set {} --branch <name>` follows a renamed branch",
+                    origin.branch,
+                    origin.url,
+                    origin.url
+                );
+            }
+            if !found && repo.ref_oid(UPSTREAM_REF)?.is_some() {
+                repo.delete_ref(UPSTREAM_REF)?;
+            }
+            status.last_fetch = Some(hstore::now_rfc3339());
         }
-        if !found && repo.ref_oid(UPSTREAM_REF)?.is_some() {
-            repo.delete_ref(UPSTREAM_REF)?;
-        }
-        status.last_fetch = Some(hstore::now_rfc3339());
         let mut upstream_commit = repo.ref_oid(UPSTREAM_REF)?;
         outcome.fetched_upstream = upstream_commit.clone();
         let repo_state = format::detect(repo, upstream_commit.as_deref())?;
@@ -228,11 +275,13 @@ pub(crate) fn sync(
         }
         // ours is the saved version: save what is live first, so a fresh
         // machine's existing files take part in adoption
-        capture_now(store, tracked);
+        if request.capture {
+            capture_now(store, tracked);
+        }
         let entries = store.list()?;
         let shared = share::current(repo, store, tracked)?;
         let unsaved = unsaved_paths(repo, tracked, &shared)?;
-        let publish = mode.publishes() && !request.fetch_only;
+        let publish = mode.publishes() && !request.fetch_only && !request.offline;
         let mut plans;
         let mut attempts = 0;
         loop {
@@ -354,6 +403,7 @@ pub(crate) fn sync(
         outcome.conflicts = status.conflicts.len();
         status.last_error = None;
         status.backoff_until = None;
+        notify_new_conflicts(&mut status);
         Ok(())
     })();
     if let Err(err) = &result {
@@ -374,6 +424,55 @@ pub(crate) fn lock(store: &Store) -> Result<fslock::LockFile> {
     crate::lock_file::LockFile::new(&hstore::store_dir_in(store.state_dir()).join("sync.lock"))
         .try_lock()?
         .ok_or_else(|| eyre::eyre!("another setup sync or pull is running; retry shortly"))
+}
+
+/// A desktop notification for conflicts that newly need a decision, when
+/// `history.notify` is on. Each conflict notifies once: a retry of the same
+/// sync is silent, and a resolved conflict is forgotten so it notifies
+/// again should it come back. Never blocks; a failure is only logged.
+fn notify_new_conflicts(status: &mut SyncStatus) {
+    let current: BTreeSet<String> = status
+        .conflicts
+        .iter()
+        .map(|conflict| conflict.branch_path.clone())
+        .collect();
+    let notified: BTreeSet<String> = status.notified_conflicts.iter().cloned().collect();
+    let new: Vec<&Conflict> = status
+        .conflicts
+        .iter()
+        .filter(|conflict| !notified.contains(&conflict.branch_path))
+        .collect();
+    if !new.is_empty() && crate::config::Settings::get().history.notify {
+        let roots = Roots::current();
+        let lines: Vec<String> = new
+            .iter()
+            .take(3)
+            .map(|conflict| {
+                let path = roots
+                    .locate(&conflict.branch_path)
+                    .path()
+                    .map(display_path)
+                    .unwrap_or_else(|| conflict.branch_path.clone());
+                format!("{path}: {}", conflict.kind.describe())
+            })
+            .collect();
+        let more = new.len().saturating_sub(3);
+        let body = if more > 0 {
+            format!("{}\n+{more} more", lines.join("\n"))
+        } else {
+            lines.join("\n")
+        };
+        crate::system::history::notify::send(
+            &format!(
+                "{} sync conflict{} need{} a decision",
+                new.len(),
+                if new.len() == 1 { "" } else { "s" },
+                if new.len() == 1 { "s" } else { "" }
+            ),
+            &format!("{body}\nInspect with: mise bootstrap dotfiles status"),
+        );
+    }
+    status.notified_conflicts = current.into_iter().collect();
 }
 
 /// Saves the tracked set now (deduplicated against the newest checkpoint),

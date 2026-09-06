@@ -42,8 +42,10 @@ assert_contains "cat $PWD/connect.log" "machine-local configuration (private unl
 assert_contains "cat $PWD/connect.log" "published"
 assert "git --git-dir=$origin ls-tree -r --name-only main | LC_ALL=C sort | tr '\n' ' '" ".mise-history/format.toml config.toml tracked/home/.config/hypr/bindings.lua "
 assert "git --git-dir=$origin show main:.mise-history/format.toml | grep -c 'format = 1'" "1"
+# the connection is machine-local: never published, never in the way of the
+# configuration a fresh machine pulls
 assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" 'url = "file://'
-assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" 'sync = "sync"'
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'url = "file://'
 assert_contains "mise bootstrap dotfiles status" "mode sync, machine laptop"
 assert "git --git-dir=$origin for-each-ref --format='%(refname)' refs/mise-history | grep -c ." "2"
 # private files never reach the branch or the machine refs
@@ -72,6 +74,7 @@ assert_contains "$b bootstrap dotfiles status" "needs adoption"
 assert_not_contains "$b bootstrap dotfiles status" "incoming change(s) pending"
 assert_contains "$b bootstrap dotfiles pull --dry-run 2>&1" "sync paused"
 assert_fail "$b bootstrap dotfiles pull --take-remote ~/.config/hypr/bindings.lua --yes 2>&1" "is not a conflict"
+# one pull: the adopted configuration, then the tracked files it declares
 assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/mise/config.toml --yes"
 assert "cat $B/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
 # the declarations that arrived are applied by a bootstrap, not by pull: said until one ran
@@ -254,9 +257,8 @@ assert_succeed "mise bootstrap dotfiles sync"
 assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
 
 # ---- fetch-only publishes nothing; disconnecting keeps local history
-assert_succeed "MISE_GLOBAL_CONFIG_FILE=$MISE_CONFIG_DIR/config.local.toml mise settings set history.sync fetch-only"
 echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
-assert_contains "mise bootstrap dotfiles sync 2>&1" "nothing new to publish"
+assert_contains "MISE_HISTORY_SYNC=fetch-only mise bootstrap dotfiles sync 2>&1" "nothing new to publish"
 assert "git --git-dir=$origin show main:tracked/home/.config/hypr/monitors.lua" "monitor=DP-1"
 assert_succeed "mise bootstrap dotfiles origin --remove"
 assert_contains "mise bootstrap dotfiles status" "Setup repository: none"
@@ -266,7 +268,6 @@ assert "mise bootstrap dotfiles history --json -n 0 | jq length | awk '{print (\
 # knew is read as a deletion; the local files are published to it
 origin2="$PWD/origin2.git"
 git init -q --bare -b main "$origin2"
-assert_succeed "MISE_GLOBAL_CONFIG_FILE=$MISE_CONFIG_DIR/config.local.toml mise settings set history.sync sync"
 assert_contains "mise bootstrap dotfiles origin set file://$origin2 --name laptop --yes 2>&1" "previous one's sync state is discarded"
 assert "git --git-dir=$origin2 show main:tracked/home/.config/hypr/monitors.lua" "monitor=DP-2"
 assert_not_contains "mise bootstrap dotfiles status" "incoming change(s) pending"

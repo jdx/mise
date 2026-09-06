@@ -272,7 +272,10 @@ default; `--include-existing`), names that look like secrets with the
 `track … --no-share --no-backup` line for each, and private content already
 committed in the repository's history, which stops the connection unless
 `--allow-committed-private` is passed (rewriting history is your decision).
-The declaration goes to `[history.origin]` in the global config, the mode
+The declaration goes to `[history.origin]` in `config.local.toml` next to the
+global config (machine-local, never published: each machine names the
+repository the way it reaches it, and a fresh machine's own declaration
+never conflicts with the configuration it pulls), the mode
 to `settings.history.sync`.
 
 **What is synchronized.** The setup branch mirrors the global configuration
@@ -305,15 +308,35 @@ mise's own bare repository and pushed with a lease; a rejection fetches and
 retries; nothing is ever force-pushed or reset, so your own commits and
 unrelated files survive. Repeating a sync changes nothing.
 
-**Modes** (`settings.history.sync`): `sync` (default) publishes, fetches, and
-queues incoming changes for application; `fetch-only` only
-downloads; `manual` publishes and fetches but never applies by itself. In
-this release `mise bootstrap dotfiles sync` publishes and fetches and
-`mise bootstrap dotfiles pull` writes what is queued; the watcher's automatic
-publication and application follow in the next release. Applying never runs
-`mise bootstrap`, installs or removes packages, or renders templates: when
-incoming configuration changes declarations, `mise bootstrap dotfiles status`
-says to run `mise bootstrap`.
+**Modes** (`settings.history.sync`) say what the watcher does on its own:
+
+- `sync` (the default, recommended): after a save the watcher publishes
+  within `history.sync_interval` (5 minutes); every `history.fetch_interval`
+  (15 minutes) it fetches and applies nonconflicting incoming changes, with
+  a protective checkpoint first. A conflict or an unsaved edit pauses
+  publication and incoming application for the complete setup.
+- `fetch-only`: the watcher fetches; nothing is ever published and no live
+  file changes until you run `mise bootstrap dotfiles pull`.
+- `manual`: no automatic network activity at all.
+
+`mise bootstrap dotfiles sync` (publish and fetch now) and `mise bootstrap
+dotfiles pull` (write what is pending now, decide conflicts) work on request
+in every mode: they are for when you do not want to wait, not something the
+background mode needs you to run. A failed sync (the repository unreachable,
+credentials missing) backs off from a minute to an hour and is retried;
+saving continues meanwhile, and `mise bootstrap dotfiles status` and
+`mise doctor` show the last error. The watcher never publishes a throttled
+file's unsaved churn or a manual-save entry's unsaved edits: what it
+publishes is what it saved. Applying never runs `mise bootstrap`, installs
+or removes packages, or renders templates: when incoming configuration
+changes declarations, `mise bootstrap dotfiles status` says to run
+`mise bootstrap`.
+
+**Conflict notifications** are off by default. With
+`settings.history.notify = true`, a desktop notification (`notify-send` on
+Linux, `osascript` on macOS) names each conflict once, the first time it
+needs a decision; retries of the same sync stay silent, and a notifier that
+is missing or failing never holds up history or sync.
 
 **Applying.** `mise bootstrap dotfiles pull` writes pending changes as one recoverable
 transaction (a protective checkpoint first, each file journaled, reload

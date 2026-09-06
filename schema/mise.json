@@ -1148,9 +1148,14 @@
                 }
               }
             },
+            "notify": {
+              "default": false,
+              "description": "Show a desktop notification when a sync conflict newly needs a decision. Off by default; each conflict notifies once, and a notifier that is missing or failing never holds up history or sync.",
+              "type": "boolean"
+            },
             "sync": {
               "default": "sync",
-              "description": "How a connected setup repository is used: `sync` publishes, fetches, and queues nonconflicting incoming changes for application; `fetch-only` only downloads; `manual` publishes and fetches but never applies by itself. `mise bootstrap dotfiles pull` writes queued changes.",
+              "description": "What the history watcher does with a connected setup repository on its own: `sync` publishes after saves, fetches periodically, and applies nonconflicting incoming changes; `fetch-only` only fetches; `manual` does nothing automatically. `mise bootstrap dotfiles sync` and `pull` work on request in every mode.",
               "type": "string",
               "enum": ["sync", "fetch-only", "manual"]
             },
