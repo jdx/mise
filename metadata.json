@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1VCPYQ0MERS00PDC2M17F3A",
+  "strategy": "manual-commit",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/.vitepress/cli-reference.test.ts",
+    "docs/.vitepress/cli-reference.ts",
+    "e2e/cli/test_lock",
+    "e2e/cli/test_mcp",
+    "src/cli/exec.rs",
+    "src/cli/plugins/install.rs",
+    "src/cli/unuse.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": -44390016,
+    "output_tokens": -40426,
+    "api_call_count": 43
+  }
+}
