@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1W64SJ5F9XWJ4MJDK3CY0TD",
+  "strategy": "manual-commit",
+  "branch": "bootstrap/11-encrypted-backups",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "e2e/config/test_schema_dotfiles_encryption",
+    "schema/mise.json",
+    "src/agecrypt.rs",
+    "src/git.rs",
+    "src/system/history/shadow.rs",
+    "src/system/history/sync/encrypted.rs",
+    "src/system/history/sync/files.rs",
+    "src/system/history/watch/runtime.rs",
+    "src/test.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 66067,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 7272576,
+    "output_tokens": 20413,
+    "api_call_count": 56
+  }
+}
