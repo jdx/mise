@@ -388,11 +388,16 @@ changes declarations, `mise bootstrap dotfiles status` says to run
 `mise bootstrap`.
 
 **Conflict notifications** are on by default. A desktop notification
-(`notify-send` on Linux, `osascript` on macOS) reports when sharing pauses
+(`notify-send` on Linux, `terminal-notifier` or `osascript` on macOS) reports when sharing pauses
 for the setup. Retries and additional conflicts during the same pause stay
 silent; a later pause can notify again after recovery. Set
 `settings.history.notify = false` to opt out. Missing or failing notifiers
 never hold up history or sync.
+
+Linux notifications use the mise logo as their icon. On macOS, an optional
+`terminal-notifier` installation includes the logo as an image in the notification;
+without it, mise uses the built-in text-only `osascript` notification. No logo
+download is needed, and an unavailable logo cache never prevents notification.
 
 **Applying.** `mise bootstrap dotfiles pull` writes pending changes as one recoverable
 transaction (a protective checkpoint first, each file journaled, reload

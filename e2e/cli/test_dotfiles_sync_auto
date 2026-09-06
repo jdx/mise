@@ -39,6 +39,7 @@ printf 'CALL %s\n' "$(printf '%s' "$*" | tr '\n' ' ')" >>"$HOME/notifications"
 EOF2
 chmod +x "$B/bin/notify-send"
 cp "$B/bin/notify-send" "$B/bin/osascript"
+cp "$B/bin/notify-send" "$B/bin/terminal-notifier"
 cat <<EOF2 >"$PWD/b"
 #!/usr/bin/env bash
 export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
@@ -119,6 +120,8 @@ assert_fail "test -e $B/.config/hypr/monitors.lua"
 assert "grep -c '\"conflicts\":1' b.log | awk '{print (\$1 > 1)}'" "1"
 assert "grep -c '^CALL' $B/notifications" "1"
 assert_contains "cat $B/notifications" "bindings.lua"
+assert_contains "cat $B/notifications" "$B/.cache/mise/notifications/mise.png"
+assert_succeed "test -s $B/.cache/mise/notifications/mise.png"
 assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/hypr/bindings.lua --yes"
 wait_until "test -e $B/.config/hypr/monitors.lua"
 assert "cat $B/.config/hypr/bindings.lua" $'bind = SUPER, Q, exec, foot\nbind = SUPER, W, exec, firefox'

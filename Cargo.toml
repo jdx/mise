@@ -28,6 +28,7 @@ include = [
   "/README.md",
   "/build.rs",
   "/completions/*",
+  "/docs/public/apple-touch-icon.png",
   "/minisign.pub",
   "/registry/*.toml",
   "/settings.toml",
