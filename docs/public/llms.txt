@@ -105,13 +105,14 @@
 
 ## Tasks
 
-- [Task Overview](https://mise.jdx.dev/tasks/): Define and run project tasks for building, testing, linting, deploying, and everyday development workflows.
+- [Task Overview](https://mise.jdx.dev/tasks/): A task is a named command or script that runs with your project's tools and environment variables. Use tasks for builds, tests, linters, development servers, and other commands you want teammates and…
 - [Task Architecture](https://mise.jdx.dev/tasks/architecture.html): Understanding how mise's task system works helps you write more efficient tasks and troubleshoot dependency issues.
 - [Running Tasks](https://mise.jdx.dev/tasks/running-tasks.html): List available tasks with mise tasks. To show tasks hidden with hide=true, use the --hidden option.
 - [TOML Tasks](https://mise.jdx.dev/tasks/toml-tasks.html): Tasks can be defined in mise.toml files in different ways. Trivial tasks can be written into a [tasks] section, while more detailed tasks each get their own section.
 - [File Tasks](https://mise.jdx.dev/tasks/file-tasks.html): In addition to defining tasks in config files, you can define them as standalone script files in one of the following directories.
-- [Task Arguments](https://mise.jdx.dev/tasks/task-arguments.html): Task arguments let you pass parameters to tasks, making them more flexible and reusable. There are three ways to define task arguments in mise, but only two are recommended.
+- [Task Arguments](https://mise.jdx.dev/tasks/task-arguments.html): Define arguments when a task needs named inputs, validation, help, or completions. Without a usage specification, mise forwards extra command-line arguments to the underlying command; see argument…
 - [Task Configuration](https://mise.jdx.dev/tasks/task-configuration.html): This is an exhaustive list of the configuration options available for tasks in mise.toml or as file tasks.
+- [Task Caching](https://mise.jdx.dev/tasks/caching.html): Use ordinary sources and outputs checks to skip work that is already up to date. Enable experimental artifact caching when you also need to reuse successful results after switching inputs or deleting…
 - [Remote Cache Protocol](https://mise.jdx.dev/tasks/remote-cache-protocol.html): [!WARNING] Remote build caching is experimental. This document defines protocol version 1 for mise task artifact caching.
 - [Task Templates](https://mise.jdx.dev/tasks/templates.html): Task templates let you define reusable task definitions that multiple tasks can extend. They are particularly useful in monorepos or projects with similar task patterns across components.
 - [Monorepo Tasks](https://mise.jdx.dev/tasks/monorepo.html): mise supports monorepo-style task organization with target path syntax. This lets you manage tasks across multiple projects in a single repository, where each project can have its own mise.toml with…

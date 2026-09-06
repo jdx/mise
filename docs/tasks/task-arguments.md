@@ -624,7 +624,7 @@ Here's how to migrate from Tera templates to the usage field:
 ```mise-toml [Usage]
 [tasks.test]
 usage = 'arg "<file>" help="Test file" default="all"'
-run = 'cargo test ${usage_file?}'
+run = 'cargo test "${usage_file?}"'
 ```
 
 ```mise-toml [Deprecated]
