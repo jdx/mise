@@ -142,7 +142,9 @@ Remove corresponding `[plugins]` and `[tools]` entries if you no longer want the
 ## Configuration
 
 Declare plugin sources in `[plugins]` and tool versions in `[tools]`, as shown above.
-Environment plugins use `[env]`; package plugins use `[bootstrap.packages]`. Configuration
+Environment plugins use `[env]`. Register package managers in `[bootstrap.plugins]` or
+install them as `package:<name>`, then declare package requests in `[bootstrap.packages]`;
+see [package plugin setup](/bootstrap/packages/plugins.html). Configuration
 options belong to the plugin's own interface, so consult its README before copying options
 from another plugin.
 

@@ -23,6 +23,10 @@ updates; new asdf and vfox tool plugins are not accepted into the mise registry.
 | Package     | Host-managed packages for machine bootstrap           | `[bootstrap.packages]`               | [Package development](/package-plugin-development.html) |
 | asdf        | An existing shell-based tool integration              | `[tools]`, an asdf backend           | [Legacy plugins](/asdf-legacy-plugins.html)             |
 
+Register a package manager in `[bootstrap.plugins]`, or install it as `package:<name>`,
+before declaring its requests in `[bootstrap.packages]`. See the
+[package plugin setup](/bootstrap/packages/plugins.html) for a complete configuration.
+
 The Lua runtime is available on Windows, macOS, and Linux. Each plugin must still support
 the selected platform and any external programs it invokes. asdf plugins use shell scripts
 and are disabled by default on Windows.
