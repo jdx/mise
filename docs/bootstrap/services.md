@@ -40,6 +40,8 @@ One declaration is rendered for the platform's user service manager:
   `mise bootstrap dotfiles watch` through a durable mise executable with
   `restart = "on-failure"` and a low priority. A builtin implies
   `scope = "user"`; `command` cannot be combined with it.
+  The history watcher is experimental and requires
+  `mise settings experimental=true`; ordinary user services do not.
 - `description`: shown by the service manager.
 - `restart`: `"on-failure"` (default), `"always"`, or `"never"`. On Linux this
   is `Restart=`; on macOS `KeepAlive` (`{ SuccessfulExit = false }` for
