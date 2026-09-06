@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TNYD67QTA1GTR7FW4B7XBD",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T06:19:30.180524Z",
+  "branch": "codex/docs-onboarding-depth",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "README.md",
+    "docs/README.md",
+    "docs/demo.md",
+    "docs/getting-started.md",
+    "docs/installing-mise.md",
+    "docs/walkthrough.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ed0ac62e3c6f",
+  "checkpoint_transcript_start": 2598,
+  "transcript_lines_at_start": 2598,
+  "compact_transcript_start": 321,
+  "token_usage": {
+    "input_tokens": 55178,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2892160,
+    "output_tokens": 13698,
+    "api_call_count": 14
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T06:19:29.71801Z",
+    "agent_lines": 341,
+    "agent_removed": 259,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 341,
+    "total_lines_changed": 600,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
