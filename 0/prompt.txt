@@ -1,9 +1,1 @@
-address feedback
-
----
-
-fix ci failures
-
----
-
 now fix [https://github.com/jdx/mise/pull/12862](https://github.com/jdx/mise/pull/12862)
