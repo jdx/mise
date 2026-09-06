@@ -1,5 +1,5 @@
 ---
-outline: [1, 3]
+outline: [2, 3]
 ---
 
 # Contributing
@@ -8,7 +8,7 @@ outline: [1, 3]
 
 mise has a specific scope and design taste. Unless the change is obvious,
 start a [discussion](https://github.com/jdx/mise/discussions) or mention what
-you plan to do in [Discord](https://discord.gg/UBa7pJUN7Z) before opening a PR.
+you plan to do in [Discord](https://discord.gg/mABnUDvP57) before opening a PR.
 The important part is to settle the direction before much implementation or
 review happens. PRs are often rejected or need to change significantly after
 submission, so make sure the idea fits before you invest too much time.
@@ -27,6 +27,56 @@ contributors.
 I get hundreds of PRs per week across my projects, so I do not have time to
 respond to every PR with detailed context. A rejection may be brief.
 
+## Development Setup
+
+### Prerequisites
+
+- A Rust toolchain meeting the `rust-version` in the root `Cargo.toml`; the project does
+  not declare Rust under `[tools]`, so your selected toolchain must already be suitable.
+- A working mise installation meeting `min_version` in `mise.toml`.
+- Git and the host dependencies required by the checks you plan to run.
+
+### Getting Started
+
+```bash
+# Clone the repository
+git clone https://github.com/jdx/mise.git
+cd mise
+
+# Install dependencies
+mise install
+
+# Build and verify the development binary
+mise run build
+target/debug/mise --version
+```
+
+### Development Shim
+
+The repository adds `target/debug` and `node_modules/.bin` to its task environment. Use
+`target/debug/mise` directly to check which binary you are testing. For a recompiling wrapper,
+see [Running the CLI](#running-the-cli).
+
+### Cargo build cache
+
+`mise install` installs the mbx version selected by the project. `mise run` activates its
+transparent Cargo wrapper, so build and lint tasks invoke ordinary Cargo commands through
+the cache. Standalone Cargo commands need an activated mise shell.
+
+If the wrapper fails, run the equivalent Cargo check with `MBX_DISABLE=1`; this bypasses
+the cache without skipping validation:
+
+```sh
+MBX_DISABLE=1 cargo build --all-features
+MBX_DISABLE=1 cargo test --all-features
+MBX_DISABLE=1 cargo check --all-features
+```
+
+If bypassed Cargo succeeds, report the mismatch in a
+[mr-boxington discussion](https://github.com/jdx/mr-boxington/discussions) with repository and
+commit, OS, `mbx --version`, `mbx doctor`, and both commands/output. Redact secrets, absolute
+cache paths, remote URLs, namespaces, and identifying details before posting.
+
 ## Pull Request Checklist
 
 1. **Discuss first**: Use GitHub Discussions or Discord for non-obvious changes
@@ -40,329 +90,10 @@ respond to every PR with detailed context. A rejection may be brief.
 
 ### Development Tips
 
-1. **Disable mise during development**: If you use mise in your shell, disable
-   it when running tests to avoid conflicts
-2. **Test specific features**: Use `cargo test test_name` for targeted testing
-3. **Update snapshots**: Use `mise run snapshots` when changing test outputs
-4. **Rate limiting**: Set `MISE_GITHUB_TOKEN` to avoid GitHub API rate limits
-   during development
-
-## Packaging and Self-Update Instructions
-
-When mise is installed via a package manager, `mise self-update` should not replace the binary the package manager owns; users should update through the package manager instead. This is opt-in: a package that does none of the following keeps self-update fully enabled. Packagers have three ways to turn it off, and any of them makes `mise doctor` report `self_update_available: no`.
-
-The paths below are relative to the install prefix, which mise derives from its own binary: the path is canonicalized (symlinks resolved) and then taken two levels up, so `/usr/bin/mise` gives `/usr`.
-
-### Disable at build time
-
-Build without the `self_update` Cargo feature, as the Arch Linux package does:
-
-```bash
-cargo build --release --no-default-features --features native-tls
-```
-
-The subcommand still exists, so scripts that call it get a clear error rather than "unknown command", but it always fails with `mise's self-update feature has been disabled at build time, cannot update`.
-
-### Disable with a marker file
-
-Install an empty `.disable-self-update` file at any one of:
-
-- `lib/.disable-self-update` (used by Homebrew)
-- `lib/mise/.disable-self-update` (used by the AUR `mise-bin` package)
-- `lib64/mise/.disable-self-update`
-
-### Ship update instructions
-
-Installing a TOML file with platform-specific instructions also disables self-update; mise prints the file's message when `mise self-update` runs and when it detects a newer release. Install it at any one of:
-
-- `lib/mise-self-update-instructions.toml`
-- `lib/mise/mise-self-update-instructions.toml`
-- `lib64/mise/mise-self-update-instructions.toml`
-
-Example contents:
-
-```toml
-# Debian/Ubuntu (APT)
-message = "To update mise from the APT repository, run:\n\n  sudo apt update && sudo apt install --only-upgrade mise\n"
-```
-
-```toml
-# Fedora/CentOS Stream (DNF)
-message = "To update mise from COPR, run:\n\n  sudo dnf upgrade mise\n"
-```
-
-Setting `MISE_SELF_UPDATE_INSTRUCTIONS` to a file path overrides the search.
-
-### Overriding the outcome
-
-`MISE_SELF_UPDATE_AVAILABLE=false` disables self-update without installing anything, and `MISE_SELF_UPDATE_AVAILABLE=true` re-enables it even when a marker or instructions file is present. Both are useful for testing a package build. Neither has any effect on a binary built without the `self_update` feature, where self-update is always unavailable.
-
-`mise self-update --force` also bypasses the availability check, so a user who passes it updates the binary in place even when a marker file, an instructions file, or `MISE_SELF_UPDATE_AVAILABLE=false` is in effect. Treat the runtime mechanisms as "do not update by default" rather than a hard block. A build without the `self_update` feature is the only variant `--force` cannot get past.
-
-## Testing
-
-mise has a comprehensive test suite with several types of tests that check
-reliability and functionality across platforms and scenarios.
-
-### Unit Tests
-
-Unit tests are fast, focused tests for individual components and functions:
-
-```bash
-# Run all unit tests
-cargo test --all-features
-
-# Run specific unit tests
-cargo test <test_name>
-```
-
-**Unit test structure:**
-
-- Located in `src/` directory alongside source code
-- Use Rust's built-in test framework
-- Test individual functions and modules
-- Fast execution (used for quick feedback during development)
-
-### E2E Tests
-
-End-to-end tests validate the complete functionality of mise in realistic
-scenarios:
-
-```bash
-# Run all E2E tests
-mise run test:e2e
-
-# Run specific E2E tests (preferred; always use this mise task)
-mise run test:e2e e2e/cli/test_version
-
-# Run E2E tests under a feature directory
-mise run test:e2e e2e/tasks
-
-# Run all tests including slow ones (`*_slow`)
-TEST_ALL=1 mise run test:e2e
-```
-
-**E2E test structure:**
-
-- Located in `e2e/` directory
-- Organized by functionality:
-  - `e2e/cli/` - Command-line interface tests
-  - `e2e/core/` - Core functionality tests
-  - `e2e/env/` - Environment variable tests
-  - `e2e/tasks/` - Task runner tests
-  - `e2e/config/` - Configuration tests
-  - `e2e/tools/` - Tool management tests
-  - `e2e/shell/` - Shell integration tests
-  - `e2e/backend/` - Backend tests
-  - `e2e/plugins/` - Plugin tests
-
-**E2E test categories:**
-
-- **Fast tests** (`test_*`): Run in normal test suites
-- **Slow tests** (`test_*_slow`): Only run when `TEST_ALL=1` is set
-- **Isolated environment**: Each test runs in a clean, isolated environment
-
-Do not execute files under `e2e/` directly; `mise run test:e2e` is the supported entry point (it depends on `build` and uses `e2e/run_all_tests`). Set `MISE_GITHUB_TOKEN` (or `GITHUB_TOKEN`) to avoid GitHub API rate limits.
-
-### Coverage Tests
-
-Coverage tests measure how much of the codebase is covered by tests:
-
-```bash
-# Run coverage tests
-mise run test:coverage
-
-# Coverage tests run in parallel tranches for CI
-TEST_TRANCHE=0 TEST_TRANCHE_COUNT=8 mise run test:coverage
-```
-
-### Windows E2E Tests
-
-Windows has its own test suite written in PowerShell:
-
-```powershell
-# Run all Windows E2E tests
-pwsh e2e-win\run.ps1
-
-# Run specific Windows tests
-pwsh e2e-win\run.ps1 task  # run tests matching *task*
-```
-
-### Plugin Tests
-
-Test plugin functionality across different backends:
-
-```bash
-# Test specific plugin
-mise test-tool ripgrep
-
-# Test all plugins in registry
-mise test-tool --all
-
-# Test all plugins in config files
-mise test-tool --all-config
-
-# Test with parallel jobs
-mise test-tool --all --jobs 4
-```
-
-### Test Environment Setup
-
-Tests run in isolated environments to avoid conflicts:
-
-```bash
-# Disable mise during development testing
-export MISE_DISABLE_TOOLS=1
-
-# Run tests with specific environment
-MISE_TRUSTED_CONFIG_PATHS=$PWD cargo test
-```
-
-### Test Assertions
-
-The E2E tests use a custom assertion framework (`e2e/assert.sh`):
-
-```bash
-# Basic assertions
-assert "command" "expected_output"
-assert_contains "command" "substring"
-assert_fail "command" "expected_error"
-
-# JSON assertions
-assert_json "command" '{"key": "value"}'
-assert_json_partial_array "command" "fields" '[{...}]'
-
-# File/directory assertions
-assert_directory_exists "/path/to/dir"
-assert_directory_not_exists "/path/to/dir"
-assert_empty "command"
-```
-
-### Running Specific Test Categories
-
-```bash
-# Run all tests (unit + e2e)
-mise run test
-
-# Run only unit tests
-mise run test:unit
-
-# Run only e2e tests
-mise run test:e2e
-
-# Run tests with shuffle (for detecting order dependencies)
-mise run test:shuffle
-
-# Run nightly tests (with bleeding edge Rust)
-rustup default nightly && mise run test
-```
-
-### Running Individual Tests
-
-#### Running Single Unit Tests
-
-```bash
-# Run a specific unit test by name
-cargo test test_name
-
-# Run tests matching a pattern
-cargo test pattern
-
-# Run tests in a specific module
-cargo test module_name
-
-# Run a single test with output
-cargo test test_name -- --nocapture
-```
-
-#### Running Focused E2E Tests
-
-```bash
-# Run a specific E2E test with an anchored filename pattern
-mise run test:e2e '^test_name$'
-
-# Run E2E tests matching a pattern
-mise run test:e2e pattern
-
-# Examples:
-mise run test:e2e '^test_use$'             # Run one specific test
-mise run test:e2e '^test_config_set$'       # Run one config-related test
-mise run test:e2e task                     # Run all tests matching "task"
-```
-
-#### Testing Individual Plugins
-
-```bash
-# Test a specific plugin
-mise test-tool ripgrep
-
-# Test a plugin with verbose output
-mise test-tool ripgrep --raw
-
-# Test multiple plugins
-mise test-tool ripgrep jq terraform
-```
-
-### Performance Testing
-
-```bash
-# Run performance benchmarks
-mise run test:perf
-
-# Build performance test workspace
-mise run test:build-perf-workspace
-```
-
-### Snapshot Testing
-
-Used for testing output consistency:
-
-```bash
-# Update test snapshots when output changes
-mise run snapshots
-
-# Use cargo-insta for snapshot testing
-cargo insta test --accept --unreferenced delete
-```
-
-## Development Setup
-
-### Prerequisites
-
-- [Rust](https://www.rust-lang.org/) (latest stable; we don't use mise to
-  manage Rust)
-- mise
-
-### Getting Started
-
-```bash
-# Clone the repository
-git clone https://github.com/jdx/mise.git
-cd mise
-
-# Install dependencies
-mise install
-
-# Build the project
-mise run build
-```
-
-### Development Shim
-
-Create a development shim to run mise easily during development:
-
-```bash
-# Create ~/.local/bin/@mise
-#!/bin/sh
-exec cargo run -q --all-features --manifest-path ~/src/mise/Cargo.toml -- "$@"
-```
-
-Then use `@mise` to run the development version:
-
-```bash
-@mise --help
-eval "$(@mise activate zsh)"
-```
+Use the project tasks for the supported environment and the development binary at
+`target/debug/mise` when verifying a change. Read [Development Setup](#development-setup)
+first, then run focused checks for the feature you changed. Set `MISE_DEBUG=1` or
+`MISE_TRACE=1` when diagnosing CLI behavior.
 
 ## Project Structure
 
@@ -379,14 +110,16 @@ mise/
 
 ## Available Development Tasks
 
-Use `mise tasks` to see all available development tasks.
+Use `mise tasks ls` to list tasks and `mise tasks info <name>` to see their resolved source.
+This repository loads both `tasks.toml` and file tasks under `xtasks`; a file task can replace
+a same-named TOML task, so inspect the resolved task when behavior is surprising.
 
 ### Common Tasks
 
 - `mise run build` - Build the project
-- `mise run test` - Run all tests (unit + E2E)
+- `mise run test:unit` followed by `mise run test:e2e --all` - Explicitly run unit and E2E suites
 - `mise run test:unit` - Run unit tests only
-- `mise run test:e2e` - Run E2E tests only
+- `mise run test:e2e <test-pattern>` - Run selected E2E tests
 - `mise run lint` - Run linting
 - `mise run lint-fix` - Run linting with fixes
 - `mise run format` - Format code
@@ -398,79 +131,18 @@ Use `mise tasks` to see all available development tasks.
 
 - `mise run docs` - Start documentation development server
 - `mise run docs:build` - Build documentation
-- `mise run render:help` - Generate help documentation
+- `mise run render:usage` - Generate CLI reference documentation
 - `mise run render:completions` - Generate shell completions
 
 ### Release Tasks
 
-- `mise run release-plz` - Create a release
+- `mise run release-plz` - CI-only release automation; do not run locally
 - `mise run ci` - Run CI tasks (format, build, test)
 
 ## Setup
 
-Nothing special should be required, but `mise run build` is a good sanity
-check that everything is working.
-
-## Pre-commit Hooks & Code Quality
-
-mise uses [hk](https://hk.jdx.dev) as its git hook manager for
-linting and code quality checks. hk is a modern alternative to lefthook written
-by the same author as mise.
-
-### hk Configuration
-
-The project uses `hk.pkl` (written in the Pkl configuration language) to define
-linting rules:
-
-```bash
-# Run all linting checks
-hk check --all
-
-# Run linting with fixes
-hk fix --all
-
-# Run specific linter
-hk check --step shellcheck
-```
-
-### Available Linters in hk
-
-- **prettier**: Code formatting for multiple languages
-- **clippy**: Rust linting with `cargo clippy`
-- **shellcheck**: Shell script linting
-- **shfmt**: Shell script formatting
-- **pkl**: Pkl configuration file validation
-
-### Using hk in Development
-
-`hk.pkl` currently defines `check` and `fix` steps only (no git `pre-commit` hook).
-`hk install --mise` may report that nothing is installed; that is expected. Use
-the mise tasks:
-
-```bash
-# Run linting (used in CI)
-mise run lint  # This runs hk check --all
-
-# Run linting with fixes
-mise run lint-fix
-
-# Check specific file types
-hk check --step prettier
-hk check --step shellcheck
-```
-
-### Running Checks Manually
-
-```bash
-# Run all checks
-hk check --all
-
-# Run checks with fixes
-hk fix --all
-
-# Run checks on specific files
-hk check --files="src/**/*.rs"
-```
+After installing prerequisites, `mise run build` and `target/debug/mise --version` establish
+that the selected toolchain can build and run the checkout. Run feature-specific tests next.
 
 ## Running the CLI
 
@@ -478,14 +150,16 @@ I use the following shim in `~/.local/bin/@mise`:
 
 ```sh
 #!/bin/sh
-exec cargo run -q --all-features --manifest-path ~/src/mise/Cargo.toml -- "$@"
+exec cargo run -q --all-features --manifest-path "$HOME/src/mise/Cargo.toml" -- "$@"
 ```
 
 ::: info
 Don't forget to change the manifest path to the correct path for your setup.
 :::
 
-If that directory is on PATH, `@mise` runs mise, compiling it on the fly.
+Make the wrapper executable and put its directory on PATH. `@mise` recompiles the checkout
+when needed. Use a disposable shell when testing development activation so a broken hook
+does not interfere with your normal shell.
 
 ```sh
 @mise --help
@@ -493,21 +167,199 @@ eval "$(@mise activate zsh)"
 @mise activate fish | source
 ```
 
-## Releasing
+## Pre-commit Hooks & Code Quality
 
-Releases are cut automatically by the `release-plz` GitHub Actions workflow
-(`mise run release-plz` in CI). Do not run that task locally.
+### hk Configuration
 
-## Linting
+[`hk.pkl`](https://github.com/jdx/mise/blob/main/hk.pkl) defines `check` and `fix` workflows.
+It currently has no Git `pre-commit` hook, so `hk install --mise` may report that there is
+nothing to install. Run the checks explicitly before committing.
 
-- Lint codebase: `mise run lint`
-- Lint and fix codebase: `mise run lint-fix`
+### Available Linters in hk
+
+The configured steps include Prettier, Markdown linting, Cargo formatting/checking,
+ShellCheck, shfmt, Pkl, TOML/schema validation, Lua checks, and actionlint. The Clippy block
+in `hk.pkl` is disabled; CI runs Clippy separately. Read the current configuration rather
+than assuming a successful hk run includes every Rust lint.
+
+### Using hk in Development
+
+```sh
+mise run lint
+mise run lint-fix
+```
+
+Review and stage the fixes before committing. Do not add Clippy exclusions to make a check
+pass; refactor the code so the applicable lint succeeds.
+
+### Running Checks Manually
+
+For an effect-aware check scoped to changed files:
+
+```sh
+mise exec hk -- hk run check --safe --format json
+```
+
+To check an exact file list, pass NUL-delimited paths with `--files0-from`. Check hk's reported
+results: a skipped step is not a passed step. The project tasks remain the normal entry point
+for the full configured workflows.
+
+## Testing
+
+Choose checks that demonstrate the changed behavior. Use unit tests for local parsing and
+resolution, E2E tests for commands and shell boundaries, and snapshots for output that
+needs a stable contract. Avoid live downloads when a local fixture can cover the behavior.
+
+### Unit Tests
+
+```sh
+mise run test:unit
+cargo test --all-features test_name
+cargo test --all-features module_name -- --nocapture
+```
+
+Standalone Cargo commands need the activated development environment described in
+[Cargo build cache](#cargo-build-cache).
+The main binary's test initialization sets fixture paths and shared process state;
+`.cargo/config.toml` and the task configure `RUST_TEST_THREADS=1`. Use existing environment
+and current-directory guards when changing shared state in a test.
+
+For the Lua runtime crate, use `mise --cd crates/vfox run test`. Tests and fixtures there
+exercise hook return values and built-in modules independently of the CLI adapter.
+
+### E2E Tests
+
+Always use the mise task, which builds the project and invokes the test wrapper:
+
+```sh
+# A concrete test path or a regex matching test basenames
+mise run test:e2e e2e/cli/test_version
+mise run test:e2e '^test_use$'
+mise run test:e2e '^test_task_'
+
+# Inspect available files or run the complete suite
+mise run test:e2e --list
+mise run test:e2e --all
+TEST_ALL=1 mise run test:e2e --all
+```
+
+The wrapper matches **basenames** after stripping a supplied path. A directory such as
+`e2e/tasks` is not a directory filter. Use a concrete test file or a filename pattern and
+check which tests ran. With no arguments, the current wrapper selects no files; use
+`--all` explicitly for the full suite. `*_slow` files require `TEST_ALL=1`.
+
+The harness creates isolated mise configuration, data, state, and working directories.
+It still needs host prerequisites such as the shell under test, compilers, or a running
+service. Let the harness handle cleanup. Do not execute files under `e2e/` directly or
+change their executable bit to run them.
+
+Supply `MISE_GITHUB_TOKEN` or `GITHUB_TOKEN` when a test needs GitHub API access. Avoid
+printing credentials in debug output or failure reports.
+
+### Coverage Tests
+
+`mise run test:coverage` is the CI-oriented setup/E2E runner in `xtasks/test/coverage`.
+Coverage instrumentation is supplied by its environment; running it locally by itself does
+not create an instrumented build. The full runner supports `TEST_TRANCHE` and
+`TEST_TRANCHE_COUNT` for partitioning tests.
+
+### Windows E2E Tests
+
+Install the Pester module in PowerShell and build the Windows binary first. The runner adds
+`target/debug` to PATH:
+
+```powershell
+pwsh -File e2e-win/run.ps1
+pwsh -File e2e-win/run.ps1 -TestName '*task*'
+```
+
+The filter matches Pester test names. Tests for activation and PATH should execute a child
+command and verify its behavior, including a native Windows grandchild where relevant.
+
+### Plugin Tests
+
+`mise test-tool` tests **registry tools**, including tools using built-in backends; it is not
+limited to plugins. It performs real installations and runs the entry's configured test:
+
+```sh
+mise test-tool ripgrep
+mise test-tool ripgrep jq
+mise test-tool ripgrep --raw
+```
+
+Use `--all` only when you intend to test the whole registry, and `--all-config` for configured
+tools. These can involve many downloads, host dependencies, and long builds. Plugin authors
+should also read [Plugin Publishing](/plugin-publishing.html#testing-before-publication).
+
+### Test Environment Setup
+
+Use the supported task/harness instead of setting `MISE_DISABLE_TOOLS=1` or broad trust
+paths in your normal shell. Those settings can hide the very integration the test should
+exercise. A test that invokes a host package manager must isolate its host-managed state
+separately from mise's directories.
+
+### Test Assertions
+
+`e2e/assert.sh` provides exact-output, substring, failure, JSON, and filesystem helpers.
+For example, inside an E2E test:
+
+```sh
+assert "mise exec -- printf '%s' hello" "hello"
+assert_contains "mise --version" "mise"
+assert_fail "mise definitely-not-a-command"
+```
+
+`assert_fail "command" "substring"` checks both failure status and an output substring.
+`assert_fail_contains` requires a message to check; `assert_fail_matches` checks a regular
+expression. Choose the helper that expresses the behavior you need to verify.
+
+### Running Specific Test Categories
+
+Run `mise run test:unit` and a focused E2E selection while developing. For an explicit full
+local run, use `mise run test:unit` followed by `mise run test:e2e --all`. The aggregate
+`test` task currently invokes the E2E wrapper without a selection, so do not infer E2E
+coverage from that task's success alone.
+
+`mise run test:shuffle` requires nightly Rust and tests order sensitivity. Use a command-local
+toolchain selection; do not change your global Rust default just to run one check.
+
+### Running Individual Tests
+
+Use Cargo's name filter for a unit test and the E2E basename patterns shown above for a CLI
+test. Confirm the output reports the intended test count; a successful command with zero
+matching tests has not verified the change.
+
+### Performance Testing
+
+`mise run test:perf` prepares a workspace and runs the performance scripts. Read the script's
+host-tool requirements before using it on macOS. The separate `mise run perf` task uses tak;
+keep the build profile and runner class consistent when comparing results.
+
+### Snapshot Testing
+
+Run `mise run snapshots` when expected output intentionally changes. Review the resulting
+`.snap` diff, including removed snapshots; do not accept snapshots as a substitute for
+checking the behavior that produced them.
 
 ## Generating readme and shell completion files
 
-```sh
-mise run render
-```
+Edit source inputs, then regenerate the outputs affected by your change:
+
+| Change | Source and generation |
+| --- | --- |
+| CLI help or arguments | `src/cli` → `mise run render:usage`; regenerate completions when command structure changes |
+| Settings | `settings.toml` → `mise run render:schema` |
+| All generated docs and completions | `mise run render` |
+| Docs website | Edit Markdown/Vue sources; run `mise run docs:build` |
+| Documentation index for agents | `mise exec bun -- bun docs/.vitepress/llms.ts` after the final docs changes |
+
+CLI pages under `docs/cli` are generated. Do not patch those files without changing their
+source or generator. Docs examples use **TOML 1.1**; multiline inline tables, comments, and
+trailing commas are valid. Use a compatible parser when validating examples.
+
+Before opening a docs PR, rebase on the current `main`, resolve source conflicts, and rebuild
+`docs/public/llms.txt` from the rebased tree. Build the website to catch Markdown/Vue and
+link errors. Commit required generated changes with the source changes that produced them.
 
 ## Dependency Management
 
@@ -518,10 +370,13 @@ mise uses several tools to validate dependencies and code quality:
 - **cargo-msrv**: Verifies minimum supported Rust version compatibility
 - **cargo-machete**: Detects unused dependencies in Cargo.toml
 
-These checks run automatically in CI; run them locally with:
+CI installs these tools separately; they are not all declared in the project's `mise.toml`.
+Install the required tool before running its check locally. Consult the
+[test workflow](https://github.com/jdx/mise/blob/main/.github/workflows/test-impl.yml) for
+the exact CI environment and flags:
 
 ```bash
-# Run checks (tools are automatically available via mise.toml)
+# Run the installed dependency-check tools
 cargo deny check
 cargo msrv verify
 cargo machete --with-metadata
@@ -530,11 +385,11 @@ cargo machete --with-metadata
 ## Conventional Commits
 
 mise uses [Conventional Commits](https://www.conventionalcommits.org/) for
-consistent commit messages and automated changelog generation. All commits
-should follow this format:
+PR titles and automated changelog generation. PR titles **must** use this format;
+intermediate commit subjects should follow it too:
 
 ```text
-<type>[optional scope]: <description>
+<type>[optional scope][optional !]: <description>
 
 [optional body]
 
@@ -551,11 +406,14 @@ should follow this format:
 - **perf**: Performance improvements (⚡ Performance)
 - **test**: Testing changes (🧪 Testing)
 - **chore**: Maintenance tasks, dependency updates
+- **ci**: CI and automation changes
+- **security**: Security-related changes
+- **registry**: Registry changes (without a scope)
 - **revert**: Reverting previous changes (◀️ Revert)
 
 ### Examples
 
-```bash
+```text
 feat(cli): add new command for listing plugins
 fix(parser): handle edge case in version parsing
 refactor(config): simplify configuration loading logic
@@ -563,6 +421,9 @@ docs(readme): update installation instructions
 test(e2e): add tests for new plugin functionality
 chore(deps): update dependencies to latest versions
 ```
+
+Start the description with a lowercase character and use an imperative verb. Use `docs:`
+for documentation changes and `fix:` for CLI behavior fixes, not CI or infrastructure.
 
 ### Scopes
 
@@ -585,15 +446,18 @@ Breaking changes are rarely accepted into mise and are only performed in
 exceptional situations where there is no better alternative. When a breaking
 change is necessary, the process includes:
 
-1. **CLI warnings**: Users receive deprecation warnings in the CLI
-2. **Migration period**: Several months are provided for users to migrate
-3. **Documentation**: Clear migration guides are provided
-4. **Community notice**: Announcements in Discord and GitHub discussions
+1. Mark the feature deprecated in documentation immediately and normally add a CLI warning
+   with `deprecated_at!` in the same release.
+2. Allow 12 months after the warning before removal.
+3. Delay the warning by up to 6 months only when migration requires a new setting, syntax,
+   or replacement that older supported clients reject. Removal remains 12 months after
+   the warning, not after the initial documentation notice.
+4. Provide a working migration path and explain the affected behavior.
 
 For breaking changes, add `!` after the type or include `BREAKING CHANGE:` in
 the footer:
 
-```bash
+```text
 feat(api)!: remove deprecated configuration options
 # OR
 feat(api): remove deprecated configuration options
@@ -616,7 +480,7 @@ development:
 ### PR Title Validation
 
 - **semantic-pr-lint**: Validates that PR titles follow the conventional commit format
-- PR titles must match: `<type>[optional scope]: <description>`
+- PR titles must match: `<type>[optional scope][optional !]: <description>`
 - Example: `feat(cli): add new command for listing plugins`
 
 ### Continuous Integration
@@ -653,6 +517,10 @@ of the full backend specification.
 
 ### Quick Start
 
+First check the popularity requirements below. A new shorthand is for an already widely
+used tool, not a way to make a personal or niche project installable. Explicit backend
+syntax works without a registry entry.
+
 1. **Choose the right backend** for your tool:
 
    - **[packslip](dev-tools/backends/packslip.md)** - Preferred when the project
@@ -677,7 +545,9 @@ of the full backend specification.
    test = { cmd = "your-tool --version", expected = "{{version}}" }
    ```
 
-3. **Test the tool** with `mise test-tool your-tool` to confirm it works
+3. **Verify version listing** with `mise ls-remote <backend:identifier>`. A backend that can
+   install only an explicitly pinned version is insufficient.
+4. **Test the tool** with `mise test-tool your-tool` to confirm installation and execution.
 
 ### Guidelines and Requirements
 
@@ -687,12 +557,13 @@ When adding a new tool, the following requirements apply:
   verify installation. This is automatically enforced by the
   [`validate-new-tools` job](https://github.com/jdx/mise/blob/main/.github/workflows/registry.yml)
   in the registry workflow.
-- **Tools may be rejected if they are not notable** - The tool should be
-  reasonably popular and well-maintained. Notability is decided by maintainer
-  review (not CI). There are no specific guidelines for this; many factors are
-  taken into account. @jdx won't explain why a given tool wasn't accepted.
-  Include a brief popularity summary (stars, downloads, recent release date) in
-  the PR description so the policy can be applied without re-doing the research.
+- **New tools must already be widely used** - The bar is normally thousands of GitHub stars,
+  active maintenance, and real use outside the author's projects. Personal, internal, niche,
+  and low-popularity tools do not meet it. A working installer or passing test is not enough.
+  @jdx won't explain why a given tool wasn't accepted.
+- **Include popularity evidence** - Put current stars/forks, release activity, relevant
+  package downloads, and examples of third-party use in the PR description. Check the actual
+  numbers before proposing an entry; do not submit speculatively.
 
 #### Backend acceptance tiers
 
@@ -722,13 +593,12 @@ user's PATH. The tool still needs to be popular and well-maintained.
 
 **Tier 4 — very high bar, rarely accepted:** `npm`, `pipx`, `gem`, `cargo`, `go`, `dotnet`.
 
-These all depend on a separately installed runtime or toolchain being present on
-the user's PATH (`node`, `python`, `ruby`, `cargo`, `go`, `dotnet`), which is
-fragile. `npm`/`pipx`/`gem` in particular silently bind tools to whichever
-`node`/`python`/`ruby` happened to be on PATH at install time, which breaks when
-versions change or the runtime isn't installed. These backends are accepted only
-when no packslip/aqua/github/gitlab option exists and the tool is widely used. Discuss with @jdx
-before submitting.
+Runtime and toolchain dependencies add setup and reproducibility constraints. For example,
+npm requires Node, and gems depend on their Ruby installation. Requirements differ by
+backend: pipx's default uv mode can provision Python, so consult the backend's guide rather
+than assuming every dependency must already be on PATH. These backends are accepted only
+when no packslip/aqua/github/gitlab option exists and the tool is widely used. Get explicit
+agreement from @jdx before submitting an entry using one of these backends.
 
 **Not accepted:** `asdf`, `vfox`, `ubi`.
 
@@ -818,7 +688,7 @@ idiomatic_files = [".your-tool-version"]
 ```
 
 For structured or tool-specific files, use a table with the same parsing options supported by the
-[HTTP backend's version listing](/dev-tools/backends/http.html#version-listing):
+[HTTP backend's version listing](/dev-tools/backends/http.html#version-list-url):
 
 ```toml
 idiomatic_files = [
@@ -874,8 +744,10 @@ All tools must include a test to verify proper installation:
 test = { cmd = "command-to-run", expected = "expected-output-pattern" }
 ```
 
-The test command should be reliable, and the output pattern should use
-<code v-pre>{{version}}</code> to match any version number.
+The test command should be reliable and verify the installed executable. The template
+<code v-pre>{{version}}</code> expands to the selected tool version; it is not a wildcard
+matching any version. Use it when the command prints that version, or choose another stable
+output check appropriate for the tool.
 
 If `test.cmd` needs extra mise-managed tools on PATH, declare them with
 `test.tools`. This is used only by `mise test-tool`; it does not affect normal
@@ -887,9 +759,9 @@ test = { cmd = "gradle -V", expected = "Gradle", tools = ["java"] }
 
 ### Registry Examples
 
-Recent tool additions:
+Examples of registry shapes (consult the current files for all fields):
 
-- **DuckDB**: Simple github backend ([#4248](https://github.com/jdx/mise/pull/4248))
+- **DuckDB**: Aqua backend ([#4248](https://github.com/jdx/mise/pull/4248))
 
   ```toml
   # registry/duckdb.toml
@@ -926,7 +798,7 @@ or tool that would greatly enhance mise's capabilities.
 
 If you need a custom backend:
 
-1. **Discuss with jdx first** in [Discord](https://discord.gg/UBa7pJUN7Z) or by
+1. **Discuss with jdx first** in [Discord](https://discord.gg/mABnUDvP57) or by
    creating a [discussion](https://github.com/jdx/mise/discussions)
 2. **Consider whether existing backends** (github, aqua, npm, pipx, etc.) can meet
    your needs
@@ -955,36 +827,12 @@ across different installation systems.
 
 1. **Create the backend module** in `src/backend/` (e.g., `my_backend.rs`)
 
-2. **Implement the Backend trait**:
-
-   ```rust
-   use crate::backend::{Backend, BackendType};
-   use crate::install_context::InstallContext;
-
-   #[derive(Debug)]
-   pub struct MyBackend {
-       // backend-specific fields
-   }
-
-   impl Backend for MyBackend {
-       fn get_type(&self) -> BackendType { BackendType::MyBackend }
-
-       async fn list_remote_versions(&self) -> Result<Vec<String>> {
-           // Implementation for listing available versions
-       }
-
-       async fn install_version(&self, ctx: &InstallContext,
-                                 tv: &ToolVersion) -> Result<()> {
-           // Implementation for installing a specific version
-       }
-
-       async fn uninstall_version(&self, tv: &ToolVersion) -> Result<()> {
-           // Implementation for uninstalling a version
-       }
-
-       // ... other required methods
-   }
-   ```
+2. **Implement the current Backend trait** in
+   [`src/backend/mod.rs`](https://github.com/jdx/mise/blob/main/src/backend/mod.rs).
+   Follow a nearby backend with the same installation model. Shared wrapper methods handle
+   caching and policy; implement the appropriate hooks, such as `_list_remote_versions`
+   (which returns `VersionInfo` entries) and `install_version_`, rather than duplicating the
+   wrapper logic. Preserve opaque versions and delegate resolution to the backend.
 
 3. **Register the backend** in `src/backend/mod.rs`:
 
@@ -1020,37 +868,112 @@ Look at existing backends for patterns:
 For detailed architecture information, see
 [Backend Architecture](dev-tools/backend_architecture.md).
 
+## Packaging and Self-Update Instructions
+
+When mise is installed via a package manager, `mise self-update` should not replace the binary the package manager owns; users should update through the package manager instead. This is opt-in: a package that does none of the following keeps self-update fully enabled. Packagers have three ways to turn it off, and any of them makes `mise doctor` report `self_update_available: no`.
+
+The paths below are relative to the install prefix, which mise derives from its own binary: the path is canonicalized (symlinks resolved) and then taken two levels up, so `/usr/bin/mise` gives `/usr`.
+
+### Disable at build time
+
+Build without the `self_update` Cargo feature. This example retains native TLS and bundled
+Lua; a package using system Lua should choose its features and build dependencies accordingly:
+
+```bash
+cargo build --release --no-default-features --features native-tls,vfox/vendored-lua
+```
+
+The subcommand still exists, so scripts that call it get a clear error rather than "unknown command", but it always fails with `mise's self-update feature has been disabled at build time, cannot update`.
+
+### Disable with a marker file
+
+Install an empty `.disable-self-update` file at any one of:
+
+- `lib/.disable-self-update` (used by Homebrew)
+- `lib/mise/.disable-self-update` (used by the AUR `mise-bin` package)
+- `lib64/mise/.disable-self-update`
+
+### Ship update instructions
+
+Installing a TOML file with platform-specific instructions also disables self-update; mise prints the file's message when `mise self-update` runs and when it detects a newer release. Install it at any one of:
+
+- `lib/mise-self-update-instructions.toml`
+- `lib/mise/mise-self-update-instructions.toml`
+- `lib64/mise/mise-self-update-instructions.toml`
+
+Example contents:
+
+```toml
+# Debian/Ubuntu (APT)
+message = "To update mise from the APT repository, run:\n\n  sudo apt update && sudo apt install --only-upgrade mise\n"
+```
+
+```toml
+# Fedora/CentOS Stream (DNF)
+message = "To update mise from COPR, run:\n\n  sudo dnf upgrade mise\n"
+```
+
+Setting `MISE_SELF_UPDATE_INSTRUCTIONS` to a file path overrides the search.
+
+### Overriding the outcome
+
+`MISE_SELF_UPDATE_AVAILABLE=false` disables self-update without installing anything, and `MISE_SELF_UPDATE_AVAILABLE=true` re-enables it even when a marker or instructions file is present. Both are useful for testing a package build. Neither has any effect on a binary built without the `self_update` feature, where self-update is always unavailable.
+
+`mise self-update --force` also bypasses the availability check, so a user who passes it updates the binary in place even when a marker file, an instructions file, or `MISE_SELF_UPDATE_AVAILABLE=false` is in effect. Treat the runtime mechanisms as "do not update by default" rather than a hard block. A build without the `self_update` feature is the only variant `--force` cannot get past.
+
 ## Testing packaging
 
-This is only necessary when changing the packaging setup.
+Test packaging changes in a disposable container or machine for the target distribution.
+A running Docker engine is required for the examples below. Start the container from your
+host shell, then run the installation commands **inside** it as root. These checks exercise
+the published repository; testing an unpublished package also requires copying that artifact
+into the container and installing it there.
 
 ### Ubuntu (apt)
 
-This example is for arm64; change the arch to amd64 if needed.
+```sh
+docker run -ti --rm ubuntu bash
+```
+
+Inside the container:
 
 ```sh
-docker run -ti --rm ubuntu
 apt update -y
-apt install -y curl
+apt install -y curl ca-certificates
 install -dm 755 /etc/apt/keyrings
-curl -fSso /etc/apt/keyrings/mise-archive-keyring.pub https://mise.jdx.dev/gpg-key.pub
-echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.pub arch=arm64] \
+curl -fSso /etc/apt/keyrings/mise-archive-keyring.asc https://mise.jdx.dev/gpg-key.pub
+echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc arch=$(dpkg --print-architecture)] \
 https://mise.jdx.dev/deb stable main" >/etc/apt/sources.list.d/mise.list
 apt update -y
 apt install -y mise
-mise -V
+mise --version
 ```
 
 ### Fedora (dnf)
 
 ```sh
-docker run -ti --rm fedora
-dnf copr enable -y jdxcode/mise && dnf install -y mise && mise -v
+docker run -ti --rm fedora bash
 ```
+
+Inside the container, follow the [Fedora installation instructions](/installing-mise.html#dnf),
+then run `mise --version`. Minimal images may require the distribution's DNF COPR plugin first.
 
 ### RHEL (dnf)
 
 ```sh
-docker run -ti --rm registry.access.redhat.com/ubi9/ubi:latest
-dnf copr enable -y jdxcode/mise && dnf install -y mise && mise -v
+docker run -ti --rm registry.access.redhat.com/ubi9/ubi:latest bash
 ```
+
+Inside the container, follow the [RHEL installation instructions](/installing-mise.html#dnf),
+then run `mise --version`. RHEL 9 uses the `centos-stream+epel-next-9` COPR target; do not
+assume that a generic COPR enable command selects an available build for every release.
+
+## Linting
+
+- Lint codebase: `mise run lint`
+- Lint and fix codebase: `mise run lint-fix`
+
+## Releasing
+
+Releases are cut automatically by the `release-plz` GitHub Actions workflow
+(`mise run release-plz` in CI). Do not run that task locally.
