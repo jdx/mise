@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TR07CP4RPRAH3TS8DFG2SB",
+  "session_id": "01a0751c-803c-71c3-8477-fa566f432cfe",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T06:55:27.8931Z",
+  "branch": "codex/docs-faq-recipes",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "2c342c2f7a42",
+  "checkpoint_transcript_start": 1836,
+  "transcript_lines_at_start": 1836,
+  "compact_transcript_start": 268,
+  "token_usage": {
+    "input_tokens": 16075,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4528768,
+    "output_tokens": 3783,
+    "api_call_count": 23
+  },
+  "session_metrics": {
+    "turn_count": 4
+  }
+}
