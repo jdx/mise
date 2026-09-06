@@ -1,4 +1,4 @@
-# brew
+# Homebrew formulae and casks
 
 Homebrew formulae and casks — **without requiring Homebrew to be installed**.
 
@@ -19,6 +19,24 @@ same relocation, code-signing, and linking work `brew` does when pouring a
 bottle. Formulae without a usable bottle are built from source, also without
 Homebrew (see [Source formulae](#source-formulae)). mise never shells out to
 `brew` for homebrew/core formulae.
+
+## First install
+
+Use this manager when you want software in the shared Homebrew prefix. For a
+CLI that needs project-specific version switching, use a [tool backend](/dev-tools/backends/).
+These package declarations do not create mise shims or modify the current shell's PATH.
+
+```sh
+mise bootstrap packages status
+mise bootstrap packages apply --manager brew --dry-run
+mise bootstrap packages apply --manager brew
+```
+
+Check [platform support](#supported-platforms) first. Source builds need a
+compiler and build tools, and some casks need permission to write system-owned
+paths. An installation can include the package's dependencies.
+
+## Third-party taps
 
 Third-party taps are supported with the same fully-qualified name you would
 pass to Homebrew:
@@ -69,7 +87,7 @@ Casks use the `brew-cask:` manager. mise fetches cask metadata directly from
 the Homebrew cask API (or from tap API metadata), downloads the artifact,
 verifies its sha256 when the cask provides one, extracts the archive, and
 installs app bundles into `/Applications` while recording the version under
-`<prefix>/Caskroom`. Like Homebrew, mise moves each app bundle into
+`<prefix>/Caskroom`. For an ordinary managed app artifact, mise moves the bundle into
 `/Applications` and leaves a symlink at its versioned Caskroom path instead of
 retaining a second copy of the application.
 
@@ -167,7 +185,9 @@ mise prints a warning whenever it replaces an existing `.app`. Version
 upgrades still replace the bundle when upstream publishes a new cask version —
 expect to re-confirm TCC prompts after those upgrades, just as with Homebrew.
 
-On Linux, initial cask support is limited to font-only casks without lifecycle
+### Linux font casks
+
+On Linux, cask support is limited to font-only casks without lifecycle
 hooks or structured `preflight_steps` or `postflight_steps` — concepts from
 Homebrew's cask DSL, documented in the
 [Homebrew Cask Cookbook](https://docs.brew.sh/Cask-Cookbook). Fonts are
@@ -184,6 +204,8 @@ explicit request such as `mise bootstrap packages apply brew-cask:firefox`
 still fails with a clear unsupported-platform error. You can also mark macOS
 casks explicitly with `{ os = "macos" }`. This boundary will expand as mise
 gains portable implementations for more cask artifact types.
+
+### Supported artifacts and lifecycle actions
 
 `brew-cask` currently supports app-bundle casks (`app` artifacts), binary and
 generated command-wrapper casks (`binary` and `command_wrapper` artifacts),
@@ -214,6 +236,8 @@ require custom installer choices, services, unsupported hook DSL, unsupported
 structured lifecycle steps, or other cask artifact types fail with a clear
 unsupported artifact error instead of delegating to Homebrew.
 
+### Ownership and installed state
+
 Direct cask pours remain mise-owned. Their completed state is recorded in
 `.mise-cask.toml`; mise does not synthesize Homebrew's private `.metadata`
 receipts. A Homebrew-owned cask with `.metadata` and exactly one Caskroom version
@@ -238,12 +262,6 @@ reported as unhealthy so the next apply can reconcile them. Version upgrades
 and an explicit remove + apply still replace the app when you want a fresh
 pour.
 
-The `brew` manager exists because shared-library packages — postgres, ffmpeg,
-imagemagick, php — fundamentally can't be served by mise's per-project backends like
-`aqua:` or `github:`: their bottles are built against fixed install paths and
-a shared dependency tree. Installing them at Homebrew's canonical prefix is
-what makes them work.
-
 ## Supported platforms
 
 | Platform                    | Prefix                       |
@@ -259,10 +277,25 @@ source instead.
 
 ## The prefix
 
-If the prefix doesn't exist, mise creates it with the standard layout. This is
-the only time the brew manager uses sudo, mirroring what Homebrew's own
-installer does (`mkdir` + `chown` to your user). After that, installs are plain
-file operations as your user; nothing runs as root.
+If the prefix doesn't exist, mise creates it with the standard layout.
+Formula installation may elevate for prefix creation and ownership setup
+(`mkdir` + `chown`), then writes formulae as the prefix owner. Cask installation
+can also require elevation for package installers or lifecycle steps. Run mise
+as the intended owner and let it request the privileges needed for each step.
+
+Linked commands need `<prefix>/bin` on `PATH`. For example, in the appropriate
+shell startup file:
+
+```sh
+# Apple Silicon macOS
+export PATH="/opt/homebrew/bin:$PATH"
+
+# Linux
+# export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+```
+
+Keg-only formulae are not linked there. Use their `<prefix>/opt/<formula>` path
+when configuring compilers or services that need them.
 
 ## Coexistence with a real Homebrew
 
@@ -414,6 +447,14 @@ linked keg — the new keg replaces the old one and the links are repointed,
 the same dance `brew upgrade` does. Since bottles only exist for a formula's
 current version, "upgrade" and "install the current bottle" are the same
 operation.
+
+## Troubleshooting
+
+- **Link conflict:** inspect the paths mise lists and identify their owner before changing them. Repeated apply does not authorize overwriting unrelated files.
+- **Unsupported formula DSL or cask artifact:** read the named unsupported operation. mise's built-in installer has its own coverage; an upstream Homebrew recipe is not a guarantee of support.
+- **Installed but command missing:** check the prefix's `bin` directory and whether the formula is keg-only.
+- **Existing app differs:** decide whether to keep managing it outside mise or use the documented adoption workflow. `adopt` is not permission to overwrite a different app.
+- **App replaced successfully but permissions changed:** check macOS Privacy & Security grants for that app.
 
 ## Limitations
 

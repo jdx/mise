@@ -1,28 +1,30 @@
 # Bootstrap Packages
 
-mise can ensure host packages are installed via the
-`[bootstrap.packages]` section of `mise.toml`, applied by
-`mise bootstrap packages apply` or as part of
-[`mise bootstrap`](/bootstrap.html):
+Declare shared host packages in `[bootstrap.packages]`, then apply them with
+`mise bootstrap packages apply` or the full [bootstrap](/bootstrap.html).
+Use this for native libraries, build dependencies, and host applications.
+
+Start with the manager used by your machine. For a Debian or Ubuntu host:
 
 ```toml
 [bootstrap.packages]
-"apk:build-base" = "latest"
 "apt:libssl-dev" = "latest"
 "apt:build-essential" = "latest"
-"aur:google-chrome" = "latest"
-"brew:postgresql@17" = "latest"
-"brew:ffmpeg" = "latest"
-"brew-cask:firefox" = "latest"
-"flatpak:org.mozilla.firefox" = "latest"
-"flatpak-user:org.gnome.Builder" = "latest"
-"mas:497799835" = "latest"
+```
+
+Preview and apply the configured packages:
+
+```sh
+mise bootstrap packages status
+mise bootstrap packages apply --dry-run
+mise bootstrap packages apply
 ```
 
 Each entry is keyed `"manager:package"` — the manager prefix is required —
 and the value is a version: `"latest"` for whatever the manager installs, or
 a pin in the manager's native format where supported (see the per-manager
-pages).
+pages). **`"latest"` accepts an already-installed version.** It does not trigger
+an upgrade on every apply; use `mise bootstrap packages upgrade` for that.
 
 Use the table form to restrict an individual package by operating system or
 OS/architecture. `os` accepts one value or a list and uses the same names and
@@ -48,28 +50,17 @@ to make adoption the default for all casks, with per-cask `adopt = false`
 overrides. See the
 [brew cask documentation](/bootstrap/packages/brew.html#casks).
 
-Host packages are intentionally separate from [`[tools]`](/configuration.html):
-they are not version-pinned per project, do not get shims, and are managed
-outside the project by the platform's package manager — or, for `brew` and
-`brew-cask`, by mise's built-in Homebrew installers, which don't require
-Homebrew itself. Use them for shared libraries, build dependencies, and host
-GUI apps (`libssl-dev`, `postgresql`, `ffmpeg`, `firefox`), not for project dev
-tools — those belong in `[tools]`.
+## Host packages or mise tools
 
-The manager list is extensible through [package manager plugins](./plugins.md),
-which cover host-owned state such as VS Code extensions, Helm plugins, krew
-plugins, and GitHub CLI extensions.
+Host package declarations can include version constraints where the manager
+supports them, but installations are shared outside the project. Changing
+directories does not switch them, and mise does not create shims for them.
+Use [`[tools]`](/dev-tools/) when you need isolated versions selected by each
+project. Use `[bootstrap.packages]` when the software belongs in the host's
+package database or shared prefix.
 
-Packages are one part of [mise bootstrap](/bootstrap.html). The other
-declarative sections work the same way:
-
-- [Repos](/bootstrap/repos.html) — `[bootstrap.repos]`
-- [Dotfiles](/dotfiles.html) — `[dotfiles]`
-- [Shell Activation](/bootstrap/shell.html) — `[bootstrap.mise_shell_activate]`
-- [macOS Defaults](/bootstrap/macos-defaults.html) — `[bootstrap.macos.defaults]`
-- [launchd](/bootstrap/launchd.html) — `[bootstrap.macos.launchd.agents]`
-- [systemd](/bootstrap/systemd.html) — `[bootstrap.linux.systemd.units]`
-- [User Login Shell](/bootstrap/user.html) — `[bootstrap.user].login_shell`
+The manager list is extensible through [package manager plugins](./plugins.md)
+for host-owned state such as editor extensions and other applications' plugins.
 
 ## Supported package managers
 
@@ -110,57 +101,32 @@ declarative sections work the same way:
   still list unavailable managers so nothing is silently hidden.
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` prints a one-time hint when packages are
-  missing, but only `mise bootstrap packages apply` ever installs anything.
+  missing. Explicit `packages apply`, `packages use`, and the full
+  `mise bootstrap` perform installation; `packages upgrade` updates installed
+  packages.
 - **Unknown managers are ignored with a warning** and a package-plugin install
   hint, so configs using managers from newer mise versions still parse.
 
-To set the current user's login shell, use `[bootstrap.user].login_shell`:
-
-```toml
-[bootstrap.user]
-login_shell = "/bin/zsh"
-```
-
-See [User Login Shell](/bootstrap/user.html) for details.
-
 ## Commands
 
+### Apply or record packages
+
 ```sh
-mise bootstrap packages status            # table of requested vs installed packages
-mise bootstrap packages status --json     # machine-readable
-mise bootstrap packages status --missing  # exit 1 if anything is out of sync (CI check)
-
-mise bootstrap packages apply           # install whatever is missing (prompts first)
-mise bootstrap packages apply apt:curl  # install specific packages (configured or not)
-mise bootstrap packages apply --dry-run # print the commands without running them
-mise bootstrap packages apply --yes     # skip the confirmation prompt
+mise bootstrap packages status --json
+mise bootstrap packages status --missing
+mise bootstrap packages apply --manager apt --dry-run
 mise bootstrap packages apply --manager apt
-mise bootstrap packages apply --update  # refresh package manager metadata first
+mise bootstrap packages apply --update
 
-mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835
-mise bootstrap packages use -g brew:ffmpeg     # write globally
-mise bootstrap packages use apt:curl@8.5.0-2   # pin a version
-    # (brew pins via the formula name instead: brew:postgresql@17)
-
-mise bootstrap packages import --manager brew   # add installed requested brew formulae
-mise bootstrap packages import --manager brew --all
-mise bootstrap packages import --manager brew --dry-run
-
-mise bootstrap packages prune --manager brew    # remove unneeded linked brew formulae
-mise bootstrap packages prune --manager brew --dry-run
-mise bootstrap packages prune --manager brew --yes
-mise bootstrap packages prune --manager brew-cask # remove safely prunable mise casks
-mise bootstrap packages prune --manager brew-cask --dry-run
-mise bootstrap packages prune --manager vscode # remove mise-owned plugin packages
-mise bootstrap packages prune --manager vscode --dry-run
-
-mise bootstrap packages upgrade           # upgrade installed packages to current versions
-mise bootstrap packages upgrade --manager brew
-mise bootstrap packages upgrade --manager brew-cask
-mise bootstrap packages upgrade --manager flatpak
-mise bootstrap packages upgrade --manager flatpak-user
-mise bootstrap packages upgrade --manager mas
+mise bootstrap packages use apt:curl
+mise bootstrap packages use -g brew:ffmpeg
 ```
+
+`apply` without package arguments reads the active configuration. An explicit
+request such as `mise bootstrap packages apply apt:curl` can install a package
+without recording it. Use `use` when the package should remain declared.
+`--update` refreshes metadata according to the manager; `--yes` skips mise's
+confirmation prompt but does not provide sudo credentials.
 
 `mise bootstrap packages use` is `mise use` for system packages: it writes
 `"manager:package" = "version"` entries to `mise.toml` (the local file by
@@ -168,6 +134,17 @@ default, the global one with `-g`) and installs whatever is missing. Entries
 for managers that aren't available on the current machine are written without
 installing — that's how a shared config picks up `apt:` lines authored on a
 Mac.
+
+### Import and prune
+
+```sh
+mise bootstrap packages import --manager brew --dry-run
+mise bootstrap packages import --manager brew
+mise bootstrap packages prune --manager brew --dry-run
+```
+
+Inspect the prune plan before running without `--dry-run`. Formula pruning can
+include software installed by Homebrew itself, not just by mise.
 
 `mise bootstrap packages import --manager brew` is the inverse for Homebrew
 formulae: it reads the active Homebrew `opt` links and writes requested
@@ -197,6 +174,13 @@ manually installed packages are never adopted. The plugin must implement
 the hook, and mise verifies removals with `PackageInstalled` before updating its
 ownership state.
 
+### Upgrade installed packages
+
+```sh
+mise bootstrap packages upgrade --manager apt --dry-run
+mise bootstrap packages upgrade --manager apt
+```
+
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available
 version — apk, apt, and dnf also honor a version pinned in config
@@ -215,13 +199,13 @@ missing.
 ## Choosing which managers run
 
 By default, mise acts on every configured manager that is available on the
-current machine. Since availability implies the OS (`apt` only exists on
-Debian-family systems, `brew` wherever a bottle exists), this usually does the right
-thing without configuration.
+current machine. Availability checks the supported platform and required
+commands; it is not a choice of one preferred manager. For example, a Linux host
+can use both apt and mise's built-in Homebrew manager if both have declarations.
 
 If more than one manager could apply — several package managers installed on
 one machine, or a shared config listing managers you don't want here — pick a
-subset with the [`system_packages.managers`](/configuration/settings.html)
+subset with the [`system_packages.managers`](/configuration/settings.html#system_packages.managers)
 setting:
 
 ```toml
@@ -229,16 +213,18 @@ setting:
 system_packages.managers = ["apt"]
 ```
 
-This composes with [platform-specific config files](/configuration.html)
-(`mise.macos.toml`, `mise.linux.toml`) when you want different selections per
-OS.
+You can also use the per-package `os` selector shown above. To put selections
+in `mise.macos.toml` or `mise.linux.toml`, activate that configuration environment
+with `-E`/`MISE_ENV` or enable
+[`auto_env`](/configuration/environments.html#platform-environments); the filename
+alone does not currently activate it.
 
 ## sudo
 
-The Linux package managers require root. When not running as root, mise
-elevates with `sudo`, which prompts for your password as usual. The same
-sudo path is used when `[bootstrap.user].login_shell` needs to add a shell to
-`/etc/shells`, and it only happens during an explicit `mise bootstrap`:
+The apk, apt, dnf, and pacman managers need root for package changes. mise
+uses sudo when necessary. AUR helpers build as the current user and handle their
+own package-install elevation; Flatpak user installations do not need root.
+The same mise sudo path is used when login-shell setup must edit `/etc/shells`:
 
 - already root (containers, CI): no sudo, commands run directly
 - interactive terminal: e.g. `sudo apt-get install ...` with a normal sudo
@@ -247,10 +233,11 @@ sudo path is used when `[bootstrap.user].login_shell` needs to add a shell to
   command to run manually — it never hangs waiting for a password
 - in every case, the full command line is logged before it runs
 
-Set [`system_packages.sudo = false`](/configuration/settings.html) to forbid
+Set [`system_packages.sudo = false`](/configuration/settings.html#system_packages.sudo) to forbid
 elevation entirely; mise prints the command for you to run yourself
-instead. The `brew` manager never needs sudo except once to create
-`/opt/homebrew` (see [brew](/bootstrap/packages/brew.html)).
+instead. Homebrew formula installation may need elevation to create its
+canonical prefix; cask installers can also need elevation for their artifacts
+(see [brew](/bootstrap/packages/brew.html)).
 Package plugins never use mise's sudo path and must never elevate themselves.
 
 ## CI usage
@@ -267,4 +254,6 @@ named `bootstrap` afterwards, if one is defined) — one command to set up a
 fresh machine or container.
 
 `mise bootstrap packages status --missing` exits 1 when packages are missing, which makes
-for a convenient CI check without installing anything.
+for a convenient CI check without installing anything. Inspect JSON status as
+well when a required manager may be unavailable: skipped declarations are not
+proof that their packages are installed.

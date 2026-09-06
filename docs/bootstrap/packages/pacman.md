@@ -1,4 +1,4 @@
-# pacman
+# Arch packages (pacman)
 
 System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 
@@ -8,6 +8,24 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 "pacman:base-devel" = "latest"
 "pacman:libreoffice-fresh" = { state = "absent" }
 ```
+
+For a rolling-release workstation, keep the whole system current using Arch's
+supported full-system upgrade workflow before adding packages. mise's scoped
+`upgrade` command is not a replacement for that workflow; see the partial-upgrade
+limitation below.
+
+## Preview and apply
+
+```sh
+mise bootstrap packages status
+mise bootstrap packages apply --manager pacman --dry-run
+mise bootstrap packages apply --manager pacman
+```
+
+These commands use the active `[bootstrap.packages]` declarations. To add and
+install a package together, use `mise bootstrap packages use pacman:openssl`.
+The manager must be available on the host; an explicit `--manager pacman` fails
+when it is unavailable.
 
 ## Behavior
 

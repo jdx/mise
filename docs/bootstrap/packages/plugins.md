@@ -22,7 +22,14 @@ krew = "https://github.com/example/mise-krew" # placeholder
 `mise bootstrap` installs declared package plugins first, applies built-in
 package managers, installs `[tools]`, then applies plugin managers. This lets a
 plugin declare a host command such as `code`, `helm`, `kubectl`, or `gh` that is
-provided by the same config's global `[tools]` entries.
+provided by global `[tools]` entries. Package-plugin hooks include the process
+PATH, mise shims, and global tool paths; project-only tool paths are not added
+as a separate dependency toolset. Install the host tool globally or ensure it
+is on the hook's PATH. Installing an extension is separate from installing its host.
+
+For an existing configuration, start with `mise bootstrap --dry-run` to inspect
+the phase order. The narrower `plugins apply` installs plugins themselves;
+`packages apply` expects the plugin and its host dependencies to be ready.
 
 The narrower commands are also available:
 
@@ -39,8 +46,12 @@ You can install a plugin without declaring it:
 
 ```sh
 # placeholder URL — replace with a real package-plugin repository
-mise plugin install package:vscode https://github.com/example/mise-vscode-extensions
+mise plugins install package:vscode https://github.com/example/mise-vscode-extensions
 ```
+
+Run as the user whose application state should change. A successful install in
+one user's VS Code, Helm, or GitHub CLI profile does not configure every user's
+profile on the host.
 
 Package plugins install into the host application's own state directory. They
 do not create mise installs or shims, never elevate with `sudo`, and are not
