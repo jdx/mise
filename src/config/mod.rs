@@ -2877,18 +2877,21 @@ pub(crate) fn global_config_path() -> PathBuf {
 /// `config.toml`. Never a `.local.toml`, even when that is the only global
 /// file that exists.
 pub(crate) fn global_shared_config_path() -> PathBuf {
-    let shared = |path: &PathBuf| {
-        path.extension().is_some_and(|ext| ext == "toml")
-            && !path
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().ends_with(".local.toml"))
+    let local = |path: &PathBuf| {
+        path.file_name()
+            .is_some_and(|name| name.to_string_lossy().ends_with(".local.toml"))
     };
-    if let Some(path) = env::MISE_GLOBAL_CONFIG_FILE.clone().filter(shared) {
+    // an explicit global file is the one mise loads: declarations go there
+    // (writing TOML into a file that is not TOML fails, rather than landing
+    // in a file that is never read)
+    if let Some(path) = env::MISE_GLOBAL_CONFIG_FILE.clone()
+        && !local(&path)
+    {
         return path;
     }
     let files = global_config_files();
     first_config_file(&files)
-        .filter(|path| shared(path))
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml") && !local(path))
         .cloned()
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }

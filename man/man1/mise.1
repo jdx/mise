@@ -263,7 +263,7 @@ Track a file or directory where it is (experimental)
 Remove dotfiles applied from `[dotfiles]`
 .TP
 \fBbootstrap dotfiles undo\fR
-Reverse a rollback or undo
+Reverse a rollback, undo, or pull
 .TP
 \fBbootstrap dotfiles untrack\fR
 Stop tracking a file or directory
@@ -2063,7 +2063,7 @@ mise bootstrap dotfiles unapply \-\-dry\-run
 mise bootstrap dotfiles unapply \-\-force \-\-yes
 .RE
 .SH "MISE BOOTSTRAP DOTFILES UNDO"
-Reverse a rollback or undo
+Reverse a rollback, undo, or pull
 
 Restores exactly the paths that operation changed from the protective
 checkpoint it took, leaving everything else as it is now. Without a

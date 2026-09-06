@@ -47,7 +47,11 @@ pub(crate) fn load(repo: &HistoryRepo) -> Result<SyncState> {
     let Some(head) = repo.ref_oid(STATE_REF)? else {
         return Ok(state);
     };
-    for entry in repo.ls_tree(&format!("{head}:state"))? {
+    // a commit written with nothing to record has no `state/` directory
+    let Ok(entries) = repo.ls_tree(&format!("{head}:state")) else {
+        return Ok(state);
+    };
+    for entry in entries {
         let Some(branch_path) = entry.path.strip_suffix(".json") else {
             continue;
         };

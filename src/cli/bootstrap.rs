@@ -1315,6 +1315,9 @@ impl Bootstrap {
         generation.refresh_tracked().await;
         let error = result.as_ref().err().map(|err| format!("{err:#}"));
         generation.finish(error, result.as_ref().ok().cloned());
+        if result.is_ok() && !self.dry_run {
+            system::history::sync::run::bootstrap_completed();
+        }
         result.map(|_| ())
     }
 

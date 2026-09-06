@@ -67,6 +67,8 @@ assert_contains "$b bootstrap dotfiles pull --dry-run 2>&1" "bindings.lua  creat
 assert_fail "$b bootstrap dotfiles pull --take-remote ~/.config/hypr/bindings.lua --yes 2>&1" "is not a conflict"
 assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/mise/config.toml --yes"
 assert "cat $B/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
+# the declarations that arrived are applied by a bootstrap, not by pull: said until one ran
+assert_contains "$b bootstrap dotfiles status" "declarations changed: run"
 assert_contains "cat $B/.config/mise/config.toml" '"~/.config/hypr" = { mode = "track" }'
 assert_contains "cat $B/.config/mise/config.local.toml" 'KEPT = "b"'
 assert "$b bootstrap dotfiles history --json | jq -r '.[0].trigger, .[1].trigger'" $'apply\napply-before'
@@ -124,9 +126,12 @@ assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
 assert "git --git-dir=$origin show main:README.md" "# my setup"
 assert "git --git-dir=$origin log --format=%s main | grep -c 'add readme'" "1"
 
-# ---- another machine's checkpoint recovers files here
+# ---- another machine's checkpoint recovers files here; the README the clone
+# committed stays in git, never written into the configuration directory
 assert_succeed "$b bootstrap dotfiles sync"
 assert_contains "$b bootstrap dotfiles rollback --to laptop/latest --all --dry-run" "monitors.lua"
+assert_succeed "$b bootstrap dotfiles pull --yes"
+assert_fail "test -e $B/.config/mise/README.md"
 
 # ---- fetch-only publishes nothing; disconnecting keeps local history
 assert_succeed "mise settings set history.sync fetch-only"

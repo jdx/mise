@@ -57,7 +57,11 @@ impl Roots {
             return Some(format!("{stream}/{}", slash(rel_home)));
         }
         if let Ok(rel) = local.strip_prefix(&self.config_dir) {
-            return Some(slash(rel));
+            let path = slash(rel);
+            if is_repository_metadata(&path) {
+                return None;
+            }
+            return Some(path);
         }
         if let Ok(rel) = local.strip_prefix(&self.dotfiles_root) {
             return Some(format!("{SOURCES_DOTFILES}/{}", slash(rel)));
@@ -67,7 +71,7 @@ impl Roots {
 
     /// Where a setup-branch path lands on this machine.
     pub(crate) fn locate(&self, branch_path: &str) -> Located {
-        if !is_safe_branch_path(branch_path) {
+        if !is_safe_branch_path(branch_path) || is_repository_metadata(branch_path) {
             return Located::Unmapped;
         }
         if branch_path == MARKER_PATH || branch_path.starts_with(".mise-history/") {
@@ -126,6 +130,36 @@ impl Located {
             Self::Marker | Self::Unmapped => None,
         }
     }
+}
+
+/// Files that belong to the repository as a repository (a README, a
+/// license, CI configuration, git's own files): never written into the
+/// configuration directory, never published from it. They stay in git.
+pub(crate) fn is_repository_metadata(branch_path: &str) -> bool {
+    let first = branch_path.split('/').next().unwrap_or_default();
+    let upper = first.to_ascii_uppercase();
+    let named = |name: &str| upper == name || upper.starts_with(&format!("{name}."));
+    [
+        "README",
+        "LICENSE",
+        "LICENCE",
+        "CHANGELOG",
+        "CONTRIBUTING",
+        "CODE_OF_CONDUCT",
+        "SECURITY",
+        "CODEOWNERS",
+    ]
+    .iter()
+    .any(|name| named(name))
+        || matches!(
+            first,
+            ".git"
+                | ".github"
+                | ".gitlab-ci.yml"
+                | ".gitignore"
+                | ".gitattributes"
+                | ".editorconfig"
+        )
 }
 
 /// Whether a setup-branch path is one this machine may materialize: a plain
@@ -196,6 +230,43 @@ mod tests {
             Located::Tracked { .. }
         ));
         assert!(matches!(roots.locate("conf.d/a.toml"), Located::Config(_)));
+    }
+
+    #[test]
+    fn repository_files_stay_in_git() {
+        let roots = roots();
+        for path in [
+            "README.md",
+            "readme",
+            "LICENSE",
+            "LICENSE.txt",
+            ".github/workflows/ci.yml",
+            ".gitignore",
+            "CHANGELOG.md",
+        ] {
+            assert_eq!(roots.locate(path), Located::Unmapped, "{path}");
+        }
+        assert!(matches!(
+            roots.locate("readme-template.tera"),
+            Located::Config(_)
+        ));
+        assert_eq!(
+            roots.branch_path(
+                EntryKind::Implicit,
+                Path::new("/home/u/.config/mise/README.md"),
+                None
+            ),
+            None
+        );
+        assert!(
+            roots
+                .branch_path(
+                    EntryKind::Implicit,
+                    Path::new("/home/u/.config/mise/conf.d/a.toml"),
+                    None
+                )
+                .is_some()
+        );
     }
 
     #[test]

@@ -297,10 +297,25 @@ fn record_pending(status: &mut SyncStatus, plans: &[PathPlan], roots: &Roots) {
             })
         })
         .collect();
-    status.declarations_changed = status
-        .pending_applications
-        .iter()
-        .any(|pending| pending.configuration);
+    // said until `mise bootstrap` ran, even once the configuration is written
+    status.declarations_changed = status.declarations_changed
+        || status
+            .pending_applications
+            .iter()
+            .any(|pending| pending.configuration);
+}
+
+/// A bootstrap finished: the declarations that arrived through sync are
+/// applied now, so `status` stops asking for one.
+pub(crate) fn bootstrap_completed() {
+    let state_dir: &Path = &crate::dirs::STATE;
+    let mut status = read_status(state_dir);
+    if status.declarations_changed {
+        status.declarations_changed = false;
+        if let Err(err) = write_status(state_dir, &status) {
+            debug!("history: could not record that the bootstrap ran: {err}");
+        }
+    }
 }
 
 /// Manual-save entries whose live file differs from the saved version:

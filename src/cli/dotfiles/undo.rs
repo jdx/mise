@@ -2,7 +2,7 @@ use eyre::Result;
 
 use crate::system::history::replay::{self, UndoRequest};
 
-/// Reverse a rollback or undo
+/// Reverse a rollback, undo, or pull
 ///
 /// Restores exactly the paths that operation changed from the protective
 /// checkpoint it took, leaving everything else as it is now. Without a

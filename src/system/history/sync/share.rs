@@ -96,11 +96,14 @@ pub(crate) fn current(
         }
         let Some(branch_path) = roots.branch_path(entry.kind, path, entry.variant.as_deref())
         else {
+            let reason = if path.starts_with(&roots.config_dir) {
+                "not shared: a file of the repository itself (README, LICENSE, .github) stays in git"
+            } else {
+                "not shared: outside HOME (move it under the config directory or dotfiles.root)"
+            };
             report.unshared.push(Unshared {
                 local: path.clone(),
-                reason:
-                    "not shared: outside HOME (move it under the config directory or dotfiles.root)"
-                        .to_string(),
+                reason: reason.to_string(),
             });
             continue;
         };

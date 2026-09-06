@@ -93,7 +93,7 @@ are recorded in the repository (`refs/promoted`), never only in an index.
 mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua        # its most recent saved version that differs from disk
 mise bootstrap dotfiles rollback ~/.zshrc --to 42                    # that checkpoint's version
 mise bootstrap dotfiles rollback --to latest~3 --all --dry-run       # everything the checkpoint covers
-mise bootstrap dotfiles undo                                         # reverse the newest rollback or undo
+mise bootstrap dotfiles undo                                         # reverse the newest rollback, undo, or pull
 ```
 
 A rollback is planned first: for every selected path, `write` when the
@@ -284,7 +284,10 @@ publishes `[dotfiles]` sources under `sources/dotfiles/…` (relative to
 physical path maps to exactly one branch path, so the same content is
 published once. Never in it: `*.local.toml`, credential stores, entries with
 `share = false`, rendered or copied outputs, machine state, sources outside
-`$HOME` (reported as not portable). A history-enabled repository carries
+`$HOME` (reported as not portable). Files that belong to the repository as a
+repository (a README, a license, `.github/`, `.gitignore`) are neither
+published from the configuration directory nor written into it: they stay in
+git. A history-enabled repository carries
 `.mise-history/format.toml`; a repository without it is an ordinary
 repository (its `--from`/`--from-git` behaviour is unchanged) until you
 confirm its adoption, and a newer format stops with an upgrade message.

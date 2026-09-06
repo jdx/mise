@@ -79,6 +79,7 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
 
     // conflict decisions
     let mut decided = vec![];
+    let mut decided_conflicts = vec![];
     let mut sync_state = state::load(repo)?;
     let mut state_changed = false;
     let mut remaining_conflicts = vec![];
@@ -92,6 +93,7 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
             continue;
         };
         if take_remote.contains(&local) {
+            decided_conflicts.push(conflict.clone());
             decided.push(PendingApplication {
                 branch_path: conflict.branch_path.clone(),
                 object: conflict
@@ -284,11 +286,28 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
     status
         .pending_applications
         .retain(|pending| !applied.contains(&pending.branch_path));
+    // a decided conflict whose repository version was not written after all
+    // (filtered out, held with its group, a failed step) is still a conflict
+    for conflict in decided_conflicts {
+        if !applied.contains(&conflict.branch_path)
+            && !remaining_conflicts
+                .iter()
+                .any(|remaining| remaining.branch_path == conflict.branch_path)
+        {
+            remaining_conflicts.push(conflict);
+        }
+    }
     status.conflicts = remaining_conflicts;
-    status.declarations_changed = status
-        .pending_applications
+    // the live declarations changed now: said until `mise bootstrap` ran
+    let configuration_written = ready
         .iter()
-        .any(|pending| pending.configuration);
+        .any(|step| step.pending.configuration && touched.contains(&step.path));
+    status.declarations_changed = status.declarations_changed
+        || configuration_written
+        || status
+            .pending_applications
+            .iter()
+            .any(|pending| pending.configuration);
     if !touched.is_empty() {
         status.last_apply = Some(crate::system::history::store::now_rfc3339());
     }
