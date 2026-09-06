@@ -74,7 +74,8 @@ impl ScheduledTaskRequest {
 }
 
 pub(crate) fn is_available() -> bool {
-    cfg!(windows) && crate::file::which("schtasks").is_some()
+    // spawnable as-is: `schtasks.exe`, which a plain lookup does not find
+    cfg!(windows) && crate::file::which_spawnable("schtasks").is_some()
 }
 
 pub(crate) fn unavailable_reason() -> String {
@@ -361,7 +362,10 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
             let _ = std::fs::remove_file(&staging);
             return Err(err);
         }
-        std::fs::rename(&staging, &path)?;
+        // written, not renamed: a rename does not replace an existing
+        // definition on Windows
+        std::fs::write(&path, &rendered)?;
+        let _ = std::fs::remove_file(&staging);
         if end_first {
             match schtasks(&end).await {
                 Ok(()) => {}

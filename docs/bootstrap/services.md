@@ -52,7 +52,10 @@ One declaration is rendered for the platform's user service manager:
 - `environment` and `working_directory` map directly to the platform
   definition. On Windows, environment variables are set through `cmd.exe`,
   so values containing characters it would reinterpret (`%`, `"`, `&`, `|`,
-  `<`, `>`, `^`) are rejected; set those inside the program instead.
+  `<`, `>`, `^`) are rejected, and so is a `command` containing `%`, `&`,
+  `|`, `<`, `>`, or `^` once `environment` is set (without `environment`
+  the command runs directly). Move such a command into a script, or set the
+  variables inside the program.
 - `state`: `"running"` (default), `"stopped"` (installed but not running), or
   `"absent"` (the installed definition is removed and stays removed while
   declared so).
