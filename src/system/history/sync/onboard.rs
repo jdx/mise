@@ -48,7 +48,15 @@ pub(crate) struct Outcome {
 /// history-managed and this machine was set up from it (or would be, on a
 /// dry run); `None` leaves the ordinary clone to the caller.
 pub(crate) async fn from_git(url: &str, yes: bool, dry_run: bool) -> Result<Option<Outcome>> {
-    let store = Store::open()?;
+    // Detect marked repositories without creating persistent tracking state
+    // for users of the released, ordinary --from-git workflow.
+    let probe_dir = (!crate::config::Settings::get().experimental)
+        .then(tempfile::tempdir)
+        .transpose()?;
+    let store = match &probe_dir {
+        Some(dir) => Store::open_in(dir.path())?,
+        None => Store::open()?,
+    };
     if let Some(reason) = store.unavailable() {
         debug!("history: {url} is not probed for a setup repository: {reason}");
         return Ok(None);
@@ -63,6 +71,7 @@ pub(crate) async fn from_git(url: &str, yes: bool, dry_run: bool) -> Result<Opti
     if !matches!(probe(&store, url, &branch)?, RepoState::Marked(_)) {
         return Ok(None);
     }
+    crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
     let outcome = run(
         &store,
         &Onboarding {
@@ -135,6 +144,7 @@ pub(crate) fn probe(store: &Store, fetch_from: &str, branch: &str) -> Result<Rep
 /// the connection, and pulls (the configuration first, then what it
 /// declares, like any pull).
 pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcome> {
+    crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
     let state_dir = store.state_dir();
     let mode = SyncMode::current()?;
     let config_dir = global_config_dir();

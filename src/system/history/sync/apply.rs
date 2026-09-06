@@ -400,7 +400,7 @@ pub(crate) async fn apply(
         .retain(|pending| !applied.contains(&pending.branch_path));
     status.resolutions.retain(|path, _| !applied.contains(path));
     status.application_failure = None;
-    status.notified_conflicts.clear();
+    status.conflict_pause_observed = false;
     // the live declarations changed now: said until `mise bootstrap` ran
     let configuration_written = ready
         .iter()

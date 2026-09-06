@@ -1869,7 +1869,6 @@ impl Bootstrap {
         // its files are written by the same recoverable pull as any other
         // incoming change; the ordinary bootstrap then runs from them
         if let Some(url) = expanded.as_deref()
-            && config::Settings::get().history.enabled
             && let Some(outcome) =
                 system::history::sync::onboard::from_git(url, self.yes, self.dry_run).await?
         {

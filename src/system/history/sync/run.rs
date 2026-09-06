@@ -106,11 +106,9 @@ pub(crate) struct SyncStatus {
     pub origin_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_branch: Option<String>,
-    /// Nonempty while a conflict-paused episode has been observed. Kept as
-    /// paths for compatibility with older status records; new conflicts
-    /// during the same pause do not trigger more notifications.
+    /// Whether this conflict-paused episode has already been observed.
     #[serde(default)]
-    pub notified_conflicts: Vec<String>,
+    pub conflict_pause_observed: bool,
     /// `origin --remove` was run: the recorded repository no longer stands
     /// in for a declaration.
     #[serde(default)]
@@ -505,7 +503,7 @@ fn notify_conflicts_with(status: &mut SyncStatus, enabled: bool, send: impl FnOn
         .iter()
         .map(|conflict| conflict.branch_path.clone())
         .collect();
-    if !current.is_empty() && status.notified_conflicts.is_empty() && enabled {
+    if !current.is_empty() && !status.conflict_pause_observed && enabled {
         let roots = Roots::current();
         let lines: Vec<String> = status
             .conflicts
@@ -531,7 +529,7 @@ fn notify_conflicts_with(status: &mut SyncStatus, enabled: bool, send: impl FnOn
             &format!("{body}\nInspect with: mise bootstrap dotfiles status"),
         );
     }
-    status.notified_conflicts = current.into_iter().collect();
+    status.conflict_pause_observed = !current.is_empty();
 }
 
 /// Saves the tracked set now (deduplicated against the newest checkpoint),
@@ -878,7 +876,7 @@ mod notification_tests {
         assert_eq!(calls, 1);
         status.conflicts.clear();
         notify_conflicts_with(&mut status, true, |_, _| calls += 1);
-        assert!(status.notified_conflicts.is_empty());
+        assert!(!status.conflict_pause_observed);
         status.conflicts.push(conflict("tracked/home/.gitconfig"));
         notify_conflicts_with(&mut status, true, |_, _| calls += 1);
         assert_eq!(calls, 2);
@@ -891,7 +889,7 @@ mod notification_tests {
             ..Default::default()
         };
         notify_conflicts_with(&mut status, false, |_, _| panic!("notifications disabled"));
-        assert_eq!(status.notified_conflicts.len(), 1);
+        assert!(status.conflict_pause_observed);
     }
 }
 

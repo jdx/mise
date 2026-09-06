@@ -85,6 +85,7 @@ impl Ssh {
                 crate::system::remote_repository::history_branch(&bundle, &revision)?
             {
                 use crate::system::history::sync::onboard;
+                crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
                 let store = crate::system::history::checkpoint::Store::open()?;
                 if let Some(reason) = store.unavailable() {
                     bail!("cannot set up from a setup repository: {reason}");

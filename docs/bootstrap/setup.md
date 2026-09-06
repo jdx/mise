@@ -1,5 +1,11 @@
 # Set up a machine with mise
 
+> [!WARNING]
+> This guide uses experimental dotfile tracking and synchronization. Enable
+> them on each machine with `mise settings experimental=true`. Interfaces
+> and storage formats may change. Existing source-managed dotfiles do not
+> require experimental mode.
+
 The recommended way to run mise on a workstation: keep editing your
 configuration files where they are, let mise save every change and share the
 ones you choose, and recreate the whole setup on the next machine with one
@@ -30,6 +36,7 @@ agent or an unencrypted key.
 ## 2. Track a file you already have
 
 ```sh
+$ mise settings experimental=true
 $ mise bootstrap dotfiles track ~/.zshrc ~/.config/hypr
 mise history: saved baseline checkpoint 1
 mise WARN automatic capture is inactive: declare `[bootstrap.services.mise-history] builtin = "history-watch"` and run `mise bootstrap`; until then edits are saved by `mise bootstrap dotfiles save` or `mise bootstrap dotfiles watch --once`
