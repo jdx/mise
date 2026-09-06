@@ -1,0 +1,3 @@
+we should remove the rtx references/guide, fix that in this pr [https://github.com/jdx/mise/pull/12877/changes](https://github.com/jdx/mise/pull/12877/changes)
+
+remove all rtx references in all docs and code

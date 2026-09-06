@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1VP0X6547DMDFKE0GRAJWBS",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-project-guides",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/external-resources.md",
+    "docs/mise.usage.kdl",
+    "docs/rtx.md",
+    "schema/mise.plugin.json",
+    "src/backend/asdf.rs",
+    "src/cli/plugins/install.rs",
+    "src/cli/plugins/link.rs",
+    "src/config/mod.rs",
+    "src/migrate.rs",
+    "src/plugins/mise_plugin_toml.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 85971,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1475840,
+    "output_tokens": 6397,
+    "api_call_count": 26
+  }
+}

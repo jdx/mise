@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1VP0X6547DMDFKE0GRAJWBS",
+  "session_id": "01a0775c-2e5b-7d10-a5b9-e907d2b4c496",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T15:40:05.692687Z",
+  "branch": "codex/docs-project-guides",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/external-resources.md",
+    "docs/mise.usage.kdl",
+    "docs/rtx.md",
+    "schema/mise.plugin.json",
+    "src/backend/asdf.rs",
+    "src/cli/plugins/install.rs",
+    "src/cli/plugins/link.rs",
+    "src/config/mod.rs",
+    "src/migrate.rs",
+    "src/plugins/mise_plugin_toml.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "110894a7b6dc",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 85971,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1475840,
+    "output_tokens": 6397,
+    "api_call_count": 26
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T15:40:05.663393Z",
+    "agent_lines": 37,
+    "agent_removed": 100,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 37,
+    "total_lines_changed": 137,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
