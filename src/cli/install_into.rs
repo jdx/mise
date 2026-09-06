@@ -68,6 +68,38 @@ impl InstallInto {
             before_date,
             dependency_context: OnceCell::new(),
         };
+        // Replacement deletes the destination, so refuse a destination that
+        // overlaps the lock directory in either direction: an ancestor would
+        // take the whole directory with it, and a descendant could unlink an
+        // active lock file, letting the next process create a fresh one and
+        // install alongside the holder.
+        let lock_dir = crate::dirs::CACHE.join("lockfiles");
+        if crate::file::path_starts_with_resolved(&lock_dir, &install_path)
+            || crate::file::path_starts_with_resolved(&install_path, &lock_dir)
+        {
+            bail!(
+                "install-into destination {} overlaps mise's lock directory {}; choose a different destination",
+                display_path(&install_path),
+                display_path(&lock_dir)
+            );
+        }
+        // Resolve parent aliases once, then install into and lock that one
+        // path. Binding both to the same resolved destination keeps the lock
+        // key and the replaced directory identical even if a parent symlink is
+        // retargeted afterwards. Create the parent first: resolving a missing
+        // path can spell the same directory differently than canonicalizing it
+        // once it exists (an unresolved `..`, or a verbatim `\\?\` prefix on
+        // Windows), so two invocations straddling the parent's creation would
+        // otherwise take two different locks for one destination. The install
+        // creates this parent regardless. Do not resolve the final component:
+        // installation replaces that entry, even if it is a symlink.
+        let install_path = match (install_path.parent(), install_path.file_name()) {
+            (Some(parent), Some(name)) => {
+                crate::file::create_dir_all(parent)?;
+                crate::file::desymlink_path(parent).join(name)
+            }
+            _ => crate::file::desymlink_path(&install_path),
+        };
         tv.install_path = Some(install_path.clone());
         tv.install_path_is_exact = true;
         tv.install_path_is_explicit = true;
@@ -76,29 +108,7 @@ impl InstallInto {
         // locks would not overlap. Keep the lock through confirmation and the
         // backend replacement so no cooperating writer can populate the path
         // between the occupancy check and deletion.
-        let lock_dir = crate::dirs::CACHE.join("lockfiles");
-        if crate::file::path_starts_with_resolved(&lock_dir, &install_path) {
-            bail!(
-                "install-into destination {} contains mise's lock directory {}; choose a different destination",
-                display_path(&install_path),
-                display_path(&lock_dir)
-            );
-        }
-        // Resolve parent aliases so every writer derives the same lock key.
-        // Create the parent first: resolving a missing path can spell the same
-        // directory differently than canonicalizing it once it exists (an
-        // unresolved `..`, or a verbatim `\\?\` prefix on Windows), so two
-        // invocations straddling the parent's creation would otherwise take
-        // two different locks for one destination. The install creates this
-        // parent regardless. Do not resolve the final component: installation
-        // replaces that entry, even if it is a symlink.
-        let lock_path = match (install_path.parent(), install_path.file_name()) {
-            (Some(parent), Some(name)) => {
-                crate::file::create_dir_all(parent)?;
-                crate::file::desymlink_path(parent).join(name)
-            }
-            _ => crate::file::desymlink_path(&install_path),
-        };
+        let lock_path = install_path.clone();
         let lock_display_path = install_path.clone();
         let _destination_lock = tokio::task::spawn_blocking(move || {
             crate::lock_file::LockFile::new(&lock_path)
