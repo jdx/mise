@@ -152,11 +152,26 @@ impl MultiProgressReport {
         self.pause_state.lock().unwrap().count
     }
 
+    /// Serialize append-only snapshots with prompt ownership. Holding this lock
+    /// through the write prevents a prompt from starting between the check and
+    /// the heartbeat's output.
+    pub(crate) fn with_progress_unpaused(&self, render: impl FnOnce()) {
+        let state = self.pause_state.lock().unwrap();
+        if state.count == 0 {
+            render();
+        }
+    }
+
     fn resume_progress(&self) {
         let mut state = self.pause_state.lock().unwrap();
         if state.release() {
             progress::resume();
         }
+    }
+
+    pub(crate) fn use_text_install_output(&self) -> bool {
+        let settings = Settings::get();
+        !self.quiet && !self.use_progress_ui && !settings.verbose && !settings.raw
     }
 
     pub(crate) fn add(&self, prefix: &str) -> Box<dyn SingleReport> {

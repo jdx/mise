@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+
+# Captured stderr gets concise progress even outside CI.
+export CI=0 MISE_COLOR=0 MISE_DEBUG=0 MISE_TRACE=0 MISE_LOG_LEVEL=info
+export MISE_FORCE_PROGRESS=0
+
+output=$(mise install dummy@1.0.0 2>&1)
+printf '%s\n' "$output" >output.log
+assert_contains 'cat output.log' 'installing 1 tool'
+assert_contains 'cat output.log' '✓ dummy@1.0.0'
+assert_contains 'cat output.log' '████████████████ 1/1 · installed 1 tool in'
+if [[ $output == *'[1/'* || $output == *$'\033['* ]]; then
+  fail "captured install should not emit operation counters or cursor controls: $output"
+fi
+
+# The timer must keep emitting elapsed time through a slow postinstall hook, and
+# the tool must not be marked complete until that hook returns. A child process's
+# own output stays immediate; only the phase messages mise generates are folded
+# into the periodic snapshot.
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.1", postinstall = "sleep 4; echo hook-finished" }
+TOML
+output=$(mise install 2>&1)
+printf '%s\n' "$output" >output.log
+assert_contains 'cat output.log' '0/1 ·'
+assert_contains 'cat output.log' 'running postinstall hook'
+assert_contains 'cat output.log' 'hook-finished'
+after_hook=${output##*hook-finished}
+printf '%s\n' "$after_hook" >after-hook.log
+assert_contains 'cat after-hook.log' '✓ dummy@1.0.1'
+assert_contains 'cat after-hook.log' '1/1 · installed 1 tool in'
+
+# Failures must not acquire a success checkmark, even after backend installation.
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.2", postinstall = "echo hook-failed; exit 1" }
+TOML
+if output=$(mise install 2>&1); then
+  fail "failing postinstall should fail the command"
+fi
+printf '%s\n' "$output" >output.log
+assert_contains 'cat output.log' '✗ dummy@1.0.2'
+assert_contains 'cat output.log' 'installed 0 tools · 1 failed'
+# A failed hook's output is present exactly once, not duplicated by the replay
+# CmdLineRunner does for reporters that hide stdout.
+assert_contains 'cat output.log' 'hook-failed'
+assert "grep -c 'hook-failed' output.log" "1"
+if [[ $output == *'✓ dummy@1.0.2'* ]]; then
+  fail "postinstall failure was reported as a successful install: $output"
+fi
+
+# Explicit output modes keep their existing behavior.
+echo '[tools]' >mise.toml
+for mode in '--quiet' '--verbose' '--raw' '--dry-run'; do
+  output=$(mise install --force dummy@1.1.0 "$mode" 2>&1)
+  if [[ $output == *'█'* || $output == *'installing 1 tool'* ]]; then
+    fail "$mode unexpectedly enabled concise progress: $output"
+  fi
+done
+
+# CI may allocate a PTY. It should still get append-only output on stderr.
+python3 - <<'PY'
+import errno
+import os
+import pty
+import subprocess
+
+master, slave = pty.openpty()
+env = dict(os.environ, CI="1")
+proc = subprocess.Popen(
+    ["mise", "install", "--force", "dummy@1.0.0"],
+    stdout=subprocess.DEVNULL, stderr=slave, env=env,
+)
+os.close(slave)
+output = bytearray()
+try:
+    while True:
+        try:
+            chunk = os.read(master, 8192)
+        except OSError as error:
+            if error.errno == errno.EIO:
+                break
+            raise
+        if not chunk:
+            break
+        output.extend(chunk)
+finally:
+    os.close(master)
+assert proc.wait() == 0, output.decode()
+assert b"1/1" in output and b"installed 1 tool in" in output, output.decode()
+assert b"\x1b[" not in output, output.decode()
+PY

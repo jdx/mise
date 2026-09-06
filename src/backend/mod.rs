@@ -3366,6 +3366,10 @@ pub(crate) trait Backend: Debug + Send + Sync {
             (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
         if install_satisfied && !will_uninstall {
+            ctx.pr.finish_with_icon(
+                "already installed".into(),
+                crate::ui::progress_report::ProgressIcon::Skipped,
+            );
             return Ok(tv);
         }
 
@@ -3435,7 +3439,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
         if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr
-                .finish_with_message("running custom postinstall hook".to_string());
+                .set_message("running custom postinstall hook".to_string());
             self.run_postinstall_hook(&ctx, &tv, script).await?;
         }
         ctx.pr.finish_with_message("installed".to_string());

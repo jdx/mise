@@ -17,9 +17,6 @@ pub(crate) enum ProgressIcon {
     Skipped,
     #[allow(dead_code)]
     Warning,
-    // Constructed only by the brew package managers (`#[cfg(unix)]`), so it reads
-    // as never-constructed on the windows build.
-    #[cfg_attr(windows, allow(dead_code))]
     Error,
 }
 
@@ -37,6 +34,22 @@ impl Display for ProgressIcon {
 pub(crate) trait SingleReport: Send + Sync + std::fmt::Debug {
     fn println(&self, _message: String) {}
     fn set_message(&self, _message: String) {}
+
+    /// A line of a child process's stdout, as opposed to a phase message a
+    /// backend produced itself.
+    ///
+    /// Reporters that only have room for one status line fold it in and rely on
+    /// [`crate::cmd::CmdLineRunner`] replaying the whole stream when the command
+    /// fails. Reporters that show it as it arrives say so with
+    /// [`Self::shows_process_output`], which suppresses that replay.
+    fn set_process_output(&self, message: String) {
+        self.set_message(message);
+    }
+
+    /// Whether [`Self::set_process_output`] reaches the user immediately.
+    fn shows_process_output(&self) -> bool {
+        false
+    }
     fn inc(&self, _delta: u64) {}
     fn set_position(&self, _delta: u64) {}
     fn set_length(&self, _length: u64) {}
@@ -195,6 +208,9 @@ impl VerboseReport {
 impl SingleReport for VerboseReport {
     fn println(&self, message: String) {
         safe_eprintln!("{message}");
+    }
+    fn shows_process_output(&self) -> bool {
+        true
     }
     fn set_message(&self, message: String) {
         let mut prev_message = self.prev_message.lock().unwrap();
