@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles history show [FLAGS] [REF]`
 - **Effect:** read-only
-- **Source code:** [`src/cli/dotfiles/history/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/history/mod.rs)
+- **Source code:** [`src/cli/dotfiles/history/show.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/history/show.rs)
 
 Show one checkpoint: what triggered it, what changed, and its journal
 

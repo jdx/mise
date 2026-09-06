@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles history diff [FLAGS] [A] [B]`
 - **Effect:** read-only
-- **Source code:** [`src/cli/dotfiles/history/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/history/mod.rs)
+- **Source code:** [`src/cli/dotfiles/history/diff.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/history/diff.rs)
 
 Compare checkpoints, or the working tree against one
 

@@ -29,8 +29,10 @@ source_code_link_template #"""
 {%- set path = "dotfiles/status.rs" -%}
 {%- elif path == "bootstrap/dotfiles/unapply" -%}
 {%- set path = "dotfiles/unapply.rs" -%}
-{%- elif path is starting_with(pat="bootstrap/dotfiles/history") -%}
+{%- elif path == "bootstrap/dotfiles/history" -%}
 {%- set path = "dotfiles/history/mod.rs" -%}
+{%- elif path is starting_with(pat="bootstrap/dotfiles/history/") -%}
+{%- set path = path | replace(from="bootstrap/dotfiles/history/", to="dotfiles/history/") ~ ".rs" -%}
 {%- elif path == "bootstrap/dotfiles/paths" -%}
 {%- set path = "dotfiles/paths.rs" -%}
 {%- elif path == "bootstrap/dotfiles/save" -%}

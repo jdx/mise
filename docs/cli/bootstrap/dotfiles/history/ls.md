@@ -4,7 +4,7 @@
 - **Usage:** `mise bootstrap dotfiles history ls [FLAGS]`
 - **Aliases:** `list`
 - **Effect:** read-only
-- **Source code:** [`src/cli/dotfiles/history/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/history/mod.rs)
+- **Source code:** [`src/cli/dotfiles/history/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/history/ls.rs)
 
 List checkpoints, newest first
 
