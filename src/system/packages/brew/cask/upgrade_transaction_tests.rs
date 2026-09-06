@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::{Settings, settings::SettingsPartial};
 use crate::system::packages::PackageDesiredState;
+use confique::Layer;
 
 struct UpgradeFixture {
     root: tempfile::TempDir,
@@ -10,6 +11,7 @@ struct UpgradeFixture {
     metadata: Value,
     receipt: PathBuf,
     archive: Vec<u8>,
+    initial_links: Vec<(PathBuf, PathBuf)>,
     _env: EnvVarGuard,
 }
 
@@ -52,14 +54,43 @@ impl UpgradeFixture {
                 .into_iter()
                 .collect(),
         );
-        std::fs::create_dir_all(prefix.join("bin"))?;
-        let links = [prefix.join("bin/example"), prefix.join("bin/obsolete")];
-        for link in &links {
-            std::os::unix::fs::symlink(app.join("Contents/payload"), link)?;
-        }
         let caskroom = caskroom_version_dir(&token, recorded);
         std::fs::create_dir_all(&caskroom)?;
         std::os::unix::fs::symlink(&app, caskroom.join("Example.app"))?;
+        let previous_stage = root.path().join("previous-stage");
+        std::fs::create_dir_all(&previous_stage)?;
+        std::fs::write(
+            previous_stage.join("obsolete"),
+            "previous standalone binary",
+        )?;
+        let apps = [AppArtifact {
+            source: "Example.app".into(),
+            target: None,
+        }];
+        let binaries = [
+            BinaryArtifact {
+                source: "$APPDIR/Example.app/Contents/payload".into(),
+                target: Some("example".into()),
+            },
+            BinaryArtifact {
+                source: "obsolete".into(),
+                target: Some("obsolete".into()),
+            },
+        ];
+        let previous_cask = test_cask(&token, recorded);
+        let appdir = app.parent().unwrap();
+        durabilize_stage_payload(&previous_stage, &caskroom, &apps)?;
+        let mut initial_links = Vec::new();
+        for binary in &binaries {
+            stage_binary(&previous_stage, &caskroom, &previous_cask, &apps, binary)?;
+            link_binary(&caskroom, appdir, binary)?;
+            let target = binary.target_path(appdir)?;
+            initial_links.push((target.clone(), std::fs::read_link(target)?));
+        }
+        let links = initial_links
+            .iter()
+            .map(|(path, _)| path.clone())
+            .collect::<Vec<_>>();
         let targets = std::iter::once(app.clone())
             .chain(links.iter().cloned())
             .map(|path| {
@@ -97,6 +128,7 @@ impl UpgradeFixture {
             metadata,
             receipt,
             archive,
+            initial_links,
             _env: env,
         })
     }
@@ -159,10 +191,12 @@ impl UpgradeFixture {
     }
 
     fn assert_links_unchanged(&self) -> Result<()> {
-        for name in ["example", "obsolete"] {
+        for (path, destination) in &self.initial_links {
             assert_eq!(
-                std::fs::read_link(self.prefix().join("bin").join(name))?,
-                self.app().join("Contents/payload")
+                &std::fs::read_link(path)?,
+                destination,
+                "{}",
+                path.display()
             );
         }
         Ok(())
