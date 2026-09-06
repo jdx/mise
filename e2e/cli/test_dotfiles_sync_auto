@@ -38,6 +38,7 @@ cat <<'EOF2' >"$B/bin/notify-send"
 printf 'CALL %s\n' "$(printf '%s' "$*" | tr '\n' ' ')" >>"$HOME/notifications"
 EOF2
 chmod +x "$B/bin/notify-send"
+cp "$B/bin/notify-send" "$B/bin/osascript"
 cat <<EOF2 >"$PWD/b"
 #!/usr/bin/env bash
 export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
@@ -60,6 +61,8 @@ $b bootstrap dotfiles watch --json >b.log 2>&1 &
 b_watcher=$!
 cleanup() {
   kill "$a_watcher" "$b_watcher" 2>/dev/null || true
+  wait "$a_watcher" 2>/dev/null || true
+  wait "$b_watcher" 2>/dev/null || true
 }
 trap cleanup EXIT
 wait_until "grep -q '\"event\":\"started\"' a.log && grep -q '\"event\":\"started\"' b.log"
@@ -89,14 +92,14 @@ wait_until "grep -q 'firefox' $B/.config/hypr/bindings.lua"
 assert_not_contains "mise bootstrap dotfiles status 2>&1" "last error"
 
 # ---- a conflict: B changes a line while its watcher is down and A changes the
-# same line; both versions are kept, B's file is untouched, unrelated syncing
-# goes on, and one notification is shown however often the sync retries
+# same line; both versions are kept, the entire setup waits, and one
+# notification is shown by default however often the sync retries
 kill "$b_watcher"
 wait "$b_watcher" 2>/dev/null || true
 printf 'bind = SUPER, Q, exec, wezterm\nbind = SUPER, W, exec, firefox\n' >"$B/.config/hypr/bindings.lua"
 printf 'bind = SUPER, Q, exec, foot\nbind = SUPER, W, exec, firefox\n' >~/.config/hypr/bindings.lua
 wait_until "git --git-dir=$origin show main:tracked/home/.config/hypr/bindings.lua | grep -q foot"
-MISE_HISTORY_NOTIFY=1 $b bootstrap dotfiles watch --json >b.log 2>&1 &
+$b bootstrap dotfiles watch --json >b.log 2>&1 &
 b_watcher=$!
 wait_until "grep -q '\"conflicts\":1' b.log"
 assert_contains "cat $B/.config/hypr/bindings.lua" "wezterm"
@@ -104,11 +107,14 @@ assert_contains "$b bootstrap dotfiles status 2>&1" "both sides changed the same
 assert_contains "$b bootstrap dotfiles status 2>&1" "mise bootstrap dotfiles pull"
 assert_contains "$b doctor 2>&1 || true" "sync conflict"
 echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
-wait_until "test -e $B/.config/hypr/monitors.lua"
+wait_until "git --git-dir=$origin show main:tracked/home/.config/hypr/monitors.lua | grep -q DP-1"
+wait_until "grep -c '\"conflicts\":1' b.log | awk '{exit !(\$1 > 1)}'"
+assert_fail "test -e $B/.config/hypr/monitors.lua"
 assert "grep -c '\"conflicts\":1' b.log | awk '{print (\$1 > 1)}'" "1"
 assert "grep -c '^CALL' $B/notifications" "1"
 assert_contains "cat $B/notifications" "bindings.lua"
 assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/hypr/bindings.lua --yes"
+wait_until "test -e $B/.config/hypr/monitors.lua"
 assert "cat $B/.config/hypr/bindings.lua" $'bind = SUPER, Q, exec, foot\nbind = SUPER, W, exec, firefox'
 assert_not_contains "$b bootstrap dotfiles status 2>&1" "both sides changed"
 assert_not_contains "$b doctor 2>&1 || true" "sync conflict"

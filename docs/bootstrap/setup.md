@@ -67,7 +67,7 @@ reports `automatic capture: running`.
 $ mise bootstrap dotfiles origin set https://github.com/you/setup.git --name laptop
 Setup repository: https://github.com/you/setup.git (branch main)
 Machine: laptop (0192f3a4-…)
-Sync mode sync: the watcher publishes this machine's shared files and configuration after each save, fetches the repository periodically, and applies nonconflicting incoming changes to tracked files and configuration (with a protective checkpoint first; a conflict or an unsaved edit holds the path, nothing else waits). It never runs `mise bootstrap`, installs or removes packages, or renders templates; when incoming configuration changes declarations, `mise bootstrap dotfiles status` says to run `mise bootstrap`. `mise bootstrap dotfiles sync` and `pull` do the same on request.
+Sync mode sync: the watcher publishes saved changes and fetches periodically. Any conflict pauses publication and incoming application for the entire setup; local history, fetching, and eligible machine backups continue. Incoming changes are preflighted together and applied with a protective checkpoint and recovery journal. Applying never runs `mise bootstrap` or renders templates. Run `mise bootstrap` when the new declarations need to be applied.
 The repository is empty: the first publication creates `main` with the mise marker.
 Published from this machine:
   configuration: 1 file(s)
@@ -82,8 +82,9 @@ mise history: published 3f2a1c9
 ```
 
 `sync` is the default: the watcher publishes shortly after a save, fetches
-periodically, and writes nonconflicting incoming changes with a protective
-checkpoint first. `fetch-only` never publishes and never changes a file
+periodically, and applies incoming changes with a protective checkpoint first.
+Any conflict pauses publication and incoming application for the entire setup.
+Local history, fetching, and eligible backups continue. `fetch-only` never publishes and never changes a file
 until you run `pull`; `manual` does nothing on the network by itself
 (`--sync <mode>` chooses; `mise settings set history.sync <mode>` changes it
 later). `sync` and `pull` are different commands on purpose: `sync` moves
@@ -139,13 +140,17 @@ $ mise bootstrap dotfiles status
 ...
 Setup repository: https://github.com/you/setup.git (branch main, mode sync, machine desktop).
   last publish 2026-09-06 09:41, last fetch 2026-09-06 09:55, last pull 2026-09-06 09:41; 0 checkpoint(s) pending upload.
-  conflict: ~/.zshrc: both sides changed the same lines; your local file is unchanged, other files continue syncing (`mise bootstrap dotfiles pull --take-remote|--keep-local ~/.zshrc`)
+  sync paused: ~/.zshrc: both sides changed the same lines; sharing is paused for the entire setup; local history continues (`mise bootstrap dotfiles pull --take-remote|--keep-local ~/.zshrc`)
 $ mise bootstrap dotfiles pull --take-remote ~/.zshrc
 ```
 
-`--keep-local` publishes this machine's version instead. `mise doctor` names
-a held path too, and `settings.history.notify = true` shows a desktop
-notification the first time a conflict needs a decision (Linux and macOS).
+`--keep-local` selects this machine's version instead. Choices are recorded
+per file, but publication and incoming application wait until every conflict
+is resolved and the current versions have been rechecked. Local history,
+fetching, and eligible machine backups continue while sharing is paused.
+`mise doctor` names the blocking paths too. Desktop notifications are enabled
+by default on Linux and macOS, once per pause; set
+`settings.history.notify = false` to opt out.
 
 ## 8. Set up the next machine
 

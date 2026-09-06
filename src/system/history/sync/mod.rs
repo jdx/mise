@@ -31,7 +31,7 @@ pub(crate) mod state;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SyncMode {
     /// The watcher publishes after saves, fetches periodically, and applies
-    /// nonconflicting incoming changes.
+    /// incoming changes once the complete setup is free of conflicts.
     Sync,
     /// The watcher fetches periodically; nothing is ever published and no
     /// live file changes without `pull`.
@@ -98,7 +98,7 @@ impl SyncMode {
     pub(crate) fn disclosure(self) -> &'static str {
         match self {
             Self::Sync => {
-                "sync: the watcher publishes this machine's shared files and configuration after each save, fetches the repository periodically, and applies nonconflicting incoming changes to tracked files and configuration (with a protective checkpoint first; a conflict or an unsaved edit holds the path, nothing else waits). It never runs `mise bootstrap`, installs or removes packages, or renders templates; when incoming configuration changes declarations, `mise bootstrap dotfiles status` says to run `mise bootstrap`. `mise bootstrap dotfiles sync` and `pull` do the same on request."
+                "sync: the watcher publishes saved changes and fetches periodically. Any conflict pauses publication and incoming application for the entire setup; local history, fetching, and eligible machine backups continue. Incoming changes are preflighted together and applied with a protective checkpoint and recovery journal. Applying never runs `mise bootstrap` or renders templates. Run `mise bootstrap` when the new declarations need to be applied."
             }
             Self::FetchOnly => {
                 "fetch-only: the watcher only downloads the repository and other machines' recovery refs. Nothing is ever published, and no live file changes unless you run `mise bootstrap dotfiles pull`."

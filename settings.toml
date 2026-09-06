@@ -1291,8 +1291,8 @@ rust_type = "usize"
 type = "Integer"
 
 [history.notify]
-default = false
-description = "Show a desktop notification when a sync conflict newly needs a decision. Off by default; each conflict notifies once, and a notifier that is missing or failing never holds up history or sync."
+default = true
+description = "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync."
 docs = """
 Linux uses `notify-send`, macOS `osascript`; other platforms log the conflict only.
 `mise bootstrap dotfiles status` and `mise doctor` show the same conflicts without notifications.
@@ -1302,7 +1302,7 @@ type = "Bool"
 
 [history.sync]
 default = "sync"
-description = "What the history watcher does with a connected setup repository on its own: `sync` publishes after saves, fetches periodically, and applies nonconflicting incoming changes; `fetch-only` only fetches; `manual` does nothing automatically. `mise bootstrap dotfiles sync` and `pull` work on request in every mode."
+description = "What the history watcher does with a connected setup repository on its own: `sync` publishes after saves, fetches periodically, and applies incoming changes. Any conflict pauses publication and incoming application for the entire setup; local history, fetching, and eligible backups continue. `fetch-only` only fetches; `manual` does nothing automatically. `mise bootstrap dotfiles sync` and `pull` work on request in every mode."
 docs = """
 Chosen and disclosed by `mise bootstrap dotfiles origin set`. Publication happens at most every
 `history.sync_interval` after a save, fetching every `history.fetch_interval`; failures back

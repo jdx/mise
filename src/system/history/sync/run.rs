@@ -98,8 +98,9 @@ pub(crate) struct SyncStatus {
     pub origin_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_branch: Option<String>,
-    /// Conflicts a desktop notification was shown for, so a retry of the
-    /// same conflict never notifies again.
+    /// Nonempty while a conflict-paused episode has been observed. Kept as
+    /// paths for compatibility with older status records; new conflicts
+    /// during the same pause do not trigger more notifications.
     #[serde(default)]
     pub notified_conflicts: Vec<String>,
     /// `origin --remove` was run: the recorded repository no longer stands
@@ -433,24 +434,26 @@ pub(crate) fn lock(store: &Store) -> Result<fslock::LockFile> {
 }
 
 /// A desktop notification for conflicts that newly need a decision, when
-/// `history.notify` is on. Each conflict notifies once: a retry of the same
-/// sync is silent, and a resolved conflict is forgotten so it notifies
-/// again should it come back. Never blocks; a failure is only logged.
+/// `history.notify` is on. Notify once per whole-setup pause, not per path.
+/// Never blocks; a failure is only logged.
 fn notify_new_conflicts(status: &mut SyncStatus) {
+    notify_conflicts_with(
+        status,
+        crate::config::Settings::get().history.notify,
+        crate::system::history::notify::send,
+    );
+}
+
+fn notify_conflicts_with(status: &mut SyncStatus, enabled: bool, send: impl FnOnce(&str, &str)) {
     let current: BTreeSet<String> = status
         .conflicts
         .iter()
         .map(|conflict| conflict.branch_path.clone())
         .collect();
-    let notified: BTreeSet<String> = status.notified_conflicts.iter().cloned().collect();
-    let new: Vec<&Conflict> = status
-        .conflicts
-        .iter()
-        .filter(|conflict| !notified.contains(&conflict.branch_path))
-        .collect();
-    if !new.is_empty() && crate::config::Settings::get().history.notify {
+    if !current.is_empty() && status.notified_conflicts.is_empty() && enabled {
         let roots = Roots::current();
-        let lines: Vec<String> = new
+        let lines: Vec<String> = status
+            .conflicts
             .iter()
             .take(3)
             .map(|conflict| {
@@ -462,19 +465,14 @@ fn notify_new_conflicts(status: &mut SyncStatus) {
                 format!("{path}: {}", conflict.kind.describe())
             })
             .collect();
-        let more = new.len().saturating_sub(3);
+        let more = current.len().saturating_sub(3);
         let body = if more > 0 {
             format!("{}\n+{more} more", lines.join("\n"))
         } else {
             lines.join("\n")
         };
-        crate::system::history::notify::send(
-            &format!(
-                "{} sync conflict{} need{} a decision",
-                new.len(),
-                if new.len() == 1 { "" } else { "s" },
-                if new.len() == 1 { "s" } else { "" }
-            ),
+        send(
+            "mise: setup sharing paused",
             &format!("{body}\nInspect with: mise bootstrap dotfiles status"),
         );
     }
@@ -786,4 +784,54 @@ fn unsaved_paths(
         }
     }
     Ok(unsaved)
+}
+
+#[cfg(test)]
+mod notification_tests {
+    use super::*;
+
+    fn conflict(path: &str) -> Conflict {
+        Conflict {
+            branch_path: path.into(),
+            kind: reconcile::ConflictKind::SameHunk,
+            local: None,
+            remote: None,
+            base: None,
+        }
+    }
+
+    #[test]
+    fn one_notification_per_pause_and_another_after_recovery() {
+        let mut status = SyncStatus {
+            conflicts: vec![conflict("tracked/home/.zshrc")],
+            ..Default::default()
+        };
+        let mut calls = 0;
+        notify_conflicts_with(&mut status, true, |title, body| {
+            assert!(title.contains("sharing paused"));
+            assert!(body.contains(".zshrc"));
+            calls += 1;
+        });
+        status.conflicts.push(conflict("tracked/home/.gitconfig"));
+        notify_conflicts_with(&mut status, true, |_, _| calls += 1);
+        status.conflicts.remove(0);
+        notify_conflicts_with(&mut status, true, |_, _| calls += 1);
+        assert_eq!(calls, 1);
+        status.conflicts.clear();
+        notify_conflicts_with(&mut status, true, |_, _| calls += 1);
+        assert!(status.notified_conflicts.is_empty());
+        status.conflicts.push(conflict("tracked/home/.gitconfig"));
+        notify_conflicts_with(&mut status, true, |_, _| calls += 1);
+        assert_eq!(calls, 2);
+    }
+
+    #[test]
+    fn explicit_opt_out_is_preserved() {
+        let mut status = SyncStatus {
+            conflicts: vec![conflict("tracked/home/.zshrc")],
+            ..Default::default()
+        };
+        notify_conflicts_with(&mut status, false, |_, _| panic!("notifications disabled"));
+        assert_eq!(status.notified_conflicts.len(), 1);
+    }
 }

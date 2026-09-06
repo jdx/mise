@@ -370,7 +370,7 @@ pub(crate) async fn apply(
                 message: Some("apply failed; recovery attempted".into()),
             }),
         );
-        return result;
+        return result.map(|()| ApplyOutcome::default());
     }
     let (error, summary) = match &result {
         Ok(()) => {

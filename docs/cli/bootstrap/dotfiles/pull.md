@@ -21,7 +21,7 @@ local history and fetching continue. Decisions are recorded per path
 with `--take-remote` or `--keep-local`; sharing resumes only after all
 conflicts are resolved and the plan has been recomputed.
 
-In `sync` mode the history watcher pulls nonconflicting changes on its
+In `sync` mode the watcher pulls conflict-free setups on its
 own; this command writes what is pending right now and decides
 conflicts. When an incoming configuration declares more tracked files,
 their shared versions follow in the same run.

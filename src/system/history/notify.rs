@@ -1,5 +1,5 @@
 //! Optional desktop notifications for sync conflicts that newly need a
-//! decision (`settings.history.notify`, off by default). Best effort: the
+//! decision (`settings.history.notify`, on by default). Best effort: the
 //! notifier is started and not waited for, a missing desktop or tool is a
 //! debug line, and nothing here ever holds up a capture or a sync.
 

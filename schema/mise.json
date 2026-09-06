@@ -1154,8 +1154,8 @@
               }
             },
             "notify": {
-              "default": false,
-              "description": "Show a desktop notification when a sync conflict newly needs a decision. Off by default; each conflict notifies once, and a notifier that is missing or failing never holds up history or sync.",
+              "default": true,
+              "description": "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync.",
               "type": "boolean"
             },
             "sync": {

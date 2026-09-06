@@ -364,7 +364,7 @@ unrelated files survive. Repeating a sync changes nothing.
 
 - `sync` (the default, recommended): after a save the watcher publishes
   within `history.sync_interval` (5 minutes); every `history.fetch_interval`
-  (15 minutes) it fetches and applies nonconflicting incoming changes, with
+  (15 minutes) it fetches and applies incoming changes, with
   a protective checkpoint first. A conflict or an unsaved edit pauses
   publication and incoming application for the complete setup.
 - `fetch-only`: the watcher fetches; nothing is ever published and no live
@@ -384,11 +384,12 @@ or removes packages, or renders templates: when incoming configuration
 changes declarations, `mise bootstrap dotfiles status` says to run
 `mise bootstrap`.
 
-**Conflict notifications** are off by default. With
-`settings.history.notify = true`, a desktop notification (`notify-send` on
-Linux, `osascript` on macOS) names each conflict once, the first time it
-needs a decision; retries of the same sync stay silent, and a notifier that
-is missing or failing never holds up history or sync.
+**Conflict notifications** are on by default. A desktop notification
+(`notify-send` on Linux, `osascript` on macOS) reports when sharing pauses
+for the setup. Retries and additional conflicts during the same pause stay
+silent; a later pause can notify again after recovery. Set
+`settings.history.notify = false` to opt out. Missing or failing notifiers
+never hold up history or sync.
 
 **Applying.** `mise bootstrap dotfiles pull` writes pending changes as one recoverable
 transaction (a protective checkpoint first, each file journaled, reload
