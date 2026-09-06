@@ -20,3 +20,11 @@ against the one before it. With two, compares the two states.
 - **`--path <PATH>`** — Restrict to one path (a file or a directory)
 - **`--exit-code`** — Exit 1 when the two sides differ
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/history.html).
+- [Global flags and argument syntax](/cli/#global-flags).

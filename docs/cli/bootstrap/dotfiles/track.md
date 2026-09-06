@@ -37,3 +37,11 @@ mise bootstrap dotfiles track ~/.zshrc --os macos
 mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave
 mise bootstrap dotfiles track ~/.ssh/config --no-share
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

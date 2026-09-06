@@ -24,3 +24,11 @@ warning for `set -e` update scripts.
 - **`--label <LABEL>`** — A label to find the checkpoint by later
 - **`--best-effort`** — Warn instead of failing when history cannot save
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

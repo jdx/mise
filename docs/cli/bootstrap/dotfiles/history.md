@@ -40,3 +40,11 @@ mise bootstrap dotfiles history diff          # the working tree against the lat
 mise bootstrap dotfiles history diff 11 12 --patch
 mise bootstrap dotfiles save --description "before the theme change"
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -17,3 +17,11 @@ List checkpoints, newest first
 - **`--trigger <TRIGGER>`** — Only checkpoints with this trigger (edit, save, bootstrap, …)
 - **`--pending`** — Only checkpoints recorded by operations that did not finish
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/history.html).
+- [Global flags and argument syntax](/cli/#global-flags).

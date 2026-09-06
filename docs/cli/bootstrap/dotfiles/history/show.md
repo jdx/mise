@@ -15,3 +15,11 @@ Show one checkpoint: what triggered it, what changed, and its journal
 - **`--files`** — List every file in the snapshot
 - **`--path <PATH>`** — Resolve `latest~N` among the checkpoints where this path changed
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/history.html).
+- [Global flags and argument syntax](/cli/#global-flags).

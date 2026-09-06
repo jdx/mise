@@ -16,3 +16,11 @@ enrollment is never mistaken for protection.
 - **`-J --json`** — Output in JSON format
 - **`--preview <PATH>`** — Show what tracking this path would capture
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).
