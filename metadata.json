@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1THAZZXYVRRSASH2VNAWZRT",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-tool-workflows",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dev-tools/aliases.md",
+    "docs/dev-tools/backend_architecture.md",
+    "docs/dev-tools/comparison-to-asdf.md",
+    "docs/dev-tools/deps.md",
+    "docs/dev-tools/index.md",
+    "docs/dev-tools/shims.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 88166,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3408512,
+    "output_tokens": 18816,
+    "api_call_count": 29
+  }
+}
