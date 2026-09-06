@@ -134,11 +134,11 @@
 
 - [About mise](https://mise.jdx.dev/about.html): mise (pronounced "meez") or "mise-en-place" is a development environment setup tool. The name refers to a French culinary phrase that roughly translates to "setup" or "put in place".
 - [mise-en-place: The Song](https://mise.jdx.dev/mise-en-place.html): I keep a tidy kitchen for the working software engineer, Where every runtime's labeled so the shell can find it bright and clear; I pin the Node and Python, Rust and Go all reproducibly, Then place…
-- [Glossary](https://mise.jdx.dev/glossary.html): This glossary defines key terms and concepts used throughout the mise documentation.
-- [FAQs](https://mise.jdx.dev/faq.html): Use mise.local.toml and put that into your global gitignore file. This file should never be committed.
+- [Glossary](https://mise.jdx.dev/glossary.html): Definitions for the concepts used in the guides and CLI reference. Follow a term's link for configuration syntax and examples.
+- [FAQs](https://mise.jdx.dev/faq.html): Quick answers about daily commands, shell integration, and configuration. For a failed command, start with Troubleshooting or Errors.
 - [Troubleshooting](https://mise.jdx.dev/troubleshooting.html): If you're looking for help with a specific error message, see Errors — this page is organized by symptom instead.
 - [Errors](https://mise.jdx.dev/errors.html): This page lists common error messages mise emits, what causes them, and how to fix them. It complements Troubleshooting, which is organized by symptom (wrong tool version, slow prompts, activation…
-- [Tips & Tricks](https://mise.jdx.dev/tips-and-tricks.html): An assortment of helpful tips for using mise.
+- [Tips & Tricks](https://mise.jdx.dev/tips-and-tricks.html): Short recipes for common workflows. Each section links to the full guide when setup or platform details matter. Start with Getting Started if you have not yet configured a project.
 - [Cookbook](https://mise.jdx.dev/mise-cookbook/): These recipes combine tools, environment variables, and tasks for specific workflows. Start with the recipe closest to your project, then adapt its paths, versions, and application commands.
 - [C++](https://mise.jdx.dev/mise-cookbook/cpp.html): Use mise to install build tools and define the configure/build cycle. A C or C++ compiler must already be available, for example through your operating system's development tools.
 - [Docker](https://mise.jdx.dev/mise-cookbook/docker.html): Install mise inside an image, use it to run project commands, or preinstall tools outside user home directories for shared development containers.
