@@ -97,7 +97,8 @@ Activation in [step 4](#activate-mise) adds mise to your shell's `PATH`.
 
 ## 3. Set up a project {#set-up-a-project}
 
-Create a directory for this example, or use an existing project directory:
+For a fresh example, create a new directory. If you are using an existing
+project, start in its root and skip the first two commands:
 
 ```sh
 mkdir mise-example
@@ -136,7 +137,7 @@ Add this section to the same `mise.toml`:
 ```toml [mise.toml]
 [tasks.hello]
 description = "Print the project's Node.js version and environment"
-run = "node -e \"console.log(process.version, process.env.NODE_ENV)\""
+run = '''node -e "console.log(process.version, process.env.NODE_ENV)"'''
 ```
 
 ```sh
@@ -170,10 +171,22 @@ Review configuration from other people before running it: tasks, hooks, and some
 environment directives can execute code. Use `mise trust` to explicitly trust a
 config you've reviewed.
 
-In normal mode, commands that execute project behavior, including `mise install`,
+In normal mode outside CI, commands that execute project behavior, including `mise install`,
 `mise exec`, and `mise run`, automatically trust the active config. With
 [paranoid mode](/paranoid.html), non-global configs require explicit trust.
 See [`mise trust`](/cli/trust.html) for details.
+
+### Confirm what is active
+
+```sh
+mise config ls
+mise ls --current
+mise tasks ls
+mise exec -- node --version
+```
+
+Use these from the project directory to check configuration discovery, tool
+selection, task discovery, and command execution before adding shell activation.
 
 ## 4. Activate `mise` <Badge text="optional" /> {#activate-mise}
 
@@ -187,7 +200,10 @@ There are two approaches:
 You can skip both and use `mise exec` or `mise run` to load the project environment
 explicitly, including in CI and scripts.
 
-Here is how to activate mise for your shell:
+Choose the instructions for your installation method and shell. Add the
+activation line once; repeating an append command can create duplicate hooks.
+For custom zsh or fish configuration locations, use your shell's actual config
+path instead of the default shown below.
 
 ::::tabs key:activating-mise
 
@@ -204,6 +220,7 @@ echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 ```
 
 ```sh [fish]
+mkdir -p ~/.config/fish
 echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 
@@ -240,7 +257,10 @@ If you need to open your PowerShell profile:
 
 ```powershell
 # create profile if it doesn't already exist
-if (-not (Test-Path $profile)) { New-Item $profile -Force }
+if (-not (Test-Path $PROFILE)) {
+    New-Item -ItemType Directory -Force (Split-Path -Parent $PROFILE) | Out-Null
+    New-Item -ItemType File -Path $PROFILE | Out-Null
+}
 # open the profile
 Invoke-Item $profile
 ```
@@ -260,6 +280,7 @@ echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 ```
 
 ```sh [fish]
+mkdir -p ~/.config/fish
 echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 
@@ -335,5 +356,8 @@ Not all shells support every mise feature:
 | ------------------------------- | ---- | --- | ---- | ------- | ------ | ----- | ---------- |
 | `mise activate`                 | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
 | `mise shell`                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
-| Shell aliases (`[shell_alias]`) | Yes  | Yes | Yes  | No      | No     | Yes   | No         |
+| Shell aliases (`[shell_alias]`) | Yes  | Yes | Yes  | No      | No     | No    | No         |
 | `chpwd` hook                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
+
+PowerShell's directory-change hook requires PowerShell 7 or newer. Other
+activation behavior remains available on supported older PowerShell versions.

@@ -53,6 +53,25 @@ reorganizing a page, using explicit IDs such as `{#activate-mise}` where needed.
 Internal website links start at the docs root, for example
 `/dev-tools/backends/github.html`.
 
+### TOML examples
+
+The docs use **TOML 1.1**. Multiline inline tables, comments inside them, and
+trailing commas are valid. Keep that syntax when it makes an example easier to
+read:
+
+```toml
+[tools]
+node = {
+  version = "24", # a version request, not an exact pin
+}
+```
+
+Validate snippets with the repository's built mise (`mise fmt --stdin`) or
+another TOML 1.1 parser. A TOML 1.0-only validator can incorrectly reject valid
+examples. Parse each complete example separately, and label fragments that need
+surrounding configuration. Alternative definitions of the same TOML key must
+be separate examples or commented out.
+
 ## Generated content
 
 Check for a generated-file comment before editing reference pages. For CLI changes,
@@ -61,9 +80,17 @@ For settings, edit `settings.toml` and run `mise run render:schema` as described
 [AGENTS.md](https://github.com/jdx/mise/blob/main/AGENTS.md). Review generated diffs and keep unrelated changes out of
 the patch.
 
+Rebuild the LLM index with `mise run render:llms` after changing page titles,
+introductory content, or the page list. It writes `docs/public/llms.txt` from the
+source pages; do not maintain that index by hand. Regenerate it after rebasing
+so it reflects the pages on the PR's base.
+
 ## Review a documentation change
 
 Check formatting with the repository's lint tools, build the site, and inspect
 changed pages in the browser. Check narrow and wide layouts when changing the
 homepage or theme. Follow the new-reader path and verify that commands, filenames,
-and expected results agree across the README and website.
+and expected results agree across the README and website. Check links to heading
+anchors in the rendered page as well as page paths: generated settings IDs may
+contain dots and underscores, while Markdown headings use VitePress's slug rules.
+A successful build does not prove that every fragment link points to an ID.

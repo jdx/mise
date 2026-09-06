@@ -4,13 +4,13 @@ Use this guide to add mise to an existing project and maintain its configuration
 select tools, share defaults, upgrade versions, and run everyday commands.
 Complete [getting started](/getting-started.html) first if you haven't installed mise.
 
-The examples that run tools directly assume [shell activation](/getting-started.html#activate-mise).
-Without activation, prefix a tool command with `mise exec --`, for example
-`mise exec -- node --version`.
+The examples use `mise exec` and `mise run`, so shell activation is optional.
+With [activation](/getting-started.html#activate-mise), you can also run the
+selected tools directly at your prompt.
 
 ## Installing Dev Tools
 
-The main command for working with tools in mise is [`mise u|use`](/cli/use). It does two things:
+The main command for working with tools in mise is [`mise use`](/cli/use). It does two things:
 
 - Installs the tool (if not already installed)
 - Saves its version request in the project configuration
@@ -19,23 +19,22 @@ The main command for working with tools in mise is [`mise u|use`](/cli/use). It 
 Use `mise use` to save that selection, or `mise exec node@24 -- node --version`
 to use it for one command.
 
-Use it like so (`mise` must be [activated](/getting-started.html#activate-mise) for this example to work):
+Run these from the existing project's root (or create a scratch directory first):
 
 ```bash
-mkdir example-project && cd example-project
-mise use node@26
-node -v
-# v26.x.x
+mise use node@24
+mise exec -- node --version
+# v24.x.x
 ```
 
 You'll also notice that you now have a `mise.toml` file with the following content:
 
 ```mise-toml [mise.toml]
 [tools]
-node = "26"
+node = "24"
 ```
 
-- If this file is in the root of a project, `node` will be installed whenever someone runs [`mise install|i`](/cli/install).
+- If this file is in the root of a project, `node` will be installed whenever someone runs [`mise install`](/cli/install).
 - `mise install` installs the configured tools after you clone a project. Use `mise upgrade` to update them.
 
 ## `mise.toml` Configuration
@@ -62,7 +61,7 @@ For tools or settings you want to keep private, use [`mise.local.toml`](/configu
 Use [`mise config ls`](/cli/config/ls) to see the configuration files currently used by `mise`.
 :::
 
-Choose version precision to match the project. A request such as `node@26` allows
+Choose version precision to match the project. A request such as `node@24` allows
 releases within that series. Use `mise use --pin` to save an exact version, or a
 [lockfile](/dev-tools/mise-lock.html) to share resolved versions while keeping
 broader requests in `mise.toml`.
@@ -75,20 +74,21 @@ Tools are installed with a variety of backends like `aqua`, `github`, or `gitlab
 the full list of shorthands like `node` you can use.
 
 You can also use other backends like `npm` or `cargo`,
-which can install any package from their respective registries:
+for command-line packages from their respective registries. Declare the
+required runtime or compiler too:
 
 ```bash
-mise use npm:@antfu/ni
-mise use cargo:starship
+mise use node@24 'npm:@antfu/ni'
+mise use rust@stable cargo:starship
 ```
 
 ## Upgrading Dev Tools
 
-Upgrade tool versions with [`mise up|upgrade`](/cli/upgrade). By default, it respects
+Upgrade tool versions with [`mise upgrade`](/cli/upgrade). By default, it respects
 the version prefix in `mise.toml`. If a [lockfile](/configuration/settings#lockfile) exists,
 mise updates `mise.lock` to the latest version of the tool matching the prefix from `mise.toml`.
 
-So if you have `node = "26"` in `mise.toml`, then `mise upgrade node` will upgrade to the latest version of `node 26`.
+So if you have `node = "24"` in `mise.toml`, then `mise upgrade node` will upgrade to the latest version of `node 24`.
 
 To update the version in `mise.toml` to something newer, use `mise upgrade --bump node`.
 It keeps the same specificity as the current version: if you have `node = "24"`
@@ -103,7 +103,7 @@ with the CLI:
 
 ```bash
 mise set MY_VAR=123
-echo $MY_VAR
+mise exec -- node -p process.env.MY_VAR
 # 123
 ```
 
@@ -120,8 +120,9 @@ Some examples of where this is useful:
 - Setting `DATABASE_URL` for a database connection
 - Setting `RUST_TEST_THREADS=1` to run cargo tests in series
 
-Do not set secrets in a project's `mise.toml`, as the file is intended to be added to version control.
-[Use `mise.local.toml`](#misetoml-configuration) instead for secrets.
+Keep secrets out of committed configuration. Use an ignored local file or a
+[secret provider](/environments/secrets/). `mise.local.toml` is still plaintext;
+its name does not encrypt its contents or automatically keep it out of Git.
 
 You can also modify `PATH` with `mise.toml`.
 This example makes CLIs installed with `npm` available:
@@ -140,7 +141,15 @@ _See [Environments](/environments/) for more information on working with environ
 
 Tasks are defined in a project to execute commands.
 
-You can define tasks in a `mise.toml`:
+If the project's `package.json` already defines `build` and `test` scripts, add
+these task wrappers. Install the project's npm dependencies before running them:
+
+```sh
+mise exec -- npm ci
+```
+
+This assumes the project has a committed `package-lock.json`. Use its chosen
+package manager and lockfile when it does not. Then add to `mise.toml`:
 
 ```mise-toml [mise.toml]
 [tasks]
@@ -148,14 +157,16 @@ build = "npm run build"
 test = "npm test"
 ```
 
-Or in a `mise-tasks` directory as a standalone file, such as `mise-tasks/build`:
+Alternatively, define `build` as a file task in `mise-tasks/build`. Choose one
+definition for a task name:
 
 ```bash [mise-tasks/build]
 #!/bin/bash
 npm run build
 ```
 
-Tasks are executed with [`mise r|run`](/cli/run):
+On Unix, make file tasks executable with `chmod +x mise-tasks/build`.
+Tasks are executed with [`mise run`](/cli/run):
 
 ```bash
 mise run build
@@ -177,21 +188,24 @@ Here is an example of a task with usage spec:
 set -e
 
 #MISE description="Greet a user with a message"
-#USAGE flag "-g --greeting <greeting>" help="The greeting word to use" {
+#USAGE flag "-g --greeting <greeting>" help="The greeting word to use" default="hello" {
 #USAGE   choices "hi" "hello" "hey"
 #USAGE }
-#USAGE flag "-u --user <user>" help="The user to greet"
+#USAGE flag "-u --user <user>" help="The user to greet" default="world"
 #USAGE flag "--dir <dir>" help="The directory to greet from" default="."
 #USAGE complete "dir" run="find . -maxdepth 1 -type d"
 #USAGE arg "<message>" help="Greeting message"
 
-echo "all available options are in the env with the prefix 'usage_'"
-env | grep usage_
-
 echo "${usage_greeting?}, ${usage_user?}! Your message is: ${usage_message?}"
 ```
 
-This task can be run like so:
+Save the script as `mise-tasks/greet` and make it executable on Unix:
+
+```sh
+chmod +x mise-tasks/greet
+```
+
+Then run it:
 
 ```shell
 mise run greet --user jdx -g "hey" "How are you?"
@@ -209,33 +223,21 @@ _See [Tasks](/tasks/) for more information on working with tasks._
 
 ## Common Commands
 
-mise has a lot of commands; here are the ones I consider most important:
+| Task                            | Command                                                                                |
+| ------------------------------- | -------------------------------------------------------------------------------------- |
+| Show active configuration files | [`mise config ls`](/cli/config/ls.html)                                                |
+| Inspect selected tool versions  | [`mise ls --current`](/cli/ls.html)                                                    |
+| Find available releases         | [`mise ls-remote TOOL`](/cli/ls-remote.html)                                           |
+| See tools with updates          | [`mise outdated`](/cli/outdated.html)                                                  |
+| List project tasks              | [`mise tasks ls`](/cli/tasks/ls.html)                                                  |
+| Diagnose environment problems   | [`mise doctor`](/cli/doctor.html)                                                      |
+| Update mise itself              | [`mise self-update`](/cli/self-update.html), or the package manager used to install it |
 
-- [`mise completion`](/cli/completion) – Set up completions for your shell.
-- [`mise cfg|config`](/cli/config) – A bunch of commands for working with `mise.toml` files via the CLI.
-- [`mise x|exec`](/cli/exec) – Execute a command in the mise environment without activating mise.
-- [`mise g|generate`](/cli/generate) – Generate things like git hooks, task documentation, GitHub actions, and more for your project.
-- [`mise i|install`](/cli/install) – Install tools.
-- [`mise link`](/cli/link) – Symlink a tool installed by some other means into mise.
-- [`mise ls-remote`](/cli/ls-remote) – List all available versions of a tool.
-- [`mise ls`](/cli/ls) – List information about installed/active tools.
-- [`mise outdated`](/cli/outdated) – Report any tools with newer versions available.
-- [`mise plugin`](/cli/plugins) – Manage plugins, which extend mise with new functionality like extra tools or environment variable management. Commonly, these are asdf plugins or modern plugins.
-- [`mise r|run`](/cli/run) – Run a task defined in `mise.toml` or `mise-tasks`.
-- [`mise self-update`](/cli/self-update) – Update mise to the latest version. Don't use this if you installed mise via a package manager.
-- [`mise settings`](/cli/settings) – CLI access to get/set configuration settings.
-- [`mise rm|uninstall`](/cli/uninstall) – Uninstall a tool.
-- [`mise up|upgrade`](/cli/upgrade) – Upgrade tool versions.
-- [`mise u|use`](/cli/use) – Install and activate tools.
-- [`mise w|watch`](/cli/watch) – Watch for changes in a project and run tasks when they occur.
+See the [CLI reference](/cli/) for all commands and options.
 
-## Final Thoughts
+## Further reading {#final-thoughts}
 
-Dev tools, env vars, and tasks work together to make managing your development environment easier—especially
-when working with others. The goal is a consistent UX for working with projects regardless of the
-programming languages or tools they use.
-
-For further reading:
+Use the feature guides for options beyond this workflow:
 
 - [Dev Tools](/dev-tools/) – A deeper overview of working with dev tools
 - [Environments](/environments/) – A deeper overview of working with environment variables
