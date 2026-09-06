@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# Enabling source_freshness_hash_contents on a task that already has an mtime
+# baseline must not skip the first run. Until a content hash is stored there is
+# nothing to compare against, so the task is stale — previously the hash branch
+# was gated on the baseline existing, and control fell through to the mtime
+# comparison, which reported "fresh" and left a stale output in place.
+#
+# The setting is toggled with an env var rather than by editing mise.toml so the
+# task keeps the same state key; rewriting the config would invalidate the
+# baseline on its own and hide the regression.
+
+cat <<EOF >mise.toml
+[tasks.build]
+run = 'cat src.txt >out.txt && echo built'
+sources = ['src.txt']
+outputs = ['out.txt']
+EOF
+
+echo "hello" >src.txt
+
+# Metadata mode: first run has no baseline and no output → stale → runs
+assert "mise run -q build" "built"
+
+# Metadata mode: nothing changed and out.txt is newer than src.txt → fresh
+assert_empty "mise run -q build"
+
+# Switching to hash mode: no content baseline exists yet, so the task must run
+# instead of trusting the mtime ordering left over from the runs above.
+assert "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS=1 mise run -q build" "built"
+
+# The baseline is stored now, so hash mode settles and stops rebuilding
+assert_empty "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS=1 mise run -q build"
+
+# Content change that mtime cannot see: same size, mtime older than the output.
+# Hash mode must still rebuild.
+echo "world" >src.txt
+touch -t 202001010000 src.txt
+assert "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS=1 mise run -q build" "built"
+assert "cat out.txt" "world"

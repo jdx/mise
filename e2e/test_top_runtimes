@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+exit 0 # disable for now for faster releases
+
+# top 50 plugins by stargazers:
+# 687 nodejs
+# 507 ruby
+# 469 python
+# 393 direnv
+# 353 elixir
+# 351 erlang
+# 321 golang
+# 285 java
+# 170 hashicorp
+# 160 php
+# 147 postgres
+# 117 rust
+# 113 yarn
+# 102 deno
+# 93 kubectl
+# 81 action-validator
+# 75 dotnet-core
+# 73 flutter
+# 68 crystal
+# 49 neovim
+# 47 poetry
+# 46 haskell
+# 42 link
+# 38 lua
+# 38 bun
+# 35 redis
+# 35 gcloud
+# 34 helm
+# 33 gleam
+# 32 awscli
+# 30 dart
+# 28 pyapp
+# 27 kotlin
+# 26 pnpm
+# 23 ocaml
+# 22 rebar
+# 20 julia
+# 20 elm
+# 18 r
+# 17 nim
+# 17 alias
+# 16 mysql
+# 16 minikube
+# 16 gradle
+# 15 zig
+# 15 shellcheck
+# 15 scala
+# 15 maven
+# 15 kustomize
+# 15 graalvm
+
+mise exec node -- node -v
+mise exec python -- python -V
+mise exec direnv -- direnv --version
+mise exec erlang -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell
+mise exec elixir erlang -- elixir --version
+mise exec golang -- go version
+mise exec java -- java -version
+mise exec terraform -- terraform -v
+mise exec yarn -- yarn --version
+mise exec deno -- deno --version
+mise exec bun -- bun --version
+mise exec kubectl -- kubectl version --client
+mise exec dotnet-core -- dotnet --list-sdks
+mise exec flutter -- flutter --version
+mise exec crystal -- crystal -v
+mise exec neovim -- nvim --version
+
+#mise exec php -- php -v php is a bit slow to install, works fine though
+#mise exec rust -- rustc -V # does not seem to work correctly
+#mise exec postgres -- psql -v # hard one to install

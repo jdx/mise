@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+
+CHANNEL_ROOT="$TMPDIR/conda-mirror"
+PORT_FILE="$TMPDIR/conda-mirror-port"
+REQUEST_LOG="$TMPDIR/conda-mirror-requests"
+mkdir -p "$CHANNEL_ROOT/mirror/noarch"
+
+python3 - "$CHANNEL_ROOT" "$PORT_FILE" "$REQUEST_LOG" <<'PY' &
+import hashlib
+import http.server
+import io
+import json
+import socketserver
+import sys
+import tarfile
+from pathlib import Path
+
+root = Path(sys.argv[1])
+port_file = Path(sys.argv[2])
+request_log = Path(sys.argv[3])
+subdir = root / "mirror" / "noarch"
+
+name = "url-replacement-fixture"
+version = "1.0.0"
+archive_name = f"{name}-{version}-0.tar.bz2"
+files = {
+    f"bin/{name}": b"#!/bin/sh\nprintf 'conda-url-replacement-ok\\n'\n",
+}
+index = {
+    "name": name,
+    "version": version,
+    "build": "0",
+    "build_number": 0,
+    "depends": [],
+    "subdir": "noarch",
+}
+paths = [{
+    "_path": path,
+    "path_type": "hardlink",
+    "sha256": hashlib.sha256(content).hexdigest(),
+    "size_in_bytes": len(content),
+} for path, content in files.items()]
+metadata = {
+    "info/index.json": json.dumps(index).encode(),
+    "info/paths.json": json.dumps({"paths_version": 1, "paths": paths}).encode(),
+    "info/files": ("\n".join(files) + "\n").encode(),
+}
+archive_path = subdir / archive_name
+with tarfile.open(archive_path, "w:bz2") as archive:
+    for path, content in {**files, **metadata}.items():
+        info = tarfile.TarInfo(path)
+        info.size = len(content)
+        info.mode = 0o755 if path.startswith("bin/") else 0o644
+        archive.addfile(info, io.BytesIO(content))
+
+archive_data = archive_path.read_bytes()
+package = {
+    **index,
+    "sha256": hashlib.sha256(archive_data).hexdigest(),
+    "size": len(archive_data),
+}
+(subdir / "repodata.json").write_text(json.dumps({
+    "info": {"subdir": "noarch"},
+    "packages": {archive_name: package},
+    "packages.conda": {},
+    "removed": [],
+    "repodata_version": 1,
+}))
+
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=root, **kwargs)
+
+    def do_GET(self):
+        with request_log.open("a") as log:
+            log.write(self.path + "\n")
+        super().do_GET()
+
+    def log_message(self, *_args):
+        pass
+
+
+with socketserver.TCPServer(("127.0.0.1", 0), Handler) as server:
+    port_file.write_text(str(server.server_address[1]))
+    server.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+  wait "$SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "conda mirror port" 30 "$SERVER_PID"
+SERVER_PORT="$(cat "$PORT_FILE")"
+UPSTREAM="http://conda.invalid/upstream"
+MIRROR="http://127.0.0.1:$SERVER_PORT/mirror"
+
+cat >mise.toml <<EOF
+[settings]
+lockfile = true
+
+[settings.url_replacements]
+"$UPSTREAM" = "$MIRROR"
+
+[tools]
+"conda:url-replacement-fixture" = { version = "1.0.0", channel = "$UPSTREAM" }
+EOF
+
+assert_contains "mise ls-remote conda:url-replacement-fixture" "1.0.0"
+mise install
+assert "mise exec -- url-replacement-fixture" "conda-url-replacement-ok"
+assert_succeed "grep -q '/mirror/noarch/repodata.json' '$REQUEST_LOG'"
+assert_succeed "grep -q '/mirror/noarch/url-replacement-fixture-1.0.0-0.tar.bz2' '$REQUEST_LOG'"
+assert_succeed "grep -q '$UPSTREAM/noarch/url-replacement-fixture-1.0.0-0.tar.bz2' mise.lock"
+assert_fail "grep -q '127.0.0.1' mise.lock"
+
+# Locked installs retain the logical upstream URL and rewrite it again at transport time.
+mise uninstall -a conda:url-replacement-fixture
+rm -rf "$MISE_DATA_DIR/conda-packages"
+: >"$REQUEST_LOG"
+mise install
+assert "mise exec -- url-replacement-fixture" "conda-url-replacement-ok"
+assert_succeed "grep -q '/mirror/noarch/url-replacement-fixture-1.0.0-0.tar.bz2' '$REQUEST_LOG'"

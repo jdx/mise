@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Test that environment-specific configs create separate lockfiles
+# When MISE_ENV=test, tools from mise.test.toml go into mise.test.lock
+
+export MISE_LOCKFILE=1
+
+# Create env-specific config only (to avoid override complexity)
+cat >mise.test.toml <<'EOF'
+[tools]
+tiny = "2"
+EOF
+
+# Create both lockfiles so they get updated
+touch mise.lock mise.test.lock
+
+# Install version
+assert "mise install tiny@2.1.0"
+
+# With MISE_ENV=test, use the test config
+# Note: Must pass MISE_ENV in the command itself since assert uses bash -c
+assert "MISE_ENV=test mise use tiny@2"
+
+# Check that mise.test.lock has the tool (not mise.lock)
+assert_contains "cat mise.test.lock" 'version = "2.1.0"'
+assert_contains "cat mise.test.lock" '[[tools.tiny]]'
+# No env field should be in the lockfile (env is encoded in filename)
+assert_not_contains "cat mise.test.lock" 'env = '

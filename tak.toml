@@ -1,0 +1,46 @@
+# Instruction-counted benchmarks, measured by tak (https://github.com/jdx/tak).
+#
+# Every subject here is hermetic, and each was checked by running it with the
+# proxy pointed at a dead port rather than assumed to be.
+#
+# The three config-resolving benchmarks run with MISE_OFFLINE=1, set by the
+# `perf` task. Without it `ls`, `env` and `hook-env` reach the network and log
+# HTTP warnings; with it they do not, and their output is byte-identical run to
+# run. Offline covers less of mise than a real invocation does — but the part it
+# leaves out is precisely the part no benchmark can measure repeatably.
+#
+# They read `benchmarks/perf-fixture`, a committed config pinning exact
+# versions. A floating version would make the measurement depend on what the
+# registry said that day.
+#
+# `mise --version` and `mise x -- echo` are deliberately absent: the first
+# checks for updates, and the second cannot run offline because it has to
+# resolve a tool.
+
+# The fixed cost every invocation pays: process start, dynamic linking, and
+# building the clap command tree. Reading the others against this separates
+# "mise got slower to start" from "this command's path got slower".
+[bench.startup]
+cmd = ["./target/release/mise", "--help"]
+
+# Config resolution: parse the fixture, resolve three tools against the local
+# store, and report. This is the path a shell pays on every prompt.
+[bench.ls]
+cmd = ["./target/release/mise", "-C", "benchmarks/perf-fixture", "ls"]
+
+# The same resolution, rendered as an environment. `env` and `hook-env` diverge
+# in how they serialise, so a change in one and not the other is informative.
+[bench.env]
+cmd = ["./target/release/mise", "-C", "benchmarks/perf-fixture", "env"]
+
+# What `mise activate` runs on every directory change, which makes it the
+# command most sensitive to a startup regression.
+[bench.hook-env]
+cmd = ["./target/release/mise", "-C", "benchmarks/perf-fixture", "hook-env"]
+
+# The compiled-in tool registry — 983 tools, ~75KB of output — walked and
+# rendered. The largest pure-CPU path that needs neither network nor installed
+# tools, and it grows every time a tool is added.
+[bench.registry]
+cmd = ["./target/release/mise", "registry"]
+runs = 10

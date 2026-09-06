@@ -1,0 +1,988 @@
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
+use crate::config::Config;
+use crate::config::settings::{Settings, SettingsStatusMissingTools};
+use crate::config::tracking::Tracker;
+use crate::env::TERM_WIDTH;
+use crate::errors::Error;
+use crate::file::display_path;
+use crate::lockfile::{Lockfile, lockfile_path_for_config};
+use crate::registry::REGISTRY;
+use crate::registry::tool_enabled;
+use crate::runtime_symlinks::is_runtime_symlink;
+use crate::{backend, parallel};
+pub(crate) use builder::{ConfigScope, ToolsetBuilder};
+use console::truncate_str;
+use eyre::{Result, bail};
+use helpers::TVTuple;
+use indexmap::IndexMap;
+use itertools::Itertools;
+use outdated_info::OutdatedInfo;
+pub(crate) use outdated_info::is_outdated_version;
+use petgraph::Direction;
+use petgraph::graphmap::DiGraphMap;
+use serde::Serialize;
+use std::collections::{BTreeSet, HashSet};
+use std::fmt::{Display, Formatter};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::{
+    cmp::Reverse,
+    collections::{BinaryHeap, HashMap},
+};
+use tokio::sync::OnceCell;
+
+pub(crate) use install_options::InstallOptions;
+pub(crate) use tool_deps::ensure_compatible_install_requests;
+pub(crate) use tool_request::ToolRequest;
+pub(crate) use tool_request_set::{
+    ToolRequestSet, ToolRequestSetBuilder, tool_env_var_name, tool_env_vars, tool_from_env_var_name,
+};
+pub(crate) use tool_source::ToolSource;
+pub(crate) use tool_version::resolve_sub_base;
+pub(crate) use tool_version::{ResolveOptions, ToolVersion};
+pub(crate) use tool_version_list::ToolVersionList;
+pub(crate) use tool_version_options::{
+    CoreToolOptions, EPHEMERAL_OPT_KEYS, RawBackendOptions, ResolvedToolOptions, ToolOptionSource,
+    ToolOptions, ToolVersionOptions, parse_tool_options, scalar_value_to_string,
+    try_parse_tool_options,
+};
+
+mod builder;
+pub(crate) mod env_cache;
+mod helpers;
+mod install_options;
+pub(crate) mod install_state;
+pub(crate) mod outdated_info;
+mod tool_deps;
+pub(crate) mod tool_request;
+mod tool_request_set;
+mod tool_source;
+mod tool_version;
+mod tool_version_list;
+mod tool_version_options;
+mod toolset_env;
+mod toolset_install;
+mod toolset_paths;
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ToolInfo {
+    pub version: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub(crate) enum ToolInfos {
+    Single(ToolInfo),
+    Multiple(Vec<ToolInfo>),
+}
+
+/// a toolset is a collection of tools for various plugins
+///
+/// one example is a .tool-versions file
+/// the idea is that we start with an empty toolset, then
+/// merge in other toolsets from various sources
+#[derive(Debug, Default, Clone)]
+pub(crate) struct Toolset {
+    pub versions: IndexMap<Arc<BackendArg>, ToolVersionList>,
+    pub source: Option<ToolSource>,
+    tera_ctx: OnceCell<tera::Context>,
+}
+
+impl Toolset {
+    pub(crate) fn new(source: ToolSource) -> Self {
+        Self {
+            source: Some(source),
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn add_version(&mut self, tvr: ToolRequest) {
+        let ba = tvr.ba();
+        if self.is_disabled(ba) {
+            return;
+        }
+        let tvl = self
+            .versions
+            .entry(tvr.ba().clone())
+            .or_insert_with(|| ToolVersionList::new(ba.clone(), self.source.clone().unwrap()));
+        tvl.requests.push(tvr);
+    }
+
+    pub(crate) fn merge(&mut self, other: Toolset) {
+        let mut versions = other.versions;
+        for (plugin, tvl) in self.versions.clone() {
+            if !versions.contains_key(&plugin) {
+                versions.insert(plugin, tvl);
+            }
+        }
+        versions.retain(|_, tvl| !self.is_disabled(&tvl.backend));
+        self.versions = versions;
+        self.source = other.source;
+    }
+
+    #[async_backtrace::framed]
+    pub async fn resolve(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        self.resolve_with_opts(config, &Default::default()).await
+    }
+
+    #[async_backtrace::framed]
+    pub async fn resolve_with_opts(
+        &mut self,
+        config: &Arc<Config>,
+        opts: &ResolveOptions,
+    ) -> eyre::Result<()> {
+        self.list_missing_plugins();
+        let versions = self
+            .versions
+            .clone()
+            .into_iter()
+            .map(|(ba, tvl)| (config.clone(), ba, tvl.clone(), opts.clone()))
+            .collect::<Vec<_>>();
+        let tvls = parallel::parallel(versions, |(config, ba, mut tvl, opts)| async move {
+            if let Err(err) = tvl.resolve(&config, &opts).await {
+                if Error::is_required_channel_resolution_err(&err) {
+                    return Err(err);
+                }
+                // warn_once: a command may resolve the same toolset more than
+                // once, and repeating an identical failure adds no information.
+                warn_once!("Failed to resolve tool version list for {ba}: {err}");
+            }
+            Ok((ba, tvl))
+        })
+        .await?;
+        self.versions = tvls.into_iter().collect();
+        Ok(())
+    }
+
+    pub(crate) fn list_missing_plugins(&self) -> Vec<String> {
+        self.versions
+            .iter()
+            .filter(|(_, tvl)| {
+                tvl.versions
+                    .first()
+                    .map(|tv| tv.request.is_os_supported())
+                    .unwrap_or_default()
+            })
+            .map(|(ba, _)| ba)
+            .flat_map(|ba| ba.backend())
+            .filter(|b| b.plugin().is_some_and(|p| !p.is_installed()))
+            .map(|p| p.id().into())
+            .collect()
+    }
+
+    /// Lists missing install markers without invoking backend-specific checks.
+    pub(crate) async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
+        trace!("list_missing_versions");
+        measure!("toolset::list_missing_versions", {
+            self.list_current_versions()
+                .into_iter()
+                .filter_map(|(backend, tv)| {
+                    (!backend.is_version_installed(config, &tv, true)).then_some(tv)
+                })
+                .collect()
+        })
+    }
+
+    /// Lists versions whose complete backend-managed install state is unsatisfied.
+    pub(crate) async fn list_missing_versions_for_install(
+        &self,
+        config: &Arc<Config>,
+    ) -> Vec<ToolVersion> {
+        trace!("list_missing_versions_for_install");
+        measure!("toolset::list_missing_versions_for_install", {
+            let versions = self.list_current_versions().into_iter().collect::<Vec<_>>();
+            let parallel_versions = versions
+                .clone()
+                .into_iter()
+                .map(|(backend, tv)| (config.clone(), backend, tv))
+                .collect::<Vec<_>>();
+            match parallel::parallel(parallel_versions, |(config, backend, tv)| async move {
+                Ok((!backend
+                    .is_install_satisfied_or_false(&config, &tv, true)
+                    .await)
+                    .then_some(tv))
+            })
+            .await
+            {
+                Ok(missing) => missing.into_iter().flatten().collect(),
+                Err(err) => {
+                    warn!("Error checking missing tool versions: {err:#}");
+                    let mut missing = vec![];
+                    for (backend, tv) in versions {
+                        if !backend
+                            .is_install_satisfied_or_false(config, &tv, true)
+                            .await
+                        {
+                            missing.push(tv);
+                        }
+                    }
+                    missing
+                }
+            }
+        })
+    }
+
+    pub(crate) async fn list_installed_versions(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<TVTuple>> {
+        // Surface an unreadable installs dir as an error rather than as an empty
+        // list. Shim rebuilding derives its desired set from this and deletes
+        // every shim it cannot account for, so "scan failed" must not be
+        // indistinguishable from "nothing is installed". (A missing installs dir
+        // is not an error — that is genuinely empty.)
+        install_state::try_list_tools()?;
+        let current_versions: HashMap<(PathBuf, String), TVTuple> = self
+            .list_current_versions()
+            .into_iter()
+            .map(|(p, tv)| {
+                (
+                    (p.ba().installs_path.clone(), tv.tv_pathname()),
+                    (p.clone(), tv),
+                )
+            })
+            .collect();
+        let current_versions = Arc::new(current_versions);
+        let mut versions = vec![];
+        for b in self.list_backends_for_installed_version_listing() {
+            for v in b.list_installed_versions() {
+                if let Some((p, tv)) =
+                    current_versions.get(&(b.ba().installs_path.clone(), v.clone()))
+                {
+                    versions.push((p.clone(), tv.clone()));
+                } else {
+                    // The version string came from an on-disk install directory,
+                    // so it's already concrete — don't call `.resolve()`, which
+                    // would hit the network and can fail (e.g. a stale install
+                    // dir literally named `latest` would re-query the registry).
+                    // A single bad install also shouldn't abort the whole listing,
+                    // so warn and skip on per-tool failures.
+                    match ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown) {
+                        Ok(req) => {
+                            // Use `request.version()`, not the raw dir name `v`:
+                            // for ref-type dirs (e.g. `ref-main`) `ToolRequest::new`
+                            // normalizes to `ref:main`, and `ToolVersion.version`
+                            // must match `tv.request.version()` to stay consistent
+                            // with the old `.resolve()` path.
+                            let version = req.version();
+                            versions.push((b.clone(), ToolVersion::new(req, version)));
+                        }
+                        Err(e) => warn!("Error listing {}@{}: {:#}", b.id(), v, e),
+                    }
+                }
+            }
+        }
+        Ok(versions)
+    }
+
+    pub(crate) fn list_cached_and_current_backends(&self) -> backend::BackendList {
+        // Backends with explicit tool options intentionally bypass the global
+        // backend cache. Prefer current toolset backends so same-process
+        // rebuilds keep configured options like bin_path and asset_pattern.
+        self.list_current_versions()
+            .into_iter()
+            .map(|(backend, _)| backend)
+            .chain(backend::list())
+            .unique_by(|backend| backend.ba().installs_path.clone())
+            .collect()
+    }
+
+    fn list_backends_for_installed_version_listing(&self) -> backend::BackendList {
+        // Path-based deduping is correct for install-dir rebuilds, but installed
+        // versions are keyed by backend short name in install_state. vfox file://
+        // plugins create a generated plugin backend and a file-url backend with
+        // the same install path, and the file-url backend owns the versions.
+        self.list_cached_and_current_backends()
+            .into_iter()
+            .chain(backend::list())
+            .unique_by(|backend| backend.ba().short.clone())
+            .collect()
+    }
+
+    pub(crate) fn list_current_requests(&self) -> Vec<&ToolRequest> {
+        self.versions
+            .values()
+            .flat_map(|tvl| &tvl.requests)
+            .collect()
+    }
+
+    /// Whether any configured tool is declared `lazy = true`. Such a tool installs the
+    /// first time one of its bootstrap shims runs, so environments mise builds for this
+    /// toolset have to make those shims reachable behind the real tool paths.
+    pub(crate) fn has_lazy_declarations(&self) -> bool {
+        self.list_current_requests()
+            .iter()
+            .any(|request| request.options().lazy == Some(true))
+    }
+
+    pub(crate) fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &ToolVersionList)> {
+        self.versions
+            .iter()
+            .flat_map(|(ba, tvl)| eyre::Ok((ba.backend()?, tvl)))
+            .collect()
+    }
+
+    pub(crate) fn list_current_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
+        trace!("list_current_versions");
+        self.list_versions_by_plugin()
+            .iter()
+            .flat_map(|(p, tvl)| tvl.os_supported_versions().map(|v| (p.clone(), v.clone())))
+            .collect()
+    }
+
+    pub(crate) async fn list_all_versions(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
+        use itertools::Itertools;
+        let versions = self
+            .list_current_versions()
+            .into_iter()
+            .chain(self.list_installed_versions(config).await?)
+            .unique_by(|(ba, tv)| (ba.clone(), tv.tv_pathname().to_string()))
+            .collect();
+        Ok(versions)
+    }
+
+    pub(crate) fn list_current_installed_versions(
+        &self,
+        config: &Arc<Config>,
+    ) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
+        self.list_current_versions()
+            .into_iter()
+            .filter(|(p, tv)| p.is_version_installed(config, tv, true))
+            .collect()
+    }
+
+    pub(crate) async fn list_outdated_versions(
+        &self,
+        config: &Arc<Config>,
+        bump: bool,
+        opts: &ResolveOptions,
+    ) -> Vec<OutdatedInfo> {
+        self.list_outdated_versions_filtered(config, bump, opts, None, None)
+            .await
+    }
+
+    pub(crate) async fn list_outdated_versions_filtered(
+        &self,
+        config: &Arc<Config>,
+        bump: bool,
+        opts: &ResolveOptions,
+        filter_tools: Option<&[crate::cli::args::ToolArg]>,
+        exclude_tools: Option<&[crate::cli::args::ToolArg]>,
+    ) -> Vec<OutdatedInfo> {
+        let list_versions = if opts.inactive {
+            match self.list_all_versions(config).await {
+                Ok(v) => v,
+                Err(err) => {
+                    warn!("Failed to list all versions: {err:#}");
+                    vec![]
+                }
+            }
+        } else {
+            self.list_current_versions()
+        };
+        let versions = list_versions
+            .into_iter()
+            // Filter to only check specified tools if provided
+            .filter(|(_, tv)| {
+                // Exclude tools if specified
+                if let Some(exclude) = exclude_tools
+                    && exclude.iter().any(|t| t.ba.as_ref() == tv.ba())
+                {
+                    return false;
+                }
+                // Include only specified tools if provided
+                if let Some(tools) = filter_tools {
+                    tools.iter().any(|t| t.ba.as_ref() == tv.ba())
+                } else {
+                    true
+                }
+            })
+            .map(|(t, tv)| (config.clone(), t, tv, bump, opts.clone()))
+            .collect::<Vec<_>>();
+        let outdated = parallel::parallel(versions, |(config, t, tv, bump, opts)| async move {
+            let mut outdated = HashSet::new();
+            match t.outdated_info(&config, &tv, bump, &opts).await {
+                Ok(Some(oi)) => {
+                    outdated.insert(oi);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    warn!("Error getting outdated info for {tv}: {e:#}");
+                }
+            }
+            if let Some(symlink_path) = t.symlink_path(&tv)
+                && !is_runtime_symlink(&symlink_path)
+            {
+                trace!("skipping symlinked version {tv}");
+                // do not consider symlinked versions to be outdated
+                return Ok(outdated);
+            }
+            if t.uses_custom_outdated_info() {
+                return Ok(outdated);
+            }
+            match OutdatedInfo::resolve(&config, tv.clone(), bump, &opts).await {
+                Ok(Some(oi)) => {
+                    outdated.insert(oi);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    warn!("Error creating OutdatedInfo for {tv}: {e:#}");
+                }
+            }
+            Ok(outdated)
+        })
+        .await
+        .unwrap_or_else(|e| {
+            warn!("Error in parallel outdated version check: {e:#}");
+            vec![]
+        });
+        outdated.into_iter().flatten().collect()
+    }
+
+    pub(crate) fn build_tools_tera_map(&self, config: &Arc<Config>) -> HashMap<String, ToolInfos> {
+        let mut tools_map: HashMap<String, Vec<ToolInfo>> = HashMap::new();
+        for (_, tv) in self.list_current_installed_versions(config) {
+            let tool_name = tv.ba().tool_name.clone();
+            let short = tv.ba().short.clone();
+            let info = ToolInfo {
+                version: tv.version.clone(),
+                path: tv.install_path().to_string_lossy().to_string(),
+            };
+            tools_map
+                .entry(tool_name.clone())
+                .or_default()
+                .push(info.clone());
+            if short != tool_name {
+                tools_map.entry(short).or_default().push(info);
+            }
+        }
+        tools_map
+            .into_iter()
+            .map(|(k, v)| {
+                let infos = if v.len() == 1 {
+                    ToolInfos::Single(v.into_iter().next().unwrap())
+                } else {
+                    ToolInfos::Multiple(v)
+                };
+                (k, infos)
+            })
+            .collect()
+    }
+
+    pub(crate) async fn tera_ctx(&self, config: &Arc<Config>) -> Result<&tera::Context> {
+        self.tera_ctx
+            .get_or_try_init(async || {
+                let env = self.full_env(config).await?;
+                let mut ctx = config.tera_ctx.clone();
+                ctx.insert("env", &env);
+                ctx.insert("tools", &self.build_tools_tera_map(config));
+                Ok(ctx)
+            })
+            .await
+    }
+
+    /// Sort installed tools so that tools with `overrides` in the registry
+    /// appear before the tools they override. e.g., npm overrides node so that
+    /// the explicitly-installed npm binary is found before node's bundled npm.
+    pub(crate) fn sort_by_overrides(
+        installed: &mut Vec<(Arc<dyn Backend>, ToolVersion)>,
+    ) -> Result<()> {
+        let mut graph = DiGraphMap::<&str, ()>::new();
+
+        // Collect unique IDs to build the graph (deduplicates multi-version tools)
+        let unique_ids: HashSet<String> =
+            installed.iter().map(|(b, _)| b.id().to_string()).collect();
+        let unique_ids: Vec<String> = unique_ids.into_iter().collect();
+
+        let mut original_index: HashMap<&str, usize> = HashMap::new();
+        for (i, (b, _)) in installed.iter().enumerate() {
+            let id = b.id();
+            original_index.entry(id).or_insert(i);
+        }
+
+        for id in &unique_ids {
+            graph.add_node(id.as_str());
+        }
+
+        for id in &unique_ids {
+            let id_str = id.as_str();
+            if let Some(tool) = REGISTRY.get(id_str) {
+                for overridden in tool.overrides {
+                    // Edge: id -> overridden (overrider -> overridden)
+                    // Only add edge if overridden tool is also in the list
+                    if graph.contains_node(overridden) {
+                        graph.add_edge(id_str, overridden, ());
+                    }
+                }
+            }
+        }
+
+        if graph.edge_count() == 0 {
+            return Ok(());
+        }
+
+        // Priority = min(priority, priority_of_dependencies)
+        let mut priorities: HashMap<&str, usize> = original_index.clone();
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for (overrider, overridden, _) in graph.all_edges() {
+                let p_overridden = *priorities.get(overridden).unwrap_or(&usize::MAX);
+                let p_overrider = *priorities.get(overrider).unwrap_or(&usize::MAX);
+                if p_overridden < p_overrider {
+                    priorities.insert(overrider, p_overridden);
+                    changed = true;
+                }
+            }
+        }
+
+        // Topological Sort with Priority Queue
+        let mut in_degree: HashMap<&str, usize> = graph
+            .nodes()
+            .map(|node| {
+                (
+                    node,
+                    graph.neighbors_directed(node, Direction::Incoming).count(),
+                )
+            })
+            .collect();
+
+        let mut pq = BinaryHeap::new();
+        for (&node, &deg) in &in_degree {
+            if deg == 0 {
+                let p = priorities[node];
+                let idx = original_index[node];
+                pq.push(Reverse((p, idx, node)));
+            }
+        }
+
+        let mut sorted_ids: Vec<&str> = Vec::with_capacity(graph.node_count());
+        while let Some(Reverse((_, _, id))) = pq.pop() {
+            sorted_ids.push(id);
+
+            for neighbor in graph.neighbors(id) {
+                if let Some(deg) = in_degree.get_mut(neighbor) {
+                    *deg -= 1;
+                    if *deg == 0 {
+                        let p = priorities[neighbor];
+                        let idx = original_index[neighbor];
+                        pq.push(Reverse((p, idx, neighbor)));
+                    }
+                }
+            }
+        }
+
+        if sorted_ids.len() != graph.node_count() {
+            bail!("Cycle detected in tool overrides");
+        }
+
+        let order: HashMap<&str, usize> = sorted_ids
+            .iter()
+            .enumerate()
+            .map(|(i, &id)| (id, i))
+            .collect();
+        installed.sort_by_cached_key(|(b, _)| order.get(b.id()).copied().unwrap_or(usize::MAX));
+
+        Ok(())
+    }
+
+    pub(crate) async fn which(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Option<(Arc<dyn Backend>, ToolVersion)> {
+        let mut installed = self.list_current_installed_versions(config);
+        Self::sort_by_overrides(&mut installed).unwrap();
+        for (p, tv) in installed {
+            match Box::pin(p.which(config, &tv, bin_name)).await {
+                Ok(Some(_bin)) => return Some((p, tv)),
+                Ok(None) => {}
+                Err(e) => {
+                    debug!("Error running which: {:#}", e);
+                }
+            }
+        }
+        None
+    }
+
+    pub(crate) async fn which_bin(&self, config: &Arc<Config>, bin_name: &str) -> Option<PathBuf> {
+        let mut installed = self.list_current_installed_versions(config);
+        Self::sort_by_overrides(&mut installed).unwrap();
+        for (p, tv) in installed {
+            if let Ok(Some(bin)) = Box::pin(p.which(config, &tv, bin_name)).await {
+                return Some(bin);
+            }
+        }
+        None
+    }
+
+    /// [`Self::which_bin`] narrowed to a path the OS can spawn, for
+    /// [`Backend::spawn_program`] and [`Backend::spawnable_dependency`]. `which_bin` itself
+    /// is untouched because `mise which`, shim dispatch and auto-install all depend on its
+    /// answer.
+    pub(crate) async fn which_bin_spawnable(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Option<PathBuf> {
+        let mut installed = self.list_current_installed_versions(config);
+        Self::sort_by_overrides(&mut installed).unwrap();
+        for (p, tv) in installed {
+            if let Ok(Some(bin)) = Box::pin(p.which_spawnable(config, &tv, bin_name)).await {
+                return Some(bin);
+            }
+        }
+        None
+    }
+
+    pub(crate) async fn list_rtvs_with_bin(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Result<Vec<ToolVersion>> {
+        let mut rtvs = vec![];
+        for (p, tv) in self.list_installed_versions(config).await? {
+            match p.which(config, &tv, bin_name).await {
+                Ok(Some(_bin)) => rtvs.push(tv),
+                Ok(None) => {}
+                Err(e) => {
+                    warn!("Error running which: {:#}", e);
+                }
+            }
+        }
+        Ok(rtvs)
+    }
+
+    pub(crate) async fn notify_if_versions_missing(&self, config: &Arc<Config>) {
+        let missing_versions = self.list_missing_versions(config).await;
+        self.notify_missing_versions(missing_versions);
+    }
+
+    pub(crate) fn notify_missing_versions(&self, missing_versions: Vec<ToolVersion>) {
+        if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Never {
+            return;
+        }
+        let mut missing = vec![];
+        for tv in missing_versions.into_iter() {
+            if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Always {
+                missing.push(tv);
+                continue;
+            }
+            if let Ok(backend) = tv.backend() {
+                let installed = backend.list_installed_versions();
+                if !installed.is_empty() {
+                    missing.push(tv);
+                }
+            }
+        }
+        if missing.is_empty() || *crate::env::__MISE_SHIM {
+            return;
+        }
+        let versions = missing
+            .iter()
+            .map(|tv| tv.style())
+            .collect::<Vec<_>>()
+            .join(" ");
+        warn!(
+            "missing: {}",
+            truncate_str(&versions, *TERM_WIDTH - 14, "…"),
+        );
+    }
+
+    fn is_disabled(&self, ba: &BackendArg) -> bool {
+        let settings = Settings::get();
+        let enable_tools = settings.enable_tools();
+        let disable_tools = settings.disable_tools();
+        !ba.is_os_supported()
+            || !tool_enabled(enable_tools.as_ref(), &disable_tools, &ba.short.to_string())
+    }
+}
+
+impl Display for Toolset {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        let plugins = &self
+            .versions
+            .iter()
+            .map(|(_, v)| v.requests.iter().map(|tvr| tvr.to_string()).join(" "))
+            .collect_vec();
+        write!(f, "{}", plugins.join(", "))
+    }
+}
+
+impl From<ToolRequestSet> for Toolset {
+    fn from(trs: ToolRequestSet) -> Self {
+        let mut ts = Toolset::default();
+        for (ba, versions, source) in trs.into_iter() {
+            ts.source = Some(source.clone());
+            let mut tvl = ToolVersionList::new(ba.clone(), source);
+            for tr in versions {
+                tvl.requests.push(tr);
+            }
+            ts.versions.insert(ba, tvl);
+        }
+        ts
+    }
+}
+
+/// Tool versions that some tracked file still needs, keyed by
+/// (short_name, tv_pathname) and mapped to the files that need them.
+///
+/// `mise prune` and `mise upgrade` only ask whether a key is present. The paths
+/// exist so `mise prune --dry-run` can say *which* config keeps a version
+/// alive, since the decision to remove one is otherwise made by absence and
+/// leaves nothing to point at (discussion #9045).
+pub(crate) type NeededVersions = HashMap<(String, String), BTreeSet<PathBuf>>;
+
+/// Get all tool versions that are needed by tracked config files.
+/// This is used by both `mise prune` and `mise upgrade` to avoid
+/// uninstalling versions that other projects still need.
+pub(crate) async fn get_versions_needed_by_tracked_configs(
+    config: &Arc<Config>,
+    use_locked_version: bool,
+    offline: bool,
+) -> Result<NeededVersions> {
+    get_versions_needed_by_tracked_configs_excluding_locks(
+        config,
+        use_locked_version,
+        offline,
+        &HashSet::new(),
+    )
+    .await
+}
+
+/// Like [`get_versions_needed_by_tracked_configs`], but ignores lockfile pins
+/// for the provided config paths.
+pub(crate) async fn get_versions_needed_by_tracked_configs_excluding_locks(
+    config: &Arc<Config>,
+    use_locked_version: bool,
+    offline: bool,
+    exclude_locked_config_paths: &HashSet<PathBuf>,
+) -> Result<NeededVersions> {
+    let mut needed = NeededVersions::new();
+    // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
+    // also protects lockfiles for other tracked projects, but excludes configs
+    // it just upgraded so stale locks there do not keep the old version alive.
+    // Prune also passes offline=true: it only protects installed versions, so
+    // remote resolution can never affect the outcome and just adds latency.
+    for (path, cf) in config.get_tracked_config_files().await? {
+        let use_locked_version = use_locked_version && !exclude_locked_config_paths.contains(&path);
+        let opts = ResolveOptions {
+            use_locked_version,
+            offline,
+            ..Default::default()
+        };
+        if use_locked_version && Settings::get().lockfile_enabled() {
+            let (lockfile_path, _) =
+                lockfile_path_for_config(&path, config.monorepo_lockfile_root().as_deref());
+            match Lockfile::read(&lockfile_path) {
+                Ok(lockfile) => {
+                    for (short, tools) in lockfile.tools() {
+                        for tool in tools {
+                            let version = tool.version.replace([':', '/'], "-");
+                            needed
+                                .entry((short.clone(), version.clone()))
+                                .or_default()
+                                .insert(lockfile_path.clone());
+                            if let Some(backend) = &tool.backend {
+                                needed
+                                    .entry((backend.clone(), version))
+                                    .or_default()
+                                    .insert(lockfile_path.clone());
+                            }
+                        }
+                    }
+                }
+                Err(err) => warn!(
+                    "error loading tracked lockfile {}: {err:#}",
+                    lockfile_path.display()
+                ),
+            }
+        }
+        let mut ts = Toolset::from(cf.to_tool_request_set()?);
+        ts.resolve_with_opts(config, &opts).await?;
+        collect_needed_versions(&ts, offline, &path, &mut needed);
+    }
+    Ok(needed)
+}
+
+/// Get all tool versions that are needed by tracked tool stub files.
+/// Stubs are tracked in ~/.local/state/mise/tracked-stubs when they are
+/// executed. Returns (short_name, tv_pathname) pairs like
+/// [`get_versions_needed_by_tracked_configs`] so `mise prune` and
+/// `mise upgrade` do not delete versions still referenced by a stub.
+pub(crate) async fn get_versions_needed_by_tracked_stubs(
+    config: &Arc<Config>,
+) -> Result<NeededVersions> {
+    let mut needed = NeededVersions::new();
+    // Like prune's tracked-config resolution, only installed versions need
+    // protecting, so resolve offline to avoid pointless remote lookups.
+    let opts = ResolveOptions {
+        use_locked_version: true,
+        offline: true,
+        ..Default::default()
+    };
+    for path in Tracker::list_all_stubs()? {
+        // A stub that no longer parses protects nothing, but shouldn't fail
+        // the whole prune either — it may simply have been repurposed.
+        let stub = match crate::cli::tool_stub::ToolStubFile::from_file(&path) {
+            Ok(stub) => stub,
+            Err(err) => {
+                warn!(
+                    "error loading tracked tool stub {}: {err:#}",
+                    display_path(&path)
+                );
+                continue;
+            }
+        };
+        let tr = match stub.to_tool_request(&path) {
+            Ok(tr) => tr,
+            Err(err) => {
+                warn!(
+                    "error resolving tracked tool stub {}: {err:#}",
+                    display_path(&path)
+                );
+                continue;
+            }
+        };
+        let mut ts = Toolset::new(ToolSource::ToolStub(path.clone()));
+        ts.add_version(tr);
+        if let Err(err) = ts.resolve_with_opts(config, &opts).await {
+            warn!(
+                "error resolving tracked tool stub version {}: {err:#}",
+                display_path(&path)
+            );
+            continue;
+        }
+        collect_needed_versions(&ts, true, &path, &mut needed);
+    }
+    Ok(needed)
+}
+
+fn collect_needed_versions(
+    ts: &Toolset,
+    offline: bool,
+    source: &Path,
+    needed: &mut NeededVersions,
+) {
+    for (_, tv) in ts.list_current_versions() {
+        needed
+            .entry((tv.ba().short.to_string(), tv.tv_pathname()))
+            .or_default()
+            .insert(source.to_path_buf());
+        // Offline can't resolve `sub-N:latest` to a concrete version
+        // (no remote latest available). Conservatively protect every
+        // installed version of this backend so we don't delete the
+        // active one.
+        if offline
+            && let crate::toolset::ToolRequest::Sub { orig_version, .. } = &tv.request
+            && orig_version == "latest"
+            && let Ok(backend) = tv.backend()
+        {
+            let short = tv.ba().short.to_string();
+            for v in backend.list_installed_versions() {
+                needed
+                    .entry((short.clone(), v))
+                    .or_default()
+                    .insert(source.to_path_buf());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::arg_to_backend;
+    use crate::cli::args::BackendArg;
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+
+    #[tokio::test]
+    async fn test_sort_by_overrides() {
+        crate::toolset::install_state::init().await.unwrap();
+        let node = arg_to_backend(BackendArg::from("node")).unwrap();
+        let npm = arg_to_backend(BackendArg::from("npm")).unwrap();
+        let jc = arg_to_backend(BackendArg::from("jc")).unwrap();
+        let jq = arg_to_backend(BackendArg::from("jq")).unwrap();
+
+        let mk_tv = |backend: Arc<dyn Backend>, version: &str| {
+            let ba = backend.ba().clone();
+            let req = ToolRequest::System {
+                backend: ba,
+                source: ToolSource::Argument,
+                options: Default::default(),
+            };
+            ToolVersion::new(req, version.into())
+        };
+
+        let tv_node = mk_tv(node.clone(), "20.0.0");
+        let tv_npm = mk_tv(npm.clone(), "10.2.5");
+        let tv_jc = mk_tv(jc.clone(), "1.0.0");
+        let tv_jq = mk_tv(jq.clone(), "1.0.0");
+
+        let mut input = vec![
+            (node.clone(), tv_node.clone()),
+            (jc.clone(), tv_jc.clone()),
+            (jq.clone(), tv_jq.clone()),
+            (npm.clone(), tv_npm.clone()),
+        ];
+        Toolset::sort_by_overrides(&mut input).unwrap();
+        let ids: Vec<&str> = input.iter().map(|(b, _)| b.id()).collect();
+        assert_eq!(ids, vec!["npm", "node", "jc", "jq"]);
+
+        let mut input = vec![
+            (node.clone(), tv_node.clone()),
+            (jq.clone(), tv_jq.clone()),
+            (npm.clone(), tv_npm.clone()),
+            (jc.clone(), tv_jc.clone()),
+        ];
+        Toolset::sort_by_overrides(&mut input).unwrap();
+        let ids: Vec<&str> = input.iter().map(|(b, _)| b.id()).collect();
+        assert_eq!(ids, vec!["npm", "node", "jq", "jc"]);
+
+        let mut input = vec![
+            (jc.clone(), tv_jc.clone()),
+            (npm.clone(), tv_npm.clone()),
+            (jq.clone(), tv_jq.clone()),
+            (node.clone(), tv_node.clone()),
+        ];
+        Toolset::sort_by_overrides(&mut input).unwrap();
+        let ids: Vec<&str> = input.iter().map(|(b, _)| b.id()).collect();
+        assert_eq!(ids, vec!["jc", "npm", "jq", "node"]);
+
+        // Test with multiple versions of the same tool
+        let tv_node_18 = mk_tv(node.clone(), "18.0.0");
+        let tv_node_20 = mk_tv(node.clone(), "20.0.0");
+        let tv_npm_9 = mk_tv(npm.clone(), "9.0.0");
+
+        let mut input = vec![
+            (node.clone(), tv_node_20.clone()),
+            (node.clone(), tv_node_18.clone()),
+            (jc.clone(), tv_jc.clone()),
+            (npm.clone(), tv_npm_9.clone()),
+            (npm.clone(), tv_npm.clone()),
+        ];
+        Toolset::sort_by_overrides(&mut input).unwrap();
+
+        // npm should come before node (due to override)
+        // Multiple versions of same tool should maintain original order
+        let result: Vec<(&str, &str)> = input
+            .iter()
+            .map(|(b, tv)| (b.id(), tv.version.as_str()))
+            .collect();
+        assert_eq!(
+            result,
+            vec![
+                ("npm", "9.0.0"),
+                ("npm", "10.2.5"),
+                ("node", "20.0.0"),
+                ("node", "18.0.0"),
+                ("jc", "1.0.0"),
+            ]
+        );
+    }
+}

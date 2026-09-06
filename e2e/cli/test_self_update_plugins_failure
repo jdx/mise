@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# `self-update` replaces the binary and then refreshes plugins in a subprocess. That subprocess
+# failing used to take the whole command down, so a completed update printed `Updated mise to X`
+# and then exited non-zero -- which reads as "the update failed" for a mise that is in fact
+# installed and working. See discussions/8827.
+#
+# The version mise reports is what `do_update` compares against, so passing it explicitly is what
+# keeps this test offline: the comparison returns `UpToDate` before any release is looked up, and
+# nothing is downloaded or replaced. Debug builds append `-DEBUG`, which is not part of the version
+# the comparison uses. The banner only prints on a tty, so take the last line rather than the first.
+version="$(mise version | tail -n1 | awk '{print $1}' | sed 's/-DEBUG$//')"
+
+# Control: with the plugins step skipped the command is clean. This also pins that the version
+# above really did take the up-to-date path -- had it not matched, this would have gone to the
+# network to look up a release and failed here instead.
+assert_contains "mise self-update $version --no-plugins 2>&1" "mise is already up to date"
+assert_not_contains "mise self-update $version --no-plugins 2>&1" "Failed to update plugins"
+
+# A mise that cannot be spawned at all. That is the shape Windows produces when an AV scanner is
+# still holding the binary self-update just wrote, and discussions/8827 is the same step failing
+# for a different reason -- a plugin whose git remote is unreachable. Either way the update itself
+# has already happened, so the command has to succeed: `assert_contains` requires a zero exit,
+# which is the whole bug.
+assert_contains "__MISE_BIN=$PWD/no-such-mise mise self-update $version 2>&1" "Failed to update plugins"

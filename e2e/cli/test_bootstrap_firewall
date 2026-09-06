@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "skipping: bootstrap firewall tests require Linux"
+  exit 0
+fi
+
+cat >mise.toml <<'TOML'
+[bootstrap.linux.firewall]
+backend = "nftables"
+default_incoming = "deny"
+
+[[bootstrap.linux.firewall.rules]]
+name = "wrong-peer"
+port = 2222
+protocol = "tcp"
+source = "198.51.100.0/24"
+action = "allow"
+TOML
+
+# Lockout validation happens before backend inspection or privilege elevation.
+assert_fail \
+  "SSH_CONNECTION='203.0.113.10 54321 192.0.2.20 2222' mise bootstrap firewall apply --dry-run --yes" \
+  "no incoming TCP allow rule covers peer 203.0.113.10 on server port 2222"
+
+cat >mise.toml <<'TOML'
+[bootstrap.linux.firewall]
+backend = "nftables"
+default_incoming = "deny"
+
+[[bootstrap.linux.firewall.rules]]
+name = "absent-ssh"
+state = "absent"
+port = 2222
+protocol = "tcp"
+source = "203.0.113.0/24"
+action = "allow"
+TOML
+
+assert_fail \
+  "SSH_CONNECTION='203.0.113.10 54321 192.0.2.20 2222' mise bootstrap firewall apply --dry-run --yes" \
+  "no incoming TCP allow rule covers peer"
+
+cat >mise.toml <<'TOML'
+[bootstrap.linux.firewall]
+backend = "nftables"
+default_incoming = "deny"
+
+[[bootstrap.linux.firewall.rules]]
+name = "wrong-server"
+port = 2222
+protocol = "tcp"
+source = "203.0.113.0/24"
+destination = "192.0.2.21/32"
+action = "allow"
+TOML
+
+assert_fail \
+  "SSH_CONNECTION='203.0.113.10 54321 192.0.2.20 2222' mise bootstrap firewall apply --dry-run --yes" \
+  "no incoming TCP allow rule covers peer"
+
+cat >mise.toml <<'TOML'
+[bootstrap.linux.firewall]
+allow_lockout = true
+
+[[bootstrap.linux.firewall.rules]]
+name = "invalid-port"
+port = 443
+TOML
+
+assert_fail "mise bootstrap firewall apply --dry-run --yes" "sets port without protocol"
+assert_contains "mise bootstrap --help" "firewall"
+assert_contains "mise bootstrap firewall --help" "Linux host firewall"

@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+
+# Cross-platform `mise lock` for the http backend resolves published checksums
+# for platforms other than the host, without downloading artifacts. Covers the
+# SHASUMS form (matched by filename) and the individual checksum file form, with
+# os()/arch() in the url rendered per target platform.
+
+SRV="$PWD/srv"
+mkdir -p "$SRV"
+
+# sha256 of each artifact's bytes (the string written below).
+LINUX_SHA="ae26b73f6db848ed1ccb7c35ec59234cd74ecf9d344f422732058df5be2e6a01"      # "tool linux payload"
+MACOS_SHA="40a3a5cdad86d4833b06b463da7f294fae29b61298aeb729e4e9dbf5e45ba4af"      # "tool macos payload"
+FILE_LINUX_SHA="508f35a45c1c4869a5949ec3d96779237619c36b7a6b51f6a83400de9fc5b01e" # "individual linux payload"
+FILE_MACOS_SHA="f4fbe0d002f0331efc717160d7ea559c0f1172685d454aac59c12c1379d2cc49" # "individual macos payload"
+# sha512 (128 hex chars) of "tool512 linux payload" — algorithm detected from the file name
+SHA512_LINUX="78b83c1f3aa14cfa6c5a551a92d90c147b3c029304429d96bc86560e0f08fc9cf69c343c2dc52fec0d7c7bceee894bb5647d4f3e3359816b231dafaee8799363"
+
+printf '%s' "tool linux payload" >"$SRV/tool_1.0.0_linux.tar.gz"
+printf '%s' "tool macos payload" >"$SRV/tool_1.0.0_macos.tar.gz"
+printf '%s' "individual linux payload" >"$SRV/file_1.0.0_linux.tar.gz"
+printf '%s' "individual macos payload" >"$SRV/file_1.0.0_macos.tar.gz"
+printf '%s' "tool512 linux payload" >"$SRV/tool512_1.0.0_linux.tar.gz"
+
+# SHASUMS file listing both platform artifacts (HashiCorp/OpenShift style)
+cat >"$SRV/tool_1.0.0_SHASUMS" <<EOF
+${LINUX_SHA}  tool_1.0.0_linux.tar.gz
+${MACOS_SHA}  tool_1.0.0_macos.tar.gz
+EOF
+
+# A sha512 SHASUMS: the algorithm is inferred from the file name (SHA512SUMS)
+cat >"$SRV/tool512_1.0.0_SHA512SUMS" <<EOF
+${SHA512_LINUX}  tool512_1.0.0_linux.tar.gz
+EOF
+
+# Individual checksum files (neo4j/dart style): just the raw hash per artifact
+echo "$FILE_LINUX_SHA" >"$SRV/file_1.0.0_linux.tar.gz.sha256"
+echo "$FILE_MACOS_SHA" >"$SRV/file_1.0.0_macos.tar.gz.sha256"
+
+# A SHASUMS list whose entries don't match this tool's artifact name (a naming
+# mismatch). Locking must NOT fall back to the first hash in the list and
+# silently write another artifact's checksum.
+BOGUS_SHA="1111111111111111111111111111111111111111111111111111111111111111"
+cat >"$SRV/mismatch_1.0.0_SHASUMS" <<EOF
+${BOGUS_SHA}  someothertool_1.0.0_linux.tar.gz
+EOF
+
+# Start a static file server on an ephemeral port
+PORT_FILE="$TMPDIR/mise_lock_http_port"
+python3 - "$SRV" "$PORT_FILE" <<'PY' &
+import http.server, socketserver, sys, os
+srv, port_file = sys.argv[1], sys.argv[2]
+os.chdir(srv)
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
+    with open(port_file, "w") as f:
+        f.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "lock http port file" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+cat >mise.toml <<EOF
+[tools."http:xplat-shasums"]
+version = "1.0.0"
+url = "http://127.0.0.1:${PORT}/tool_{{ version }}_{{ os() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${PORT}/tool_{{ version }}_SHASUMS"
+
+[tools."http:xplat-file"]
+version = "1.0.0"
+url = "http://127.0.0.1:${PORT}/file_{{ version }}_{{ os() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${PORT}/file_{{ version }}_{{ os() }}.tar.gz.sha256"
+
+[tools."http:xplat-sha512"]
+version = "1.0.0"
+url = "http://127.0.0.1:${PORT}/tool512_{{ version }}_{{ os() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${PORT}/tool512_{{ version }}_SHA512SUMS"
+
+[tools."http:xplat-shasums-mismatch"]
+version = "1.0.0"
+url = "http://127.0.0.1:${PORT}/mismatch_{{ version }}_{{ os() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${PORT}/mismatch_{{ version }}_SHASUMS"
+EOF
+
+mise lock --platform linux-x64,macos-x64
+
+# sha512 SHASUMS: algorithm detected from the file name, labeled sha512:
+assert_contains "cat mise.lock" "sha512:${SHA512_LINUX}"
+
+# SHASUMS form: each target platform gets its own filename-matched checksum
+assert_contains "cat mise.lock" "sha256:${LINUX_SHA}"
+assert_contains "cat mise.lock" "sha256:${MACOS_SHA}"
+# url() is rendered per target platform, not the host
+assert_contains "cat mise.lock" "tool_1.0.0_linux.tar.gz"
+assert_contains "cat mise.lock" "tool_1.0.0_macos.tar.gz"
+
+# Individual checksum file form: raw-hash file resolved per platform
+assert_contains "cat mise.lock" "sha256:${FILE_LINUX_SHA}"
+assert_contains "cat mise.lock" "sha256:${FILE_MACOS_SHA}"
+assert_contains "cat mise.lock" "file_1.0.0_linux.tar.gz"
+assert_contains "cat mise.lock" "file_1.0.0_macos.tar.gz"
+
+# SHASUMS naming mismatch: a url-only entry is written, and the unrelated first
+# hash from the list is never locked as this artifact's checksum.
+assert_contains "cat mise.lock" "mismatch_1.0.0_linux.tar.gz"
+assert_not_contains "cat mise.lock" "$BOGUS_SHA"

@@ -1,0 +1,37 @@
+#![deny(unreachable_pub)]
+
+#[cfg(test)]
+#[macro_use]
+extern crate insta;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate mlua;
+
+pub use error::Result as VfoxResult;
+pub use error::VfoxError;
+pub use hooks::package::{
+    PackageActionContext, PackageActionResponse, PackageInstalledContext, PackageInstalledResponse,
+    PackageRequest, PackageUninstallContext,
+};
+pub use hooks::pre_install::VerifiedAttestation;
+pub use metadata::{Metadata, SystemDependency};
+pub use plugin::Plugin;
+pub use vfox::InstallResult;
+pub use vfox::Vfox;
+
+pub use http::cancel_http_requests;
+
+mod config;
+mod context;
+pub mod embedded_plugins;
+mod error;
+mod hooks;
+mod http;
+mod lua_mod;
+mod metadata;
+mod plugin;
+mod registry;
+mod runtime;
+mod sdk_info;
+mod vfox;

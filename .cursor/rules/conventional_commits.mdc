@@ -1,0 +1,49 @@
+---
+alwaysApply: false
+description: how to write commit and PR titles
+---
+
+## Conventional Commits (REQUIRED)
+
+PR titles MUST follow conventional commit format. Intermediate commit subjects
+SHOULD use the same format:
+
+### Format
+```
+<type>[optional scope][optional !]: <description>
+```
+
+### Types
+- `feat:` - New features
+- `fix:` - Bug fixes that affect CLI behavior (not CI, docs, or infrastructure)
+- `refactor:` - Code refactoring
+- `docs:` - Documentation changes
+- `style:` - Code style/formatting (no logic changes)
+- `perf:` - Performance improvements
+- `test:` - Testing changes
+- `chore:` - Maintenance tasks, releases, dependency updates, CI/infrastructure
+- `ci:` - CI and automation changes
+- `revert:` - Revert a previous change
+- `security:` - Security-related changes
+- `registry:` - Any changes to `registry/` (no extra scope)
+
+### Examples
+```
+feat(cli): add new command for tool management
+fix(config): resolve parsing issue with nested tables
+refactor(backend): simplify plugin loading logic
+docs(contributing): update installation instructions
+test(e2e): add tests for tool installation
+chore(ci): improve cursor cloud agent environment
+registry: add miller
+```
+
+### Common Scopes
+Command names (`install`, `activate`, `use`, `exec`, …) or subsystems:
+`config`, `backend`, `env`, `task`, `vfox`, `python`, `github`, `release`,
+`completions`, `http`, `schema`, `doctor`, `shim`, `core`, `deps`, `ci`.
+
+Use `task` (not `run`) for task-related changes, even if the code lives in
+`src/cli/run.rs` or `src/cmd.rs`.
+
+Description: start with a lowercase character, use imperative mood, and keep it concise.

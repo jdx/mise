@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# A UTF-8 byte-order mark is what Notepad and PowerShell 5.1's `Out-File -Encoding utf8` leave at
+# the front of a file. It is invisible in an editor, and mise used to either drop the declaration
+# silently or carry the mark into the version -- and from there into a download URL, which 404s
+# while naming nothing the user can see.
+#
+# Each case is paired with the same file without a mark. Without that control an assertion could
+# pass because the reader never worked, rather than because the mark is handled.
+#
+# `requested_version` is compared exactly rather than with `assert_contains`: a version that still
+# carries the mark *contains* the expected one, so a substring check would pass unfixed.
+
+mise settings set idiomatic_version_file_enable_tools "node,pnpm,earthly"
+
+# .tool-versions: the first whitespace-separated token on a line is the tool name, so the mark
+# lands in the name and the entry resolves to nothing at all.
+echo 'tiny 3.1.0' >.tool-versions
+assert "mise ls --current --json | jq -r '.tiny[0].requested_version'" "3.1.0"
+printf '\xef\xbb\xbftiny 3.1.0\n' >.tool-versions
+assert "mise ls --current --json | jq -r '.tiny[0].requested_version'" "3.1.0"
+
+# A plain-text idiomatic file: the mark used to become part of the version itself.
+echo '20.0.0' >.node-version
+assert "mise ls --current --json | jq -r '.node[0].requested_version'" "20.0.0"
+printf '\xef\xbb\xbf20.0.0\n' >.node-version
+assert "mise ls --current --json | jq -r '.node[0].requested_version'" "20.0.0"
+
+# package.json is read by serde_json, which rejects a leading mark outright.
+echo '{"packageManager": "pnpm@9.0.0"}' >package.json
+assert "mise ls --current --json | jq -r '.pnpm[0].requested_version'" "9.0.0"
+printf '\xef\xbb\xbf{"packageManager": "pnpm@9.0.0"}\n' >package.json
+assert "mise ls --current --json | jq -r '.pnpm[0].requested_version'" "9.0.0"
+
+# A registry file read by regex. Earthly's pattern is line-anchored, so the mark stops it matching
+# and the tool disappears without a word.
+echo 'VERSION 0.8.15' >Earthfile
+assert "mise ls --current --json | jq -r '.earthly[0].requested_version'" "0.8.15"
+printf '\xef\xbb\xbfVERSION 0.8.15\n' >Earthfile
+assert "mise ls --current --json | jq -r '.earthly[0].requested_version'" "0.8.15"

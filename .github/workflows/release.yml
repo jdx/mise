@@ -1,0 +1,709 @@
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]*"]
+  pull_request:
+    branches: ["main"]
+    # auto_merge_enabled arms the dry run on the release PR; see the gate job.
+    types: [opened, synchronize, reopened, auto_merge_enabled]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force release even if one already exists"
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  # A dry run for a superseded release PR head can never satisfy auto-merge,
+  # so stop it as soon as the next one starts. Tag runs are never cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  DRY_RUN: ${{ startsWith(github.ref, 'refs/tags/v') && '0' || '1' }}
+  RUST_BACKTRACE: 1
+  GITHUB_API_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  GH_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  gate:
+    # Decides what this run does. Tag pushes and manual dispatches always
+    # build and publish. Pull requests only matter when they come from the
+    # `release` branch of this repository, and even then the tarballs are only
+    # built once auto-merge has been enabled on the release PR: every merge to
+    # main force-pushes `release`, and building eight PGO tarballs for each of
+    # those was the bulk of the Namespace bill. The `release` job below still
+    # runs for an unarmed release PR so that the required check fails instead
+    # of being skipped (GitHub treats a skipped required check as passed).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      release-run: ${{ steps.gate.outputs.release-run }}
+      build: ${{ steps.gate.outputs.build }}
+    steps:
+      - id: gate
+        env:
+          RELEASE_RUN: ${{ github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository) }}
+          ARMED: ${{ github.event_name != 'pull_request' || github.event.pull_request.auto_merge != null }}
+        run: |
+          build=false
+          if [ "$RELEASE_RUN" = true ] && [ "$ARMED" = true ]; then
+            build=true
+          fi
+          echo "release-run=$RELEASE_RUN" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "release-run=$RELEASE_RUN armed=$ARMED build=$build"
+  build-tarball-linux:
+    needs: [gate]
+    if: needs.gate.outputs.build == 'true'
+    name: build-tarball-${{matrix.name}}
+    runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev')) && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-xlarge' }}
+    # PGO and cross-built release tarballs can exceed 90 minutes on
+    # loaded runners, especially once archive generation is included.
+    timeout-minutes: 150
+    env:
+      MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
+      MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # pgo: the amd64 runner can execute x86_64 binaries, so those
+          # targets build via scripts/pgo.bash (instrument -> train ->
+          # rebuild with profile). bolt: apply post-link optimization to
+          # the glibc x64 binary after PGO. arm targets can't run their
+          # instrumented binaries here and stay plain serious builds.
+          - name: linux-x64
+            target: x86_64-unknown-linux-gnu
+            pgo: 1
+            bolt: 1
+          - name: linux-x64-musl
+            target: x86_64-unknown-linux-musl
+            pgo: 1
+          - name: linux-arm64
+            target: aarch64-unknown-linux-gnu
+          - name: linux-arm64-musl
+            target: aarch64-unknown-linux-musl
+          - name: linux-armv7
+            target: armv7-unknown-linux-gnueabihf
+          - name: linux-armv7-musl
+            target: armv7-unknown-linux-musleabi
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install cross
+        uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with:
+          tool: cross
+      - name: Install llvm-tools (PGO)
+        if: matrix.pgo
+        run: rustup component add llvm-tools
+      - name: Install BOLT
+        if: matrix.bolt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bolt-19
+      - name: build-tarball ${{matrix.target}}
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        env:
+          MISE_PGO: ${{ matrix.pgo || '' }}
+          MISE_BOLT: ${{ matrix.bolt || '' }}
+          LLVM_BOLT: llvm-bolt-19
+          MERGE_FDATA: merge-fdata-19
+        with:
+          timeout_minutes: 140
+          max_attempts: 3
+          command: scripts/build-tarball.sh ${{matrix.target}}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tarball-${{matrix.target}}
+          path: |
+            dist/mise-*.tar.xz
+            dist/mise-*.tar.gz
+            dist/mise-*.tar.zst
+          if-no-files-found: error
+  build-tarball-macos:
+    needs: [gate]
+    if: needs.gate.outputs.build == 'true'
+    name: build-tarball-${{matrix.name}}
+    runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev')) && 'macos-14' || 'namespace-profile-endev-macos-arm64' }}
+    timeout-minutes: 300
+    env:
+      MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
+      MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # pgo: only the native arm64 target — an x64 instrumented
+          # binary would train under Rosetta and skew the profile.
+          - name: macos-x64
+            target: x86_64-apple-darwin
+          - name: macos-arm64
+            target: aarch64-apple-darwin
+            pgo: 1
+    steps:
+      - uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7
+        with:
+          p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
+          p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Setup Rust toolchain
+        run: rustup toolchain install stable --profile minimal --target ${{matrix.target}}
+      - name: Install llvm-tools (PGO)
+        if: matrix.pgo
+        run: rustup component add --toolchain stable llvm-tools
+      - name: build-tarball ${{matrix.target}}
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        env:
+          MISE_PGO: ${{ matrix.pgo || '' }}
+        with:
+          timeout_minutes: 280
+          max_attempts: 3
+          # Keep rustc, rust-std, and the profiling runtime on the same
+          # toolchain. A mismatched runner default makes PGO training fail
+          # before it can write any profile data.
+          command: rustup run stable scripts/build-tarball.sh ${{matrix.target}}
+      # Signing settles who built the binary; notarization is what Gatekeeper
+      # demands once an archive carries the quarantine bit, which is to say
+      # whenever someone downloads it in a browser rather than with curl.
+      # Without a ticket it is blocked behind a "cannot be verified" dialog that
+      # only a deliberate override gets past.
+      #
+      # The ticket lives on Apple's side and is keyed to the binary's cdhash, so
+      # nothing here rewrites what was already built or uploaded -- stapling
+      # would, but `stapler` only writes into bundles, disk images, and
+      # installer packages, and this is a bare Mach-O in an archive. Gatekeeper
+      # resolves the ticket online instead.
+      - name: Notarize macOS binary
+        if: env.DRY_RUN == '0'
+        shell: bash
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          BINARIES: dist/mise/bin/mise
+        run: |
+          set -euo pipefail
+
+          if [ -z "$APPLE_API_KEY_P8" ] || [ -z "$APPLE_API_KEY_ID" ] || [ -z "$APPLE_API_ISSUER_ID" ]; then
+            echo "::error title=Notarization credentials missing::App Store Connect credentials are required for macOS releases."
+            exit 1
+          fi
+
+          # Outside the workspace, so no later step can sweep the key into an
+          # artifact, and removed even when notarization fails.
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$work/key.p8"
+
+          # notarytool takes a container, never a bare executable. Copies are
+          # fine: a Mach-O carries its signature inline, so the cdhash the
+          # ticket is keyed to is the one already shipped.
+          mkdir "$work/stage"
+          for binary in $BINARIES; do
+            cp "$binary" "$work/stage/"
+          done
+          # Apple rejects a binary without the hardened runtime or a secure
+          # timestamp. Naming a missing one here turns an opaque Invalid verdict
+          # into a diagnosis; Apple stays the authority on whether to accept.
+          for binary in $BINARIES; do
+            details="$(codesign --display --verbose=4 "$binary" 2>&1 || true)"
+            case "$details" in
+              *runtime*) ;;
+              *) echo "::warning title=No hardened runtime::$binary is signed without --options runtime, which Apple requires; expect an Invalid verdict below." ;;
+            esac
+            case "$details" in
+              *Timestamp=*) ;;
+              *) echo "::warning title=No secure timestamp::$binary carries no secure timestamp, which Apple requires; expect an Invalid verdict below." ;;
+            esac
+          done
+
+          ditto -c -k --norsrc --noextattr "$work/stage" "$work/submission.zip"
+
+          # `--wait` is not a gate on its own: it can return zero on an Invalid
+          # submission, so the reported status is what decides. plutil reads
+          # JSON and ships with macOS, which keeps this off jq.
+          result="$(xcrun notarytool submit "$work/submission.zip" \
+            --key "$work/key.p8" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --output-format json \
+            --timeout 30m \
+            --wait)"
+          echo "$result"
+
+          status="$(printf '%s' "$result" | plutil -extract status raw -o - -)"
+          id="$(printf '%s' "$result" | plutil -extract id raw -o - -)"
+          if [ "$status" != "Accepted" ]; then
+            echo "::error::notarization returned $status for submission $id"
+            xcrun notarytool log "$id" \
+              --key "$work/key.p8" \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER_ID" || true
+            exit 1
+          fi
+          echo "notarized: submission $id"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tarball-${{matrix.target}}
+          path: |
+            dist/mise-*.tar.xz
+            dist/mise-*.tar.gz
+            dist/mise-*.tar.zst
+          if-no-files-found: error
+  build-tarball-windows:
+    needs: [gate]
+    if: needs.gate.outputs.build == 'true'
+    name: build-tarball-windows-${{matrix.arch}}
+    runs-on: windows-latest
+    # Matches the Linux tarball job. 60 was sized for a non-LTO build; the fat-LTO
+    # link this job now does is the long pole and its cost varies a lot with
+    # available memory — locally the same relink took ~20 minutes with RAM to spare
+    # and ~180 minutes when it did not. If this proves too tight on a runner,
+    # thin LTO for Windows is the fallback.
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            target: aarch64-pc-windows-msvc
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: rustup target add ${{matrix.target}}
+      - run: scripts/build-tarball.ps1 ${{matrix.target}}
+        env:
+          OS: windows
+          ARCH: ${{matrix.arch}}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tarball-${{matrix.target}}
+          path: dist/*.zip
+          if-no-files-found: error
+  e2e-linux:
+    needs: [gate, build-tarball-linux]
+    if: needs.gate.outputs.build == 'true'
+    name: e2e-linux-${{matrix.tranche}}
+    runs-on: ubuntu-latest
+    #container: ghcr.io/jdx/mise:github-actions
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        tranche: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install zsh/fish/direnv/fd
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv fd-find liblzma-dev libbz2-dev
+      - name: Install fd-find
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with:
+          tool: usage-cli
+      - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
+      - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
+      - run: mise -v
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
+      - run: mise i
+      - name: Run e2e tests
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        env:
+          TEST_TRANCHE: ${{matrix.tranche}}
+          TEST_TRANCHE_COUNT: 8
+          TEST_ALL: 1
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: ./e2e/run_all_tests
+  rpm:
+    needs: [gate, build-tarball-linux]
+    if: needs.gate.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: ghcr.io/jdx/mise:rpm@sha256:a8468e3c31eb2ec25ba1d74cda9960dfe5d309d676c251f8432c74a283704b74
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+        with:
+          gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: tarball-aarch64-unknown-linux-gnu
+          path: dist
+      - run: scripts/build-rpm.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rpm
+          path: dist/rpmrepo
+          if-no-files-found: error
+  deb:
+    needs: [gate, build-tarball-linux]
+    if: needs.gate.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/jdx/mise:deb@sha256:d952c001014be8c424c1f3b0b04e0f57a4ee4138e25a01ec383f2cb91c8cb8e1
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+        with:
+          gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: tarball-aarch64-unknown-linux-gnu
+          path: dist
+      - run: scripts/build-deb.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: deb
+          path: dist/deb
+          if-no-files-found: error
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      created: ${{ steps.create-release.outputs.created }}
+      release-id: ${{ steps.create-release.outputs.release-id }}
+    permissions:
+      contents: write
+    needs:
+      - gate
+      - rpm
+      - deb
+      - e2e-linux
+      - build-tarball-linux
+      - build-tarball-macos
+      - build-tarball-windows
+    # Run even when a build failed: this is the required `release` check on
+    # main, and a skipped required check counts as passed. The steps below
+    # turn an unarmed release PR or a failed build into an explicit failure.
+    if: ${{ !cancelled() && needs.gate.outputs.release-run == 'true' }}
+    steps:
+      - name: Require auto-merge on the release PR
+        if: needs.gate.outputs.build != 'true'
+        run: |
+          echo "::error title=Release dry run not armed::Enable auto-merge on this pull request to build and test the release tarballs. The PR merges once that dry run passes."
+          exit 1
+      - name: Verify all build targets succeeded
+        run: |
+          failed=""
+          for result in \
+            "${{ needs.build-tarball-linux.result }}" \
+            "${{ needs.build-tarball-macos.result }}" \
+            "${{ needs.build-tarball-windows.result }}" \
+            "${{ needs.e2e-linux.result }}" \
+            "${{ needs.rpm.result }}" \
+            "${{ needs.deb.result }}"; do
+            if [ "$result" != "success" ]; then
+              failed="true"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::One or more required jobs did not succeed:"
+            echo "  build-tarball-linux: ${{ needs.build-tarball-linux.result }}"
+            echo "  build-tarball-macos: ${{ needs.build-tarball-macos.result }}"
+            echo "  build-tarball-windows: ${{ needs.build-tarball-windows.result }}"
+            echo "  e2e-linux: ${{ needs.e2e-linux.result }}"
+            echo "  rpm: ${{ needs.rpm.result }}"
+            echo "  deb: ${{ needs.deb.result }}"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Check for existing release
+        id: check-release
+        if: startsWith(github.ref, 'refs/tags/v') && inputs.force != true
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          RELEASE="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
+            jq -s -c --arg version "$VERSION" '[.[][] | select(.tag_name == $version)][0] // {}')"
+          DRAFT="$(jq -r 'if has("draft") then .draft else empty end' <<< "$RELEASE")"
+          if [[ "$DRAFT" == "false" ]]; then
+            echo "::warning::Release $VERSION already exists and is published — skipping publish steps"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$DRAFT" == "true" ]]; then
+            echo "Draft release $VERSION exists — will refresh its assets and continue publishing"
+            echo "draft=true" >> "$GITHUB_OUTPUT"
+            echo "release-id=$(jq -r '.id' <<< "$RELEASE")" >> "$GITHUB_OUTPUT"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No release found for $VERSION"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+        with:
+          gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+      - run: ./scripts/setup-zipsign.sh
+        env:
+          ZIPSIGN: ${{ secrets.ZIPSIGN }}
+      - name: Install fd-find
+        run: |
+          sudo apt-get update
+          sudo apt-get install fd-find minisign
+          mkdir -p "$HOME/.local/bin"
+          ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with: { path: artifacts }
+      - run: ls -R artifacts
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: artifacts
+          pattern: |
+            mise-v*.tar.gz
+            mise-v*.tar.xz
+            mise-v*.tar.zst
+            mise-v*.zip
+          merge-multiple: true
+      - run: echo "${{ secrets.MINISIGN_KEY }}" >minisign.key
+      - run: ls -R artifacts
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
+      - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
+      - run: which mise && mise -v && mise i
+      - run: mise x -- scripts/release.sh
+      - name: Stage release assets for attestation
+        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-assets
+          path: releases/${{ github.ref_name }}
+          if-no-files-found: error
+          retention-days: 1
+      - name: Generate release notes
+        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          if mise x -- communique generate "$VERSION" -o /tmp/release-notes.txt; then
+            TITLE="$(head -1 /tmp/release-notes.txt | sed 's/^#* //' | sed "s/^$VERSION: //")"
+            echo "RELEASE_TITLE=$VERSION: $TITLE" >> "$GITHUB_ENV"
+            # Remove the title line (and any blank line after it) from the notes body
+            tail -n +2 /tmp/release-notes.txt | sed '/./,$!d' > /tmp/release-notes-body.txt
+            mv /tmp/release-notes-body.txt /tmp/release-notes.txt
+          else
+            echo "::warning::communique failed, falling back to git-cliff changelog"
+            mise x -- git cliff --strip all --latest > /tmp/release-notes.txt 2>/dev/null || echo "Release $VERSION" > /tmp/release-notes.txt
+            echo "RELEASE_TITLE=$VERSION" >> "$GITHUB_ENV"
+          fi
+          # Strip any pre-existing sponsor section from the generated notes
+          # (communique has at times included its own) and trim trailing blanks,
+          # so the heredoc below always produces exactly one canonical block.
+          awk '
+            /^## (💚 )?Sponsor mise[[:space:]]*$/ { exit }
+            /^[[:space:]]*$/ { blanks++; next }
+            { while (blanks-- > 0) print ""; blanks = 0; print }
+          ' /tmp/release-notes.txt > /tmp/release-notes-trimmed.txt
+          mv /tmp/release-notes-trimmed.txt /tmp/release-notes.txt
+          cat >> /tmp/release-notes.txt <<'EOF'
+
+          ## 💚 Sponsor mise
+
+          mise is built and maintained by [@jdx](https://github.com/jdx), an open source developer at [**entire.io**](https://entire.io/), the title sponsor of his open source work.
+
+          If mise saves you or your team time, please consider becoming an [individual or company sponsor](https://jdx.dev/sponsors.html). Your support funds ongoing development and helps keep mise fast, free, and independent.
+          EOF
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - name: Create Draft GitHub Release
+        id: create-release
+        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          if [[ "$EXISTING_DRAFT" == "true" ]]; then
+            gh release upload "$VERSION" --clobber "releases/$VERSION"/*
+            RELEASE_ID="$EXISTING_RELEASE_ID"
+          else
+            RELEASE_URL="$(gh release create "$VERSION" \
+              --title "$RELEASE_TITLE" \
+              --notes-file /tmp/release-notes.txt \
+              --verify-tag \
+              --draft \
+              "releases/$VERSION"/*)"
+            RELEASE_ID="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
+              jq -s -r --arg url "$RELEASE_URL" '[.[][] | select(.html_url == $url)][0].id // empty')"
+          fi
+          test -n "$RELEASE_ID"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "release-id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+        env:
+          EXISTING_DRAFT: ${{ steps.check-release.outputs.draft }}
+          EXISTING_RELEASE_ID: ${{ steps.check-release.outputs.release-id }}
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+      - name: Publish Release Assets to CDN
+        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
+        run: mise x -- scripts/publish-release.sh
+        env:
+          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+
+  attest-release:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Attest release artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: release-assets/SHASUMS256.txt
+
+  # The packslip is this release's signed inventory: every artifact's digest,
+  # the executable inside it, the man page beside that, the shared objects it
+  # needs from the host, and the workflow identity that signed for all of it.
+  # SHASUMS and the minisign and GPG signatures say the bytes did not change;
+  # this says which platform each file is for and what is in it, so an
+  # installer can pick and check one against the identity github.com/jdx/mise.
+  # See https://packslip.dev.
+  #
+  # attest: false -- attest-release above already attests every artifact
+  # through SHASUMS256.txt, and attesting again here would only add a second
+  # statement about the same digests.
+  packslip:
+    needs:
+      - release
+      - attest-release
+    if: needs.release.outputs.created == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+    # The workflow-level env puts the publishing token in every step. This job
+    # runs the binary it just built, so it takes the token back out and hands
+    # it only to the two steps that publish with it.
+    env:
+      GH_TOKEN: ""
+      GITHUB_TOKEN: ""
+      GITHUB_API_TOKEN: ""
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-assets
+          path: release-assets
+      # From this a consumer generates completions, a man page, and
+      # documentation with its own copy of usage, so nothing of mise's has to
+      # run on the machine it is being installed on. Generating it and
+      # uploading it are separate steps so that the release token is only in
+      # the environment of the step that publishes, not of the binary that was
+      # just built.
+      - name: Generate the CLI specification and completions
+        run: |
+          mkdir -p bin
+          tar -xzf "release-assets/mise-$GITHUB_REF_NAME-linux-x64.tar.gz" -C bin
+          bin/mise/bin/mise usage > mise.usage.kdl
+          for shell in bash zsh fish powershell; do
+            bin/mise/bin/mise completion "$shell" > "mise.$shell"
+            test -s "mise.$shell"
+            grep -Fq '__complete_word__' "mise.$shell"
+            bin/mise/bin/mise __complete_word__ --shell "$shell" --line 'mise ins' | grep -Fq -- 'install'
+          done
+          bash -n mise.bash
+      - name: Publish the CLI specification and completions
+        env:
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
+      # `out: .` keeps the bundle beside mise.usage.kdl. The action defaults to
+      # writing it under packslip/, and an artifact holding files at two
+      # depths keeps the directory, which the flat `sha256sum ./*` below
+      # would then choke on.
+      - uses: jdx/packslip@a0d434ad57571c62dbd0ab5095b4eff607a71fd3 # v1.1.1
+        with:
+          artifacts: release-assets/mise-*
+          bin: mise
+          # A bare executable named for a dotted version (mise-v2026.9.1-linux-x64)
+          # now infers format = "raw" on its own, and the platform scope below picks
+          # the man page out of the Unix archives only -- the Windows zip carries
+          # none -- so neither needs a manifest to say what the file name can't.
+          resources: |
+            man@linux=archive:mise/man/man1/mise.1
+            man@darwin=archive:mise/man/man1/mise.1
+            cli-spec/usage=asset:mise.usage.kdl
+            completion/bash=asset:mise.bash
+            completion/zsh=asset:mise.zsh
+            completion/fish=asset:mise.fish
+            completion/powershell=asset:mise.powershell
+          attest: "false"
+          out: "."
+          token: ${{ secrets.MISE_GH_TOKEN }}
+      # publish-release compares the draft's assets against what this workflow
+      # built, so the metadata files added here have to reach it or the diff fails.
+      - name: Stage the packslip for the asset check
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-extras
+          path: |
+            mise.usage.kdl
+            mise.bash
+            mise.zsh
+            mise.fish
+            mise.powershell
+            packslip.sigstore.json
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-release:
+    needs:
+      - release
+      - attest-release
+      - packslip
+    if: needs.release.outputs.created == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Download the packslip
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-extras
+          path: release-assets
+      - name: Verify and publish GitHub Release
+        run: |
+          (cd release-assets && sha256sum ./* | sort) > /tmp/expected-assets
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            --jq '.assets[] | select(.digest | startswith("sha256:")) | "\(.digest[7:])  ./\(.name)"' \
+            | sort > /tmp/draft-assets
+          diff -u /tmp/expected-assets /tmp/draft-assets
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false
+        env:
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          RELEASE_ID: ${{ needs.release.outputs.release-id }}

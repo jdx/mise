@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Regression test: killing `mise watch` with a signal must still put the
+# terminal back.
+#
+# `TerminalState` restores termios from `Drop`, which covers every exit that
+# unwinds — but not being killed. A `mise watch` nested under a `mise run` is
+# killed by that run's `exit::kill_all()`, which sends SIGTERM, and mise handles
+# only SIGINT. So the process died where it stood and the terminal kept whatever
+# watchexec had left in it: no echo (#8269).
+#
+# Two things this test needs that a plain e2e run does not give it:
+#
+#   * a controlling terminal. `TerminalState::capture()` prefers `/dev/tty` and
+#     saves nothing at all when no descriptor is a terminal, so without a pty
+#     there is no defect to observe.
+#   * a watchexec that reliably clears ECHO. The real one does it through
+#     `--clear=reset`, but a stub makes the test deterministic and independent of
+#     what version of watchexec is installed. `e2e/cli/test_watch_default_task`
+#     already stubs watchexec this way.
+
+mkdir -p "$HOME/bin"
+cat >"$HOME/bin/watchexec" <<'EOF'
+#!/usr/bin/env bash
+# Stand in for `--clear=reset`: drop ECHO on the controlling terminal, say so,
+# then stay alive until something kills us.
+stty -echo </dev/tty
+: >"$HOME/watchexec-ready"
+while :; do sleep 1; done
+EOF
+chmod +x "$HOME/bin/watchexec"
+export PATH="$HOME/bin:$PATH"
+
+cat >mise.toml <<'EOF'
+[tasks.watched]
+run = "echo watched"
+sources = ["src/**/*.rs"]
+EOF
+
+rm -f "$HOME/watchexec-ready"
+
+python3 - "$HOME" <<'PY'
+import fcntl
+import os
+import pty
+import signal
+import sys
+import termios
+import time
+
+home = sys.argv[1]
+ready = os.path.join(home, "watchexec-ready")
+
+master, slave = pty.openpty()
+
+pid = os.fork()
+if pid == 0:
+    # The child has to become a session leader and claim the pty before exec,
+    # or `/dev/tty` resolves to whatever terminal the test runner is attached to
+    # (usually none) and mise captures nothing.
+    os.setsid()
+    fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+    for fd in (0, 1, 2):
+        os.dup2(slave, fd)
+    os.close(master)
+    os.close(slave)
+    os.execvp("mise", ["mise", "watch", "watched"])
+    os._exit(127)
+
+os.close(slave)
+
+
+def echo_on():
+    return bool(termios.tcgetattr(master)[3] & termios.ECHO)
+
+
+def wait_for(predicate, what, timeout=30.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.05)
+    raise SystemExit(f"timed out waiting for {what}")
+
+
+def wait_for_exit(timeout=30.0):
+    # Bounded on purpose. This change replaces SIGTERM's default action, so a
+    # regression in handing the signal back leaves the process alive — and a
+    # test for "it still dies" must fail saying so rather than hang until the
+    # CI timeout kills it with no explanation.
+    deadline = time.monotonic() + timeout
+    while True:
+        waited, status = os.waitpid(pid, os.WNOHANG)
+        if waited == pid:
+            return status
+        if time.monotonic() >= deadline:
+            raise SystemExit("timed out waiting for mise to exit after SIGTERM")
+        time.sleep(0.05)
+
+
+# Everything from here is inside the `finally`: a timeout waiting for the stub
+# is as capable of stranding these processes as a failed assertion is.
+try:
+    # The stub reports that it has taken ECHO away. Assert it really is gone, so
+    # a pass cannot come from the premise never holding.
+    wait_for(lambda: os.path.exists(ready), "the watchexec stub to start")
+    wait_for(lambda: not echo_on(), "the watchexec stub to clear ECHO")
+
+    # This is the kill that `exit::kill_all()` performs on a nested watch: a
+    # plain `kill` on the pid, since a watch that has its own session is not
+    # killed by process group (`should_use_pgroup` returns false for a session
+    # leader).
+    os.kill(pid, signal.SIGTERM)
+    status = wait_for_exit()
+
+    if not echo_on():
+        raise SystemExit("terminal still has ECHO off after SIGTERM")
+
+    # The restore must not swallow the cause of death: callers read it from the
+    # exit status, which is why the signal is re-raised rather than exiting a
+    # code of our own choosing.
+    if not os.WIFSIGNALED(status):
+        raise SystemExit(f"expected death by signal, got status {status}")
+    if os.WTERMSIG(status) != signal.SIGTERM:
+        raise SystemExit(f"expected SIGTERM, got signal {os.WTERMSIG(status)}")
+finally:
+    # The stub sits in the watch's session but is not killed with it, so it has
+    # to be reaped here or it outlives the test holding the pty. Killing the
+    # group also takes the watch itself if we never got as far as signalling it.
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+print("terminal restored after SIGTERM")
+PY

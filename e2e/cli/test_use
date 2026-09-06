@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+
+mise i dummy@1.0.0
+
+assert_contains "mise use dummy" "dummy@1.0.0"
+assert "mise current dummy" "1.0.0"
+
+assert_contains "mise use dummy@2" "dummy@2."
+assert "mise current dummy" "2.0.0"
+
+assert_contains "mise use --rm dummy" "removed: dummy"
+assert "mise current dummy" ""
+
+assert_contains "mise use --env local dummy@2" "dummy@2."
+assert "cat mise.local.toml" '[tools]
+dummy = "2"'
+assert "mise current dummy" "2.0.0"
+rm mise.local.toml
+
+assert_contains "mise use --env local dummy@1" "dummy@1."
+assert "cat mise.local.toml" '[tools]
+dummy = "1"'
+mv mise.local.toml .mise.local.toml
+assert_contains "mise use --env local dummy@2" "dummy@2."
+assert_fail "test -f mise.local.toml"
+assert "cat .mise.local.toml" '[tools]
+dummy = "2"'
+rm .mise.local.toml
+
+mise use dummy@1 dummy@2
+assert "mise current dummy" "1.0.0 2.0.0"
+
+# Multiple additions should preserve an already-sorted [tools] table.
+rm mise.toml
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny-local"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny-ref"
+mise use tiny-ref@1
+mise use dummy@1 tiny-local@1 tiny@1
+assert "cat mise.toml" '[tools]
+dummy = "1"
+tiny = "1"
+tiny-local = "1"
+tiny-ref = "1"'
+rm mise.toml
+
+mise use --pin dummy@1
+assert "cat mise.toml" '[tools]
+dummy = "1.0.0"'
+
+assert_fail "mise use dummy@--version" "must not start with '-'"
+assert "cat mise.toml" '[tools]
+dummy = "1.0.0"'
+
+MISE_PIN=1 mise use --fuzzy dummy@1
+assert "cat mise.toml" '[tools]
+dummy = "1"'
+
+MISE_PIN=1 mise use dummy@1 --path mise.local.toml
+assert "cat mise.local.toml" '[tools]
+dummy = "1.0.0"'
+
+assert_fail "mise use --dry-run --path package.json dummy@1" "cannot update idiomatic version file"
+
+mise use --rm dummy --path mise.local.toml
+assert "cat mise.local.toml" ""
+
+# `nodejs` is an alias for `node`, so --rm has to match the key however it is spelled.
+# It used to only look for the short name, leaving the entry in the file.
+cat >mise.local.toml <<EOF
+[tools]
+dummy = "1"
+nodejs = "20.0.0"
+EOF
+mise use --rm nodejs --path mise.local.toml
+assert "cat mise.local.toml" '[tools]
+dummy = "1"'
+rm -f mise.local.toml
+
+mise use dummy@1 --path .
+assert "cat mise.toml" '[tools]
+dummy = "1"'
+
+# mise use should write to mise.toml (lowest precedence) instead of mise.local.toml
+# See: https://github.com/jdx/mise/discussions/6475
+mise use dummy@2
+assert "cat mise.toml" '[tools]
+dummy = "2"'
+
+# When both mise.toml and mise.local.toml exist, mise use should still write to mise.toml
+echo '[tools]' >mise.local.toml
+echo 'dummy = "1"' >>mise.local.toml
+mise use dummy@3
+assert "cat mise.toml" '[tools]
+dummy = "3"'
+assert "cat mise.local.toml" '[tools]
+dummy = "1"'
+
+rm -f mise.local.toml mise.toml
+
+# mise use should write to .config/mise/config.toml instead of .config/mise/config.local.toml
+mkdir -p .config/mise
+echo '[tools]' >.config/mise/config.toml
+echo 'dummy = "1"' >>.config/mise/config.toml
+touch .config/mise/config.local.toml
+mise use dummy@2
+assert "cat .config/mise/config.toml" '[tools]
+dummy = "2"'
+assert "cat .config/mise/config.local.toml" ""
+rm -rf .config
+
+echo "dummy 1.0.0" >.tool-versions
+mise use dummy@2
+assert "cat .tool-versions" "dummy 2"
+
+# When both .tool-versions and mise.toml exist, mise use should prefer mise.toml
+echo '[tools]' >mise.toml
+echo 'dummy = "1"' >>mise.toml
+mise use dummy@3
+assert "cat mise.toml" '[tools]
+dummy = "3"'
+assert "cat .tool-versions" "dummy 2"
+
+rm -f .tool-versions mise.toml
+
+mise use -g dummy@1
+assert "cat ~/.config/mise/config.toml" '[tools]
+dummy = "1"'
+rm -f ~/.config/mise/config.toml
+
+assert_empty "mise use --quiet -g dummy@1 2>&1"
+assert "cat ~/.config/mise/config.toml" '[tools]
+dummy = "1"'
+assert_empty "mise use --silent -g dummy@1 2>&1"
+assert "cat ~/.config/mise/config.toml" '[tools]
+dummy = "1"'
+rm -f ~/.config/mise/config.toml
+
+mise use -g "ubi:cli/cli[exe=gh]"
+assert "cat ~/.config/mise/config.toml" '[tools]
+"ubi:cli/cli" = { version = "latest", exe = "gh" }'
+rm -f ~/.config/mise/config.toml
+
+mise use -g gh@2
+assert "cat ~/.config/mise/config.toml" '[tools]
+gh = "2"'
+rm -f ~/.config/mise/config.toml
+
+# mise use -g should write to config.toml instead of config.local.toml
+# See: https://github.com/jdx/mise/discussions/8236
+touch ~/.config/mise/config.toml ~/.config/mise/config.local.toml
+mise use -g dummy@1
+assert "cat ~/.config/mise/config.toml" '[tools]
+dummy = "1"'
+assert "cat ~/.config/mise/config.local.toml" ""
+rm -f ~/.config/mise/config.toml ~/.config/mise/config.local.toml
+
+export MISE_ENV=test
+mise use -g dummy@1
+assert "cat ~/.config/mise/config.toml" '[tools]
+dummy = "1"'
+rm -f ~/.config/mise/config.toml
+unset MISE_ENV
+
+mise uninstall dummy --all
+mise use dummy@system
+assert "mise ls dummy" "dummy  system  ~/workdir/mise.toml  system"
+
+mkdir -p ~/workdir/mydummy
+mise use "dummy@path:~/workdir/mydummy"
+assert_contains "mise ls dummy" "dummy  path:~/workdir/mydummy  ~/workdir/mise.toml  path:~/workdir/mydummy"
+
+cd "$HOME" || exit 1
+assert_contains "mise use dummy@system" "mise ~/.config/mise/config.toml tools: dummy@system"
+
+assert_contains "mise use --path mise.path.toml dummy@1" "dummy@1."
+assert "cat mise.path.toml" '[tools]
+dummy = "1"'
+
+# --path <dir> writes inside that directory, never the cwd's config. This used to resolve from
+# the cwd and silently discard --path entirely.
+mkdir -p "$HOME/workdir/pathtarget/from" "$HOME/workdir/pathtarget/to"
+printf '[tools]\ndummy = "1"\n' >"$HOME/workdir/pathtarget/from/mise.toml"
+cd "$HOME/workdir/pathtarget/from" || exit 1
+
+mise use --path ../to dummy@2
+assert "cat ../to/mise.toml" '[tools]
+dummy = "2"'
+assert "cat mise.toml" '[tools]
+dummy = "1"'
+
+# and with an absolute path
+mise use --path "$HOME/workdir/pathtarget/to" dummy@3
+assert "cat ../to/mise.toml" '[tools]
+dummy = "3"'
+assert "cat mise.toml" '[tools]
+dummy = "1"'
+
+# a directory whose only config is .tool-versions keeps using it rather than growing a mise.toml
+mkdir -p "$HOME/workdir/pathtarget/tv"
+printf 'dummy 1.0.0\n' >"$HOME/workdir/pathtarget/tv/.tool-versions"
+mise use --path ../tv dummy@2.0.0
+assert "cat ../tv/.tool-versions" "dummy 2.0.0"
+assert_fail "cat ../tv/mise.toml"
+
+# --path . still means "here"
+mise use --path . dummy@4
+assert "cat mise.toml" '[tools]
+dummy = "4"'
+
+# the same rule applies to `mise set --file <dir>`
+mise set --file ../to PATHTARGET=yes
+assert_contains "cat ../to/mise.toml" "PATHTARGET"
+assert_not_contains "cat mise.toml" "PATHTARGET"
+
+cd "$HOME/workdir" || exit 1
+
+# comments around a tool survive the version being replaced
+# See: https://github.com/jdx/mise/discussions/4797
+mkdir -p "$HOME/workdir/comments"
+cd "$HOME/workdir/comments" || exit 1
+printf '[tools]\n# renovate: datasource=github-releases depName=dummy\ndummy = "1" # keep me\n' >mise.toml
+mise use dummy@2
+assert "cat mise.toml" '[tools]
+# renovate: datasource=github-releases depName=dummy
+dummy = "2" # keep me'

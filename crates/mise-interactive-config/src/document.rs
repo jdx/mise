@@ -1,0 +1,900 @@
+//! TomlDocument: In-memory TOML representation with sections and entries
+
+use std::path::Path;
+use toml_edit::{DocumentMut, Formatted, Item, Table, Value};
+
+/// Represents a TOML document with navigable sections
+#[derive(Debug)]
+pub(crate) struct TomlDocument {
+    pub sections: Vec<Section>,
+    pub modified: bool,
+}
+
+/// A section in the TOML document (e.g., [tools], [env])
+#[derive(Debug, Clone)]
+pub(crate) struct Section {
+    pub name: String,
+    pub entries: Vec<Entry>,
+    pub expanded: bool,
+    /// Comments appearing before this section header
+    pub comments: Vec<String>,
+}
+
+/// An entry within a section (key = value)
+#[derive(Debug, Clone)]
+pub(crate) struct Entry {
+    pub key: String,
+    pub value: EntryValue,
+    pub expanded: bool,
+    /// Comments appearing before this entry
+    pub comments: Vec<String>,
+    /// The value's decor suffix when it carries a same-line comment, kept
+    /// verbatim so spacing survives. It lives in the *suffix*, which is why
+    /// reading only the prefix never picked it up.
+    pub trailing_comment: Option<String>,
+}
+
+/// The value of an entry
+#[derive(Debug, Clone)]
+pub(crate) enum EntryValue {
+    /// Simple string, number, or boolean value
+    Simple(String),
+    /// Array of values
+    Array(Vec<String>),
+    /// Inline table of key-value pairs
+    InlineTable(Vec<(String, String)>),
+}
+
+impl TomlDocument {
+    /// Create a new document with default sections
+    pub(crate) fn new() -> Self {
+        Self::new_with_deps(false)
+    }
+
+    /// Create a new document with default sections, optionally including deps
+    pub(crate) fn new_with_deps(include_deps: bool) -> Self {
+        let mut sections = vec![
+            Section {
+                name: "tools".to_string(),
+                entries: Vec::new(),
+                expanded: true,
+                comments: Vec::new(),
+            },
+            Section {
+                name: "env".to_string(),
+                entries: Vec::new(),
+                expanded: false,
+                comments: Vec::new(),
+            },
+            Section {
+                name: "tasks".to_string(),
+                entries: Vec::new(),
+                expanded: false,
+                comments: Vec::new(),
+            },
+        ];
+
+        if include_deps {
+            sections.push(Section {
+                name: "deps".to_string(),
+                entries: Vec::new(),
+                expanded: false,
+                comments: Vec::new(),
+            });
+        }
+
+        sections.push(Section {
+            name: "settings".to_string(),
+            entries: Vec::new(),
+            expanded: false,
+            comments: Vec::new(),
+        });
+
+        Self {
+            sections,
+            modified: false,
+        }
+    }
+
+    /// Parse a TOML document from a string
+    pub(crate) fn parse(content: &str) -> Result<Self, toml_edit::TomlError> {
+        let doc: DocumentMut = content.parse()?;
+        let mut sections = Vec::new();
+
+        // Known sections in preferred order
+        let known_sections = ["tools", "env", "tasks", "deps", "settings"];
+
+        // Collect top-level entries (non-table items like min_version)
+        let mut root_entries = Vec::new();
+        for (key, item) in doc.iter() {
+            let key_prefix = doc
+                .as_table()
+                .key(key)
+                .and_then(|k| k.leaf_decor().prefix());
+            if !item.is_table()
+                && !item.is_array_of_tables()
+                && let Some(entry) = Self::parse_entry(key, item, key_prefix)
+            {
+                root_entries.push(entry);
+            }
+        }
+
+        // Add root section (empty name) if we have top-level entries
+        if !root_entries.is_empty() {
+            sections.push(Section {
+                name: String::new(),
+                entries: root_entries,
+                expanded: true,
+                comments: Vec::new(),
+            });
+        }
+
+        // Add known sections first (in order)
+        for name in &known_sections {
+            if let Some(item) = doc.get(name)
+                && let Some(table) = item.as_table()
+            {
+                sections.push(Self::parse_section(name, table));
+            }
+        }
+
+        // Add any other sections
+        for (key, item) in doc.iter() {
+            if !known_sections.contains(&key)
+                && let Some(table) = item.as_table()
+            {
+                sections.push(Self::parse_section(key, table));
+            }
+        }
+
+        // Add missing default sections
+        for name in &known_sections {
+            if !sections.iter().any(|s| s.name == *name) {
+                sections.push(Section {
+                    name: name.to_string(),
+                    entries: Vec::new(),
+                    expanded: false,
+                    comments: Vec::new(),
+                });
+            }
+        }
+
+        // Sort to maintain preferred order (empty name for root entries comes first)
+        sections.sort_by(|a, b| {
+            let order = |n: &str| {
+                if n.is_empty() {
+                    return 0; // Root entries come first
+                }
+                known_sections
+                    .iter()
+                    .position(|&s| s == n)
+                    .map(|p| p + 1)
+                    .unwrap_or(known_sections.len() + 1)
+            };
+            order(&a.name).cmp(&order(&b.name))
+        });
+
+        // Expand first non-empty section, or tools if all empty
+        let first_non_empty = sections.iter_mut().find(|s| !s.entries.is_empty());
+        if let Some(section) = first_non_empty {
+            section.expanded = true;
+        } else if let Some(tools) = sections.iter_mut().find(|s| s.name == "tools") {
+            tools.expanded = true;
+        }
+
+        Ok(Self {
+            sections,
+            modified: false,
+        })
+    }
+
+    /// Load a TOML document from a file
+    pub(crate) fn load(path: &Path) -> std::io::Result<Self> {
+        let content = std::fs::read_to_string(path)?;
+        Self::parse(&content).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+
+    fn parse_section(name: &str, table: &Table) -> Section {
+        let mut entries = Vec::new();
+
+        for (key, item) in table.iter() {
+            // The leading comment of a key/value pair belongs to the key, not the
+            // value — the value's prefix is only the space after `=`. Reading the
+            // value meant `comments` was always empty for entries, so nothing was
+            // displayed and nothing could be written back (discussion #10650).
+            let key_prefix = table.key(key).and_then(|k| k.leaf_decor().prefix());
+            if let Some(entry) = Self::parse_entry(key, item, key_prefix) {
+                entries.push(entry);
+            }
+        }
+
+        // Extract comments from the table's decor
+        let comments = Self::extract_comments_from_decor(table.decor().prefix());
+
+        Section {
+            name: name.to_string(),
+            entries,
+            expanded: false,
+            comments,
+        }
+    }
+
+    fn parse_entry(
+        key: &str,
+        item: &Item,
+        key_prefix: Option<&toml_edit::RawString>,
+    ) -> Option<Entry> {
+        // A nested table carries its own decor; a key/value pair carries it on
+        // the key.
+        let comments = match item {
+            Item::Table(t) => Self::extract_comments_from_decor(t.decor().prefix()),
+            _ => Self::extract_comments_from_decor(key_prefix),
+        };
+        let trailing_comment = match item {
+            Item::Value(v) => Self::extract_trailing_comment(v.decor().suffix()),
+            _ => None,
+        };
+
+        let value = match item {
+            Item::Value(v) => Self::parse_value(v),
+            Item::Table(t) => {
+                // Nested table - convert to inline table representation
+                let pairs: Vec<(String, String)> = t
+                    .iter()
+                    .filter_map(|(k, v)| {
+                        if let Item::Value(val) = v {
+                            Some((k.to_string(), Self::value_to_string(val)))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                EntryValue::InlineTable(pairs)
+            }
+            _ => return None,
+        };
+
+        Some(Entry {
+            key: key.to_string(),
+            value,
+            expanded: false,
+            comments,
+            trailing_comment,
+        })
+    }
+
+    /// Keep a decor suffix that carries a same-line comment, spacing and all.
+    fn extract_trailing_comment(suffix: Option<&toml_edit::RawString>) -> Option<String> {
+        let raw = suffix?.as_str()?;
+        raw.trim_start().starts_with('#').then(|| raw.to_string())
+    }
+
+    /// Extract comment lines from a decor prefix
+    fn extract_comments_from_decor(prefix: Option<&toml_edit::RawString>) -> Vec<String> {
+        let Some(prefix) = prefix else {
+            return Vec::new();
+        };
+        let prefix_str = prefix.as_str().unwrap_or("");
+        prefix_str
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                if trimmed.starts_with('#') {
+                    Some(trimmed.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn parse_value(value: &Value) -> EntryValue {
+        match value {
+            Value::Array(arr) => {
+                let items: Vec<String> = arr.iter().map(Self::value_to_string).collect();
+                EntryValue::Array(items)
+            }
+            Value::InlineTable(t) => {
+                let pairs: Vec<(String, String)> = t
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), Self::value_to_string(v)))
+                    .collect();
+                EntryValue::InlineTable(pairs)
+            }
+            _ => EntryValue::Simple(Self::value_to_string(value)),
+        }
+    }
+
+    fn value_to_string(value: &Value) -> String {
+        match value {
+            Value::String(s) => s.value().to_string(),
+            Value::Integer(i) => i.value().to_string(),
+            Value::Float(f) => f.value().to_string(),
+            Value::Boolean(b) => b.value().to_string(),
+            Value::Array(arr) => {
+                let items: Vec<String> = arr.iter().map(Self::value_to_string).collect();
+                format!("[{}]", items.join(", "))
+            }
+            Value::InlineTable(t) => {
+                let pairs: Vec<String> = t
+                    .iter()
+                    .map(|(k, v)| format!("{} = {}", k, Self::value_to_string(v)))
+                    .collect();
+                format!("{{ {} }}", pairs.join(", "))
+            }
+            Value::Datetime(dt) => dt.value().to_string(),
+        }
+    }
+
+    /// Serialize the document to a TOML string
+    pub(crate) fn to_toml(&self) -> String {
+        let mut doc = DocumentMut::new();
+
+        for section in &self.sections {
+            if section.entries.is_empty() {
+                continue;
+            }
+
+            // Handle root-level entries (section with empty name)
+            if section.name.is_empty() {
+                for entry in &section.entries {
+                    let item = Self::entry_value_to_item(&entry.value);
+                    doc.insert(&entry.key, item);
+                    Self::apply_entry_decor(doc.as_table_mut(), entry);
+                }
+                continue;
+            }
+
+            let mut table = Table::new();
+
+            for entry in &section.entries {
+                let item = Self::entry_value_to_item(&entry.value);
+
+                // Handle dotted keys (like _.path in env section) by creating nested tables
+                if entry.key.contains('.') && section.name == "env" {
+                    // The leaf sits in a subtable, so the decor helper below cannot
+                    // reach it. Comments on a dotted key stay lost for now.
+                    Self::insert_dotted_key(&mut table, &entry.key, item);
+                } else {
+                    table.insert(&entry.key, item);
+                    Self::apply_entry_decor(&mut table, entry);
+                }
+            }
+
+            let prefix = Self::comment_prefix(&section.comments);
+            if !prefix.is_empty() {
+                table.decor_mut().set_prefix(prefix);
+            }
+            doc.insert(&section.name, Item::Table(table));
+        }
+
+        doc.to_string()
+    }
+
+    /// Render comment lines as a decor prefix.
+    fn comment_prefix(comments: &[String]) -> String {
+        comments
+            .iter()
+            .map(|c| format!("{c}\n"))
+            .collect::<Vec<_>>()
+            .concat()
+    }
+
+    /// Put an entry's comments back on the item it was written as.
+    ///
+    /// The leading comment goes on the key and a same-line comment on the value:
+    /// `to_toml` builds a fresh document, so nothing carries over unless it is
+    /// written here (discussion #10650).
+    fn apply_entry_decor(table: &mut Table, entry: &Entry) {
+        let prefix = Self::comment_prefix(&entry.comments);
+        if !prefix.is_empty()
+            && let Some(mut key) = table.key_mut(&entry.key)
+        {
+            key.leaf_decor_mut().set_prefix(prefix);
+        }
+        if let Some(trailing) = &entry.trailing_comment
+            && let Some(Item::Value(value)) = table.get_mut(&entry.key)
+        {
+            value.decor_mut().set_suffix(trailing.clone());
+        }
+    }
+
+    /// Insert a dotted key into a table by creating nested structure
+    /// e.g., "_.path" becomes _: { path: value }
+    fn insert_dotted_key(table: &mut Table, key: &str, item: Item) {
+        let parts: Vec<&str> = key.splitn(2, '.').collect();
+        if parts.len() == 2 {
+            let parent_key = parts[0];
+            let child_key = parts[1];
+
+            // Get or create the parent subtable
+            if !table.contains_key(parent_key) {
+                let mut subtable = Table::new();
+                subtable.set_implicit(true);
+                table.insert(parent_key, Item::Table(subtable));
+            }
+
+            if let Some(Item::Table(subtable)) = table.get_mut(parent_key) {
+                // Recursively handle if child_key also contains a dot
+                if child_key.contains('.') {
+                    Self::insert_dotted_key(subtable, child_key, item);
+                } else {
+                    subtable.insert(child_key, item);
+                }
+            }
+        } else {
+            // No dot, insert directly
+            table.insert(key, item);
+        }
+    }
+
+    fn entry_value_to_item(value: &EntryValue) -> Item {
+        match value {
+            EntryValue::Simple(s) => {
+                // Only special-case booleans, keep everything else as strings
+                // This is appropriate for mise configs where versions like "22" should stay quoted
+                if s == "true" {
+                    Item::Value(Value::Boolean(Formatted::new(true)))
+                } else if s == "false" {
+                    Item::Value(Value::Boolean(Formatted::new(false)))
+                } else {
+                    Item::Value(Value::String(Formatted::new(s.clone())))
+                }
+            }
+            EntryValue::Array(items) => {
+                let mut arr = toml_edit::Array::new();
+                for item in items {
+                    // Keep array items as strings unless explicitly boolean
+                    let val = if item == "true" {
+                        Value::Boolean(Formatted::new(true))
+                    } else if item == "false" {
+                        Value::Boolean(Formatted::new(false))
+                    } else {
+                        Value::String(Formatted::new(item.clone()))
+                    };
+                    arr.push(val);
+                }
+                Item::Value(Value::Array(arr))
+            }
+            EntryValue::InlineTable(pairs) => {
+                let mut table = toml_edit::InlineTable::new();
+                for (k, v) in pairs {
+                    let val = if v == "true" {
+                        Value::Boolean(Formatted::new(true))
+                    } else if v == "false" {
+                        Value::Boolean(Formatted::new(false))
+                    } else {
+                        Value::String(Formatted::new(v.clone()))
+                    };
+                    table.insert(k, val);
+                }
+                Item::Value(Value::InlineTable(table))
+            }
+        }
+    }
+
+    /// Save the document to a file, creating its directory if it is not there yet.
+    ///
+    /// The editor is routinely pointed at a config that does not exist yet, and its directory
+    /// may not either — `mise generate config --global` on a fresh install is exactly that
+    /// case. Without this the save fails after the whole session's worth of edits, which is
+    /// the worst possible moment to find out.
+    ///
+    /// A bare relative name gives an empty parent, which `create_dir_all` treats as a no-op.
+    pub(crate) fn save(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, self.to_toml())
+    }
+
+    /// Add a new section
+    pub(crate) fn add_section(&mut self, name: String) {
+        if !self.sections.iter().any(|s| s.name == name) {
+            self.sections.push(Section {
+                name,
+                entries: Vec::new(),
+                expanded: true,
+                comments: Vec::new(),
+            });
+            self.modified = true;
+        }
+    }
+
+    /// Add an entry to a section with a simple string value
+    pub(crate) fn add_entry(&mut self, section_idx: usize, key: String, value: String) {
+        self.add_entry_with_value(section_idx, key, EntryValue::Simple(value));
+    }
+
+    /// Add an entry to a section with a specific value type
+    pub(crate) fn add_entry_with_value(
+        &mut self,
+        section_idx: usize,
+        key: String,
+        value: EntryValue,
+    ) {
+        if let Some(section) = self.sections.get_mut(section_idx) {
+            section.entries.push(Entry {
+                key,
+                value,
+                expanded: false,
+                comments: Vec::new(),
+                trailing_comment: None,
+            });
+            self.modified = true;
+        }
+    }
+
+    /// Delete an entry from a section
+    pub(crate) fn delete_entry(&mut self, section_idx: usize, entry_idx: usize) {
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && entry_idx < section.entries.len()
+        {
+            section.entries.remove(entry_idx);
+            self.modified = true;
+        }
+    }
+
+    /// Update an entry's value
+    pub(crate) fn update_entry(&mut self, section_idx: usize, entry_idx: usize, value: String) {
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+        {
+            entry.value = EntryValue::Simple(value);
+            self.modified = true;
+        }
+    }
+
+    /// Add an item to an array entry
+    pub(crate) fn add_array_item(&mut self, section_idx: usize, entry_idx: usize, value: String) {
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+            && let EntryValue::Array(ref mut items) = entry.value
+        {
+            items.push(value);
+            self.modified = true;
+        }
+    }
+
+    /// Update an array item
+    pub(crate) fn update_array_item(
+        &mut self,
+        section_idx: usize,
+        entry_idx: usize,
+        array_idx: usize,
+        value: String,
+    ) {
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+            && let EntryValue::Array(ref mut items) = entry.value
+            && let Some(item) = items.get_mut(array_idx)
+        {
+            *item = value;
+            self.modified = true;
+        }
+    }
+
+    /// Delete an array item
+    pub(crate) fn delete_array_item(
+        &mut self,
+        section_idx: usize,
+        entry_idx: usize,
+        array_idx: usize,
+    ) {
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+            && let EntryValue::Array(ref mut items) = entry.value
+            && array_idx < items.len()
+        {
+            items.remove(array_idx);
+            self.modified = true;
+        }
+    }
+
+    /// Toggle section expanded state
+    pub(crate) fn toggle_section(&mut self, section_idx: usize) {
+        if let Some(section) = self.sections.get_mut(section_idx) {
+            section.expanded = !section.expanded;
+        }
+    }
+
+    /// Toggle entry expanded state (for arrays/inline tables)
+    pub(crate) fn toggle_entry(&mut self, section_idx: usize, entry_idx: usize) {
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+        {
+            entry.expanded = !entry.expanded;
+        }
+    }
+
+    /// Delete a section
+    pub(crate) fn delete_section(&mut self, section_idx: usize) {
+        if section_idx < self.sections.len() {
+            self.sections.remove(section_idx);
+            self.modified = true;
+        }
+    }
+
+    /// Convert a simple entry value to an inline table with version key
+    /// Returns true if conversion was successful
+    pub(crate) fn convert_to_inline_table(&mut self, section_idx: usize, entry_idx: usize) -> bool {
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+            && let EntryValue::Simple(value) = &entry.value
+        {
+            // Convert "value" to { version = "value" }
+            entry.value = EntryValue::InlineTable(vec![("version".to_string(), value.clone())]);
+            entry.expanded = true;
+            self.modified = true;
+            return true;
+        }
+        false
+    }
+
+    /// Add a field to an inline table entry
+    #[allow(dead_code)]
+    pub(crate) fn add_inline_table_field(
+        &mut self,
+        section_idx: usize,
+        entry_idx: usize,
+        key: String,
+        value: String,
+    ) {
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+            && let EntryValue::InlineTable(ref mut pairs) = entry.value
+        {
+            pairs.push((key, value));
+            self.modified = true;
+        }
+    }
+}
+
+impl Default for TomlDocument {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(dead_code)]
+impl EntryValue {
+    /// Check if this is a complex value (array or inline table)
+    pub(crate) fn is_complex(&self) -> bool {
+        !matches!(self, EntryValue::Simple(_))
+    }
+
+    /// Get the display string for this value
+    pub(crate) fn display(&self) -> String {
+        match self {
+            EntryValue::Simple(s) => s.clone(),
+            EntryValue::Array(items) => format!("[{}]", items.join(", ")),
+            EntryValue::InlineTable(pairs) => {
+                let parts: Vec<String> = pairs
+                    .iter()
+                    .map(|(k, v)| format!("{} = {}", k, v))
+                    .collect();
+                format!("{{ {} }}", parts.join(", "))
+            }
+        }
+    }
+
+    /// Get item count for complex values
+    pub(crate) fn item_count(&self) -> Option<usize> {
+        match self {
+            EntryValue::Simple(_) => None,
+            EntryValue::Array(items) => Some(items.len()),
+            EntryValue::InlineTable(pairs) => Some(pairs.len()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_document() {
+        let doc = TomlDocument::new();
+        assert_eq!(doc.sections.len(), 4);
+        assert_eq!(doc.sections[0].name, "tools");
+        assert!(doc.sections[0].expanded);
+    }
+
+    #[test]
+    fn test_parse_simple() {
+        let content = r#"
+[tools]
+node = "22"
+python = "3.12"
+
+[env]
+NODE_ENV = "development"
+"#;
+        let doc = TomlDocument::parse(content).unwrap();
+        assert_eq!(doc.sections[0].name, "tools");
+        assert_eq!(doc.sections[0].entries.len(), 2);
+        assert_eq!(doc.sections[0].entries[0].key, "node");
+    }
+
+    #[test]
+    fn test_parse_array() {
+        let content = r#"
+[env]
+paths = ["./bin", "./node_modules/.bin"]
+"#;
+        let doc = TomlDocument::parse(content).unwrap();
+        let env_section = doc.sections.iter().find(|s| s.name == "env").unwrap();
+        let entry = &env_section.entries[0];
+        assert_eq!(entry.key, "paths");
+        assert!(matches!(entry.value, EntryValue::Array(_)));
+        if let EntryValue::Array(items) = &entry.value {
+            assert_eq!(items.len(), 2);
+            assert_eq!(items[0], "./bin");
+        }
+    }
+
+    #[test]
+    fn test_to_toml() {
+        let mut doc = TomlDocument::new();
+        doc.add_entry(0, "node".to_string(), "22".to_string());
+        let toml = doc.to_toml();
+        assert!(toml.contains("[tools]"));
+        assert!(toml.contains("node = \"22\""));
+    }
+
+    #[test]
+    fn test_roundtrip_keeps_comments() {
+        // Everything here came back stripped before: the banner, the comment
+        // above the section, the comment above an entry, and the same-line
+        // comment. See discussion #10650.
+        let content = r#"# managed by the platform team
+
+[tools]
+# language runtimes
+node = "22"
+
+[env]
+FOO = "bar" # why this is set
+"#;
+        let doc = TomlDocument::parse(content).unwrap();
+        let output = doc.to_toml();
+        assert!(
+            output.contains("# managed by the platform team"),
+            "banner lost: {output}"
+        );
+        assert!(
+            output.contains("# language runtimes"),
+            "section-level comment lost: {output}"
+        );
+        assert!(
+            output.contains("# why this is set"),
+            "trailing comment lost: {output}"
+        );
+        // The trailing comment has to stay on its own line, not become a leading
+        // one for the next entry.
+        assert!(
+            output.contains(r#"FOO = "bar" # why this is set"#),
+            "trailing comment moved: {output}"
+        );
+    }
+
+    #[test]
+    fn test_roundtrip_without_comments_adds_nothing() {
+        let content = r#"[tools]
+node = "22"
+"#;
+        let doc = TomlDocument::parse(content).unwrap();
+        let output = doc.to_toml();
+        assert!(!output.contains('#'), "invented a comment: {output}");
+    }
+
+    #[test]
+    fn test_roundtrip() {
+        let content = r#"[tools]
+node = "22"
+python = "3.12"
+
+[env]
+NODE_ENV = "development"
+"#;
+        let doc = TomlDocument::parse(content).unwrap();
+        let output = doc.to_toml();
+        assert!(output.contains("node = \"22\""));
+        assert!(output.contains("python = \"3.12\""));
+        assert!(output.contains("NODE_ENV = \"development\""));
+    }
+
+    #[test]
+    fn test_parse_top_level_entries() {
+        let content = r#"min_version = "2024.1.0"
+
+[tools]
+node = "22"
+"#;
+        let doc = TomlDocument::parse(content).unwrap();
+        // Root section (empty name) should be first
+        let root_section = doc.sections.iter().find(|s| s.name.is_empty()).unwrap();
+        assert_eq!(root_section.entries.len(), 1);
+        assert_eq!(root_section.entries[0].key, "min_version");
+    }
+
+    #[test]
+    fn test_top_level_entries_roundtrip() {
+        let content = r#"min_version = "2024.1.0"
+
+[tools]
+node = "22"
+"#;
+        let doc = TomlDocument::parse(content).unwrap();
+        let output = doc.to_toml();
+        assert!(output.contains("min_version = \"2024.1.0\""));
+        assert!(output.contains("[tools]"));
+        assert!(output.contains("node = \"22\""));
+    }
+
+    #[test]
+    fn test_env_dotted_key_serialization() {
+        // Create a document with _.path in the env section
+        let mut doc = TomlDocument::new();
+        let env_idx = doc.sections.iter().position(|s| s.name == "env").unwrap();
+
+        // Add _.path as an array
+        doc.sections[env_idx].entries.push(Entry {
+            key: "_.path".to_string(),
+            value: EntryValue::Array(vec!["./bin".to_string(), "./node_modules/.bin".to_string()]),
+            expanded: false,
+            comments: Vec::new(),
+            trailing_comment: None,
+        });
+
+        let output = doc.to_toml();
+        // Should output as dotted key, not quoted key
+        // _.path = [...] means _: { path: [...] }
+        assert!(
+            output.contains("_.path") || output.contains("[env._]"),
+            "Output should contain dotted key notation: {}",
+            output
+        );
+        // Should NOT contain quoted key
+        assert!(
+            !output.contains("\"_.path\""),
+            "Output should not contain quoted key: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_save_creates_missing_directories() {
+        // `mise generate config --global` on a fresh install points here at
+        // ~/.config/mise/config.toml, and neither the file nor its directory exists yet.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mise").join("config.toml");
+        assert!(!path.parent().unwrap().exists());
+
+        TomlDocument::new().save(&path).unwrap();
+
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn test_save_still_writes_into_an_existing_directory() {
+        // Control for the case above: without it, that test would also pass if `save` had
+        // started creating a directory *at* `path` and writing nothing.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        TomlDocument::new().save(&path).unwrap();
+
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn test_a_bare_relative_name_has_an_empty_parent_that_is_safe_to_create() {
+        // What `save` relies on for `mise edit foo.toml`, pinned here rather than assumed:
+        // the parent is the empty path, and creating that is a no-op rather than an error.
+        // Asserted without touching the process's current directory, which the test harness
+        // shares across threads.
+        assert_eq!(Path::new("foo.toml").parent(), Some(Path::new("")));
+        std::fs::create_dir_all(Path::new("")).unwrap();
+    }
+}

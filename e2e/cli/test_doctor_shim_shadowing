@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+mise use dummy@latest
+
+shim_dir="$MISE_DATA_DIR/shims"
+shadow_dir="$PWD/shadow-bin"
+mkdir -p "$shadow_dir"
+printf '#!/bin/sh\nexit 0\n' >"$shadow_dir/dummy"
+chmod +x "$shadow_dir/dummy"
+
+# A command before the shim directory is an intentional PATH override, but doctor
+# should identify the concrete executable that shadows the mise-managed command.
+output="$(PATH="$shadow_dir:$shim_dir:$PATH" mise doctor 2>&1 || true)"
+assert_contains_text "$output" "mise shims are shadowed by executables earlier in PATH"
+assert_contains_text "$output" "dummy:"
+assert_contains_text "$output" "shadow-bin/dummy"
+
+# No warning is needed when the mise shim wins command resolution.
+output="$(PATH="$shim_dir:$shadow_dir:$PATH" mise doctor 2>&1 || true)"
+assert_not_contains_text "$output" "shadow-bin/dummy"

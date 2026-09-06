@@ -1,0 +1,329 @@
+use std::sync::{Arc, Mutex, Once};
+
+use clx::progress::{self, ProgressJobBuilder, ProgressOutput};
+
+use crate::cli::version::VERSION_PLAIN;
+use crate::config::Settings;
+use crate::env;
+use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
+
+#[derive(Debug)]
+pub(crate) struct MultiProgressReport {
+    quiet: bool,
+    use_progress_ui: bool,
+    pause_state: Mutex<ProgressPauseState>,
+    total_count: Mutex<usize>,
+    completed_count: Mutex<usize>,
+    /// Header job for updating progress display
+    header_job: Mutex<Option<Arc<progress::ProgressJob>>>,
+}
+
+#[derive(Debug, Default)]
+struct ProgressPauseState {
+    count: usize,
+    resume_on_zero: bool,
+}
+
+impl ProgressPauseState {
+    fn acquire(&mut self, renderer_is_paused: bool) -> bool {
+        let should_pause = self.count == 0 && !renderer_is_paused;
+        if self.count == 0 {
+            self.resume_on_zero = should_pause;
+        }
+        self.count += 1;
+        should_pause
+    }
+
+    fn release(&mut self) -> bool {
+        debug_assert!(self.count > 0, "unbalanced progress suspension");
+        self.count = self.count.saturating_sub(1);
+        if self.count == 0 {
+            std::mem::take(&mut self.resume_on_zero)
+        } else {
+            false
+        }
+    }
+}
+
+/// Keeps the global progress renderer suspended until every overlapping
+/// suspension has been released.
+#[derive(Debug)]
+pub(crate) struct ProgressPauseGuard {
+    report: Arc<MultiProgressReport>,
+}
+
+impl Drop for ProgressPauseGuard {
+    fn drop(&mut self) {
+        self.report.resume_progress();
+    }
+}
+
+static INSTANCE: Mutex<Option<Arc<MultiProgressReport>>> = Mutex::new(None);
+
+impl MultiProgressReport {
+    pub(crate) fn try_get() -> Option<Arc<Self>> {
+        INSTANCE.lock().unwrap().as_ref().cloned()
+    }
+
+    pub(crate) fn get() -> Arc<Self> {
+        let mut guard = INSTANCE.lock().unwrap();
+        if let Some(existing) = guard.as_ref() {
+            return existing.clone();
+        }
+        let mpr = Arc::new(Self::new());
+        *guard = Some(mpr.clone());
+        mpr
+    }
+
+    fn new() -> Self {
+        let settings = Settings::get();
+        let has_stderr = console::user_attended_stderr();
+        let force_progress = *env::MISE_FORCE_PROGRESS;
+        let ci = settings.ci;
+
+        progress_trace!(
+            "MultiProgressReport::new: raw={}, quiet={}, verbose={}, has_stderr={}, force_progress={}, ci={}",
+            settings.raw,
+            settings.quiet,
+            settings.verbose,
+            has_stderr,
+            force_progress,
+            ci,
+        );
+
+        // Configure clx output mode based on settings
+        // MISE_FORCE_PROGRESS=1 forces progress UI even in non-TTY (for debugging)
+        // Prefer text output in known CI environments even when stderr looks interactive:
+        // CI systems often allocate a PTY for colors, then strip cursor controls into
+        // thousands of spinner-frame log rows.
+        let use_progress_ui = !settings.raw
+            && !settings.quiet
+            && !settings.verbose
+            && (force_progress || (has_stderr && !ci));
+        if !use_progress_ui {
+            progress::set_output(ProgressOutput::Text);
+        }
+
+        // Configure OSC progress based on settings
+        if !settings.terminal_progress {
+            // Disable OSC progress if terminal_progress is disabled
+            // clx configuration is write-once. MultiProgressReport may be
+            // reconstructed, so ensure the initializer is called only once
+            // without using a caught panic as control flow.
+            static DISABLE_OSC_PROGRESS: Once = Once::new();
+            DISABLE_OSC_PROGRESS.call_once(|| {
+                clx::osc::configure(false);
+            });
+        }
+
+        MultiProgressReport {
+            quiet: settings.quiet,
+            use_progress_ui,
+            pause_state: Mutex::new(ProgressPauseState::default()),
+            total_count: Mutex::new(0),
+            completed_count: Mutex::new(0),
+            header_job: Mutex::new(None),
+        }
+    }
+
+    /// Suspend the animated progress display while another component owns the
+    /// terminal, such as an interactive confirmation prompt.
+    ///
+    /// Suspensions are reference-counted because tool installs run in
+    /// parallel. The renderer resumes only after the final guard is dropped.
+    pub(crate) fn pause_progress(self: &Arc<Self>) -> ProgressPauseGuard {
+        let mut state = self.pause_state.lock().unwrap();
+        let renderer_is_paused = !self.use_progress_ui || progress::is_paused();
+        if state.acquire(renderer_is_paused) {
+            progress::pause();
+        }
+        ProgressPauseGuard {
+            report: self.clone(),
+        }
+    }
+
+    /// Depth of overlapping progress suspensions.
+    ///
+    /// For tests that need to observe that a caller holds its guard for a whole
+    /// scope — such as an elevated child's lifetime in [`crate::system::sudo`] —
+    /// rather than only that it constructed one.
+    #[cfg(test)]
+    pub(crate) fn progress_suspension_depth(&self) -> usize {
+        self.pause_state.lock().unwrap().count
+    }
+
+    fn resume_progress(&self) {
+        let mut state = self.pause_state.lock().unwrap();
+        if state.release() {
+            progress::resume();
+        }
+    }
+
+    pub(crate) fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
+        self.add_with_options(prefix, false)
+    }
+
+    /// Create a progress report before backends are loaded, when normal prefix sizing is unavailable.
+    pub(crate) fn add_pre_backend(&self, prefix: &str) -> Box<dyn SingleReport> {
+        if self.quiet {
+            Box::new(QuietReport::new())
+        } else if self.use_progress_ui {
+            Box::new(ProgressReport::new_with_pad(prefix.to_string(), 15))
+        } else {
+            Box::new(VerboseReport::new_with_pad(prefix.to_string(), 15))
+        }
+    }
+
+    pub(crate) fn add_with_options(&self, prefix: &str, dry_run: bool) -> Box<dyn SingleReport> {
+        if self.quiet {
+            progress_trace!(
+                "add_with_options[{}]: creating QuietReport (quiet=true)",
+                prefix
+            );
+            Box::new(QuietReport::new())
+        } else if self.use_progress_ui && !dry_run {
+            progress_trace!(
+                "add_with_options[{}]: creating ProgressReport with clx",
+                prefix
+            );
+            Box::new(ProgressReport::new(prefix.into()))
+        } else {
+            progress_trace!(
+                "add_with_options[{}]: creating VerboseReport (use_progress_ui={}, dry_run={})",
+                prefix,
+                self.use_progress_ui,
+                dry_run
+            );
+            Box::new(VerboseReport::new(prefix.to_string()))
+        }
+    }
+
+    pub(crate) fn init_footer(&self, dry_run: bool, _message: &str, total_count: usize) {
+        // Only create header once - check if already initialized
+        if self.header_job.lock().unwrap().is_some() {
+            return;
+        }
+
+        // Set total count for progress tracking
+        *self.total_count.lock().unwrap() = total_count;
+        progress_trace!("init_footer: total_count={}", total_count);
+
+        // Don't show header when there's only 1 tool - individual progress bar is sufficient
+        if total_count <= 1 {
+            return;
+        }
+
+        // Don't show header in quiet mode
+        if self.quiet {
+            return;
+        }
+
+        // Create header job showing overall progress (only in progress UI mode)
+        // Left-aligned, colored header with "mise VERSION by @jdx" and cur/total count
+        if self.use_progress_ui && !dry_run {
+            use crate::ui::style;
+
+            // Build colored header text parts
+            let mise_text = format!("{}", style::emagenta("mise").bold());
+            let version_text = format!("{}", style::edim(&*VERSION_PLAIN));
+            let by_text = format!("{}", style::edim("by @jdx"));
+
+            // Template showing: "mise VERSION by @jdx                  [cur/total]"
+            let header_body = "{{ mise }} {{ version }} {{ by | flex_fill }} {{ progress }}";
+
+            let job = ProgressJobBuilder::new()
+                .body(header_body)
+                .prop("mise", &mise_text)
+                .prop("version", &version_text)
+                .prop("by", &by_text)
+                .prop("progress", &format!("[0/{}]", total_count))
+                .progress_total(total_count)
+                .progress_current(0)
+                .start();
+            *self.header_job.lock().unwrap() = Some(job);
+        }
+    }
+
+    pub(crate) fn footer_inc(&self, n: usize) {
+        if n == 0 {
+            return;
+        }
+        let completed = {
+            let mut c = self.completed_count.lock().unwrap();
+            *c += n;
+            *c
+        };
+        let total = *self.total_count.lock().unwrap();
+        progress_trace!("footer_inc: completed={}, total={}", completed, total);
+
+        // Update header job progress display
+        if let Some(job) = self.header_job.lock().unwrap().as_ref() {
+            job.prop("progress", &format!("[{}/{}]", completed, total));
+            job.progress_current(completed);
+        }
+    }
+
+    pub(crate) fn footer_finish(&self) {
+        let total = *self.total_count.lock().unwrap();
+        let completed = *self.completed_count.lock().unwrap();
+
+        progress_trace!("footer_finish: completed={}, total={}", completed, total);
+
+        self.finish_progress();
+    }
+
+    /// Render the final progress state, then clear clx's registered jobs so
+    /// later regular terminal output cannot be erased by process shutdown.
+    pub(crate) fn finish_progress(&self) {
+        progress::stop();
+        self.reset_jobs();
+    }
+
+    pub(crate) fn stop(&self) -> eyre::Result<()> {
+        progress::stop_clear();
+        self.reset_jobs();
+        Ok(())
+    }
+
+    /// Reset clx's global job list and our session counters. Neither
+    /// `progress::stop()` nor `progress::stop_clear()` drops the completed
+    /// jobs on its own, so without this a later `mpr.add(...)` would
+    /// re-render the previously-completed jobs and `init_footer` would
+    /// silently no-op because `header_job` is still `Some`.
+    fn reset_jobs(&self) {
+        *self.header_job.lock().unwrap() = None;
+        progress::clear_jobs();
+        *self.completed_count.lock().unwrap() = 0;
+        *self.total_count.lock().unwrap() = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_multi_progress_report() {
+        let mpr = MultiProgressReport::get();
+        let pr = mpr.add("PREFIX");
+        pr.finish_with_message("test".into());
+        pr.println("".into());
+        pr.set_message("test".into());
+    }
+
+    #[test]
+    fn progress_pause_state_is_reference_counted() {
+        let mut state = ProgressPauseState::default();
+        assert!(state.acquire(false));
+        assert!(!state.acquire(true));
+        assert!(!state.release());
+        assert!(state.release());
+    }
+
+    #[test]
+    fn progress_pause_state_preserves_an_existing_pause() {
+        let mut state = ProgressPauseState::default();
+        assert!(!state.acquire(true));
+        assert!(!state.release());
+    }
+}

@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+
+assert_fail "mise ssh devbox --github-relay-read-only"
+assert_fail "mise ssh devbox --github-relay-repo owner/repo"
+assert_fail "mise ssh devbox --github-relay-log-requests"
+assert_fail "mise ssh devbox --github-relay-max-duration 1h"
+assert_fail "mise ssh devbox --github-relay-log-format jsonl"
+assert_fail "mise ssh devbox --github-relay-read-only --github-relay-all-repos --github-relay-log-requests --github-relay-no-log-requests"
+assert_fail "mise ssh devbox --github-relay-read-only --github-relay-all-repos --github-relay-log-format invalid"
+assert_fail "MISE_GITHUB_RELAY_CONCURRENCY=0 mise ssh devbox --github-relay-read-only --github-relay-all-repos"
+assert_fail "MISE_GITHUB_RELAY_REQUEST_TIMEOUT=0s mise ssh devbox --github-relay-read-only --github-relay-all-repos"
+assert_fail "mise ssh devbox --github-relay-read-only --github-relay-all-repos --github-relay-repo owner/repo"
+assert_fail "mise bootstrap remote --host devbox --from-git owner/repo --source ."
+assert_fail "mise bootstrap remote --from-git owner/repo"
+assert_fail "mise bootstrap remote --host devbox --from-git not/a/repository --dry-run"
+assert_contains "mise bootstrap remote --host devbox --from-git owner/repo --dry-run" "https://github.com/owner/repo.git"
+
+mkdir -p fakebin
+cat >fakebin/ssh <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" >"$SSH_LOG"
+if test "${BLOCK_SSH:-}" = 1; then
+  echo $$ >"$SSH_CHILD_PID"
+  exec sleep 60
+fi
+exit 23
+EOF
+chmod +x fakebin/ssh
+export SSH_LOG="$PWD/ssh.log"
+export PATH="$PWD/fakebin:$PATH"
+mise ssh alias -p 2222 -i key -o ServerAliveInterval=10 -- printf '%s' 'a b' && exit 1
+assert "cat '$SSH_LOG'" "-p
+2222
+-i
+key
+-o
+ServerAliveInterval=10
+--
+alias
+printf '%s' 'a b'"
+
+# A PID-directed Ctrl-C preserves exit 130 and reaps plain SSH too.
+BLOCK_SSH=1 SSH_CHILD_PID="$PWD/plain-child.pid" mise ssh alias &
+ssh_pid=$!
+wait_for_file plain-child.pid 'plain SSH child' 10 "$ssh_pid"
+kill -INT "$ssh_pid"
+ssh_status=0
+wait "$ssh_pid" || ssh_status=$?
+test "$ssh_status" -eq 130
+assert_fail "kill -0 '$(cat plain-child.pid)' 2>/dev/null"
+
+# Exercise real Git clone/fetch through the session's Unix-to-HTTP adapter.
+mkdir -p upstream/owner seed
+git -C seed init -b main
+git -C seed config user.email test@example.invalid
+git -C seed config user.name Test
+echo first >seed/value
+git -C seed add .
+git -C seed -c core.hooksPath=/dev/null commit -m first
+git clone --bare seed upstream/owner/repo.git
+relay_socket="$(mktemp -d /tmp/mise-relay-test.XXXXXXXX)/relay.sock"
+python3 "$ROOT/e2e/fixtures/github_relay.py" "$relay_socket" "$PWD/upstream" &
+relay_pid=$!
+trap 'kill "$relay_pid" 2>/dev/null || true' EXIT
+for _ in {1..100}; do
+  test -S "$relay_socket" && break
+  sleep 0.05
+done
+mise ssh --relay-session "$relay_socket" -- git clone https://github.com/owner/repo.git clone
+mise ssh --relay-session "$relay_socket" -- git clone git@github.com:owner/repo.git clone-ssh
+mise ssh --relay-session "$relay_socket" -- git clone ssh://git@github.com/owner/repo.git clone-ssh-url
+# This fixture must exercise GitHub HTTP through the socket, not a public
+# version-list cache. Keep trace diagnostics for platform-specific CI failures.
+assert "MISE_USE_VERSIONS_HOST=0 mise ssh --relay-session '$relay_socket' -- mise --trace ls-remote github:owner/repo" 1.2.3
+assert "cat clone/value" first
+assert "git -C clone config remote.origin.url" https://github.com/owner/repo.git
+# Omitting a command starts the user's login shell and preserves its status.
+shell_status=0
+printf 'exit 17\n' | SHELL=/bin/sh mise ssh --relay-session "$relay_socket" || shell_status=$?
+test "$shell_status" -eq 17
+
+# Cancelling the adapter also terminates its owned command.
+mise ssh --relay-session "$relay_socket" -- sh -c 'echo $$ > child.pid; exec sleep 60' &
+adapter_pid=$!
+wait_for_file child.pid 'relay child' 10 "$adapter_pid"
+child_pid=$(cat child.pid)
+kill -TERM "$adapter_pid"
+wait "$adapter_pid" && exit 1
+for _ in {1..50}; do
+  kill -0 "$child_pid" 2>/dev/null || break
+  sleep 0.1
+done
+assert_fail "kill -0 '$child_pid' 2>/dev/null"
+
+mise ssh --relay-session "$relay_socket" -- sh -c 'echo $$ > interrupt-child.pid; exec sleep 60' &
+adapter_pid=$!
+wait_for_file interrupt-child.pid 'interruptible relay child' 10 "$adapter_pid"
+kill -INT "$adapter_pid"
+adapter_status=0
+wait "$adapter_pid" || adapter_status=$?
+test "$adapter_status" -eq 130
+assert_fail "kill -0 '$(cat interrupt-child.pid)' 2>/dev/null"
+
+assert_fail "mise ssh --relay-session '$relay_socket' -- git -C clone push origin HEAD:write-test"
+assert_fail "mise ssh --relay-session '$relay_socket' -- git clone https://github.com/other/private.git denied"
+mise ssh --relay-session "$relay_socket" -- git -C clone fetch
+assert_fail "git -C clone config --get-regexp '^url\.'"
+kill "$relay_pid"
+wait "$relay_pid" || true
+assert_fail "mise ssh --relay-session '$relay_socket' -- git -C clone fetch"

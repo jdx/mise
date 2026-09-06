@@ -1,0 +1,1239 @@
+use crate::backend::backend_type::BackendType;
+use crate::backend::options::VersionOrder;
+use crate::backend::{ABackend, unalias_backend};
+use crate::config::Config;
+use crate::plugins::PluginType;
+use crate::registry::REGISTRY;
+use crate::toolset::install_state::InstallStateTool;
+use crate::toolset::{
+    ResolvedToolOptions, ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options,
+    try_parse_tool_options,
+};
+use crate::{backend, config, dirs, lockfile, registry};
+use contracts::requires;
+use eyre::{Result, bail};
+use heck::{ToKebabCase, ToShoutySnakeCase};
+use std::collections::HashSet;
+use std::env;
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
+use std::path::PathBuf;
+use std::str::FromStr;
+
+/// Metadata about how a backend was resolved.
+/// This struct is designed for extensibility - additional fields can be added
+/// as needed without breaking existing code.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct BackendResolution {
+    /// Whether the user explicitly specified the full backend (e.g., "aqua:oven-sh/bun" vs "bun").
+    /// Also true when restored from install state for backward compatibility with existing installations,
+    /// and for plugin-based tools initialized from the plugin registry.
+    pub explicit: bool,
+}
+
+impl BackendResolution {
+    pub(crate) fn new(explicit: bool) -> Self {
+        Self { explicit }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct BackendArg {
+    /// short or full identifier (what the user specified), "node", "prettier", "npm:prettier", "cargo:eza"
+    pub short: String,
+    /// full identifier, "core:node", "npm:prettier", "cargo:eza", "vfox:version-fox/vfox-nodejs"
+    full: Option<String>,
+    /// the name of the tool within the backend, e.g.: "node", "prettier", "eza", "vfox-nodejs"
+    pub tool_name: String,
+    /// ~/.local/share/mise/cache/<THIS>
+    pub cache_path: PathBuf,
+    /// ~/.local/share/mise/installs/<THIS>
+    pub installs_path: PathBuf,
+    /// ~/.local/share/mise/downloads/<THIS>
+    pub downloads_path: PathBuf,
+    pub opts: Option<ToolVersionOptions>,
+    opts_source: Option<ToolOptionSource>,
+    resolution: BackendResolution,
+    registry_version: Option<String>,
+    // TODO: make this not a hash key anymore to use this
+    // backend: OnceCell<ABackend>,
+}
+
+impl<A: AsRef<str>> From<A> for BackendArg {
+    fn from(s: A) -> Self {
+        let short = unalias_backend(s.as_ref()).to_string();
+        // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
+        // If so, treat it as explicit since the user specified the backend
+        let explicit = if let Some((prefix, _)) = short.split_once(':') {
+            BackendType::guess(prefix) != BackendType::Unknown
+        } else {
+            false
+        };
+        let (short_parsed, tool_name, opts) = parse_backend_components(&short, None);
+        Self::new_raw(
+            short_parsed,
+            None,
+            tool_name,
+            opts,
+            BackendResolution::new(explicit),
+        )
+    }
+}
+
+impl From<InstallStateTool> for BackendArg {
+    fn from(ist: InstallStateTool) -> Self {
+        let (short, tool_name, mut opts) = parse_backend_components(&ist.short, ist.full.as_ref());
+
+        // Merge manifest opts into the parsed opts (manifest opts provide defaults)
+        if !ist.opts.is_empty() {
+            let tvo = opts.get_or_insert_with(ToolVersionOptions::default);
+            for (k, v) in ist.opts {
+                tvo.opts.entry(k).or_insert(v);
+            }
+        }
+
+        let opts_source = opts.as_ref().map(|_| ToolOptionSource::InstallManifest);
+        let mut tool = Self::new_raw(
+            short,
+            ist.full,
+            tool_name,
+            None,
+            BackendResolution::new(ist.explicit_backend),
+        );
+        tool.opts = opts;
+        tool.opts_source = opts_source;
+        if let Some(installs_path) = ist.installs_path {
+            tool.installs_path = installs_path;
+        }
+        tool
+    }
+}
+
+/// Split a string like `"http:hello[url=...,bin=bin]"` into `("http:hello", "url=...,bin=bin")`.
+/// Returns `None` if no bracketed opts are present.
+pub(crate) fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
+    if !s.ends_with(']') {
+        return None;
+    }
+    let (name, opts, suffix) = split_bracketed_opts_with_suffix(s)?;
+    suffix.is_empty().then_some((name, opts))
+}
+
+/// Split inline options while preserving a following version, even when option
+/// values contain '@', quoted brackets, or nested arrays.
+pub(crate) fn split_bracketed_opts_with_suffix(s: &str) -> Option<(&str, &str, &str)> {
+    if !s.contains('[') {
+        return None;
+    }
+    let mut bracket_start = None;
+    let mut depth = 0;
+    let mut in_single_quotes = false;
+    let mut in_double_quotes = false;
+    let mut escaped = false;
+
+    for (index, ch) in s.char_indices() {
+        match ch {
+            '\'' if !in_double_quotes => in_single_quotes = !in_single_quotes,
+            '"' if !in_single_quotes && !escaped => in_double_quotes = !in_double_quotes,
+            '[' if !in_single_quotes && !in_double_quotes => {
+                bracket_start.get_or_insert(index);
+                depth += 1;
+            }
+            ']' if !in_single_quotes && !in_double_quotes => {
+                let start = bracket_start?;
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&s[..start], &s[start + 1..index], &s[index + 1..]));
+                }
+            }
+            _ => {}
+        }
+
+        escaped = in_double_quotes && ch == '\\' && !escaped;
+    }
+
+    None
+}
+
+/// Strip trailing `[...]` opts from a string, e.g. `"foo[a=1]"` → `"foo"`.
+pub(crate) fn strip_opts(s: &str) -> String {
+    split_bracketed_opts(s)
+        .map(|(name, _)| name.to_string())
+        .unwrap_or_else(|| s.to_string())
+}
+
+/// Whether a plugin installed under `short` takes precedence over the registry entry.
+///
+/// A plugin whose backend is disabled by `disable_backends` does not, unless a version is
+/// already installed through that same backend. `disable_backends` is an install-time guard
+/// that intentionally keeps reporting the recorded backend of an installed tool, but a
+/// leftover plugin must not route a registry shorthand to a disabled backend and turn the
+/// install into an error when the registry offers an enabled backend (discussions/6021).
+fn plugin_overrides_registry(short: &str) -> bool {
+    let Some(plugin_type) = install_state::get_plugin_type(short) else {
+        return false;
+    };
+    let backend_type = match plugin_type {
+        PluginType::Asdf => BackendType::Asdf,
+        PluginType::Vfox => BackendType::Vfox,
+        PluginType::VfoxBackend => BackendType::VfoxBackend(short.to_string()),
+        PluginType::Package => return true,
+    };
+    if !backend::is_disabled_backend_type(&backend_type) {
+        return true;
+    }
+    // Versions are recorded per shorthand, so check the backend they were installed with:
+    // a version that came from an enabled registry backend must not keep the disabled
+    // plugin authoritative.
+    !install_state::list_versions(short).is_empty()
+        && install_state::backend_type(short).ok().flatten() == Some(backend_type)
+}
+
+fn parse_backend_components(
+    short: &str,
+    full: Option<&String>,
+) -> (String, String, Option<ToolVersionOptions>) {
+    let short = unalias_backend(short).to_string();
+    let source = full.unwrap_or(&short);
+    let (source, opts) = match split_bracketed_opts(source) {
+        Some((name, opts_str)) => (name, Some(parse_tool_options(opts_str))),
+        None => (source.as_str(), None),
+    };
+    let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
+    let short = strip_opts(&short);
+
+    (short, tool_name.to_string(), opts)
+}
+
+fn parse_backend_components_fallible(
+    short: &str,
+    full: Option<&String>,
+) -> Result<(String, String, Option<ToolVersionOptions>)> {
+    let short = unalias_backend(short).to_string();
+    let source = full.unwrap_or(&short);
+    let (source, opts) = match split_bracketed_opts(source) {
+        Some((name, opts_str)) => (
+            name,
+            Some(try_parse_tool_options(opts_str).map_err(|err| eyre::eyre!(err))?),
+        ),
+        None => (source.as_str(), None),
+    };
+    let (_backend, tool_name) = source.split_once(':').unwrap_or(("", source));
+    let short = strip_opts(&short);
+
+    Ok((short, tool_name.to_string(), opts))
+}
+
+fn plugin_backend_type(identifier: &str) -> Option<BackendType> {
+    let (plugin_name, _tool_name) = identifier.split_once(':')?;
+    if config::is_loaded() {
+        let config = Config::get_();
+        if let Some(plugin_type) = config.get_configured_plugin_type(plugin_name) {
+            return Some(plugin_type_to_backend_type(plugin_name, plugin_type));
+        }
+        if config.get_repo_url(plugin_name).is_some() {
+            return Some(BackendType::VfoxBackend(plugin_name.to_string()));
+        }
+    }
+    install_state::get_plugin_type(plugin_name)
+        .map(|plugin_type| plugin_type_to_backend_type(plugin_name, plugin_type))
+}
+
+fn plugin_type_to_backend_type(plugin_name: &str, plugin_type: PluginType) -> BackendType {
+    match plugin_type {
+        PluginType::Vfox => BackendType::Vfox,
+        PluginType::VfoxBackend => BackendType::VfoxBackend(plugin_name.to_string()),
+        PluginType::Asdf => BackendType::Asdf,
+        PluginType::Package => BackendType::Unknown,
+    }
+}
+
+impl BackendArg {
+    pub(crate) fn matches_bin_name(&self, bin_name: &str) -> bool {
+        let exe_suffix = std::env::consts::EXE_SUFFIX;
+        let bin_name = if exe_suffix.is_empty() {
+            bin_name
+        } else {
+            let suffix_start = bin_name.len().saturating_sub(exe_suffix.len());
+            match (bin_name.get(..suffix_start), bin_name.get(suffix_start..)) {
+                (Some(name), Some(suffix)) if suffix.eq_ignore_ascii_case(exe_suffix) => name,
+                _ => bin_name,
+            }
+        };
+        let matches = |name: &str| {
+            if cfg!(windows) {
+                name.eq_ignore_ascii_case(bin_name)
+            } else {
+                name == bin_name
+            }
+        };
+        self.short.rsplit([':', '/']).next().is_some_and(matches)
+            || self.tool_name.rsplit('/').next().is_some_and(matches)
+    }
+
+    #[requires(!short.is_empty())]
+    pub fn new(short: String, full: Option<String>) -> Self {
+        let resolution = BackendResolution::new(full.is_some());
+        let (short, tool_name, opts) = parse_backend_components(&short, full.as_ref());
+        Self::new_raw(short, full, tool_name, opts, resolution)
+    }
+
+    pub(crate) fn new_raw(
+        short: String,
+        full: Option<String>,
+        tool_name: String,
+        opts: Option<ToolVersionOptions>,
+        resolution: BackendResolution,
+    ) -> Self {
+        let pathname = short.to_kebab_case();
+        let opts_source = opts.as_ref().map(|_| ToolOptionSource::InlineBackendArg);
+        Self {
+            tool_name,
+            short,
+            full,
+            cache_path: dirs::CACHE.join(&pathname),
+            installs_path: dirs::INSTALLS.join(&pathname),
+            downloads_path: dirs::DOWNLOADS.join(&pathname),
+            opts,
+            opts_source,
+            resolution,
+            registry_version: None,
+            // backend: Default::default(),
+        }
+    }
+
+    /// Returns the kebab-cased directory name used for this tool's install path.
+    /// This is the canonical name used on the filesystem (e.g. "github-user-repo").
+    pub(crate) fn tool_dir_name(&self) -> String {
+        self.installs_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+    }
+
+    pub(crate) fn backend(&self) -> Result<ABackend> {
+        // TODO: see above about hash key
+        // let backend = self.backend.get_or_try_init(|| {
+        //     if let Some(backend) = backend::get(self) {
+        //         Ok(backend)
+        //     } else {
+        //         bail!("{self} not found in mise tool registry");
+        //     }
+        // })?;
+        // Ok(backend.clone())
+        if let Some(backend) = backend::get(self) {
+            Ok(backend)
+        } else if let Some((plugin_name, tool_name)) = self.short.split_once(':') {
+            // Check if the plugin exists first
+            if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
+                // Plugin exists, but the backend couldn't be created
+                // This could be due to the tool not being available or plugin not properly installed
+                match plugin_type {
+                    PluginType::Asdf => {
+                        bail!(
+                            "asdf plugin '{plugin_name}' exists but '{tool_name}' is not available or the plugin is not properly installed"
+                        );
+                    }
+                    PluginType::Vfox => {
+                        bail!(
+                            "vfox plugin '{plugin_name}' exists but '{tool_name}' is not available or the plugin is not properly installed"
+                        );
+                    }
+                    PluginType::VfoxBackend => {
+                        bail!(
+                            "vfox-backend plugin '{plugin_name}' exists but '{tool_name}' is not available or the plugin is not properly installed"
+                        );
+                    }
+                    PluginType::Package => {
+                        bail!("package plugin '{plugin_name}' is not a tool backend");
+                    }
+                }
+            } else {
+                // Plugin doesn't exist
+                bail!("{plugin_name} is not a valid plugin name");
+            }
+        } else {
+            // Check if the tool is in the registry but has no available backends
+            if let Some(rt) = REGISTRY.get(self.registry_short().as_str())
+                && rt
+                    .backends_for_version(self.registry_version.as_deref())
+                    .is_empty()
+                && !rt.backends.is_empty()
+            {
+                let all_backends: Vec<&str> = rt.backends.iter().map(|rb| rb.full).collect();
+                bail!(
+                    "{self} is in the mise tool registry but none of its backends ({}) are supported in the current configuration{}",
+                    all_backends.join(", "),
+                    self.registry_version
+                        .as_ref()
+                        .map(|v| format!(" for version {v}"))
+                        .unwrap_or_default()
+                );
+            }
+
+            let registry_shorts: Vec<&str> = REGISTRY.keys().collect();
+            let mut suggestions: Vec<String> =
+                xx::suggest::similar_n_with_threshold(&self.short, &registry_shorts, 3, 0.8)
+                    .into_iter()
+                    .filter(|s| *s != self.short)
+                    .map(|s| s.to_string())
+                    .collect();
+
+            let mise_names: HashSet<String> = suggestions.iter().cloned().collect();
+            for aqua in crate::aqua::aqua_registry_wrapper::aqua_suggest(&self.short) {
+                if !mise_names.contains(&aqua.name) {
+                    suggestions.push(aqua.backend);
+                }
+            }
+
+            let mut msg = format!("{self} not found in mise tool registry");
+            if !suggestions.is_empty() {
+                msg.push_str("\n\nDid you mean?");
+                for s in suggestions.iter().take(5) {
+                    msg.push_str(&format!("\n  {s}"));
+                }
+            }
+            bail!("{msg}");
+        }
+    }
+
+    pub(crate) fn backend_type(&self) -> BackendType {
+        // Check if this is a valid backend:tool format first
+        if let Some((backend_prefix, _tool_name)) = self.short.split_once(':')
+            && let Ok(backend_type) = backend_prefix.parse::<BackendType>()
+        {
+            return backend_type;
+        }
+
+        // Then check if this is a vfox plugin:tool format
+        // We cannot reliably determine backend type within install state so we check config first.
+        if let Some(backend_type) = plugin_backend_type(&self.short) {
+            return backend_type;
+        }
+
+        // Derive the backend type from the same resolved identifier used by
+        // `tool_name()`. For non-explicit tools, `full()` may intentionally
+        // prefer the current registry backend over stale install metadata.
+        let full = self.full();
+        if let Some((backend, _)) = full.split_once(':')
+            && let Ok(backend_type) = backend.parse()
+        {
+            return backend_type;
+        }
+        if let Some(backend_type) = plugin_backend_type(&full) {
+            return backend_type;
+        }
+
+        // A version-scoped registry lookup with no eligible backend must not
+        // revive the backend recorded by another installed version.
+        if self.has_registry_version() {
+            return BackendType::Core;
+        }
+
+        // Legacy install state may have a backend type without a full
+        // identifier. Keep it as a fallback when `full()` was inconclusive.
+        if !self.short.contains(':')
+            && let Ok(Some(backend_type)) = install_state::backend_type(&self.short)
+        {
+            return backend_type;
+        }
+        if config::is_loaded() && Config::get_().get_repo_url(&self.short).is_some() {
+            return match install_state::get_plugin_type(&self.short).unwrap_or(PluginType::Asdf) {
+                PluginType::Vfox => BackendType::Vfox,
+                PluginType::VfoxBackend => BackendType::VfoxBackend(self.short.to_string()),
+                PluginType::Asdf => BackendType::Asdf,
+                PluginType::Package => BackendType::Unknown,
+            };
+        }
+        BackendType::Unknown
+    }
+
+    /// The registry short a bare `[tool_alias]` value points at, if there is one.
+    ///
+    /// A value with no backend prefix names a *tool*, not a backend:
+    /// `llama = "llama.cpp"` means "whatever the registry installs for
+    /// llama.cpp". Left unresolved it reaches the plugin path, which builds an
+    /// asdf repo URL out of the name — so the alias either resolves to a
+    /// different tool through a backend this repo no longer accepts new plugins
+    /// for, or fails outright when no such plugin exists.
+    ///
+    /// Everything the registry knows about that tool has to be read from the
+    /// same entry, not from the alias key: options, version order and OS
+    /// support all key on a registry short, and `llama` is not one. Resolving
+    /// the backend while losing `llama.cpp`'s `version_prefix` would install
+    /// the right tool and then misread every version of it.
+    ///
+    /// Options are stripped for the lookup only — they are read from the alias
+    /// entry separately by `get_backend_alias_opts`, so they survive either way.
+    /// Legacy spellings are normalised, so `mytool = "nodejs"` finds `node`.
+    fn aliased_registry_short(&self) -> Option<String> {
+        if self.has_explicit_backend_identifier()
+            || self.has_env_backend_override()
+            || !config::is_loaded()
+        {
+            return None;
+        }
+        let full = Config::get_()
+            .all_aliases
+            .get(unalias_backend(&self.short))
+            .and_then(|a| a.backend.clone())?;
+        let name = split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
+        if name.contains(':') {
+            return None;
+        }
+        let name = unalias_backend(name);
+        REGISTRY.contains_key(name).then(|| name.to_string())
+    }
+
+    /// The registry key this arg's metadata should be read from: the tool a
+    /// bare alias points at, or the short itself.
+    fn registry_short(&self) -> String {
+        self.aliased_registry_short()
+            .unwrap_or_else(|| self.short.to_string())
+    }
+
+    /// Registry metadata associated with a shorthand selected by the user.
+    /// Explicit backend identifiers must not accidentally inherit metadata from
+    /// an unrelated registry entry with the same trailing tool name. A concrete
+    /// backend restored from a lockfile under a bare shorthand remains eligible:
+    /// it records resolution, not an explicit backend identifier from the user.
+    pub(crate) fn registry_tool(&self) -> Option<&'static crate::registry::RegistryTool> {
+        if self.has_explicit_backend_identifier() {
+            return None;
+        }
+        REGISTRY.get(&self.registry_short())
+    }
+
+    fn has_explicit_backend_identifier(&self) -> bool {
+        self.resolution.explicit && self.short.contains(':')
+    }
+
+    pub(crate) fn full(&self) -> String {
+        let short = unalias_backend(&self.short);
+
+        // Check for environment variable override first
+        // e.g., MISE_BACKENDS_MYTOOLS='github:myorg/mytools'
+        if let Some(env_value) = self.env_backend_override() {
+            return env_value;
+        }
+
+        // An explicitly resolved full backend must not be replaced by a short-name
+        // alias or lockfile entry. This is also used by package.json checksum
+        // declarations, which require the backend that publishes the verified artifact.
+        if self.resolution.explicit
+            && let Some(full) = &self.full
+        {
+            return full.clone();
+        }
+
+        if config::is_loaded() {
+            if let Some(full) = Config::get_()
+                .all_aliases
+                .get(short)
+                .and_then(|a| a.backend.clone())
+            {
+                if let Some(registry_full) = self
+                    .aliased_registry_short()
+                    .and_then(|name| REGISTRY.get(name.as_str()))
+                    .and_then(|rt| {
+                        rt.backends_for_version(self.registry_version.as_deref())
+                            .first()
+                            .cloned()
+                    })
+                {
+                    return registry_full.to_string();
+                }
+                return full;
+            }
+            if let Some(url) = Config::get_().repo_urls.get(short) {
+                return match install_state::get_plugin_type(short).unwrap_or(PluginType::Asdf) {
+                    PluginType::Asdf => format!("asdf:{url}"),
+                    PluginType::Vfox => format!("vfox:{short}"),
+                    PluginType::VfoxBackend => short.to_string(),
+                    PluginType::Package => short.to_string(),
+                };
+            }
+
+            let config = Config::get_();
+            // With version-dependent backends, the first lockfile entry may
+            // belong to another version. ToolVersion restores the backend from
+            // the matching lock entry after resolving this request's binding.
+            if !self.has_registry_version()
+                && let Some(backend) = lockfile::get_locked_backend(&config, short)
+            {
+                return backend;
+            }
+        }
+
+        // For non-explicit short-name tools that are not plugins, use registry's current
+        // backend if available. This allows tools to automatically switch backends when
+        // the registry changes (e.g., when a tool moves from one maintainer to another).
+        if !self.resolution.explicit
+            && !plugin_overrides_registry(short)
+            && let Some(registry_full) = REGISTRY.get(short).and_then(|rt| {
+                rt.backends_for_version(self.registry_version.as_deref())
+                    .first()
+                    .cloned()
+            })
+        {
+            if let Some(stored_full) = &self.full
+                && stored_full != registry_full
+            {
+                debug!(
+                    "backend for '{short}' changed from stored '{stored_full}' to registry '{registry_full}'"
+                );
+            }
+            return registry_full.to_string();
+        }
+
+        if self.has_registry_version()
+            && !plugin_overrides_registry(short)
+            && self.registry_tool().is_some_and(|tool| {
+                tool.backends_for_version(self.registry_version.as_deref())
+                    .is_empty()
+            })
+        {
+            return short.to_string();
+        }
+
+        if let Some(full) = &self.full {
+            full.clone()
+        } else if let Some(full) = install_state::get_tool_full(short) {
+            full
+        } else if let Some((plugin_name, _tool_name)) = short.split_once(':') {
+            // Check if this is a plugin:tool format
+            if BackendType::guess(short) != BackendType::Unknown {
+                // Handle built-in backends
+                short.to_string()
+            } else if let Some(pt) = install_state::get_plugin_type(plugin_name) {
+                match pt {
+                    PluginType::Asdf => {
+                        // For asdf plugins, plugin:tool format is invalid
+                        // Return just the plugin name since asdf doesn't support plugin:tool structure
+                        plugin_name.to_string()
+                    }
+                    // For vfox plugins, when already in plugin:tool format, return as-is
+                    // because the plugin itself is the backend specification
+                    PluginType::Vfox => short.to_string(),
+                    PluginType::VfoxBackend => short.to_string(),
+                    PluginType::Package => short.to_string(),
+                }
+            } else if plugin_name.starts_with("asdf-") {
+                // Handle asdf plugin:tool format even if not installed
+                plugin_name.to_string()
+            } else {
+                short.to_string()
+            }
+        } else if let Some(pt) = install_state::get_plugin_type(short) {
+            match pt {
+                PluginType::Asdf => format!("asdf:{short}"),
+                PluginType::Vfox => format!("vfox:{short}"),
+                PluginType::VfoxBackend => short.to_string(),
+                PluginType::Package => short.to_string(),
+            }
+        } else if let Some(full) = REGISTRY.get(short).and_then(|rt| {
+            rt.backends_for_version(self.registry_version.as_deref())
+                .first()
+                .cloned()
+        }) {
+            full.to_string()
+        } else {
+            short.to_string()
+        }
+    }
+
+    /// Carry a version boundary without making a registry choice user-explicit.
+    /// Keeping this separate from `full` lets installed shorthands migrate to a
+    /// newer backend while explicit identifiers, overrides, and locks stay pinned.
+    pub(crate) fn with_registry_version(&self, version: &str) -> Option<Self> {
+        if self.has_explicit_backend()
+            || self.has_env_backend_override()
+            || !self
+                .registry_tool()
+                .is_some_and(|tool| tool.backends.iter().any(|b| b.min_version.is_some()))
+        {
+            return None;
+        }
+        let mut backend = self.clone();
+        backend.registry_version = Some(version.to_string());
+        Some(backend)
+    }
+
+    pub(crate) fn has_registry_version(&self) -> bool {
+        self.registry_version.is_some()
+    }
+
+    pub(crate) fn full_without_opts(&self) -> String {
+        let full = self.full();
+        if let Some((name, _)) = split_bracketed_opts(&full) {
+            return name.to_string();
+        }
+        full
+    }
+
+    pub(crate) fn opts(&self) -> ToolVersionOptions {
+        self.resolve_opts_with_layers(self.backend_alias_opts_from_loaded_config(), None, None)
+            .into_effective()
+    }
+
+    pub(crate) fn registry_opts(&self) -> ToolVersionOptions {
+        let full = self.full_without_opts();
+        REGISTRY
+            .get(self.registry_short().as_str())
+            .map(|rt| rt.backend_options(&full))
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn registry_version_order(&self) -> Option<VersionOrder> {
+        let full = self.full_without_opts();
+        REGISTRY
+            .get(self.registry_short().as_str())
+            .and_then(|tool| tool.version_order(&full))
+    }
+
+    pub(crate) fn resolve_opts_with_config_and_request(
+        &self,
+        config_opts: Option<ToolVersionOptions>,
+        request_opts: Option<ToolVersionOptions>,
+    ) -> ResolvedToolOptions {
+        self.resolve_opts_with_layers(
+            self.backend_alias_opts_from_loaded_config(),
+            config_opts,
+            request_opts,
+        )
+    }
+
+    pub(crate) fn resolve_opts_with_layers(
+        &self,
+        alias_opts: Option<ToolVersionOptions>,
+        config_opts: Option<ToolVersionOptions>,
+        request_opts: Option<ToolVersionOptions>,
+    ) -> ResolvedToolOptions {
+        let mut opts = ResolvedToolOptions::default();
+        opts.apply_overrides(&self.registry_opts(), ToolOptionSource::Registry);
+        if let Some(manifest_opts) = self.install_manifest_opts() {
+            opts.apply_overrides(manifest_opts, ToolOptionSource::InstallManifest);
+        }
+        if alias_opts.is_none()
+            && let Some(full_opts) = self.resolved_full_opts()
+        {
+            opts.apply_overrides(&full_opts, ToolOptionSource::BackendAlias);
+        }
+        if let Some(alias_opts) = alias_opts {
+            opts.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
+        }
+        if let Some(config_opts) = config_opts {
+            opts.apply_overrides(&config_opts, ToolOptionSource::Config);
+        }
+        if let Some(request_opts) = request_opts {
+            opts.apply_overrides(&request_opts, ToolOptionSource::Request);
+        }
+        if let Some(user_opts) = self.explicit_opts() {
+            opts.apply_overrides(user_opts, ToolOptionSource::InlineBackendArg);
+        }
+        opts
+    }
+
+    pub(crate) fn explicit_opts(&self) -> Option<&ToolVersionOptions> {
+        self.opts
+            .as_ref()
+            .filter(|_| self.opts_source == Some(ToolOptionSource::InlineBackendArg))
+    }
+
+    pub(crate) fn install_manifest_opts(&self) -> Option<&ToolVersionOptions> {
+        self.opts
+            .as_ref()
+            .filter(|_| self.opts_source == Some(ToolOptionSource::InstallManifest))
+    }
+
+    pub(crate) fn resolved_full_opts(&self) -> Option<ToolVersionOptions> {
+        let full = self.full();
+        split_bracketed_opts(&full).map(|(_, opts)| parse_tool_options(opts))
+    }
+
+    pub(crate) fn has_env_backend_override(&self) -> bool {
+        self.env_backend_override().is_some()
+    }
+
+    fn env_backend_override(&self) -> Option<String> {
+        let short = unalias_backend(&self.short);
+        let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
+        env::var(&env_key).ok()
+    }
+
+    fn backend_alias_opts_from_loaded_config(&self) -> Option<ToolVersionOptions> {
+        if !config::is_loaded() || self.has_env_backend_override() {
+            return None;
+        }
+        let short = unalias_backend(&self.short);
+        Config::get_()
+            .all_aliases
+            .get(short)
+            .and_then(|alias| alias.backend.as_deref())
+            .and_then(|backend| split_bracketed_opts(backend).map(|(_, opts)| opts))
+            .map(parse_tool_options)
+    }
+
+    pub(crate) fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
+        self.opts = opts;
+        self.opts_source = self
+            .opts
+            .as_ref()
+            .map(|_| ToolOptionSource::InlineBackendArg);
+    }
+
+    /// Returns true if the user explicitly specified the full backend identifier.
+    /// When false and the tool is not plugin-based, it may resolve to the current
+    /// registry backend on next operation, allowing automatic backend migration
+    /// when registry/ is updated.
+    pub(crate) fn has_explicit_backend(&self) -> bool {
+        self.resolution.explicit
+    }
+
+    /// Returns the stored backend identifier, preferring the explicitly stored value
+    /// over dynamic registry resolution. For non-explicit tools, uses `full()` which
+    /// respects registry updates, allowing automatic backend migration when registry/
+    /// is updated. Used for lockfiles to preserve the actual installed backend when possible.
+    /// Options are stripped since lockfiles have a separate options field.
+    pub(crate) fn stored_full(&self) -> String {
+        // For non-explicit tools, use full() which respects registry updates.
+        // This allows tools to automatically switch backends when the registry changes.
+        if !self.resolution.explicit {
+            let full = self.full();
+            // Strip options since lockfiles have a separate options field
+            if let Some((name, _)) = split_bracketed_opts(&full) {
+                return name.to_string();
+            }
+            return full;
+        }
+
+        // For explicit tools, preserve the stored value
+        let full = if let Some(full) = &self.full {
+            full.clone()
+        } else {
+            let short = unalias_backend(&self.short);
+            if let Some(full) = install_state::get_tool_full(short) {
+                full
+            } else if let Some(pt) = install_state::get_plugin_type(short) {
+                match pt {
+                    PluginType::Asdf => format!("asdf:{short}"),
+                    PluginType::Vfox => format!("vfox:{short}"),
+                    PluginType::VfoxBackend => short.to_string(),
+                    PluginType::Package => short.to_string(),
+                }
+            } else {
+                self.full()
+            }
+        };
+        // Strip options since lockfiles have a separate options field
+        if let Some((name, _)) = split_bracketed_opts(&full) {
+            return name.to_string();
+        }
+        full
+    }
+
+    pub(crate) fn tool_name(&self) -> String {
+        let full = self.full();
+        let (_backend, tool_name) = full.split_once(':').unwrap_or(("", &full));
+        strip_opts(tool_name)
+    }
+
+    /// maps something like cargo:cargo-binstall to cargo-binstall and ubi:cargo-binstall, etc
+    pub(crate) fn all_fulls(&self) -> HashSet<String> {
+        let full = self.full();
+        let mut all = HashSet::new();
+        for short in registry::shorts_for_full(&full) {
+            let rt = REGISTRY.get(short).unwrap();
+            let backends = rt.backends();
+            if backends.contains(&full.as_str()) {
+                all.insert(rt.short.to_string());
+                all.extend(backends.into_iter().map(|s| s.to_string()));
+            }
+        }
+        all.insert(full);
+        all.insert(self.short.to_string());
+        all
+    }
+
+    pub(crate) fn is_os_supported(&self) -> bool {
+        if self.uses_plugin() {
+            return true;
+        }
+        if let Some(rt) = REGISTRY.get(self.registry_short().as_str()) {
+            return rt.is_supported_os();
+        }
+        true
+    }
+
+    pub(crate) fn uses_plugin(&self) -> bool {
+        install_state::get_plugin_type(&self.short).is_some()
+    }
+}
+
+impl FromStr for BackendArg {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let short = unalias_backend(s).to_string();
+        let explicit = if let Some((prefix, _)) = short.split_once(':') {
+            BackendType::guess(prefix) != BackendType::Unknown
+        } else {
+            false
+        };
+        let (short_parsed, tool_name, opts) = parse_backend_components_fallible(&short, None)?;
+        Ok(Self::new_raw(
+            short_parsed,
+            None,
+            tool_name,
+            opts,
+            BackendResolution::new(explicit),
+        ))
+    }
+}
+
+impl Display for BackendArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.short)
+    }
+}
+
+impl Debug for BackendArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(full) = &self.full {
+            write!(f, r#"BackendArg({} -> {})"#, self.short, full)
+        } else {
+            write!(f, r#"BackendArg({})"#, self.short)
+        }
+    }
+}
+
+impl PartialEq for BackendArg {
+    fn eq(&self, other: &Self) -> bool {
+        self.short == other.short
+    }
+}
+
+impl Eq for BackendArg {}
+
+impl PartialOrd for BackendArg {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BackendArg {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.short.cmp(&other.short)
+    }
+}
+
+impl Hash for BackendArg {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.short.hash(state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use pretty_assertions::{assert_eq, assert_str_eq};
+
+    #[tokio::test]
+    async fn registry_min_version_keeps_backend_instances_separate() {
+        use crate::cli::args::ToolArg;
+        let _config = Config::get().await.unwrap();
+        // Exercise both orders: a cache hit for the shorthand must not replace
+        // the backend selected for a different version in the same process.
+        for (query, expected) in [
+            ("hk@1.57.0", "aqua:jdx/hk"),
+            ("hk@V1.57.0", "aqua:jdx/hk"),
+            ("hk@1.58.1", "packslip:github.com/jdx/hk"),
+            ("hk@prefix:1.57", "aqua:jdx/hk"),
+            ("hk@latest", "packslip:github.com/jdx/hk"),
+        ] {
+            let tool: ToolArg = query.parse().unwrap();
+            assert_eq!(tool.ba.full(), expected);
+            assert_eq!(tool.ba.backend().unwrap().ba().full(), expected);
+            assert_eq!(tool.tvr.unwrap().backend().unwrap().ba().full(), expected);
+            assert!(!tool.ba.has_explicit_backend());
+        }
+        for full in ["packslip:github.com/jdx/hk", "aqua:jdx/hk"] {
+            let explicit: ToolArg = format!("{full}@1.57.0").parse().unwrap();
+            assert_eq!(explicit.ba.full(), full);
+            let locked = BackendArg::new("hk".to_string(), Some(full.to_string()));
+            assert!(locked.with_registry_version("1.57.0").is_none());
+            assert_eq!(locked.full(), full);
+        }
+    }
+
+    #[test]
+    fn test_matches_bin_name_uses_tool_identity() {
+        let codex: BackendArg = "codex".into();
+        let explicit_codex: BackendArg = "aqua:openai/codex".into();
+        let node: BackendArg = "node".into();
+
+        assert!(codex.matches_bin_name("codex"));
+        assert!(explicit_codex.matches_bin_name("codex"));
+        assert!(!node.matches_bin_name("codex"));
+        assert!(!codex.matches_bin_name("node"));
+        if cfg!(windows) {
+            assert!(codex.matches_bin_name("CODEX.EXE"));
+            assert!(explicit_codex.matches_bin_name("Codex.Exe"));
+        } else {
+            assert!(!codex.matches_bin_name("CODEX"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_backend_arg() {
+        let _config = Config::get().await.unwrap();
+        let t = |s: &str, full, tool_name, t| {
+            let fa: BackendArg = s.into();
+            assert_str_eq!(full, fa.full());
+            assert_str_eq!(tool_name, fa.tool_name);
+            assert_eq!(t, fa.backend_type());
+        };
+        #[cfg(unix)]
+        let asdf = |s, full, name| t(s, full, name, BackendType::Asdf);
+        let cargo = |s, full, name| t(s, full, name, BackendType::Cargo);
+        // let core = |s, full, name| t(s, full, name, BackendType::Core);
+        let npm = |s, full, name| t(s, full, name, BackendType::Npm);
+        let vfox = |s, full, name| t(s, full, name, BackendType::Vfox);
+
+        #[cfg(unix)]
+        {
+            asdf("asdf:clojure", "asdf:clojure", "clojure");
+            vfox("clojure", "vfox:jdx/vfox-clojure", "clojure");
+        }
+        cargo("cargo:eza", "cargo:eza", "eza");
+        t("dotnet-core", "core:dotnet", "dotnet", BackendType::Core);
+        // core("node", "node", "node");
+        npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
+        npm("npm:prettier", "npm:prettier", "prettier");
+        vfox(
+            "vfox:version-fox/vfox-nodejs",
+            "vfox:version-fox/vfox-nodejs",
+            "version-fox/vfox-nodejs",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_bare_package_backend_names_are_not_implicit_tools() {
+        let _config = Config::get().await.unwrap();
+
+        for name in ["cargo", "gem"] {
+            let fa: BackendArg = name.into();
+            assert_str_eq!(name, fa.full());
+            assert_eq!(BackendType::Unknown, fa.backend_type());
+        }
+
+        let fa: BackendArg = "cargo:ripgrep".into();
+        assert_eq!(BackendType::Cargo, fa.backend_type());
+
+        let fa: BackendArg = "gem:bashly".into();
+        assert_eq!(BackendType::Gem, fa.backend_type());
+
+        let fa: BackendArg = "npm:npm".into();
+        assert_str_eq!("npm:npm", fa.full());
+        assert_eq!(BackendType::Npm, fa.backend_type());
+    }
+
+    #[tokio::test]
+    async fn test_bare_npm_uses_registry_tool() {
+        let _config = Config::get().await.unwrap();
+
+        let fa: BackendArg = "npm".into();
+        #[cfg(windows)]
+        {
+            assert_str_eq!("npm:npm", fa.full());
+            assert_eq!(BackendType::Npm, fa.backend_type());
+        }
+        #[cfg(not(windows))]
+        {
+            assert_str_eq!("aqua:npm/cli", fa.full());
+            assert_eq!(BackendType::Aqua, fa.backend_type());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_lockfile_resolved_shorthand_keeps_registry_metadata() {
+        let _config = Config::get().await.unwrap();
+
+        let resolved = BackendArg::new("tiny".to_string(), Some("vfox:jdx/vfox-tiny".to_string()));
+        assert_eq!(resolved.registry_tool().unwrap().bins, ["rtx-tiny"]);
+
+        let explicit: BackendArg = "vfox:jdx/vfox-tiny".into();
+        assert!(explicit.registry_tool().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_backend_arg_pathname() {
+        let _config = Config::get().await.unwrap();
+        let t = |s: &str, expected| {
+            let fa: BackendArg = s.into();
+            let actual = fa.installs_path.to_string_lossy();
+            let expected = dirs::INSTALLS.join(expected);
+            assert_str_eq!(actual, expected.to_string_lossy());
+        };
+        t("asdf:node", "asdf-node");
+        t("node", "node");
+        t("dotnet-core", "dotnet");
+        t("cargo:eza", "cargo-eza");
+        t("npm:@antfu/ni", "npm-antfu-ni");
+        t("npm:prettier", "npm-prettier");
+        t(
+            "vfox:version-fox/vfox-nodejs",
+            "vfox-version-fox-vfox-nodejs",
+        );
+        t("vfox:version-fox/nodejs", "vfox-version-fox-nodejs");
+    }
+
+    #[tokio::test]
+    async fn test_backend_arg_bug_fixes() {
+        let _config = Config::get().await.unwrap();
+
+        // Test that asdf plugins in plugin:tool format return just the plugin name
+        // (asdf doesn't support plugin:tool structure)
+        let fa: BackendArg = "asdf-plugin:tool".into();
+        assert_str_eq!("asdf-plugin", fa.full());
+
+        // Test that vfox plugins in plugin:tool format return as-is
+        let fa: BackendArg = "vfox-plugin:tool".into();
+        assert_str_eq!("vfox-plugin:tool", fa.full());
+    }
+
+    #[tokio::test]
+    async fn test_backend_arg_improved_error_messages() {
+        let _config = Config::get().await.unwrap();
+
+        // Test that when a plugin exists but the tool is not available,
+        // we get a more specific error message instead of "not a valid backend name"
+        let fa: BackendArg = "nonexistent-plugin:some-tool".into();
+        let result = fa.backend();
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("is not a valid plugin name"),
+            "Expected error to mention invalid plugin name, got: {error_msg}"
+        );
+
+        // Note: We can't easily test the case where a plugin exists but the tool doesn't
+        // because that would require setting up actual plugins in the test environment.
+        // The logic has been improved to check plugin existence first and provide
+        // more specific error messages based on the plugin type.
+    }
+
+    #[tokio::test]
+    async fn test_split_bracketed_opts_ignores_quoted_brackets() {
+        let _config = Config::get().await.unwrap();
+
+        assert_eq!(
+            split_bracketed_opts(r#"http:hello-lock[pattern='a"b',bin_path="bin[debug]"]"#),
+            Some(("http:hello-lock", r#"pattern='a"b',bin_path="bin[debug]""#))
+        );
+        assert_str_eq!(
+            "http:hello-lock",
+            strip_opts(r#"http:hello-lock[pattern='a"b',bin_path="bin[debug]"]"#)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_backend_opts_with_url_value_on_shorthand() {
+        let _config = Config::get().await.unwrap();
+        let ba: BackendArg = "tiny[api_url=https://inline.example/api/v3]".into();
+
+        assert_eq!(ba.short, "tiny");
+        assert_eq!(ba.tool_name, "tiny");
+        assert_eq!(
+            ba.opts().get("api_url"),
+            Some("https://inline.example/api/v3")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_backend_opts_core_fields() {
+        let _config = Config::get().await.unwrap();
+        let ba: BackendArg =
+            "pipx:ruff[depends=python,os=linux,install_env.PIPX_HOME=/tmp/pipx,install_env.REMOVE=false]".into();
+        let opts = ba.opts();
+
+        assert_eq!(opts.depends, Some(vec!["python".to_string()]));
+        assert_eq!(opts.os, Some(vec!["linux".to_string()]));
+        assert_eq!(
+            opts.install_env.get("PIPX_HOME"),
+            Some(&crate::config::env_directive::EnvValue::String(
+                "/tmp/pipx".to_string()
+            ))
+        );
+        assert_eq!(
+            opts.install_env.get("REMOVE"),
+            Some(&crate::config::env_directive::EnvValue::Boolean(false))
+        );
+        assert!(!opts.opts.contains_key("depends"));
+        assert!(!opts.opts.contains_key("os"));
+        assert!(!opts.opts.contains_key("install_env.PIPX_HOME"));
+    }
+
+    #[test]
+    fn test_parse_backend_opts_rejects_invalid_core_fields() {
+        let err = "pipx:ruff[depends={ name = \"python\" }]"
+            .parse::<BackendArg>()
+            .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("depends must be a string or array")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_opts_overlays_registry_config_and_inline() {
+        let _config = Config::get().await.unwrap();
+        let ba: BackendArg = "solidity[bin=inline,foo=inline]".into();
+        let config_opts = parse_tool_options("bin=config,bar=config");
+
+        let resolved = ba.resolve_opts_with_config_and_request(Some(config_opts), None);
+        let opts = resolved.effective();
+
+        assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
+        assert_eq!(opts.get("bin"), Some("inline"));
+        assert_eq!(opts.get("bar"), Some("config"));
+        assert_eq!(opts.get("foo"), Some("inline"));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_opts_with_layers_preserves_alias_options() {
+        let _config = Config::get().await.unwrap();
+        let ba: BackendArg = "solidity[bin=inline,foo=inline]".into();
+        let alias_opts = parse_tool_options("bin=alias,alias_only=alias");
+        let config_opts = parse_tool_options("bin=config,config_only=config");
+
+        let resolved = ba.resolve_opts_with_layers(Some(alias_opts), Some(config_opts), None);
+        let opts = resolved.effective();
+
+        assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
+        assert_eq!(opts.get("bin"), Some("inline"));
+        assert_eq!(opts.get("alias_only"), Some("alias"));
+        assert_eq!(opts.get("config_only"), Some("config"));
+        assert_eq!(opts.get("foo"), Some("inline"));
+    }
+
+    #[test]
+    fn test_opts_include_resolved_full_bracket_options() {
+        let ba = BackendArg::new_raw(
+            "solidity".to_string(),
+            Some("github:ethereum/solidity[foo=resolved]".to_string()),
+            "ethereum/solidity".to_string(),
+            None,
+            BackendResolution::new(true),
+        );
+
+        let opts = ba.opts();
+
+        assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
+        assert_eq!(opts.get("bin"), Some("solc"));
+        assert_eq!(opts.get("foo"), Some("resolved"));
+    }
+}

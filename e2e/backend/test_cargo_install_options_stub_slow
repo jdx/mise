@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+cat >~/bin/cargo <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$MISE_DATA_DIR/cargo-install.log"
+while (($#)); do
+  if [[ $1 == "--root" ]]; then
+    mkdir -p "$2/bin"
+    exit 0
+  fi
+  shift
+done
+EOF
+chmod u+x ~/bin/cargo
+export PATH="$HOME/bin:$PATH"
+export MISE_CARGO_BINSTALL=0
+
+assert_install_state() {
+  assert_contains "mise install '$tool' --dry-run 2>&1" "$1"
+}
+
+tool="cargo:option-test"
+cat >mise.toml <<'EOF'
+[tools]
+"cargo:option-test" = "1.0.0"
+EOF
+mise install
+assert_install_state "already installed"
+
+cat >mise.toml <<'EOF'
+[tools]
+"cargo:option-test" = { version = "1.0.0", features = "beta, alpha beta" }
+EOF
+assert_install_state "would install"
+mise install
+assert_install_state "already installed"
+
+# Equivalent feature spelling, ordering, and array syntax must reuse the install.
+cat >mise.toml <<'EOF'
+[tools]
+"cargo:option-test" = { version = "1.0.0", features = ["alpha", "beta"] }
+EOF
+assert_install_state "already installed"
+
+# Removing a non-default option must restore and record the default state.
+cat >mise.toml <<'EOF'
+[tools]
+"cargo:option-test" = "1.0.0"
+EOF
+assert_install_state "would install"
+mise install
+assert_install_state "already installed"
+
+for option in \
+  "default-features = false" \
+  'bin = "alternate-bin"' \
+  'crate = "alternate-crate"' \
+  "locked = false"; do
+  cat >mise.toml <<EOF
+[tools]
+"cargo:option-test" = { version = "1.0.0", $option }
+EOF
+  assert_install_state "would install"
+  mise install
+  assert_install_state "already installed"
+
+  cat >mise.toml <<'EOF'
+[tools]
+"cargo:option-test" = "1.0.0"
+EOF
+  assert_install_state "would install"
+  mise install
+  assert_install_state "already installed"
+done
+
+install_path="$(mise where cargo:option-test@1.0.0)"
+assert_contains "cat '$install_path/.mise-cargo-install.toml'" "default_features = true"
+assert_contains "cat '$install_path/.mise-cargo-install.toml'" "locked = true"
+
+# An incompatible shared install must be shadowed in the primary installs dir.
+tool="cargo:shared-option-test"
+cat >mise.toml <<'EOF'
+[tools]
+"cargo:shared-option-test" = "1.0.0"
+EOF
+mise install
+primary_path="$(mise where cargo:shared-option-test@1.0.0)"
+relative_path="${primary_path#"$MISE_DATA_DIR/installs/"}"
+shared_dir="$PWD/shared-installs"
+shared_path="$shared_dir/$relative_path"
+mkdir -p "$(dirname "$shared_path")"
+mv "$primary_path" "$shared_path"
+shared_state="$(cat "$shared_path/.mise-cargo-install.toml")"
+export MISE_SHARED_INSTALL_DIRS="$shared_dir"
+
+cat >mise.toml <<'EOF'
+[tools]
+"cargo:shared-option-test" = { version = "1.0.0", features = "extra" }
+EOF
+assert_install_state "would install"
+mise install
+assert "test -d '$primary_path'"
+assert_contains "cat '$primary_path/.mise-cargo-install.toml'" 'features = ["extra"]'
+assert "cat '$shared_path/.mise-cargo-install.toml'" "$shared_state"

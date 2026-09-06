@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tasks.check]
+env = { TASK_ENV_VALUE = "from-task" }
+EOF
+
+mkdir -p .mise/tasks
+cat <<'EOF' >.mise/tasks/check
+#!/usr/bin/env bash
+set -euo pipefail
+
+eval "$(mise hook-env -s bash)"
+printf "dir=%s env=%s\n" "${MISE_TASK_DIR:-missing}" "${TASK_ENV_VALUE:-missing}"
+EOF
+chmod +x .mise/tasks/check
+
+assert "mise run check" "dir=$PWD/.mise/tasks env=from-task"

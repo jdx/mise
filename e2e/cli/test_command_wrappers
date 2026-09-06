@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+
+fake_bin="$HOME/wrapper-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/mbx" <<'EOF'
+#!/usr/bin/env bash
+printf 'mbx:%s\n' "$MBX_CARGO_SHIM_MODE"
+exec cargo "$@"
+EOF
+cat >"$fake_bin/cargo" <<'EOF'
+#!/usr/bin/env bash
+echo system-cargo
+EOF
+chmod +x "$fake_bin/mbx" "$fake_bin/cargo"
+export PATH="$fake_bin:$PATH"
+
+cat >mise.toml <<'EOF'
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
+EOF
+
+mise reshim
+assert_contains "mise hook-env -s bash --force" "$MISE_DATA_DIR/command-wrappers/bin"
+assert_contains "mise activate bash --shims" "$MISE_DATA_DIR/command-wrappers/bin"
+eval "$(mise activate bash --shims)"
+eval "$(mise activate bash --shims)"
+assert "printf '%s\n' \"\$PATH\" | tr ':' '\n' | grep -cx '$MISE_DATA_DIR/command-wrappers/bin'" "1"
+assert "printf '%s\n' \"\$PATH\" | tr ':' '\n' | grep -cx '$MISE_DATA_DIR/shims'" "1"
+assert "mise x -- cargo check" "mbx:1
+system-cargo"
+assert "cargo check" "mbx:1
+system-cargo"
+
+mise install dummy@1.0.0
+managed_bin="$MISE_DATA_DIR/installs/dummy/1.0.0/bin"
+cat >"$managed_bin/cargo" <<'EOF'
+#!/usr/bin/env bash
+echo managed-cargo
+EOF
+chmod +x "$managed_bin/cargo"
+cat >>mise.toml <<'EOF'
+
+[tools]
+dummy = "1.0.0"
+EOF
+
+mise reshim
+assert "mise x -- cargo check" "mbx:1
+managed-cargo"
+assert "cargo check" "mbx:1
+managed-cargo"
+
+cat >mise.toml <<'EOF'
+[wrappers]
+cargo = "mbx"
+EOF
+mise reshim
+assert "cargo check" "mbx:
+system-cargo"
+
+cat >mise.toml <<'EOF'
+[wrappers.cargo]
+command = "mbx"
+args = ["--fixed"]
+EOF
+cat >"$fake_bin/mbx" <<'EOF'
+#!/usr/bin/env bash
+echo "$*"
+EOF
+chmod +x "$fake_bin/mbx"
+mise reshim
+assert "cargo check" "--fixed check"
+
+cat >mise.toml <<'EOF'
+[wrappers]
+other = "mbx"
+EOF
+mise reshim
+assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin/cargo'"
+
+cat >mise.toml <<'EOF'
+[wrappers]
+cargo = " "
+EOF
+assert_fail "mise reshim" "must have a non-blank command"
+
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+mise reshim
+assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin'"

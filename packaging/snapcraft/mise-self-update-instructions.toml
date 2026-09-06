@@ -1,0 +1,1 @@
+message = "To update mise snap package, run:\n\n  snap refresh\n\nNote that this command updates all the snap packages you installed.\n"

@@ -1,0 +1,8 @@
+backends = [
+  "aqua:NetApp/trident/tridentctl",
+  "asdf:asdf-community/asdf-tridentctl",
+]
+description = "Storage orchestrator for containers"
+os = ["linux", "macos"]
+test = { cmd = "tridentctl version --client", expected = "{{version}}" }
+version_order = "source"

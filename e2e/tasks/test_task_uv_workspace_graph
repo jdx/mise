@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+EOF
+
+cat <<'EOF' >pyproject.toml
+[project]
+name = "workspace-root"
+version = "0.1.0"
+
+[tool.uv.sources]
+shared-lib = { workspace = true }
+
+[tool.uv.workspace]
+members = ["packages/*"]
+exclude = ["packages/local"]
+EOF
+
+mkdir -p packages/app packages/shared packages/build packages/local
+
+cat <<'EOF' >packages/app/pyproject.toml
+[project]
+name = "app"
+version = "0.1.0"
+dependencies = ["Shared.Lib>=1"]
+
+[project.optional-dependencies]
+test = ["local_helper"]
+
+[dependency-groups]
+dev = ["build-helper"]
+
+[tool.uv.sources]
+local-helper = { path = "../local" }
+build-helper = [{ path = "../build", marker = "sys_platform == 'linux'" }]
+EOF
+
+for project in shared build local; do
+  name="$project"
+  if [[ $project == "shared" ]]; then
+    name="shared_lib"
+  elif [[ $project == "build" ]]; then
+    name="build-helper"
+  elif [[ $project == "local" ]]; then
+    name="local.helper"
+  fi
+  cat <<EOF >"packages/$project/pyproject.toml"
+[project]
+name = "$name"
+version = "0.1.0"
+EOF
+done
+
+assert_contains "mise tasks graph" "uv:app"
+assert_contains "mise tasks graph" "packages/app"
+assert_contains "mise tasks graph" '"workspace_source":"pyproject.toml"'
+assert_contains "mise tasks graph --explain" "Project: uv:app"
+assert_contains "mise tasks graph --explain" "uv:shared-lib — uv (packages/app/pyproject.toml)"
+
+assert_json "mise tasks graph --json | jq '.projects | map({id, root, dependencies})'" '[
+  {
+    "id": "uv:app",
+    "root": "packages/app",
+    "dependencies": [
+      "uv:build-helper",
+      "uv:local-helper",
+      "uv:shared-lib"
+    ]
+  },
+  {
+    "id": "uv:build-helper",
+    "root": "packages/build",
+    "dependencies": []
+  },
+  {
+    "id": "uv:local-helper",
+    "root": "packages/local",
+    "dependencies": []
+  },
+  {
+    "id": "uv:shared-lib",
+    "root": "packages/shared",
+    "dependencies": []
+  },
+  {
+    "id": "uv:workspace-root",
+    "root": ".",
+    "dependencies": []
+  }
+]'
+
+assert_json "mise tasks graph --json | jq '.projects[] | select(.id == \"uv:app\") | {
+  project: .provenance,
+  dependency: .dependency_provenance[\"uv:local-helper\"]
+}'" '{
+  "project": {
+    "provider": "uv",
+    "source": "packages/app/pyproject.toml"
+  },
+  "dependency": {
+    "provider": "uv",
+    "source": "packages/app/pyproject.toml"
+  }
+}'

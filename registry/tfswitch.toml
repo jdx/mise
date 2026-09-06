@@ -1,0 +1,10 @@
+description = "A command line tool to switch between different versions of terraform (install with homebrew and more)"
+version_order = "semver"
+# test = { cmd = "tfswitch --version", expected = "Version: v{{version}}" }
+
+bins = ["tfswitch"]
+[[backends]]
+full = "github:warrensbox/terraform-switcher"
+
+[[backends]]
+full = "asdf:iul1an/asdf-tfswitch"

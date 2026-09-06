@@ -1,0 +1,355 @@
+use std::sync::Arc;
+
+use crate::config::{self, Config};
+use crate::dirs;
+use crate::file;
+use crate::file::display_rel_path;
+use crate::task::Task;
+use crate::task::task_fetcher::TaskFetcher;
+use crate::task::task_list::find_non_executable_task_files;
+use crate::ui::table::MiseTable;
+use comfy_table::{Attribute, Cell, Row};
+use eyre::{Result, bail};
+use itertools::Itertools;
+use serde_json::json;
+
+/// List available tasks
+///
+/// Tasks come from config files and from task directories such as `.mise/tasks`.
+/// Tasks from all parent directories are merged into this list.
+///
+/// So if you have global tasks in `~/.config/mise/tasks/*` and project-specific tasks in
+/// ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
+/// tasks will override the global ones if they have the same name.
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub(crate) struct TasksLs {
+    /// Only show global tasks
+    #[usage(short, long, overrides = "local", verbatim_doc_comment)]
+    pub global: bool,
+
+    /// Output in JSON format
+    #[usage(short = 'J', long, verbatim_doc_comment)]
+    pub json: bool,
+
+    /// Only show non-global tasks
+    #[usage(short, long, overrides = "global", verbatim_doc_comment)]
+    pub local: bool,
+
+    /// Show all columns
+    #[usage(short = 'x', long, verbatim_doc_comment)]
+    pub extended: bool,
+
+    /// Load all tasks from the entire monorepo, including sibling directories.
+    /// By default, only tasks from the current directory hierarchy are loaded.
+    #[usage(long, verbatim_doc_comment)]
+    pub all: bool,
+
+    /// Display tasks for usage completion
+    #[usage(long, hide = true)]
+    pub complete: bool,
+
+    /// Show hidden tasks
+    #[usage(long, verbatim_doc_comment)]
+    pub hidden: bool,
+
+    /// Only show task names, one per line. Useful for piping to fzf and similar tools.
+    #[usage(
+        long,
+        verbatim_doc_comment,
+        conflicts = ["json", "extended", "usage"]
+    )]
+    pub name_only: bool,
+
+    /// Do not print table header
+    #[usage(long, alias = "no-headers", verbatim_doc_comment)]
+    pub no_header: bool,
+
+    /// Sort by column. Default is name.
+    #[usage(long, value_name = "COLUMN", verbatim_doc_comment, value_enum)]
+    pub sort: Option<SortColumn>,
+
+    /// Sort order. Default is asc.
+    #[usage(long, verbatim_doc_comment, value_enum)]
+    pub sort_order: Option<SortOrder>,
+
+    #[usage(long, hide = true)]
+    pub usage: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
+pub(crate) enum SortColumn {
+    Name,
+    Alias,
+    Description,
+    Source,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
+pub(crate) enum SortOrder {
+    Asc,
+    Desc,
+}
+
+impl TasksLs {
+    pub(super) fn merge(mut self, later: Self) -> Result<Self> {
+        if later.global || later.local {
+            self.global = later.global;
+            self.local = later.local;
+        }
+        self.json |= later.json;
+        self.extended |= later.extended;
+        self.all |= later.all;
+        self.complete |= later.complete;
+        self.hidden |= later.hidden;
+        self.name_only |= later.name_only;
+        self.no_header |= later.no_header;
+        self.sort = later.sort.or(self.sort);
+        self.sort_order = later.sort_order.or(self.sort_order);
+        self.usage |= later.usage;
+        if self.name_only && (self.json || self.extended || self.usage) {
+            bail!("--name-only cannot be used with --json, --extended, or --usage");
+        }
+        Ok(self)
+    }
+
+    pub(super) fn has_options(&self) -> bool {
+        self.json || self.has_non_json_options()
+    }
+
+    pub(super) fn has_non_json_options(&self) -> bool {
+        self.global
+            || self.local
+            || self.extended
+            || self.all
+            || self.complete
+            || self.hidden
+            || self.name_only
+            || self.no_header
+            || self.sort.is_some()
+            || self.sort_order.is_some()
+            || self.usage
+    }
+
+    pub(super) async fn run(self) -> Result<()> {
+        use crate::task::TaskLoadContext;
+
+        let config = Config::get().await?;
+
+        // Create context based on --all flag or when generating completions/usage specs
+        // to ensure monorepo tasks (e.g., `//app:task`) are available for autocomplete.
+        let ctx = if self.all || self.complete || self.usage {
+            Some(TaskLoadContext::all())
+        } else {
+            None
+        };
+
+        let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+
+        let tasks = all_tasks
+            .values()
+            .filter(|t| self.hidden || !t.hide)
+            .filter(|t| !self.local || !t.global)
+            .filter(|t| !self.global || t.global)
+            .cloned()
+            .sorted_by(|a, b| self.sort(a, b))
+            .collect::<Vec<Task>>();
+
+        // Resolve remote task files before any operation that may need them
+        let mut tasks = tasks;
+        // always pass no_cache=false as the command doesn't take no-cache argument
+        // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
+        TaskFetcher::new(false)
+            .fetch_tasks(&config, &mut tasks)
+            .await?;
+
+        // Warn about non-executable files only when there are truly no tasks at all
+        // (not just filtered out by --hidden/--local/--global)
+        if all_tasks.is_empty()
+            && let Some(cwd) = &*dirs::CWD
+        {
+            let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
+            let excludes = config::task_excludes_for_dir(cwd, &config.config_files)?;
+            // One file is enough to act on, and `make_executable_hint` is the only thing that
+            // knows what "make it executable" means on this platform. Bound to a local because
+            // under edition 2024 an `if let` scrutinee temporary is dropped before the body runs.
+            let non_executable = find_non_executable_task_files(&includes, &excludes);
+            if let Some(path) = non_executable.first() {
+                warn!(
+                    "no tasks found, but non-executable files exist in task directories.\nFiles must be executable to be detected as tasks. {}",
+                    file::make_executable_hint(path)
+                );
+            }
+        }
+
+        if self.complete {
+            return self.complete(tasks);
+        } else if self.usage {
+            self.display_usage(&config, tasks).await?;
+        } else if self.json {
+            self.display_json(&config, tasks).await?;
+        } else if self.name_only {
+            self.display_name_only(tasks)?;
+        } else {
+            self.display(tasks)?;
+        }
+        Ok(())
+    }
+
+    fn display_name_only(&self, tasks: Vec<Task>) -> Result<()> {
+        for t in tasks {
+            calm_io::stdoutln!("{}", t.display_name)?;
+        }
+        Ok(())
+    }
+
+    fn complete(&self, tasks: Vec<Task>) -> Result<()> {
+        for t in tasks {
+            let name = t.display_name.replace(":", "\\:");
+            let description = t.description.replace(":", "\\:");
+            calm_io::stdoutln!("{name}:{description}")?;
+        }
+        Ok(())
+    }
+
+    fn display(&self, tasks: Vec<Task>) -> Result<()> {
+        let mut table = MiseTable::new(
+            self.no_header,
+            if self.extended {
+                &["Name", "Aliases", "Source", "Description"]
+            } else {
+                &["Name", "Description"]
+            },
+        );
+        for task in tasks {
+            table.add_row(self.task_to_row(&task));
+        }
+        table.print()
+    }
+
+    async fn display_usage(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
+        let mut usage = usage::Spec::default();
+        for task in tasks {
+            let mut task_spec = task.parse_usage_spec_for_display(config).await?;
+            for (name, complete) in task_spec.complete {
+                task_spec.cmd.complete.insert(name, complete);
+            }
+            // Absorb words the caller forwards to the task beyond what it declares, so
+            // `mise run <task> -- --not-a-mise-flag` completes instead of erroring with
+            // "unexpected word". This must NOT be spelled `-- ARGS_LAST`: jdx/usage#762
+            // made an explicit `--` route the positional cursor onto the arg that declared
+            // the separator, past earlier args, so a `--`-gated catch-all swallowed the
+            // word being completed and `mise run <task> -- <TAB>` offered filenames
+            // instead of the task's own choices. A plain trailing variadic takes the
+            // overflow without hijacking `--`, and behaves the same on usage 4 and 5.
+            task_spec.cmd.args.push(
+                usage::SpecArgBuilder::new()
+                    .name("ARGS")
+                    .help("Arguments to pass to the tasks. Use \":::\" to separate tasks.")
+                    .hide(true)
+                    .var(true)
+                    .build(),
+            );
+            if let Some(path) = crate::task::extract_monorepo_path(&task.display_name) {
+                let prefixed_aliases: Vec<String> = task_spec
+                    .cmd
+                    .aliases
+                    .iter()
+                    .map(|a| format!("//{}:{}", path, a))
+                    .collect();
+                task_spec.cmd.aliases.extend(prefixed_aliases);
+            }
+            usage
+                .cmd
+                .subcommands
+                .insert(task.display_name.clone(), task_spec.cmd);
+        }
+        miseprintln!("{}", usage.to_string());
+        Ok(())
+    }
+
+    async fn display_json(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
+        let mut array_items: Vec<serde_json::Value> = Vec::with_capacity(tasks.len());
+        for task in tasks {
+            // Report the resolved dir (including any inherited task_config.dir)
+            // so consumers see the directory the task will actually run in.
+            let resolved_dir = task
+                .dir(config)
+                .await?
+                .map(|p| p.to_string_lossy().to_string());
+            let env_strs: Vec<String> = task
+                .env
+                .0
+                .iter()
+                .chain(task.overlay_env.iter().map(|(d, _)| d))
+                .map(|d| d.to_string())
+                .collect();
+            array_items.push(json!({
+                "name": task.display_name,
+                "aliases": task.aliases,
+                "description": task.description,
+                "source": task.config_source,
+                "config_sources": task.config_sources(),
+                "depends": task.depends,
+                "depends_post": task.depends_post,
+                "wait_for": task.wait_for,
+                "env": env_strs,
+                "dir": resolved_dir,
+                "hide": task.hide,
+                "global": task.global,
+                "raw": task.raw,
+                "interactive": task.interactive,
+                "sources": task.sources,
+                "outputs": task.outputs,
+                "shell": task.shell,
+                "quiet": task.quiet,
+                "silent": task.silent,
+                "tools": task.tools,
+                "usage": task.usage,
+                "timeout": task.timeout,
+                "run": task.run(),
+                "args": task.args,
+                "file": task.file,
+            }));
+        }
+        miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
+        Ok(())
+    }
+
+    fn sort(&self, a: &Task, b: &Task) -> std::cmp::Ordering {
+        let cmp = match self.sort.unwrap_or(SortColumn::Name) {
+            SortColumn::Alias => a.aliases.join(", ").cmp(&b.aliases.join(", ")),
+            SortColumn::Description => a.description.cmp(&b.description),
+            SortColumn::Source => a.config_source.cmp(&b.config_source),
+            _ => a.name.cmp(&b.name),
+        };
+
+        match self.sort_order.unwrap_or(SortOrder::Asc) {
+            SortOrder::Desc => cmp.reverse(),
+            _ => cmp,
+        }
+    }
+
+    fn task_to_row(&self, task: &Task) -> Row {
+        let mut row = vec![Cell::new(&task.display_name).add_attribute(Attribute::Bold)];
+        if self.extended {
+            row.push(Cell::new(task.aliases.join(", ")));
+            row.push(Cell::new(
+                task.config_sources()
+                    .iter()
+                    .map(display_rel_path)
+                    .join(", "),
+            ));
+        }
+        row.push(Cell::new(&task.description).add_attribute(Attribute::Dim));
+        row.into()
+    }
+}
+
+// TODO: fill this out
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise tasks ls</bold>
+"#
+);

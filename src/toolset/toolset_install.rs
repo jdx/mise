@@ -1,0 +1,1007 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use eyre::Result;
+use eyre::WrapErr;
+use indexmap::IndexSet;
+use itertools::Itertools;
+use tokio::sync::OnceCell;
+use tokio::sync::{Mutex, Semaphore};
+use tokio::task::JoinSet;
+
+use crate::config::Config;
+use crate::config::settings::Settings;
+use crate::errors::Error;
+use crate::hooks::{Hooks, InstalledToolInfo};
+use crate::install_context::InstallContext;
+use crate::plugins::PluginType;
+use crate::registry::REGISTRY;
+use crate::toolset::Toolset;
+use crate::toolset::helpers::{preflight_system_deps, show_python_install_hint};
+use crate::toolset::install_options::InstallOptions;
+use crate::toolset::tool_deps::{ToolDeps, ensure_compatible_install_requests, tool_key};
+use crate::toolset::tool_request::ToolRequest;
+use crate::toolset::tool_source::ToolSource;
+use crate::toolset::tool_version::{ResolveOptions, ToolVersion};
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::{backend, config, hooks, runtime_symlinks, shims};
+
+impl Toolset {
+    async fn missing_lazy_bin_provider(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Result<Option<ToolVersion>> {
+        let mut providers = self
+            .list_missing_versions_for_install(config)
+            .await
+            .into_iter()
+            .filter_map(|tv| {
+                let options = tv.request.options();
+                if options.lazy == Some(true) {
+                    match tv.request.lazy_bins() {
+                        Ok(Some(bins))
+                            if bins.iter().any(|bin| lazy_bin_names_eq(bin, bin_name)) =>
+                        {
+                            Some(Ok(tv))
+                        }
+                        Ok(_) => None,
+                        // Missing metadata for one lazy declaration says nothing
+                        // about whether another declaration provides this command.
+                        // ensure_lazy_shims reports that declaration's error while
+                        // still materializing the valid providers' shims.
+                        Err(_) => None,
+                    }
+                } else if tv.ba().matches_bin_name(bin_name)
+                    || tv
+                        .ba()
+                        .registry_tool()
+                        .is_some_and(|tool| tool.provides_bin(bin_name))
+                {
+                    Some(Ok(tv))
+                } else {
+                    None
+                }
+            })
+            .map(|tv| tv.and_then(|tv| Ok((tv.backend()?, tv))))
+            .collect::<Result<Vec<_>>>()?;
+        Self::sort_by_overrides(&mut providers)?;
+        Ok(providers
+            .into_iter()
+            .next()
+            .and_then(|(_, tv)| (tv.request.options().lazy == Some(true)).then_some(tv)))
+    }
+
+    pub(crate) async fn has_missing_lazy_bin_provider(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Result<bool> {
+        Ok(self
+            .missing_lazy_bin_provider(config, bin_name)
+            .await?
+            .is_some())
+    }
+
+    pub(crate) async fn install_missing_lazy_bin(
+        &mut self,
+        config: &mut Arc<Config>,
+        bin_name: &str,
+    ) -> Result<Option<Vec<ToolVersion>>> {
+        let Some(tv) = self.missing_lazy_bin_provider(config, bin_name).await? else {
+            return Ok(None);
+        };
+        let install_dir = tv.request.source().path().and_then(|path| {
+            (crate::config::provenance::ConfigProvenance::from_path(path).scope()
+                == crate::config::provenance::ConfigFileScope::System)
+                .then(|| Settings::get().system_installs_dir().to_path_buf())
+        });
+        let install_options = InstallOptions {
+            reason: "lazy shim".into(),
+            install_dir: install_dir.filter(|dir| dir != *crate::dirs::INSTALLS),
+            ..Default::default()
+        };
+        let installed = self
+            .install_all_versions(config, vec![tv.request.clone()], &install_options)
+            .await
+            .wrap_err_with(|| {
+                install_options.install_dir.as_ref().map_or_else(
+                    || format!("failed to install lazy tool {}", tv.style()),
+                    |dir| {
+                        format!(
+                            "failed to install lazy tool {} into {}. Preinstall it with appropriate privileges or set system_installs_dir to a writable directory",
+                            tv.style(),
+                            crate::file::display_path(dir)
+                        )
+                    },
+                )
+            })?;
+        if !installed.is_empty() {
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks(
+                config,
+                ts,
+                &installed,
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
+        }
+        Ok(Some(installed))
+    }
+
+    pub(crate) async fn should_install_missing_registry_bin_provider(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Result<bool> {
+        let mut providers = vec![];
+        for (backend, tv) in self.list_current_versions() {
+            if backend.is_version_installed(config, &tv, true) {
+                if backend
+                    .which(config, &tv, bin_name)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
+                    providers.push((backend, tv));
+                }
+            } else if REGISTRY
+                .get(&tv.ba().short)
+                .is_some_and(|tool| tool.provides_bin(bin_name))
+                && match &Settings::get().auto_install_disable_tools {
+                    Some(disable_tools) => !disable_tools.contains(&tv.ba().short),
+                    None => true,
+                }
+            {
+                providers.push((backend, tv));
+            }
+        }
+        Self::sort_by_overrides(&mut providers)?;
+        Ok(providers.first().is_some_and(|(backend, tv)| {
+            !backend.is_version_installed(config, tv, true)
+                && REGISTRY
+                    .get(&tv.ba().short)
+                    .is_some_and(|tool| tool.provides_bin(bin_name))
+        }))
+    }
+
+    #[async_backtrace::framed]
+    /// Installs missing tool versions and returns (installed_versions, still_missing_versions).
+    /// This avoids callers needing to re-compute the missing versions list.
+    pub async fn install_missing_versions(
+        &mut self,
+        config: &mut Arc<Config>,
+        opts: &InstallOptions,
+    ) -> Result<(Vec<ToolVersion>, Vec<ToolVersion>)> {
+        let missing = self.list_missing_versions_for_install(config).await;
+
+        // If auto-install is explicitly disabled, skip installation but return what's missing
+        if opts.skip_auto_install {
+            return Ok((vec![], missing));
+        }
+
+        let mut versions = missing
+            .iter()
+            .filter(|tv| tv.request.options().lazy != Some(true) || opts.include_lazy)
+            .filter(|tv| {
+                !opts.missing_args_only
+                    || matches!(self.versions[tv.ba()].source, ToolSource::Argument)
+            })
+            .filter(|tv| {
+                if let Some(tools) = &opts.auto_install_disable_tools {
+                    !tools.contains(&tv.ba().short)
+                } else {
+                    true
+                }
+            })
+            .map(|tv| tv.request.clone())
+            .collect_vec();
+        // Ensure options from toolset are preserved during auto-install
+        self.init_request_options(&mut versions);
+        let installed = self.install_all_versions(config, versions, opts).await?;
+        if opts.dry_run {
+            // Dry-run install results describe the planned installs. They are not
+            // present on disk, so rebuilding shims/runtime symlinks or updating
+            // lockfiles for them would both mutate state and advertise tools that
+            // cannot be executed.
+            return Ok((installed, missing));
+        }
+        if !installed.is_empty() {
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks(
+                config,
+                ts,
+                &installed,
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
+            // Re-check what's still missing after installation
+            let still_missing = self.list_missing_versions_for_install(config).await;
+            return Ok((installed, still_missing));
+        }
+        // Nothing was installed, the missing list is unchanged
+        Ok((installed, missing))
+    }
+
+    /// sets the options on incoming requests to install to whatever is already in the toolset
+    /// this handles the use-case where you run `mise use ubi:cilium/cilium-cli` (without CLi options)
+    /// but this tool has options inside mise.toml
+    pub(super) fn init_request_options(&self, requests: &mut Vec<ToolRequest>) {
+        for tr in requests {
+            if let Some(tvl) = self.versions.get(tr.ba()) {
+                // Requests cloned from this toolset already carry their own
+                // per-entry options, including platform filters. Do not
+                // collapse duplicate selectors onto another config entry.
+                if tvl.requests.contains(tr) {
+                    continue;
+                }
+                // Use matching config options when available. If selection is
+                // ambiguous, preserve options already carried by the request.
+                if let Some(config_options) =
+                    super::tool_request_set::configured_options_for_runtime_request(
+                        &tvl.requests,
+                        tr,
+                    )
+                {
+                    tr.apply_config_options(config_options);
+                }
+            }
+        }
+    }
+
+    #[async_backtrace::framed]
+    pub async fn install_all_versions(
+        &mut self,
+        config: &mut Arc<Config>,
+        mut versions: Vec<ToolRequest>,
+        opts: &InstallOptions,
+    ) -> Result<Vec<ToolVersion>> {
+        if versions.is_empty() {
+            // Configured plugins are still installed when no tools need work
+            // (for example, env-only plugins).
+            Self::ensure_config_plugins_installed(config, opts.dry_run).await?;
+            return Ok(vec![]);
+        }
+
+        self.init_request_options(&mut versions);
+        ensure_compatible_install_requests(&versions)?;
+        ensure_safe_install_options(&versions)?;
+
+        // Validate shared install destinations before plugin installation or
+        // hooks introduce side effects.
+        Self::ensure_config_plugins_installed(config, opts.dry_run).await?;
+
+        // Initialize a footer for the entire install session once (before batching)
+        let mpr = MultiProgressReport::get();
+        let footer_reason = if opts.dry_run {
+            format!("{} (dry-run)", opts.reason)
+        } else {
+            opts.reason.clone()
+        };
+        mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
+
+        hooks::run_one_hook_with_context(
+            config,
+            self,
+            Hooks::Preinstall,
+            None,
+            None,
+            opts.dry_run,
+            opts.global_hooks_only,
+        )
+        .await;
+
+        show_python_install_hint(&versions);
+
+        let mut disabled_backend_errors = vec![];
+        versions.retain(|tr| {
+            if let Ok(backend) = tr.backend()
+                && let Err(err) = backend::ensure_backend_enabled(&backend.get_type())
+            {
+                disabled_backend_errors.push((tr.clone(), err));
+                false
+            } else {
+                true
+            }
+        });
+
+        // Ensure plugins are installed before building dependency graph
+        let plugin_errors = self.ensure_plugins_installed(config, &versions, opts).await;
+
+        // Filter out tools with plugin errors
+        let tools_with_plugin_errors: HashSet<_> =
+            plugin_errors.iter().map(|(tr, _)| tr.clone()).collect();
+        versions.retain(|tr| !tools_with_plugin_errors.contains(tr));
+
+        // Check plugin-declared system prerequisites before compiling anything.
+        // Runs here (after plugins are installed, before parallel install tasks
+        // spawn) so declarations are readable and the non-Send driver stays on
+        // the main task.
+        preflight_system_deps(config, &versions, opts).await;
+
+        // Build dependency graph and install using Kahn's algorithm
+        let (installed, failed, attempted_failures) =
+            self.install_with_deps(config, versions, opts).await;
+        let failed_backends = attempted_failures
+            .iter()
+            .filter_map(|tr| tr.backend().ok())
+            .unique_by(|backend| backend.ba().installs_path.clone())
+            .collect_vec();
+
+        // Update footer for errors found before install tasks are spawned.
+        let pre_install_error_count = disabled_backend_errors.len() + plugin_errors.len();
+        if pre_install_error_count > 0 {
+            mpr.footer_inc(pre_install_error_count);
+        }
+
+        // Combine plugin errors with installation failures
+        let mut all_failed = disabled_backend_errors;
+        all_failed.extend(plugin_errors);
+        all_failed.extend(failed);
+
+        // Skip config reload and resolve in dry-run mode
+        if !opts.dry_run {
+            // Reload config and resolve (ignoring errors like the original does)
+            trace!("install: reloading config");
+            *config = Config::reset().await?;
+            trace!("install: resolving");
+            if let Err(err) = self.resolve(config).await {
+                debug!("error resolving versions after install: {err:#}");
+            }
+            if !failed_backends.is_empty()
+                && let Err(err) =
+                    runtime_symlinks::rebuild_for_backends(config, self, failed_backends).await
+            {
+                warn!("failed to restore runtime symlinks after install failure: {err:#}");
+            }
+            crate::packslip::auto_sync_skills(config).await;
+        }
+
+        // Debug logging for successful installations
+        if log::log_enabled!(log::Level::Debug) {
+            for tv in installed.iter() {
+                let backend = tv.backend()?;
+                let bin_paths = backend
+                    .list_bin_paths(config, tv)
+                    .await
+                    .map_err(|e| {
+                        warn!("Error listing bin paths for {tv}: {e:#}");
+                    })
+                    .unwrap_or_default();
+                debug!("[{tv}] list_bin_paths: {bin_paths:?}");
+                let env = backend
+                    .exec_env(config, self, tv)
+                    .await
+                    .map_err(|e| {
+                        warn!("Error running exec-env: {e:#}");
+                    })
+                    .unwrap_or_default();
+                if !env.is_empty() {
+                    debug!("[{tv}] exec_env: {env:?}");
+                }
+            }
+        }
+
+        // Finish the global footer before running hooks so output isn't masked
+        if !opts.dry_run {
+            mpr.footer_finish();
+        }
+
+        if opts.dry_run {
+            hooks::run_one_hook_with_context(
+                config,
+                self,
+                Hooks::Postinstall,
+                None,
+                None,
+                opts.dry_run,
+                opts.global_hooks_only,
+            )
+            .await;
+        } else {
+            // Run post-install hook with installed tools info
+            // `self` was re-resolved after the config reload above and still
+            // contains explicitly requested and task-only tools that are not
+            // present in the reloaded project config.
+            let installed_tools: Vec<InstalledToolInfo> =
+                installed.iter().map(InstalledToolInfo::from).collect();
+            hooks::run_one_hook_with_context(
+                config,
+                self,
+                Hooks::Postinstall,
+                None,
+                Some(&installed_tools),
+                opts.dry_run,
+                opts.global_hooks_only,
+            )
+            .await;
+        }
+
+        // Return appropriate result
+        if all_failed.is_empty() {
+            Ok(installed)
+        } else {
+            Err(Error::InstallFailed {
+                successful_installations: installed,
+                failed_installations: all_failed,
+            }
+            .into())
+        }
+    }
+
+    /// Ensure all plugins for the requested tools are installed
+    async fn ensure_plugins_installed(
+        &self,
+        config: &Arc<Config>,
+        versions: &[ToolRequest],
+        opts: &InstallOptions,
+    ) -> Vec<(ToolRequest, eyre::Error)> {
+        let mut plugin_errors = Vec::new();
+        let mut checked_backends = HashSet::new();
+
+        for tr in versions {
+            let ba = tr.ba();
+            if checked_backends.contains(ba) {
+                continue;
+            }
+            checked_backends.insert(ba.clone());
+
+            if let Ok(backend) = tr.backend()
+                && let Some(plugin) = backend.plugin()
+                && !plugin.is_installed()
+            {
+                let mpr = MultiProgressReport::get();
+                if let Err(e) = plugin
+                    .ensure_installed(config, &mpr, false, opts.dry_run)
+                    .await
+                    .or_else(|err| {
+                        if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>() {
+                            Ok(())
+                        } else {
+                            Err(err)
+                        }
+                    })
+                {
+                    // Collect errors for all tools using this plugin
+                    for tr2 in versions {
+                        if tr2.ba() == ba {
+                            plugin_errors.push((
+                                tr2.clone(),
+                                eyre::eyre!("Plugin '{}' installation failed: {}", ba.short, e),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        plugin_errors
+    }
+
+    /// Install tools using Kahn's algorithm for dependency ordering.
+    /// Returns (successful_installations, failed_installations, attempted_failures).
+    /// The final collection excludes tools blocked before their installer was spawned.
+    async fn install_with_deps(
+        &self,
+        config: &Arc<Config>,
+        versions: Vec<ToolRequest>,
+        opts: &InstallOptions,
+    ) -> (
+        Vec<ToolVersion>,
+        Vec<(ToolRequest, eyre::Error)>,
+        Vec<ToolRequest>,
+    ) {
+        if versions.is_empty() {
+            return (vec![], vec![], vec![]);
+        }
+
+        // Build index map to preserve original request order
+        let request_order: HashMap<String, usize> = versions
+            .iter()
+            .enumerate()
+            .map(|(i, tr)| (tool_key(tr), i))
+            .collect();
+
+        // Build dependency graph
+        let tool_deps = match ToolDeps::new(versions.clone()) {
+            Ok(deps) => Arc::new(Mutex::new(deps)),
+            Err(e) => {
+                // If we can't build the graph, return error for all versions
+                let failed: Vec<_> = versions
+                    .into_iter()
+                    .map(|tr| (tr, eyre::eyre!("Failed to build dependency graph: {}", e)))
+                    .collect();
+                return (vec![], failed, vec![]);
+            }
+        };
+
+        let mut rx = tool_deps.lock().await.subscribe();
+
+        let raw = opts.raw || Settings::get().raw;
+        let jobs = match raw {
+            true => 1,
+            false => crate::jobs::resolve(Settings::get().jobs, opts.jobs),
+        };
+        let semaphore = Arc::new(Semaphore::new(jobs));
+        let ts = Arc::new(self.clone());
+        let opts = Arc::new(opts.clone());
+
+        let mut installed = vec![];
+        let mut failed = vec![];
+        let mut attempted_failures = vec![];
+        let mut jset: JoinSet<(ToolRequest, Result<ToolVersion>)> = JoinSet::new();
+        // Track in-flight tools to recover from task panics
+        let mut in_flight: HashMap<tokio::task::Id, ToolRequest> = HashMap::new();
+
+        loop {
+            tokio::select! {
+                // Use `biased` to ensure completed installations are handled before starting new ones.
+                // This priority ordering ensures dependency tracking stays correct: we must process
+                // completions (which may unblock dependents) before spawning new installations.
+                biased;
+
+                // Handle completed installations first (higher priority)
+                Some(result) = jset.join_next() => {
+                    let mpr = MultiProgressReport::get();
+                    match result {
+                        Ok((tr, Ok(tv))) => {
+                            mpr.footer_inc(1);
+                            installed.push(tv);
+                            tool_deps.lock().await.complete_success(&tr);
+                        }
+                        Ok((tr, Err(e))) => {
+                            mpr.footer_inc(1);
+                            attempted_failures.push(tr.clone());
+                            failed.push((tr.clone(), e));
+                            tool_deps.lock().await.complete_failure(&tr);
+                        }
+                        Err(e) => {
+                            // Task panicked - try to recover the tool request from in_flight tracking
+                            mpr.footer_inc(1);
+                            if let Some(tr) = in_flight.remove(&e.id()) {
+                                attempted_failures.push(tr.clone());
+                                failed.push((tr.clone(), eyre::eyre!("Installation task panicked: {e:#}")));
+                                tool_deps.lock().await.complete_failure(&tr);
+                            } else {
+                                warn!("Task panicked but tool request not found: {e:#}");
+                            }
+                        }
+                    }
+                }
+
+                // Receive new tools to install
+                Some(maybe_tr) = rx.recv() => {
+                    match maybe_tr {
+                        Some(tr) => {
+                            // Spawn installation task
+                            let permit = match semaphore.clone().acquire_owned().await {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    // Mark as failed and notify tool_deps so dependents are blocked
+                                    MultiProgressReport::get().footer_inc(1);
+                                    failed.push((tr.clone(), eyre::eyre!("Failed to acquire semaphore: {}", e)));
+                                    tool_deps.lock().await.complete_failure(&tr);
+                                    continue;
+                                }
+                            };
+
+                            let config = config.clone();
+                            let ts = ts.clone();
+                            let opts = opts.clone();
+                            let tr_clone = tr.clone();
+
+                            let handle = jset.spawn(async move {
+                                let _permit = permit;
+                                let result = Self::install_single_tool(&config, &ts, &tr, &opts).await;
+                                (tr, result)
+                            });
+                            in_flight.insert(handle.id(), tr_clone);
+                        }
+                        None => {
+                            // All tools have been emitted, wait for remaining tasks
+                            break;
+                        }
+                    }
+                }
+
+                else => break,
+            }
+        }
+
+        // Wait for all remaining tasks to complete
+        while let Some(result) = jset.join_next().await {
+            let mpr = MultiProgressReport::get();
+            match result {
+                Ok((tr, Ok(tv))) => {
+                    mpr.footer_inc(1);
+                    installed.push(tv);
+                    tool_deps.lock().await.complete_success(&tr);
+                }
+                Ok((tr, Err(e))) => {
+                    mpr.footer_inc(1);
+                    attempted_failures.push(tr.clone());
+                    failed.push((tr.clone(), e));
+                    tool_deps.lock().await.complete_failure(&tr);
+                }
+                Err(e) => {
+                    mpr.footer_inc(1);
+                    if let Some(tr) = in_flight.remove(&e.id()) {
+                        attempted_failures.push(tr.clone());
+                        failed.push((tr.clone(), eyre::eyre!("Installation task panicked: {e:#}")));
+                        tool_deps.lock().await.complete_failure(&tr);
+                    } else {
+                        warn!("Task panicked but tool request not found: {e:#}");
+                    }
+                }
+            }
+        }
+
+        // Add blocked tools to failures
+        let blocked = tool_deps.lock().await.blocked_tools();
+        for tr in blocked {
+            failed.push((tr.clone(), eyre::eyre!("Skipped due to failed dependency")));
+            MultiProgressReport::get().footer_inc(1);
+        }
+
+        // Sort installed versions by original request order to preserve user's intended ordering
+        installed.sort_by_key(|tv| {
+            let key = tool_key(&tv.request);
+            request_order.get(&key).copied().unwrap_or(usize::MAX)
+        });
+
+        (installed, failed, attempted_failures)
+    }
+
+    /// Install a single tool
+    async fn install_single_tool(
+        config: &Arc<Config>,
+        ts: &Arc<Toolset>,
+        tr: &ToolRequest,
+        opts: &Arc<InstallOptions>,
+    ) -> Result<ToolVersion> {
+        let mpr = MultiProgressReport::get();
+        let pre_resolve_backend = tr.backend()?;
+        backend::ensure_backend_enabled(&pre_resolve_backend.get_type())?;
+        let mut resolve_options = opts.resolve_options.clone();
+        if should_refresh_remote_versions(tr, &pre_resolve_backend, &resolve_options) {
+            resolve_options.refresh_remote_versions = true;
+        }
+        let mut tv = tr.resolve(config, &resolve_options).await?;
+        let backend = tv.backend()?;
+        backend::ensure_backend_enabled(&backend.get_type())?;
+        if let Some(dir) = &opts.install_dir {
+            let tool_dir_name = tv.ba().tool_dir_name();
+            tv.install_path = Some(dir.join(tool_dir_name).join(tv.tv_pathname()));
+            tv.install_path_is_explicit = true;
+        }
+        let before_date = transitive_dependency_before_date(tr, &tv);
+
+        let ctx = InstallContext {
+            config: config.clone(),
+            ts: ts.clone(),
+            pr: mpr.add_with_options(&tv.style(), opts.dry_run),
+            force: opts.force,
+            dry_run: opts.dry_run,
+            locked: config.invocation_locked_for(tr.source(), opts.locked)
+                || config.tool_config_locked(tr.source()),
+            before_date,
+            dependency_context: OnceCell::new(),
+        };
+
+        backend.install_version(ctx, tv).await
+    }
+
+    pub(crate) async fn install_missing_bin(
+        &mut self,
+        config: &mut Arc<Config>,
+        bin_name: &str,
+    ) -> Result<Option<Vec<ToolVersion>>> {
+        // Registry bin metadata is the only provider signal available before a tool has ever
+        // been installed. Prefer those configured providers, applying registry override order,
+        // before falling back to executable discovery from existing installs.
+        let mut plugins = IndexSet::new();
+        let mut registry_providers = self
+            .list_missing_versions_for_install(config)
+            .await
+            .into_iter()
+            .filter(|tv| {
+                REGISTRY
+                    .get(&tv.ba().short)
+                    .is_some_and(|tool| tool.provides_bin(bin_name))
+            })
+            .filter(|tv| match &Settings::get().auto_install_disable_tools {
+                Some(disable_tools) => !disable_tools.contains(&tv.ba().short),
+                None => true,
+            })
+            .map(|tv| eyre::Ok((tv.backend()?, tv)))
+            .collect::<Result<Vec<_>>>()?;
+        Self::sort_by_overrides(&mut registry_providers)?;
+        plugins.extend(registry_providers.into_iter().map(|(backend, _)| backend));
+
+        // Check currently active installed versions.
+        for (p, tv) in self.list_current_installed_versions(config) {
+            if let Ok(Some(_bin)) = p.which(config, &tv, bin_name).await {
+                plugins.insert(p);
+            }
+        }
+
+        // Also check backends that are requested but not currently active.
+        // This handles the case where a user has tool@v1 globally and tool@v2 locally (not installed)
+        // When looking for a bin provided by the tool, we check if any installed version provides it
+        let all_installed = self.list_installed_versions(config).await?;
+        for (backend, _versions) in self.list_versions_by_plugin() {
+            // Skip if we already found this backend
+            if plugins.contains(&backend) {
+                continue;
+            }
+
+            // Check if this backend has ANY installed version that provides the bin
+            let backend_versions: Vec<_> = all_installed
+                .iter()
+                .filter(|(p, _)| p.ba() == backend.ba())
+                .collect();
+
+            for (_, tv) in backend_versions {
+                if let Ok(Some(_bin)) = backend.which(config, tv, bin_name).await {
+                    plugins.insert(backend.clone());
+                    break;
+                }
+            }
+        }
+
+        // Install missing versions for backends that provide this bin
+        for plugin in plugins {
+            let versions = self
+                .list_missing_versions_for_install(config)
+                .await
+                .into_iter()
+                .filter(|tv| tv.ba() == &**plugin.ba())
+                .filter(|tv| match &Settings::get().auto_install_disable_tools {
+                    Some(disable_tools) => !disable_tools.contains(&tv.ba().short),
+                    None => true,
+                })
+                .map(|tv| tv.request)
+                .collect_vec();
+            if !versions.is_empty() {
+                let versions = self
+                    .install_all_versions(config, versions.clone(), &InstallOptions::default())
+                    .await?;
+                if !versions.is_empty() {
+                    let ts = config.get_toolset().await?;
+                    config::rebuild_shims_and_runtime_symlinks(
+                        config,
+                        ts,
+                        &versions,
+                        crate::lockfile::LockfileUpdateMode::Normal,
+                    )
+                    .await?;
+                }
+                for tv in &versions {
+                    let backend = tv.backend()?;
+                    if backend.which(config, tv, bin_name).await?.is_some() {
+                        return Ok(Some(versions));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Install all plugins defined in [plugins] config section
+    pub(crate) async fn ensure_config_plugins_installed(
+        config: &Arc<Config>,
+        dry_run: bool,
+    ) -> Result<()> {
+        Self::ensure_config_plugins_installed_from_urls(config, &config.repo_urls, dry_run).await
+    }
+
+    /// Install all plugins from an explicit plugin URL map.
+    pub(crate) async fn ensure_config_plugins_installed_from_urls(
+        config: &Arc<Config>,
+        repo_urls: &HashMap<String, String>,
+        dry_run: bool,
+    ) -> Result<()> {
+        if repo_urls.is_empty() {
+            return Ok(());
+        }
+
+        let mpr = MultiProgressReport::get();
+
+        for (plugin_key, url) in repo_urls {
+            let (plugin_type, name) = Self::parse_plugin_key(plugin_key);
+
+            // Skip empty plugin names (e.g., from malformed keys like "" or "vfox:")
+            if name.is_empty() {
+                warn!("skipping empty plugin name from key: {plugin_key}");
+                continue;
+            }
+
+            let plugin = plugin_type.plugin(name.to_string());
+            plugin.set_remote_url(url.clone());
+
+            if !plugin.is_installed() {
+                plugin
+                    .ensure_installed(config, &mpr, false, dry_run)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    fn parse_plugin_key(key: &str) -> (PluginType, &str) {
+        PluginType::from_plugin_config(key)
+    }
+}
+
+fn lazy_bin_names_eq(configured: &str, requested: &str) -> bool {
+    if cfg!(windows) {
+        shims::command_name_without_exe_suffix(configured)
+            .eq_ignore_ascii_case(shims::command_name_without_exe_suffix(requested))
+    } else {
+        configured == requested
+    }
+}
+
+fn ensure_safe_install_options(versions: &[ToolRequest]) -> Result<()> {
+    for request in versions {
+        request.ensure_safe_install_options()?;
+    }
+    Ok(())
+}
+
+/// Whether install-time resolution should refresh the remote-versions cache
+/// before picking a version. Only selectors whose meaning depends on the
+/// freshest upstream entry benefit: `latest`, `sub-N:latest`, and prefix
+/// queries that have no matching installed version. Fully-pinned exact
+/// versions, refs, paths, `system`, and prefix queries already satisfied by
+/// an installed version are unaffected by cache staleness — for those the
+/// cached answer is either correct or harmless, and refreshing is wasted
+/// network traffic. Users who want to pull the absolute latest matching a
+/// prefix can run `mise upgrade` or pin to `@latest`.
+///
+/// Skipped in `prefer_offline` mode (shims, hook-env, activate, etc.) because
+/// the versions host is disabled there, so a refresh would bypass the
+/// on-disk cache populated by an earlier non-prefer-offline command and fall
+/// through to a backend listing that often has far fewer versions (e.g. the
+/// GitHub releases listing only returns the most recent ~30), turning a
+/// previously-resolvable prefix query into "no versions found".
+fn should_refresh_remote_versions(
+    tr: &ToolRequest,
+    backend: &crate::backend::ABackend,
+    opts: &ResolveOptions,
+) -> bool {
+    if opts.refresh_remote_versions || opts.offline || Settings::get().prefer_offline() {
+        return false;
+    }
+    match tr {
+        ToolRequest::Version { version, .. } => version == "latest",
+        ToolRequest::Prefix { prefix, .. } => {
+            backend.list_installed_versions_matching(prefix).is_empty()
+        }
+        ToolRequest::Sub { orig_version, .. } => orig_version == "latest",
+        ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => false,
+    }
+}
+
+fn transitive_dependency_before_date(
+    tr: &ToolRequest,
+    tv: &ToolVersion,
+) -> Option<jiff::Timestamp> {
+    match tr {
+        ToolRequest::Version { version, .. } if version != "latest" && version == &tv.version => {
+            None
+        }
+        ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => None,
+        _ => tv.before_date,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::BackendArg;
+    use crate::toolset::parse_tool_options;
+
+    #[cfg(windows)]
+    #[test]
+    fn lazy_bin_names_match_windows_command_case() {
+        assert!(lazy_bin_names_eq("dummy", "DUMMY"));
+        assert!(lazy_bin_names_eq("dummy.exe", "DUMMY"));
+        assert!(lazy_bin_names_eq("DUMMY.EXE", "dummy.exe"));
+        assert!(!lazy_bin_names_eq("dummy", "other"));
+    }
+
+    #[tokio::test]
+    async fn test_init_request_options_preserves_unmatched_request_options() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        for version in ["1.0.0", "2.0.0"] {
+            toolset.add_version(
+                ToolRequest::new_with_options(
+                    ba.clone(),
+                    version,
+                    parse_tool_options(&format!(r#"postinstall="echo configured {version}""#)),
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            );
+        }
+
+        let mut requests = vec![
+            ToolRequest::new_with_options(
+                ba.clone(),
+                "3.0.0",
+                parse_tool_options(r#"postinstall="echo carried""#),
+                ToolSource::Argument,
+            )
+            .unwrap(),
+        ];
+        toolset.init_request_options(&mut requests);
+
+        assert_eq!(
+            requests[0].options().get("postinstall"),
+            Some("echo carried")
+        );
+
+        let mut inactive_options = parse_tool_options(r#"postinstall="echo inactive""#);
+        let inactive_os = match crate::cli::version::OS.as_str() {
+            "linux" => "macos",
+            _ => "linux",
+        };
+        inactive_options.core.os = Some(vec![inactive_os.to_string()]);
+        let inactive = ToolRequest::new_with_options(
+            ba.clone(),
+            "4.0.0",
+            inactive_options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let active = ToolRequest::new_with_options(
+            ba,
+            "4.0.0",
+            parse_tool_options(r#"postinstall="echo active""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(inactive.clone());
+        toolset.add_version(active.clone());
+        let mut requests = vec![inactive.clone(), active.clone()];
+        toolset.init_request_options(&mut requests);
+
+        assert_eq!(requests, vec![inactive, active]);
+    }
+
+    #[tokio::test]
+    async fn test_init_request_options_preserves_matching_request_options() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy[inline_only=inline]"));
+        let configured = ToolRequest::new_with_options(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"selected="config""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(configured);
+        let mut requests = vec![
+            ToolRequest::new_with_options(
+                ba,
+                "1.0.0",
+                parse_tool_options(r#"request_only="request""#),
+                ToolSource::Argument,
+            )
+            .unwrap(),
+        ];
+
+        toolset.init_request_options(&mut requests);
+
+        let options = requests[0].options();
+        assert_eq!(options.get("selected"), Some("config"));
+        assert_eq!(options.get("request_only"), Some("request"));
+        assert_eq!(options.get("inline_only"), Some("inline"));
+    }
+}

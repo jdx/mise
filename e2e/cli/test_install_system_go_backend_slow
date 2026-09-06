@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/discussions/9526
+#
+# When `mise install --system` installs both `go` and a `go:` backend tool
+# in the same invocation, the go-backend install must use the freshly
+# installed go (in the system installs dir), not a stale path that was
+# computed before go installed.
+#
+# The bug: tv.install_path() cached the user-dir path (returned because the
+# system dir didn't exist yet at the time of the first call). Subsequent
+# callers (core go's exec_env -> GOROOT/GOPATH) then exported the stale
+# path, and `go install ...` failed with "cannot find GOROOT directory".
+
+# Block any system-wide go so we can prove the install used the
+# mise-installed go.
+cat >"$HOME/bin/fail" <<'EOF'
+#!/usr/bin/env bash
+echo "CALL TO SYSTEM $(basename $0)! args: $*" >&2
+exit 1
+EOF
+chmod +x "$HOME/bin/fail"
+ln -s fail "$HOME/bin/go"
+export PATH="$HOME/bin:$PATH"
+assert_fail go
+
+export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
+SYSTEM_INSTALLS="$MISE_SYSTEM_DATA_DIR/installs"
+
+cat >>.mise.toml <<EOF
+[tools]
+go = "prefix:1.24"
+"go:github.com/jdx/go-example" = "e16a340"
+[settings]
+experimental = true
+EOF
+
+# Both go and the go-backend tool must install in a single invocation.
+mise install --system --jobs 1
+
+# Verify both ended up in the system installs dir, not the user dir.
+assert_directory_exists "$SYSTEM_INSTALLS/go"
+assert_directory_exists "$SYSTEM_INSTALLS/go-github-com-jdx-go-example/e16a340"
+
+# Required to properly cleanup as go installs read-only sources
+chmod -R +w ~/go 2>/dev/null || true

@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+echo "tasks.mylocal = { run = 'echo mylocal' }" >mise.toml
+cat >~/.config/mise/config.toml <<'TOML'
+tasks.myglobal = { run = 'echo myglobal' }
+
+[task_config]
+includes = [".config/mise/tasks", "dotfiles/tasks"]
+TOML
+mkdir -p ~/.config/mise/tasks
+cat <<'EOF' >~/.config/mise/tasks/myglobalfile
+#!/usr/bin/env bash
+echo myglobalfile
+EOF
+chmod +x ~/.config/mise/tasks/myglobalfile
+mkdir -p ~/.config/mise/conf.d ~/lower-global-tasks
+cat <<'EOF' >~/lower-global-tasks/lower-global-only
+#!/usr/bin/env bash
+echo lower-global-only
+EOF
+chmod +x ~/lower-global-tasks/lower-global-only
+cat <<'TOML' >~/.config/mise/conf.d/relative-overlay.toml
+[task_config]
+includes = ["lower-global-tasks"]
+
+[tasks.relative-meta]
+file = ".config/mise/tasks/relative-meta"
+env = { RELATIVE_OVERLAY = "applied" }
+
+[tasks.templated-meta]
+file = "{{config_root}}/.config/mise/tasks/templated-meta"
+env = { TEMPLATED_OVERLAY = "applied" }
+TOML
+cat <<'EOF' >~/.config/mise/tasks/relative-meta
+#!/usr/bin/env bash
+echo "RELATIVE_OVERLAY=${RELATIVE_OVERLAY:-<unset>}"
+EOF
+chmod +x ~/.config/mise/tasks/relative-meta
+cat <<'EOF' >~/.config/mise/tasks/templated-meta
+#!/usr/bin/env bash
+echo "TEMPLATED_OVERLAY=${TEMPLATED_OVERLAY:-<unset>}"
+EOF
+chmod +x ~/.config/mise/tasks/templated-meta
+mkdir -p ~/dotfiles/tasks
+cat <<'EOF' >~/dotfiles/tasks/customglobalfile
+#!/usr/bin/env bash
+echo "PROJECT_ROOT=$MISE_PROJECT_ROOT"
+EOF
+chmod +x ~/dotfiles/tasks/customglobalfile
+mkdir -p "$PWD/system-config" "$PWD/system-tasks"
+cat >"$PWD/system-config/config.toml" <<EOF
+[task_config]
+includes = ["$PWD/system-tasks"]
+EOF
+cat <<'EOF' >"$PWD/system-tasks/systemglobalfile"
+#!/usr/bin/env bash
+echo "PROJECT_ROOT=$MISE_PROJECT_ROOT"
+EOF
+chmod +x "$PWD/system-tasks/systemglobalfile"
+export MISE_SYSTEM_CONFIG_FILE="$PWD/system-config/config.toml"
+
+assert "mise tasks" "customglobalfile
+myglobal
+myglobalfile
+mylocal
+relative-meta
+systemglobalfile
+templated-meta"
+assert "mise tasks --local" "mylocal"
+assert "mise tasks --global" "customglobalfile
+myglobal
+myglobalfile
+relative-meta
+systemglobalfile
+templated-meta"
+assert "mise tasks ls --local" "mylocal"
+assert "mise tasks --local ls" "mylocal"
+assert_fail "mise tasks --name-only ls --json" "--name-only cannot be used with --json, --extended, or --usage"
+assert_contains "mise tasks mylocal --json" '"name": "mylocal"'
+assert_fail "mise tasks mylocal --local" "task list options cannot be used with task info"
+assert_fail "mise tasks deps --local" "unexpected argument '--local'"
+assert_fail "mise tasks --global deps" "task list options cannot be used with subcommands"
+assert "mise run customglobalfile" "PROJECT_ROOT=$PWD"
+assert "mise run systemglobalfile" "PROJECT_ROOT=$PWD"
+assert "mise run relative-meta" "RELATIVE_OVERLAY=applied"
+assert "mise run templated-meta" "TEMPLATED_OVERLAY=applied"
+assert_fail "mise run lower-global-only" "no task lower-global-only found"

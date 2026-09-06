@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# `{{config_source}}` is the config file the template is written in.
+#
+# The shape here is the one from discussions#9100: a shared config living in
+# some checkout, symlinked into `conf.d`, that wants to put its own `bin` on the
+# path. `config_root` cannot express that — for a global config it is
+# `MISE_GLOBAL_CONFIG_ROOT` by design, so it points at $HOME rather than at the
+# checkout — and before this change no variable did.
+
+SHARED="$MISE_TMP_DIR/shared-config"
+mkdir -p "$SHARED/bin" "$HOME/.config/mise/conf.d"
+
+cat >"$SHARED/bin/shared-tool" <<'EOF'
+#!/usr/bin/env bash
+echo shared-tool-ok
+EOF
+chmod +x "$SHARED/bin/shared-tool"
+
+# `canonicalize` resolves the symlink, `dirname` takes the directory it lives
+# in. Neither filter is new; the variable to feed them is.
+cat >"$SHARED/mise.team.toml" <<'EOF'
+[env]
+_.path = "{{ config_source | canonicalize | dirname }}/bin"
+REACHED_BY = "{{ config_source | dirname }}"
+LIVES_IN = "{{ config_source | canonicalize | dirname }}"
+EOF
+
+ln -sf "$SHARED/mise.team.toml" "$HOME/.config/mise/conf.d/mise.team.toml"
+
+# The point of the report: the checkout's bin ends up on PATH, so its tools run.
+assert_contains "mise x -- shared-tool" "shared-tool-ok"
+
+# Resolving is the template's choice, not mise's. Without `canonicalize` the
+# variable still names the path the file was reached through, which is why the
+# variable itself is left unresolved.
+assert_contains "mise env" "REACHED_BY=$HOME/.config/mise/conf.d"
+assert_contains "mise env" "LIVES_IN=$SHARED"
+
+# And it is the file, not the project: `config_root` still answers the question
+# it always answered.
+cat >mise.toml <<'EOF'
+[env]
+LOCAL_SOURCE = "{{ config_source }}"
+LOCAL_ROOT = "{{ config_root }}"
+EOF
+
+assert_contains "mise env" "LOCAL_SOURCE=$PWD/mise.toml"
+assert_contains "mise env" "LOCAL_ROOT=$PWD"

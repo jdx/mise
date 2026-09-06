@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Test MISE_BACKENDS_* environment variable override for non-registry tools
+
+# Test 1: Non-registry tool with custom backend via env var
+echo "Testing non-registry tool with env override..."
+export MISE_BACKENDS_JUST_TEST='github:casey/just[bin=just]'
+
+assert "mise exec just-test@1.43.0 -- just --version" "just 1.43.0"

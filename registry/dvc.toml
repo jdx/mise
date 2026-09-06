@@ -1,0 +1,5 @@
+backends = ["pipx:dvc"]
+bins = ["dvc"]
+description = "Data Versioning and ML Experiments"
+test = { cmd = "dvc version", expected = "{{version}}" }
+version_order = "semver"

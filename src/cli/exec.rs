@@ -1,0 +1,758 @@
+use std::collections::BTreeMap;
+use std::ffi::OsString;
+use std::sync::Arc;
+
+use duct::IntoExecutablePath;
+#[cfg(not(any(test, windows)))]
+use eyre::{Result, bail};
+#[cfg(any(test, windows))]
+use eyre::{Result, eyre};
+
+use crate::cli::args::ToolArg;
+#[cfg(any(test, windows))]
+use crate::cmd;
+use crate::config::{Config, Settings};
+use crate::deps::{DepsEngine, DepsOptions};
+use crate::env;
+use crate::env_diff::EnvDiff;
+use crate::sandbox::SandboxConfig;
+use crate::toolset::env_cache::CachedEnv;
+use crate::toolset::{InstallOptions, ResolveOptions, Toolset, ToolsetBuilder};
+
+/// Execute a command with tool(s) set
+///
+/// Use this to run a command with mise's tools and environment without modifying the shell
+/// session, or to run ad-hoc commands with tools that are not in the config.
+///
+/// Tools are loaded from mise.toml and can be overridden with <TOOL@VERSION> args. Only the
+/// tools you name are overridden: if `mise.toml` includes `node = "20"` and you run
+/// `mise exec python@3.11`, node@20 is still loaded.
+///
+/// The "--" separates tools from the command to pass along to the subprocess.
+#[derive(Debug, usage_rs::Args)]
+#[usage(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub(crate) struct Exec {
+    /// Tool(s) to load
+    /// e.g.: node@20 python@3.10
+    #[usage(value_name = "TOOL@VERSION")]
+    pub tool: Vec<ToolArg>,
+
+    /// Command string to execute (same as --command)
+    #[usage(conflicts = "c", required_unless = "c", double_dash = "required")]
+    pub command: Option<Vec<String>>,
+
+    /// Command string to execute
+    #[usage(short, long = "command", value_hint = usage_rs::ValueHint::CommandString, conflicts = "command")]
+    pub c: Option<String>,
+
+    /// Number of jobs to run in parallel
+    /// Values below 1 are treated as 1
+    /// Defaults to the `jobs` setting
+    #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    pub jobs: Option<usize>,
+
+    /// Allow specific env var through (implies --deny-env for everything else)
+    /// Supports wildcards, e.g. --allow-env='MYAPP_*'
+    #[usage(long, value_name = "VAR", verbatim_doc_comment)]
+    pub allow_env: Vec<String>,
+
+    /// Allow network to specific host (implies --deny-net for everything else)
+    /// macOS only in v1; on Linux falls back to allowing all network
+    #[usage(long, value_name = "HOST", verbatim_doc_comment)]
+    pub allow_net: Vec<String>,
+
+    /// Allow reads from specific path (implies --deny-read for everything else)
+    #[usage(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_read: Vec<std::path::PathBuf>,
+
+    /// Allow writes to specific path (implies --deny-write for everything else)
+    #[usage(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_write: Vec<std::path::PathBuf>,
+
+    /// Block reads, writes, network, and env vars
+    #[usage(long, verbatim_doc_comment)]
+    pub deny_all: bool,
+
+    /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    #[usage(long, verbatim_doc_comment)]
+    pub deny_env: bool,
+
+    /// Block all network access
+    #[usage(long, verbatim_doc_comment)]
+    pub deny_net: bool,
+
+    /// Block filesystem reads (system libs and tool dirs still accessible)
+    #[usage(long, verbatim_doc_comment)]
+    pub deny_read: bool,
+
+    /// Block all filesystem writes
+    #[usage(long, verbatim_doc_comment)]
+    pub deny_write: bool,
+
+    /// Bypass the environment cache and recompute the environment
+    #[usage(long)]
+    pub fresh_env: bool,
+
+    /// Skip automatic dependency preparation
+    #[usage(long)]
+    pub no_deps: bool,
+
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
+    /// Implies `--jobs=1`
+    #[usage(long, overrides = "jobs")]
+    pub raw: bool,
+}
+
+impl Exec {
+    #[async_backtrace::framed]
+    pub async fn run(self) -> eyre::Result<()> {
+        // Temporarily unset cache key to force fresh env computation
+        if self.fresh_env {
+            env::reset_env_cache_key();
+        }
+
+        let config = Config::get().await?;
+
+        // Check if any tool arg explicitly specified @latest
+        // If so, resolve to the actual latest version from the registry (not just latest installed)
+        let has_explicit_latest = self
+            .tool
+            .iter()
+            .any(|t| t.tvr.as_ref().is_some_and(|tvr| tvr.version() == "latest"));
+
+        let resolve_options = if has_explicit_latest {
+            ResolveOptions {
+                latest_versions: true,
+                use_locked_version: false,
+                ..Default::default()
+            }
+        } else {
+            Default::default()
+        };
+
+        let ts = measure!("toolset", {
+            ToolsetBuilder::new()
+                .with_args(&self.tool)
+                .with_default_to_latest(true)
+                .with_resolve_options(resolve_options.clone())
+                .build(&config)
+                .await?
+        });
+
+        self.run_with_context(
+            config,
+            ts,
+            resolve_options,
+            has_explicit_latest,
+            BTreeMap::new(),
+            false,
+        )
+        .await
+    }
+
+    /// Execute with a toolset that the shim path has already resolved while
+    /// locating the delegated binary.
+    pub(crate) async fn run_with_toolset(
+        self,
+        config: Arc<Config>,
+        ts: Toolset,
+    ) -> eyre::Result<()> {
+        self.run_with_context(
+            config,
+            ts,
+            ResolveOptions::default(),
+            false,
+            BTreeMap::new(),
+            false,
+        )
+        .await
+    }
+
+    pub(crate) async fn run_with_command_wrapper(
+        self,
+        config: Arc<Config>,
+        ts: Toolset,
+        wrapper_env: BTreeMap<String, String>,
+    ) -> eyre::Result<()> {
+        self.run_with_context(
+            config,
+            ts,
+            ResolveOptions::default(),
+            false,
+            wrapper_env,
+            true,
+        )
+        .await
+    }
+
+    async fn run_with_context(
+        self,
+        mut config: Arc<Config>,
+        mut ts: Toolset,
+        resolve_options: ResolveOptions,
+        has_explicit_latest: bool,
+        wrapper_env: BTreeMap<String, String>,
+        strip_dispatch_dirs: bool,
+    ) -> eyre::Result<()> {
+        let opts = InstallOptions {
+            force: false,
+            jobs: self.jobs,
+            raw: self.raw,
+            // prevent installing things in shims by checking for tty
+            // also don't autoinstall if at least 1 tool is specified
+            // in that case the user probably just wants that one tool
+            missing_args_only: !self.tool.is_empty()
+                || !Settings::get().exec_auto_install
+                || *env::__MISE_SHIM,
+            skip_auto_install: !Settings::get().exec_auto_install || !Settings::get().auto_install,
+            resolve_options,
+            ..Default::default()
+        };
+        let (_, mut missing) = measure!("install_arg_versions", {
+            ts.install_missing_versions(&mut config, &opts).await?
+        });
+
+        // If we installed new versions for explicit @latest, re-resolve to pick up the installed versions
+        if has_explicit_latest {
+            ts.resolve_with_opts(&config, &opts.resolve_options).await?;
+        }
+
+        let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
+
+        // Running a lazy tool's command is what installs it, and `mise x -- <cmd>`
+        // names that command directly. Install its provider here: program resolution
+        // below deliberately looks past shim directories, so the bootstrap shim that
+        // would otherwise do this never gets the chance.
+        if ts.has_lazy_declarations()
+            && !program.contains(['/', '\\'])
+            && ts.has_missing_lazy_bin_provider(&config, &program).await?
+        {
+            ts.install_missing_lazy_bin(&mut config, &program).await?;
+            // The original list was computed before the command's lazy provider
+            // was installed. Refresh it so a successful install is not reported
+            // as missing below.
+            missing = ts.list_missing_versions_for_install(&config).await;
+        }
+        if ts.has_lazy_declarations()
+            && !opts.dry_run
+            && let Err(err) = crate::shims::ensure_lazy_shims(&missing)
+        {
+            // Commands started by the child (a shell, a script) reach lazy tools
+            // through their bootstrap shims, which a hand-edited declaration lacks.
+            warn!("failed to create shims for lazy tools: {err:#}");
+        }
+
+        measure!("notify_if_versions_missing", {
+            ts.notify_missing_versions(missing);
+        });
+
+        let (mut env, env_remove) = measure!("env_with_path", {
+            ts.env_with_path_and_removals(&config).await?
+        });
+        env.extend(wrapper_env);
+        if strip_dispatch_dirs && let Some(path) = env.get_mut(&*env::PATH_KEY) {
+            *path = crate::file::strip_dispatch_dirs_from_path(path);
+        }
+
+        // Run auto-enabled deps steps (unless --no-deps)
+        if !self.no_deps {
+            let engine = DepsEngine::new(&config)?;
+            engine
+                .run(DepsOptions {
+                    auto_only: true, // Only run providers with auto=true
+                    env: env.clone(),
+                    env_remove: env_remove.clone(),
+                    ..Default::default()
+                })
+                .await?;
+        }
+
+        // Ensure MISE_ENV is set in the spawned shell if it was specified via -E flag
+        if !env::MISE_ENV.is_empty() {
+            env.insert("MISE_ENV".to_string(), env::MISE_ENV.join(","));
+        }
+
+        // Ensure cache key is propagated to subprocesses for env caching
+        if Settings::get().env_cache && !self.fresh_env {
+            let key = CachedEnv::ensure_encryption_key();
+            env.insert("__MISE_ENV_CACHE_KEY".to_string(), key);
+        }
+
+        // Embed __MISE_DIFF so a nested mise invocation can recover the pristine
+        // env (and pristine PATH) instead of stacking our tool dirs on top of its
+        // own. Without this, `mise -C <new> exec -- ...` invoked from inside our
+        // child process would inherit our tool dirs as user-pre-PATH and they
+        // would outrank the inner toolset's resolved tool. See discussion #9754.
+        // Computed after all env modifications so the diff fully describes what
+        // mise added (matches task_executor.rs).
+        let removed_mise_env = if !env::MISE_ENV.is_empty() {
+            // Keep explicit -E profiles active if the child shell sources `mise activate`.
+            env.remove("MISE_ENV")
+        } else {
+            None
+        };
+        env.remove("__MISE_DIFF");
+        let mut final_env = env::PRISTINE_ENV.clone();
+        for key in &env_remove {
+            final_env.remove(key);
+        }
+        final_env.extend(env.clone());
+        let serialized = EnvDiff::from_final_env(&env::PRISTINE_ENV, &final_env).serialize();
+        if let Some(mise_env) = removed_mise_env {
+            env.insert("MISE_ENV".to_string(), mise_env);
+        }
+        if let Ok(serialized) = serialized {
+            env.insert("__MISE_DIFF".to_string(), serialized);
+        }
+
+        if program.rsplit('/').next() == Some("fish") {
+            let mut cmd = vec![];
+            for (k, v) in env.iter().filter(|(k, _)| *k != "PATH") {
+                cmd.push(format!(
+                    "set -gx {} {}",
+                    shell_escape::escape(k.into()),
+                    shell_escape::escape(v.into())
+                ));
+            }
+            // TODO: env is being calculated twice with final_env and env_with_path
+            let (_, env_results) = ts.final_env(&config).await?;
+            for p in ts.list_final_paths(&config, env_results).await? {
+                cmd.push(format!(
+                    "fish_add_path -gm {}",
+                    shell_escape::escape(p.to_string_lossy())
+                ));
+            }
+            args.insert(0, cmd.join("\n"));
+            args.insert(0, "-C".into());
+        }
+
+        // Build sandbox config from settings and CLI flags.
+        let mut sandbox = SandboxConfig::from_settings_and_cli(
+            &Settings::get().sandbox,
+            self.deny_all,
+            SandboxConfig {
+                deny_read: self.deny_read,
+                deny_write: self.deny_write,
+                deny_net: self.deny_net,
+                deny_env: self.deny_env,
+                deny_process: false,
+                deny_temp_write: false,
+                allow_read: self.allow_read,
+                allow_write: self.allow_write,
+                allow_net: self.allow_net,
+                allow_env: self.allow_env,
+                pass_through_env: vec![],
+                cache_env: vec![],
+            },
+        );
+        sandbox.resolve_paths();
+
+        if sandbox.is_active() {
+            env = sandbox.filter_env(&env);
+        }
+
+        time!("exec");
+        // shell_body_mode: true only for the `-c`/`--command` path, where
+        // parse_command synthesized `shell + [flags.., body]`. A positional
+        // command must not be reinterpreted as a shell body.
+        exec_program(program, args, env, env_remove, &sandbox, self.c.is_some()).await
+    }
+}
+
+#[cfg(all(not(test), unix))]
+pub(crate) async fn exec_program<T, U>(
+    program: T,
+    args: U,
+    env: BTreeMap<String, String>,
+    env_remove: std::collections::BTreeSet<String>,
+    sandbox: &SandboxConfig,
+    _shell_body_mode: bool,
+) -> Result<()>
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+{
+    // Capture the marker before deny-env removes variables from the process.
+    // The lazy state must retain the dispatching shim for candidate filtering.
+    drop(env::MISE_SHIM_PATH.read().unwrap());
+    for key in env_remove {
+        env::remove_var(key);
+    }
+    if sandbox.effective_deny_env() {
+        // When env is sandboxed, clear all vars and only set the filtered ones.
+        //
+        // Deliberately iterates vars_os() rather than env::vars_safe(): vars_safe()
+        // drops a pair when *either* the key or the value is not valid UTF-8, so a
+        // variable with a non-UTF-8 value (e.g. SECRET=<binary>) would never be
+        // visited here and would survive --deny-env into the sandboxed child.
+        // A key that is not valid UTF-8 can never be present in `env` (a
+        // BTreeMap<String, String>), so treating it as "not allowed" is correct.
+        for (k, _) in std::env::vars_os() {
+            if !k.to_str().is_some_and(|key| env.contains_key(key)) {
+                env::remove_var(&k);
+            }
+        }
+    }
+    for (k, v) in env.iter() {
+        env::set_var(k, v);
+    }
+    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    let program = program.to_executable();
+    // Captured before `program` is shadowed by the resolved path, so a failed
+    // exec can still name what the user asked for.
+    let program_name = program.to_string_lossy().into_owned();
+    // Set when PATH resolution failed and we fell back to the bare name. The
+    // exec below is then expected to fail, and discussion #4407's hint applies.
+    let mut resolution_failed = false;
+    let program = if program.to_string_lossy().contains('/') {
+        // Already a path, no need to resolve
+        program
+    } else {
+        let cwd = crate::dirs::CWD.clone().unwrap_or_default();
+        let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
+            // For program resolution, reorder PATH so that paths added by mise
+            // (tool bins, _.path entries) come before paths from the original
+            // system PATH. This prevents wrapper scripts in the system PATH
+            // (e.g. .devcontainer/bin/tool) from being found before the real
+            // tool binary, which would cause infinite recursion and E2BIG.
+            //
+            // User-configured paths (_.path/venv) maintain their position
+            // relative to tool paths since both are "mise-added".
+            // The child process still inherits the full unmodified PATH.
+            let pristine: std::collections::HashSet<_> = crate::env::PATH.iter().collect();
+            let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
+            let wrappers: Vec<_> = all_paths
+                .iter()
+                .filter(|p| crate::file::is_command_wrapper_dir(p))
+                .cloned()
+                .collect();
+            // Mise-added paths first (preserving relative order)
+            let mise_added: Vec<_> = all_paths
+                .iter()
+                .filter(|p| {
+                    !pristine.contains(p)
+                        && !crate::file::is_mise_shims_dir(p)
+                        && !crate::file::is_command_wrapper_dir(p)
+                })
+                .cloned()
+                .collect();
+            // Then original system paths (minus shims)
+            let original: Vec<_> = all_paths
+                .iter()
+                .filter(|p| {
+                    pristine.contains(p)
+                        && !crate::file::is_mise_shims_dir(p)
+                        && !crate::file::is_command_wrapper_dir(p)
+                })
+                .cloned()
+                .collect();
+            std::env::join_paths(
+                wrappers
+                    .iter()
+                    .chain(mise_added.iter())
+                    .chain(original.iter()),
+            )
+            .unwrap()
+        });
+        let is_shim_dispatch = env::MISE_SHIM_PATH.read().unwrap().is_some();
+        match which::which_in_all(&program, lookup_path, cwd) {
+            Ok(mut candidates) => {
+                match candidates.find(|candidate| !crate::file::is_active_mise_shim(candidate)) {
+                    Some(resolved) => resolved.into_os_string(),
+                    // When invoked as a shim (`__MISE_SHIM_PATH` set), give the
+                    // actionable `which_shim`-style error rather than the opaque
+                    // `cannot find binary path` (discussion #11183).
+                    None if is_shim_dispatch => {
+                        return Err(crate::shims::err_shim_not_found(&program_name).await);
+                    }
+                    None => {
+                        // Fall back to original if resolution fails
+                        resolution_failed = true;
+                        program
+                    }
+                }
+            }
+            Err(which::Error::CannotFindBinaryPath) if is_shim_dispatch => {
+                return Err(crate::shims::err_shim_not_found(&program_name).await);
+            }
+            Err(err) if is_shim_dispatch => return Err(err.into()),
+            Err(_) => {
+                // Fall back to original if resolution fails
+                resolution_failed = true;
+                program
+            }
+        }
+    };
+    if crate::file::is_active_mise_shim(std::path::Path::new(&program)) {
+        return Err(eyre::eyre!(
+            "recursive shim invocation detected: {}",
+            program.to_string_lossy()
+        ));
+    }
+    env::remove_var(env::MISE_SHIM_PATH_ENV);
+    // Apply sandbox (Landlock/seccomp on Linux, sandbox-exec on macOS)
+    let args_str: Vec<String> = args
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    if let Some(sandboxed) = sandbox.apply(&program.to_string_lossy(), &args_str).await? {
+        // macOS: exec through sandbox-exec
+        let err = exec::Command::new(&sandboxed.program)
+            .args(&sandboxed.args)
+            .exec();
+        bail!("{} {err}", sandboxed.program);
+    }
+
+    let err = exec::Command::new(program.clone()).args(&args).exec();
+    let mut msg = format!("{:?} {err}", program.to_string_lossy());
+    // The bin never resolved on PATH. If an installed-but-unconfigured tool
+    // would have provided it, say so instead of leaving the user with a bare
+    // ENOENT (discussion #4407).
+    if resolution_failed && let Some(hint) = crate::shims::exec_resolution_hint(&program_name).await
+    {
+        msg.push_str("\n\n");
+        msg.push_str(&hint);
+    }
+    bail!("{msg}")
+}
+
+/// The opaque `cannot find binary path`, plus an explanation when an
+/// installed-but-unconfigured tool would have provided the bin. `mise install`
+/// writes to no config file, so its tool dirs never join the PATH `mise exec`
+/// builds (discussion #4407).
+#[cfg(all(windows, not(test)))]
+async fn err_cannot_find_binary_path(program_name: &str) -> eyre::Report {
+    let base: eyre::Report = which::Error::CannotFindBinaryPath.into();
+    match crate::shims::exec_resolution_hint(program_name).await {
+        Some(hint) => eyre!("{base}\n\n{hint}"),
+        None => base,
+    }
+}
+
+#[cfg(all(windows, not(test)))]
+pub(crate) async fn exec_program<T, U>(
+    program: T,
+    args: U,
+    env: BTreeMap<String, String>,
+    env_remove: std::collections::BTreeSet<String>,
+    sandbox: &SandboxConfig,
+    shell_body_mode: bool,
+) -> Result<()>
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+{
+    if sandbox.is_active() {
+        warn!("sandbox is not supported on Windows, running unsandboxed");
+    }
+    for key in env_remove {
+        env::remove_var(key);
+    }
+    for (k, v) in env.iter() {
+        env::set_var(k, v);
+    }
+    let cwd = crate::dirs::CWD.clone().unwrap_or_default();
+    let program = program.to_executable();
+    // Reorder PATH for program resolution: mise-added paths first, then
+    // original system paths (minus shims). See Unix version for full rationale.
+    let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
+        let pristine: std::collections::HashSet<_> = crate::env::PATH
+            .iter()
+            .map(|p| {
+                crate::file::replace_path(p)
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .replace('/', "\\")
+            })
+            .collect();
+        let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
+        let wrappers: Vec<_> = all_paths
+            .iter()
+            .filter(|p| crate::file::is_command_wrapper_dir(p))
+            .cloned()
+            .collect();
+        let mise_added: Vec<_> = all_paths
+            .iter()
+            .filter(|p| {
+                let normalized = crate::file::replace_path(p)
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .replace('/', "\\");
+                !pristine.contains(&normalized)
+                    && !crate::file::is_mise_shims_dir(p)
+                    && !crate::file::is_command_wrapper_dir(p)
+            })
+            .cloned()
+            .collect();
+        let original: Vec<_> = all_paths
+            .iter()
+            .filter(|p| {
+                let normalized = crate::file::replace_path(p)
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .replace('/', "\\");
+                pristine.contains(&normalized)
+                    && !crate::file::is_mise_shims_dir(p)
+                    && !crate::file::is_command_wrapper_dir(p)
+            })
+            .cloned()
+            .collect();
+        std::env::join_paths(
+            wrappers
+                .iter()
+                .chain(mise_added.iter())
+                .chain(original.iter()),
+        )
+        .unwrap()
+    });
+    // Capture the requested program name before `which_in_all` consumes it, so
+    // a resolution failure while dispatching a shim can name the tool.
+    let program_name = program.to_string_lossy().into_owned();
+    let is_shim_dispatch = env::MISE_SHIM_PATH.read().unwrap().is_some();
+    let resolved = match which::which_in_all(program, lookup_path, cwd) {
+        Ok(mut candidates) => {
+            candidates.find(|candidate| !crate::file::is_active_mise_shim(candidate))
+        }
+        Err(which::Error::CannotFindBinaryPath) if is_shim_dispatch => {
+            return Err(crate::shims::err_shim_not_found(&program_name).await);
+        }
+        Err(which::Error::CannotFindBinaryPath) => {
+            return Err(err_cannot_find_binary_path(&program_name).await);
+        }
+        Err(err) => return Err(err.into()),
+    };
+    let program = match resolved {
+        Some(program) => program,
+        // When invoked as a shim (`__MISE_SHIM_PATH` set), give the actionable
+        // `which_shim`-style error instead of the opaque `cannot find binary
+        // path` (discussion #11183).
+        None if is_shim_dispatch => {
+            return Err(crate::shims::err_shim_not_found(&program_name).await);
+        }
+        None => return Err(err_cannot_find_binary_path(&program_name).await),
+    };
+    env::remove_var(env::MISE_SHIM_PATH_ENV);
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+
+    // Windows does not support exec in the same way as Unix,
+    // so we emulate it instead by not handling Ctrl-C and letting
+    // the child process deal with it instead.
+    win_exec::set_ctrlc_handler()?;
+
+    // `mise exec -c "<cmd>"` spawns the configured shell as `cmd /c <cmd>`. For
+    // cmd, pass the command verbatim so inner double quotes survive (#9355).
+    // Gated on `shell_body_mode` (the `-c`/`--command` path) so a positional
+    // `mise exec -- cmd /c "echo one" two` is not reinterpreted as a shell body.
+    // cwd is intentionally inherited from the process here, matching the duct
+    // fallback below; the resolved `cwd` above governs program lookup only.
+    if shell_body_mode && let (Some(prog), [.., last]) = (program.to_str(), args.as_slice()) {
+        let flags: Vec<String> = args[..args.len() - 1]
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let body = last.to_string_lossy();
+        if let Some(mut c) = crate::path::cmd_verbatim_command(prog, &flags, &body) {
+            match c.status()?.code() {
+                Some(code) => return Err(crate::request_exit(code)),
+                None => return Err(eyre!("command failed: terminated by signal")),
+            }
+        }
+    }
+
+    let cmd = cmd::cmd(program, args);
+    let res = cmd.unchecked().run()?;
+    match res.status.code() {
+        Some(code) => Err(crate::request_exit(code)),
+        None => Err(eyre!("command failed: terminated by signal")),
+    }
+}
+
+#[cfg(test)]
+pub(crate) async fn exec_program<T, U>(
+    program: T,
+    args: U,
+    env: BTreeMap<String, String>,
+    env_remove: std::collections::BTreeSet<String>,
+    _sandbox: &SandboxConfig,
+    _shell_body_mode: bool,
+) -> Result<()>
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+{
+    let mut cmd = cmd::cmd(program, args);
+    for (k, v) in env.iter() {
+        cmd = cmd.env(k, v);
+    }
+    for key in env_remove {
+        cmd = cmd.env_remove(key);
+    }
+    let res = cmd.unchecked().run()?;
+    match res.status.code() {
+        Some(0) => Ok(()),
+        Some(code) => Err(eyre!("command failed: exit code {}", code)),
+        None => Err(eyre!("command failed: terminated by signal")),
+    }
+}
+
+#[cfg(all(windows, not(test)))]
+mod win_exec {
+    use eyre::{Result, eyre};
+    use winapi::shared::minwindef::{BOOL, DWORD, FALSE, TRUE};
+    use winapi::um::consoleapi::SetConsoleCtrlHandler;
+    // Windows way of creating a process is to just go ahead and pop a new process
+    // with given program and args into existence. But in unix-land, it instead happens
+    // in a two-step process where you first fork the process and then exec the new program,
+    // essentially replacing the current process with the new one.
+    // We use Windows API to set a Ctrl-C handler that does nothing, essentially attempting
+    // to emulate the ctrl-c behavior by not handling it ourselves, and propagating it to
+    // the child process to handle it instead.
+    // This is the same way cargo does it in cargo run.
+    unsafe extern "system" fn ctrlc_handler(_: DWORD) -> BOOL {
+        // This is a no-op handler to prevent Ctrl-C from terminating the process.
+        // It allows the child process to handle Ctrl-C instead.
+        TRUE
+    }
+
+    pub(super) fn set_ctrlc_handler() -> Result<()> {
+        if unsafe { SetConsoleCtrlHandler(Some(ctrlc_handler), TRUE) } == FALSE {
+            Err(eyre!("Could not set Ctrl-C handler."))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn parse_command(
+    shell: &str,
+    command: &Option<Vec<String>>,
+    c: &Option<String>,
+) -> (String, Vec<String>) {
+    match (&command, &c) {
+        (Some(command), _) => {
+            let (program, args) = command.split_first().unwrap();
+            (program.clone(), args.into())
+        }
+        _ => (
+            shell.into(),
+            vec![env::SHELL_COMMAND_FLAG.into(), c.clone().unwrap()],
+        ),
+    }
+}
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise exec node@20 -- node ./app.js</bold>  # launch app.js using node-20.x
+    $ <bold>mise x node@20 -- node ./app.js</bold>     # shorter alias
+
+    # Specify command as a string:
+    $ <bold>mise exec node@20 python@3.11 --command "node -v && python -V"</bold>
+
+    # Run a command in a different directory:
+    $ <bold>mise x -C /path/to/project node@20 -- node ./app.js</bold>
+"#
+);

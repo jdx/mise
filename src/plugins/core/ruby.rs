@@ -1,0 +1,1946 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::env::temp_dir;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use eyre::{Result, WrapErr, bail, eyre};
+use itertools::Itertools;
+use xx::regex;
+
+use crate::backend::platform_target::PlatformTarget;
+use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
+use crate::cli::args::BackendArg;
+use crate::cmd::CmdLineRunner;
+use crate::config::{CompilePurpose, Config, Settings};
+use crate::duration::DAILY;
+use crate::env::PATH_KEY;
+use crate::git::{CloneOptions, Git};
+use crate::github::{self, GithubRelease};
+use crate::http::{HTTP, HTTP_FETCH};
+use crate::install_context::InstallContext;
+use crate::lock_file::LockFile;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::plugins::PluginSource;
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
+use crate::ui::progress_report::SingleReport;
+use crate::{file, hash, plugins, timeout};
+
+const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
+const DEFAULT_RUBY_PRECOMPILED_URL: &str = "jdx/ruby";
+const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_RUBY_GITHUB_ATTESTATIONS=false\n\
+    or add `ruby.github_attestations = false` under [settings] in mise.toml";
+
+#[derive(Debug)]
+pub(super) struct RubyPlugin {
+    ba: Arc<BackendArg>,
+}
+
+impl RubyPlugin {
+    pub(super) fn new() -> Self {
+        Self {
+            ba: Arc::new(plugins::core::new_backend_arg("ruby")),
+        }
+    }
+
+    fn ruby_build_path(&self) -> PathBuf {
+        self.ba.cache_path.join("ruby-build")
+    }
+    fn ruby_install_path(&self) -> PathBuf {
+        self.ba.cache_path.join("ruby-install")
+    }
+
+    fn ruby_build_bin(&self) -> PathBuf {
+        self.ruby_build_path().join("bin/ruby-build")
+    }
+
+    fn ruby_install_bin(&self) -> PathBuf {
+        self.ruby_install_path().join("bin/ruby-install")
+    }
+
+    fn lock_build_tool(&self) -> Result<fslock::LockFile> {
+        let settings = Settings::get();
+        let build_tool_path = if settings.ruby.ruby_install {
+            self.ruby_install_bin()
+        } else {
+            self.ruby_build_bin()
+        };
+        LockFile::new(&build_tool_path)
+            .with_callback(|l| {
+                trace!("install_or_update_ruby_build_tool {}", l.display());
+            })
+            .lock()
+    }
+
+    async fn update_build_tool(&self, ctx: Option<&InstallContext>) -> Result<()> {
+        let pr = ctx.map(|ctx| ctx.pr.as_ref());
+        if Settings::get().ruby.ruby_install {
+            self.update_ruby_install(pr)
+                .await
+                .wrap_err("failed to update ruby-install")
+        } else {
+            self.update_ruby_build(pr)
+                .await
+                .wrap_err("failed to update ruby-build")
+        }
+    }
+
+    async fn install_ruby_build(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
+        debug!(
+            "Installing ruby-build to {}",
+            self.ruby_build_path().display()
+        );
+        let settings = Settings::get();
+        let tmp = self
+            .prepare_source_in_tmp(&settings.ruby.ruby_build_repo, pr, "mise-ruby-build")
+            .await?;
+
+        cmd!("sh", "install.sh")
+            .env("PREFIX", self.ruby_build_path())
+            .dir(&tmp)
+            .run()?;
+        file::remove_all(&tmp)?;
+        Ok(())
+    }
+    async fn update_ruby_build(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
+        let _lock = self.lock_build_tool();
+        if self.ruby_build_bin().exists() {
+            let cur = self.ruby_build_version()?;
+            let latest = self.latest_ruby_build_version().await;
+            match (cur, latest) {
+                // ruby-build is up-to-date
+                (cur, Ok(latest)) if cur == latest => return Ok(()),
+                // ruby-build is not up-to-date
+                (_cur, Ok(_latest)) => {}
+                // error getting latest ruby-build version (usually github rate limit)
+                (_cur, Err(err)) => warn!("failed to get latest ruby-build version: {}", err),
+            }
+        }
+        debug!(
+            "Updating ruby-build in {}",
+            self.ruby_build_path().display()
+        );
+        file::remove_all(self.ruby_build_path())?;
+        self.install_ruby_build(pr).await?;
+        Ok(())
+    }
+
+    async fn install_ruby_install(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
+        debug!(
+            "Installing ruby-install to {}",
+            self.ruby_install_path().display()
+        );
+        let settings = Settings::get();
+        let tmp = self
+            .prepare_source_in_tmp(&settings.ruby.ruby_install_repo, pr, "mise-ruby-install")
+            .await?;
+        cmd!("make", "install")
+            .env("PREFIX", self.ruby_install_path())
+            .dir(&tmp)
+            .stdout_to_stderr()
+            .run()?;
+        file::remove_all(&tmp)?;
+        Ok(())
+    }
+    async fn update_ruby_install(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
+        let _lock = self.lock_build_tool();
+        let ruby_install_path = self.ruby_install_path();
+        if !ruby_install_path.exists() {
+            self.install_ruby_install(pr).await?;
+        }
+        if self.ruby_install_recently_updated()? {
+            return Ok(());
+        }
+        debug!("Updating ruby-install in {}", ruby_install_path.display());
+
+        plugins::core::run_fetch_task_with_timeout(move || {
+            cmd!(self.ruby_install_bin(), "--update")
+                .stdout_to_stderr()
+                .run()?;
+            file::touch_dir(&ruby_install_path)?;
+            Ok(())
+        })
+    }
+
+    fn ruby_install_recently_updated(&self) -> Result<bool> {
+        let updated_at = file::modified_duration(&self.ruby_install_path())?;
+        Ok(updated_at < DAILY)
+    }
+
+    async fn prepare_source_in_tmp(
+        &self,
+        repo: &str,
+        pr: Option<&dyn SingleReport>,
+        tmp_dir_name: &str,
+    ) -> Result<PathBuf> {
+        let tmp = temp_dir().join(tmp_dir_name);
+        file::remove_all(&tmp)?;
+        file::create_dir_all(tmp.parent().unwrap())?;
+        let source = PluginSource::parse(repo);
+        match source {
+            PluginSource::Zip { url } => {
+                let temp_archive = tmp.join("ruby.zip");
+                HTTP.download_file(url, &temp_archive, pr).await?;
+
+                if let Some(pr) = pr {
+                    pr.set_message("extracting zip file".to_string());
+                }
+
+                let strip_components =
+                    file::should_strip_components(&temp_archive, file::ExtractionFormat::Zip)?;
+
+                file::unzip(
+                    &temp_archive,
+                    &tmp,
+                    &file::ExtractOptions {
+                        strip_components: if strip_components { 1 } else { 0 },
+                        ..Default::default()
+                    },
+                )?;
+            }
+            PluginSource::Git {
+                url: repo_url,
+                git_ref,
+                subdir,
+            } => {
+                let git = Git::new(tmp.clone());
+                let mut clone_options = CloneOptions::default();
+                if let Some(pr) = pr {
+                    clone_options = clone_options.pr(pr);
+                }
+                git.clone(&repo_url, clone_options)?;
+                if let Some(ref_) = &git_ref {
+                    git.update(Some(ref_.to_string()))?;
+                }
+                if let Some(subdir) = subdir {
+                    let subdir_path = tmp.join(subdir);
+                    if !subdir_path.is_dir() {
+                        return Err(eyre!(
+                            "plugin subdirectory does not exist: {}",
+                            file::display_path(&subdir_path)
+                        ));
+                    }
+                    return Ok(subdir_path);
+                }
+            }
+        }
+        Ok(tmp)
+    }
+
+    fn gem_path(&self, tv: &ToolVersion) -> PathBuf {
+        tv.install_path().join("bin/gem")
+    }
+
+    async fn install_default_gems(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        pr: &dyn SingleReport,
+    ) -> Result<()> {
+        let settings = Settings::get();
+        let default_gems_file = file::replace_path(&settings.ruby.default_packages_file);
+        let body = file::read_to_string(&default_gems_file).unwrap_or_default();
+        let mut packages = body
+            .lines()
+            .filter_map(Settings::parse_default_package_line)
+            .peekable();
+        if packages.peek().is_some() {
+            Settings::warn_default_package_file_deprecated(
+                "ruby.default_packages_file",
+                "ruby gem",
+            );
+        }
+        for package in packages {
+            pr.set_message(format!("install default gem: {package}"));
+            let gem = self.gem_path(tv);
+            let mut cmd = CmdLineRunner::new(gem)
+                .with_pr(pr)
+                .arg("install")
+                .envs(config.env().await?)
+                .env_values(tv.install_env());
+            match package.split_once(' ') {
+                Some((name, "--pre")) => cmd = cmd.arg(name).arg("--pre"),
+                Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
+                None => cmd = cmd.arg(package),
+            };
+            cmd.env(&*PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
+                .execute()?;
+        }
+        Ok(())
+    }
+
+    fn ruby_build_version(&self) -> Result<String> {
+        let output = cmd!(self.ruby_build_bin(), "--version").read()?;
+        let re = regex!(r"^ruby-build ([0-9.]+)");
+        let caps = re.captures(&output).expect("ruby-build version regex");
+        Ok(caps.get(1).unwrap().as_str().to_string())
+    }
+
+    async fn latest_ruby_build_version(&self) -> Result<String> {
+        let release: GithubRelease = HTTP_FETCH
+            .json("https://api.github.com/repos/rbenv/ruby-build/releases/latest")
+            .await?;
+        Ok(release.tag_name.trim_start_matches('v').to_string())
+    }
+
+    fn install_rubygems_hook(&self, tv: &ToolVersion) -> Result<()> {
+        let site_ruby_path = tv.install_path().join("lib/ruby/site_ruby");
+        let f = site_ruby_path.join("rubygems_plugin.rb");
+        file::create_dir_all(site_ruby_path)?;
+        file::write(f, include_str!("assets/rubygems_plugin.rb"))?;
+        Ok(())
+    }
+
+    async fn install_cmd<'a>(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        pr: &'a dyn SingleReport,
+    ) -> Result<CmdLineRunner<'a>> {
+        let settings = Settings::get();
+        let cmd = if settings.ruby.ruby_install {
+            CmdLineRunner::new(self.ruby_install_bin()).args(self.install_args_ruby_install(tv)?)
+        } else {
+            CmdLineRunner::new(self.ruby_build_bin())
+                .args(self.install_args_ruby_build(tv)?)
+                .stdin_string(self.fetch_patches().await?)
+        };
+        Ok(cmd
+            .with_pr(pr)
+            .envs(config.env().await?)
+            .env_values(tv.install_env()))
+    }
+    fn install_args_ruby_build(&self, tv: &ToolVersion) -> Result<Vec<String>> {
+        let settings = Settings::get();
+        let mut args = vec![];
+        if self.verbose_install() {
+            args.push("--verbose".into());
+        }
+        if settings.ruby.apply_patches.is_some() {
+            args.push("--patch".into());
+        }
+        if let Some(opts) = &settings.ruby.ruby_build_cli_opts {
+            args.extend(shell_words::split(opts)?);
+        }
+        args.push(tv.version.clone());
+        args.push(tv.install_path().to_string_lossy().to_string());
+        if let Some(opts) = &settings.ruby.ruby_build_opts {
+            args.push("--".into());
+            args.extend(shell_words::split(opts)?);
+        }
+        Ok(args)
+    }
+    fn install_args_ruby_install(&self, tv: &ToolVersion) -> Result<Vec<String>> {
+        let settings = Settings::get();
+        let mut args = vec![];
+        for patch in self.fetch_patch_sources() {
+            args.push("--patch".into());
+            args.push(patch);
+        }
+        let (engine, version) = match tv.version.split_once('-') {
+            Some((engine, version)) => (engine, version),
+            None => ("ruby", tv.version.as_str()),
+        };
+        args.push(engine.into());
+        args.push(version.into());
+        args.push("--install-dir".into());
+        args.push(tv.install_path().to_string_lossy().to_string());
+        if let Some(opts) = &settings.ruby.ruby_install_opts {
+            args.push("--".into());
+            args.extend(shell_words::split(opts)?);
+        }
+        Ok(args)
+    }
+
+    fn verbose_install(&self) -> bool {
+        let settings = Settings::get();
+        let verbose_env = settings.ruby.verbose_install;
+        verbose_env == Some(true) || (settings.verbose && verbose_env != Some(false))
+    }
+
+    fn fetch_patch_sources(&self) -> Vec<String> {
+        plugins::core::patch_sources(Settings::get().ruby.apply_patches.as_deref())
+    }
+
+    /// ruby-build takes every patch as one blob on stdin, so they are concatenated here.
+    async fn fetch_patches(&self) -> Result<String> {
+        Ok(
+            plugins::core::fetch_patch_contents(&self.fetch_patch_sources())
+                .await?
+                .join("\n"),
+        )
+    }
+
+    /// Fetch Ruby source tarball info from cache.ruby-lang.org index
+    /// Returns (url, sha256) for the given version
+    async fn get_ruby_download_info(&self, version: &str) -> Result<Option<(String, String)>> {
+        // Only standard MRI Ruby versions are in the index (e.g., "3.3.0", not "jruby-9.4.0")
+        if !version.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            return Ok(None);
+        }
+
+        let index_text: String = HTTP_FETCH.get_text(RUBY_INDEX_URL).await?;
+
+        // Format: name\turl\tsha1\tsha256\tsha512
+        // Example: ruby-3.3.0\thttps://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.0.tar.gz\t...\t<sha256>\t...
+        let target_name = format!("ruby-{version}");
+        for line in index_text.lines().skip(1) {
+            // skip header
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 4 {
+                let name = parts[0];
+                // Match exact version with .tar.gz (prefer over .tar.xz for compatibility)
+                if name == target_name {
+                    let url = parts[1];
+                    let sha256 = parts[3];
+                    if url.ends_with(".tar.gz") && !sha256.is_empty() {
+                        return Ok(Some((url.to_string(), format!("sha256:{sha256}"))));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    // ===== Precompiled Ruby support =====
+
+    /// Detect provenance type for precompiled Ruby binaries.
+    /// Records GithubAttestations based on settings and URL format without an API probe.
+    /// This assumes all releases from the configured precompiled source have attestations;
+    /// if a release lacks them, install will fail at verification time.
+    fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
+        let settings = Settings::get();
+        let enabled = settings
+            .ruby
+            .github_attestations
+            .unwrap_or(settings.github_attestations);
+        if !enabled {
+            return None;
+        }
+        let source = &settings.ruby.precompiled_url;
+        // Custom URL templates aren't verified via GitHub attestation API
+        if source.contains("://") {
+            return None;
+        }
+        // Must be a valid owner/repo format for GitHub attestation verification
+        if !source.contains('/') {
+            return None;
+        }
+        Some(ProvenanceType::GithubAttestations)
+    }
+
+    fn is_default_ruby_source(source: &str) -> bool {
+        source == DEFAULT_RUBY_PRECOMPILED_URL
+    }
+
+    fn use_versions_host_for_precompiled_source(source: &str) -> bool {
+        Self::is_default_ruby_source(source)
+    }
+
+    /// Check if precompiled binaries should be tried.
+    /// Precompiled binaries are the default unless source compilation is explicitly requested.
+    fn should_try_precompiled(&self) -> bool {
+        Settings::get().ruby_compile(CompilePurpose::Inspect) != Some(true)
+    }
+
+    /// Check if precompiled binaries are required, with no fallback to compiling.
+    /// `ruby.compile = false` is a strict opt-in: installs fail instead of falling back
+    /// to ruby-build, and remote version listings only offer versions that have a
+    /// precompiled binary for this platform.
+    fn precompiled_only(&self) -> bool {
+        Settings::get().ruby_compile(CompilePurpose::Inspect) == Some(false)
+    }
+
+    /// Get platform identifier for precompiled binaries
+    /// Returns platform in jdx/ruby format: "macos", "arm64_linux", or "x86_64_linux"
+    fn precompiled_platform(&self) -> Option<String> {
+        self.precompiled_platform_for_target(&PlatformTarget::from_current())
+    }
+
+    /// Get platform identifier for a specific target (used for lockfiles)
+    /// Returns platform in jdx/ruby format: "macos", "arm64_linux", or "x86_64_linux"
+    fn precompiled_platform_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        let settings = Settings::get();
+
+        // Check for user overrides first
+        if let (Some(arch), Some(os)) = (
+            settings.ruby.precompiled_arch.as_deref(),
+            settings.ruby.precompiled_os.as_deref(),
+        ) {
+            return Some(format!("{}_{}", arch, os));
+        }
+
+        match target.os_name() {
+            "macos" => {
+                // macOS only supports arm64 and uses "macos" without arch prefix
+                match target.arch_name() {
+                    "arm64" | "aarch64" => Some("macos".to_string()),
+                    _ => None,
+                }
+            }
+            "linux" => {
+                // jdx/ruby Linux binaries are glibc-only (manylinux2014); there is no
+                // musl build, so a glibc tarball would fail at runtime on Alpine etc.
+                if target.libc() == Some("musl") {
+                    return None;
+                }
+                // Linux uses arch_linux format
+                let arch = match target.arch_name() {
+                    "arm64" | "aarch64" => "arm64",
+                    "x64" | "x86_64" => "x86_64",
+                    _ => return None,
+                };
+                Some(format!("{}_linux", arch))
+            }
+            _ => None,
+        }
+    }
+
+    /// Render URL template with version and platform variables
+    fn render_precompiled_url(&self, template: &str, version: &str, platform: &str) -> String {
+        let (arch, os) = platform.split_once('_').unwrap_or((platform, ""));
+        template
+            .replace("{version}", version)
+            .replace("{platform}", platform)
+            .replace("{os}", os)
+            .replace("{arch}", arch)
+    }
+
+    /// Extract the build revision tag from existing lock_platforms URLs.
+    ///
+    /// URLs look like: `.../releases/download/3.3.11-1/ruby-3.3.11...`
+    /// This extracts "3.3.11-1" when the version is "3.3.11".
+    fn extract_build_revision_from_lock_platforms(
+        tv: &ToolVersion,
+        version: &str,
+    ) -> Option<String> {
+        for pi in tv.lock_platforms.values() {
+            if let Some(url) = &pi.url {
+                // Match `/download/{tag}/` in GitHub release URLs
+                let prefix = "/releases/download/";
+                if let Some(start) = url.find(prefix) {
+                    let after = &url[start + prefix.len()..];
+                    if let Some(end) = after.find('/') {
+                        let tag = &after[..end];
+                        // Check if this is a build revision of the version
+                        if Self::is_build_revision_tag(version, tag) {
+                            return Some(tag.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn source_requires_build_revision(source: &str) -> bool {
+        Self::is_default_ruby_source(source)
+    }
+
+    fn is_build_revision_tag(version: &str, tag: &str) -> bool {
+        matches!(Self::split_build_revision_tag(tag), (v, Some(_)) if v == version)
+    }
+
+    /// Split a release tag into its version and build revision.
+    ///
+    /// `3.3.11-1` -> `("3.3.11", Some(1))`, `3.3.11` -> `("3.3.11", None)`.
+    /// Non-numeric suffixes are part of the version: `3.4.0-preview1` -> `("3.4.0-preview1", None)`.
+    fn split_build_revision_tag(tag: &str) -> (&str, Option<u32>) {
+        match tag.rsplit_once('-') {
+            Some((version, revision)) => match revision.parse::<u32>() {
+                Ok(revision) => (version, Some(revision)),
+                Err(_) => (tag, None),
+            },
+            None => (tag, None),
+        }
+    }
+
+    /// Collect the versions that have a precompiled asset for `platform`.
+    ///
+    /// An install resolves a version to exactly one release — the highest build revision, or
+    /// the base tag when revisions aren't required — so availability is decided by that same
+    /// release. A newer revision that is missing an asset for this platform means the version
+    /// is not installable even when an older revision has one, which keeps this list from
+    /// offering versions [`Self::find_precompiled_asset_in_repo`] would reject.
+    fn precompiled_versions_from_releases(
+        releases: &[GithubRelease],
+        requires_build_revision: bool,
+        platform: &str,
+    ) -> HashSet<String> {
+        let mut best: HashMap<&str, (Option<u32>, bool)> = HashMap::new();
+        for release in releases {
+            let (version, revision) = Self::split_build_revision_tag(&release.tag_name);
+            if requires_build_revision && revision.is_none() {
+                continue;
+            }
+            match best.get(version) {
+                // `None` (the base tag) sorts below every numeric revision, matching how
+                // installs prefer `3.3.11-2` over `3.3.11-1` over `3.3.11`.
+                Some((best_revision, _)) if *best_revision >= revision => continue,
+                _ => {}
+            }
+            let asset_name = format!("ruby-{version}.{platform}.tar.gz");
+            let has_asset = release.assets.iter().any(|asset| asset.name == asset_name);
+            best.insert(version, (revision, has_asset));
+        }
+        best.into_iter()
+            .filter(|(_, (_, has_asset))| *has_asset)
+            .map(|(version, _)| version.to_string())
+            .collect()
+    }
+
+    /// Cache key context for strict precompiled version listings.
+    ///
+    /// The filtered list depends on which source is queried and which platform's assets are
+    /// looked for, so a change to any of those must not reuse the previous list.
+    fn precompiled_cache_context(&self) -> Option<String> {
+        if !self.precompiled_only() {
+            return None;
+        }
+        let settings = Settings::get();
+        Some(hash::hash_to_str(&(
+            "ruby-precompiled",
+            &settings.ruby.precompiled_url,
+            &settings.ruby.precompiled_arch,
+            &settings.ruby.precompiled_os,
+            self.precompiled_platform(),
+        )))
+    }
+
+    /// Restrict a version list to versions that have a precompiled binary for this platform.
+    ///
+    /// Entries are only removed, never reordered, so `latest` and prefix resolution keep the
+    /// same ordering semantics as a source install.
+    async fn retain_precompiled_versions(
+        &self,
+        versions: Vec<VersionInfo>,
+    ) -> Result<Vec<VersionInfo>> {
+        let settings = Settings::get();
+        let source = &settings.ruby.precompiled_url;
+        if source.contains("://") {
+            // A URL template can't be enumerated, so every version is assumed available.
+            return Ok(versions);
+        }
+        let Some(platform) = self.precompiled_platform() else {
+            bail!(
+                "no precompiled ruby is available for this platform\n\
+                 To compile ruby from source, run: mise settings ruby.compile=true"
+            );
+        };
+        // Only the releases `list_releases` returns are considered. Without
+        // MISE_LIST_ALL_VERSIONS that is the most recent page, which is where the
+        // precompiled builds live.
+        let releases = github::list_releases(source).await?;
+        let available = Self::precompiled_versions_from_releases(
+            &releases,
+            Self::source_requires_build_revision(source),
+            &platform,
+        );
+        Ok(versions
+            .into_iter()
+            .filter(|v| available.contains(&v.version))
+            .collect())
+    }
+
+    /// Find precompiled asset from a GitHub repo's releases.
+    async fn find_precompiled_asset_in_repo(
+        &self,
+        repo: &str,
+        version: &str,
+        platform: &str,
+        locked_build_revision: Option<&str>,
+    ) -> Result<Option<(String, Option<String>)>> {
+        let requires_build_revision = Self::source_requires_build_revision(repo);
+        // The default precompiled repo is explicitly allowlisted by mise-versions.
+        // Custom repositories must fetch their release metadata directly from GitHub.
+        let use_versions_host = Self::use_versions_host_for_precompiled_source(repo);
+        let release = if let Some(tag) = locked_build_revision {
+            // Use the exact build revision from the lockfile
+            debug!("using locked build revision {tag} for ruby {version}");
+            match github::get_release_with_versions_host(repo, tag, use_versions_host).await {
+                Ok(r) => r,
+                Err(err) => {
+                    debug!("locked build revision {tag} not found, finding latest: {err}");
+                    match github::get_release_with_build_revision_status(
+                        repo,
+                        version,
+                        use_versions_host,
+                    )
+                    .await
+                    {
+                        Ok((r, found_build_revision)) => {
+                            if requires_build_revision && !found_build_revision {
+                                debug!("no build revision release found for ruby {version}");
+                                return Ok(None);
+                            }
+                            r
+                        }
+                        Err(err) => {
+                            debug!("no precompiled ruby found for {version}: {err}");
+                            return Ok(None);
+                        }
+                    }
+                }
+            }
+        } else {
+            match github::get_release_with_build_revision_status(repo, version, use_versions_host)
+                .await
+            {
+                Ok((r, found_build_revision)) => {
+                    if requires_build_revision && !found_build_revision {
+                        debug!("no build revision release found for ruby {version}");
+                        return Ok(None);
+                    }
+                    r
+                }
+                Err(err) => {
+                    debug!("no precompiled ruby found for {version}: {err}");
+                    return Ok(None);
+                }
+            }
+        };
+        if release.tag_name != version {
+            debug!(
+                "using build revision {} for ruby {version}",
+                release.tag_name
+            );
+        }
+        let standard_name = format!("ruby-{}.{}.tar.gz", version, platform);
+
+        for asset in &release.assets {
+            if asset.name == standard_name {
+                return Ok(Some((
+                    asset.browser_download_url.clone(),
+                    asset.digest.clone(),
+                )));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Resolve precompiled binary URL and checksum for a given version and platform
+    async fn resolve_precompiled_url(
+        &self,
+        version: &str,
+        platform: &str,
+        locked_build_revision: Option<&str>,
+    ) -> Result<Option<(String, Option<String>)>> {
+        let settings = Settings::get();
+        let source = &settings.ruby.precompiled_url;
+
+        if source.contains("://") {
+            // Full URL template - no checksum available
+            Ok(Some((
+                self.render_precompiled_url(source, version, platform),
+                None,
+            )))
+        } else {
+            // GitHub repo shorthand (default: "jdx/ruby")
+            self.find_precompiled_asset_in_repo(source, version, platform, locked_build_revision)
+                .await
+        }
+    }
+
+    /// Convert a Ruby GitHub tag name to a version string.
+    /// Ruby uses tags like "v3_3_0" for version "3.3.0"
+    fn tag_to_version(tag: &str) -> Option<String> {
+        // Ruby tags are in format v3_3_0, v3_3_0_preview1, etc.
+        let tag = tag.strip_prefix('v')?;
+        // Replace underscores with dots, but be careful with preview/rc suffixes
+        let re = regex!(r"^(\d+)_(\d+)_(\d+)(.*)$");
+        if let Some(caps) = re.captures(tag) {
+            let major = &caps[1];
+            let minor = &caps[2];
+            let patch = &caps[3];
+            let suffix = &caps[4];
+            // Convert suffix like "_preview1" to "-preview1"
+            let suffix = suffix.replace('_', "-");
+            Some(format!("{major}.{minor}.{patch}{suffix}"))
+        } else {
+            None
+        }
+    }
+
+    /// Fetch publication timestamps for Ruby versions from GitHub releases.
+    async fn fetch_ruby_release_dates(&self) -> Result<HashMap<String, String>> {
+        let mut dates = HashMap::new();
+        match github::list_releases("ruby/ruby").await {
+            Ok(releases) => {
+                for release in releases {
+                    if let Some(version) = Self::tag_to_version(&release.tag_name) {
+                        dates.insert(version, release.released_at().to_string());
+                    }
+                }
+            }
+            Err(err) => {
+                if strict_metadata() {
+                    return Err(err).wrap_err("failed to fetch Ruby release metadata");
+                }
+                debug!("Failed to fetch Ruby release dates: {err}");
+            }
+        }
+        Ok(dates)
+    }
+
+    /// Try to install from precompiled binary
+    /// Returns Ok(None) if no precompiled version is available for this version/platform
+    async fn install_precompiled(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+    ) -> Result<Option<ToolVersion>> {
+        let Some(platform) = self.precompiled_platform() else {
+            return Ok(None);
+        };
+
+        let locked_build_revision =
+            Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
+        let Some((url, checksum)) = self
+            .resolve_precompiled_url(&tv.version, &platform, locked_build_revision.as_deref())
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        let filename = match url.rsplit('/').next() {
+            Some(name) if !name.is_empty() => name.to_string(),
+            _ => format!("ruby-{}.{}.tar.gz", tv.version, platform),
+        };
+        let tarball_path = tv.download_path().join(&filename);
+
+        ctx.pr.set_message(format!("download {}", filename));
+        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
+            .await?;
+
+        if let Some(hash_str) = checksum.as_ref().and_then(|c| c.strip_prefix("sha256:")) {
+            ctx.pr.set_message(format!("checksum {}", filename));
+            hash::ensure_checksum(&tarball_path, hash_str, Some(ctx.pr.as_ref()), "sha256")?;
+        }
+
+        // Check lockfile provenance expectation before verification
+        let platform_key = PlatformTarget::from_current().to_key();
+        let locked_provenance = tv
+            .lock_platforms
+            .get_mut(&platform_key)
+            .and_then(|pi| pi.provenance.take());
+
+        // Verify GitHub artifact attestations for precompiled binaries
+        // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
+        let verified = self
+            .verify_github_artifact_attestations(ctx, &tarball_path, &tv.version)
+            .await?;
+
+        // Record provenance only if verification actually succeeded (not skipped)
+        if verified {
+            let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+            pi.provenance = Some(ProvenanceType::GithubAttestations);
+        }
+
+        // Enforce lockfile provenance
+        if let Some(ref expected) = locked_provenance {
+            let got = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance.as_ref());
+            if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
+                let got_str = got
+                    .map(|g| g.to_string())
+                    .unwrap_or_else(|| "no verification".to_string());
+                return Err(eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
+                     This may indicate a downgrade attack. Enable the corresponding verification setting \
+                     or update the lockfile."
+                ));
+            }
+        }
+
+        ctx.pr.set_message(format!("extract {}", filename));
+        let install_path = tv.install_path();
+        file::create_dir_all(&install_path)?;
+        file::untar(
+            &tarball_path,
+            &install_path,
+            file::ExtractionFormat::TarGz,
+            &file::ExtractOptions {
+                strip_components: 1,
+                pr: Some(ctx.pr.as_ref()),
+                ..Default::default()
+            },
+        )?;
+
+        Ok(Some(tv.clone()))
+    }
+
+    /// Verify GitHub artifact attestations for precompiled Ruby binary
+    /// Returns Ok(true) if verification succeeds
+    /// Returns Ok(false) if verification was skipped (disabled or not applicable)
+    /// Returns Err if verification is enabled and fails
+    async fn verify_github_artifact_attestations(
+        &self,
+        ctx: &InstallContext,
+        tarball_path: &std::path::Path,
+        version: &str,
+    ) -> Result<bool> {
+        let settings = Settings::get();
+
+        // Check Ruby-specific setting, fall back to global
+        let enabled = settings
+            .ruby
+            .github_attestations
+            .unwrap_or(settings.github_attestations);
+        if !enabled {
+            debug!("GitHub artifact attestations verification disabled for Ruby");
+            return Ok(false);
+        }
+
+        let source = &settings.ruby.precompiled_url;
+
+        // Skip for custom URL templates (not GitHub repos)
+        if source.contains("://") {
+            debug!("Skipping GitHub artifact attestation verification for custom URL template");
+            return Ok(false);
+        }
+
+        let (owner, repo) = match source.split_once('/') {
+            Some((o, r)) => (o, r),
+            None => {
+                warn!("Invalid precompiled_url format: {}", source);
+                return Ok(false);
+            }
+        };
+
+        ctx.pr
+            .set_message("verify GitHub artifact attestations".to_string());
+
+        match crate::github::sigstore::verify_attestation(
+            tarball_path,
+            owner,
+            repo,
+            None, // Accept any workflow from repo
+            None,
+            Self::use_versions_host_for_precompiled_source(source),
+        )
+        .await
+        {
+            Ok(true) => {
+                ctx.pr
+                    .set_message("✓ GitHub artifact attestations verified".to_string());
+                debug!(
+                    "GitHub artifact attestations verified successfully for ruby@{}",
+                    version
+                );
+                Ok(true)
+            }
+            Ok(false) => Err(eyre!(
+                "GitHub artifact attestations verification failed for ruby@{version}\n{ATTESTATION_HELP}"
+            )),
+            Err(crate::github::sigstore::AttestationError::NoAttestations) => Err(eyre!(
+                "No GitHub artifact attestations found for ruby@{version}\n{ATTESTATION_HELP}"
+            )),
+            Err(e) => Err(eyre!(
+                "GitHub artifact attestations verification failed for ruby@{version}: {e}\n{ATTESTATION_HELP}"
+            )),
+        }
+    }
+}
+
+#[async_trait]
+impl Backend for RubyPlugin {
+    fn ba(&self) -> &Arc<BackendArg> {
+        &self.ba
+    }
+
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+        let settings = Settings::get();
+
+        let mut features = vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }];
+
+        // Report GitHub artifact attestations if enabled for precompiled binaries
+        let github_attestations_enabled = settings
+            .ruby
+            .github_attestations
+            .unwrap_or(settings.github_attestations);
+        if self.should_try_precompiled() && github_attestations_enabled {
+            features.push(SecurityFeature::GithubAttestations {
+                signer_workflow: None,
+            });
+        }
+
+        features
+    }
+
+    async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+        // Strict precompiled mode lists a subset of the versions ruby-build knows about, so it
+        // must not share a cache — or the shared versions host list — with source installs.
+        Ok(self.precompiled_cache_context())
+    }
+
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        timeout::run_with_timeout_async(
+            async || {
+                if let Err(err) = self.update_build_tool(None).await {
+                    warn!("{err}");
+                }
+
+                // Fetch Ruby release dates from GitHub in parallel with version list
+                let release_dates = self.fetch_ruby_release_dates().await?;
+
+                let ruby_build_bin = self.ruby_build_bin();
+                let ruby_build_str = ruby_build_bin.to_string_lossy().to_string();
+                let output = crate::cmd::cmd_read_async_inherited_env(
+                    &ruby_build_str,
+                    &["--definitions"],
+                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
+                )
+                .await?;
+                let versions: Vec<String> = output
+                    .split('\n')
+                    .sorted_by_cached_key(|s| regex!(r#"^\d"#).is_match(s)) // show matz ruby first
+                    .map(|s| s.to_string())
+                    .collect();
+
+                // Map versions to VersionInfo with created_at timestamps
+                let version_infos: Vec<VersionInfo> = versions
+                    .into_iter()
+                    .map(|version| {
+                        let created_at = release_dates.get(&version).cloned();
+                        VersionInfo {
+                            version,
+                            created_at,
+                            ..Default::default()
+                        }
+                    })
+                    .collect();
+
+                if self.precompiled_only() {
+                    return self.retain_precompiled_versions(version_infos).await;
+                }
+
+                Ok(version_infos)
+            },
+            Settings::get().fetch_remote_versions_timeout(),
+        )
+        .await
+    }
+
+    async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
+        let v = match path.file_name() {
+            Some(name) if name == "Gemfile" => parse_gemfile(&file::read_to_string(path)?),
+            _ => {
+                // .ruby-version
+                let body = normalize_idiomatic_contents(&file::read_to_string(path)?);
+                body.trim()
+                    .trim_start_matches("ruby-")
+                    .trim_start_matches('v')
+                    .to_string()
+            }
+        };
+        if v.is_empty() {
+            return Ok(vec![]);
+        }
+        Ok(vec![v])
+    }
+
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let mut tv = tv;
+        // Try precompiled unless source compilation was explicitly requested.
+        if self.should_try_precompiled() {
+            if let Some(installed_tv) = self.install_precompiled(ctx, &mut tv).await? {
+                hint!(
+                    "ruby_precompiled",
+                    "installing precompiled ruby from jdx/ruby\n\
+                    if you experience issues, switch to ruby-build by running",
+                    "mise settings ruby.compile=true"
+                );
+                self.install_rubygems_hook(&installed_tv)?;
+                if let Err(err) = self
+                    .install_default_gems(&ctx.config, &installed_tv, ctx.pr.as_ref())
+                    .await
+                {
+                    warn!("failed to install default ruby gems {err:#}");
+                }
+                return Ok(installed_tv);
+            }
+            // `ruby.compile = false` opts out of source builds entirely, so a missing
+            // precompiled binary is an error instead of a silent ruby-build fallback.
+            if self.precompiled_only() {
+                hint!(
+                    "ruby_compile",
+                    "To compile ruby from source, run",
+                    "mise settings ruby.compile=true"
+                );
+                match self.precompiled_platform() {
+                    Some(platform) => bail!("no precompiled ruby found for {tv} on {platform}"),
+                    None => bail!("no precompiled ruby is available for this platform"),
+                }
+            }
+        }
+        // No precompiled available, fall through to compile from source
+
+        // Compile from source
+        let _ = Settings::get().ruby_compile(CompilePurpose::Install);
+        if let Err(err) = self.update_build_tool(Some(ctx)).await {
+            warn!("ruby build tool update error: {err:#}");
+        }
+        ctx.pr.set_message("ruby-build".into());
+        self.install_cmd(&ctx.config, &tv, ctx.pr.as_ref())
+            .await?
+            .execute()?;
+
+        self.install_rubygems_hook(&tv)?;
+        if let Err(err) = self
+            .install_default_gems(&ctx.config, &tv, ctx.pr.as_ref())
+            .await
+        {
+            warn!("failed to install default ruby gems {err:#}");
+        }
+        Ok(tv)
+    }
+
+    async fn exec_env(
+        &self,
+        _config: &Arc<Config>,
+        _ts: &Toolset,
+        _tv: &ToolVersion,
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        let map = BTreeMap::new();
+        // No modification to RUBYLIB
+        Ok(map)
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        _request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> Result<BTreeMap<String, String>> {
+        if target.os_name() == "windows" {
+            // Windows uses RubyInstaller2, so ruby-build/precompiled settings do not affect it.
+            return Ok(BTreeMap::new());
+        }
+
+        let mut opts = BTreeMap::new();
+        let settings = Settings::get();
+        let ruby = &settings.ruby;
+        let try_precompiled = self.should_try_precompiled();
+
+        opts.insert("compile".to_string(), (!try_precompiled).to_string());
+
+        // Ruby uses ruby-install vs ruby-build. The installer and its options
+        // can affect the source-built output, including fallback after a
+        // missing precompiled binary.
+        opts.insert("ruby_install".to_string(), ruby.ruby_install.to_string());
+        if ruby.ruby_install {
+            if let Some(ruby_install_opts) = ruby.ruby_install_opts.clone() {
+                opts.insert("ruby_install_opts".to_string(), ruby_install_opts);
+            }
+            opts.insert(
+                "ruby_install_repo".to_string(),
+                ruby.ruby_install_repo.clone(),
+            );
+        } else {
+            if let Some(ruby_build_cli_opts) = ruby.ruby_build_cli_opts.clone() {
+                opts.insert("ruby_build_cli_opts".to_string(), ruby_build_cli_opts);
+            }
+            if let Some(ruby_build_opts) = ruby.ruby_build_opts.clone() {
+                opts.insert("ruby_build_opts".to_string(), ruby_build_opts);
+            }
+            opts.insert("ruby_build_repo".to_string(), ruby.ruby_build_repo.clone());
+        }
+
+        if let Some(apply_patches) = ruby.apply_patches.clone() {
+            opts.insert("apply_patches".to_string(), apply_patches);
+        }
+
+        if try_precompiled {
+            opts.insert("precompiled_url".to_string(), ruby.precompiled_url.clone());
+            if let Some(precompiled_arch) = ruby.precompiled_arch.clone() {
+                opts.insert("precompiled_arch".to_string(), precompiled_arch);
+            }
+            if let Some(precompiled_os) = ruby.precompiled_os.clone() {
+                opts.insert("precompiled_os".to_string(), precompiled_os);
+            }
+        }
+
+        Ok(opts)
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // Windows uses RubyInstaller2 binaries, not source tarballs
+        if target.os_name() == "windows" {
+            return super::ruby_common::resolve_rubyinstaller_lock_info(&tv.version).await;
+        }
+
+        // Precompiled binary info if enabled
+        if self.should_try_precompiled()
+            && let Some(platform) = self.precompiled_platform_for_target(target)
+            && let Some((url, checksum)) = {
+                let locked_build_revision =
+                    Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
+                self.resolve_precompiled_url(
+                    &tv.version,
+                    &platform,
+                    locked_build_revision.as_deref(),
+                )
+                .await?
+            }
+        {
+            // Detect provenance for precompiled binaries
+            let provenance = self.detect_precompiled_provenance();
+            return Ok(PlatformInfo {
+                url: Some(url),
+                checksum,
+                provenance,
+                ..Default::default()
+            });
+        }
+
+        // Default: source tarball
+        match self.get_ruby_download_info(&tv.version).await? {
+            Some((url, checksum)) => Ok(PlatformInfo {
+                url: Some(url),
+                checksum: Some(checksum),
+                size: None,
+                url_api: None,
+                conda_deps: None,
+                ..Default::default()
+            }),
+            None => Ok(PlatformInfo::default()),
+        }
+    }
+}
+
+fn parse_gemfile(body: &str) -> String {
+    let v = body
+        .lines()
+        .find(|line| line.trim().starts_with("ruby "))
+        .unwrap_or_default()
+        .trim()
+        .split('#')
+        .next()
+        .unwrap_or_default()
+        .replace("engine:", ":engine =>")
+        .replace("engine_version:", ":engine_version =>");
+    let v = regex!(r#".*:engine *=> *['"](?<engine>[^'"]*).*:engine_version *=> *['"](?<engine_version>[^'"]*).*"#).replace_all(&v, "${engine_version}__ENGINE__${engine}").to_string();
+    let v = regex!(r#".*:engine_version *=> *['"](?<engine_version>[^'"]*).*:engine *=> *['"](?<engine>[^'"]*).*"#).replace_all(&v, "${engine_version}__ENGINE__${engine}").to_string();
+    let v = regex!(r#" *ruby *['"]([^'"]*).*"#)
+        .replace_all(&v, "$1")
+        .to_string();
+    let v = regex!(r#"^[^0-9]"#).replace_all(&v, "").to_string();
+    let v = regex!(r#"(.*)__ENGINE__(.*)"#)
+        .replace_all(&v, "$2-$1")
+        .to_string();
+    // make sure it's a version string like "3.0.0", "3.4.10", "ruby-3.0.0",
+    // or "jruby-9.4.12.0" (optional engine prefix, one or more numeric segments)
+    if !regex!(r"^(\w+-)?\d+(\.\d+)*$").is_match(&v) {
+        return "".to_string();
+    }
+    v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::settings::SettingsPartial;
+    use crate::platform::Platform;
+    use crate::toolset::ToolSource;
+    use confique::Layer;
+    use indoc::indoc;
+    use pretty_assertions::assert_eq;
+
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    const DEFAULT_RUBY_BUILD_REPO: &str = "https://github.com/rbenv/ruby-build.git";
+    const DEFAULT_RUBY_INSTALL_REPO: &str = "https://github.com/postmodern/ruby-install.git";
+
+    struct SettingsResetGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for SettingsResetGuard {
+        fn drop(&mut self) {
+            Settings::reset(None);
+        }
+    }
+
+    fn resolve_ruby_lockfile_options(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+    ) -> BTreeMap<String, String> {
+        resolve_ruby_lockfile_options_for_target(configure_settings, PlatformTarget::from_current())
+    }
+
+    fn resolve_ruby_lockfile_options_for_target(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+        target: PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let mut settings = SettingsPartial::empty();
+        configure_settings(&mut settings);
+        Settings::reset(Some(settings));
+        let _guard = SettingsResetGuard { _lock: lock };
+
+        let backend = RubyPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
+        backend.resolve_lockfile_options(&request, &target).unwrap()
+    }
+
+    fn with_ruby_settings<T>(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+        f: impl FnOnce(&RubyPlugin) -> T,
+    ) -> T {
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let mut settings = SettingsPartial::empty();
+        configure_settings(&mut settings);
+        Settings::reset(Some(settings));
+        let _guard = SettingsResetGuard { _lock: lock };
+
+        f(&RubyPlugin::new())
+    }
+
+    fn ruby_precompiled_only(compile: Option<bool>) -> bool {
+        with_ruby_settings(
+            |settings| settings.ruby.compile = compile,
+            |backend| backend.precompiled_only(),
+        )
+    }
+
+    fn ruby_build_args(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+    ) -> Result<Vec<String>> {
+        with_ruby_settings(configure_settings, |backend| {
+            let request =
+                ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
+            let tv = ToolVersion::new(request, "3.3.0".to_string());
+            backend.install_args_ruby_build(&tv)
+        })
+    }
+
+    fn ruby_precompiled_cache_context(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+    ) -> Option<String> {
+        with_ruby_settings(configure_settings, |backend| {
+            backend.precompiled_cache_context()
+        })
+    }
+
+    fn release(tag: &str, assets: &[&str]) -> GithubRelease {
+        GithubRelease {
+            tag_name: tag.to_string(),
+            draft: false,
+            prerelease: false,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            published_at: None,
+            assets: assets
+                .iter()
+                .map(|name| crate::github::GithubAsset {
+                    name: (*name).to_string(),
+                    browser_download_url: format!("https://example.com/{name}"),
+                    url: format!("https://api.example.com/{name}"),
+                    digest: None,
+                })
+                .collect(),
+        }
+    }
+
+    fn non_current_platform_target() -> PlatformTarget {
+        let platform = ["linux-x64", "macos-arm64", "windows-x64"]
+            .into_iter()
+            .map(|platform| Platform::parse(platform).unwrap())
+            .find(|platform| platform != &Platform::current())
+            .unwrap();
+        PlatformTarget::new(platform)
+    }
+
+    #[test]
+    fn test_tag_to_version() {
+        // Standard versions
+        assert_eq!(
+            RubyPlugin::tag_to_version("v3_3_0"),
+            Some("3.3.0".to_string())
+        );
+        assert_eq!(
+            RubyPlugin::tag_to_version("v3_2_2"),
+            Some("3.2.2".to_string())
+        );
+        assert_eq!(
+            RubyPlugin::tag_to_version("v2_7_8"),
+            Some("2.7.8".to_string())
+        );
+
+        // Preview and RC versions
+        assert_eq!(
+            RubyPlugin::tag_to_version("v3_3_0_preview1"),
+            Some("3.3.0-preview1".to_string())
+        );
+        assert_eq!(
+            RubyPlugin::tag_to_version("v3_3_0_rc1"),
+            Some("3.3.0-rc1".to_string())
+        );
+
+        // Invalid tags
+        assert_eq!(RubyPlugin::tag_to_version("3_3_0"), None); // Missing 'v' prefix
+        assert_eq!(RubyPlugin::tag_to_version("v3_3"), None); // Missing patch version
+        assert_eq!(RubyPlugin::tag_to_version("jruby-9.4.0"), None); // Different format
+    }
+
+    #[test]
+    fn test_parse_gemfile() {
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            ruby '2.7.2'
+        "#}),
+            "2.7.2"
+        );
+        // Each numeric segment may be more than one digit (e.g. 3.4.10, 4.0.6)
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            ruby "3.4.10"
+        "#}),
+            "3.4.10"
+        );
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            ruby "4.0.6"
+        "#}),
+            "4.0.6"
+        );
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            ruby '1.9.3', engine: 'jruby', engine_version: "1.6.7"
+        "#}),
+            "jruby-1.6.7"
+        );
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            ruby '1.9.3', :engine => 'jruby', :engine_version => '1.6.7'
+        "#}),
+            "jruby-1.6.7"
+        );
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            ruby '1.9.3', :engine_version => '1.6.7', :engine => 'jruby'
+        "#}),
+            "jruby-1.6.7"
+        );
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            ruby "3.3.0", engine: "jruby", engine_version: "9.4.12.0"
+        "#}),
+            "jruby-9.4.12.0"
+        );
+        assert_eq!(
+            parse_gemfile(indoc! {r#"
+            source "https://rubygems.org"
+            ruby File.read(File.expand_path(".ruby-version", __dir__)).strip
+        "#}),
+            ""
+        );
+    }
+
+    #[test]
+    fn test_ruby_precompiled_versions_host_only_for_default_source() {
+        assert!(RubyPlugin::use_versions_host_for_precompiled_source(
+            DEFAULT_RUBY_PRECOMPILED_URL
+        ));
+        assert!(!RubyPlugin::use_versions_host_for_precompiled_source(
+            "acme/ruby"
+        ));
+    }
+
+    #[test]
+    fn test_ruby_default_precompiled_source_requires_build_revision() {
+        assert!(RubyPlugin::source_requires_build_revision(
+            DEFAULT_RUBY_PRECOMPILED_URL
+        ));
+        assert!(!RubyPlugin::source_requires_build_revision("acme/ruby"));
+    }
+
+    #[test]
+    fn test_ruby_split_build_revision_tag() {
+        assert_eq!(
+            RubyPlugin::split_build_revision_tag("3.3.11-1"),
+            ("3.3.11", Some(1))
+        );
+        assert_eq!(
+            RubyPlugin::split_build_revision_tag("3.3.11-12"),
+            ("3.3.11", Some(12))
+        );
+        assert_eq!(
+            RubyPlugin::split_build_revision_tag("3.3.11"),
+            ("3.3.11", None)
+        );
+        assert_eq!(
+            RubyPlugin::split_build_revision_tag("3.4.0-preview1"),
+            ("3.4.0-preview1", None)
+        );
+    }
+
+    #[test]
+    fn test_ruby_precompiled_versions_use_highest_build_revision_only() {
+        // An install resolves 3.3.12 to the -2 release, which has no asset for this platform,
+        // so 3.3.12 must not be listed even though -1 does have one.
+        let releases = vec![
+            release("3.3.12-1", &["ruby-3.3.12.x86_64_linux.tar.gz"]),
+            release("3.3.12-2", &["ruby-3.3.12.macos.tar.gz"]),
+        ];
+        let versions =
+            RubyPlugin::precompiled_versions_from_releases(&releases, true, "x86_64_linux");
+        assert!(versions.is_empty());
+
+        // Release order must not change the answer.
+        let reversed = releases.into_iter().rev().collect_vec();
+        let versions =
+            RubyPlugin::precompiled_versions_from_releases(&reversed, true, "x86_64_linux");
+        assert!(versions.is_empty());
+        let versions = RubyPlugin::precompiled_versions_from_releases(&reversed, true, "macos");
+        assert_eq!(versions, HashSet::from(["3.3.12".to_string()]));
+    }
+
+    #[test]
+    fn test_ruby_precompiled_cache_context_tracks_source_and_platform() {
+        assert_eq!(ruby_precompiled_cache_context(|_| {}), None);
+
+        let default_source = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+        });
+        let same = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+        });
+        assert!(default_source.is_some());
+        assert_eq!(default_source, same);
+
+        let custom_source = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.precompiled_url = Some("acme/ruby".to_string());
+        });
+        assert_ne!(default_source, custom_source);
+
+        let custom_platform = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.precompiled_arch = Some("arm64".to_string());
+            settings.ruby.precompiled_os = Some("linux".to_string());
+        });
+        assert_ne!(default_source, custom_platform);
+        assert_ne!(custom_source, custom_platform);
+    }
+
+    #[test]
+    fn test_ruby_precompiled_versions_require_build_revision_for_default_source() {
+        let releases = vec![
+            release("3.3.11", &["ruby-3.3.11.x86_64_linux.tar.gz"]),
+            release("3.3.12-1", &["ruby-3.3.12.x86_64_linux.tar.gz"]),
+            release("4.0.6-2", &["ruby-4.0.6.macos.tar.gz"]),
+        ];
+
+        // The default source only ships usable binaries under build revision tags, so the
+        // plain `3.3.11` tag is not offered.
+        let versions =
+            RubyPlugin::precompiled_versions_from_releases(&releases, true, "x86_64_linux");
+        assert_eq!(versions, HashSet::from(["3.3.12".to_string()]));
+
+        // Custom sources have no build revision requirement.
+        let versions =
+            RubyPlugin::precompiled_versions_from_releases(&releases, false, "x86_64_linux");
+        assert_eq!(
+            versions,
+            HashSet::from(["3.3.11".to_string(), "3.3.12".to_string()])
+        );
+
+        // Only assets for the requested platform count.
+        let versions = RubyPlugin::precompiled_versions_from_releases(&releases, true, "macos");
+        assert_eq!(versions, HashSet::from(["4.0.6".to_string()]));
+        let versions =
+            RubyPlugin::precompiled_versions_from_releases(&releases, true, "arm64_linux");
+        assert!(versions.is_empty());
+    }
+
+    #[test]
+    fn test_ruby_precompiled_only_requires_explicit_false() {
+        assert!(!ruby_precompiled_only(None));
+        assert!(!ruby_precompiled_only(Some(true)));
+        assert!(ruby_precompiled_only(Some(false)));
+    }
+
+    fn ruby_precompiled_platform_for_target(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+        platform: &str,
+    ) -> Option<String> {
+        with_ruby_settings(configure_settings, |backend| {
+            backend.precompiled_platform_for_target(&PlatformTarget::new(
+                Platform::parse(platform).unwrap(),
+            ))
+        })
+    }
+
+    #[test]
+    fn test_ruby_precompiled_platform_skips_musl_linux() {
+        assert_eq!(
+            ruby_precompiled_platform_for_target(|_| {}, "linux-x64").as_deref(),
+            Some("x86_64_linux")
+        );
+        assert_eq!(
+            ruby_precompiled_platform_for_target(|_| {}, "linux-arm64").as_deref(),
+            Some("arm64_linux")
+        );
+        assert_eq!(
+            ruby_precompiled_platform_for_target(|_| {}, "macos-arm64").as_deref(),
+            Some("macos")
+        );
+
+        // jdx/ruby has no musl builds, so a musl target has no precompiled platform;
+        // installs fall back to ruby-build and lockfiles record the source tarball
+        assert_eq!(
+            ruby_precompiled_platform_for_target(|_| {}, "linux-x64-musl"),
+            None
+        );
+        assert_eq!(
+            ruby_precompiled_platform_for_target(|_| {}, "linux-arm64-musl"),
+            None
+        );
+
+        // Explicit overrides bypass auto-detection, including the musl skip
+        assert_eq!(
+            ruby_precompiled_platform_for_target(
+                |settings| {
+                    settings.ruby.precompiled_arch = Some("x86_64".to_string());
+                    settings.ruby.precompiled_os = Some("linux".to_string());
+                },
+                "linux-x64-musl"
+            )
+            .as_deref(),
+            Some("x86_64_linux")
+        );
+    }
+
+    #[test]
+    fn test_ruby_precompiled_platform_skips_musl_current() {
+        let platform = with_ruby_settings(
+            |settings| {
+                settings.os = Some("linux".to_string());
+                settings.arch = Some("x64".to_string());
+                settings.libc = Some("musl".to_string());
+            },
+            |backend| backend.precompiled_platform(),
+        );
+        assert_eq!(platform, None);
+    }
+
+    #[test]
+    fn test_ruby_build_revision_tags_are_numeric_suffixes() {
+        assert!(RubyPlugin::is_build_revision_tag("3.3.11", "3.3.11-1"));
+        assert!(RubyPlugin::is_build_revision_tag("3.3.11", "3.3.11-10"));
+        assert!(!RubyPlugin::is_build_revision_tag("3.3.11", "3.3.11"));
+        assert!(!RubyPlugin::is_build_revision_tag(
+            "3.3.11",
+            "3.3.11-preview1"
+        ));
+        assert!(!RubyPlugin::is_build_revision_tag("3.3.11", "3.3.10-1"));
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_precompiled_inputs() {
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.precompiled_url = Some("acme/ruby".to_string());
+            settings.ruby.precompiled_arch = Some("arm64".to_string());
+            settings.ruby.precompiled_os = Some("linux".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                ("compile".to_string(), "false".to_string()),
+                ("precompiled_arch".to_string(), "arm64".to_string()),
+                ("precompiled_os".to_string(), "linux".to_string()),
+                ("precompiled_url".to_string(), "acme/ruby".to_string()),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
+                ("ruby_install".to_string(), "false".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lock_info_url_uses_precompiled_overrides() {
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let mut settings = SettingsPartial::empty();
+        settings.ruby.compile = Some(false);
+        settings.ruby.precompiled_url =
+            Some("https://example.com/ruby-{version}-{platform}.tar.gz".to_string());
+        settings.ruby.precompiled_arch = Some("arm64".to_string());
+        settings.ruby.precompiled_os = Some("linux".to_string());
+        Settings::reset(Some(settings));
+        let _guard = SettingsResetGuard { _lock: lock };
+
+        let backend = RubyPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
+        let target = PlatformTarget::new(Platform::parse("macos-arm64").unwrap());
+        let opts = backend.resolve_lockfile_options(&request, &target).unwrap();
+        let tv = ToolVersion::new(request, "3.3.0".to_string());
+        let info = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(backend.resolve_lock_info(&tv, &target))
+            .unwrap();
+
+        assert_eq!(
+            opts.get("precompiled_arch").map(String::as_str),
+            Some("arm64")
+        );
+        assert_eq!(
+            opts.get("precompiled_os").map(String::as_str),
+            Some("linux")
+        );
+        assert_eq!(
+            info.url.as_deref(),
+            Some("https://example.com/ruby-3.3.0-arm64_linux.tar.gz")
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_source_build_inputs() {
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(true);
+            settings.ruby.ruby_build_cli_opts = Some("--keep".to_string());
+            settings.ruby.ruby_build_opts = Some("--enable-yjit".to_string());
+            settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                (
+                    "apply_patches".to_string(),
+                    "https://example.com/ruby.patch".to_string(),
+                ),
+                ("compile".to_string(), "true".to_string()),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
+                ("ruby_build_cli_opts".to_string(), "--keep".to_string()),
+                ("ruby_build_opts".to_string(), "--enable-yjit".to_string()),
+                ("ruby_install".to_string(), "false".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_build_cli_and_configure_option_order() {
+        let args = ruby_build_args(|settings| {
+            settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
+            settings.ruby.ruby_build_cli_opts =
+                Some("--keep --definitions='/path with spaces'".to_string());
+            settings.ruby.ruby_build_opts =
+                Some("--enable-yjit --with-openssl-dir='/opt with spaces'".to_string());
+        })
+        .unwrap();
+
+        assert_eq!(
+            args[0..4],
+            [
+                "--patch",
+                "--keep",
+                "--definitions=/path with spaces",
+                "3.3.0"
+            ]
+        );
+        assert!(Path::new(&args[4]).ends_with("installs/ruby/3.3.0"));
+        assert_eq!(
+            args[5..],
+            ["--", "--enable-yjit", "--with-openssl-dir=/opt with spaces"]
+        );
+    }
+
+    #[test]
+    fn test_ruby_build_cli_opts_reject_invalid_shell_words() {
+        let result = ruby_build_args(|settings| {
+            settings.ruby.ruby_build_cli_opts = Some("--keep '".to_string());
+        });
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_precompiled_default() {
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.precompiled_url = Some("acme/ruby".to_string());
+            settings.ruby.precompiled_arch = Some("arm64".to_string());
+            settings.ruby.precompiled_os = Some("linux".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                ("compile".to_string(), "false".to_string()),
+                ("precompiled_arch".to_string(), "arm64".to_string()),
+                ("precompiled_os".to_string(), "linux".to_string()),
+                ("precompiled_url".to_string(), "acme/ruby".to_string()),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
+                ("ruby_install".to_string(), "false".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_precompiled_defaults() {
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(false);
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                ("compile".to_string(), "false".to_string()),
+                (
+                    "precompiled_url".to_string(),
+                    DEFAULT_RUBY_PRECOMPILED_URL.to_string(),
+                ),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
+                ("ruby_install".to_string(), "false".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_source_inputs_for_non_current_targets() {
+        let opts = resolve_ruby_lockfile_options_for_target(
+            |settings| {
+                settings.ruby.compile = Some(true);
+                settings.ruby.ruby_build_opts = Some("--enable-yjit".to_string());
+                settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
+            },
+            non_current_platform_target(),
+        );
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                (
+                    "apply_patches".to_string(),
+                    "https://example.com/ruby.patch".to_string(),
+                ),
+                ("compile".to_string(), "true".to_string()),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
+                ("ruby_build_opts".to_string(), "--enable-yjit".to_string()),
+                ("ruby_install".to_string(), "false".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_skip_build_inputs_for_windows_targets() {
+        let opts = resolve_ruby_lockfile_options_for_target(
+            |settings| {
+                settings.ruby.compile = Some(false);
+                settings.ruby.ruby_build_opts = Some("--enable-yjit".to_string());
+                settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
+                settings.ruby.precompiled_url = Some("acme/ruby".to_string());
+                settings.ruby.precompiled_arch = Some("arm64".to_string());
+                settings.ruby.precompiled_os = Some("linux".to_string());
+            },
+            PlatformTarget::new(Platform::parse("windows-x64").unwrap()),
+        );
+
+        assert_eq!(opts, BTreeMap::new());
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_source_fallback_inputs() {
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.ruby_build_opts = Some("--enable-yjit".to_string());
+            settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                (
+                    "apply_patches".to_string(),
+                    "https://example.com/ruby.patch".to_string(),
+                ),
+                ("compile".to_string(), "false".to_string()),
+                (
+                    "precompiled_url".to_string(),
+                    DEFAULT_RUBY_PRECOMPILED_URL.to_string(),
+                ),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
+                ("ruby_build_opts".to_string(), "--enable-yjit".to_string()),
+                ("ruby_install".to_string(), "false".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_ruby_install_inputs() {
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(true);
+            settings.ruby.ruby_install = Some(true);
+            settings.ruby.ruby_install_opts = Some("--no-reinstall".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                ("compile".to_string(), "true".to_string()),
+                ("ruby_install".to_string(), "true".to_string()),
+                (
+                    "ruby_install_opts".to_string(),
+                    "--no-reinstall".to_string()
+                ),
+                (
+                    "ruby_install_repo".to_string(),
+                    DEFAULT_RUBY_INSTALL_REPO.to_string(),
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_include_ruby_install_inputs_with_patches() {
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(true);
+            settings.ruby.ruby_install = Some(true);
+            settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                (
+                    "apply_patches".to_string(),
+                    "https://example.com/ruby.patch".to_string(),
+                ),
+                ("compile".to_string(), "true".to_string()),
+                ("ruby_install".to_string(), "true".to_string()),
+                (
+                    "ruby_install_repo".to_string(),
+                    DEFAULT_RUBY_INSTALL_REPO.to_string(),
+                ),
+            ])
+        );
+    }
+}

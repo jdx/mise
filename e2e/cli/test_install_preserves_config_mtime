@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# Installing a configured tool should notify hook-env through the mise data
+# directory without changing the config file's timestamp.
+
+cat >mise.toml <<EOF
+[tools]
+dummy = "1.0.0"
+EOF
+
+rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# Establish a session while the configured tool is still uninstalled.
+eval "$(mise activate bash)"
+output=$(mise hook-env -s bash)
+if [[ -n $output ]]; then
+  fail "expected hook-env fast path before install but got: '$output'"
+fi
+
+# Use a deterministic old timestamp so the test detects an install touching the
+# config file without relying on filesystem timestamp resolution.
+touch -t 202001010000 mise.toml
+touch config-mtime-marker
+
+mise install dummy@1.0.0
+
+assert_succeed "test mise.toml -ot config-mtime-marker"
+
+# The data-directory update must still bypass hook-env's fast path and add the
+# newly installed tool to PATH.
+output=$(mise hook-env -s bash)
+assert_contains_text "$output" "$MISE_DATA_DIR/installs/dummy/1.0.0/bin"

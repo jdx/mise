@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+mise uninstall --all tiny
+mise install tiny@1 tiny@2
+mise asdf install tiny
+assert "mise asdf list tiny" "1.1.0
+2.1.0
+3.1.0"

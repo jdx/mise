@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+# Test that the leading '//' is optional when running a monorepo task by its
+# project-qualified name, e.g. "web:build" as well as "//web:build".
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["web", "api"]
+
+[tasks."release:notes"]
+run = 'echo "root release:notes task"'
+EOF
+
+mkdir -p web
+cat <<'EOF' >web/mise.toml
+[tasks.build]
+run = 'echo "web build task"'
+
+[tasks.dev]
+run = 'echo "web dev task"'
+EOF
+
+mkdir -p api
+cat <<'EOF' >api/mise.toml
+[tasks.build]
+run = 'echo "api build task"'
+EOF
+
+# Test 1: project-qualified name without the '//' prefix
+assert_contains "mise run web:build" "web build task"
+assert_contains "mise run api:build" "api build task"
+
+# Test 2: equivalent to the '//' form
+assert_contains "mise run //web:build" "web build task"
+
+# Test 3: works as a shorthand too, without 'run'
+assert_contains "mise web:build" "web build task"
+
+# Test 4: wildcards stay scoped to the named project
+OUTPUT=$(mise run 'web:*')
+assert_contains "mise run 'web:*'" "web build task"
+assert_contains "mise run 'web:*'" "web dev task"
+if echo "$OUTPUT" | grep -q "api build task"; then
+  echo "ERROR: 'web:*' matched a task outside the web project"
+  exit 1
+fi
+
+# Test 5: a root task whose name contains ':' is not shadowed by the project
+# interpretation of the same syntax
+assert_contains "mise run release:notes" "root release:notes task"
+
+# Test 6: unknown project or task still fails
+assert_fail_contains "mise run web:missing" "no task"
+assert_fail_contains "mise run missing:build" "no task"

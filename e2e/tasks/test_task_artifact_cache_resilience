@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+
+[tasks.build]
+run = '''
+mkdir -p dist
+printf 'artifact\n' > dist/result.txt
+printf 'ran\n' >> runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+
+[tasks.stdin]
+run = '''
+mkdir -p stdin-dist
+IFS= read -r line
+printf '%s\n' "$line" > stdin-dist/result.txt
+'''
+sources = ["stdin.txt"]
+outputs = ["stdin-dist"]
+output = "interleave"
+EOF
+
+printf 'input\n' >input.txt
+printf 'stdin\n' >stdin.txt
+
+# A corrupt current manifest is a cache miss, so the task executes instead of
+# reporting a successful no-work hit without replaying output.
+mise run build
+manifest="$(find "$MISE_CACHE_DIR/task-artifacts/v2" -type f -name '*.json' -print -quit)"
+printf 'invalid manifest\n' >"$manifest"
+assert_contains "mise run build 2>&1" "cache miss: cache entry was corrupt"
+assert "wc -l < runs.txt | tr -d ' '" "2"
+
+# Archive integrity is verified independently of the cache lookup key. Appended
+# bytes may still be accepted by the compression decoder, but never by the
+# artifact checksum.
+rm -rf dist
+manifest="$(find "$MISE_CACHE_DIR/task-artifacts/v2" -type f -name '*.json' -print -quit)"
+archive="${manifest%.json}.tar.zst"
+printf 'trailing corruption\n' >>"$archive"
+assert_contains "mise run build 2>&1" "task cache artifact checksum mismatch"
+assert "wc -l < runs.txt | tr -d ' '" "3"
+
+# Capturing output for a cacheable interleave task must not disconnect stdin.
+printf 'from-stdin\n' | mise run stdin
+assert "cat stdin-dist/result.txt" "from-stdin"

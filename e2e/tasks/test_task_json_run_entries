@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tasks.example1]
+run = "echo example1"
+
+[tasks.example2]
+run = "echo example2"
+
+[tasks.example3]
+run = "echo example3"
+
+[tasks.one_by_one]
+run = [
+  "echo start",
+  { task = "example1", args = ["--flag"], env = { FOO = "bar" } },
+  { tasks = ["example2", "example3"] },
+]
+EOF
+
+expected_run='[
+  "echo start",
+  {
+    "task": "example1",
+    "args": [
+      "--flag"
+    ],
+    "env": {
+      "FOO": "bar"
+    }
+  },
+  {
+    "tasks": [
+      "example2",
+      "example3"
+    ]
+  }
+]'
+
+assert_json "mise tasks ls --json | jq '.[] | select(.name == \"one_by_one\") | .run'" "$expected_run"
+assert_json "mise tasks info one_by_one --json | jq '.run'" "$expected_run"

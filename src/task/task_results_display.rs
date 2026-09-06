@@ -1,0 +1,110 @@
+use crate::task::task_output_handler::OutputHandler;
+use crate::task::{FailedTasks, Task};
+use crate::ui::{style, time};
+use crate::{Result, request_exit};
+
+/// Handles display of task execution results and failure summaries
+pub(crate) struct TaskResultsDisplay {
+    output_handler: OutputHandler,
+    failed_tasks: FailedTasks,
+    continue_on_error: bool,
+    show_timings: bool,
+    interrupted: bool,
+}
+
+impl TaskResultsDisplay {
+    pub(crate) fn new(
+        output_handler: OutputHandler,
+        failed_tasks: FailedTasks,
+        continue_on_error: bool,
+        show_timings: bool,
+        interrupted: bool,
+    ) -> Self {
+        Self {
+            output_handler,
+            failed_tasks,
+            continue_on_error,
+            show_timings,
+            interrupted,
+        }
+    }
+
+    /// Display final results and handle failures
+    pub(crate) fn display_results(
+        &self,
+        num_tasks: usize,
+        timer: std::time::Instant,
+    ) -> Result<()> {
+        self.display_keep_order_output();
+        self.display_timing_summary(num_tasks, timer);
+        if self.interrupted {
+            return Err(request_exit(130));
+        }
+        self.maybe_print_failure_summary();
+        self.exit_if_failed()?;
+        Ok(())
+    }
+
+    /// Flush any remaining keep-order output (safety net).
+    ///
+    /// No task context is available here, so flush unconditionally rather than
+    /// gating on the run-wide output mode: `flush_all` is a no-op when nothing
+    /// was buffered, and per-task `output = "keep-order"` overrides must still be
+    /// drained even when the global default isn't keep-order.
+    fn display_keep_order_output(&self) {
+        self.output_handler
+            .keep_order_state
+            .lock()
+            .unwrap()
+            .flush_all();
+    }
+
+    /// Display timing summary if enabled
+    fn display_timing_summary(&self, num_tasks: usize, timer: std::time::Instant) {
+        if self.show_timings && num_tasks > 1 {
+            let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
+            safe_eprintln!("{}", style::edim(msg));
+        }
+    }
+
+    /// Print failure summary if in continue-on-error mode
+    fn maybe_print_failure_summary(&self) {
+        if !self.continue_on_error {
+            return;
+        }
+
+        let failed = self.failed_tasks.lock().unwrap().clone();
+        if failed.is_empty() {
+            return;
+        }
+
+        let count = failed.len();
+        safe_eprintln!("{} {} task(s) failed:", style::ered("ERROR"), count);
+        for (task, status) in &failed {
+            let prefix = task.estyled_prefix();
+            let status_str = status
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            self.eprint(task, &prefix, &format!("exited with status {}", status_str));
+        }
+    }
+
+    /// Request a failing exit status if any tasks failed
+    fn exit_if_failed(&self) -> Result<()> {
+        if let Some((task, status)) = self.failed_tasks.lock().unwrap().first() {
+            let prefix = task.estyled_prefix();
+            self.eprint(
+                task,
+                &prefix,
+                &format!("{} task failed", style::ered("ERROR")),
+            );
+            return Err(request_exit(status.unwrap_or(1)));
+        }
+        Ok(())
+    }
+
+    /// Print error message for a task
+    fn eprint(&self, task: &Task, prefix: &str, line: &str) {
+        self.output_handler.eprint(task, prefix, line);
+    }
+}

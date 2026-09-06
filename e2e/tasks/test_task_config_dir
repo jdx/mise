@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+task_config.dir = "{{config_root}}/mywork"
+tasks.a.run = "pwd"
+EOF
+
+mkdir -p mywork
+assert "mise run a" "$(pwd)/mywork"

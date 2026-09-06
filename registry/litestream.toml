@@ -1,0 +1,3 @@
+backends = ["aqua:benbjohnson/litestream", "asdf:threkk/asdf-litestream"]
+description = "Streaming replication for SQLite"
+version_order = "semver"

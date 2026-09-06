@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# `backend_matches_platform` decides which registry backends survive for a platform, and it runs
+# before any backend is asked whether it supports that platform. Windows on arm64 was matching
+# neither `windows-x64` nor `x64`, so backends aqua itself would have accepted were dropped first.
+#
+# `MISE_OS`/`MISE_ARCH` move only that decision, so the whole rule is observable from this runner --
+# no Windows arm64 machine involved, and mise CI has none. What is *not* covered here is whether an
+# amd64 binary really runs on Windows arm64; that assumption is mise's own, already written into
+# `is_platform_supported` in the aqua backend.
+#
+# imagemagick is asserted by containment rather than equality on purpose: the asdf backend is
+# dropped by `cfg!(windows)`, a compile-time check that `MISE_OS` cannot move, so the full list
+# differs between this runner and a Windows one.
+
+# imagemagick's aqua backend is declared `platforms = ["windows-x64"]`, and aqua's own
+# `supported_envs` for it is `[windows/amd64, linux/amd64]` -- which `is_platform_supported` extends
+# with `windows/amd64` for windows/arm64. Only the registry filter stood between them.
+assert_contains "MISE_OS=windows MISE_ARCH=arm64 mise registry imagemagick" "aqua:ImageMagick/ImageMagick"
+
+# android-cli has exactly one backend, so on windows/arm64 it had none at all.
+assert "MISE_OS=windows MISE_ARCH=arm64 mise registry android-cli" "http:android-cli"
+
+# The controls. Without them a rule that matched x64 selectors everywhere would pass both
+# assertions above.
+
+# Linux on arm64 cannot execute an x86_64 build. android-cli publishes only linux-x64, so having no
+# backend there is the correct answer and has to stay that way.
+assert_empty "MISE_OS=linux MISE_ARCH=arm64 mise registry android-cli"
+
+# macOS has Rosetta, but aqua declares no rule for it and this change invents none: imagemagick's
+# aqua backend stays out of reach on macos/arm64, exactly as before.
+assert_not_contains "MISE_OS=macos MISE_ARCH=arm64 mise registry imagemagick" "aqua:ImageMagick/ImageMagick"
+
+# And the platform that already worked is untouched.
+assert_contains "MISE_OS=windows MISE_ARCH=x64 mise registry imagemagick" "aqua:ImageMagick/ImageMagick"

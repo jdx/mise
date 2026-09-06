@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+mkdir -p bundles/a bundles/b bundles/empty
+
+cat <<'EOF' >mise.toml
+[bootstrap]
+config_roots = ["bundles/*"]
+EOF
+
+cat <<'EOF' >bundles/a/mise.toml
+[bootstrap.packages]
+"apt:jq" = "latest"
+"brew:ripgrep" = "latest"
+
+[bootstrap.repos."~/src/example"]
+url = "https://example.com/example.git"
+
+[bootstrap.users.example]
+
+[bootstrap.groups.example]
+
+[bootstrap.hooks.pre-packages]
+run = "exit 99"
+EOF
+
+cat <<'EOF' >bundles/a/mise.dev.toml
+[bootstrap.packages]
+"apt:curl" = "latest"
+
+[bootstrap.hooks.final]
+run = ["exit 98", "exit 97"]
+EOF
+
+cat <<'EOF' >bundles/a/mise.prod.toml
+[bootstrap.repos."~/src/inactive"]
+url = "https://example.com/inactive.git"
+EOF
+
+cat <<'EOF' >bundles/b/mise.toml
+[bootstrap.repos]
+"~/src/one" = { url = "https://example.com/one.git" }
+"~/src/two" = { url = "https://example.com/two.git" }
+EOF
+
+cat <<'EOF' >bundles/empty/mise.toml
+[tools]
+tiny = "1"
+EOF
+
+assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots | length == 3'"
+assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[0].config_root == \"$PWD/bundles/a\"'"
+assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[0].environments == [\"dev\"]'"
+assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[0].declares.packages.count == 3'"
+assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[0].declares.repos.count == 1'"
+assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[0].declares.accounts.count == 2'"
+assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[0].declares.hooks.count == 2'"
+assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[0].declares.hooks.phases == [\"pre-packages\", \"final\"]'"
+assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[0].declares.packages.provenance | map(.config) | index(\"$PWD/bundles/a/mise.dev.toml\")'"
+assert_not_contains "MISE_ENV=dev mise bootstrap config-roots --json" "mise.prod.toml"
+assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[1].declares.repos.count == 2'"
+assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[2].declares.packages.count == 0 and .roots[2].declares.hooks.phases == []'"
+assert_not_contains "MISE_ENV=dev mise bootstrap config-roots" "exit 99"
+assert_contains "MISE_ENV=dev mise bootstrap config-roots" "bundles/a"
+assert_contains "MISE_ENV=dev mise bootstrap config-roots" "2  pre-packages, final"
+
+cat <<'EOF' >mise.toml
+[tools]
+tiny = "1"
+EOF
+assert_succeed "mise bootstrap config-roots --json | jq -e '.roots == []'"

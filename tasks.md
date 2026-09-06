@@ -1,0 +1,257 @@
+## `build`
+
+- **Usage:** `build`
+- **Aliases:** `b`
+
+Build the project
+
+## `ci`
+
+- Depends: format, build, test
+
+- **Usage:** `ci`
+
+Run all CI checks
+
+## `clean`
+
+- **Usage:** `clean`
+
+Clean build artifacts
+
+## `docs`
+
+- Depends: docs:setup
+
+- **Usage:** `docs`
+
+Start the documentation development server
+
+## `docs:build`
+
+- Depends: docs:setup
+
+- **Usage:** `docs:build`
+
+Build the documentation site
+
+## `docs:demos`
+
+- **Usage:** `docs:demos`
+
+Create recordings with vhs
+
+## `docs:preview`
+
+- Depends: docs:build
+
+- **Usage:** `docs:preview`
+
+Preview the documentation site
+
+## `docs:release`
+
+- Depends: docs:build
+
+- **Usage:** `docs:release`
+
+Release documentation site to production or remote
+
+## `docs:setup`
+
+- **Usage:** `docs:setup`
+
+Install documentation dependencies
+
+## `fetch-gpg-keys`
+
+- **Usage:** `fetch-gpg-keys`
+
+Fetch GPG keys for signing or verification
+
+## `flamegraph`
+
+- **Usage:** `flamegraph`
+
+Generate a flamegraph for performance analysis
+
+## `install-dev`
+
+- **Usage:** `install-dev`
+
+Install the current project in debug mode
+
+## `lint`
+
+- Depends: lint:*
+
+- **Usage:** `lint`
+
+Run all lint checks
+
+## `lint-fix`
+
+- **Usage:** `lint-fix`
+- **Aliases:** `format`, `fix`
+
+Automatically fix lint issues
+
+## `lint:hk`
+
+- **Usage:** `lint:hk`
+
+Lint HK files
+
+## `perf`
+
+- **Usage:** `perf`
+
+## `perf:record`
+
+- **Usage:** `perf:record`
+
+## `perf:task-cache`
+
+- **Usage:** `perf:task-cache`
+
+## `pre-commit`
+
+- **Usage:** `pre-commit`
+
+Run pre-commit hooks
+
+## `release-plz`
+
+- **Usage:** `release-plz`
+
+Release with release-plz
+
+## `render`
+
+- Depends: render:*
+
+- **Usage:** `render`
+
+Run all render tasks
+
+## `render:completions`
+
+- Depends: build
+
+- **Usage:** `render:completions`
+
+Generate shell completions
+
+## `render:help`
+
+- Depends: build
+
+- **Usage:** `render:help`
+
+Render help documentation
+
+## `render:llms`
+
+- Depends: render:usage, render:help
+
+- **Usage:** `render:llms`
+
+Generate docs/public/llms.txt (docs index for AI agents)
+
+## `render:mangen`
+
+- Depends: render:usage
+
+- **Usage:** `render:mangen`
+
+Generate man pages
+
+## `render:schema`
+
+- Depends: docs:setup
+
+- **Usage:** `render:schema`
+
+Render JSON schema
+
+## `render:usage`
+
+- Depends: build
+
+- **Usage:** `render:usage`
+
+Generate usage documentation
+
+## `show-output-on-failure`
+
+- **Usage:** `show-output-on-failure`
+
+Show output on failure for documentation generation
+
+## `snapshots`
+
+- **Usage:** `snapshots`
+
+update test snapshots
+
+## `test`
+
+- **Usage:** `test`
+- **Aliases:** `t`
+
+run all tests
+
+## `test-tool-retry`
+
+Retry failed test-tools with grace period for recent upstream releases
+
+
+- **Usage:** `test-tool-retry [--grace-period] [--check-only] <tools>…`
+
+### Arguments
+- **`<tools>…`** — Failed tools to retry
+
+### Flags
+- **`--grace-period`** — Ignore failures from tools whose upstream released &lt;7 days ago
+- **`--check-only`** — Skip retrying tools, only check grace period (use with --grace-period)
+
+## `test:build-perf-workspace`
+
+- **Usage:** `test:build-perf-workspace`
+
+task description
+
+## `test:coverage`
+
+- **Usage:** `test:coverage`
+
+Run all tests with coverage report
+
+## `test:e2e`
+
+- Depends: build
+
+- **Usage:** `test:e2e`
+- **Aliases:** `e`, `e2e`
+
+Run end-to-end tests
+
+## `test:perf`
+
+- Depends: test:build-perf-workspace
+
+- **Usage:** `test:perf`
+
+Run performance tests
+
+## `test:shuffle`
+
+- **Usage:** `test:shuffle`
+
+Run tests with shuffling enabled
+
+## `test:unit`
+
+- **Usage:** `test:unit`
+
+run unit tests

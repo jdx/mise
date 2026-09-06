@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+task.cache_dir = "config-task-cache"
+
+[task_config.cache]
+enabled = true
+
+[tasks.build]
+run = """
+mkdir -p dist
+printf 'cached\n' > dist/result.txt
+printf 'ran\n' >> runs.txt
+"""
+sources = ["input.txt"]
+outputs = ["dist"]
+EOF
+
+printf 'input\n' >input.txt
+export MISE_TASK_CACHE_DIR="$PWD/custom-task-cache"
+
+mise run build
+assert "wc -l < runs.txt | tr -d ' '" "1"
+assert "find \"$MISE_TASK_CACHE_DIR/v2\" -type f -name '*.json' | wc -l | tr -d ' '" "1"
+assert_directory_not_exists "$MISE_CACHE_DIR/task-artifacts"
+
+rm -rf dist
+assert_contains "mise run build 2>&1" "restored outputs from cache"
+assert "cat dist/result.txt" "cached"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+mise cache clear
+assert_directory_not_exists "$MISE_TASK_CACHE_DIR/v2"
+assert_directory_exists "$MISE_TASK_CACHE_DIR"
+
+# The config setting is used when the environment override is absent.
+unset MISE_TASK_CACHE_DIR
+rm -rf dist
+mise run build
+assert "wc -l < runs.txt | tr -d ' '" "2"
+assert "find \"$PWD/config-task-cache/v2\" -type f -name '*.json' | wc -l | tr -d ' '" "1"
+
+mise cache clear
+assert_directory_not_exists "$PWD/config-task-cache/v2"
+assert_directory_exists "$PWD/config-task-cache"

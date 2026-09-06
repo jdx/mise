@@ -1,0 +1,213 @@
+use std::sync::Arc;
+
+use eyre::{Result, bail};
+use itertools::Itertools;
+use serde_json::json;
+
+use crate::config::Config;
+use crate::file::display_path;
+use crate::task::Task;
+use crate::task::task_fetcher::TaskFetcher;
+use crate::task::task_source_checker::task_cwd;
+use crate::ui::info;
+
+/// Get information about a task
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub(super) struct TasksInfo {
+    /// Name of the task to get information about
+    #[usage(verbatim_doc_comment)]
+    pub task: String,
+    /// Output in JSON format
+    #[usage(short = 'J', long, verbatim_doc_comment)]
+    pub json: bool,
+}
+
+impl TasksInfo {
+    pub(super) async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+
+        let task_name = crate::task::expand_colon_task_syntax(&self.task, &config)?;
+
+        let tasks = if task_name.starts_with("//") {
+            let ctx = crate::task::TaskLoadContext::from_pattern(&task_name);
+            config.tasks_with_context(Some(&ctx)).await?
+        } else if crate::task::is_workspace_project_task(&task_name) {
+            let ctx = crate::task::TaskLoadContext::all();
+            config.tasks_with_context(Some(&ctx)).await?
+        } else {
+            config.tasks().await?
+        };
+
+        let tasks_with_aliases = crate::task::build_task_ref_map(tasks.iter());
+
+        use crate::task::GetMatchingExt;
+        let matching = tasks_with_aliases.get_matching(&task_name).ok();
+        let task = matching.and_then(|m| m.first().cloned().cloned());
+
+        if let Some(task) = task {
+            // Resolve remote task files before displaying task info
+            let mut tasks = vec![task.clone()];
+            // always pass no_cache=false as the command doesn't take no-cache argument
+            // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
+            TaskFetcher::new(false)
+                .fetch_tasks(&config, &mut tasks)
+                .await?;
+            let task = &tasks[0];
+
+            if self.json {
+                self.display_json(&config, task).await?;
+            } else {
+                self.display(&config, task).await?;
+            }
+        } else {
+            bail!(
+                "Task not found: {}, use `mise tasks ls --all --hidden` to list all tasks",
+                self.task
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn display(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
+        info::inline_section("Task", &task.display_name)?;
+        if !task.aliases.is_empty() {
+            info::inline_section("Aliases", task.aliases.join(", "))?;
+        }
+        info::inline_section("Description", &task.description)?;
+        info::inline_section(
+            "Source",
+            task.config_sources().iter().map(display_path).join(", "),
+        )?;
+        let mut properties = vec![];
+        if task.hide {
+            properties.push("hide");
+        }
+        if task.raw {
+            properties.push("raw");
+        }
+        if task.interactive {
+            properties.push("interactive");
+        }
+        if !properties.is_empty() {
+            info::inline_section("Properties", properties.join(", "))?;
+        }
+        if !task.depends.is_empty() {
+            info::inline_section("Depends on", task.depends.iter().join(", "))?;
+        }
+        if !task.depends_post.is_empty() {
+            info::inline_section("Depends post", task.depends_post.iter().join(", "))?;
+        }
+        if let Some(dir) = &task.dir {
+            info::inline_section("Directory", display_path(dir))?;
+        }
+        if !task.sources.is_empty() {
+            info::inline_section("Sources", task.sources.join(", "))?;
+        }
+        let root = task_cwd(task, config).await?;
+        let outputs = task.outputs.paths(task, &root);
+        if !outputs.is_empty() {
+            info::inline_section("Outputs", outputs.join(", "))?;
+        }
+        if task.cache.as_ref().is_some_and(|cache| cache.enabled) {
+            info::inline_section("Cache", "enabled")?;
+        }
+        if let Some(file) = &task.file {
+            info::inline_section("File", display_path(file))?;
+        }
+        let run = task.run();
+        if !run.is_empty() {
+            info::section("Run", run.iter().map(|e| e.to_string()).join("\n"))?;
+        }
+        if !task.env.is_empty() || !task.overlay_env.is_empty() {
+            let env_display = task
+                .env
+                .0
+                .iter()
+                .chain(task.overlay_env.iter().map(|(d, _)| d))
+                .map(|directive| directive.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            info::section("Environment Variables", env_display)?;
+        }
+        let spec = task.parse_usage_spec_for_display(config).await?;
+        if !spec.is_empty() {
+            info::section("Usage Spec", &spec)?;
+        }
+        Ok(())
+    }
+
+    async fn display_json(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
+        let spec = task.parse_usage_spec_for_display(config).await?;
+        let resolved_dir = task
+            .dir(config)
+            .await?
+            .map(|p| p.to_string_lossy().to_string());
+        let o = json!({
+            "name": task.display_name,
+            "aliases": task.aliases,
+            "description": task.description,
+            "source": task.config_source,
+            "config_sources": task.config_sources(),
+            "depends": task.depends,
+            "depends_post": task.depends_post,
+            "wait_for": task.wait_for,
+            "env": task
+                .env
+                .0
+                .iter()
+                .chain(task.overlay_env.iter().map(|(d, _)| d))
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>(),
+            "dir": resolved_dir,
+            "hide": task.hide,
+            "raw": task.raw,
+            "interactive": task.interactive,
+            "sources": task.sources,
+            "outputs": task.outputs,
+            "cache": task.cache.clone().unwrap_or_default(),
+            "shell": task.shell,
+            "quiet": task.quiet,
+            "silent": task.silent,
+            "tools": task.tools,
+            "run": task.run(),
+            "file": task.file,
+            "usage_spec": spec,
+        });
+        miseprintln!("{}", serde_json::to_string_pretty(&o)?);
+        Ok(())
+    }
+}
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise tasks info</bold>
+    Name: test
+    Aliases: t
+    Description: Test the application
+    Source: ~/src/myproj/mise.toml
+
+    $ <bold>mise tasks info test --json</bold>
+    {
+      "name": "test",
+      "aliases": "t",
+      "description": "Test the application",
+      "source": "~/src/myproj/mise.toml",
+      "config_sources": ["~/src/myproj/mise.toml"],
+      "depends": [],
+      "env": {},
+      "dir": null,
+      "hide": false,
+      "raw": false,
+      "sources": [],
+      "outputs": [],
+      "run": [
+        "echo \"testing!\""
+      ],
+      "file": null,
+      "usage_spec": {}
+    }
+"#
+);

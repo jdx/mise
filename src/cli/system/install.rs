@@ -1,0 +1,462 @@
+use eyre::Result;
+
+use super::driver::{self, Action, DriverOpts};
+use crate::config::{Config, Settings};
+use crate::system;
+
+#[derive(Debug, Default)]
+pub(crate) struct BootstrapApplyReport {
+    /// Whether top-level `mise bootstrap` should print a user follow-up item
+    /// for this phase after a successful apply or dry-run.
+    pub needs_follow_up: bool,
+    pub skipped_reason: Option<String>,
+}
+
+/// Apply system packages from `[bootstrap.packages]`
+///
+/// Checks which configured packages are missing and installs them with the
+/// system package manager. Built-in system managers may elevate with sudo when
+/// not running as root (see `system_packages.sudo`); package plugins never do.
+///
+/// Packages can also be given explicitly in `manager:package` form (e.g.
+/// `apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
+/// the config. Explicit packages and `--manager` scope the run to packages
+/// only. `install` is accepted as an alias for this command.
+#[derive(Debug, usage_rs::Args)]
+#[usage(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub(crate) struct SystemInstall {
+    /// Packages in `manager:package` form; defaults to everything configured
+    /// in [bootstrap.packages]
+    #[usage(value_name = "PACKAGE")]
+    packages: Vec<String>,
+
+    /// Only install packages for this built-in or plugin manager
+    #[usage(long, short)]
+    manager: Option<String>,
+
+    /// Print the commands that would run without running them
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+
+    /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
+    #[usage(long)]
+    update: bool,
+}
+
+impl SystemInstall {
+    pub(crate) async fn run(self) -> Result<()> {
+        let mgrs = if self.packages.is_empty() {
+            let config = Config::get().await?;
+            system::packages_from_config(&config)
+        } else {
+            let config = Config::get().await?;
+            system::packages_from_specs_with_config(&self.packages, Some(&config))?
+        };
+        let opts = DriverOpts {
+            manager: self.manager.clone(),
+            explicit: !self.packages.is_empty(),
+            allow_unavailable_manager: false,
+            dry_run: self.dry_run,
+            update: self.update,
+            yes: self.yes,
+        };
+        driver::run(mgrs, Action::Install, &opts).await
+    }
+}
+
+/// Apply `[bootstrap.macos.defaults]` entries that are unset or differ.
+/// Inert off-macOS.
+pub(crate) async fn apply_defaults(
+    defaults: Vec<system::defaults::DefaultsRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    apply_defaults_with_report(defaults, dry_run, yes, true)
+        .await
+        .map(|_| ())
+}
+
+pub(crate) async fn apply_defaults_with_report(
+    defaults: Vec<system::defaults::DefaultsRequest>,
+    dry_run: bool,
+    yes: bool,
+    print_follow_up: bool,
+) -> Result<BootstrapApplyReport> {
+    use crate::system::defaults::{self, DefaultsState};
+    if defaults.is_empty() {
+        return Ok(BootstrapApplyReport::default());
+    }
+    if !defaults::is_available() {
+        // cross-platform config: [bootstrap.macos.defaults] is simply inert off-macOS
+        let reason = defaults::unavailable_reason();
+        debug!("defaults: skipping, {reason}");
+        return Ok(BootstrapApplyReport {
+            needs_follow_up: false,
+            skipped_reason: Some(reason),
+        });
+    }
+    let statuses = defaults::status(&defaults).await?;
+    let targets: Vec<_> = statuses
+        .iter()
+        .filter(|s| s.state != DefaultsState::Set)
+        .map(|s| s.request.clone())
+        .collect();
+    let set = statuses.len() - targets.len();
+    if set > 0 {
+        info!("defaults: {set} value(s) already set");
+    }
+    if targets.is_empty() {
+        return Ok(BootstrapApplyReport::default());
+    }
+    let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("defaults: write {}?", list.join(", "));
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
+            info!("defaults: skipped");
+            return Ok(BootstrapApplyReport::default());
+        }
+    }
+    defaults::apply(&targets, dry_run).await?;
+    if !dry_run {
+        if print_follow_up {
+            info!(
+                "defaults: wrote {} — some apps only pick up changes after a relaunch \
+                 (e.g. `killall Dock`)",
+                list.join(", ")
+            );
+        } else {
+            info!("defaults: wrote {}", list.join(", "));
+        }
+    }
+    Ok(BootstrapApplyReport {
+        needs_follow_up: true,
+        skipped_reason: None,
+    })
+}
+
+/// Apply `[bootstrap.user].login_shell` when it differs for `mise bootstrap`.
+/// Inert off-Unix or when `chsh` is missing.
+pub(crate) fn apply_login_shell(
+    request: Option<system::login_shell::LoginShellRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    apply_login_shell_with_report(request, dry_run, yes, true).map(|_| ())
+}
+
+pub(crate) fn apply_login_shell_with_report(
+    request: Option<system::login_shell::LoginShellRequest>,
+    dry_run: bool,
+    yes: bool,
+    print_follow_up: bool,
+) -> Result<BootstrapApplyReport> {
+    use crate::system::login_shell::{self, LoginShellState};
+    let Some(request) = request else {
+        return Ok(BootstrapApplyReport::default());
+    };
+    if !login_shell::is_available() {
+        let reason = login_shell::unavailable_reason();
+        debug!("login_shell: skipping, {reason}");
+        return Ok(BootstrapApplyReport {
+            needs_follow_up: false,
+            skipped_reason: Some(reason),
+        });
+    }
+    let status = login_shell::status(&request)?;
+    if status.state == LoginShellState::Set {
+        info!("login_shell: already set to {}", request.shell);
+        return Ok(BootstrapApplyReport::default());
+    }
+    let needs_follow_up = status.state != LoginShellState::Set;
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("login_shell: run `chsh -s {}`?", request.shell);
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
+            info!("login_shell: skipped");
+            return Ok(BootstrapApplyReport::default());
+        }
+    }
+
+    login_shell::apply(&request, dry_run)?;
+    if !dry_run {
+        if print_follow_up {
+            info!(
+                "login_shell: set to {} - start a new login session for it to take effect",
+                request.shell
+            );
+        } else {
+            info!("login_shell: set to {}", request.shell);
+        }
+    }
+    Ok(BootstrapApplyReport {
+        needs_follow_up,
+        skipped_reason: None,
+    })
+}
+
+/// Apply `[bootstrap.mise_shell_activate]` entries using dotfile edit blocks.
+pub(crate) fn apply_shell_activation(
+    config: &Config,
+    requests: Vec<system::shell_activation::ShellActivationRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    if requests.is_empty() {
+        return Ok(());
+    }
+    let edits = requests
+        .into_iter()
+        .map(|request| request.edit)
+        .collect::<Vec<_>>();
+    let opts = system::edits::ApplyOpts {
+        dry_run,
+        verbose: Settings::get().verbose,
+        yes,
+    };
+    system::edits::apply(config, &edits, &opts).map(|_| ())
+}
+
+/// Apply `[bootstrap.repos]` entries that are missing or differ.
+pub(crate) async fn apply_repos(
+    repos: Vec<system::repos::RepoRequest>,
+    dry_run: bool,
+    yes: bool,
+    skip_dirty: bool,
+) -> Result<()> {
+    mutate_repos(
+        repos,
+        dry_run,
+        yes,
+        skip_dirty,
+        RepoMutation {
+            prompt_verb: "apply",
+            completed_verb: "applied",
+            report_current_count: true,
+            report_all_current: false,
+        },
+        |status| !status.state.is_current(),
+        system::repos::apply_statuses,
+    )
+    .await
+}
+
+/// Update `[bootstrap.repos]` entries, including unpinned repos.
+pub(crate) async fn update_repos(
+    repos: Vec<system::repos::RepoRequest>,
+    dry_run: bool,
+    yes: bool,
+    skip_dirty: bool,
+) -> Result<()> {
+    mutate_repos(
+        repos,
+        dry_run,
+        yes,
+        skip_dirty,
+        RepoMutation {
+            prompt_verb: "update",
+            completed_verb: "updated",
+            report_current_count: false,
+            report_all_current: true,
+        },
+        |status| !status.state.is_current() || status.request.git_ref.is_none(),
+        system::repos::update_statuses,
+    )
+    .await
+}
+
+struct RepoMutation {
+    prompt_verb: &'static str,
+    completed_verb: &'static str,
+    report_current_count: bool,
+    report_all_current: bool,
+}
+
+async fn mutate_repos(
+    repos: Vec<system::repos::RepoRequest>,
+    dry_run: bool,
+    yes: bool,
+    skip_dirty: bool,
+    mutation: RepoMutation,
+    is_target: impl Fn(&system::repos::RepoStatus) -> bool,
+    mutate: impl FnOnce(&[system::repos::RepoStatus], bool) -> Result<()>,
+) -> Result<()> {
+    use crate::system::repos;
+    if repos.is_empty() {
+        return Ok(());
+    }
+    let mut statuses = repos::status(&repos).await?;
+    let mut skipped_dirty = false;
+    if skip_dirty {
+        statuses.retain(|status| {
+            if matches!(status.state, system::repos::RepoState::Dirty) {
+                warn!("repos: {} has local changes, skipping", status.request);
+                skipped_dirty = true;
+                false
+            } else {
+                true
+            }
+        });
+    }
+    repos::preflight_statuses(&statuses)?;
+    let eligible = statuses.len();
+    let targets: Vec<_> = statuses.into_iter().filter(is_target).collect();
+    let current = eligible - targets.len();
+    if mutation.report_current_count && current > 0 {
+        info!("repos: {current} repo(s) already current");
+    }
+    if targets.is_empty() {
+        if mutation.report_all_current && !skipped_dirty {
+            info!("repos: all repo(s) already current");
+        }
+        return Ok(());
+    }
+    let list = targets
+        .iter()
+        .map(|s| s.request.to_string())
+        .collect::<Vec<_>>();
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("repos: {} {}?", mutation.prompt_verb, list.join(", "));
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
+            info!("repos: skipped");
+            return Ok(());
+        }
+    }
+    mutate(&targets, dry_run)?;
+    if !dry_run {
+        info!("repos: {} {}", mutation.completed_verb, list.join(", "));
+    }
+    Ok(())
+}
+
+/// Apply `[bootstrap.macos.launchd.agents]` entries that are missing, changed,
+/// or not loaded. Inert off-macOS.
+pub(crate) async fn apply_launchd(
+    agents: Vec<system::launchd::LaunchdRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    apply_launchd_with_report(agents, dry_run, yes)
+        .await
+        .map(|_| ())
+}
+
+pub(crate) async fn apply_launchd_with_report(
+    agents: Vec<system::launchd::LaunchdRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<BootstrapApplyReport> {
+    use crate::system::launchd::{self, LaunchdState};
+    if agents.is_empty() {
+        return Ok(BootstrapApplyReport::default());
+    }
+    if !launchd::is_available() {
+        let reason = launchd::unavailable_reason();
+        debug!("launchd: skipping, {reason}");
+        return Ok(BootstrapApplyReport {
+            needs_follow_up: false,
+            skipped_reason: Some(reason),
+        });
+    }
+    let statuses = launchd::status(&agents).await?;
+    let targets: Vec<_> = statuses
+        .iter()
+        .filter(|s| s.state != LaunchdState::Loaded)
+        .map(|s| s.request.clone())
+        .collect();
+    let loaded = statuses.len() - targets.len();
+    if loaded > 0 {
+        info!("launchd: {loaded} agent(s) already loaded");
+    }
+    if targets.is_empty() {
+        return Ok(BootstrapApplyReport::default());
+    }
+    let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("launchd: install/load {}?", list.join(", "));
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
+            info!("launchd: skipped");
+            return Ok(BootstrapApplyReport::default());
+        }
+    }
+    launchd::apply(&targets, dry_run).await?;
+    if !dry_run {
+        info!("launchd: installed/loaded {}", list.join(", "));
+    }
+    Ok(BootstrapApplyReport {
+        needs_follow_up: false,
+        skipped_reason: None,
+    })
+}
+
+/// Apply `[bootstrap.linux.systemd.units]` entries that are missing, changed,
+/// or inactive. Inert off-Linux.
+pub(crate) async fn apply_systemd(
+    units: Vec<system::systemd::SystemdRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    apply_systemd_with_report(units, dry_run, yes)
+        .await
+        .map(|_| ())
+}
+
+pub(crate) async fn apply_systemd_with_report(
+    units: Vec<system::systemd::SystemdRequest>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<BootstrapApplyReport> {
+    use crate::system::systemd;
+    if units.is_empty() {
+        return Ok(BootstrapApplyReport::default());
+    }
+    if !systemd::is_available() {
+        let reason = systemd::unavailable_reason();
+        debug!("systemd: skipping, {reason}");
+        return Ok(BootstrapApplyReport {
+            needs_follow_up: false,
+            skipped_reason: Some(reason),
+        });
+    }
+    let statuses = systemd::status(&units).await?;
+    let targets: Vec<_> = statuses
+        .iter()
+        .filter(|s| !s.is_desired())
+        .map(|s| s.request.clone())
+        .collect();
+    let applied = statuses.len() - targets.len();
+    if applied > 0 {
+        info!("systemd: {applied} unit(s) already applied");
+    }
+    if targets.is_empty() {
+        return Ok(BootstrapApplyReport::default());
+    }
+    let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("systemd: apply {}?", list.join(", "));
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
+            info!("systemd: skipped");
+            return Ok(BootstrapApplyReport::default());
+        }
+    }
+    systemd::apply(&targets, dry_run).await?;
+    if !dry_run {
+        info!("systemd: applied {}", list.join(", "));
+    }
+    Ok(BootstrapApplyReport {
+        needs_follow_up: false,
+        skipped_reason: None,
+    })
+}
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise bootstrap packages apply</bold>
+    $ <bold>mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835</bold>
+    $ <bold>mise bootstrap packages apply --dry-run</bold>
+    $ <bold>mise bootstrap packages apply --manager apt --yes</bold>
+"#
+);

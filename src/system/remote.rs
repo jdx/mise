@@ -1,0 +1,2937 @@
+use std::fmt;
+use std::fs::{self, File};
+use std::path::{Component, Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+
+use eyre::{Context, Result, bail, eyre};
+use indexmap::{IndexMap, IndexSet};
+use serde::Deserialize;
+
+use crate::config::Config;
+use crate::http::HTTP;
+use crate::ui::multi_progress_report::MultiProgressReport;
+
+const RELEASE_BASE_URL: &str = "https://github.com/jdx/mise/releases/download";
+/// Where `install_mise = true` puts the executable. This matches the default
+/// used by <https://mise.run> and is already searched by remote mise discovery.
+pub(crate) const DEFAULT_INSTALL_MISE_PATH: &str = "~/.local/bin/mise";
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct RemoteTomlConfig {
+    pub source: Option<PathBuf>,
+    pub mise_env: Option<Vec<String>>,
+    pub install_mise: Option<InstallMiseTomlConfig>,
+    #[serde(default)]
+    pub copy_links: bool,
+    #[serde(default)]
+    pub copy_link: Vec<PathBuf>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
+    #[serde(default)]
+    pub hosts: IndexMap<String, RemoteHostTomlConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct RemoteHostTomlConfig {
+    pub host: String,
+    pub user: Option<String>,
+    pub port: Option<u16>,
+    pub identity_file: Option<PathBuf>,
+    pub source: Option<PathBuf>,
+    pub mise_env: Option<Vec<String>>,
+    pub copy_links: Option<bool>,
+    #[serde(default)]
+    pub copy_link: Vec<PathBuf>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
+    #[serde(default)]
+    pub ssh_options: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub install_mise: Option<InstallMiseTomlConfig>,
+    pub mise_bin: Option<PathBuf>,
+    pub remote_mise: Option<String>,
+    pub bootstrap_command: Option<String>,
+}
+
+/// `install_mise = true` or `install_mise = "~/bin/mise"`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum InstallMiseTomlConfig {
+    Enabled(bool),
+    Path(String),
+}
+
+impl InstallMiseTomlConfig {
+    fn path(self) -> Option<String> {
+        match self {
+            Self::Enabled(false) => None,
+            Self::Enabled(true) => Some(DEFAULT_INSTALL_MISE_PATH.to_string()),
+            Self::Path(path) => Some(path),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RemoteHost {
+    pub name: String,
+    pub host: String,
+    pub user: Option<String>,
+    pub port: Option<u16>,
+    pub identity_file: Option<PathBuf>,
+    pub source: PathBuf,
+    pub mise_env: Vec<String>,
+    pub copy_links: bool,
+    pub copy_link: Vec<PathBuf>,
+    pub exclude: Vec<String>,
+    pub ssh_options: Vec<String>,
+    pub tags: IndexSet<String>,
+    /// Remote path the provisioned executable is installed to, keeping mise on
+    /// the host after the staging directory is removed.
+    pub install_mise: Option<String>,
+    pub mise_bin: Option<PathBuf>,
+    pub remote_mise: Option<String>,
+    pub bootstrap_command: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RemoteOverrides {
+    /// Git onboarding does not use the inventory's archive source.
+    pub from_git: bool,
+    pub source: Option<PathBuf>,
+    pub mise_env: Option<Vec<String>>,
+    pub copy_links: bool,
+    pub copy_link: Vec<PathBuf>,
+    pub port: Option<u16>,
+    pub identity_file: Option<PathBuf>,
+    pub exclude: Vec<String>,
+    pub ssh_options: Vec<String>,
+    pub install_mise: Option<String>,
+    pub no_install_mise: bool,
+    pub mise_bin: Option<PathBuf>,
+    pub remote_mise: Option<String>,
+    pub bootstrap_command: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RemoteRunOptions {
+    pub relay: Option<crate::github_relay::Scope>,
+    pub dry_run: bool,
+    pub yes: bool,
+    pub update: bool,
+    pub prompt_secrets: bool,
+    pub force_dotfiles: bool,
+    pub skip: Vec<String>,
+    pub only: Vec<String>,
+    pub keep_staging: bool,
+    pub connect_timeout: u16,
+}
+
+#[derive(Default)]
+pub(crate) struct RemoteArtifactResolver {
+    directory: Option<tempfile::TempDir>,
+    manifest: Option<ReleaseManifest>,
+    artifacts: IndexMap<String, PathBuf>,
+    official_local_verified: bool,
+}
+
+#[derive(Clone, Debug)]
+struct ReleaseManifest {
+    checksums: std::collections::HashMap<String, String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RemotePlatform {
+    os: String,
+    arch: String,
+    libc: Option<LibcFlavor>,
+}
+
+pub(crate) fn hosts_from_config(
+    config: &Config,
+    layered_excludes: &[String],
+) -> Result<IndexMap<String, RemoteHost>> {
+    let mut hosts = IndexMap::new();
+    for cf in config.config_files.values() {
+        let Some(bootstrap) = cf.bootstrap_config() else {
+            continue;
+        };
+        let remote = bootstrap.remote;
+        let base = cf.get_path().parent().unwrap_or_else(|| Path::new("."));
+        let default_source = resolve_local_path(base, remote.source.as_deref())?;
+        let default_mise_env = remote.mise_env;
+        let default_install_mise = remote.install_mise.and_then(InstallMiseTomlConfig::path);
+        let default_copy_links = remote.copy_links;
+        let default_copy_link = remote.copy_link;
+        for (name, host) in remote.hosts {
+            if hosts.contains_key(&name) {
+                continue;
+            }
+            let source = match host.source.as_deref() {
+                Some(source) => resolve_local_path(base, Some(source))?
+                    .expect("a provided source resolves to a path"),
+                None => default_source.clone().unwrap_or(std::env::current_dir()?),
+            };
+            let identity_file = resolve_local_path(base, host.identity_file.as_deref())?;
+            let mise_bin = resolve_local_path(base, host.mise_bin.as_deref())?;
+            let mut exclude = default_excludes();
+            exclude.extend_from_slice(layered_excludes);
+            exclude.extend(host.exclude);
+            let mut copy_link = default_copy_link.clone();
+            copy_link.extend(host.copy_link);
+            let host = RemoteHost {
+                name: name.clone(),
+                host: host.host,
+                user: host.user,
+                port: host.port,
+                identity_file,
+                source,
+                mise_env: host
+                    .mise_env
+                    .unwrap_or_else(|| default_mise_env.clone().unwrap_or_default()),
+                copy_links: host.copy_links.unwrap_or(default_copy_links),
+                copy_link: dedupe_paths(copy_link),
+                exclude: dedupe(exclude),
+                ssh_options: dedupe(host.ssh_options),
+                tags: host.tags.into_iter().collect(),
+                install_mise: match host.install_mise {
+                    Some(install_mise) => install_mise.path(),
+                    None => default_install_mise.clone(),
+                },
+                mise_bin,
+                remote_mise: host.remote_mise,
+                bootstrap_command: host.bootstrap_command,
+            };
+            hosts.insert(name, host);
+        }
+    }
+    Ok(hosts)
+}
+
+pub(crate) fn excludes_from_config(config: &Config) -> Vec<String> {
+    config
+        .config_files
+        .values()
+        .filter_map(|cf| cf.bootstrap_config())
+        .flat_map(|bootstrap| bootstrap.remote.exclude)
+        .collect()
+}
+
+pub(crate) fn ad_hoc_host(
+    destination: &str,
+    source: PathBuf,
+    config_excludes: &[String],
+) -> Result<RemoteHost> {
+    let (user, host) = destination
+        .rsplit_once('@')
+        .map(|(user, host)| (Some(user.to_string()), host.to_string()))
+        .unwrap_or((None, destination.to_string()));
+    let target = RemoteHost {
+        name: destination.to_string(),
+        host,
+        user,
+        port: None,
+        identity_file: None,
+        source,
+        mise_env: vec![],
+        copy_links: false,
+        copy_link: vec![],
+        exclude: dedupe(
+            default_excludes()
+                .into_iter()
+                .chain(config_excludes.iter().cloned())
+                .collect(),
+        ),
+        ssh_options: vec![],
+        tags: IndexSet::new(),
+        install_mise: None,
+        mise_bin: None,
+        remote_mise: None,
+        bootstrap_command: None,
+    };
+    target.validate()?;
+    Ok(target)
+}
+
+impl RemoteHost {
+    pub(crate) fn apply_overrides(&mut self, overrides: &RemoteOverrides) -> Result<()> {
+        if let Some(source) = &overrides.source {
+            self.source = absolutize(source)?;
+        }
+        if let Some(mise_env) = &overrides.mise_env {
+            self.mise_env.clone_from(mise_env);
+        }
+        if overrides.copy_links {
+            self.copy_links = true;
+        }
+        self.copy_link.extend(overrides.copy_link.clone());
+        self.copy_link = dedupe_paths(std::mem::take(&mut self.copy_link));
+        if let Some(port) = overrides.port {
+            self.port = Some(port);
+        }
+        if let Some(identity_file) = &overrides.identity_file {
+            self.identity_file = Some(absolutize(&crate::file::replace_path(identity_file))?);
+        }
+        self.exclude.extend(overrides.exclude.clone());
+        self.exclude = dedupe(std::mem::take(&mut self.exclude));
+        self.ssh_options.extend(overrides.ssh_options.clone());
+        self.ssh_options = dedupe(std::mem::take(&mut self.ssh_options));
+        if overrides.mise_bin.is_some()
+            || overrides.remote_mise.is_some()
+            || overrides.bootstrap_command.is_some()
+        {
+            self.mise_bin = overrides
+                .mise_bin
+                .as_ref()
+                .map(|binary| absolutize(&crate::file::replace_path(binary)))
+                .transpose()?;
+            self.remote_mise.clone_from(&overrides.remote_mise);
+            self.bootstrap_command
+                .clone_from(&overrides.bootstrap_command);
+            // A command-line strategy that provides its own mise replaces a
+            // configured install rather than conflicting with it.
+            if overrides.remote_mise.is_some() || overrides.bootstrap_command.is_some() {
+                self.install_mise = None;
+            }
+        }
+        if let Some(install_mise) = &overrides.install_mise {
+            // Both of these provide their own mise, so an explicit install
+            // replaces them the same way a command-line strategy would.
+            self.remote_mise = None;
+            self.bootstrap_command = None;
+            self.install_mise = Some(install_mise.clone());
+        } else if overrides.no_install_mise {
+            self.install_mise = None;
+        }
+        self.validate_with_source(!overrides.from_git)
+    }
+
+    pub(crate) fn destination(&self) -> String {
+        match &self.user {
+            Some(user) => format!("{user}@{}", self.host),
+            None => self.host.clone(),
+        }
+    }
+
+    fn validate(&self) -> Result<()> {
+        self.validate_with_source(true)
+    }
+
+    fn validate_with_source(&self, archive: bool) -> Result<()> {
+        validate_ssh_atom("host", &self.host)?;
+        if let Some(user) = &self.user {
+            validate_ssh_atom("user", user)?;
+        }
+        if self.port == Some(0) {
+            bail!("remote host '{}' port must be greater than zero", self.name);
+        }
+        if archive && !self.source.is_dir() {
+            bail!(
+                "remote host '{}' source is not a directory: {}",
+                self.name,
+                self.source.display()
+            );
+        }
+        if archive && !self.copy_links {
+            for link in &self.copy_link {
+                validate_copy_link(&self.source, link).wrap_err_with(|| {
+                    format!("remote host '{}' has invalid copy_link", self.name)
+                })?;
+            }
+        }
+        if let Some(identity) = &self.identity_file
+            && !identity.is_file()
+        {
+            bail!(
+                "remote host '{}' identity file does not exist: {}",
+                self.name,
+                identity.display()
+            );
+        }
+        if let Some(binary) = &self.mise_bin
+            && !binary.is_file()
+        {
+            bail!(
+                "remote host '{}' mise binary does not exist: {}",
+                self.name,
+                binary.display()
+            );
+        }
+        let provisioning_strategies = [
+            self.mise_bin.is_some(),
+            self.remote_mise.is_some(),
+            self.bootstrap_command.is_some(),
+        ]
+        .into_iter()
+        .filter(|configured| *configured)
+        .count();
+        if provisioning_strategies > 1 {
+            bail!(
+                "remote host '{}' must set at most one of mise_bin, remote_mise, or bootstrap_command",
+                self.name
+            );
+        }
+        if let Some(install_mise) = &self.install_mise {
+            if self.remote_mise.is_some() || self.bootstrap_command.is_some() {
+                bail!(
+                    "remote host '{}' cannot combine install_mise with remote_mise or bootstrap_command, which already provide mise on the host",
+                    self.name
+                );
+            }
+            validate_install_mise_path(install_mise).wrap_err_with(|| {
+                format!("remote host '{}' has an invalid install_mise", self.name)
+            })?;
+        }
+        for option in &self.ssh_options {
+            validate_value("SSH option", option)?;
+        }
+        for exclude in &self.exclude {
+            validate_value("archive exclude", exclude)?;
+        }
+        for env in &self.mise_env {
+            validate_value("mise environment", env)?;
+            if env.contains(',') {
+                bail!("remote mise environment cannot contain a comma: {env}");
+            }
+        }
+        if let Some(remote_mise) = &self.remote_mise {
+            validate_remote_executable(remote_mise)?;
+        }
+        if self
+            .bootstrap_command
+            .as_ref()
+            .is_some_and(|command| command.contains('\0'))
+        {
+            bail!("remote host '{}' bootstrap command contains NUL", self.name);
+        }
+        Ok(())
+    }
+}
+
+pub(crate) async fn run(
+    host: &RemoteHost,
+    options: &RemoteRunOptions,
+    artifacts: &mut RemoteArtifactResolver,
+    repository: Option<&super::remote_repository::Source>,
+) -> Result<()> {
+    run_inner(host, options, artifacts, repository).await
+}
+
+/// Observe cancellation inside resource ownership, so cleanup can still be awaited.
+pub(crate) async fn interruptible<T>(
+    operation: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    #[cfg(unix)]
+    {
+        crate::github_relay::unix::lifecycle(operation).await
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::select! {
+            result = operation => result,
+            _ = tokio::signal::ctrl_c() => Err(crate::request_exit(130)),
+        }
+    }
+}
+
+async fn run_inner(
+    host: &RemoteHost,
+    options: &RemoteRunOptions,
+    artifacts: &mut RemoteArtifactResolver,
+    repository: Option<&super::remote_repository::Source>,
+) -> Result<()> {
+    let ssh = crate::file::which("ssh").ok_or_else(|| eyre!("required command 'ssh' not found"))?;
+    let tar = crate::file::which("tar").ok_or_else(|| eyre!("required command 'tar' not found"))?;
+    let control_directory = if cfg!(unix) {
+        Some(
+            tempfile::Builder::new()
+                .prefix("mise-ssh-")
+                .tempdir_in("/tmp")?,
+        )
+    } else {
+        None
+    };
+    let session = SshSession {
+        ssh,
+        host,
+        relay: options.relay.is_some(),
+        connect_timeout: options.connect_timeout,
+        control_path: control_directory
+            .as_ref()
+            .map(|directory| directory.path().join("control")),
+    };
+    info!("bootstrap remote {} ({})", host.name, host.destination());
+    let mut staging = None;
+    let result = interruptible(async {
+        let path = session
+            .output_async(&["sh", "-c", staging_creation_script()])
+            .await?
+            .trim()
+            .to_string();
+        validate_staging_path(&path)?;
+        staging = Some(path);
+        run_staged(
+            &session,
+            &tar,
+            staging.as_deref().unwrap(),
+            options,
+            artifacts,
+            repository,
+        )
+        .await
+    })
+    .await;
+    finish_session(&session, staging.as_deref(), options.keep_staging, result).await
+}
+
+// Cleanup deliberately lives outside the interruptible future. Two bounded
+// attempts handle transient failures without blocking a Tokio worker in Drop.
+async fn finish_session(
+    session: &SshSession<'_>,
+    staging: Option<&str>,
+    retain: bool,
+    mut result: Result<()>,
+) -> Result<()> {
+    if let Some(path) = staging {
+        if retain {
+            warn!("remote staging retained on {}: {path}", session.host.name);
+        } else {
+            let mut cleanup = Err(eyre!("remote cleanup not attempted"));
+            for _ in 0..2 {
+                cleanup = session.cleanup(path).await;
+                if cleanup.is_ok() {
+                    break;
+                }
+            }
+            if let Err(error) = cleanup {
+                warn!(
+                    "failed to clean remote staging on {}: {path}: {error:#}",
+                    session.host.name
+                );
+                if result.is_ok() {
+                    result = Err(error);
+                }
+            }
+        }
+    }
+    session.close().await;
+    result
+}
+
+fn staging_creation_script() -> &'static str {
+    r#"set -eu
+staging=$(mktemp -d /tmp/mise-bootstrap.XXXXXXXXXX)
+case "$staging" in
+  /tmp/mise-bootstrap.?*)
+    case "$staging" in
+      *[[:space:]]*) ;;
+      *) printf '%s\n' "$staging"; exit 0 ;;
+    esac
+    ;;
+esac
+case "$staging" in /tmp/mise-bootstrap.?*) rmdir "$staging" 2>/dev/null || true ;; esac
+printf 'mktemp returned an unsafe staging path: %s\n' "$staging" >&2
+exit 1"#
+}
+
+async fn run_staged(
+    session: &SshSession<'_>,
+    tar: &Path,
+    staging: &str,
+    options: &RemoteRunOptions,
+    artifacts: &mut RemoteArtifactResolver,
+    repository: Option<&super::remote_repository::Source>,
+) -> Result<()> {
+    let project = format!("{staging}/project");
+    session
+        .status_async(&["mkdir", "-p", &project], false)
+        .await?;
+    if repository.is_none() {
+        upload_source(session, tar, &project).await?;
+    }
+    let mise = provision_mise(session, staging, &project, options.dry_run, artifacts).await?;
+    #[cfg(unix)]
+    let relay = match &options.relay {
+        Some(scope) => Some(start_relay(session, staging, scope.clone()).await?),
+        None => None,
+    };
+    let project = if let Some(repository) = repository {
+        let bundle = format!("{staging}/repository.bundle");
+        session
+            .status_with_stdin_async(
+                &["sh", "-c", &format!("cat > {}", shell_quote(&bundle))],
+                File::open(&repository.bundle)?,
+            )
+            .await?;
+        let mut install = vec![
+            mise.as_str(),
+            "ssh",
+            "--repository-bundle",
+            bundle.as_str(),
+            "--repository-origin",
+            &repository.origin,
+            "--repository-revision",
+            &repository.revision,
+        ];
+        if options.update {
+            install.push("--repository-update");
+        }
+        if options.yes {
+            install.push("--repository-yes");
+        }
+        // The helper uses the target's XDG/global-config environment. Only its
+        // absolute result, never the staging directory, becomes trusted config.
+        let path = session
+            .output_async(&[&mise, "ssh", "--global-config-directory"])
+            .await?
+            .trim()
+            .to_string();
+        if !path.starts_with('/') || path.contains(['\n', '\r']) {
+            bail!("invalid remote global configuration path");
+        }
+        session.status_async(&install, true).await?;
+        path
+    } else {
+        project
+    };
+    let mut argv = vec![
+        "env".to_string(),
+        format!("MISE_TRUSTED_CONFIG_PATHS={project}"),
+    ];
+    argv.push(format!("MISE_ENV={}", session.host.mise_env.join(",")));
+    #[cfg(unix)]
+    if relay.is_some() {
+        argv.extend([
+            mise.clone(),
+            "ssh".into(),
+            "--relay-session".into(),
+            format!("{staging}/github.sock"),
+            "--".into(),
+        ]);
+    }
+    argv.extend([mise, "--cd".to_string(), project, "bootstrap".to_string()]);
+    if options.dry_run {
+        argv.push("--dry-run".to_string());
+    }
+    if options.yes {
+        argv.push("--yes".to_string());
+    }
+    if options.update {
+        argv.push("--update".to_string());
+    }
+    if options.prompt_secrets {
+        argv.push("--prompt-secrets".to_string());
+    }
+    if options.force_dotfiles {
+        argv.push("--force-dotfiles".to_string());
+    }
+    for part in &options.skip {
+        argv.extend(["--skip".to_string(), part.clone()]);
+    }
+    for part in &options.only {
+        argv.extend(["--only".to_string(), part.clone()]);
+    }
+    let argv = argv.iter().map(String::as_str).collect::<Vec<_>>();
+    let result = session.status_async(&argv, true).await;
+    if options.relay.is_some() {
+        info!(
+            "borrowed GitHub access has ended; future private updates require remote credentials or another relay-enabled session"
+        );
+    }
+    result
+}
+
+#[cfg(unix)]
+async fn start_relay(
+    session: &SshSession<'_>,
+    staging: &str,
+    scope: crate::github_relay::Scope,
+) -> Result<crate::github_relay::unix::Relay> {
+    let relay = crate::github_relay::unix::Relay::start(scope, &session.host.name).await?;
+    let control = session
+        .control_path
+        .as_ref()
+        .ok_or_else(|| eyre!("relay requires an owned SSH control connection"))?;
+    let status = tokio::process::Command::new(&session.ssh)
+        .kill_on_drop(true)
+        .arg("-S")
+        .arg(control)
+        .args(["-O", "forward", "-o", "ExitOnForwardFailure=yes", "-R"])
+        .arg(format!(
+            "{staging}/github.sock:{}",
+            relay.socket().display()
+        ))
+        .arg(session.host.destination())
+        .status()
+        .await?;
+    if !status.success() {
+        bail!("GitHub relay socket forwarding failed");
+    }
+    Ok(relay)
+}
+
+#[cfg(unix)]
+pub(crate) async fn ssh(
+    host: &RemoteHost,
+    scope: crate::github_relay::Scope,
+    command: &[String],
+) -> Result<()> {
+    crate::ui::ctrlc::exit_on_ctrl_c(false);
+    let directory = tempfile::Builder::new()
+        .prefix("mise-ssh-")
+        .tempdir_in("/tmp")?;
+    let session = SshSession {
+        ssh: crate::file::which("ssh").ok_or_else(|| eyre!("ssh not found"))?,
+        host,
+        relay: true,
+        connect_timeout: 10,
+        control_path: Some(directory.path().join("control")),
+    };
+    let mut staging = None;
+    let result = interruptible(async {
+        let path = session
+            .output_async(&["sh", "-c", staging_creation_script()])
+            .await?
+            .trim()
+            .to_string();
+        validate_staging_path(&path)?;
+        staging = Some(path);
+        let staging = staging.as_deref().unwrap();
+        let project = format!("{staging}/project");
+        session
+            .status_async(&["mkdir", "-p", &project], false)
+            .await?;
+        let mise = provision_mise(
+            &session,
+            staging,
+            &project,
+            false,
+            &mut RemoteArtifactResolver::default(),
+        )
+        .await?;
+        let _relay = start_relay(&session, staging, scope).await?;
+        let mut argv = vec![
+            mise,
+            "ssh".into(),
+            "--relay-session".into(),
+            format!("{staging}/github.sock"),
+            "--".into(),
+        ];
+        argv.extend_from_slice(command);
+        session
+            .status_async(&argv.iter().map(String::as_str).collect::<Vec<_>>(), true)
+            .await
+    })
+    .await;
+    let result = finish_session(&session, staging.as_deref(), false, result).await;
+    info!(
+        "borrowed GitHub access has ended; future private updates require remote credentials or another relay-enabled session"
+    );
+    result
+}
+
+async fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<()> {
+    let temporary = tempfile::tempdir()?;
+    let archive = temporary.path().join("source.tar.gz");
+    let archive_source = if session.host.copy_links || session.host.copy_link.is_empty() {
+        session.host.source.clone()
+    } else {
+        let source = temporary.path().join("source");
+        fs::create_dir(&source)?;
+        crate::file::copy_dir_all_preserve_symlinks(&session.host.source, &source)?;
+        for link in &session.host.copy_link {
+            materialize_link(&session.host.source, &source, link)?;
+        }
+        source
+    };
+    let mut command = tokio::process::Command::new(tar);
+    command.kill_on_drop(true);
+    command.args(["-czf"]);
+    command.arg(&archive);
+    if session.host.copy_links {
+        command.arg("-h");
+    }
+    for exclude in &session.host.exclude {
+        command.arg(format!("--exclude={exclude}"));
+    }
+    let status = command
+        .args(["-C"])
+        .arg(archive_source)
+        .arg(".")
+        .status()
+        .await?;
+    if !status.success() {
+        bail!("failed to archive remote source with {status}");
+    }
+    session
+        .status_with_stdin_async(&["tar", "-xzf", "-", "-C", project], File::open(archive)?)
+        .await
+}
+
+fn validate_copy_link(source: &Path, link: &Path) -> Result<()> {
+    validate_copy_link_path(source, link)?;
+    let path = source.join(link);
+    fs::metadata(&path)
+        .wrap_err_with(|| format!("copy_link target does not exist: {}", link.display()))?;
+    Ok(())
+}
+
+fn validate_copy_link_path(source: &Path, link: &Path) -> Result<()> {
+    if link.as_os_str().is_empty()
+        || link.is_absolute()
+        || link.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        bail!(
+            "copy_link must be a relative path within the source: {}",
+            link.display()
+        );
+    }
+    let mut parent = source.to_path_buf();
+    for component in link.parent().unwrap_or_else(|| Path::new("")).components() {
+        if let Component::Normal(component) = component {
+            parent.push(component);
+            let metadata = fs::symlink_metadata(&parent).wrap_err_with(|| {
+                format!("copy_link parent does not exist: {}", parent.display())
+            })?;
+            if metadata.file_type().is_symlink() {
+                bail!(
+                    "copy_link cannot be nested below a symbolic link: {}",
+                    link.display()
+                );
+            }
+        }
+    }
+    let path = source.join(link);
+    let metadata = fs::symlink_metadata(&path)
+        .wrap_err_with(|| format!("copy_link does not exist: {}", link.display()))?;
+    if !metadata.file_type().is_symlink() {
+        bail!("copy_link is not a symbolic link: {}", link.display());
+    }
+    Ok(())
+}
+
+fn materialize_link(source: &Path, staged_source: &Path, link: &Path) -> Result<()> {
+    validate_copy_link_path(staged_source, link)
+        .wrap_err_with(|| format!("staged copy_link is unsafe: {}", link.display()))?;
+    let source_link = source.join(link);
+    let staged_link = staged_source.join(link);
+    let target = fs::canonicalize(&source_link)
+        .wrap_err_with(|| format!("failed to resolve copy_link {}", link.display()))?;
+    let parent = staged_link
+        .parent()
+        .expect("a validated copy_link has a staged parent");
+    let original_permissions = make_directory_writable(parent)?;
+    let result = (|| {
+        crate::file::remove_file(&staged_link)?;
+        if target.is_dir() {
+            fs::create_dir(&staged_link)?;
+            crate::file::copy_dir_all_preserve_symlinks(&target, &staged_link)?;
+        } else {
+            crate::file::copy(&target, &staged_link)?;
+        }
+        Ok(())
+    })();
+    if let Some(permissions) = original_permissions {
+        fs::set_permissions(parent, permissions).wrap_err_with(|| {
+            format!(
+                "failed to restore staged directory permissions: {}",
+                parent.display()
+            )
+        })?;
+    }
+    result
+}
+
+fn make_directory_writable(path: &Path) -> Result<Option<fs::Permissions>> {
+    let original = fs::metadata(path)?.permissions();
+    let mut writable = original.clone();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if original.mode() & 0o200 != 0 {
+            return Ok(None);
+        }
+        writable.set_mode(original.mode() | 0o200);
+    }
+    #[cfg(windows)]
+    {
+        if !original.readonly() {
+            return Ok(None);
+        }
+        writable.set_readonly(false);
+    }
+    fs::set_permissions(path, writable).wrap_err_with(|| {
+        format!(
+            "failed to make staged directory writable: {}",
+            path.display()
+        )
+    })?;
+    Ok(Some(original))
+}
+
+async fn provision_mise(
+    session: &SshSession<'_>,
+    staging: &str,
+    project: &str,
+    dry_run: bool,
+    artifacts: &mut RemoteArtifactResolver,
+) -> Result<String> {
+    if let Some(remote_mise) = &session.host.remote_mise {
+        let remote_mise = resolve_configured_remote_mise(session, remote_mise, project)
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "remote host '{}' has an invalid remote_mise value",
+                    session.host.name
+                )
+            })?;
+        session
+            .status_async(&[&remote_mise, "version"], false)
+            .await?;
+        return Ok(remote_mise);
+    }
+    if let Some(command) = &session.host.bootstrap_command {
+        if dry_run {
+            let mise = resolve_remote_mise(session).await.wrap_err_with(|| {
+                format!(
+                    "remote host '{}' has no existing mise executable; --dry-run does not execute bootstrap_command, so install mise first or set remote_mise or mise_bin",
+                    session.host.name
+                )
+            })?;
+            session.status_async(&[&mise, "version"], false).await?;
+            return Ok(mise);
+        }
+        let before = discover_remote_mise_candidates(session).await?;
+        let before_identities = remote_mise_candidate_identities(session, &before).await;
+        let candidates_file = format!("{staging}/mise-candidates");
+        let lookup = remote_mise_candidate_union_script();
+        let script = format!(
+            "set -e\n{command}\n{lookup} > {}",
+            shell_quote(&candidates_file),
+        );
+        session.status_async(&["sh", "-lc", &script], true).await?;
+        let candidates = session.output_async(&["cat", &candidates_file]).await?;
+        let candidates = parse_remote_mise_candidates(&candidates)?;
+        let after_identities = remote_mise_candidate_identities(session, &candidates).await;
+        let mise =
+            select_bootstrapped_mise(&before, &before_identities, &candidates, &after_identities)?;
+        session.status_async(&[&mise, "version"], false).await?;
+        return Ok(mise);
+    }
+    let binary = if let Some(binary) = &session.host.mise_bin {
+        binary.clone()
+    } else {
+        let platform = detect_remote_platform(session).await?;
+        let local_os = normalize_os(std::env::consts::OS);
+        let local_arch = normalize_arch(std::env::consts::ARCH);
+        let local = std::env::current_exe()?;
+        let local_incompatibility = if platform.os != local_os || platform.arch != local_arch {
+            Some(format!(
+                "local mise is {local_os}/{local_arch}, while the remote target is {}",
+                platform.description()
+            ))
+        } else {
+            validate_default_binary_compatibility(session, &local, &platform.os)
+                .await
+                .err()
+                .map(|error| format!("{error:#}"))
+        };
+        if local_incompatibility.is_none() {
+            local
+        } else {
+            artifacts
+                .resolve(&platform, &local)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "local mise could not run on remote host '{}' ({}) because {}; official mise {} artifact fallback also failed",
+                        session.host.name,
+                        platform.description(),
+                        local_incompatibility.expect("incompatibility was identified"),
+                        env!("CARGO_PKG_VERSION"),
+                    )
+                })?
+        }
+    };
+    let remote = match &session.host.install_mise {
+        // A dry run stays inside the staging directory it already cleans up.
+        Some(install_mise) if dry_run => {
+            let target = resolve_remote_install_path(session, install_mise).await?;
+            info!("would install mise to {} on {}", target, session.host.name);
+            stage_mise(session, &binary, staging).await?
+        }
+        Some(install_mise) => {
+            let target = resolve_remote_install_path(session, install_mise).await?;
+            install_remote_mise(session, &binary, &target).await?;
+            target
+        }
+        None => stage_mise(session, &binary, staging).await?,
+    };
+    session.status_async(&[&remote, "version"], false).await.wrap_err_with(|| {
+        format!(
+            "provisioned mise cannot run on remote host '{}'; set mise_bin, remote_mise, or bootstrap_command",
+            session.host.name
+        )
+    })?;
+    if session.host.install_mise.is_some() && !dry_run {
+        warn_when_installed_mise_is_off_login_path(session, &remote).await;
+    }
+    Ok(remote)
+}
+
+async fn stage_mise(session: &SshSession<'_>, binary: &Path, staging: &str) -> Result<String> {
+    let remote = format!("{staging}/mise");
+    session.upload_executable(binary, &remote).await?;
+    Ok(remote)
+}
+
+async fn resolve_remote_install_path(session: &SshSession<'_>, path: &str) -> Result<String> {
+    let Some(suffix) = path.strip_prefix("~/") else {
+        return Ok(path.to_string());
+    };
+    let output = session
+        .output_async(&["sh", "-lc", "printf '%s\\n' \"$HOME\""])
+        .await?;
+    let home = validated_absolute_remote_path_output(&output, "remote login home")?;
+    let target = format!("{}/{suffix}", home.trim_end_matches('/'));
+    validate_install_mise_path(&target)?;
+    Ok(target)
+}
+
+/// Installs the provisioned executable at a persistent remote path so the host
+/// keeps a usable mise once the staging directory is removed.
+async fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) -> Result<()> {
+    let expected = crate::hash::file_hash_sha256(binary, None)?;
+    if remote_executable_sha256(session, target)
+        .await?
+        .is_some_and(|installed| installed == expected)
+    {
+        info!(
+            "mise is already installed at {target} on {}",
+            session.host.name
+        );
+        return Ok(());
+    }
+    let file = File::open(binary)
+        .wrap_err_with(|| format!("failed to open mise binary {}", binary.display()))?;
+    session
+        .status_with_stdin_async(&["sh", "-c", &install_mise_script(target)], file)
+        .await?;
+    // An install path can be writable by more than the SSH account, so confirm
+    // the executable about to run is the one that was just written.
+    match remote_executable_sha256(session, target).await? {
+        Some(installed) if installed != expected => bail!(
+            "{target} on '{}' changed after it was installed; another writer owns that path",
+            session.host.name
+        ),
+        Some(_) => {}
+        None => warn!(
+            "cannot verify the mise installed at {target} on {}; the host returned no SHA-256 digest",
+            session.host.name
+        ),
+    }
+    info!("installed mise to {target} on {}", session.host.name);
+    Ok(())
+}
+
+/// Writes beside the target and renames, so a replaced executable is never
+/// truncated in place and a busy binary cannot fail with ETXTBSY. The write
+/// goes into a `mktemp -d` directory rather than a named sibling file: that
+/// directory is private to the SSH account, so nobody else can swap the path
+/// out from under `cat` in a shared writable install directory. A directory at
+/// the target is refused before the rename, and again after it in case one
+/// appears in between — `mv` would otherwise move the executable inside it and
+/// report success.
+fn install_mise_script(target: &str) -> String {
+    format!(
+        r#"set -eu
+target={}
+directory={}
+mkdir -p "$directory"
+if [ -d "$target" ]; then
+  printf 'mise install path is a directory: %s\n' "$target" >&2
+  exit 1
+fi
+staging=$(mktemp -d "$directory/.mise-install.XXXXXXXXXX")
+trap 'rm -rf -- "$staging"' EXIT
+temporary="$staging/mise"
+cat > "$temporary"
+chmod 755 "$temporary"
+mv -f "$temporary" "$target"
+if [ ! -f "$target" ]; then
+  rm -f "$target/mise"
+  printf 'mise install path is not a regular file: %s\n' "$target" >&2
+  exit 1
+fi"#,
+        shell_quote(target),
+        shell_quote(remote_parent_directory(target)),
+    )
+}
+
+fn remote_parent_directory(target: &str) -> &str {
+    match target.rsplit_once('/') {
+        Some(("", _)) | None => "/",
+        Some((directory, _)) => directory,
+    }
+}
+
+/// `None` when the path is missing or the host cannot compute SHA-256, which
+/// only costs an upload that would otherwise have been skipped.
+async fn remote_executable_sha256(
+    session: &SshSession<'_>,
+    target: &str,
+) -> Result<Option<String>> {
+    let script = format!(
+        r#"target={}
+if [ ! -f "$target" ]; then
+  exit 0
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum "$target" | cut -d' ' -f1
+elif command -v shasum >/dev/null 2>&1; then
+  shasum -a 256 "$target" | cut -d' ' -f1
+fi"#,
+        shell_quote(target)
+    );
+    let digest = session
+        .output_async(&["sh", "-c", &script])
+        .await?
+        .trim()
+        .to_string();
+    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Ok(None);
+    }
+    Ok(Some(digest.to_ascii_lowercase()))
+}
+
+/// An installed executable is only reachable later when its directory is on the
+/// login PATH, so report that once instead of leaving a silent surprise.
+async fn warn_when_installed_mise_is_off_login_path(session: &SshSession<'_>, target: &str) {
+    let script = format!(
+        r#"case ":$PATH:" in
+  *:{}:*) printf 'yes\n' ;;
+  *) printf 'no\n' ;;
+esac"#,
+        shell_quote(remote_parent_directory(target))
+    );
+    match session.output_async(&["sh", "-lc", &script]).await {
+        Ok(output) if output.trim() == "no" => warn!(
+            "{target} is not on {}'s login PATH; add its directory to PATH or declare [bootstrap.mise_shell_activate] in the bootstrap project",
+            session.host.name
+        ),
+        Ok(_) => {}
+        Err(error) => debug!(
+            "failed to read the login PATH on {}: {error:#}",
+            session.host.name
+        ),
+    }
+}
+
+async fn resolve_remote_mise(session: &SshSession<'_>) -> Result<String> {
+    let script = remote_mise_output_script();
+    let mise = session.output_async(&["sh", "-lc", &script]).await?;
+    validated_remote_command_output(&mise)
+}
+
+async fn resolve_configured_remote_mise(
+    session: &SshSession<'_>,
+    command: &str,
+    project: &str,
+) -> Result<String> {
+    validate_remote_executable(command)?;
+    if !command.contains('/') {
+        return resolve_login_path_executable(session, command).await;
+    }
+    let remote_home = if command.starts_with("~/") {
+        let output = session
+            .output_async(&["sh", "-lc", "printf '%s\\n' \"$HOME\""])
+            .await?;
+        Some(validated_absolute_remote_path_output(
+            &output,
+            "remote login home",
+        )?)
+    } else {
+        None
+    };
+    resolve_remote_mise_path(command, project, remote_home.as_deref())
+}
+
+async fn resolve_login_path_executable(session: &SshSession<'_>, command: &str) -> Result<String> {
+    let script = format!(
+        r#"command_path=$(command -v {} 2>/dev/null || true)
+case "$command_path" in
+  /*) printf '%s\n' "$command_path" ;;
+  *) printf 'executable not found on remote login PATH: %s\n' {} >&2; exit 127 ;;
+esac"#,
+        shell_quote(command),
+        shell_quote(command),
+    );
+    let output = session.output_async(&["sh", "-lc", &script]).await?;
+    validated_absolute_remote_path_output(&output, "remote login executable")
+}
+
+fn resolve_remote_mise_path(
+    command: &str,
+    project: &str,
+    remote_home: Option<&str>,
+) -> Result<String> {
+    if command.starts_with('/') {
+        return Ok(command.to_string());
+    }
+    if let Some(suffix) = command.strip_prefix("~/") {
+        if suffix.is_empty() {
+            bail!("remote mise path does not name an executable: {command:?}");
+        }
+        let home = remote_home.ok_or_else(|| eyre!("remote login home was not resolved"))?;
+        return Ok(format!("{}/{suffix}", home.trim_end_matches('/')));
+    }
+
+    let mut components = Vec::new();
+    for component in command.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                if components.pop().is_none() {
+                    bail!("relative remote mise path escapes the staged project: {command:?}");
+                }
+            }
+            component => components.push(component),
+        }
+    }
+    if components.is_empty() {
+        bail!("relative remote mise path does not name an executable: {command:?}");
+    }
+    Ok(format!("{project}/{}", components.join("/")))
+}
+
+fn remote_mise_find_script() -> &'static str {
+    r#"mise_path=$(command -v mise 2>/dev/null || true)
+case "$mise_path" in /*) ;; *) mise_path= ;; esac
+if [ -z "$mise_path" ]; then
+  for candidate in "$HOME/.local/bin/mise" "$HOME/.local/share/mise/bin/mise" "$HOME/.cargo/bin/mise" /usr/local/bin/mise /opt/homebrew/bin/mise; do
+    if [ -x "$candidate" ]; then
+      mise_path=$candidate
+      break
+    fi
+  done
+fi"#
+}
+
+fn remote_mise_output_script() -> String {
+    format!(
+        "{}\nif [ -z \"$mise_path\" ]; then\n  echo \"mise executable not found after bootstrap_command\" >&2\n  exit 127\nfi\nprintf '%s\\n' \"$mise_path\"",
+        remote_mise_find_script()
+    )
+}
+
+async fn discover_remote_mise_candidates(session: &SshSession<'_>) -> Result<Vec<String>> {
+    let script = remote_mise_candidate_union_script();
+    let output = session.output_async(&["sh", "-lc", &script]).await?;
+    parse_remote_mise_candidates(&output)
+}
+
+fn remote_mise_candidate_union_script() -> String {
+    let lookup = remote_mise_candidates_script();
+    let fresh_login_lookup = shell_words::join(["sh", "-lc", lookup]);
+    format!("{{\n{lookup}\n{fresh_login_lookup}\n}}")
+}
+
+fn remote_mise_candidates_script() -> &'static str {
+    r#"set -f
+emit_mise_candidate() {
+  case "$1" in
+    /*) if [ -x "$1" ]; then printf '%s\000' "$1"; fi ;;
+  esac
+}
+old_ifs=$IFS
+IFS=:
+for directory in $PATH; do
+  if [ -z "$directory" ]; then directory=.; fi
+  emit_mise_candidate "$directory/mise"
+done
+IFS=$old_ifs
+for candidate in "$HOME/.local/bin/mise" "$HOME/.local/share/mise/bin/mise" "$HOME/.cargo/bin/mise" /usr/local/bin/mise /opt/homebrew/bin/mise; do
+  emit_mise_candidate "$candidate"
+done"#
+}
+
+fn parse_remote_mise_candidates(output: &str) -> Result<Vec<String>> {
+    if !output.is_empty() && !output.ends_with('\0') {
+        bail!("remote mise candidate discovery returned a truncated response");
+    }
+    output
+        .split_terminator('\0')
+        .map(validated_remote_command)
+        .collect::<Result<IndexSet<_>>>()
+        .map(IndexSet::into_iter)
+        .map(Iterator::collect)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RemoteMiseIdentity {
+    version: String,
+    fingerprint: String,
+}
+
+async fn remote_mise_candidate_identities(
+    session: &SshSession<'_>,
+    candidates: &[String],
+) -> IndexMap<String, Option<RemoteMiseIdentity>> {
+    let mut identities = IndexMap::new();
+    for candidate in candidates {
+        let identity: Result<RemoteMiseIdentity> = async {
+            let version = session.output_async(&[candidate, "version"]).await?;
+            let fingerprint = remote_mise_fingerprint(session, candidate).await?;
+            Ok(RemoteMiseIdentity {
+                version: version.trim().to_string(),
+                fingerprint,
+            })
+        }
+        .await;
+        identities.insert(candidate.clone(), identity.ok());
+    }
+    identities
+}
+
+async fn remote_mise_fingerprint(session: &SshSession<'_>, candidate: &str) -> Result<String> {
+    let candidate = shell_quote(candidate);
+    let script = format!(
+        "if command -v sha256sum >/dev/null 2>&1; then sha256sum {candidate}; elif command -v shasum >/dev/null 2>&1; then shasum -a 256 {candidate}; else cksum {candidate}; fi"
+    );
+    Ok(session
+        .output_async(&["sh", "-c", &script])
+        .await?
+        .trim()
+        .to_string())
+}
+
+fn select_bootstrapped_mise(
+    before: &[String],
+    before_identities: &IndexMap<String, Option<RemoteMiseIdentity>>,
+    after: &[String],
+    after_identities: &IndexMap<String, Option<RemoteMiseIdentity>>,
+) -> Result<String> {
+    let new_candidates = after
+        .iter()
+        .filter(|candidate| !before.contains(candidate))
+        .collect::<Vec<_>>();
+    if let Some(candidate) = select_unique_remote_mise_candidate(new_candidates, "new")? {
+        return Ok(candidate);
+    }
+    let changed_candidates = after
+        .iter()
+        .filter(|candidate| {
+            before_identities.get(*candidate) != after_identities.get(*candidate)
+                && after_identities
+                    .get(*candidate)
+                    .is_some_and(Option::is_some)
+        })
+        .collect::<Vec<_>>();
+    if let Some(candidate) = select_unique_remote_mise_candidate(changed_candidates, "changed")? {
+        return Ok(candidate);
+    }
+    let version_candidates = after
+        .iter()
+        .filter(|candidate| {
+            after_identities
+                .get(*candidate)
+                .and_then(Option::as_ref)
+                .and_then(|identity| identity.version.split_whitespace().next())
+                .is_some_and(|version| {
+                    version == env!("CARGO_PKG_VERSION")
+                        || version == concat!(env!("CARGO_PKG_VERSION"), "-DEBUG")
+                })
+        })
+        .collect::<Vec<_>>();
+    if let Some(candidate) =
+        select_unique_remote_mise_candidate(version_candidates, "version-matching")?
+    {
+        return Ok(candidate);
+    }
+    if let [candidate] = after {
+        return Ok(candidate.clone());
+    }
+    if after.is_empty() {
+        bail!("mise executable not found after bootstrap_command");
+    }
+    bail!(
+        "bootstrap_command left multiple unchanged mise executables and the installed path is ambiguous: {}; set remote_mise or mise_bin explicitly",
+        after.join(", ")
+    )
+}
+
+fn select_unique_remote_mise_candidate(
+    candidates: Vec<&String>,
+    kind: &str,
+) -> Result<Option<String>> {
+    match candidates.as_slice() {
+        [] => Ok(None),
+        [candidate] => Ok(Some((*candidate).clone())),
+        _ => bail!(
+            "bootstrap_command left multiple {kind} mise executables and the installed path is ambiguous: {}; set remote_mise or mise_bin explicitly",
+            candidates
+                .iter()
+                .map(|candidate| candidate.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LibcFlavor {
+    Glibc,
+    Musl,
+}
+
+impl RemotePlatform {
+    fn description(&self) -> String {
+        match self.libc {
+            Some(libc) => format!("{}/{}/{libc}", self.os, self.arch),
+            None => format!("{}/{}", self.os, self.arch),
+        }
+    }
+
+    fn release_asset_name(&self) -> Result<String> {
+        release_asset_name(&self.os, &self.arch, self.libc)
+    }
+}
+
+impl fmt::Display for LibcFlavor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Glibc => f.write_str("glibc"),
+            Self::Musl => f.write_str("musl"),
+        }
+    }
+}
+
+impl ReleaseManifest {
+    fn verified(contents: &str, signature: &str) -> Result<Self> {
+        crate::minisign::verify(
+            &crate::minisign::MISE_PUB_KEY,
+            contents.as_bytes(),
+            signature,
+        )
+        .wrap_err("mise release checksum signature is invalid")?;
+        let checksums = crate::hash::parse_shasums(contents);
+        if checksums.is_empty() {
+            bail!("signed mise release checksum manifest is empty");
+        }
+        if checksums.values().any(|checksum| {
+            checksum.len() != 64 || !checksum.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }) {
+            bail!("signed mise release checksum manifest contains an invalid SHA-256 checksum");
+        }
+        Ok(Self { checksums })
+    }
+
+    fn checksum(&self, asset: &str) -> Result<&str> {
+        self.checksums
+            .get(asset)
+            .or_else(|| self.checksums.get(&format!("./{asset}")))
+            .map(String::as_str)
+            .ok_or_else(|| eyre!("signed mise release manifest does not contain {asset}"))
+    }
+}
+
+impl RemoteArtifactResolver {
+    async fn resolve(&mut self, platform: &RemotePlatform, local: &Path) -> Result<PathBuf> {
+        let asset = platform.release_asset_name()?;
+        if let Some(path) = self.artifacts.get(&asset) {
+            return Ok(path.clone());
+        }
+        self.ensure_official_local(local).await?;
+        let checksum = self.manifest().await?.checksum(&asset)?.to_string();
+        if self.directory.is_none() {
+            self.directory = Some(tempfile::tempdir()?);
+        }
+        let path = self
+            .directory
+            .as_ref()
+            .expect("artifact directory was initialized")
+            .path()
+            .join(&asset);
+        let progress = MultiProgressReport::get().add("mise bootstrap");
+        progress.set_message(format!("downloading {asset}"));
+        if let Err(error) = HTTP
+            .download_file(release_url(&asset), &path, Some(progress.as_ref()))
+            .await
+        {
+            progress.abandon();
+            return Err(error).wrap_err_with(|| {
+                format!("failed to download official mise release artifact {asset}")
+            });
+        }
+        progress.set_message(format!("verifying {asset}"));
+        if let Err(error) =
+            crate::hash::ensure_checksum(&path, &checksum, Some(progress.as_ref()), "sha256")
+        {
+            progress.abandon();
+            return Err(error).wrap_err_with(|| {
+                format!("official mise release artifact {asset} failed verification")
+            });
+        }
+        progress.finish();
+        info!(
+            "using signed official mise {} artifact {asset}",
+            env!("CARGO_PKG_VERSION")
+        );
+        self.artifacts.insert(asset, path.clone());
+        Ok(path)
+    }
+
+    async fn ensure_official_local(&mut self, local: &Path) -> Result<()> {
+        if self.official_local_verified {
+            return Ok(());
+        }
+        if cfg!(debug_assertions) {
+            bail!(
+                "automatic cross-platform provisioning is unavailable from a debug mise build; set mise_bin, remote_mise, or bootstrap_command"
+            );
+        }
+        let local_os = normalize_os(std::env::consts::OS);
+        let local_arch = normalize_arch(std::env::consts::ARCH);
+        let candidates = official_release_assets(&local_os, &local_arch)?;
+        let actual = crate::hash::file_hash_sha256(local, None)?;
+        let manifest = self.manifest().await?;
+        let official = candidates.iter().any(|asset| {
+            manifest
+                .checksum(asset)
+                .is_ok_and(|expected| expected.eq_ignore_ascii_case(&actual))
+        });
+        if !official {
+            bail!(
+                "automatic cross-platform provisioning refuses to replace a custom mise build with an official binary because {} does not match the signed mise {} release checksums; set mise_bin, remote_mise, or bootstrap_command",
+                local.display(),
+                env!("CARGO_PKG_VERSION")
+            );
+        }
+        self.official_local_verified = true;
+        Ok(())
+    }
+
+    async fn manifest(&mut self) -> Result<&ReleaseManifest> {
+        if self.manifest.is_none() {
+            let manifest_url = release_url("SHASUMS256.txt");
+            let signature_url = release_url("SHASUMS256.txt.minisig");
+            let (contents, signature) = tokio::try_join!(
+                HTTP.get_text_cached(&manifest_url),
+                HTTP.get_text_cached(&signature_url)
+            )
+            .wrap_err_with(|| {
+                format!(
+                    "failed to fetch signed mise {} release checksums",
+                    env!("CARGO_PKG_VERSION")
+                )
+            })?;
+            self.manifest = Some(ReleaseManifest::verified(&contents, &signature)?);
+        }
+        Ok(self.manifest.as_ref().expect("release manifest was loaded"))
+    }
+}
+
+fn release_url(filename: &str) -> String {
+    let version = env!("CARGO_PKG_VERSION");
+    format!("{RELEASE_BASE_URL}/v{version}/{filename}")
+}
+
+fn release_asset_name(os: &str, arch: &str, libc: Option<LibcFlavor>) -> Result<String> {
+    let release_arch = match arch {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        "armv7" => "armv7",
+        _ => {
+            bail!(
+                "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
+                env!("CARGO_PKG_VERSION")
+            )
+        }
+    };
+    let suffix = match os {
+        "macos" if matches!(arch, "x86_64" | "aarch64") => {
+            if libc.is_some() {
+                bail!("macOS release targets cannot declare a libc family");
+            }
+            format!("macos-{release_arch}")
+        }
+        "linux" if matches!(arch, "x86_64" | "aarch64" | "armv7") => match libc {
+            Some(LibcFlavor::Glibc) => format!("linux-{release_arch}"),
+            Some(LibcFlavor::Musl) => format!("linux-{release_arch}-musl"),
+            None => bail!("Linux release targets require a detected libc family"),
+        },
+        _ => {
+            bail!(
+                "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
+                env!("CARGO_PKG_VERSION")
+            )
+        }
+    };
+    Ok(format!("mise-v{}-{suffix}", env!("CARGO_PKG_VERSION")))
+}
+
+fn official_release_assets(os: &str, arch: &str) -> Result<Vec<String>> {
+    match os {
+        "linux" => [LibcFlavor::Glibc, LibcFlavor::Musl]
+            .into_iter()
+            .map(|libc| release_asset_name(os, arch, Some(libc)))
+            .collect(),
+        "macos" => Ok(vec![release_asset_name(os, arch, None)?]),
+        "windows" => {
+            let release_arch = match arch {
+                "x86_64" => "x64",
+                "aarch64" => "arm64",
+                _ => {
+                    bail!(
+                        "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
+                        env!("CARGO_PKG_VERSION")
+                    )
+                }
+            };
+            Ok(vec![format!(
+                "mise-v{}-windows-{release_arch}.exe",
+                env!("CARGO_PKG_VERSION")
+            )])
+        }
+        _ => bail!(
+            "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
+            env!("CARGO_PKG_VERSION")
+        ),
+    }
+}
+
+async fn detect_remote_platform(session: &SshSession<'_>) -> Result<RemotePlatform> {
+    let output = session
+        .output_async(&["sh", "-c", remote_platform_script()])
+        .await?;
+    parse_remote_platform(&output).wrap_err_with(|| {
+        format!(
+            "could not detect the platform for remote host '{}'; set mise_bin, remote_mise, or bootstrap_command",
+            session.host.name
+        )
+    })
+}
+
+fn remote_platform_script() -> &'static str {
+    r#"os=$(uname -s)
+arch=$(uname -m)
+printf '%s\n%s\n' "$os" "$arch"
+case "$os" in
+  Linux|linux)
+    libc=
+    if command -v getconf >/dev/null 2>&1; then
+      libc_output=$(getconf GNU_LIBC_VERSION 2>&1 || true)
+      case "$libc_output" in *glibc*|*GLIBC*) libc=glibc ;; esac
+    fi
+    if [ -z "$libc" ] && command -v ldd >/dev/null 2>&1; then
+      libc_output=$(ldd --version 2>&1 || true)
+      case "$libc_output" in
+        *musl*|*MUSL*) libc=musl ;;
+        *glibc*|*GLIBC*|*GNU\ libc*|*GNU\ C\ Library*) libc=glibc ;;
+      esac
+    fi
+    if [ -z "$libc" ]; then
+      for loader in /lib/ld-musl-*.so.1 /usr/lib/ld-musl-*.so.1; do
+        if [ -e "$loader" ]; then libc=musl; break; fi
+      done
+    fi
+    printf '%s\n' "${libc:-unknown}"
+    ;;
+  *) printf '%s\n' none ;;
+esac"#
+}
+
+fn parse_remote_platform(output: &str) -> Result<RemotePlatform> {
+    let mut lines = output.lines();
+    let os = normalize_os(lines.next().unwrap_or_default());
+    let arch = normalize_arch(lines.next().unwrap_or_default());
+    let libc = match (os.as_str(), lines.next()) {
+        ("linux", Some("glibc")) => Some(LibcFlavor::Glibc),
+        ("linux", Some("musl")) => Some(LibcFlavor::Musl),
+        ("linux", _) => bail!("remote Linux libc family could not be identified"),
+        (_, Some("none")) => None,
+        _ => bail!("remote platform response is incomplete"),
+    };
+    if os.is_empty() || arch.is_empty() || lines.next().is_some() {
+        bail!("remote platform response is invalid");
+    }
+    Ok(RemotePlatform { os, arch, libc })
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct AbiVersion(Vec<u32>);
+
+impl fmt::Display for AbiVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(
+            &self
+                .0
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join("."),
+        )
+    }
+}
+
+async fn validate_default_binary_compatibility(
+    session: &SshSession<'_>,
+    binary: &Path,
+    remote_os: &str,
+) -> Result<()> {
+    if remote_os != "linux" {
+        return Ok(());
+    }
+    let binary_bytes = std::fs::read(binary)?;
+    let Some(interpreter) = elf_interpreter(&binary_bytes)? else {
+        // A static ELF has no runtime loader or libc compatibility constraint.
+        return Ok(());
+    };
+    let local_output = Command::new(&interpreter).arg("--version").output()?;
+    let local_libc = parse_libc_flavor(&combined_output(&local_output)).ok_or_else(|| {
+        eyre!(
+            "could not identify the libc used by local mise loader {interpreter}; set mise_bin, remote_mise, or bootstrap_command"
+        )
+    })?;
+    let check = format!(
+        "if test -x {loader}; then {loader} --version 2>&1 || true; else printf '%s\\n' MISE_LOADER_MISSING; fi",
+        loader = shell_quote(&interpreter),
+    );
+    let remote_output = session.output_async(&["sh", "-c", &check]).await?;
+    if remote_output
+        .lines()
+        .any(|line| line == "MISE_LOADER_MISSING")
+    {
+        bail!(
+            "remote host '{}' does not provide the dynamic loader required by local mise: {interpreter}; set mise_bin, remote_mise, or bootstrap_command",
+            session.host.name
+        );
+    }
+    let remote_libc = parse_libc_flavor(&remote_output).ok_or_else(|| {
+        eyre!(
+            "could not identify the libc provided by remote loader {interpreter} on '{}'; set mise_bin, remote_mise, or bootstrap_command",
+            session.host.name
+        )
+    })?;
+    if local_libc != remote_libc {
+        bail!(
+            "remote host '{}' libc {remote_libc:?} is incompatible with local mise libc {local_libc:?}; set mise_bin, remote_mise, or bootstrap_command",
+            session.host.name
+        );
+    }
+    let required = match local_libc {
+        LibcFlavor::Glibc => max_required_glibc_version(&binary_bytes).ok_or_else(|| {
+            eyre!(
+                "could not determine the glibc ABI required by local mise; set mise_bin, remote_mise, or bootstrap_command"
+            )
+        })?,
+        LibcFlavor::Musl => parse_musl_runtime_version(&combined_output(&local_output))
+            .ok_or_else(|| {
+                eyre!(
+                    "could not determine the musl version used by local mise loader {interpreter}; set mise_bin, remote_mise, or bootstrap_command"
+                )
+            })?,
+    };
+    let available = match remote_libc {
+        LibcFlavor::Glibc => parse_glibc_runtime_version(&remote_output),
+        LibcFlavor::Musl => parse_musl_runtime_version(&remote_output),
+    }
+    .ok_or_else(|| {
+        eyre!(
+            "could not determine the {remote_libc:?} version provided by remote loader {interpreter} on '{}'; set mise_bin, remote_mise, or bootstrap_command",
+            session.host.name
+        )
+    })?;
+    if available < required {
+        bail!(
+            "remote host '{}' provides {remote_libc:?} {available}, but local mise requires {remote_libc:?} {required}; set mise_bin, remote_mise, or bootstrap_command",
+            session.host.name
+        );
+    }
+    Ok(())
+}
+
+fn max_required_glibc_version(bytes: &[u8]) -> Option<AbiVersion> {
+    const PREFIX: &[u8] = b"GLIBC_";
+    bytes
+        .windows(PREFIX.len())
+        .enumerate()
+        .filter_map(|(offset, window)| {
+            (window == PREFIX)
+                .then(|| parse_abi_version(&bytes[offset + PREFIX.len()..]))
+                .flatten()
+        })
+        .max()
+}
+
+fn parse_glibc_runtime_version(output: &str) -> Option<AbiVersion> {
+    let lower = output.to_ascii_lowercase();
+    ["glibc", "gnu libc"].into_iter().find_map(|marker| {
+        lower.match_indices(marker).find_map(|(offset, _)| {
+            let suffix = &output.as_bytes()[offset + marker.len()..];
+            let digit = suffix.iter().position(u8::is_ascii_digit)?;
+            parse_abi_version(&suffix[digit..])
+        })
+    })
+}
+
+fn parse_musl_runtime_version(output: &str) -> Option<AbiVersion> {
+    output.lines().find_map(|line| {
+        let line = line.trim();
+        let suffix = line
+            .get(..7)
+            .filter(|prefix| prefix.eq_ignore_ascii_case("version"))
+            .and_then(|_| line.get(7..))?;
+        if !suffix.starts_with([' ', '\t', ':']) {
+            return None;
+        }
+        let digit = suffix.as_bytes().iter().position(u8::is_ascii_digit)?;
+        parse_abi_version(&suffix.as_bytes()[digit..])
+    })
+}
+
+fn parse_abi_version(bytes: &[u8]) -> Option<AbiVersion> {
+    let mut components = Vec::new();
+    let mut offset = 0;
+    loop {
+        let start = offset;
+        while bytes.get(offset).is_some_and(u8::is_ascii_digit) {
+            offset += 1;
+        }
+        if start == offset {
+            break;
+        }
+        let component = std::str::from_utf8(&bytes[start..offset])
+            .ok()?
+            .parse()
+            .ok()?;
+        components.push(component);
+        if bytes.get(offset) != Some(&b'.') {
+            break;
+        }
+        offset += 1;
+    }
+    (!components.is_empty()).then_some(AbiVersion(components))
+}
+
+fn elf_interpreter(bytes: &[u8]) -> Result<Option<String>> {
+    const ELF_MAGIC: &[u8] = b"\x7fELF";
+    const PT_INTERP: u64 = 3;
+    if !bytes.starts_with(ELF_MAGIC) {
+        bail!("local mise is not an ELF executable");
+    }
+    let class = *bytes.get(4).ok_or_else(|| eyre!("truncated ELF header"))?;
+    let little_endian = match bytes.get(5) {
+        Some(1) => true,
+        Some(2) => false,
+        _ => bail!("unsupported ELF byte order"),
+    };
+    let (program_offset, entry_size, entry_count, offset_field, size_field) = match class {
+        1 => (
+            read_elf_int(bytes, 28, 4, little_endian)?,
+            read_elf_int(bytes, 42, 2, little_endian)?,
+            read_elf_int(bytes, 44, 2, little_endian)?,
+            4,
+            16,
+        ),
+        2 => (
+            read_elf_int(bytes, 32, 8, little_endian)?,
+            read_elf_int(bytes, 54, 2, little_endian)?,
+            read_elf_int(bytes, 56, 2, little_endian)?,
+            8,
+            32,
+        ),
+        _ => bail!("unsupported ELF class"),
+    };
+    let program_offset = usize::try_from(program_offset)?;
+    let entry_size = usize::try_from(entry_size)?;
+    let entry_count = usize::try_from(entry_count)?;
+    for index in 0..entry_count {
+        let start = program_offset
+            .checked_add(
+                index
+                    .checked_mul(entry_size)
+                    .ok_or_else(|| eyre!("invalid ELF program headers"))?,
+            )
+            .ok_or_else(|| eyre!("invalid ELF program headers"))?;
+        if read_elf_int(bytes, start, 4, little_endian)? != PT_INTERP {
+            continue;
+        }
+        let offset = usize::try_from(read_elf_int(
+            bytes,
+            start + offset_field,
+            if class == 1 { 4 } else { 8 },
+            little_endian,
+        )?)?;
+        let size = usize::try_from(read_elf_int(
+            bytes,
+            start + size_field,
+            if class == 1 { 4 } else { 8 },
+            little_endian,
+        )?)?;
+        let value = bytes
+            .get(
+                offset
+                    ..offset
+                        .checked_add(size)
+                        .ok_or_else(|| eyre!("invalid ELF interpreter"))?,
+            )
+            .ok_or_else(|| eyre!("truncated ELF interpreter"))?;
+        let value = value.strip_suffix(&[0]).unwrap_or(value);
+        let interpreter = String::from_utf8(value.to_vec())?;
+        if !interpreter.starts_with('/') || interpreter.contains('\0') || interpreter.contains('\n')
+        {
+            bail!("unsafe ELF interpreter path: {interpreter:?}");
+        }
+        return Ok(Some(interpreter));
+    }
+    Ok(None)
+}
+
+fn read_elf_int(bytes: &[u8], offset: usize, size: usize, little_endian: bool) -> Result<u64> {
+    let value = bytes
+        .get(
+            offset
+                ..offset
+                    .checked_add(size)
+                    .ok_or_else(|| eyre!("invalid ELF field"))?,
+        )
+        .ok_or_else(|| eyre!("truncated ELF field"))?;
+    let mut padded = [0_u8; 8];
+    if little_endian {
+        padded[..size].copy_from_slice(value);
+        Ok(u64::from_le_bytes(padded))
+    } else {
+        padded[8 - size..].copy_from_slice(value);
+        Ok(u64::from_be_bytes(padded))
+    }
+}
+
+fn combined_output(output: &Output) -> String {
+    format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+fn parse_libc_flavor(output: &str) -> Option<LibcFlavor> {
+    let lower = output.to_ascii_lowercase();
+    if lower.contains("musl") {
+        Some(LibcFlavor::Musl)
+    } else if lower.contains("glibc") || lower.contains("gnu libc") {
+        Some(LibcFlavor::Glibc)
+    } else {
+        None
+    }
+}
+
+struct SshSession<'a> {
+    relay: bool,
+    ssh: PathBuf,
+    host: &'a RemoteHost,
+    connect_timeout: u16,
+    control_path: Option<PathBuf>,
+}
+
+impl SshSession<'_> {
+    async fn status_async(&self, remote_argv: &[&str], tty: bool) -> Result<()> {
+        let mut command = tokio::process::Command::new(&self.ssh);
+        command.args(self.args(tty, remote_argv)).kill_on_drop(true);
+        #[cfg(unix)]
+        let status = crate::github_relay::unix::wait_command(&mut command, None).await?;
+        #[cfg(not(unix))]
+        let status = command.status().await?;
+        if !status.success() {
+            return Err(crate::request_exit(status.code().unwrap_or(255)));
+        }
+        Ok(())
+    }
+    fn args(&self, tty: bool, remote_argv: &[&str]) -> Vec<String> {
+        let mut args = vec![
+            "-o".to_string(),
+            format!("ConnectTimeout={}", self.connect_timeout),
+        ];
+        if self.relay {
+            args.extend([
+                "-o".into(),
+                "ServerAliveInterval=15".into(),
+                "-o".into(),
+                "ServerAliveCountMax=2".into(),
+            ]);
+        }
+        if let Some(control_path) = &self.control_path {
+            args.extend([
+                "-o".to_string(),
+                "ControlMaster=auto".to_string(),
+                "-o".to_string(),
+                "ControlPersist=60".to_string(),
+                "-o".to_string(),
+                format!("ControlPath={}", control_path.display()),
+            ]);
+        }
+        if !console::user_attended_stderr() {
+            args.extend(["-o".to_string(), "BatchMode=yes".to_string()]);
+        }
+        if tty && console::user_attended_stderr() {
+            args.push("-tt".to_string());
+        }
+        if let Some(port) = self.host.port {
+            args.extend(["-p".to_string(), port.to_string()]);
+        }
+        if let Some(identity) = &self.host.identity_file {
+            args.push("-i".to_string());
+            args.push(identity.to_string_lossy().to_string());
+        }
+        for option in &self.host.ssh_options {
+            args.extend(["-o".to_string(), option.clone()]);
+        }
+        args.push(self.host.destination());
+        args.push(shell_words::join(remote_argv));
+        args
+    }
+
+    async fn output_async(&self, remote_argv: &[&str]) -> Result<String> {
+        let args = self.args(false, remote_argv);
+        info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
+        let output = tokio::process::Command::new(&self.ssh)
+            .args(args)
+            .kill_on_drop(true)
+            .output()
+            .await?;
+        checked_output(output, &self.host.name)
+    }
+
+    async fn status_with_stdin_async(&self, remote_argv: &[&str], input: File) -> Result<()> {
+        let args = self.args(false, remote_argv);
+        info!("$ {} {}", self.ssh.display(), shell_words::join(&args));
+        let status = tokio::process::Command::new(&self.ssh)
+            .args(args)
+            .stdin(Stdio::from(input))
+            .kill_on_drop(true)
+            .status()
+            .await?;
+        if !status.success() {
+            bail!("remote upload to '{}' failed with {status}", self.host.name);
+        }
+        Ok(())
+    }
+
+    async fn upload_executable(&self, local: &Path, remote: &str) -> Result<()> {
+        let file = File::open(local)
+            .wrap_err_with(|| format!("failed to open mise binary {}", local.display()))?;
+        self.status_with_stdin_async(
+            &[
+                "sh",
+                "-c",
+                &format!(
+                    "cat > {} && chmod 700 {}",
+                    shell_quote(remote),
+                    shell_quote(remote)
+                ),
+            ],
+            file,
+        )
+        .await
+    }
+
+    async fn cleanup(&self, path: &str) -> Result<()> {
+        validate_staging_path(path)?;
+        let mut command = tokio::process::Command::new(&self.ssh);
+        command
+            .args(self.args(false, &["rm", "-rf", "--", path]))
+            .kill_on_drop(true);
+        let status = tokio::time::timeout(std::time::Duration::from_secs(5), command.status())
+            .await
+            .map_err(|_| eyre!("remote cleanup timed out"))??;
+        if !status.success() {
+            bail!("remote cleanup failed with {status}");
+        }
+        Ok(())
+    }
+
+    async fn close(&self) {
+        let Some(control_path) = &self.control_path else {
+            return;
+        };
+        let mut command = tokio::process::Command::new(&self.ssh);
+        command
+            .kill_on_drop(true)
+            .args(["-S"])
+            .arg(control_path)
+            .args(["-O", "exit"])
+            .arg(self.host.destination())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let status =
+            tokio::time::timeout(std::time::Duration::from_secs(2), command.status()).await;
+        if !matches!(status, Ok(Ok(status)) if status.success()) {
+            debug!(
+                "SSH control connection for {} did not confirm closure (failed or timed out)",
+                self.host.name
+            );
+        }
+    }
+}
+
+fn checked_output(output: Output, name: &str) -> Result<String> {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "remote command on '{name}' failed with {}: {}",
+            output.status,
+            stderr.trim()
+        );
+    }
+    Ok(String::from_utf8(output.stdout)?)
+}
+
+fn resolve_local_path(base: &Path, path: Option<&Path>) -> Result<Option<PathBuf>> {
+    path.map(|path| {
+        let path = crate::file::replace_path(path);
+        let path = if path.is_absolute() {
+            path
+        } else {
+            base.join(path)
+        };
+        absolutize(&path)
+    })
+    .transpose()
+}
+
+fn absolutize(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        Ok(path.to_path_buf())
+    } else {
+        Ok(std::env::current_dir()?.join(path))
+    }
+}
+
+fn validate_ssh_atom(kind: &str, value: &str) -> Result<()> {
+    validate_value(kind, value)?;
+    if value.starts_with('-') || value.chars().any(char::is_whitespace) {
+        bail!("invalid remote {kind}: {value}");
+    }
+    Ok(())
+}
+
+fn validate_value(kind: &str, value: &str) -> Result<()> {
+    if value.is_empty() || value.contains('\0') {
+        bail!("remote {kind} cannot be empty or contain NUL");
+    }
+    Ok(())
+}
+
+fn validate_staging_path(path: &str) -> Result<()> {
+    if !path.starts_with("/tmp/mise-bootstrap.")
+        || path["/tmp/mise-bootstrap.".len()..].is_empty()
+        || path.chars().any(char::is_whitespace)
+    {
+        bail!("remote mktemp returned an unsafe staging path: {path:?}");
+    }
+    Ok(())
+}
+
+fn validated_remote_command(command: &str) -> Result<String> {
+    if !command.starts_with('/') || command.contains(['\0', '\n', '\r']) {
+        bail!("bootstrap_command returned an unsafe mise path: {command:?}");
+    }
+    Ok(command.to_string())
+}
+
+fn validated_remote_command_output(output: &str) -> Result<String> {
+    validated_remote_command(output.strip_suffix('\n').unwrap_or(output))
+}
+
+fn validated_absolute_remote_path_output(output: &str, kind: &str) -> Result<String> {
+    let path = output.strip_suffix('\n').unwrap_or(output);
+    if !path.starts_with('/') || path.contains(['\0', '\n', '\r']) {
+        bail!("{kind} returned an unsafe absolute path: {path:?}");
+    }
+    Ok(path.to_string())
+}
+
+fn validate_install_mise_path(path: &str) -> Result<()> {
+    validate_value("mise install path", path)?;
+    if path.contains(['\n', '\r']) {
+        bail!("install_mise must not contain a newline: {path:?}");
+    }
+    if !path.starts_with('/') && !path.starts_with("~/") {
+        bail!("install_mise must be an absolute path or start with ~/: {path:?}");
+    }
+    if path.split('/').any(|component| component == "..") {
+        bail!("install_mise must not contain '..': {path:?}");
+    }
+    if matches!(
+        path.rsplit('/').next(),
+        None | Some("") | Some(".") | Some("~")
+    ) {
+        bail!("install_mise must name an executable file: {path:?}");
+    }
+    Ok(())
+}
+
+fn validate_remote_executable(command: &str) -> Result<()> {
+    validate_value("mise command", command)?;
+    let is_path = command.contains('/');
+    if command.starts_with('-')
+        || command.contains(['\n', '\r'])
+        || (!is_path && command.chars().any(char::is_whitespace))
+    {
+        bail!("remote mise command must be an executable name or path: {command:?}");
+    }
+    Ok(())
+}
+
+fn shell_quote(value: &str) -> String {
+    shell_words::join([value])
+}
+
+fn normalize_os(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "darwin" | "macos" => "macos".to_string(),
+        "linux" => "linux".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn normalize_arch(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "x86_64" | "amd64" => "x86_64".to_string(),
+        "aarch64" | "arm64" => "aarch64".to_string(),
+        "armv7l" | "armv7" => "armv7".to_string(),
+        "armv6l" | "armv6" => "armv6".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn default_excludes() -> Vec<String> {
+    vec![
+        ".git".to_string(),
+        "target".to_string(),
+        "node_modules".to_string(),
+    ]
+}
+
+fn dedupe(values: Vec<String>) -> Vec<String> {
+    values
+        .into_iter()
+        .collect::<IndexSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn dedupe_paths(values: Vec<PathBuf>) -> Vec<PathBuf> {
+    values
+        .into_iter()
+        .map(|path| {
+            path.components()
+                .filter(|component| !matches!(component, Component::CurDir))
+                .collect()
+        })
+        .collect::<IndexSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn materializes_only_the_selected_link() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        let staged = temp.path().join("staged");
+        let shared = temp.path().join("shared");
+        fs::create_dir_all(shared.join("nested"))?;
+        fs::write(shared.join("module.toml"), "module")?;
+        symlink("../module.toml", shared.join("nested/module-link"))?;
+        fs::create_dir_all(&source)?;
+        symlink(&shared, source.join("shared"))?;
+
+        fs::create_dir(&staged)?;
+        crate::file::copy_dir_all_preserve_symlinks(&source, &staged)?;
+        materialize_link(&source, &staged, Path::new("shared"))?;
+
+        assert!(staged.join("shared").is_dir());
+        assert!(!staged.join("shared").is_symlink());
+        assert_eq!(
+            fs::read_to_string(staged.join("shared/module.toml"))?,
+            "module"
+        );
+        assert_eq!(
+            fs::read_link(staged.join("shared/nested/module-link"))?,
+            Path::new("../module.toml")
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn validates_copy_link_paths() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        fs::create_dir(&source)?;
+        fs::write(temp.path().join("target"), "target")?;
+        fs::write(source.join("regular"), "regular")?;
+        symlink(temp.path().join("target"), source.join("link"))?;
+        symlink("missing", source.join("dangling"))?;
+
+        assert!(validate_copy_link(&source, Path::new("link")).is_ok());
+        assert!(validate_copy_link(&source, Path::new("regular")).is_err());
+        assert!(validate_copy_link(&source, Path::new("dangling")).is_err());
+        assert!(validate_copy_link(&source, Path::new("../target")).is_err());
+        assert!(validate_copy_link(&source, &temp.path().join("target")).is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rejects_copy_link_below_symlinked_parent() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        let outside = temp.path().join("outside");
+        fs::create_dir(&source)?;
+        fs::create_dir(&outside)?;
+        fs::write(temp.path().join("target"), "target")?;
+        symlink(temp.path().join("target"), outside.join("child-link"))?;
+        symlink(&outside, source.join("linked-parent"))?;
+
+        let error = validate_copy_link(&source, Path::new("linked-parent/child-link"))
+            .expect_err("a selected link below a symlinked parent must be rejected");
+        assert!(error.to_string().contains("nested below a symbolic link"));
+        assert!(outside.join("child-link").is_symlink());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rejects_symlinked_parent_introduced_in_staging() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        let staged = temp.path().join("staged");
+        let outside = temp.path().join("outside");
+        fs::create_dir_all(source.join("parent"))?;
+        fs::create_dir(&staged)?;
+        fs::create_dir(&outside)?;
+        fs::write(temp.path().join("target"), "target")?;
+        symlink(temp.path().join("target"), source.join("parent/link"))?;
+        symlink(temp.path().join("target"), outside.join("link"))?;
+        symlink(&outside, staged.join("parent"))?;
+
+        let error = materialize_link(&source, &staged, Path::new("parent/link"))
+            .expect_err("a symlinked parent introduced in staging must be rejected");
+        assert!(error.to_string().contains("staged copy_link is unsafe"));
+        assert!(outside.join("link").is_symlink());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn materializes_link_below_read_only_directory() -> Result<()> {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        let staged = temp.path().join("staged");
+        let parent = source.join("read-only");
+        fs::create_dir_all(&parent)?;
+        fs::write(temp.path().join("target"), "target")?;
+        symlink(temp.path().join("target"), parent.join("link"))?;
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o555))?;
+
+        fs::create_dir(&staged)?;
+        crate::file::copy_dir_all_preserve_symlinks(&source, &staged)?;
+        materialize_link(&source, &staged, Path::new("read-only/link"))?;
+
+        assert_eq!(fs::read_to_string(staged.join("read-only/link"))?, "target");
+        assert_eq!(
+            fs::metadata(staged.join("read-only"))?.permissions().mode() & 0o777,
+            0o555
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn dedupes_normalized_copy_link_paths() {
+        assert_eq!(
+            dedupe_paths(vec![
+                PathBuf::from("shared/link"),
+                PathBuf::from("./shared/link")
+            ]),
+            vec![PathBuf::from("shared/link")]
+        );
+    }
+
+    #[test]
+    fn parses_ad_hoc_destinations() {
+        let source = std::env::current_dir().unwrap();
+        let host = ad_hoc_host("ubuntu@example.com", source, &[]).unwrap();
+        assert_eq!(host.user.as_deref(), Some("ubuntu"));
+        assert_eq!(host.host, "example.com");
+        assert_eq!(host.destination(), "ubuntu@example.com");
+        assert!(ad_hoc_host("-oProxyCommand=bad", std::env::current_dir().unwrap(), &[]).is_err());
+    }
+
+    #[test]
+    fn git_onboarding_ignores_archive_source_but_validates_ssh() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut host = ad_hoc_host("devbox", temp.path().into(), &[]).unwrap();
+        host.source = temp.path().join("absent");
+        host.copy_link.push(PathBuf::from("absent-link"));
+        assert!(host.apply_overrides(&RemoteOverrides::default()).is_err());
+        let overrides = RemoteOverrides {
+            from_git: true,
+            ..Default::default()
+        };
+        host.apply_overrides(&overrides).unwrap();
+        host.port = Some(0);
+        assert!(host.apply_overrides(&overrides).is_err());
+    }
+
+    #[test]
+    fn validates_remote_staging_paths() {
+        assert!(validate_staging_path("/tmp/mise-bootstrap.abc123").is_ok());
+        assert!(validate_staging_path("/tmp/mise-bootstrap.").is_err());
+        assert!(validate_staging_path("/tmp/other").is_err());
+        assert!(validate_staging_path("/tmp/mise-bootstrap.a b").is_err());
+    }
+
+    #[test]
+    fn normalizes_platform_names() {
+        assert_eq!(normalize_os("Darwin"), "macos");
+        assert_eq!(normalize_arch("amd64"), "x86_64");
+        assert_eq!(normalize_arch("arm64"), "aarch64");
+    }
+
+    #[test]
+    fn provisioning_override_replaces_inventory_strategy() {
+        let mut host = ad_hoc_host("example.com", std::env::current_dir().unwrap(), &[]).unwrap();
+        host.remote_mise = Some("mise".to_string());
+        host.apply_overrides(&RemoteOverrides {
+            mise_bin: Some(std::env::current_exe().unwrap()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(host.mise_bin.is_some());
+        assert!(host.remote_mise.is_none());
+        assert!(host.bootstrap_command.is_none());
+
+        host.bootstrap_command = Some("install-mise".to_string());
+        assert!(host.validate().is_err());
+    }
+
+    #[test]
+    fn parses_install_mise_as_a_flag_or_a_path() {
+        let enabled: RemoteTomlConfig = toml::from_str("install_mise = true").unwrap();
+        assert_eq!(
+            enabled.install_mise.unwrap().path().as_deref(),
+            Some(DEFAULT_INSTALL_MISE_PATH)
+        );
+        let disabled: RemoteTomlConfig = toml::from_str("install_mise = false").unwrap();
+        assert!(disabled.install_mise.unwrap().path().is_none());
+        let path: RemoteTomlConfig =
+            toml::from_str(r#"install_mise = "/usr/local/bin/mise""#).unwrap();
+        assert_eq!(
+            path.install_mise.unwrap().path().as_deref(),
+            Some("/usr/local/bin/mise")
+        );
+    }
+
+    #[test]
+    fn validates_install_mise_paths() {
+        assert!(validate_install_mise_path("~/.local/bin/mise").is_ok());
+        assert!(validate_install_mise_path("/usr/local/bin/mise").is_ok());
+        assert!(validate_install_mise_path("bin/mise").is_err());
+        assert!(validate_install_mise_path("./mise").is_err());
+        assert!(validate_install_mise_path("~/bin/../../mise").is_err());
+        assert!(validate_install_mise_path("~/.local/bin/").is_err());
+        assert!(validate_install_mise_path("~/").is_err());
+        assert!(validate_install_mise_path("/usr/local/bin/mise\nrm -rf /").is_err());
+        assert!(validate_install_mise_path("").is_err());
+    }
+
+    #[test]
+    fn install_mise_composes_only_with_an_uploaded_binary() {
+        let mut host = ad_hoc_host("example.com", std::env::current_dir().unwrap(), &[]).unwrap();
+        host.install_mise = Some(DEFAULT_INSTALL_MISE_PATH.to_string());
+        host.validate().unwrap();
+
+        host.mise_bin = Some(std::env::current_exe().unwrap());
+        host.validate().unwrap();
+
+        host.mise_bin = None;
+        host.remote_mise = Some("mise".to_string());
+        assert!(host.validate().is_err());
+
+        host.remote_mise = None;
+        host.bootstrap_command = Some("curl https://mise.run | sh".to_string());
+        assert!(host.validate().is_err());
+    }
+
+    #[test]
+    fn install_mise_overrides_replace_and_clear_the_configured_path() {
+        let mut host = ad_hoc_host("example.com", std::env::current_dir().unwrap(), &[]).unwrap();
+        host.install_mise = Some(DEFAULT_INSTALL_MISE_PATH.to_string());
+        host.apply_overrides(&RemoteOverrides {
+            install_mise: Some("/usr/local/bin/mise".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(host.install_mise.as_deref(), Some("/usr/local/bin/mise"));
+
+        host.apply_overrides(&RemoteOverrides {
+            no_install_mise: true,
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(host.install_mise.is_none());
+
+        host.install_mise = Some(DEFAULT_INSTALL_MISE_PATH.to_string());
+        host.apply_overrides(&RemoteOverrides {
+            remote_mise: Some("mise".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(host.install_mise.is_none());
+        assert_eq!(host.remote_mise.as_deref(), Some("mise"));
+
+        host.apply_overrides(&RemoteOverrides {
+            install_mise: Some(DEFAULT_INSTALL_MISE_PATH.to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            host.install_mise.as_deref(),
+            Some(DEFAULT_INSTALL_MISE_PATH)
+        );
+        assert!(host.remote_mise.is_none());
+
+        host.bootstrap_command = Some("curl https://mise.run | sh".to_string());
+        host.install_mise = None;
+        host.apply_overrides(&RemoteOverrides {
+            install_mise: Some(DEFAULT_INSTALL_MISE_PATH.to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(host.bootstrap_command.is_none());
+    }
+
+    /// Runs the real script rather than asserting on its text, so the install,
+    /// replace, and refuse-a-directory paths are covered end to end.
+    #[test]
+    #[cfg(unix)]
+    fn install_script_installs_replaces_and_refuses_a_directory() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir()?;
+        let directory = temp.path().join("bin");
+        let target = directory.join("mise");
+        let payload = temp.path().join("payload");
+        let install = |target: &Path, contents: &str| -> Result<Output> {
+            fs::write(&payload, contents)?;
+            Ok(Command::new("sh")
+                .arg("-c")
+                .arg(install_mise_script(
+                    target.to_str().expect("a utf-8 temporary path"),
+                ))
+                .stdin(Stdio::from(File::open(&payload)?))
+                .output()?)
+        };
+
+        // `sh -n` parses every branch, including the post-rename guard that a
+        // deterministic test cannot reach.
+        let script = install_mise_script(target.to_str().expect("a utf-8 temporary path"));
+        assert!(
+            Command::new("sh")
+                .args(["-n", "-c", &script])
+                .output()?
+                .status
+                .success()
+        );
+
+        assert!(install(&target, "first")?.status.success());
+        assert_eq!(fs::read_to_string(&target)?, "first");
+        assert_eq!(fs::metadata(&target)?.permissions().mode() & 0o777, 0o755);
+
+        assert!(install(&target, "second")?.status.success());
+        assert_eq!(fs::read_to_string(&target)?, "second");
+        assert_eq!(fs::read_dir(&directory)?.count(), 1);
+
+        let occupied = directory.join("occupied");
+        fs::create_dir(&occupied)?;
+        let refused = install(&occupied, "third")?;
+        assert!(!refused.status.success());
+        assert!(String::from_utf8_lossy(&refused.stderr).contains("is a directory"));
+        assert_eq!(fs::read_dir(&occupied)?.count(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn install_script_quotes_the_target_and_renames_into_place() {
+        let script = install_mise_script("/home/deploy dir/.local/bin/mise");
+        assert!(script.contains("target='/home/deploy dir/.local/bin/mise'"));
+        assert!(script.contains("directory='/home/deploy dir/.local/bin'"));
+        assert!(script.contains(r#"staging=$(mktemp -d "$directory/.mise-install.XXXXXXXXXX")"#));
+        assert!(script.contains(r#"if [ -d "$target" ]; then"#));
+        assert_eq!(remote_parent_directory("/mise"), "/");
+        assert!(script.contains(r#"mv -f "$temporary" "$target""#));
+    }
+
+    #[test]
+    fn reads_dynamic_loader_from_elf() {
+        let interpreter = b"/lib64/ld-linux-x86-64.so.2\0";
+        let mut elf = vec![0_u8; 256];
+        elf[..6].copy_from_slice(b"\x7fELF\x02\x01");
+        elf[32..40].copy_from_slice(&64_u64.to_le_bytes());
+        elf[54..56].copy_from_slice(&56_u16.to_le_bytes());
+        elf[56..58].copy_from_slice(&1_u16.to_le_bytes());
+        elf[64..68].copy_from_slice(&3_u32.to_le_bytes());
+        elf[72..80].copy_from_slice(&128_u64.to_le_bytes());
+        elf[96..104].copy_from_slice(&(interpreter.len() as u64).to_le_bytes());
+        elf[128..128 + interpreter.len()].copy_from_slice(interpreter);
+        assert_eq!(
+            elf_interpreter(&elf).unwrap().as_deref(),
+            Some("/lib64/ld-linux-x86-64.so.2")
+        );
+        elf[64..68].copy_from_slice(&1_u32.to_le_bytes());
+        assert_eq!(elf_interpreter(&elf).unwrap(), None);
+    }
+
+    #[test]
+    fn identifies_libc_flavors_without_assuming_binary_requirements() {
+        assert_eq!(
+            parse_libc_flavor("ld.so (Debian GLIBC 2.36) stable release version 2.36."),
+            Some(LibcFlavor::Glibc)
+        );
+        assert_eq!(
+            parse_libc_flavor("musl libc\nVersion 1.2.5"),
+            Some(LibcFlavor::Musl)
+        );
+        assert_eq!(parse_libc_flavor("unknown loader"), None);
+    }
+
+    #[test]
+    fn maps_every_supported_remote_release_target() {
+        let version = env!("CARGO_PKG_VERSION");
+        assert_eq!(
+            release_asset_name("linux", "x86_64", Some(LibcFlavor::Glibc)).unwrap(),
+            format!("mise-v{version}-linux-x64")
+        );
+        assert_eq!(
+            release_asset_name("linux", "x86_64", Some(LibcFlavor::Musl)).unwrap(),
+            format!("mise-v{version}-linux-x64-musl")
+        );
+        assert_eq!(
+            release_asset_name("linux", "aarch64", Some(LibcFlavor::Glibc)).unwrap(),
+            format!("mise-v{version}-linux-arm64")
+        );
+        assert_eq!(
+            release_asset_name("linux", "aarch64", Some(LibcFlavor::Musl)).unwrap(),
+            format!("mise-v{version}-linux-arm64-musl")
+        );
+        assert_eq!(
+            release_asset_name("linux", "armv7", Some(LibcFlavor::Glibc)).unwrap(),
+            format!("mise-v{version}-linux-armv7")
+        );
+        assert_eq!(
+            release_asset_name("linux", "armv7", Some(LibcFlavor::Musl)).unwrap(),
+            format!("mise-v{version}-linux-armv7-musl")
+        );
+        assert_eq!(
+            release_asset_name("macos", "x86_64", None).unwrap(),
+            format!("mise-v{version}-macos-x64")
+        );
+        assert_eq!(
+            release_asset_name("macos", "aarch64", None).unwrap(),
+            format!("mise-v{version}-macos-arm64")
+        );
+        assert!(release_asset_name("linux", "riscv64", Some(LibcFlavor::Glibc)).is_err());
+        assert!(release_asset_name("freebsd", "x86_64", None).is_err());
+        assert!(release_asset_name("linux", "x86_64", None).is_err());
+    }
+
+    #[test]
+    fn maps_official_local_release_executables_for_provenance() {
+        let version = env!("CARGO_PKG_VERSION");
+        assert_eq!(
+            official_release_assets("windows", "x86_64").unwrap(),
+            vec![format!("mise-v{version}-windows-x64.exe")]
+        );
+        assert_eq!(
+            official_release_assets("windows", "aarch64").unwrap(),
+            vec![format!("mise-v{version}-windows-arm64.exe")]
+        );
+        assert!(official_release_assets("windows", "x86").is_err());
+    }
+
+    #[test]
+    fn parses_remote_release_platforms_and_requires_linux_libc() {
+        assert_eq!(
+            parse_remote_platform("Linux\nx86_64\nglibc\n").unwrap(),
+            RemotePlatform {
+                os: "linux".to_string(),
+                arch: "x86_64".to_string(),
+                libc: Some(LibcFlavor::Glibc),
+            }
+        );
+        assert_eq!(
+            parse_remote_platform("linux\naarch64\nmusl\n").unwrap(),
+            RemotePlatform {
+                os: "linux".to_string(),
+                arch: "aarch64".to_string(),
+                libc: Some(LibcFlavor::Musl),
+            }
+        );
+        assert_eq!(
+            parse_remote_platform("Darwin\narm64\nnone\n").unwrap(),
+            RemotePlatform {
+                os: "macos".to_string(),
+                arch: "aarch64".to_string(),
+                libc: None,
+            }
+        );
+        assert!(parse_remote_platform("Linux\nx86_64\nunknown\n").is_err());
+        assert!(parse_remote_platform("Linux\nx86_64\n").is_err());
+        assert!(parse_remote_platform("Darwin\narm64\nnone\nextra\n").is_err());
+    }
+
+    #[test]
+    fn verifies_real_signed_release_manifest_before_lookup() {
+        let contents = include_str!("remote_testdata/mise-v2026.8.1-SHASUMS256.txt");
+        let signature = include_str!("remote_testdata/mise-v2026.8.1-SHASUMS256.txt.minisig");
+        let manifest = ReleaseManifest::verified(contents, signature).unwrap();
+        assert_eq!(
+            manifest.checksum("mise-v2026.8.1-linux-x64-musl").unwrap(),
+            "522fd15a3b0748d8a240bdf06cd45f679f759a097e2f49b436363e92c48fdbdc"
+        );
+        assert!(manifest.checksum("missing-asset").is_err());
+
+        let tampered = contents.replacen("522fd15", "022fd15", 1);
+        assert!(ReleaseManifest::verified(&tampered, signature).is_err());
+    }
+
+    #[test]
+    fn compares_required_glibc_symbol_versions_with_remote_runtime() {
+        assert_eq!(
+            max_required_glibc_version(b"GLIBC_PRIVATE\0GLIBC_2.3.4\0GLIBC_2.17\0GLIBC_2.34\0"),
+            Some(AbiVersion(vec![2, 34]))
+        );
+        assert_eq!(
+            parse_glibc_runtime_version(
+                "ld.so (Debian GLIBC 2.36-9+deb12u13) stable release version 2.36"
+            ),
+            Some(AbiVersion(vec![2, 36]))
+        );
+        assert_eq!(
+            parse_glibc_runtime_version("ldd (GNU libc) 2.17"),
+            Some(AbiVersion(vec![2, 17]))
+        );
+        assert!(AbiVersion(vec![2, 17]) < AbiVersion(vec![2, 34]));
+    }
+
+    #[test]
+    fn compares_musl_loader_versions() {
+        assert_eq!(
+            parse_musl_runtime_version("musl libc (x86_64)\nVersion 1.2.5\nDynamic Program Loader"),
+            Some(AbiVersion(vec![1, 2, 5]))
+        );
+        assert_eq!(
+            parse_musl_runtime_version("musl libc\nversion: 1.1.24\n"),
+            Some(AbiVersion(vec![1, 1, 24]))
+        );
+        assert!(parse_musl_runtime_version("musl libc (x86_64)").is_none());
+        assert!(AbiVersion(vec![1, 2, 4]) < AbiVersion(vec![1, 2, 5]));
+    }
+
+    #[test]
+    fn accepts_quoted_absolute_remote_paths() {
+        assert_eq!(
+            validated_remote_command_output("/tmp/mise install/bin/mise\n").unwrap(),
+            "/tmp/mise install/bin/mise"
+        );
+        assert!(validated_remote_command("relative/mise").is_err());
+        assert!(validated_remote_command("/tmp/mise\nother").is_err());
+        assert!(validate_remote_executable("/tmp/mise install/bin/mise").is_ok());
+        assert!(validate_remote_executable("./bin with space/mise").is_ok());
+        assert!(validate_remote_executable("mise command").is_err());
+        assert!(validate_remote_executable("/tmp/mise\ncommand").is_err());
+        assert!(validate_remote_executable("-mise").is_err());
+    }
+
+    #[test]
+    fn snapshots_the_same_candidate_scopes_before_and_after_installation() {
+        let union = remote_mise_candidate_union_script();
+        let lookup = remote_mise_candidates_script();
+        assert!(union.starts_with("{\n"));
+        assert!(union.contains(lookup));
+        assert!(union.contains(&shell_words::join(["sh", "-lc", lookup])));
+    }
+
+    #[test]
+    fn resolves_relative_remote_mise_inside_staged_project() {
+        let project = "/tmp/mise-bootstrap.abc/project";
+        assert_eq!(
+            resolve_remote_mise_path("./bin/mise", project, None).unwrap(),
+            "/tmp/mise-bootstrap.abc/project/bin/mise"
+        );
+        assert_eq!(
+            resolve_remote_mise_path("bin/../tools/mise", project, None).unwrap(),
+            "/tmp/mise-bootstrap.abc/project/tools/mise"
+        );
+        assert_eq!(
+            resolve_remote_mise_path("~/.local/bin/mise", project, Some("/home/test user"))
+                .unwrap(),
+            "/home/test user/.local/bin/mise"
+        );
+        assert_eq!(
+            resolve_remote_mise_path("/opt/mise/bin/mise", project, None).unwrap(),
+            "/opt/mise/bin/mise"
+        );
+        assert!(resolve_remote_mise_path("../mise", project, None).is_err());
+        assert!(resolve_remote_mise_path("bin/../../mise", project, None).is_err());
+        assert!(resolve_remote_mise_path("~/mise", project, None).is_err());
+    }
+
+    #[test]
+    fn selects_new_changed_or_matching_bootstrapped_mise() {
+        let identity = |version: &str, checksum: &str| {
+            Some(RemoteMiseIdentity {
+                version: version.to_string(),
+                fingerprint: checksum.to_string(),
+            })
+        };
+        let old = "/opt/old/mise".to_string();
+        let installed = "/opt/new/mise".to_string();
+        let before = vec![old.clone()];
+        let before_identities = IndexMap::from([(old.clone(), identity("1.0.0", "100 10"))]);
+        let after = vec![old.clone(), installed.clone()];
+        let after_identities = IndexMap::from([
+            (old.clone(), identity("1.0.0", "100 10")),
+            (installed.clone(), identity("2.0.0", "200 20")),
+        ]);
+        assert_eq!(
+            select_bootstrapped_mise(&before, &before_identities, &after, &after_identities)
+                .unwrap(),
+            installed
+        );
+
+        let after = vec![old.clone()];
+        let changed = IndexMap::from([(old.clone(), identity("1.0.0", "300 30"))]);
+        assert_eq!(
+            select_bootstrapped_mise(&before, &before_identities, &after, &changed).unwrap(),
+            old
+        );
+
+        let stale = "/opt/stale/mise".to_string();
+        let overwritten = "/opt/overwritten/mise".to_string();
+        let same_paths = vec![stale.clone(), overwritten.clone()];
+        let before_same_version = IndexMap::from([
+            (stale.clone(), identity("1.0.0", "100 10")),
+            (overwritten.clone(), identity("2.0.0", "200 20")),
+        ]);
+        let after_same_version = IndexMap::from([
+            (stale, identity("1.0.0", "100 10")),
+            (overwritten.clone(), identity("2.0.0", "300 30")),
+        ]);
+        assert_eq!(
+            select_bootstrapped_mise(
+                &same_paths,
+                &before_same_version,
+                &same_paths,
+                &after_same_version,
+            )
+            .unwrap(),
+            overwritten
+        );
+
+        let current = "/opt/current/mise".to_string();
+        let candidates = vec!["/opt/stale/mise".to_string(), current.clone()];
+        let identities = IndexMap::from([
+            (candidates[0].clone(), identity("0.0.1", "100 10")),
+            (
+                current.clone(),
+                identity(
+                    &format!("{} linux-x64", env!("CARGO_PKG_VERSION")),
+                    "200 20",
+                ),
+            ),
+        ]);
+        assert_eq!(
+            select_bootstrapped_mise(&candidates, &identities, &candidates, &identities).unwrap(),
+            current
+        );
+    }
+
+    #[test]
+    fn rejects_ambiguous_bootstrapped_mise_candidates() {
+        let candidates = vec!["/opt/one/mise".to_string(), "/opt/two/mise".to_string()];
+        let identities = IndexMap::from([
+            (
+                candidates[0].clone(),
+                Some(RemoteMiseIdentity {
+                    version: "1.0.0".to_string(),
+                    fingerprint: "100 10".to_string(),
+                }),
+            ),
+            (
+                candidates[1].clone(),
+                Some(RemoteMiseIdentity {
+                    version: "2.0.0".to_string(),
+                    fingerprint: "200 20".to_string(),
+                }),
+            ),
+        ]);
+        assert!(
+            select_bootstrapped_mise(&candidates, &identities, &candidates, &identities).is_err()
+        );
+        let current_version = format!("{} linux-x64", env!("CARGO_PKG_VERSION"));
+        let matching_identities = IndexMap::from([
+            (
+                candidates[0].clone(),
+                Some(RemoteMiseIdentity {
+                    version: current_version.clone(),
+                    fingerprint: "100 10".to_string(),
+                }),
+            ),
+            (
+                candidates[1].clone(),
+                Some(RemoteMiseIdentity {
+                    version: current_version,
+                    fingerprint: "200 20".to_string(),
+                }),
+            ),
+        ]);
+        assert!(
+            select_bootstrapped_mise(
+                &candidates,
+                &matching_identities,
+                &candidates,
+                &matching_identities,
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("multiple version-matching mise executables")
+        );
+        assert!(parse_remote_mise_candidates("/opt/mise").is_err());
+        assert_eq!(
+            parse_remote_mise_candidates("/opt/one\0/opt/one\0/opt/two\0").unwrap(),
+            vec!["/opt/one".to_string(), "/opt/two".to_string()]
+        );
+    }
+}

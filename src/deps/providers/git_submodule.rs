@@ -1,0 +1,91 @@
+use std::path::{Path, PathBuf};
+
+use eyre::Result;
+
+use crate::deps::rule::DepsProviderConfig;
+use crate::deps::{DepsCommand, DepsProvider, DepsProviderApplicability};
+
+use super::ProviderBase;
+
+/// Deps provider for git submodules (.gitmodules)
+#[derive(Debug)]
+pub(crate) struct GitSubmoduleDepsProvider {
+    base: ProviderBase,
+}
+
+impl GitSubmoduleDepsProvider {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+        Self {
+            base: ProviderBase::new("git-submodule", project_root, config),
+        }
+    }
+
+    /// Parse submodule paths from .gitmodules file
+    ///
+    /// Handles INI-style sections and comments. Only extracts `path` values
+    /// from `[submodule "..."]` sections.
+    fn submodule_paths(&self) -> Vec<PathBuf> {
+        let gitmodules = self.base.config_root().join(".gitmodules");
+        let Ok(content) = std::fs::read_to_string(&gitmodules) else {
+            return vec![];
+        };
+
+        let mut in_submodule_section = false;
+        content
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.starts_with('#') || line.starts_with(';') {
+                    return None;
+                }
+                if line.starts_with("[submodule ") || line.starts_with("[submodule\"") {
+                    in_submodule_section = true;
+                    return None;
+                }
+                if line.starts_with('[') {
+                    in_submodule_section = false;
+                    return None;
+                }
+                if !in_submodule_section {
+                    return None;
+                }
+                if let Some(value) = line.strip_prefix("path") {
+                    let value = value.trim_start();
+                    value
+                        .strip_prefix('=')
+                        .map(|value| self.base.config_root().join(value.trim()))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}
+
+impl DepsProvider for GitSubmoduleDepsProvider {
+    fn base(&self) -> &ProviderBase {
+        &self.base
+    }
+
+    fn sources(&self) -> Vec<PathBuf> {
+        self.base
+            .sources(vec![self.base.config_root().join(".gitmodules")])
+    }
+
+    fn outputs(&self) -> Vec<PathBuf> {
+        self.base.outputs(self.submodule_paths())
+    }
+
+    fn install_command(&self) -> Result<DepsCommand> {
+        self.base.install_command(
+            "git",
+            &["submodule", "update", "--init", "--recursive"],
+            "git submodule update --init --recursive",
+        )
+    }
+
+    fn applicability(&self) -> DepsProviderApplicability {
+        let gitmodules = self.base.config_root().join(".gitmodules");
+        DepsProviderApplicability::require_nonempty_file(&gitmodules)
+    }
+}

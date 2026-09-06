@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+# Commands that execute project-defined behavior implicitly trust their active
+# config in normal mode. hook-env does not, and paranoid mode always requires
+# an explicit, content-bound trust decision.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p install run exec ignored ci paranoid
+
+cat <<'EOF' >install/mise.toml
+[env]
+IMPLICIT_TRUST = "install"
+EOF
+
+assert_not_contains "cd install && MISE_YES=0 mise hook-env -s bash 2>&1 || true" "IMPLICIT_TRUST=install"
+assert "cd install && MISE_YES=0 mise install"
+assert_contains "cd install && MISE_YES=0 mise hook-env -s bash" "IMPLICIT_TRUST"
+
+cat <<'EOF' >run/mise.toml
+[env]
+IMPLICIT_TRUST = "run"
+
+[tasks.hi]
+run = "echo $IMPLICIT_TRUST"
+EOF
+
+assert_contains "cd run && MISE_YES=0 mise run hi" "run"
+assert_contains "cd run && MISE_YES=0 mise trust --show" "trusted"
+assert "cd run && mise untrust"
+
+cat <<'EOF' >exec/mise.toml
+[env]
+IMPLICIT_TRUST = "exec"
+EOF
+
+assert_contains "cd exec && MISE_YES=0 mise exec -- sh -c 'echo \$IMPLICIT_TRUST'" "exec"
+assert_contains "cd exec && MISE_YES=0 mise trust --show" "trusted"
+assert "cd exec && mise untrust"
+
+cat <<'EOF' >ignored/mise.toml
+[tools]
+dummy = "1.0.0"
+EOF
+
+assert "mise -C ignored trust --ignore mise.toml"
+assert "mise -C ignored install"
+assert_contains "mise -C ignored trust --show mise.toml" "ignored"
+
+cat <<'EOF' >ci/mise.toml
+[env]
+IMPLICIT_TRUST = "ci"
+EOF
+
+ci_state="$PWD/ci-state"
+assert "CI=1 MISE_STATE_DIR='$ci_state' mise -C ci install"
+assert_fail "find '$ci_state/trusted-configs' -mindepth 1 \( -type f -o -type l \) 2>/dev/null | grep -q ."
+
+cat <<'EOF' >paranoid/mise.toml
+[env]
+IMPLICIT_TRUST = "paranoid"
+EOF
+
+set +e
+output=$(cd paranoid && MISE_PARANOID=1 MISE_YES=0 mise install 2>&1)
+status=$?
+set -e
+[[ $status -ne 0 ]] || fail "paranoid install unexpectedly trusted the config"
+echo "$output" | grep -qi "trust" || fail "expected paranoid install to report an untrusted config, got: $output"

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Test GitHub backend with docker-compose
+
+set -euo pipefail
+
+# Test: Install docker-compose via GitHub backend
+cat >mise.toml <<EOF
+[tools]
+"github:docker/compose" = "2.29.1"
+EOF
+
+assert_succeed "mise install -f github:docker/compose"
+
+# Verify it's executable
+assert_succeed "mise exec github:docker/compose -- docker-compose version"
+assert "mise x github:docker/compose -- which docker-compose" "$MISE_DATA_DIR/installs/github-docker-compose/2.29.1/docker-compose"

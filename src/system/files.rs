@@ -1,0 +1,3262 @@
+//! `[dotfiles]` — declarative config files (dotfiles) applied by
+//! `mise bootstrap dotfiles apply` or `mise bootstrap`, and removed by
+//! `mise bootstrap dotfiles unapply`.
+//!
+//! Entries are keyed by target path and point at a source file or directory,
+//! resolved relative to the config file that declares them:
+//!
+//! ```toml
+//! [dotfiles]
+//! "~/.config/mise/config.toml" = { source = "config.toml", mode = "symlink" }
+//! "~/.zshrc" = { mode = "symlink" }                      # implied source
+//! "~/.gitconfig" = "dotfiles/gitconfig"                  # explicit source
+//! "~/.config/foo.toml" = { mode = "copy" }               # implied source
+//! "~/.ssh/config" = { source = "ssh.tmpl", mode = "template" }
+//! "~/.config/nvim" = "dotfiles/nvim"                     # symlink the dir itself
+//! "~/.local/bin" = { source = "bin", mode = "symlink-each" }
+//! ```
+//!
+//! Like `[bootstrap.packages]`, entries merge across the config hierarchy
+//! (global -> local, local overrides by target key) and are only ever
+//! applied by an explicit command, never implicitly.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use eyre::{Result, WrapErr, bail};
+use indexmap::IndexMap;
+use itertools::Itertools;
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+
+use crate::config::{Config, ConfigMap, Settings};
+use crate::dirs;
+use crate::file;
+use crate::hash::hash_to_str;
+use crate::path::PathExt;
+use crate::system::resources::ResourceOrigin;
+use crate::ui::prompt;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileMode {
+    /// symlink the target to the source — a file or the directory itself
+    Symlink,
+    /// source is a directory: recreate its directory structure under the
+    /// target and symlink each file individually, so the target directory
+    /// can also hold files mise doesn't manage
+    SymlinkEach,
+    /// copy the source file (or directory, recursively)
+    Copy,
+    /// render the source through the mise template engine and write the
+    /// result (permissions are taken from the source file)
+    Template,
+    /// write literal content declared directly in mise.toml
+    Content,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileManifest {
+    Git,
+}
+
+impl FileManifest {
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "git" => Some(Self::Git),
+            _ => None,
+        }
+    }
+}
+
+impl FileMode {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
+        match s {
+            "symlink" => Some(Self::Symlink),
+            "symlink-each" => Some(Self::SymlinkEach),
+            "copy" => Some(Self::Copy),
+            "template" => Some(Self::Template),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Symlink => "symlink",
+            Self::SymlinkEach => "symlink-each",
+            Self::Copy => "copy",
+            Self::Template => "template",
+            Self::Content => "content",
+        }
+    }
+}
+
+/// one `[dotfiles]` whole-file entry as written in mise.toml
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum FileTomlEntry {
+    /// `"~/.gitconfig" = "dotfiles/gitconfig"`
+    Source(String),
+    /// `"~/.gitconfig" = { source = "...", mode = "..." }` — every field is
+    /// optional so `{}` can mean implied source/default mode. Mode stays a
+    /// string here so configs using modes from newer mise versions still
+    /// parse (they warn and are skipped, like unknown package managers)
+    Table {
+        #[serde(default)]
+        source: Option<String>,
+        #[serde(default)]
+        content: Option<String>,
+        #[serde(default)]
+        mode: Option<String>,
+        #[serde(default)]
+        exclude: Option<Vec<String>>,
+        #[serde(default)]
+        manifest: Option<String>,
+    },
+}
+
+/// one file entry, resolved against the config file that declared it
+#[derive(Debug, Clone)]
+pub(crate) struct FileRequest {
+    /// target path as written in config (display/merge key)
+    pub target_raw: String,
+    /// absolute, lexically normalized target path (`~` expanded)
+    pub target: PathBuf,
+    /// absolute source path (relative sources resolve against the config
+    /// file's directory; omitted sources resolve under dotfiles.root)
+    pub source: PathBuf,
+    /// literal whole-file content; present only for inline content entries
+    pub content: Option<String>,
+    pub mode: FileMode,
+    /// glob patterns, matched against source-relative paths, for files a
+    /// directory-walking mode should skip (see [`is_excluded`])
+    pub exclude: Vec<glob::Pattern>,
+    /// optional source manifest limiting which directory entries are managed
+    pub manifest: Option<FileManifest>,
+    /// directory of the declaring config file — base dir for template
+    /// functions like `exec` and `read_file`
+    pub base: PathBuf,
+    pub origin: ResourceOrigin,
+}
+
+const SYMLINK_EACH_STATE_VERSION: u8 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ManagedLink {
+    source: PathBuf,
+    target: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct SymlinkEachState {
+    version: u8,
+    source: PathBuf,
+    target: PathBuf,
+    links: Vec<ManagedLink>,
+}
+
+#[derive(Debug)]
+struct SymlinkEachReconciliation {
+    stale_links: Vec<ManagedLink>,
+    targets: Vec<PathBuf>,
+}
+
+enum LoadedSymlinkEachState {
+    Missing,
+    Invalid,
+    Present(SymlinkEachState),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum FileState {
+    Applied,
+    Missing,
+    /// target exists but doesn't match — the reason is human-readable
+    Differs(String),
+    SourceMissing,
+}
+
+/// Aggregate whole-file `[dotfiles]` entries across all loaded config files.
+/// Keys union global -> local; a more local config overrides an entry for the
+/// same target. Malformed entries and unknown modes warn and are skipped.
+pub(crate) fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
+    let mut composed: IndexMap<PathBuf, Vec<FileRequest>> = IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for request in files_from_config_files(config_files) {
+            let siblings = composed.entry(request.target.clone()).or_default();
+            if siblings
+                .iter()
+                .any(|existing| file_requests_match(config, existing, &request))
+            {
+                continue;
+            }
+            if let Some(existing) = siblings.iter().find(|existing| {
+                existing.mode != FileMode::SymlinkEach || request.mode != FileMode::SymlinkEach
+            }) {
+                bail!(
+                    "conflicting dotfile declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    request.target.display(),
+                    existing.origin.conflict_description(),
+                    request.origin.conflict_description(),
+                );
+            }
+            siblings.push(request);
+        }
+    }
+    let composed = composed.into_values().flatten().collect::<Vec<_>>();
+    Ok(composed)
+}
+
+/// Validate the complete paths claimed by composed `[dotfiles]` entries.
+/// Directory copies and `symlink-each` entries may share directories, but no
+/// two entries may own the same leaf or require a directory where another
+/// entry places a leaf.
+pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Result<()> {
+    let mut leaves: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
+    let mut directories: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
+    let mut symlink_each_identities: HashMap<(&Path, &Path), &FileRequest> = HashMap::new();
+
+    for request in requests {
+        if request.manifest.is_some() && request.source.exists() && !request.source.is_dir() {
+            bail!(
+                "[dotfiles].\"{}\": manifest requires the source to be a directory: {}",
+                request.target_raw,
+                request.source.display_user()
+            );
+        }
+        if request.mode == FileMode::SymlinkEach
+            && let Some(existing) = symlink_each_identities.insert(
+                (request.source.as_path(), request.target.as_path()),
+                request,
+            )
+        {
+            return Err(composed_file_footprint_conflict(
+                &request.target,
+                existing,
+                request,
+            ));
+        }
+        // A missing source has an unknown eventual shape, but it still claims
+        // its target. Whole-resource modes reserve a leaf; symlink-each has a
+        // known directory-shaped target even before its children are known.
+        let source_unavailable = request.mode != FileMode::Content
+            && (!request.source.exists()
+                || request.mode == FileMode::SymlinkEach && !request.source.is_dir());
+        let directory_walker = !source_unavailable
+            && matches!(request.mode, FileMode::Copy | FileMode::SymlinkEach)
+            && request.source.is_dir();
+        let unresolved_directory = source_unavailable && request.mode == FileMode::SymlinkEach;
+        let request_leaves = if unresolved_directory {
+            vec![]
+        } else if directory_walker {
+            walk_source_files(request)?
+                .into_iter()
+                .map(|(_, target)| target)
+                .collect::<Vec<_>>()
+        } else {
+            vec![request.target.clone()]
+        };
+        let mut request_directories = indexmap::IndexSet::new();
+        for leaf in &request_leaves {
+            request_directories.extend(leaf.ancestors().skip(1).map(Path::to_path_buf));
+        }
+        if directory_walker || unresolved_directory {
+            request_directories.insert(request.target.clone());
+            request_directories.extend(request.target.ancestors().skip(1).map(Path::to_path_buf));
+        }
+
+        for leaf in &request_leaves {
+            if let Some(existing) = leaves.get(leaf).or_else(|| directories.get(leaf)) {
+                return Err(composed_file_footprint_conflict(leaf, existing, request));
+            }
+        }
+        for directory in &request_directories {
+            if let Some(existing) = leaves.get(directory) {
+                return Err(composed_file_footprint_conflict(
+                    directory, existing, request,
+                ));
+            }
+        }
+        for leaf in request_leaves {
+            leaves.insert(leaf, request);
+        }
+        for directory in request_directories {
+            directories.entry(directory).or_insert(request);
+        }
+    }
+    Ok(())
+}
+
+/// Describe a footprint collision while preserving the established
+/// `symlink-each` diagnostic for two contributors in that mode.
+fn composed_file_footprint_conflict(
+    path: &Path,
+    first: &FileRequest,
+    second: &FileRequest,
+) -> eyre::Report {
+    let kind = if first.mode == FileMode::SymlinkEach && second.mode == FileMode::SymlinkEach {
+        "symlink-each"
+    } else {
+        "dotfile"
+    };
+    eyre::eyre!(
+        "conflicting {kind} declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
+        path.display(),
+        first.origin.conflict_description(),
+        second.origin.conflict_description(),
+    )
+}
+
+/// Returns whether sibling declarations produce the same whole-file resource.
+fn file_requests_match(config: &Config, first: &FileRequest, second: &FileRequest) -> bool {
+    first.target == second.target
+        && first.source == second.source
+        && first.content == second.content
+        && first.mode == second.mode
+        && first.manifest == second.manifest
+        && first
+            .exclude
+            .iter()
+            .map(glob::Pattern::as_str)
+            .eq(second.exclude.iter().map(glob::Pattern::as_str))
+        && (first.mode != FileMode::Template
+            || first.base == second.base
+                && config.bootstrap_tera_ctx(&first.origin.config)
+                    == config.bootstrap_tera_ctx(&second.origin.config))
+}
+
+/// Aggregate `[dotfiles]` across a specific set of config files. This is
+/// used by OCI builds, which intentionally scope config to project files by
+/// default instead of blindly inheriting global dotfiles.
+pub(crate) fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
+    // keyed by the *expanded* target so "~/.gitconfig" in one config and
+    // its absolute spelling in another are one entry, not two
+    let mut merged: IndexMap<PathBuf, FileRequest> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local
+    for (path, cf) in config_files.iter().rev() {
+        let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let origin = ResourceOrigin {
+            config: path.clone(),
+            config_root: cf.config_root(),
+            environment: crate::config::environments_for_config_path(path),
+            source: None,
+        };
+        let Some(dotfiles) = cf.dotfiles_config() else {
+            continue;
+        };
+        for (target_raw, value) in dotfiles.0 {
+            let Some(entry) = file_entry_from_toml(&target_raw, value) else {
+                continue;
+            };
+            merge_file_entry(target_raw, entry, &base, &origin, &mut merged);
+        }
+    }
+    merged.into_values().collect()
+}
+
+fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileTomlEntry> {
+    match &value {
+        toml::Value::String(_) => {}
+        toml::Value::Table(table)
+            if table.is_empty()
+                || table.contains_key("mode")
+                || table.contains_key("exclude")
+                || table.contains_key("manifest")
+                || ((table.contains_key("source") || table.contains_key("content"))
+                    && !table.contains_key("block")
+                    && !table.contains_key("line")
+                    && !table.contains_key("template")
+                    && !table.contains_key("comment")) => {}
+        toml::Value::Table(_) => return None,
+        _ => {
+            warn!("[dotfiles].\"{target_raw}\": expected string or table entry, ignoring entry");
+            return None;
+        }
+    }
+    match value.try_into() {
+        Ok(entry) => Some(entry),
+        Err(err) => {
+            warn!("[dotfiles].\"{target_raw}\": invalid file entry: {err}");
+            None
+        }
+    }
+}
+
+fn merge_file_entry(
+    target_raw: String,
+    entry: FileTomlEntry,
+    base: &Path,
+    origin: &ResourceOrigin,
+    merged: &mut IndexMap<PathBuf, FileRequest>,
+) {
+    let (source, content, mode, exclude, manifest) = match entry {
+        FileTomlEntry::Source(source) => (Some(source), None, None, None, None),
+        FileTomlEntry::Table {
+            source,
+            content,
+            mode,
+            exclude,
+            manifest,
+        } => (source, content, mode, exclude, manifest),
+    };
+    if source.is_some() && content.is_some() {
+        warn!(
+            "[dotfiles].\"{target_raw}\": source and content are mutually exclusive, ignoring entry"
+        );
+        return;
+    }
+    if content.is_some() && (mode.is_some() || exclude.is_some() || manifest.is_some()) {
+        warn!(
+            "[dotfiles].\"{target_raw}\": inline content does not support mode, exclude, or manifest, ignoring entry"
+        );
+        return;
+    }
+    // compile once here so a typo is reported against the entry that wrote
+    // it, not on every walk of the source
+    let exclude = exclude
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|pattern| match glob::Pattern::new(&pattern) {
+            Ok(pattern) => Some(pattern),
+            Err(err) => {
+                warn!("[dotfiles].\"{target_raw}\": invalid exclude pattern '{pattern}': {err}");
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let mode = match mode.as_deref() {
+        None => default_mode(),
+        Some(m) => match FileMode::parse(m) {
+            Some(m) => m,
+            None => {
+                warn!("[dotfiles].\"{target_raw}\": unknown mode '{m}', ignoring entry");
+                return;
+            }
+        },
+    };
+    let manifest = match manifest.as_deref() {
+        None => None,
+        Some(value) => match FileManifest::parse(value) {
+            Some(manifest) => Some(manifest),
+            None => {
+                warn!("[dotfiles].\"{target_raw}\": unknown manifest '{value}', ignoring entry");
+                return;
+            }
+        },
+    };
+    if manifest.is_some() && !matches!(mode, FileMode::Copy | FileMode::SymlinkEach) {
+        warn!(
+            "[dotfiles].\"{target_raw}\": manifest requires mode copy or symlink-each, ignoring entry"
+        );
+        return;
+    }
+    let target = resolve_target_arg(&target_raw);
+    if target.is_relative() {
+        warn!(
+            "[dotfiles].\"{target_raw}\": target must be absolute or start with ~/, ignoring entry"
+        );
+        return;
+    }
+    if let Some(content) = content {
+        merged.insert(
+            target.clone(),
+            FileRequest {
+                target_raw,
+                target,
+                source: PathBuf::new(),
+                content: Some(content),
+                mode: FileMode::Content,
+                exclude: vec![],
+                manifest: None,
+                base: base.to_path_buf(),
+                origin: origin.clone(),
+            },
+        );
+        return;
+    }
+    let source = match source {
+        Some(source) => {
+            let source = file::replace_path(&source);
+            if source.is_relative() {
+                base.join(source)
+            } else {
+                source
+            }
+        }
+        None => match implied_source(&target) {
+            Ok(source) => source,
+            Err(err) => {
+                warn!("[dotfiles].\"{target_raw}\": {err}, ignoring entry");
+                return;
+            }
+        },
+    };
+    let mut origin = origin.clone();
+    origin.source = Some(source.clone());
+    for req in expand_request(FileRequest {
+        target_raw,
+        target,
+        source,
+        content: None,
+        mode,
+        exclude,
+        manifest,
+        base: base.to_path_buf(),
+        origin,
+    }) {
+        merged.insert(req.target.clone(), req);
+    }
+}
+
+pub(crate) fn default_mode() -> FileMode {
+    let settings = Settings::get();
+    let mode = settings.dotfiles.default_mode.as_str();
+    match FileMode::parse(mode) {
+        Some(mode) => mode,
+        None => {
+            warn!("dotfiles.default_mode: unknown mode '{mode}', using symlink");
+            FileMode::Symlink
+        }
+    }
+}
+
+pub(crate) fn dotfiles_root() -> PathBuf {
+    file::replace_path(&Settings::get().dotfiles.root)
+}
+
+pub(crate) fn implied_source(target: &Path) -> Result<PathBuf> {
+    let home: &Path = &dirs::HOME;
+    let rel = target.strip_prefix(home).map_err(|_| {
+        eyre::eyre!(
+            "source is required for targets outside $HOME: {}",
+            target.display_user()
+        )
+    })?;
+    if rel.as_os_str().is_empty() {
+        bail!("source is required for the home directory itself");
+    }
+    Ok(dotfiles_root().join(rel))
+}
+
+pub(crate) fn source_is_implied(req: &FileRequest) -> bool {
+    if req.mode == FileMode::Content {
+        return false;
+    }
+    match implied_source(&req.target) {
+        Ok(source) => source == req.source,
+        Err(_) => false,
+    }
+}
+
+pub(crate) fn resolve_target_arg(target: &str) -> PathBuf {
+    lexical_normalize(&file::replace_path(target))
+}
+
+fn lexical_normalize(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            component => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
+}
+
+pub(crate) fn matches_target(req_target: &Path, req_raw: &str, filters: &[String]) -> bool {
+    filters.is_empty()
+        || filters.iter().any(|filter| {
+            filter == req_raw || {
+                let resolved = resolve_target_arg(filter);
+                resolved == req_target
+            }
+        })
+}
+
+pub(crate) fn copy_path(source: &Path, target: &Path) -> Result<()> {
+    if let Some(parent) = target.parent() {
+        file::create_dir_all(parent)?;
+    }
+    if source.is_dir() {
+        if target.exists() || target.is_symlink() {
+            remove_existing(target)?;
+        }
+        file::create_dir_all(target)?;
+        file::copy_dir_all_preserve_symlinks(source, target)?;
+    } else {
+        if target.is_symlink() {
+            file::remove_file(target)?;
+        }
+        file::copy(source, target)?;
+    }
+    Ok(())
+}
+
+fn expand_request(req: FileRequest) -> Vec<FileRequest> {
+    let FileRequest {
+        target_raw,
+        target,
+        source,
+        mode,
+        exclude,
+        manifest,
+        base,
+        origin,
+        ..
+    } = req;
+    if !is_glob_pattern(&source) {
+        return vec![FileRequest {
+            target_raw,
+            target,
+            source,
+            content: None,
+            mode,
+            exclude,
+            manifest,
+            base,
+            origin,
+        }];
+    }
+
+    let source_pattern = source.to_string_lossy().to_string();
+    let matches = match glob::glob(&source_pattern) {
+        Ok(paths) => paths
+            .filter_map(|path| match path {
+                Ok(path) => Some(path),
+                Err(err) => {
+                    warn!(
+                        "[dotfiles].\"{target_raw}\": error reading source pattern {source_pattern}: {err}"
+                    );
+                    None
+                }
+            })
+            .sorted()
+            .collect_vec(),
+        Err(err) => {
+            warn!("[dotfiles].\"{target_raw}\": invalid source pattern: {err}");
+            return vec![];
+        }
+    };
+    if matches.is_empty() {
+        warn!("[dotfiles].\"{target_raw}\": source pattern matched no files, ignoring entry");
+        return vec![];
+    }
+
+    let target_pattern = target.to_string_lossy().to_string();
+    if !is_glob_pattern(&target) {
+        if matches.len() > 1 {
+            warn!(
+                "[dotfiles].\"{target_raw}\": source pattern matched multiple paths but target has no wildcard, ignoring entry"
+            );
+            return vec![];
+        }
+        return vec![FileRequest {
+            target_raw,
+            target,
+            source: matches[0].clone(),
+            content: None,
+            mode,
+            exclude,
+            manifest,
+            base,
+            origin: ResourceOrigin {
+                source: Some(matches[0].clone()),
+                ..origin
+            },
+        }];
+    }
+
+    matches
+        .into_iter()
+        .filter_map(|matched_source| {
+            let captures = match wildcard_captures(&source_pattern, &matched_source) {
+                Ok(captures) => captures,
+                Err(err) => {
+                    warn!("[dotfiles].\"{target_raw}\": {err}");
+                    return None;
+                }
+            };
+            let Some(target_path) = expand_target_pattern(&target_pattern, &captures) else {
+                warn!(
+                    "[dotfiles].\"{target_raw}\": target wildcard count does not match source pattern, ignoring {}",
+                    matched_source.display_user()
+                );
+                return None;
+            };
+            Some(FileRequest {
+                target_raw: target_path.display_user().to_string(),
+                target: target_path,
+                source: matched_source.clone(),
+                content: None,
+                mode,
+                exclude: exclude.clone(),
+                manifest,
+                base: base.clone(),
+                origin: ResourceOrigin {
+                    source: Some(matched_source.clone()),
+                    ..origin.clone()
+                },
+            })
+        })
+        .collect()
+}
+
+fn is_glob_pattern(path: &Path) -> bool {
+    path.to_string_lossy()
+        .chars()
+        .any(|c| matches!(c, '*' | '?' | '['))
+}
+
+fn wildcard_captures(pattern: &str, path: &Path) -> Result<Vec<String>> {
+    let path = normalize_path_separators(&path.to_string_lossy());
+    let re = wildcard_regex(pattern)?;
+    let Some(captures) = re.captures(&path) else {
+        bail!("source pattern did not match {path}");
+    };
+    Ok((1..captures.len())
+        .map(|i| {
+            captures
+                .get(i)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default()
+        })
+        .collect())
+}
+
+fn wildcard_regex(pattern: &str) -> Result<Regex> {
+    let mut re = String::from("^");
+    let pattern = normalize_path_separators(pattern);
+    let mut chars = pattern.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '*' if chars.peek() == Some(&'*') => {
+                chars.next();
+                if chars.peek() == Some(&'/') {
+                    chars.next();
+                    // Glob `**/` can match zero directories. Capture the
+                    // directory body without the trailing slash so target
+                    // expansion can omit the slash when the capture is empty.
+                    re.push_str("(?:(.*)/)?");
+                } else {
+                    re.push_str("(.*)");
+                }
+            }
+            '*' => re.push_str("([^/]*)"),
+            '?' => re.push_str("([^/])"),
+            '[' => {
+                let Some(class) = read_glob_class(&mut chars) else {
+                    re.push_str("\\[");
+                    continue;
+                };
+                re.push('(');
+                re.push_str(&class);
+                re.push(')');
+            }
+            _ => re.push_str(&regex::escape(&ch.to_string())),
+        }
+    }
+    re.push('$');
+    Ok(Regex::new(&re)?)
+}
+
+fn expand_target_pattern(pattern: &str, captures: &[String]) -> Option<PathBuf> {
+    let mut out = String::new();
+    let pattern = normalize_path_separators(pattern);
+    let mut chars = pattern.chars().peekable();
+    let mut captures = captures.iter();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '*' if chars.peek() == Some(&'*') => {
+                chars.next();
+                let capture = normalize_path_separators(captures.next()?);
+                if chars.peek() == Some(&'/') {
+                    chars.next();
+                    if !capture.is_empty() {
+                        out.push_str(&capture);
+                        out.push('/');
+                    }
+                } else {
+                    out.push_str(&capture);
+                }
+            }
+            '*' => out.push_str(&normalize_path_separators(captures.next()?)),
+            '?' => out.push_str(&normalize_path_separators(captures.next()?)),
+            '[' => {
+                read_glob_class(&mut chars)?;
+                out.push_str(&normalize_path_separators(captures.next()?));
+            }
+            _ => out.push(ch),
+        }
+    }
+    if captures.next().is_some() {
+        return None;
+    }
+    Some(PathBuf::from(native_path_separators(&out)))
+}
+
+fn normalize_path_separators(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+fn native_path_separators(path: &str) -> String {
+    if std::path::MAIN_SEPARATOR == '/' {
+        path.to_string()
+    } else {
+        path.replace('/', std::path::MAIN_SEPARATOR_STR)
+    }
+}
+
+fn read_glob_class<I>(chars: &mut std::iter::Peekable<I>) -> Option<String>
+where
+    I: Iterator<Item = char>,
+{
+    let mut class = String::from("[");
+    if chars.peek() == Some(&'!') {
+        chars.next();
+        class.push('^');
+    }
+    for ch in chars.by_ref() {
+        class.push(ch);
+        if ch == ']' {
+            return Some(class);
+        }
+    }
+    None
+}
+
+/// Current state of one entry on this machine.
+///
+/// Note: computing a template entry's state requires rendering it, so this
+/// runs the template engine — including `exec()` — from
+/// `mise bootstrap dotfiles status`. That's the same trust model as `[env]`
+/// templates (which run on
+/// every command in a trusted config); only `--dry-run` promises to execute
+/// nothing and therefore skips template checks entirely.
+pub(crate) fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
+    if req.mode != FileMode::Content && !req.source.exists() {
+        return Ok(FileState::SourceMissing);
+    }
+    // render at most once per call — templates may use exec()
+    let rendered = match req.mode {
+        FileMode::Template => Some(render_template(config, req)?),
+        _ => None,
+    };
+    check_rendered(req, rendered.as_deref())
+}
+
+/// [`check`] with template output already rendered, so callers that go on to
+/// write the file render only once (templates may use `exec()`, which must
+/// not run more often than necessary)
+fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState> {
+    match req.mode {
+        FileMode::Symlink => check_symlink(&req.source, &req.target),
+        FileMode::SymlinkEach => check_symlink_each(req),
+        FileMode::Copy if req.source.is_dir() => check_copy_dir(req),
+        FileMode::Copy => check_copy(&req.source, &req.target),
+        FileMode::Content => check_content(
+            &req.target,
+            req.content.as_deref().expect("inline content").as_bytes(),
+        ),
+        FileMode::Template => {
+            let state = check_content(
+                &req.target,
+                rendered.expect("rendered template content").as_bytes(),
+            )?;
+            // templates promise the source file's permissions — repair
+            // drift (e.g. a later chmod), not just content
+            #[cfg(unix)]
+            if state == FileState::Applied {
+                use std::os::unix::fs::PermissionsExt;
+                let mode_of =
+                    |p: &Path| -> Result<u32> { Ok(p.metadata()?.permissions().mode() & 0o7777) };
+                if mode_of(&req.source)? != mode_of(&req.target)? {
+                    return Ok(FileState::Differs("permissions differ".into()));
+                }
+            }
+            Ok(state)
+        }
+    }
+}
+
+fn check_symlink(source: &Path, target: &Path) -> Result<FileState> {
+    // On Windows a file link is a real symlink when the privilege was available and a copy
+    // otherwise (see `link_path`), so which one is on disk decides how to read it. Only fall
+    // through to the copy comparison when it is not a symlink.
+    if cfg!(windows) && source.is_file() && !target.is_symlink() {
+        return check_copy(source, target);
+    }
+    if target.is_symlink() {
+        let dest = std::fs::read_link(target)?;
+        if dest == *source || points_at_same_file(target, source) {
+            Ok(FileState::Applied)
+        } else {
+            Ok(FileState::Differs(format!(
+                "symlink points to {}",
+                dest.display_user()
+            )))
+        }
+    } else if target.exists() {
+        Ok(FileState::Differs("exists but is not a symlink".into()))
+    } else {
+        Ok(FileState::Missing)
+    }
+}
+
+fn points_at_same_file(target: &Path, source: &Path) -> bool {
+    match (target.canonicalize(), source.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
+fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
+    if !req.source.is_dir() {
+        // callers add the entry's context (status row / apply error list)
+        bail!(
+            "mode symlink-each requires the source to be a directory: {}",
+            req.source.display_user()
+        );
+    }
+    let stale = stale_links(req)?;
+    let stale_reason = || format!("{} stale link(s)", stale.len());
+    let files = walk_source_files(req)?;
+    // with no files to link the desired state is just the target directory —
+    // a blocking non-directory must still surface (and be --force-able)
+    if files.is_empty() {
+        return if req.target.is_dir() {
+            if stale.is_empty() {
+                Ok(FileState::Applied)
+            } else {
+                Ok(FileState::Differs(stale_reason()))
+            }
+        } else if req.target.exists() || req.target.is_symlink() {
+            Ok(FileState::Differs("exists but is not a directory".into()))
+        } else {
+            Ok(FileState::Missing)
+        };
+    }
+    let mut applied = 0;
+    let mut missing = 0;
+    let mut differs: Option<String> = None;
+    for (source, target) in files {
+        match check_symlink(&source, &target)? {
+            FileState::Applied => applied += 1,
+            FileState::Missing => missing += 1,
+            FileState::Differs(reason) => {
+                differs.get_or_insert(format!("{}: {reason}", target.display_user()));
+            }
+            FileState::SourceMissing => unreachable!("walked from source"),
+        }
+    }
+    if let Some(reason) = differs {
+        Ok(FileState::Differs(reason))
+    } else if missing > 0 && applied > 0 {
+        Ok(FileState::Differs(format!(
+            "{applied} file(s) linked, {missing} missing"
+        )))
+    } else if missing > 0 {
+        Ok(FileState::Missing)
+    } else if !stale.is_empty() {
+        Ok(FileState::Differs(stale_reason()))
+    } else {
+        Ok(FileState::Applied)
+    }
+}
+
+fn check_copy(source: &Path, target: &Path) -> Result<FileState> {
+    check_content(target, &file::read(source)?)
+}
+
+/// walks through [`walk_source_files`] rather than the source tree directly
+/// so `exclude` applies to a directory copy the same way it does to
+/// symlink-each
+fn check_copy_dir(req: &FileRequest) -> Result<FileState> {
+    if !req.target.exists() {
+        return Ok(FileState::Missing);
+    }
+    if !req.target.is_dir() {
+        return Ok(FileState::Differs("exists but is not a directory".into()));
+    }
+    for (source, target) in walk_source_files(req)? {
+        match check_content(&target, &file::read(&source)?)? {
+            FileState::Applied => {}
+            _ => {
+                let rel = target.strip_prefix(&req.target).unwrap_or(&target);
+                return Ok(FileState::Differs(format!("{} differs", rel.display())));
+            }
+        }
+    }
+    Ok(FileState::Applied)
+}
+
+fn check_content(target: &Path, expected: &[u8]) -> Result<FileState> {
+    // copy/template targets must be real files; a symlink — dangling or
+    // live — gets replaced (re-pointing/replacing symlinks needs no --force)
+    if target.is_symlink() {
+        return Ok(FileState::Differs("exists but is a symlink".into()));
+    }
+    if !target.exists() {
+        return Ok(FileState::Missing);
+    }
+    if target.is_dir() {
+        return Ok(FileState::Differs("exists but is a directory".into()));
+    }
+    if file::read(target)? == expected {
+        Ok(FileState::Applied)
+    } else {
+        Ok(FileState::Differs("content differs".into()))
+    }
+}
+
+pub(crate) fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
+    let raw = file::read_to_string(&req.source)?;
+    let mut tera = crate::tera::get_tera(Some(&req.base));
+    let rendered = crate::tera::render_str(
+        &mut tera,
+        &raw,
+        config.bootstrap_tera_ctx(&req.origin.config),
+    )
+    .map_err(|err| {
+        eyre::eyre!(
+            "[dotfiles].\"{}\": failed to render template {}: {err}",
+            req.target_raw,
+            req.source.display_user()
+        )
+    })?;
+    Ok(rendered)
+}
+
+/// directories a symlink-each entry needs: the target itself plus every
+/// intermediate directory for nested source files
+fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    let mut out = indexmap::IndexSet::new();
+    out.insert(req.target.clone());
+    for (_, target) in walk_source_files(req)? {
+        let mut dir = target.parent();
+        while let Some(d) = dir {
+            if d == req.target {
+                break;
+            }
+            out.insert(d.to_path_buf());
+            dir = d.parent();
+        }
+    }
+    Ok(out.into_iter().collect())
+}
+
+fn symlink_each_state_path(req: &FileRequest) -> PathBuf {
+    let source = lexical_normalize(&req.source);
+    let target = lexical_normalize(&req.target);
+    dirs::STATE.join("dotfiles").join(format!(
+        "{}.toml",
+        hash_to_str(&(source.as_path(), target.as_path()))
+    ))
+}
+
+fn desired_symlink_each_state(req: &FileRequest) -> Result<SymlinkEachState> {
+    Ok(SymlinkEachState {
+        version: SYMLINK_EACH_STATE_VERSION,
+        source: lexical_normalize(&req.source),
+        target: lexical_normalize(&req.target),
+        links: walk_source_files(req)?
+            .into_iter()
+            .map(|(source, target)| ManagedLink {
+                source: lexical_normalize(&source),
+                target: lexical_normalize(&target),
+            })
+            .collect(),
+    })
+}
+
+fn active_symlink_each_state(req: &FileRequest) -> Result<SymlinkEachState> {
+    if req.source.is_dir() {
+        desired_symlink_each_state(req)
+    } else {
+        Ok(SymlinkEachState {
+            version: SYMLINK_EACH_STATE_VERSION,
+            source: lexical_normalize(&req.source),
+            target: lexical_normalize(&req.target),
+            links: vec![],
+        })
+    }
+}
+
+fn load_symlink_each_state(req: &FileRequest) -> LoadedSymlinkEachState {
+    let path = symlink_each_state_path(req);
+    if !path.exists() {
+        return LoadedSymlinkEachState::Missing;
+    }
+    let state = match read_symlink_each_state(&path) {
+        Ok(state) => state,
+        Err(err) => {
+            warn!(
+                "files: failed to read dotfiles state {}: {err}",
+                path.display_user()
+            );
+            return LoadedSymlinkEachState::Invalid;
+        }
+    };
+    let valid = state.version == SYMLINK_EACH_STATE_VERSION
+        && state.source == lexical_normalize(&req.source)
+        && state.target == lexical_normalize(&req.target)
+        && state
+            .links
+            .iter()
+            .all(|link| link.target != req.target && link.target.starts_with(&req.target));
+    if valid {
+        LoadedSymlinkEachState::Present(state)
+    } else {
+        warn!(
+            "files: ignoring invalid dotfiles state {}",
+            path.display_user()
+        );
+        LoadedSymlinkEachState::Invalid
+    }
+}
+
+fn read_symlink_each_state(path: &Path) -> Result<SymlinkEachState> {
+    file::read_to_string(path)
+        .and_then(|contents| toml::from_str::<SymlinkEachState>(&contents).map_err(Into::into))
+        .map(normalize_symlink_each_state)
+}
+
+fn normalize_symlink_each_state(mut state: SymlinkEachState) -> SymlinkEachState {
+    state.source = lexical_normalize(&state.source);
+    state.target = lexical_normalize(&state.target);
+    for link in &mut state.links {
+        link.source = lexical_normalize(&link.source);
+        link.target = lexical_normalize(&link.target);
+    }
+    state
+}
+
+fn valid_symlink_each_state(state: &SymlinkEachState) -> bool {
+    state.version == SYMLINK_EACH_STATE_VERSION
+        && state
+            .links
+            .iter()
+            .all(|link| link.target != state.target && link.target.starts_with(&state.target))
+}
+
+fn plan_symlink_each_reconciliation(
+    active_requests: &[FileRequest],
+    selected_requests: &[FileRequest],
+) -> Result<SymlinkEachReconciliation> {
+    let selected_targets = selected_requests
+        .iter()
+        .map(|req| lexical_normalize(&req.target))
+        .collect::<std::collections::HashSet<_>>();
+    let active = active_requests
+        .iter()
+        .filter(|req| {
+            req.mode == FileMode::SymlinkEach
+                && selected_targets.contains(&lexical_normalize(&req.target))
+        })
+        .map(active_symlink_each_state)
+        .collect::<Result<Vec<_>>>()?;
+    let state_dir = dirs::STATE.join("dotfiles");
+    let stored = if state_dir.is_dir() {
+        state_dir
+            .read_dir()?
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| read_symlink_each_state(&entry.path()).ok())
+            .collect()
+    } else {
+        vec![]
+    };
+    Ok(reconcile_symlink_each_states(
+        &active,
+        &selected_targets,
+        &stored,
+    ))
+}
+
+fn reconcile_symlink_each_states(
+    active: &[SymlinkEachState],
+    selected_targets: &std::collections::HashSet<PathBuf>,
+    stored: &[SymlinkEachState],
+) -> SymlinkEachReconciliation {
+    let active_keys = active
+        .iter()
+        .map(|state| (&state.source, &state.target))
+        .collect::<std::collections::HashSet<_>>();
+    let desired_links = active
+        .iter()
+        .flat_map(|state| state.links.iter())
+        .map(|link| (&link.target, &link.source))
+        .collect::<std::collections::HashMap<_, _>>();
+    if selected_targets.is_empty() {
+        return SymlinkEachReconciliation {
+            stale_links: vec![],
+            targets: vec![],
+        };
+    }
+    let mut stale_links = IndexMap::<PathBuf, ManagedLink>::new();
+    let mut targets = indexmap::IndexSet::new();
+    for state in stored {
+        if !valid_symlink_each_state(state)
+            || !selected_targets.contains(&state.target)
+            || active_keys.contains(&(&state.source, &state.target))
+        {
+            continue;
+        }
+        let stale_before = stale_links.len();
+        for link in &state.links {
+            if desired_links
+                .get(&link.target)
+                .is_none_or(|source| **source != link.source)
+                && link_points_to(&link.source, &link.target)
+            {
+                stale_links.insert(link.target.clone(), link.clone());
+            }
+        }
+        if stale_links.len() != stale_before {
+            targets.insert(state.target.clone());
+        }
+    }
+    SymlinkEachReconciliation {
+        stale_links: stale_links.into_values().collect(),
+        targets: targets.into_iter().collect(),
+    }
+}
+
+fn save_symlink_each_state(req: &FileRequest) {
+    if cfg!(windows) {
+        return;
+    }
+    let path = symlink_each_state_path(req);
+    let result = (|| -> Result<()> {
+        file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
+        file::write(
+            &path,
+            toml::to_string_pretty(&desired_symlink_each_state(req)?)?,
+        )
+    })();
+    if let Err(err) = result {
+        warn!(
+            "files: failed to write dotfiles state {}: {err}",
+            path.display_user()
+        );
+    }
+}
+
+fn remove_symlink_each_state(req: &FileRequest) -> Result<()> {
+    let path = symlink_each_state_path(req);
+    if path.exists() {
+        file::remove_file(path)?;
+    }
+    Ok(())
+}
+
+fn link_points_to(source: &Path, target: &Path) -> bool {
+    if !target.is_symlink() {
+        return false;
+    }
+    std::fs::read_link(target).is_ok_and(|dest| {
+        let resolved = if dest.is_absolute() {
+            dest.clone()
+        } else {
+            target
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join(&dest)
+        };
+        dest == source
+            || lexical_normalize(&resolved) == lexical_normalize(source)
+            || points_at_same_file(target, source)
+    })
+}
+
+fn tracked_stale_links(state: &SymlinkEachState, desired: &SymlinkEachState) -> Vec<PathBuf> {
+    let desired = desired
+        .links
+        .iter()
+        .map(|link| (&link.target, &link.source))
+        .collect::<std::collections::HashMap<_, _>>();
+    state
+        .links
+        .iter()
+        .filter(|link| {
+            desired
+                .get(&link.target)
+                .is_none_or(|source| **source != link.source)
+                && link_points_to(&link.source, &link.target)
+        })
+        .map(|link| link.target.clone())
+        .collect()
+}
+
+/// Legacy ownership discovery for installations that predate persistent
+/// symlink-each state. A successful apply records the exact links it owns, so
+/// this unbounded target walk happens at most once per target.
+fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    if cfg!(windows) || !req.target.is_dir() || req.target.is_symlink() {
+        return Ok(vec![]);
+    }
+    let mut out = vec![];
+    for entry in walkdir::WalkDir::new(&req.target).sort_by_file_name() {
+        // a path we can't read shouldn't fail the whole entry — the links we
+        // can see are still worth pruning
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                debug!("files: walking {}: {err}", req.target.display_user());
+                continue;
+            }
+        };
+        if !entry.file_type().is_symlink() {
+            continue;
+        }
+        let dest = match std::fs::read_link(entry.path()) {
+            Ok(dest) => dest,
+            Err(err) => {
+                debug!("files: reading {}: {err}", entry.path().display_user());
+                continue;
+            }
+        };
+        let Ok(rel) = entry.path().strip_prefix(&req.target) else {
+            continue;
+        };
+        let expected = req.source.join(rel);
+        // `dest` is compared as a path, so the `.` in a source like
+        // `/dotfiles/.` doesn't have to match character for character
+        if dest == expected && (!expected.exists() || is_excluded(rel, &req.exclude)) {
+            out.push(entry.path().to_path_buf());
+        }
+    }
+    Ok(out)
+}
+
+/// Links recorded for this target that are no longer desired. Persistent
+/// ownership state keeps this proportional to the managed source tree instead
+/// of recursively walking a shared target such as the user's home directory.
+fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    match load_symlink_each_state(req) {
+        LoadedSymlinkEachState::Present(state) => Ok(tracked_stale_links(
+            &state,
+            &desired_symlink_each_state(req)?,
+        )),
+        LoadedSymlinkEachState::Missing | LoadedSymlinkEachState::Invalid => {
+            legacy_stale_links(req)
+        }
+    }
+}
+
+fn symlink_each_state_needs_update(req: &FileRequest) -> Result<bool> {
+    if cfg!(windows) {
+        return Ok(false);
+    }
+    let desired = desired_symlink_each_state(req)?;
+    Ok(!matches!(
+        load_symlink_each_state(req),
+        LoadedSymlinkEachState::Present(state) if state == desired
+    ))
+}
+
+/// Whether a source-relative path is dropped by the entry's `exclude`
+/// patterns. A pattern without `/` matches any single path component, so
+/// `exclude = ["mise.toml"]` drops that file wherever it sits in the tree
+/// and `["*.md"]` drops every markdown file; a pattern containing `/` is
+/// anchored to the source root. Either kind matching a directory takes
+/// everything under it, which is why ancestors are tested too.
+fn is_excluded(rel: &Path, patterns: &[glob::Pattern]) -> bool {
+    patterns.iter().any(|pattern| {
+        if pattern.as_str().contains('/') {
+            rel.ancestors().any(|a| pattern.matches_path(a))
+        } else {
+            rel.components()
+                .any(|c| pattern.matches(&c.as_os_str().to_string_lossy()))
+        }
+    })
+}
+
+/// every (source file, target path) pair of a directory-walking entry —
+/// `symlink-each`, and `copy` with a directory source
+fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
+    if req.manifest == Some(FileManifest::Git) {
+        return git_tracked_paths(&req.source)?.into_iter().try_fold(
+            vec![],
+            |mut out, entry| -> Result<_> {
+                if entry.is_gitlink || is_excluded(&entry.path, &req.exclude) {
+                    return Ok(out);
+                }
+                let source = req.source.join(&entry.path);
+                match std::fs::symlink_metadata(&source) {
+                    Ok(metadata) if !metadata.file_type().is_dir() => {
+                        out.push((source, req.target.join(entry.path)));
+                    }
+                    Ok(_) => {}
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => return Err(err.into()),
+                }
+                Ok(out)
+            },
+        );
+    }
+    let mut out = vec![];
+    let mut walk = walkdir::WalkDir::new(&req.source)
+        .sort_by_file_name()
+        .into_iter();
+    while let Some(entry) = walk.next() {
+        let entry = entry?;
+        let rel = entry.path().strip_prefix(&req.source)?;
+        if !rel.as_os_str().is_empty() && is_excluded(rel, &req.exclude) {
+            // don't descend into an excluded directory — its children are
+            // excluded by the same pattern, just more slowly
+            if entry.file_type().is_dir() {
+                walk.skip_current_dir();
+            }
+            continue;
+        }
+        if entry.file_type().is_dir() {
+            continue;
+        }
+        out.push((entry.path().to_path_buf(), req.target.join(rel)));
+    }
+    Ok(out)
+}
+
+struct GitTrackedPath {
+    path: PathBuf,
+    is_gitlink: bool,
+    is_symlink: bool,
+}
+
+fn git_tracked_paths(source: &Path) -> Result<Vec<GitTrackedPath>> {
+    let mut root_command = Command::new("git");
+    root_command
+        .arg("-C")
+        .arg(source)
+        .args(["-c", "safe.directory=*", "rev-parse", "--show-toplevel"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    crate::git::sanitize_git_command(&mut root_command);
+    let root_output = root_command.output().wrap_err_with(|| {
+        format!(
+            "failed to locate Git repository for {}",
+            source.display_user()
+        )
+    })?;
+    if !root_output.status.success() {
+        let stderr = String::from_utf8_lossy(&root_output.stderr)
+            .trim()
+            .to_string();
+        bail!(
+            "failed to locate Git repository for {}: {}",
+            source.display_user(),
+            if stderr.is_empty() {
+                root_output.status.to_string()
+            } else {
+                stderr
+            }
+        );
+    }
+    let root = root_output
+        .stdout
+        .strip_suffix(b"\n")
+        .unwrap_or(&root_output.stdout);
+    let root = root.strip_suffix(b"\r").unwrap_or(root);
+    let safe = format!("safe.directory={}", path_buf_from_git_bytes(root).display());
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(source)
+        .arg("-c")
+        .arg(safe)
+        .arg("-c")
+        .arg("core.autocrlf=false")
+        .args(["ls-files", "-z", "--cached", "--stage", "--", "."])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output().wrap_err_with(|| {
+        format!(
+            "failed to list Git-tracked files in {}",
+            source.display_user()
+        )
+    })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        bail!(
+            "failed to list Git-tracked files in {}: {}",
+            source.display_user(),
+            if stderr.is_empty() {
+                output.status.to_string()
+            } else {
+                stderr
+            }
+        );
+    }
+    output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|record| !record.is_empty())
+        .map(|record| {
+            let tab = record
+                .iter()
+                .position(|byte| *byte == b'\t')
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "unexpected git ls-files output for {}",
+                        source.display_user()
+                    )
+                })?;
+            let metadata = &record[..tab];
+            let path = path_buf_from_git_bytes(&record[tab + 1..]);
+            if !metadata.ends_with(b" 0") {
+                bail!(
+                    "unresolved Git index entry {} in {}",
+                    path.display(),
+                    source.display_user()
+                );
+            }
+            Ok(GitTrackedPath {
+                is_gitlink: metadata.starts_with(b"160000 "),
+                is_symlink: metadata.starts_with(b"120000 "),
+                path,
+            })
+        })
+        .collect()
+}
+
+/// Capture only the files selected by a Git manifest, preserving the source
+/// repository and any untracked files around them.
+pub(crate) fn capture_git_manifest(req: &FileRequest) -> Result<()> {
+    for entry in git_tracked_paths(&req.source)? {
+        if entry.is_gitlink || entry.is_symlink || is_excluded(&entry.path, &req.exclude) {
+            continue;
+        }
+        let from = req.target.join(&entry.path);
+        let to = req.source.join(entry.path);
+        if from.exists() || from.is_symlink() {
+            if !file::same_file(&from, &to) {
+                copy_path(&from, &to)?;
+            }
+        } else if to.exists() || to.is_symlink() {
+            remove_existing(&to)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn path_buf_from_git_bytes(path: &[u8]) -> PathBuf {
+    use std::os::unix::ffi::OsStringExt;
+    std::ffi::OsString::from_vec(path.to_vec()).into()
+}
+
+#[cfg(not(unix))]
+fn path_buf_from_git_bytes(path: &[u8]) -> PathBuf {
+    String::from_utf8_lossy(path).into_owned().into()
+}
+
+pub(crate) struct ApplyOpts {
+    pub dry_run: bool,
+    pub verbose: bool,
+    /// replace conflicting targets (existing real files where a symlink
+    /// should go, or type mismatches) instead of erroring
+    pub force: bool,
+    pub force_hint: &'static str,
+    pub yes: bool,
+}
+
+pub(crate) struct ApplyPlan<'a> {
+    todo: Vec<(&'a FileRequest, Option<String>)>,
+    record_symlink_each: Vec<&'a FileRequest>,
+    reconciliation: SymlinkEachReconciliation,
+}
+
+/// Apply all entries that aren't already in the desired state. Conflicting
+/// targets (a real file where a symlink should go, a directory where a file
+/// should go) are an error unless `force` is set — content updates for
+/// copy/template entries are not conflicts, overwriting is their job. Returns
+/// `false` when the user declines the confirmation prompt.
+pub(crate) fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<bool> {
+    execute_apply(plan_apply(config, requests, opts)?, opts)
+}
+
+pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
+    let has_reconciliation = !plan.reconciliation.stale_links.is_empty();
+    if plan.todo.is_empty() && !has_reconciliation {
+        if !opts.dry_run {
+            for req in plan.record_symlink_each {
+                save_symlink_each_state(req);
+            }
+        }
+        info!("files: all files are applied");
+        return Ok(true);
+    }
+    if opts.dry_run {
+        for link in &plan.reconciliation.stale_links {
+            miseprintln!("rm {}", link.target.display_user());
+        }
+        for (req, rendered) in &plan.todo {
+            // template state wasn't computed (no rendering on dry runs), so
+            // the entry may already be converged
+            let conditional = req.mode == FileMode::Template && rendered.is_none();
+            let suffix = if conditional { " (if changed)" } else { "" };
+            miseprintln!("{}{suffix}", describe(req)?);
+            if opts.verbose && !conditional {
+                print_diff(req, rendered.as_deref())?;
+            }
+        }
+        return Ok(true);
+    }
+    if !opts.yes && console::user_attended_stderr() {
+        let list = plan
+            .todo
+            .iter()
+            .map(|(r, _)| r.target_raw.clone())
+            .chain(
+                plan.reconciliation
+                    .targets
+                    .iter()
+                    .map(|target| target.display_user()),
+            )
+            .unique()
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !prompt::confirm(format!("files: apply {list}?"))?.is_yes() {
+            info!("files: skipped");
+            return Ok(false);
+        }
+    }
+    for link in &plan.reconciliation.stale_links {
+        if link_points_to(&link.source, &link.target) {
+            file::remove_file(&link.target)?;
+        }
+    }
+    for (req, rendered) in &plan.todo {
+        apply_one(req, rendered.as_deref())?;
+        if req.mode == FileMode::SymlinkEach {
+            save_symlink_each_state(req);
+        }
+        info!("files: {}", describe_applied(req)?);
+    }
+    for req in plan.record_symlink_each {
+        if !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, req)) {
+            save_symlink_each_state(req);
+        }
+    }
+    cleanup_reconciled_directories(&plan.reconciliation)?;
+    let applied = plan
+        .todo
+        .iter()
+        .map(|(r, _)| r.target_raw.clone())
+        .chain(
+            plan.reconciliation
+                .targets
+                .iter()
+                .map(|target| target.display_user()),
+        )
+        .unique()
+        .collect::<Vec<_>>();
+    info!("files: applied {}", applied.join(", "));
+    Ok(true)
+}
+
+/// Plan and validate an apply without changing targets. Templates are rendered
+/// here so execution writes exactly the content that was validated.
+pub(crate) fn plan_apply<'a>(
+    config: &Config,
+    requests: &'a [FileRequest],
+    opts: &ApplyOpts,
+) -> Result<ApplyPlan<'a>> {
+    let active_requests = files_from_config(config)?;
+    plan_apply_with_active(config, requests, &active_requests, opts)
+}
+
+/// Plan an apply against the requests that will be active when it executes.
+/// This is used by transactional config updates that apply before saving the
+/// prospective configuration.
+pub(crate) fn plan_apply_with_active<'a>(
+    config: &Config,
+    requests: &'a [FileRequest],
+    active_requests: &[FileRequest],
+    opts: &ApplyOpts,
+) -> Result<ApplyPlan<'a>> {
+    validate_composed_file_footprints(requests)?;
+    // pre-rendered template output rides along so it's written as compared,
+    // and exec() in templates runs once per apply
+    let mut todo: Vec<(&FileRequest, Option<String>)> = vec![];
+    let mut missing_sources = vec![];
+    let mut broken = vec![];
+    let mut conflicts = vec![];
+    let mut record_symlink_each = vec![];
+    for req in requests {
+        // report every problem in one pass instead of fix-and-retry — a
+        // render or check failure on one entry must not hide the rest
+        if req.mode != FileMode::Content && !req.source.exists() {
+            missing_sources.push(format!(
+                "  [dotfiles].\"{}\": {}",
+                req.target_raw,
+                req.source.display_user()
+            ));
+            continue;
+        }
+        // rendering can run exec() — a dry run must not execute anything,
+        // so list template entries without computing their current state
+        if opts.dry_run && req.mode == FileMode::Template {
+            conflicts.extend(find_conflicts(req)?);
+            todo.push((req, None));
+            continue;
+        }
+        let rendered = match req.mode {
+            FileMode::Template => match render_template(config, req) {
+                Ok(rendered) => Some(rendered),
+                // already carries the entry's context
+                Err(err) => {
+                    broken.push(format!("  {err}"));
+                    continue;
+                }
+            },
+            _ => None,
+        };
+        match check_rendered(req, rendered.as_deref()) {
+            Ok(FileState::Applied) => {
+                if req.mode == FileMode::SymlinkEach && symlink_each_state_needs_update(req)? {
+                    record_symlink_each.push(req);
+                }
+                continue;
+            }
+            Ok(_) => {}
+            Err(err) => {
+                broken.push(format!("  [dotfiles].\"{}\": {err}", req.target_raw));
+                continue;
+            }
+        }
+        conflicts.extend(find_conflicts(req)?);
+        todo.push((req, rendered));
+    }
+    let mut problems = vec![];
+    if !missing_sources.is_empty() {
+        problems.push(format!(
+            "sources do not exist:\n{}",
+            missing_sources.join("\n")
+        ));
+    }
+    if !broken.is_empty() {
+        problems.push(format!("entries with errors:\n{}", broken.join("\n")));
+    }
+    if !conflicts.is_empty() && !opts.force {
+        problems.push(format!(
+            "refusing to overwrite existing files ({}):\n{}",
+            opts.force_hint,
+            conflicts
+                .iter()
+                .map(|p| format!("  {}", p.display_user()))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+    if !problems.is_empty() {
+        bail!("files: {}", problems.join("\nfiles: "));
+    }
+    Ok(ApplyPlan {
+        todo,
+        record_symlink_each,
+        reconciliation: plan_symlink_each_reconciliation(active_requests, requests)?,
+    })
+}
+
+fn cleanup_reconciled_directories(reconciliation: &SymlinkEachReconciliation) -> Result<()> {
+    for target in &reconciliation.targets {
+        for start in reconciliation
+            .stale_links
+            .iter()
+            .filter(|link| link.target.starts_with(target))
+            .filter_map(|link| link.target.parent())
+            .sorted_by_key(|path| std::cmp::Reverse(path.components().count()))
+            .unique()
+        {
+            let mut dir = start;
+            while dir != target && dir.starts_with(target) {
+                if !dir.is_dir() || dir.read_dir()?.next().is_some() {
+                    break;
+                }
+                file::remove_dir(dir)?;
+                let Some(parent) = dir.parent() else {
+                    break;
+                };
+                dir = parent;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) struct UnapplyOpts {
+    pub dry_run: bool,
+    pub verbose: bool,
+    /// remove targets whose ownership cannot be verified from their current
+    /// state (for example a modified copy)
+    pub force: bool,
+    pub yes: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct UnapplyPlan<'a> {
+    req: &'a FileRequest,
+    paths: Vec<PathBuf>,
+    /// directory-walking modes share their target with unmanaged files, so
+    /// only remove directories after their managed children are gone and only
+    /// while they are empty
+    cleanup_empty_dirs: bool,
+    /// template dry-runs do not render, so the removal is conditional
+    conditional: bool,
+    /// remove persistent symlink-each ownership after successful cleanup
+    clear_symlink_each_state: bool,
+}
+
+/// Remove configured whole-file entries without recursively deleting
+/// directories that may contain unmanaged files. Symlinks carry their own
+/// ownership evidence. Copies and templates must still match their source
+/// unless `--force` was given.
+pub(crate) fn plan_unapply<'a>(
+    requests: &'a [FileRequest],
+    opts: &UnapplyOpts,
+) -> Result<Vec<UnapplyPlan<'a>>> {
+    let mut todo = vec![];
+    let mut problems = vec![];
+    for req in requests {
+        match plan_unapply_one(req, opts) {
+            Ok(Some(plan)) => todo.push(plan),
+            Ok(None) => {}
+            Err(err) => problems.push(format!("  [dotfiles].\"{}\": {err}", req.target_raw)),
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "files: cannot unapply these entries:\n{}",
+            problems.join("\n")
+        );
+    }
+    Ok(todo)
+}
+
+/// Resolve checks that may execute user-authored template functions. This runs
+/// only after interactive confirmation, but still before any mutation.
+pub(crate) fn resolve_unapply(
+    config: &Config,
+    plans: &mut Vec<UnapplyPlan<'_>>,
+    opts: &UnapplyOpts,
+) -> Result<()> {
+    if opts.dry_run {
+        return Ok(());
+    }
+    let mut problems = vec![];
+    let rendered = plans
+        .iter()
+        .map(|plan| {
+            if plan.conditional {
+                match render_template(config, plan.req) {
+                    Ok(rendered) => Some(rendered),
+                    Err(err) => {
+                        problems.push(format!("  [dotfiles].\"{}\": {err}", plan.req.target_raw));
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    if !problems.is_empty() {
+        bail!(
+            "files: cannot unapply these entries:\n{}",
+            problems.join("\n")
+        );
+    }
+
+    // Template functions can change any selected target. Refresh every plan
+    // only after all templates have rendered so no stale validation is used.
+    let mut refreshed = Vec::with_capacity(plans.len());
+    for (plan, rendered) in std::mem::take(plans).into_iter().zip(rendered) {
+        let result = if let Some(rendered) = rendered {
+            let mut paths = IndexMap::new();
+            plan_expected_content(rendered.as_bytes(), &plan.req.target, false, &mut paths).map(
+                |_| {
+                    Some(UnapplyPlan {
+                        req: plan.req,
+                        paths: paths.into_keys().collect(),
+                        cleanup_empty_dirs: false,
+                        conditional: false,
+                        clear_symlink_each_state: false,
+                    })
+                },
+            )
+        } else {
+            plan_unapply_one(plan.req, opts)
+        };
+        match result {
+            Ok(Some(plan)) => refreshed.push(plan),
+            Ok(None) => {}
+            Err(err) => problems.push(format!("  [dotfiles].\"{}\": {err}", plan.req.target_raw)),
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "files: cannot unapply these entries:\n{}",
+            problems.join("\n")
+        );
+    }
+    *plans = refreshed;
+    Ok(())
+}
+
+pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
+    let todo = plans;
+    if todo.is_empty() {
+        info!("files: all files are unapplied");
+        return Ok(());
+    }
+    if opts.dry_run {
+        for plan in todo {
+            for path in &plan.paths {
+                let suffix = if plan.conditional {
+                    " (if unchanged)"
+                } else {
+                    ""
+                };
+                miseprintln!("rm {}{suffix}", path.display_user());
+            }
+            if plan.cleanup_empty_dirs {
+                miseprintln!("rmdir {} (if empty)", plan.req.target.display_user());
+            }
+            if opts.verbose && plan.cleanup_empty_dirs {
+                miseprintln!(
+                    "  preserve unmanaged files under {}",
+                    plan.req.target.display_user()
+                );
+            }
+        }
+        return Ok(());
+    }
+    if !opts.yes && console::user_attended_stderr() {
+        let list = todo
+            .iter()
+            .map(|plan| plan.req.target_raw.clone())
+            .join(", ");
+        if !prompt::confirm(format!("files: unapply {list}?"))?.is_yes() {
+            info!("files: skipped");
+            return Ok(());
+        }
+    }
+    for plan in todo {
+        unapply_one(plan)?;
+        if plan.clear_symlink_each_state {
+            remove_symlink_each_state(plan.req)?;
+        }
+    }
+    info!(
+        "files: unapplied {}",
+        todo.iter()
+            .map(|plan| plan.req.target_raw.clone())
+            .join(", ")
+    );
+    Ok(())
+}
+
+fn plan_unapply_one<'a>(
+    req: &'a FileRequest,
+    opts: &UnapplyOpts,
+) -> Result<Option<UnapplyPlan<'a>>> {
+    let mut paths = IndexMap::<PathBuf, ()>::new();
+    let mut cleanup_empty_dirs = false;
+    let mut conditional = false;
+    let mut clear_symlink_each_state = false;
+    match req.mode {
+        // A Windows file link that came out as a copy is planned by content further down; one
+        // that is a real symlink belongs here, where the link target is what identifies it as
+        // ours. `plan_expected_content` requires a non-symlink, so routing a symlink there
+        // would make unapply demand `--force`.
+        FileMode::Symlink
+            if !(cfg!(windows) && req.source.is_file() && !req.target.is_symlink()) =>
+        {
+            if req.target.is_symlink() {
+                let dest = std::fs::read_link(&req.target)?;
+                if opts.force || dest == req.source || points_at_same_file(&req.target, &req.source)
+                {
+                    paths.insert(req.target.clone(), ());
+                } else {
+                    bail!(
+                        "target symlink points to {}, use --force to remove it",
+                        dest.display_user()
+                    );
+                }
+            } else if req.target.exists() {
+                if opts.force {
+                    paths.insert(req.target.clone(), ());
+                } else {
+                    bail!("target is not the managed symlink, use --force to remove it");
+                }
+            }
+        }
+        FileMode::SymlinkEach if !cfg!(windows) => {
+            clear_symlink_each_state = symlink_each_state_path(req).exists();
+            if req.target.is_symlink() || (req.target.exists() && !req.target.is_dir()) {
+                if opts.force {
+                    paths.insert(req.target.clone(), ());
+                } else {
+                    bail!("target is not the managed directory, use --force to remove it");
+                }
+            } else if req.target.is_dir() {
+                for path in owned_links(req)? {
+                    paths.insert(path, ());
+                }
+                cleanup_empty_dirs = true;
+            }
+        }
+        FileMode::Copy | FileMode::SymlinkEach if req.source.is_dir() => {
+            if req.target.is_symlink() || (req.target.exists() && !req.target.is_dir()) {
+                if opts.force {
+                    paths.insert(req.target.clone(), ());
+                } else {
+                    bail!("target is not the managed directory, use --force to remove it");
+                }
+            } else if req.target.is_dir() {
+                for (source, target) in walk_source_files(req)? {
+                    plan_regular_file(&source, &target, opts.force, &mut paths)?;
+                }
+                cleanup_empty_dirs = true;
+            }
+        }
+        FileMode::Copy => {
+            if req.target.is_dir() && !req.source.exists() {
+                bail!("source directory is missing, so managed children cannot be identified");
+            }
+            plan_single_file(req, opts, &mut paths)?;
+        }
+        FileMode::Content => {
+            if !req.target.exists() && !req.target.is_symlink() {
+                return Ok(None);
+            }
+            if opts.force {
+                paths.insert(req.target.clone(), ());
+            } else {
+                plan_inline_file(req, &mut paths)?;
+            }
+        }
+        FileMode::Symlink => {
+            plan_single_file(req, opts, &mut paths)?;
+        }
+        FileMode::SymlinkEach => {
+            bail!("mode symlink-each requires the source to be a directory");
+        }
+        FileMode::Template => {
+            if !req.target.exists() && !req.target.is_symlink() {
+                return Ok(None);
+            }
+            if opts.force {
+                paths.insert(req.target.clone(), ());
+            } else if opts.dry_run {
+                // Rendering may execute commands. Keep dry-run inert, matching
+                // apply/status policy, and describe the removal as conditional.
+                paths.insert(req.target.clone(), ());
+                conditional = true;
+            } else {
+                if !req.source.exists() {
+                    bail!("source is missing; use --force to remove the target");
+                }
+                // Rendering may execute user-authored commands. Defer it until
+                // after the complete unapply plan has been confirmed.
+                conditional = true;
+            }
+        }
+    }
+    if paths.is_empty() && !cleanup_empty_dirs && !conditional && !clear_symlink_each_state {
+        Ok(None)
+    } else {
+        Ok(Some(UnapplyPlan {
+            req,
+            paths: paths.into_keys().collect(),
+            cleanup_empty_dirs,
+            conditional,
+            clear_symlink_each_state,
+        }))
+    }
+}
+
+fn plan_inline_file(req: &FileRequest, paths: &mut IndexMap<PathBuf, ()>) -> Result<()> {
+    if !req.target.is_symlink()
+        && req.target.is_file()
+        && file::read(&req.target)? == req.content.as_deref().expect("inline content").as_bytes()
+    {
+        paths.insert(req.target.clone(), ());
+    } else if req.target.exists() || req.target.is_symlink() {
+        bail!("target differs from the managed content, use --force to remove it");
+    }
+    Ok(())
+}
+
+fn plan_single_file(
+    req: &FileRequest,
+    opts: &UnapplyOpts,
+    paths: &mut IndexMap<PathBuf, ()>,
+) -> Result<()> {
+    if !req.source.exists() && req.target.exists() && !opts.force {
+        bail!("source is missing; use --force to remove the target");
+    }
+    if opts.force && (req.target.exists() || req.target.is_symlink()) {
+        paths.insert(req.target.clone(), ());
+    } else if req.source.exists() {
+        plan_regular_file(&req.source, &req.target, false, paths)?;
+    }
+    Ok(())
+}
+
+fn plan_regular_file(
+    source: &Path,
+    target: &Path,
+    force: bool,
+    paths: &mut IndexMap<PathBuf, ()>,
+) -> Result<()> {
+    if !target.exists() && !target.is_symlink() {
+        return Ok(());
+    }
+    if source.is_file() {
+        plan_expected_content(&file::read(source)?, target, force, paths)
+    } else if force {
+        paths.insert(target.to_path_buf(), ());
+        Ok(())
+    } else {
+        bail!(
+            "cannot verify {}; use --force to remove it",
+            target.display_user()
+        )
+    }
+}
+
+fn plan_expected_content(
+    expected: &[u8],
+    target: &Path,
+    force: bool,
+    paths: &mut IndexMap<PathBuf, ()>,
+) -> Result<()> {
+    if force || (target.is_file() && !target.is_symlink() && file::read(target)? == expected) {
+        paths.insert(target.to_path_buf(), ());
+        Ok(())
+    } else {
+        bail!(
+            "{} differs from its managed source; use --force to remove it",
+            target.display_user()
+        )
+    }
+}
+
+/// All symlinks under a symlink-each target that point exactly where this
+/// entry maps that relative path. Unlike stale-link pruning this includes
+/// both current and deleted source files because unapply removes the entry's
+/// complete observable footprint.
+fn legacy_owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    if !req.target.is_dir() || req.target.is_symlink() {
+        return Ok(vec![]);
+    }
+    let mut out = vec![];
+    for entry in walkdir::WalkDir::new(&req.target).sort_by_file_name() {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                debug!("files: walking {}: {err}", req.target.display_user());
+                continue;
+            }
+        };
+        if !entry.file_type().is_symlink() {
+            continue;
+        }
+        let Ok(rel) = entry.path().strip_prefix(&req.target) else {
+            continue;
+        };
+        // Excluded paths are outside this entry's managed footprint. Even an
+        // exact source-shaped link there may have been created by the user.
+        if is_excluded(rel, &req.exclude) {
+            continue;
+        }
+        let dest = match std::fs::read_link(entry.path()) {
+            Ok(dest) => dest,
+            Err(err) => {
+                debug!("files: reading {}: {err}", entry.path().display_user());
+                continue;
+            }
+        };
+        let expected = req.source.join(rel);
+        if dest == expected || points_at_same_file(entry.path(), &expected) {
+            out.push(entry.path().to_path_buf());
+        }
+    }
+    Ok(out)
+}
+
+fn owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    let state = match load_symlink_each_state(req) {
+        LoadedSymlinkEachState::Present(state) => state,
+        LoadedSymlinkEachState::Missing | LoadedSymlinkEachState::Invalid => {
+            return legacy_owned_links(req);
+        }
+    };
+    let mut out = IndexMap::<PathBuf, ()>::new();
+    for link in state.links {
+        if link_points_to(&link.source, &link.target) {
+            out.insert(link.target, ());
+        }
+    }
+    Ok(out.into_keys().collect())
+}
+
+fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
+    let mut parents = vec![];
+    for path in &plan.paths {
+        debug!("files: removing {}", path.display_user());
+        if path.is_symlink() || path.is_file() {
+            file::remove_file(path)?;
+        } else if path.is_dir() {
+            // Only reached for a forced type conflict. The user explicitly
+            // asked to remove the declared whole target.
+            file::remove_all(path)?;
+        }
+        if let Some(parent) = path.parent() {
+            parents.push(parent.to_path_buf());
+        }
+    }
+    if plan.cleanup_empty_dirs && plan.req.target.is_dir() {
+        parents.push(plan.req.target.clone());
+        for start in parents
+            .into_iter()
+            .sorted_by_key(|p| std::cmp::Reverse(p.components().count()))
+            .unique()
+        {
+            let mut dir = start.as_path();
+            while dir.starts_with(&plan.req.target) {
+                if !dir.is_dir() || dir.read_dir()?.next().is_some() {
+                    break;
+                }
+                file::remove_dir(dir)?;
+                if dir == plan.req.target {
+                    break;
+                }
+                let Some(parent) = dir.parent() else {
+                    break;
+                };
+                dir = parent;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// existing paths this entry would have to delete or replace — not counting
+/// content overwrites by copy/template (those are the declared intent) or
+/// re-pointing symlinks (always mise-owned territory)
+fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    // A symlink at the target is one mise made, so it is re-pointable. Anything else that is
+    // there — a regular file or a directory — belongs to someone else and needs `--force`.
+    //
+    // Windows used to exempt regular files here, on the grounds that a file link becomes a copy
+    // on that platform so an existing file is only a content update. That reasoning holds for
+    // `copy` mode, which is declared as overwriting; for a `symlink` entry it meant the copy
+    // silently destroyed a file the user wrote, with no `--force` and no message — while unix
+    // refused the same apply.
+    let file_link_conflicts =
+        |target: &Path| -> Result<bool> { Ok(target.exists() && !target.is_symlink()) };
+    let mut out = vec![];
+    match req.mode {
+        FileMode::Symlink => {
+            if file_link_conflicts(&req.target)? {
+                out.push(req.target.clone());
+            }
+        }
+        FileMode::SymlinkEach => {
+            // a regular file where the target directory (or a nested one)
+            // should go blocks the whole entry
+            for dir in needed_dirs(req)? {
+                if dir.exists() && !dir.is_dir() {
+                    out.push(dir);
+                }
+            }
+            for (_source, target) in walk_source_files(req)? {
+                if file_link_conflicts(&target)? {
+                    out.push(target);
+                }
+            }
+        }
+        FileMode::Copy | FileMode::Template => {
+            // a dir where a file should go (or vice versa) must be removed;
+            // file-over-file is an ordinary overwrite
+            if req.target.exists() && req.target.is_dir() != req.source.is_dir() {
+                out.push(req.target.clone());
+            }
+        }
+        FileMode::Content => {
+            if req.target.is_dir() {
+                out.push(req.target.clone());
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn describe(req: &FileRequest) -> Result<String> {
+    let src = req.source.display_user();
+    let tgt = req.target.display_user();
+    Ok(match req.mode {
+        FileMode::Symlink => format!("ln -sf {src} {tgt}"),
+        FileMode::SymlinkEach => {
+            let stale = stale_links(req)?.len();
+            let removals = match stale {
+                0 => String::new(),
+                n => format!(", rm {n} stale link(s)"),
+            };
+            format!(
+                "ln -sf {src}/* into {tgt}/ ({} files){removals}",
+                walk_source_files(req)?.len()
+            )
+        }
+        FileMode::Copy if req.source.is_dir() => format!("cp -r {src} {tgt}"),
+        FileMode::Copy => format!("cp {src} {tgt}"),
+        FileMode::Template => format!("render {src} -> {tgt}"),
+        FileMode::Content => format!("write inline content to {tgt}"),
+    })
+}
+
+fn describe_applied(req: &FileRequest) -> Result<String> {
+    let src = req.source.display_user();
+    let tgt = req.target.display_user();
+    Ok(match req.mode {
+        FileMode::Symlink => format!("created symlink {tgt} -> {src}"),
+        FileMode::SymlinkEach => format!(
+            "created {} symlink(s) from {src} in {tgt}",
+            walk_source_files(req)?.len()
+        ),
+        FileMode::Copy => format!("copied {src} to {tgt}"),
+        FileMode::Template => format!("rendered {src} to {tgt}"),
+        FileMode::Content => format!("wrote inline content to {tgt}"),
+    })
+}
+
+fn print_diff(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
+    match req.mode {
+        FileMode::Symlink => {
+            if req.target.is_symlink() {
+                let dest = std::fs::read_link(&req.target)?;
+                miseprintln!(
+                    "  current symlink: {} -> {}",
+                    req.target.display_user(),
+                    dest.display_user()
+                );
+            } else if req.target.exists() {
+                miseprintln!("  current: {} exists", req.target.display_user());
+            } else {
+                miseprintln!("  current: {} missing", req.target.display_user());
+            }
+            miseprintln!(
+                "  desired symlink: {} -> {}",
+                req.target.display_user(),
+                req.source.display_user()
+            );
+        }
+        FileMode::SymlinkEach => {
+            miseprintln!(
+                "  desired symlink-each: {} files from {}",
+                walk_source_files(req)?.len(),
+                req.source.display_user()
+            );
+            for path in stale_links(req)? {
+                miseprintln!("  stale link to remove: {}", path.display_user());
+            }
+        }
+        FileMode::Copy | FileMode::Template if req.source.is_file() => {
+            let desired = match req.mode {
+                FileMode::Template => rendered.unwrap_or_default().as_bytes().to_vec(),
+                _ => file::read(&req.source)?,
+            };
+            if let Some(current) = current_regular_file_for_diff(req)?
+                && current != desired
+            {
+                print_content_diff(req, &current, &desired)?;
+            }
+            #[cfg(unix)]
+            if req.mode == FileMode::Template && !req.target.is_symlink() && req.target.is_file() {
+                use std::os::unix::fs::PermissionsExt;
+                let current_mode = req.target.metadata()?.permissions().mode() & 0o7777;
+                let desired_mode = req.source.metadata()?.permissions().mode() & 0o7777;
+                if current_mode != desired_mode {
+                    miseprintln!(
+                        "  permissions differ: {:04o} (current) -> {:04o} (desired)",
+                        current_mode,
+                        desired_mode
+                    );
+                }
+            }
+        }
+        FileMode::Copy | FileMode::Template => {
+            miseprintln!(
+                "  desired directory contents: {} -> {}",
+                req.source.display_user(),
+                req.target.display_user()
+            );
+        }
+        FileMode::Content => {
+            let desired = req.content.as_deref().expect("inline content").as_bytes();
+            if let Some(current) = current_regular_file_for_diff(req)?
+                && current != desired
+            {
+                print_content_diff(req, &current, desired)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Read a regular target without following a symlink. Non-file targets are
+/// described structurally and return no bytes to compare.
+fn current_regular_file_for_diff(req: &FileRequest) -> Result<Option<Vec<u8>>> {
+    if req.target.is_symlink() {
+        let dest = std::fs::read_link(&req.target)?;
+        miseprintln!(
+            "  file type differs: current symlink {} -> {}; desired regular file",
+            req.target.display_user(),
+            dest.display_user()
+        );
+        return Ok(None);
+    }
+    if req.target.is_file() {
+        return Ok(Some(file::read(&req.target)?));
+    }
+    if req.target.exists() {
+        miseprintln!(
+            "  file type differs: current directory {}; desired regular file",
+            req.target.display_user()
+        );
+        return Ok(None);
+    }
+    miseprintln!("  current: {} missing", req.target.display_user());
+    Ok(Some(vec![]))
+}
+
+fn print_content_diff(req: &FileRequest, current: &[u8], desired: &[u8]) -> Result<()> {
+    let source = match req.mode {
+        FileMode::Content => "inline".to_string(),
+        _ => req.source.display_user(),
+    };
+    miseprintln!(
+        "  content differs: {} -> {}",
+        source,
+        req.target.display_user()
+    );
+    let mut opts = diffy::DiffOptions::new();
+    opts.set_original_filename(format!("{} (current)", req.target.display_user()))
+        .set_modified_filename(match req.mode {
+            FileMode::Content => format!("{} (desired)", req.target.display_user()),
+            _ => format!("{} (desired)", req.source.display_user()),
+        });
+    match (str::from_utf8(current), str::from_utf8(desired)) {
+        (Ok(current), Ok(desired)) => {
+            let patch = opts.create_patch(current, desired);
+            miseprint!("{}", diffy::PatchFormatter::new().fmt_patch(&patch))?;
+        }
+        _ => miseprintln!("  binary content differs"),
+    }
+    Ok(())
+}
+
+/// Print the changes required to converge whole-file dotfile entries.
+/// Templates are rendered because a meaningful diff requires their desired
+/// content, matching the trust and execution semantics of dotfiles status.
+pub(crate) fn print_diffs(config: &Config, requests: &[FileRequest]) -> Result<()> {
+    let mut changed = false;
+    let mut problems = vec![];
+    for req in requests {
+        if req.mode != FileMode::Content && !req.source.exists() {
+            miseprintln!("{}: source missing", req.target_raw);
+            changed = true;
+            continue;
+        }
+        let rendered = match req.mode {
+            FileMode::Template => match render_template(config, req) {
+                Ok(rendered) => Some(rendered),
+                Err(err) => {
+                    problems.push(format!("  \"{}\": {err}", req.target_raw));
+                    continue;
+                }
+            },
+            _ => None,
+        };
+        match check_rendered(req, rendered.as_deref()) {
+            Ok(FileState::Applied) => continue,
+            Ok(_) => {}
+            Err(err) => {
+                problems.push(format!("  \"{}\": {err}", req.target_raw));
+                continue;
+            }
+        }
+        changed = true;
+        miseprintln!("dotfile differs: {}", req.target.display_user());
+        if let Err(err) = print_diff(req, rendered.as_deref()) {
+            problems.push(format!("  \"{}\": {err}", req.target_raw));
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "files: cannot diff these entries, fix them manually:\n{}",
+            problems.join("\n")
+        );
+    }
+    if !changed {
+        info!("files: all files are applied");
+    }
+    Ok(())
+}
+
+fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
+    debug!("files: {}", describe(req)?);
+    if let Some(parent) = req.target.parent() {
+        file::create_dir_all(parent)?;
+    }
+    match req.mode {
+        FileMode::Symlink => {
+            remove_existing(&req.target)?;
+            link_path(&req.source, &req.target, true)?;
+        }
+        FileMode::SymlinkEach => {
+            // conflicts were vetted (or --force given): clear anything
+            // blocking a directory we need
+            for dir in needed_dirs(req)? {
+                if dir.exists() && !dir.is_dir() {
+                    remove_existing(&dir)?;
+                }
+            }
+            // even an empty source dir must produce the target dir, or the
+            // entry would never converge
+            file::create_dir_all(&req.target)?;
+            for (source, target) in walk_source_files(req)? {
+                if check_symlink(&source, &target)? == FileState::Applied {
+                    continue;
+                }
+                if let Some(parent) = target.parent() {
+                    file::create_dir_all(parent)?;
+                }
+                remove_existing(&target)?;
+                link_path(&source, &target, false)?;
+            }
+            prune_stale_links(req)?;
+        }
+        FileMode::Copy => {
+            if req.source.is_dir() {
+                // additive: overwrite matching files, leave files mise
+                // doesn't manage in place — only a type mismatch (vetted
+                // as a conflict) removes the target
+                if req.target.exists() && !req.target.is_dir() {
+                    remove_existing(&req.target)?;
+                }
+                // even an empty source dir must produce the target dir,
+                // or the entry would never converge
+                file::create_dir_all(&req.target)?;
+                // per-file instead of copy_dir_all so a symlink at a
+                // destination is replaced, not written through
+                for (source, target) in walk_source_files(req)? {
+                    if let Some(parent) = target.parent() {
+                        file::create_dir_all(parent)?;
+                    }
+                    if target.is_symlink() {
+                        file::remove_file(&target)?;
+                    }
+                    file::copy(&source, &target)?;
+                }
+            } else {
+                remove_existing(&req.target)?;
+                file::copy(&req.source, &req.target)?;
+            }
+        }
+        FileMode::Template => {
+            let rendered = rendered.expect("rendered template content");
+            remove_existing(&req.target)?;
+            file::write(&req.target, rendered)?;
+            #[cfg(unix)]
+            std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
+        }
+        FileMode::Content => {
+            remove_existing(&req.target)?;
+            file::write(&req.target, req.content.as_deref().expect("inline content"))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&req.target, std::fs::Permissions::from_mode(0o600))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// delete this entry's leftover links (see [`stale_links`]) and any directory
+/// they emptied out. A directory only goes when the links we just removed were
+/// all that was in it and the entry has no source file left that needs it, so
+/// user content — and the target directory itself — always survives.
+fn prune_stale_links(req: &FileRequest) -> Result<()> {
+    let stale = stale_links(req)?;
+    if stale.is_empty() {
+        return Ok(());
+    }
+    for path in &stale {
+        debug!("files: removing stale link {}", path.display_user());
+        file::remove_file(path)?;
+    }
+    let needed: std::collections::HashSet<PathBuf> = needed_dirs(req)?.into_iter().collect();
+    // deepest first, so emptying a nested directory can empty its parent too
+    for dir in stale
+        .iter()
+        .filter_map(|p| p.parent())
+        .sorted_by_key(|d| std::cmp::Reverse(d.components().count()))
+        .unique()
+    {
+        let mut dir = dir;
+        while dir != req.target && dir.starts_with(&req.target) && !needed.contains(dir) {
+            if !dir.is_dir() || dir.read_dir()?.next().is_some() {
+                break;
+            }
+            file::remove_dir(dir)?;
+            match dir.parent() {
+                Some(parent) => dir = parent,
+                None => break,
+            }
+        }
+    }
+    Ok(())
+}
+
+/// remove whatever sits at `path` so it can be replaced — conflicts have
+/// already been vetted (or --force given) by the time this runs
+fn remove_existing(path: &Path) -> Result<()> {
+    if path.is_symlink() || path.is_file() {
+        file::remove_file(path)?;
+    } else if path.is_dir() {
+        file::remove_all(path)?;
+    }
+    Ok(())
+}
+
+/// `allow_windows_symlink` is false for `symlink-each`, which stays on the Windows copy path:
+/// its unapply planner is `#[cfg(not(windows))]`-guarded and falls through to the content
+/// comparison, which rejects a symlink — creating one there would make unapply demand `--force`.
+fn link_path(source: &Path, target: &Path, allow_windows_symlink: bool) -> Result<()> {
+    #[cfg(windows)]
+    if source.is_file() {
+        // Windows grants SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE when Developer Mode is
+        // on, so a file symlink is often creatable without elevation -- `windows_shim_mode`
+        // already relies on that. Try it rather than assume it fails. Junctions only cover
+        // directories, so a copy stays the fallback: it is what this did unconditionally
+        // before, and it keeps working where the privilege really is absent.
+        if allow_windows_symlink && std::os::windows::fs::symlink_file(source, target).is_ok() {
+            return Ok(());
+        }
+        file::copy(source, target)?;
+        return Ok(());
+    }
+    #[cfg(not(windows))]
+    let _ = allow_windows_symlink;
+    file::make_symlink(source, target)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_mode_parse() {
+        assert_eq!(FileMode::parse("symlink"), Some(FileMode::Symlink));
+        assert_eq!(FileMode::parse("symlink-each"), Some(FileMode::SymlinkEach));
+        assert_eq!(FileMode::parse("copy"), Some(FileMode::Copy));
+        assert_eq!(FileMode::parse("template"), Some(FileMode::Template));
+        assert_eq!(FileMode::parse("hardlink"), None);
+    }
+
+    fn patterns(patterns: &[&str]) -> Vec<glob::Pattern> {
+        patterns
+            .iter()
+            .map(|p| glob::Pattern::new(p).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn test_exclude_bare_pattern_matches_any_component() {
+        let pats = patterns(&["mise.toml"]);
+        assert!(is_excluded(Path::new("mise.toml"), &pats));
+        assert!(is_excluded(Path::new("nested/mise.toml"), &pats));
+        assert!(!is_excluded(Path::new("mise.toml.bak"), &pats));
+        assert!(!is_excluded(Path::new("other.toml"), &pats));
+    }
+
+    #[test]
+    fn test_exclude_wildcard_matches_by_component() {
+        let pats = patterns(&["*.md"]);
+        assert!(is_excluded(Path::new("README.md"), &pats));
+        assert!(is_excluded(Path::new("docs/guide.md"), &pats));
+        assert!(!is_excluded(Path::new("README.txt"), &pats));
+    }
+
+    #[test]
+    fn test_exclude_slash_pattern_is_anchored() {
+        let pats = patterns(&["nvim/spell"]);
+        assert!(is_excluded(Path::new("nvim/spell"), &pats));
+        // matching a directory takes everything under it
+        assert!(is_excluded(Path::new("nvim/spell/en.add"), &pats));
+        // but the same name elsewhere in the tree is untouched
+        assert!(!is_excluded(Path::new("config/nvim/spell"), &pats));
+        assert!(!is_excluded(Path::new("spell"), &pats));
+    }
+
+    #[test]
+    fn test_exclude_directory_component_takes_children() {
+        let pats = patterns(&[".git"]);
+        assert!(is_excluded(Path::new(".git"), &pats));
+        assert!(is_excluded(Path::new(".git/config"), &pats));
+        assert!(!is_excluded(Path::new("git/config"), &pats));
+    }
+
+    #[test]
+    fn test_exclude_empty_matches_nothing() {
+        assert!(!is_excluded(Path::new("mise.toml"), &[]));
+    }
+
+    #[test]
+    fn test_wildcard_target_expansion() {
+        let captures = wildcard_captures(
+            "/repo/dotfiles/config/*.toml",
+            Path::new("/repo/dotfiles/config/starship.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/*.toml", &captures).unwrap();
+        assert_eq!(target, PathBuf::from("/home/me/.config/starship.toml"));
+    }
+
+    #[test]
+    fn test_recursive_wildcard_target_expansion() {
+        let captures = wildcard_captures(
+            "/repo/dotfiles/config/**/*.toml",
+            Path::new("/repo/dotfiles/config/a/b/tool.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/**/*.toml", &captures).unwrap();
+        assert_eq!(target, PathBuf::from("/home/me/.config/a/b/tool.toml"));
+    }
+
+    #[test]
+    fn test_recursive_wildcard_matches_zero_directories() {
+        let captures = wildcard_captures(
+            "/repo/dotfiles/config/**/*.toml",
+            Path::new("/repo/dotfiles/config/tool.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/**/*.toml", &captures).unwrap();
+        assert_eq!(target, PathBuf::from("/home/me/.config/tool.toml"));
+    }
+
+    #[test]
+    fn test_question_mark_target_expansion() {
+        let captures = wildcard_captures(
+            "/repo/dotfiles/config/app?.toml",
+            Path::new("/repo/dotfiles/config/app1.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/app?.toml", &captures).unwrap();
+        assert_eq!(target, PathBuf::from("/home/me/.config/app1.toml"));
+    }
+
+    #[test]
+    fn test_character_class_target_expansion() {
+        let captures = wildcard_captures(
+            "/repo/dotfiles/config/theme-[ab].toml",
+            Path::new("/repo/dotfiles/config/theme-a.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern("/home/me/.config/theme-[ab].toml", &captures).unwrap();
+        assert_eq!(target, PathBuf::from("/home/me/.config/theme-a.toml"));
+    }
+
+    #[test]
+    fn test_windows_separator_wildcard_expansion() {
+        let captures = wildcard_captures(
+            r"C:\repo\dotfiles\config\*.toml",
+            Path::new(r"C:\repo\dotfiles\config\starship.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern(r"C:\Users\me\.config\*.toml", &captures).unwrap();
+        assert_eq!(
+            target,
+            PathBuf::from(native_path_separators("C:/Users/me/.config/starship.toml"))
+        );
+    }
+
+    #[test]
+    fn test_windows_separator_recursive_wildcard_expansion() {
+        let captures = wildcard_captures(
+            r"C:\repo\dotfiles\config\**\*.toml",
+            Path::new(r"C:\repo\dotfiles\config\tool.toml"),
+        )
+        .unwrap();
+        let target = expand_target_pattern(r"C:\Users\me\.config\**\*.toml", &captures).unwrap();
+        assert_eq!(
+            target,
+            PathBuf::from(native_path_separators("C:/Users/me/.config/tool.toml"))
+        );
+    }
+
+    fn link_req(source: &Path, target: &Path, mode: FileMode) -> FileRequest {
+        FileRequest {
+            target_raw: target.to_string_lossy().to_string(),
+            target: target.to_path_buf(),
+            source: source.to_path_buf(),
+            // These tests are about link and copy modes, which read the file at `source`. Inline
+            // content is the other kind of entry and has nothing to do with what they assert.
+            content: None,
+            mode,
+            exclude: vec![],
+            manifest: None,
+            base: source.parent().expect("source parent").to_path_buf(),
+            origin: ResourceOrigin {
+                config: PathBuf::from("/mise.toml"),
+                config_root: PathBuf::from("/"),
+                environment: vec![],
+                source: Some(source.to_path_buf()),
+            },
+        }
+    }
+
+    fn symlink_req(source: &Path, target: &Path) -> FileRequest {
+        link_req(source, target, FileMode::Symlink)
+    }
+
+    #[test]
+    fn composed_symlink_each_allows_disjoint_leaves() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_a = dir.path().join("a");
+        let source_b = dir.path().join("b");
+        let target = dir.path().join("target");
+        file::create_dir_all(source_a.join("conf.d"))?;
+        file::create_dir_all(source_b.join("conf.d"))?;
+        file::write(source_a.join("conf.d/a.toml"), "a")?;
+        file::write(source_b.join("conf.d/b.toml"), "b")?;
+
+        validate_composed_file_footprints(&[
+            link_req(&source_a, &target, FileMode::SymlinkEach),
+            link_req(&source_b, &target, FileMode::SymlinkEach),
+        ])?;
+        Ok(())
+    }
+
+    #[test]
+    fn reconciliation_preserves_every_active_contributor_for_selected_target() {
+        let target = PathBuf::from("/home/example");
+        let state = |source: &str, leaf: &str| SymlinkEachState {
+            version: SYMLINK_EACH_STATE_VERSION,
+            source: PathBuf::from(source),
+            target: target.clone(),
+            links: vec![ManagedLink {
+                source: PathBuf::from(source).join(leaf),
+                target: target.join(leaf),
+            }],
+        };
+        let home = state("/repo/home", ".zshrc");
+        let work = state("/repo/work", ".gitconfig");
+        let selected_targets = [target].into_iter().collect();
+
+        let reconciliation =
+            reconcile_symlink_each_states(&[home, work.clone()], &selected_targets, &[work]);
+
+        assert!(reconciliation.stale_links.is_empty());
+        assert!(reconciliation.targets.is_empty());
+    }
+
+    #[test]
+    fn reconciliation_preserves_ownership_for_missing_active_source() {
+        let target = PathBuf::from("/home/example");
+        let stored = SymlinkEachState {
+            version: SYMLINK_EACH_STATE_VERSION,
+            source: PathBuf::from("/repo/home"),
+            target: target.clone(),
+            links: vec![ManagedLink {
+                source: PathBuf::from("/repo/home/.zshrc"),
+                target: target.join(".zshrc"),
+            }],
+        };
+        let active = SymlinkEachState {
+            links: vec![],
+            ..stored.clone()
+        };
+        let selected_targets = [target].into_iter().collect();
+
+        let reconciliation = reconcile_symlink_each_states(&[active], &selected_targets, &[stored]);
+
+        assert!(reconciliation.stale_links.is_empty());
+        assert!(reconciliation.targets.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn normalized_source_matches_dangling_managed_link() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_dir = dir.path().join("profile");
+        let source = source_dir.join("../profile/.zshrc");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_dir)?;
+        file::write(&source, "managed")?;
+        std::os::unix::fs::symlink(&source, &target)?;
+        file::remove_file(&source)?;
+
+        assert!(link_points_to(&lexical_normalize(&source), &target));
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_symlink_each_state_paths_are_normalized() {
+        let state = SymlinkEachState {
+            version: SYMLINK_EACH_STATE_VERSION,
+            source: PathBuf::from("/repo/./home"),
+            target: PathBuf::from("/home/example/../example"),
+            links: vec![ManagedLink {
+                source: PathBuf::from("/repo/home/config/../.zshrc"),
+                target: PathBuf::from("/home/example/./.zshrc"),
+            }],
+        };
+
+        assert_eq!(
+            normalize_symlink_each_state(state),
+            SymlinkEachState {
+                version: SYMLINK_EACH_STATE_VERSION,
+                source: PathBuf::from("/repo/home"),
+                target: PathBuf::from("/home/example"),
+                links: vec![ManagedLink {
+                    source: PathBuf::from("/repo/home/.zshrc"),
+                    target: PathBuf::from("/home/example/.zshrc"),
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn composed_symlink_each_rejects_duplicate_state_identity() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source)?;
+        let ordinary = link_req(&source, &target, FileMode::SymlinkEach);
+        let mut git_manifest = ordinary.clone();
+        git_manifest.manifest = Some(FileManifest::Git);
+
+        let err = validate_composed_file_footprints(&[ordinary, git_manifest]).unwrap_err();
+        assert!(err.to_string().contains("conflicting symlink-each"));
+        Ok(())
+    }
+
+    #[test]
+    fn composed_symlink_each_rejects_duplicate_leaves() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_a = dir.path().join("a");
+        let source_b = dir.path().join("b");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_a)?;
+        file::create_dir_all(&source_b)?;
+        file::write(source_a.join("shared"), "a")?;
+        file::write(source_b.join("shared"), "b")?;
+
+        let err = validate_composed_file_footprints(&[
+            link_req(&source_a, &target, FileMode::SymlinkEach),
+            link_req(&source_b, &target, FileMode::SymlinkEach),
+        ])
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains(&target.join("shared").to_string_lossy().to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn composed_symlink_each_rejects_file_directory_collisions() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_a = dir.path().join("a");
+        let source_b = dir.path().join("b");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_a)?;
+        file::create_dir_all(source_b.join("shared"))?;
+        file::write(source_a.join("shared"), "a")?;
+        file::write(source_b.join("shared/nested"), "b")?;
+
+        let err = validate_composed_file_footprints(&[
+            link_req(&source_a, &target, FileMode::SymlinkEach),
+            link_req(&source_b, &target, FileMode::SymlinkEach),
+        ])
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains(&target.join("shared").to_string_lossy().to_string())
+        );
+        Ok(())
+    }
+
+    /// Nested declarations may share directories when their concrete leaves
+    /// remain disjoint.
+    #[test]
+    fn composed_file_footprints_allow_disjoint_nested_leaves() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_tree = dir.path().join("tree");
+        let source_file = dir.path().join("nested");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_tree)?;
+        file::write(source_tree.join("owned-by-tree"), "tree")?;
+        file::write(&source_file, "nested")?;
+
+        validate_composed_file_footprints(&[
+            link_req(&source_tree, &target, FileMode::Copy),
+            link_req(
+                &source_file,
+                &target.join("owned-separately"),
+                FileMode::Copy,
+            ),
+        ])?;
+        Ok(())
+    }
+
+    /// A nested whole-file declaration cannot also be owned by a directory
+    /// copy, regardless of declaration order.
+    #[test]
+    fn composed_file_footprints_reject_directory_copy_nested_leaf() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_tree = dir.path().join("tree");
+        let source_file = dir.path().join("nested");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_tree)?;
+        file::write(source_tree.join("shared"), "tree")?;
+        file::write(&source_file, "nested")?;
+        let tree = link_req(&source_tree, &target, FileMode::Copy);
+        let nested = link_req(&source_file, &target.join("shared"), FileMode::Copy);
+
+        for requests in [
+            [tree.clone(), nested.clone()],
+            [nested.clone(), tree.clone()],
+        ] {
+            let err = validate_composed_file_footprints(&requests).unwrap_err();
+            assert!(err.to_string().contains("conflicting dotfile declarations"));
+            assert!(
+                err.to_string()
+                    .contains(&target.join("shared").to_string_lossy().to_string())
+            );
+        }
+        Ok(())
+    }
+
+    /// A whole-resource leaf cannot occupy a path another declaration needs
+    /// as a directory.
+    #[test]
+    fn composed_file_footprints_reject_leaf_required_as_directory() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_tree = dir.path().join("tree");
+        let source_file = dir.path().join("nested");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_tree)?;
+        file::write(&source_file, "nested")?;
+
+        let err = validate_composed_file_footprints(&[
+            link_req(&source_tree, &target, FileMode::Symlink),
+            link_req(&source_file, &target.join("nested"), FileMode::Copy),
+        ])
+        .unwrap_err();
+        assert!(err.to_string().contains("conflicting dotfile declarations"));
+        assert!(
+            err.to_string()
+                .contains(&target.to_string_lossy().to_string())
+        );
+        Ok(())
+    }
+
+    /// A declaration whose source is unavailable still reserves its target,
+    /// preventing a filtered apply from writing a nested declaration there.
+    #[test]
+    fn composed_file_footprints_reserve_missing_source_target() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let missing = dir.path().join("missing");
+        let source_file = dir.path().join("nested");
+        let target = dir.path().join("target");
+        file::write(&source_file, "nested")?;
+
+        let err = validate_composed_file_footprints(&[
+            link_req(&missing, &target, FileMode::Copy),
+            link_req(&source_file, &target.join("nested"), FileMode::Copy),
+        ])
+        .unwrap_err();
+        assert!(err.to_string().contains("conflicting dotfile declarations"));
+        assert!(
+            err.to_string()
+                .contains(&target.to_string_lossy().to_string())
+        );
+        Ok(())
+    }
+
+    /// An unavailable symlink-each contributor reserves the shared target as
+    /// a directory, allowing a sibling's known leaves to remain composable.
+    #[test]
+    fn composed_file_footprints_keep_missing_symlink_each_directory_shaped() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let missing = dir.path().join("missing");
+        let source_tree = dir.path().join("tree");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_tree)?;
+        file::write(source_tree.join("known"), "known")?;
+
+        validate_composed_file_footprints(&[
+            link_req(&missing, &target, FileMode::SymlinkEach),
+            link_req(&source_tree, &target, FileMode::SymlinkEach),
+        ])?;
+        Ok(())
+    }
+
+    /// The fix: a file the user wrote is not mise's to replace. This used to pass on Windows,
+    /// where the entry applied and overwrote it with no `--force` and no message.
+    #[test]
+    fn an_unmanaged_file_at_the_target_is_a_conflict() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::write(&source, "managed")?;
+        file::write(&target, "the user's own file")?;
+
+        assert_eq!(
+            find_conflicts(&symlink_req(&source, &target))?,
+            vec![target]
+        );
+        Ok(())
+    }
+
+    /// The control for the test above: the two cases that must *not* start blocking. A symlink
+    /// is one mise made, so re-pointing it is the normal path and would be a regression to
+    /// refuse; a missing target has nothing to protect.
+    #[test]
+    fn a_managed_symlink_and_a_missing_target_are_not_conflicts() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "managed")?;
+
+        let absent = dir.path().join("absent");
+        assert!(find_conflicts(&symlink_req(&source, &absent))?.is_empty());
+
+        // Created directly rather than through `link_path`, which copies on Windows: the point
+        // here is what `find_conflicts` does when a symlink *is* present.
+        let link = dir.path().join("link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&source, &link)?;
+        #[cfg(windows)]
+        let created = std::os::windows::fs::symlink_file(&source, &link).is_ok();
+        #[cfg(unix)]
+        let created = true;
+        if created {
+            assert!(link.is_symlink(), "precondition: target must be a symlink");
+            assert!(find_conflicts(&symlink_req(&source, &link))?.is_empty());
+        }
+        Ok(())
+    }
+
+    /// `symlink-each` shares the predicate, so it gains the same protection: a file the user
+    /// wrote inside the target directory is not mise's to replace either. Asserted separately
+    /// because it reaches `file_link_conflicts` through `walk_source_files` rather than
+    /// directly, and the mode is the half of this change most likely to be overlooked.
+    #[test]
+    fn symlink_each_also_treats_an_unmanaged_file_as_a_conflict() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        // `file::write` does not create parents, and the target directory must already exist or
+        // `needed_dirs` would report it as its own conflict and drown the assertion.
+        file::create_dir_all(&source)?;
+        file::create_dir_all(&target)?;
+        file::write(source.join("one"), "managed")?;
+        file::write(source.join("two"), "managed")?;
+        // Only `one` is squatted on; `two` has nothing in its way.
+        file::write(target.join("one"), "the user's own file")?;
+
+        assert_eq!(
+            find_conflicts(&link_req(&source, &target, FileMode::SymlinkEach))?,
+            vec![target.join("one")]
+        );
+        Ok(())
+    }
+
+    /// A directory where a file belongs blocked before this change and still does — the
+    /// type-mismatch case is untouched.
+    #[test]
+    fn a_directory_at_the_target_is_still_a_conflict() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::write(&source, "managed")?;
+        file::create_dir_all(&target)?;
+
+        assert_eq!(
+            find_conflicts(&symlink_req(&source, &target))?,
+            vec![target]
+        );
+        Ok(())
+    }
+
+    /// `link_path` produces either a symlink or a copy on Windows depending on a privilege the
+    /// test runner may or may not have, so these assert the property that has to hold for both:
+    /// whichever form lands, `check_symlink` reads it as Applied. Branching on what actually
+    /// happened rather than on an assumed privilege keeps this meaningful on a runner without
+    /// Developer Mode, where only the copy path is exercised.
+    #[test]
+    fn link_path_result_is_recognised_whichever_form_it_takes() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let target = dir.path().join("linked");
+        file::write(&source, "contents")?;
+
+        link_path(&source, &target, true)?;
+
+        assert!(
+            target.exists() || target.is_symlink(),
+            "link_path produced nothing"
+        );
+        assert_eq!(check_symlink(&source, &target)?, FileState::Applied);
+        Ok(())
+    }
+
+    /// `symlink-each` opts out of the Windows symlink attempt, so it keeps producing a copy
+    /// there. Pinned because the two modes share `link_path`: making it symlink for everyone
+    /// would route `symlink-each` unapply through a planner that rejects symlinks.
+    #[cfg(windows)]
+    #[test]
+    fn symlink_each_still_copies_on_windows() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let target = dir.path().join("copied");
+        file::write(&source, "contents")?;
+
+        link_path(&source, &target, false)?;
+
+        assert!(
+            !target.is_symlink(),
+            "symlink-each must not create a symlink"
+        );
+        assert_eq!(file::read_to_string(&target)?, "contents");
+        Ok(())
+    }
+
+    /// The control for the test above: a target that is neither a copy of the source nor a link
+    /// to it must not read as Applied, or the assertion there would hold for the wrong reason.
+    #[test]
+    fn check_symlink_rejects_an_unrelated_file() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let target = dir.path().join("unrelated");
+        file::write(&source, "contents")?;
+        file::write(&target, "something else")?;
+
+        assert!(!matches!(
+            check_symlink(&source, &target)?,
+            FileState::Applied
+        ));
+        Ok(())
+    }
+}

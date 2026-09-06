@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+if ! command -v dotnet >/dev/null 2>&1; then
+  echo "dotnet is not installed"
+  exit 0
+fi
+
+export MISE_EXPERIMENTAL=1
+
+test() {
+  assert_contains "mise x $1 -- $2" "$3"
+}
+
+assert_not_contains "mise ls-remote dotnet:GitVersion.Tool" "-beta"
+test dotnet:GitVersion.Tool@5.12.0 "dotnet-gitversion /version" "5.12.0+Branch.support-5.x.Sha.3f75764963eb3d7956dcd5a40488c074dd9faf9e"
+test dotnet:Husky@0.7.2 "husky --version" "v0.7.2"
+
+# This command is needed if you want to reexecute the ls-remote command
+mise cache clear
+
+assert_contains "mise ls-remote 'dotnet:GitVersion.Tool[prerelease=true]'" "-beta"
+
+mise cache clear
+
+assert_contains "MISE_DOTNET_PACKAGE_FLAGS=prerelease mise ls-remote dotnet:GitVersion.Tool" "-beta"
+
+mise cache clear
+
+# Regression test for #10283: packages whose versions are all SemVer 2.0.0 (e.g.
+# roslyn-language-server) are hidden by NuGet's search API unless semVerLevel=2.0.0
+# is sent. Without that parameter the take=1 search returns a different package and
+# this errors with "Tool roslyn-language-server not found". Published NuGet versions
+# are immutable, so the asserted version is stable.
+assert_contains "mise ls-remote 'dotnet:roslyn-language-server[prerelease=true]'" "5.5.0-2.26103.6"

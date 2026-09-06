@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+error() {
+	echo "$@" >&2
+	exit 1
+}
+
+RUST_TRIPLE=${1:-$(rustc -vV | grep ^host: | cut -d ' ' -f2)}
+#region os/arch
+get_os() {
+	case "$RUST_TRIPLE" in
+	*-apple-darwin*)
+		echo "macos"
+		;;
+	*-windows-*)
+		echo "windows"
+		;;
+	*-linux-*)
+		echo "linux"
+		;;
+	*)
+		error "unsupported OS: $RUST_TRIPLE"
+		;;
+	esac
+}
+
+get_arch() {
+	case "$RUST_TRIPLE" in
+	aarch64-*)
+		echo "arm64"
+		;;
+	arm*)
+		echo "armv7"
+		;;
+	x86_64-*)
+		echo "x64"
+		;;
+	universal2-*)
+		echo "universal"
+		;;
+	*)
+		error "unsupported arch: $RUST_TRIPLE"
+		;;
+	esac
+}
+get_suffix() {
+	case "$RUST_TRIPLE" in
+	*-musl | *-musleabi | *-musleabihf)
+		echo "-musl"
+		;;
+	*)
+		echo ""
+		;;
+	esac
+}
+#endregion
+
+set -x
+os=$(get_os)
+arch=$(get_arch)
+suffix=$(get_suffix)
+version=$(./scripts/get-version.sh)
+basename=mise-$version-$os-$arch$suffix
+
+case "$os-$arch" in
+linux-arm*)
+	# don't use sccache
+	unset RUSTC_WRAPPER
+	;;
+esac
+
+features="rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored"
+if [[ $os == "linux" ]] && [[ $arch == "armv7" ]]; then
+	features="$features,aws-lc-rs"
+fi
+
+if [[ $RUST_TRIPLE == "armv7-unknown-linux-gnueabihf" ]]; then
+	# cross 0.2.5 uses Ubuntu 16.04 for this target, whose libclang 3.8 is
+	# too old for aws-lc-sys bindgen. Cross.toml installs libclang 6 here.
+	export LIBCLANG_PATH=/usr/lib/llvm-6.0/lib
+	export BINDGEN_EXTRA_CLANG_ARGS_armv7_unknown_linux_gnueabihf="--sysroot=/usr/arm-linux-gnueabihf -isystem /usr/lib/llvm-6.0/lib/clang/6.0.1/include"
+fi
+
+if [[ $os == "macos" ]]; then
+	# Targeting macOS 12+ makes ld emit chained fixups (LC_DYLD_CHAINED_FIXUPS),
+	# which dyld applies lazily per page instead of eagerly interpreting ~170k
+	# legacy rebase/bind opcodes on every launch. Measurably faster startup for
+	# a binary this large. macOS 11 (EOL since 2023) cannot run these binaries.
+	export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-12.0}
+fi
+
+if [[ -n "${MISE_BOLT:-}" ]] && [[ -z "${MISE_PGO:-}" ]]; then
+	error "MISE_BOLT requires MISE_PGO so BOLT optimizes the PGO release binary"
+fi
+
+if [[ -n "${MISE_PGO:-}" ]]; then
+	# Profile-guided optimization: instrument, train against the hermetic
+	# offline workload in scripts/pgo.bash, rebuild with the profile.
+	# Only valid for targets whose binaries can execute on this machine.
+	build_tool=cargo
+	if [[ $os == "linux" ]]; then
+		build_tool=cross
+	fi
+	MISE_PGO_BUILD_TOOL="$build_tool" MISE_PGO_TARGET="$RUST_TRIPLE" \
+		bash scripts/pgo.bash --ignore-rust-version --no-default-features --features "$features"
+elif [[ $os == "linux" ]]; then
+	cross build --profile=serious --target "$RUST_TRIPLE" --ignore-rust-version --no-default-features --features "$features"
+else
+	cargo build --profile=serious --target "$RUST_TRIPLE" --ignore-rust-version --no-default-features --features "$features"
+fi
+
+# Use CARGO_TARGET_DIR if set, otherwise default to target
+target_dir="${CARGO_TARGET_DIR:-target}"
+binary_path="$target_dir/$RUST_TRIPLE/serious/mise"
+
+if [[ -n "${MISE_BOLT:-}" ]]; then
+	case "$RUST_TRIPLE" in
+	x86_64-unknown-linux-gnu)
+		bash scripts/bolt.bash "$binary_path"
+		;;
+	*)
+		error "BOLT is only enabled for the x86_64 Linux GNU release target: $RUST_TRIPLE"
+		;;
+	esac
+fi
+
+case "$RUST_TRIPLE" in
+x86_64-unknown-linux-gnu)
+	echo "Checking glibc compatibility for Amazon Linux 2..."
+	scripts/check-glibc.sh "$binary_path" "2.26" "Amazon Linux 2"
+	;;
+aarch64-unknown-linux-gnu)
+	echo "Checking glibc compatibility for Amazon Linux 2023..."
+	scripts/check-glibc.sh "$binary_path" "2.34" "Amazon Linux 2023"
+	;;
+esac
+mkdir -p dist/mise/bin
+mkdir -p dist/mise/man/man1
+mkdir -p dist/mise/share/fish/vendor_conf.d
+cp "$target_dir/$RUST_TRIPLE/serious/mise"* dist/mise/bin
+cp README.md dist/mise/README.md
+cp LICENSE dist/mise/LICENSE
+
+if [[ $os != "windows" ]]; then
+	cp {,dist/mise/}man/man1/mise.1
+	cp {,dist/mise/}share/fish/vendor_conf.d/mise-activate.fish
+fi
+
+cd dist
+
+if [[ $os == "macos" ]]; then
+	# --options runtime and --timestamp are what the notary service requires;
+	# without them a submission comes back Invalid.
+	codesign -f --options runtime --timestamp --prefix dev.jdx. \
+		-s "Developer ID Application: Jeffrey Dickey (4993Y37DX6)" mise/bin/mise
+fi
+
+if [[ $os == "windows" ]]; then
+	zip -r "$basename.zip" mise
+	ls -oh "$basename.zip"
+else
+	tar_owner_args=(--owner=0 --group=0)
+	if tar --version 2>&1 | grep -q '^bsdtar'; then
+		# macOS ships BSD tar, whose ownership flags differ from GNU tar's.
+		tar_owner_args=(--uid 0 --gid 0 --uname root --gname root)
+	fi
+	XZ_OPT=-9 tar "${tar_owner_args[@]}" -acf "$basename.tar.xz" mise
+	tar "${tar_owner_args[@]}" -cf - mise | gzip -9 >"$basename.tar.gz"
+	ZSTD_NBTHREADS=0 ZSTD_CLEVEL=19 tar "${tar_owner_args[@]}" -acf "$basename.tar.zst" mise
+	ls -oh "$basename.tar."*
+fi

@@ -1,0 +1,170 @@
+#:schema ./schema/mise-task.json
+
+[clean]
+description = 'Clean build artifacts'
+run = 'cargo clean'
+
+[ci]
+depends = ["format", "build", "test"]
+description = "Run all CI checks"
+
+[lint]
+description = 'Run all lint checks'
+depends = ['lint:*']
+
+[build]
+alias = "b"
+run = "{{ get_env(name='MISE_CARGO_BUILD_COMMAND', default='cargo build') }} --all-features {{ get_env(name='MISE_CARGO_BUILD_EXTRA_ARGS', default='') }}"
+run_windows = "{{ get_env(name='MISE_CARGO_BUILD_COMMAND', default='cargo build') }} {{ get_env(name='MISE_CARGO_BUILD_EXTRA_ARGS', default='') }}"
+description = "Build the project"
+#sources = ["Cargo.*", "src/**/*.rs"]
+#outputs = ["target/debug/mise"]
+
+[docs]
+description = 'Start the documentation development server'
+depends = ['docs:setup']
+run = "bun run docs:dev"
+
+["docs:setup"]
+description = 'Install documentation dependencies'
+run = "bun i"
+
+["docs:build"]
+description = 'Build the documentation site'
+depends = ["docs:setup"]
+run = "bun run docs:build"
+
+["docs:preview"]
+description = 'Preview the documentation site'
+depends = ["docs:build"]
+run = "bun run docs:preview"
+
+["docs:demos"]
+description = "Create recordings with vhs"
+dir = "docs"
+run = """
+#!/usr/bin/env bash
+
+if ! docker info > /dev/null 2>&1; then
+  echo "This script uses docker, and it isn't running - please start docker and try again!"
+  exit 1
+fi
+
+vhs() {
+    docker run --rm -v $(pwd)/tapes/:/data -w /data ghcr.io/charmbracelet/vhs "$@"
+}
+
+# Create VHS recordings of all tape files in the assets directory
+for i in $(ls -1 tapes/*.tape); do
+    vhs $(basename $i .tape).tape
+done
+"""
+
+["render:usage"]
+description = 'Generate usage documentation'
+depends = ["build"]
+env = { CLICOLOR_FORCE = "0" }
+run = [
+  "mise usage > mise.usage.kdl",
+  "mise generate task-docs > tasks.md",
+  "rm -rf docs/cli && mkdir -p docs/cli",
+  "usage generate markdown -m --out-dir docs/cli --url-prefix /cli --html-encode --file mise.usage.kdl --replace-pre-with-code-fences",
+  # usage-lib renders <SUBCOMMAND> for any command with subcommands. `mise bootstrap`
+  # can run without a subcommand, so normalize the generated markdown.
+  "perl -0pi -e 's/mise bootstrap \\[FLAGS\\] <SUBCOMMAND>/mise bootstrap [FLAGS] [SUBCOMMAND]/g' docs/cli/bootstrap.md docs/cli/index.md",
+  "markdownlint --fix docs/cli",
+]
+
+["render:completions"]
+description = 'Generate shell completions'
+depends = ["build"]
+wait_for = ["render:usage"]
+env = { NO_COLOR = "1" }
+run = '''
+#!/usr/bin/env bash
+set -xeuo pipefail
+mise completion bash > completions/mise.bash
+mise completion zsh > completions/_mise
+mise completion fish > completions/mise.fish
+mise completion powershell > completions/mise.ps1
+'''
+
+["render:mangen"]
+description = 'Generate man pages'
+depends = ["render:usage"]
+env = { NO_COLOR = "1" }
+run = "usage generate manpage --file mise.usage.kdl > man/man1/mise.1"
+
+["render:help"]
+description = 'Render help documentation'
+depends = ["build"]
+# markdown-magic scans docs/cli while render:usage replaces that directory.
+# When both tasks are part of `mise run render`, wait for the replacement to finish.
+wait_for = ["render:usage"]
+env = { NO_COLOR = "1" }
+sources = ["mise"]
+outputs = ["README.md"]
+run = [
+  "mise render-help",
+  "mise run show-output-on-failure -- mise x node npm:markdown-magic -- md-magic",
+]
+
+["render:llms"]
+description = 'Generate docs/public/llms.txt (docs index for AI agents)'
+# render:usage writes docs/cli/*.md and render:help writes cli_commands.ts,
+# both of which the index is built from.
+depends = ["render:usage", "render:help"]
+sources = [
+  "docs/**/*.md",
+  "docs/.vitepress/sidebar.ts",
+  "docs/.vitepress/llms.ts",
+  # sidebar.ts builds the CLI section from this, so a render:help change to
+  # command visibility must invalidate the index even if no markdown changed.
+  "docs/.vitepress/cli_commands.ts",
+  # the title and summary come from the docs homepage hero
+  "docs/index.md",
+]
+outputs = ["docs/public/llms.txt"]
+run = "bun docs/.vitepress/llms.ts"
+
+[render]
+description = 'Run all render tasks'
+depends = ["render:*"]
+
+[snapshots]
+description = "update test snapshots"
+run = "cargo insta test --all-features --accept --unreferenced delete"
+
+[test]
+description = "run all tests"
+alias = 't'
+run = ["mise tasks run test:unit", "mise tasks run test:e2e"]
+
+["test:unit"]
+description = "run unit tests"
+run = "cargo test --all-features"
+env = { CARGO_TERM_COLOR = "always", "RUST_TEST_THREADS" = "1" }
+
+["test:e2e"]
+description = "run end-to-end tests"
+depends = ["build"]
+run = "e2e/run_all_tests"
+
+["test:shuffle"]
+description = 'Run tests with shuffling enabled'
+run = 'cargo +nightly test --all-features -- -Z unstable-options --shuffle'
+
+[install-dev]
+description = 'Install the current project in debug mode'
+run = 'cargo install --path . --debug'
+
+[pre-commit]
+description = 'Run pre-commit hooks'
+env = { PRE_COMMIT = 1 }
+run = ["mise run lint"]
+
+[flamegraph]
+description = 'Generate a flamegraph for performance analysis'
+tools = { "cargo:flamegraph" = "latest" }
+env = { CARGO_PROFILE_RELEASE_DEBUG = "true" }
+run = 'cargo flamegraph'

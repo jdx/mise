@@ -1,0 +1,66 @@
+name: docs
+
+on:
+  push:
+    paths: &docs-paths
+      - ".github/actions/**"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/docs-impl.yml"
+      - "bun.lock"
+      - "docs/**"
+      - "mise.toml"
+      - "package.json"
+      - "registry/**"
+      - "schema/**"
+      - "settings.toml"
+      - "tasks.toml"
+      - "tasks/docs/**"
+      - "xtasks/docs/**"
+    branches: [main]
+  pull_request:
+    paths: *docs-paths
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  trusted:
+    if: ${{ github.actor == 'jdx' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'jdx')) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/docs-impl.yml
+    with:
+      trusted: true
+    secrets:
+      CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+      CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+      MISE_GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+
+  untrusted:
+    if: ${{ github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx')) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/docs-impl.yml
+    with:
+      trusted: false
+
+  docs:
+    name: docs
+    if: ${{ always() && !cancelled() && github.repository == 'jdx/mise' && needs.trusted.result != 'cancelled' && needs.untrusted.result != 'cancelled' }}
+    permissions: {}
+    needs: [trusted, untrusted]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Check selected workflow result
+        env:
+          TRUSTED_RESULT: ${{ needs.trusted.result }}
+          UNTRUSTED_RESULT: ${{ needs.untrusted.result }}
+        run: |
+          if [[ "$TRUSTED_RESULT" == success && "$UNTRUSTED_RESULT" == skipped ]] ||
+             [[ "$TRUSTED_RESULT" == skipped && "$UNTRUSTED_RESULT" == success ]]; then
+            exit 0
+          fi
+          echo "trusted=$TRUSTED_RESULT untrusted=$UNTRUSTED_RESULT"
+          exit 1

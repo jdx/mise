@@ -1,0 +1,11 @@
+# Upstream ships bare per-platform binaries (cliamp-linux-amd64,
+# cliamp-darwin-arm64, ...), which mise normalises onto `cliamp`.
+#
+# The macOS binaries link dynamically against Homebrew's FLAC, Vorbis, Ogg and
+# mpg123; upstream documents `brew install flac libvorbis libogg mpg123` for the
+# release artifacts. The Linux binaries link those codecs statically.
+backends = ["github:bjarneo/cliamp"]
+bins = ["cliamp"]
+description = "Retro terminal music player inspired by Winamp"
+test = { cmd = "cliamp --version", expected = "cliamp version v{{version}}" }
+version_order = "semver"

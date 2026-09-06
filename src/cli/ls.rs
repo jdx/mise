@@ -1,0 +1,845 @@
+use chrono::{DateTime, SecondsFormat, Utc};
+use comfy_table::{Attribute, Cell, Color};
+use eyre::{Result, ensure};
+use indexmap::IndexMap;
+use itertools::Itertools;
+use serde::Serialize;
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+use versions::Versioning;
+
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
+use crate::cli::prune;
+use crate::config;
+use crate::config::Config;
+use crate::env;
+use crate::file;
+use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::{ToolRequestSet, ToolSource, ToolVersion, Toolset};
+use crate::ui::table::MiseTable;
+
+/// List installed and active tool versions
+///
+/// Lists the tools mise knows about: versions that are installed, and versions requested
+/// by a config file (active) whether or not they are installed.
+#[derive(Debug, usage_rs::Args)]
+#[usage(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub(crate) struct Ls {
+    /// Only show tool versions from [TOOL]
+    #[usage(conflicts = "tool_flag")]
+    installed_tool: Option<Vec<BackendArg>>,
+
+    /// Only show tool versions currently specified in a mise.toml
+    #[usage(long, short)]
+    current: bool,
+
+    /// Only show tool versions currently specified in the global mise.toml
+    #[usage(long, short, conflicts = "local")]
+    global: bool,
+
+    /// Only show tool versions that are installed
+    /// (Hides tools defined in mise.toml but not installed)
+    #[usage(long, short)]
+    installed: bool,
+
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Only show tool versions currently specified in the local mise.toml
+    #[usage(long, short, conflicts = "global")]
+    local: bool,
+
+    /// Display missing tool versions
+    #[usage(long, short, conflicts = "installed")]
+    missing: bool,
+
+    /// Don't fetch information such as outdated versions
+    #[usage(long, short, hide = true)]
+    offline: bool,
+
+    #[usage(long = "plugin", short = 'p', hide = true)]
+    tool_flag: Option<BackendArg>,
+
+    /// Display all tracked config sources for tools
+    #[usage(long, conflicts = &["current", "global", "local", "prunable"])]
+    all_sources: bool,
+
+    /// List tools from every [monorepo].config_roots config root
+    ///
+    /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
+    /// [monorepo].config_roots in the monorepo root config.
+    #[usage(
+        long,
+        env = "MISE_MONOREPO",
+        verbatim_doc_comment,
+        conflicts = &["all_sources", "prunable"]
+    )]
+    monorepo: bool,
+
+    /// Don't display headers
+    #[usage(long, alias = "no-headers", verbatim_doc_comment, conflicts = &["json"])]
+    no_header: bool,
+
+    /// Display whether a version is outdated
+    #[usage(long)]
+    outdated: bool,
+
+    /// Display versions matching this prefix
+    #[usage(long, requires = "installed_tool")]
+    prefix: Option<String>,
+
+    /// List only tools that can be pruned with `mise prune`
+    #[usage(long)]
+    prunable: bool,
+}
+
+impl Ls {
+    pub(crate) async fn run(mut self) -> Result<()> {
+        let config = Config::get().await?;
+        self.installed_tool = self
+            .installed_tool
+            .or_else(|| self.tool_flag.clone().map(|p| vec![p]));
+        self.verify_plugin()?;
+
+        let (mut runtimes, sources_map) = if self.prunable {
+            (self.get_prunable_runtime_list(&config).await?, None)
+        } else if self.all_sources {
+            let (runtimes, sources_map) = self.get_all_sources_runtime_list(&config).await?;
+            (runtimes, Some(sources_map))
+        } else {
+            (self.get_runtime_list(&config).await?, None)
+        };
+        if self.current || self.global || self.local {
+            // TODO: global is a little weird: it will show global versions as the active ones even if
+            // they're overridden locally
+            runtimes.retain(|(_, _, _, source)| !source.is_unknown());
+        }
+        if self.installed {
+            let mut installed_runtimes = vec![];
+            for (ls, p, tv, source) in runtimes {
+                if p.is_version_installed(&config, &tv, true) {
+                    installed_runtimes.push((ls, p, tv, source));
+                }
+            }
+            runtimes = installed_runtimes;
+        }
+        if self.missing {
+            let mut missing_runtimes = vec![];
+            for (ls, p, tv, source) in runtimes {
+                if !p.is_version_installed(&config, &tv, true) {
+                    missing_runtimes.push((ls, p, tv, source));
+                }
+            }
+            runtimes = missing_runtimes;
+        }
+        if let Some(prefix) = &self.prefix {
+            runtimes.retain(|(_, _, tv, _)| tv.version.starts_with(prefix));
+        }
+        let scheduled_removals = match crate::tool_purgatory::scheduled_removals() {
+            Ok(scheduled_removals) => scheduled_removals,
+            Err(err) => {
+                warn!("failed to read tool purgatory state: {err:#}");
+                BTreeMap::new()
+            }
+        };
+        if self.json {
+            self.display_json(&config, runtimes, sources_map.as_ref(), &scheduled_removals)
+                .await
+        } else {
+            self.display_user(&config, runtimes, sources_map.as_ref(), &scheduled_removals)
+                .await
+        }
+    }
+
+    fn verify_plugin(&self) -> Result<()> {
+        if let Some(plugins) = &self.installed_tool {
+            for ba in plugins {
+                if let Some(plugin) = ba.backend()?.plugin() {
+                    ensure!(plugin.is_installed(), "{ba} is not installed");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn display_json(
+        &self,
+        config: &Arc<Config>,
+        runtimes: Vec<RuntimeRow<'_>>,
+        sources_map: Option<&SourcesMap>,
+        scheduled_removals: &BTreeMap<PathBuf, u64>,
+    ) -> Result<()> {
+        if let Some(plugins) = &self.installed_tool {
+            // only runtimes for 1 plugin
+            let runtimes: Vec<RuntimeRow<'_>> = runtimes
+                .into_iter()
+                .filter(|(_, p, _, _)| matches_requested_tool(plugins, p.ba()))
+                .collect();
+            let mut r = vec![];
+            for row in runtimes {
+                r.push(
+                    json_tool_version_from(
+                        config,
+                        row,
+                        sources_map,
+                        self.all_sources,
+                        scheduled_removals,
+                    )
+                    .await,
+                );
+            }
+            miseprintln!("{}", serde_json::to_string_pretty(&r)?);
+            return Ok(());
+        }
+
+        let mut plugins = JSONOutput::new();
+        for (plugin_name, runtimes) in &runtimes
+            .into_iter()
+            .chunk_by(|(_, p, _, _)| p.id().to_string())
+        {
+            let mut r = vec![];
+            for (ls, p, tv, source) in runtimes {
+                r.push(
+                    json_tool_version_from(
+                        config,
+                        (ls, p, tv, source),
+                        sources_map,
+                        self.all_sources,
+                        scheduled_removals,
+                    )
+                    .await,
+                );
+            }
+            plugins.insert(plugin_name.clone(), r);
+        }
+        miseprintln!("{}", serde_json::to_string_pretty(&plugins)?);
+        Ok(())
+    }
+
+    async fn display_user<'a>(
+        &'a self,
+        config: &Arc<Config>,
+        runtimes: Vec<RuntimeRow<'a>>,
+        sources_map: Option<&SourcesMap>,
+        scheduled_removals: &BTreeMap<PathBuf, u64>,
+    ) -> Result<()> {
+        let mut rows = vec![];
+        for (ls, p, tv, source) in runtimes {
+            let sources = sources_map
+                .and_then(|map| map.get(&source_key(&tv)).cloned())
+                .unwrap_or_default();
+            let has_sources = !sources.is_empty();
+            rows.push(Row {
+                tool: p.clone(),
+                version: if self.all_sources {
+                    version_status_from_sources(config, (ls, p.as_ref(), &tv, has_sources)).await
+                } else {
+                    version_status_from(config, (ls, p.as_ref(), &tv, &source)).await
+                },
+                requested: if self.all_sources || source.is_unknown() {
+                    None
+                } else {
+                    Some(tv.request.version())
+                },
+                source: if self.all_sources || source.is_unknown() {
+                    None
+                } else {
+                    Some(source)
+                },
+                sources,
+                remove_after: scheduled_removals.get(&tv.install_path()).copied(),
+            });
+        }
+        let mut table = MiseTable::new(self.no_header, &["Tool", "Version", "Source", "Requested"]);
+        for r in rows {
+            if self.all_sources && !r.sources.is_empty() {
+                for (idx, source_entry) in r.sources.iter().enumerate() {
+                    let row = vec![
+                        if idx == 0 {
+                            r.display_tool()
+                        } else {
+                            Cell::new("")
+                        },
+                        if idx == 0 {
+                            r.display_version()
+                        } else {
+                            Cell::new("")
+                        },
+                        Cell::new(source_entry.source.to_string()),
+                        Cell::new(source_entry.requested.clone()),
+                    ];
+                    table.add_row(row);
+                }
+            } else {
+                let row = vec![
+                    r.display_tool(),
+                    r.display_version(),
+                    r.display_source(),
+                    r.display_requested(),
+                ];
+                table.add_row(row);
+            }
+        }
+        table.truncate(true).print()
+    }
+
+    /// Deliberately does *not* widen the tool filter the way the other listings do.
+    ///
+    /// `--prunable` previews `mise prune`, and both share `prune::prunable_tools`, which
+    /// matches on `BackendArg` equality. Accepting a name from another backend here would
+    /// either disagree with what `mise prune <name>` then deletes, or — if the widening
+    /// were pushed down into `prunable_tools` — make a destructive command act on an
+    /// install the user did not name. Agreeing with `prune` is the more useful of the two
+    /// consistencies.
+    async fn get_prunable_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
+        let installed_tool = self.installed_tool.clone().unwrap_or_default();
+        Ok(
+            prune::prunable_tools(config, installed_tool.iter().collect())
+                .await?
+                .into_iter()
+                .map(|(p, tv)| (self, p, tv, ToolSource::Unknown))
+                .collect(),
+        )
+    }
+    async fn get_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
+        let mut trs = if self.monorepo {
+            config.monorepo_union_tool_request_set().await?
+        } else {
+            config.get_tool_request_set().await?.clone()
+        };
+        if self.global {
+            trs = trs
+                .iter()
+                .filter(|(.., ts)| match ts {
+                    ToolSource::MiseToml(p) => config::is_global_config(p),
+                    _ => false,
+                })
+                .map(|(fa, tv, ts)| (fa.clone(), tv.clone(), ts.clone()))
+                .collect()
+        } else if self.local {
+            trs = trs
+                .iter()
+                .filter(|(.., ts)| {
+                    matches!(
+                        ts,
+                        ToolSource::MiseToml(p)
+                        | ToolSource::IdiomaticVersionFile(p)
+                        | ToolSource::ToolVersions(p)
+                        if !config::is_global_config(p)
+                    )
+                })
+                .map(|(fa, tv, ts)| (fa.clone(), tv.clone(), ts.clone()))
+                .collect()
+        }
+
+        let mut ts = Toolset::from(trs);
+        ts.resolve(config).await?;
+
+        let rvs: Vec<RuntimeRow<'_>> = ts
+            .list_all_versions(config)
+            .await?
+            .into_iter()
+            .map(|(b, tv)| ((b, tv.version.clone()), tv))
+            .filter(|((b, _), _)| match &self.installed_tool {
+                Some(p) => matches_requested_tool(p, b.ba()),
+                None => true,
+            })
+            .sorted_by_cached_key(|((plugin_name, version), _)| {
+                (
+                    plugin_name.clone(),
+                    Versioning::new(version),
+                    version.clone(),
+                )
+            })
+            .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
+            // if it isn't installed and it's not specified, don't show it -- unless there is
+            // something at its install path that simply does not resolve. A `mise link` whose
+            // target went away is that case, and hiding it is how it became impossible to find:
+            // no config names it, and `is_version_installed` resolves the link before answering.
+            .filter(|(_ls, p, tv, source)| {
+                !source.is_unknown()
+                    || p.is_version_installed(config, tv, true)
+                    || file::entry_exists(tv.install_path())
+            })
+            .filter(|(_ls, p, _, _)| match &self.installed_tool {
+                Some(backend) => matches_requested_tool(backend, p.ba()),
+                None => true,
+            })
+            .collect();
+
+        Ok(rvs)
+    }
+
+    async fn get_all_sources_runtime_list(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<(Vec<RuntimeRow<'_>>, SourcesMap)> {
+        let mut trs = ToolRequestSet::new();
+        for cf in config.get_tracked_config_files().await?.values() {
+            let cf_trs = cf.to_tool_request_set()?;
+            for (_ba, tool_requests, _source) in cf_trs.into_iter() {
+                for tr in tool_requests {
+                    trs.add_version(tr.clone(), tr.source());
+                }
+            }
+        }
+
+        let mut ts = Toolset::from(trs);
+        ts.resolve(config).await?;
+        let sources_map = collect_sources(&ts);
+
+        let rvs: Vec<RuntimeRow<'_>> = ts
+            .list_current_versions()
+            .into_iter()
+            .map(|(b, tv)| ((b, tv.version.clone()), tv))
+            .filter(|((b, _), _)| match &self.installed_tool {
+                Some(p) => matches_requested_tool(p, b.ba()),
+                None => true,
+            })
+            .sorted_by_cached_key(|((plugin_name, version), _)| {
+                (
+                    plugin_name.clone(),
+                    Versioning::new(version),
+                    version.clone(),
+                )
+            })
+            .unique_by(|(_, tv)| tv.tv_pathname())
+            .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
+            // if it isn't installed and it's not specified, don't show it -- unless there is
+            // something at its install path that simply does not resolve. A `mise link` whose
+            // target went away is that case, and hiding it is how it became impossible to find:
+            // no config names it, and `is_version_installed` resolves the link before answering.
+            .filter(|(_ls, p, tv, source)| {
+                !source.is_unknown()
+                    || p.is_version_installed(config, tv, true)
+                    || file::entry_exists(tv.install_path())
+            })
+            .filter(|(_ls, p, _, _)| match &self.installed_tool {
+                Some(backend) => matches_requested_tool(backend, p.ba()),
+                None => true,
+            })
+            .collect();
+
+        Ok((rvs, sources_map))
+    }
+}
+
+/// Whether `ba` is one of the tools named on the command line.
+///
+/// A bare name also matches an entry from another backend that installs the same binary,
+/// so `mise ls navi` shows `cargo:.../navi` next to the registry one rather than hiding
+/// it — `mise ls` with no filter already lists both (discussion #4491).
+///
+/// Spelling a backend out keeps matching only itself: `mise ls ubi:jqlang/jq` passes the
+/// whole string as the bin name, which cannot match a trailing segment.
+fn matches_requested_tool(requested: &[BackendArg], ba: &BackendArg) -> bool {
+    requested
+        .iter()
+        .any(|req| req == ba || ba.matches_bin_name(&req.short))
+}
+
+type JSONOutput = IndexMap<String, Vec<JSONToolVersion>>;
+type SourcesMap = BTreeMap<(String, String), Vec<SourceEntry>>;
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct SourceEntry {
+    source: ToolSource,
+    requested: String,
+}
+
+#[derive(Serialize)]
+struct JSONToolSource {
+    #[serde(flatten)]
+    source: IndexMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requested_version: Option<String>,
+}
+
+#[derive(Serialize)]
+struct JSONToolVersion {
+    version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requested_version: Option<String>,
+    install_path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<IndexMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sources: Option<Vec<JSONToolSource>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    symlinked_to: Option<PathBuf>,
+    /// The link at `install_path` no longer resolves.
+    ///
+    /// Omitted when false, so output for everything else is unchanged. `installed` is false for
+    /// these too — this says *why*, and distinguishes an entry that is still on disk and needs
+    /// removing from a version that was simply never installed.
+    #[serde(skip_serializing_if = "is_false")]
+    broken: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    scheduled_for_pruning: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prune_after: Option<String>,
+    installed: bool,
+    active: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+type RuntimeRow<'a> = (&'a Ls, Arc<dyn Backend>, ToolVersion, ToolSource);
+
+struct Row {
+    tool: Arc<dyn Backend>,
+    version: VersionStatus,
+    source: Option<ToolSource>,
+    requested: Option<String>,
+    sources: Vec<SourceEntry>,
+    remove_after: Option<u64>,
+}
+
+impl Row {
+    fn display_tool(&self) -> Cell {
+        Cell::new(&self.tool).fg(Color::Blue)
+    }
+    fn display_version(&self) -> Cell {
+        let annotate = |version: String| match self.remove_after {
+            Some(remove_after) => format!("{version} {}", pruning_label(remove_after)),
+            None => version,
+        };
+        match &self.version {
+            VersionStatus::Active(version, outdated) => {
+                if *outdated {
+                    Cell::new(annotate(format!("{version} (outdated)")))
+                        .fg(Color::Yellow)
+                        .add_attribute(Attribute::Bold)
+                } else {
+                    Cell::new(annotate(version.clone())).fg(Color::Green)
+                }
+            }
+            VersionStatus::Inactive(version) => {
+                Cell::new(annotate(version.clone())).add_attribute(Attribute::Dim)
+            }
+            VersionStatus::Missing(version) => Cell::new(annotate(format!("{version} (missing)")))
+                .fg(Color::Red)
+                .add_attribute(Attribute::CrossedOut),
+            VersionStatus::Symlink(version, active) => {
+                let mut cell = Cell::new(annotate(format!("{version} (symlink)")));
+                if !*active {
+                    cell = cell.add_attribute(Attribute::Dim);
+                }
+                cell
+            }
+            // Red like `Missing`, but not crossed out: the entry is still there, and the point of
+            // showing it is that the user has something to act on.
+            VersionStatus::BrokenSymlink(version) => {
+                Cell::new(annotate(format!("{version} (broken symlink)"))).fg(Color::Red)
+            }
+            VersionStatus::Shared(version, active, label) => {
+                let mut cell = Cell::new(annotate(format!("{version} ({label})")));
+                if *active {
+                    cell = cell.fg(Color::Cyan);
+                } else {
+                    cell = cell.fg(Color::Cyan).add_attribute(Attribute::Dim);
+                }
+                cell
+            }
+        }
+    }
+    fn display_source(&self) -> Cell {
+        Cell::new(match &self.source {
+            Some(source) => source.to_string(),
+            None => String::new(),
+        })
+    }
+    fn display_requested(&self) -> Cell {
+        Cell::new(match &self.requested {
+            Some(s) => s.clone(),
+            None => String::new(),
+        })
+    }
+}
+
+fn source_key(tv: &ToolVersion) -> (String, String) {
+    (tv.ba().short.to_string(), tv.tv_pathname())
+}
+
+fn collect_sources(ts: &Toolset) -> SourcesMap {
+    let mut sources_map: SourcesMap = BTreeMap::new();
+    for (ba, tvl) in ts.versions.iter() {
+        for tv in &tvl.versions {
+            let key = (ba.short.to_string(), tv.tv_pathname());
+            let entry = SourceEntry {
+                source: tv.request.source().clone(),
+                requested: tv.request.version(),
+            };
+            let entries = sources_map.entry(key).or_default();
+            if !entries.contains(&entry) {
+                entries.push(entry);
+            }
+        }
+    }
+    for entries in sources_map.values_mut() {
+        entries.sort();
+    }
+    sources_map
+}
+
+async fn json_tool_version_from(
+    config: &Arc<Config>,
+    row: RuntimeRow<'_>,
+    sources_map: Option<&SourcesMap>,
+    all_sources: bool,
+    scheduled_removals: &BTreeMap<PathBuf, u64>,
+) -> JSONToolVersion {
+    let (ls, p, tv, source) = row;
+    let sources = sources_map
+        .and_then(|map| map.get(&source_key(&tv)))
+        .filter(|entries| !entries.is_empty());
+    let vs: VersionStatus = if all_sources {
+        version_status_from_sources(config, (ls, p.as_ref(), &tv, sources.is_some())).await
+    } else {
+        version_status_from(config, (ls, p.as_ref(), &tv, &source)).await
+    };
+    let install_path = tv.install_path();
+    let prune_after = scheduled_removals
+        .get(&install_path)
+        .copied()
+        .map(format_timestamp);
+    let sources = sources
+        .map(|entries| {
+            entries
+                .iter()
+                .filter(|entry| !entry.source.is_unknown())
+                .map(|entry| JSONToolSource {
+                    source: entry.source.as_json(),
+                    requested_version: Some(entry.requested.clone()),
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|entries| !entries.is_empty());
+    JSONToolVersion {
+        // Check for symlinks directly (separate from upgrade-skip logic in symlink_path)
+        symlinked_to: if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
+            Some(install_path.clone())
+        } else {
+            None
+        },
+        install_path,
+        version: tv.version.clone(),
+        requested_version: if all_sources || source.is_unknown() {
+            None
+        } else {
+            Some(tv.request.version())
+        },
+        source: if all_sources || source.is_unknown() {
+            None
+        } else {
+            Some(source.as_json())
+        },
+        sources: if all_sources { sources } else { None },
+        broken: matches!(vs, VersionStatus::BrokenSymlink(_)),
+        scheduled_for_pruning: prune_after.is_some(),
+        prune_after,
+        // A link that leads nowhere is not an install, the same call `mise link` already makes by
+        // keeping the `incomplete` marker for one.
+        installed: !matches!(
+            vs,
+            VersionStatus::Missing(_) | VersionStatus::BrokenSymlink(_)
+        ),
+        active: match &vs {
+            VersionStatus::Active(_, _) => true,
+            VersionStatus::Symlink(_, active) => *active,
+            VersionStatus::Shared(_, active, _) => *active,
+            _ => false,
+        },
+    }
+}
+
+fn format_timestamp(timestamp: u64) -> String {
+    i64::try_from(timestamp)
+        .ok()
+        .and_then(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0))
+        .map(|timestamp| timestamp.to_rfc3339_opts(SecondsFormat::Secs, true))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn pruning_label(remove_after: u64) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let remaining = remove_after.saturating_sub(now);
+    if remaining == 0 {
+        return "(pruning pending)".to_string();
+    }
+    let (amount, unit) = if remaining >= 86_400 {
+        (remaining.div_ceil(86_400), "d")
+    } else if remaining >= 3_600 {
+        (remaining.div_ceil(3_600), "h")
+    } else if remaining >= 60 {
+        (remaining.div_ceil(60), "m")
+    } else {
+        (remaining, "s")
+    };
+    format!("(pruned in {amount}{unit})")
+}
+
+#[derive(Debug)]
+enum VersionStatus {
+    Active(String, bool),
+    Inactive(String),
+    Missing(String),
+    Symlink(String, bool),
+    /// A link that is still on disk but no longer resolves — a `mise link` whose target moved or
+    /// was deleted. Distinct from `Missing`, which is a version that was never there: this one
+    /// occupies its name and has to be removed before that name is free again.
+    BrokenSymlink(String),
+    /// Version from a shared or system install directory
+    Shared(String, bool, &'static str),
+}
+
+async fn version_status_from(
+    config: &Arc<Config>,
+    (ls, p, tv, source): (&Ls, &dyn Backend, &ToolVersion, &ToolSource),
+) -> VersionStatus {
+    resolve_version_status(config, ls, p, tv, !source.is_unknown()).await
+}
+
+async fn version_status_from_sources(
+    config: &Arc<Config>,
+    (ls, p, tv, has_sources): (&Ls, &dyn Backend, &ToolVersion, bool),
+) -> VersionStatus {
+    resolve_version_status(config, ls, p, tv, has_sources).await
+}
+
+async fn resolve_version_status(
+    config: &Arc<Config>,
+    ls: &Ls,
+    p: &dyn Backend,
+    tv: &ToolVersion,
+    active: bool,
+) -> VersionStatus {
+    let install_path = tv.install_path();
+    if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
+        // `exists()` resolves the link, so this is asking whether it still leads anywhere.
+        if install_path.exists() {
+            VersionStatus::Symlink(tv.version.clone(), active)
+        } else {
+            VersionStatus::BrokenSymlink(tv.version.clone())
+        }
+    } else if !p.is_version_installed(config, tv, true) {
+        VersionStatus::Missing(tv.version.clone())
+    } else {
+        let category = env::install_path_category(&install_path);
+        if category != env::InstallPathCategory::Local {
+            let label = match category {
+                env::InstallPathCategory::System => "system",
+                env::InstallPathCategory::Shared => "shared",
+                _ => unreachable!(),
+            };
+            return VersionStatus::Shared(tv.version.clone(), active, label);
+        }
+        if active {
+            let outdated = if ls.outdated {
+                p.is_version_outdated(config, tv).await
+            } else {
+                false
+            };
+            VersionStatus::Active(tv.version.clone(), outdated)
+        } else {
+            VersionStatus::Inactive(tv.version.clone())
+        }
+    }
+}
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise ls</bold>
+    node    20.0.0 ~/src/myapp/.tool-versions latest
+    python  3.11.0 ~/.tool-versions           3.10
+    python  3.10.0
+
+    $ <bold>mise ls --current</bold>
+    node    20.0.0 ~/src/myapp/.tool-versions 20
+    python  3.11.0 ~/.tool-versions           3.11.0
+
+    $ <bold>mise ls --json</bold>
+    {
+      "node": [
+        {
+          "version": "20.0.0",
+          "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
+          "source": {
+            "type": "mise.toml",
+            "path": "/Users/jdx/mise.toml"
+          }
+        }
+      ],
+      "python": [...]
+    }
+
+    $ <bold>mise ls --all-sources</bold>
+    node    20.0.0  ~/src/myapp/mise.toml  20
+                    ~/.config/mise/config.toml  latest
+"#
+);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ba(short: &str) -> BackendArg {
+        BackendArg::from(short.to_string())
+    }
+
+    /// The case from discussion #4491: the same tool installed twice, once from the
+    /// registry and once straight from a backend, should both answer to its name.
+    #[test]
+    fn bare_name_matches_another_backend() {
+        let requested = vec![ba("navi")];
+        assert!(matches_requested_tool(
+            &requested,
+            &ba("cargo:https://github.com/denisidoro/navi")
+        ));
+        assert!(matches_requested_tool(&requested, &ba("navi")));
+        assert!(matches_requested_tool(
+            &requested,
+            &ba("ubi:denisidoro/navi")
+        ));
+    }
+
+    /// Naming a backend is a narrowing request, so it must not pull in the others.
+    #[test]
+    fn explicit_backend_matches_only_itself() {
+        let requested = vec![ba("ubi:jqlang/jq")];
+        assert!(matches_requested_tool(&requested, &ba("ubi:jqlang/jq")));
+        assert!(!matches_requested_tool(&requested, &ba("jq")));
+    }
+
+    /// Matching is on the whole trailing segment, not a prefix, so neighbouring tool
+    /// names stay separate.
+    #[test]
+    fn unrelated_tool_does_not_match() {
+        let requested = vec![ba("node")];
+        assert!(!matches_requested_tool(&requested, &ba("npm:node-gyp")));
+        assert!(!matches_requested_tool(&requested, &ba("nodemon")));
+    }
+
+    /// A registry alias resolves before any of this, so the two spellings are already the
+    /// same `BackendArg` and match on plain equality rather than by name.
+    #[test]
+    fn registry_aliases_still_match() {
+        assert!(matches_requested_tool(&[ba("node")], &ba("nodejs")));
+        assert!(matches_requested_tool(&[ba("nodejs")], &ba("node")));
+    }
+
+    #[test]
+    fn no_filter_entries_match_nothing() {
+        assert!(!matches_requested_tool(&[], &ba("node")));
+    }
+}

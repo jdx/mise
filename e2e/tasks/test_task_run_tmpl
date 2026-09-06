@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+env.BAR = "bar"
+tasks.a = "echo {{ env.BAR }}"
+EOF
+assert "mise run a" "bar"
+
+cat <<EOF >mise.toml
+env.BAR = "a"
+tasks.a = "echo a"
+tasks.b.depends = ["{{ env.BAR }}"]
+EOF
+assert "mise run b" "a"

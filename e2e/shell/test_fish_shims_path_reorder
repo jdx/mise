@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+require_cmd fish
+
+# Resolve the mise binary directory before entering fish (which has no bash PATH)
+mise_dir=$(dirname "$(which mise)")
+
+exec fish --no-config "$TEST_DIR/fish_shims_reorder_script.fish" "$mise_dir"

@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=dummy
+
+rm -rf "$MISE_DATA_DIR/plugins/tiny"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
+
+echo "=== unset [monorepo].lockfile keeps subproject lockfiles during rollout ==="
+mkdir -p monorepo-unset/packages/a
+cat >monorepo-unset/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-unset/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+touch monorepo-unset/packages/a/mise.lock
+
+assert "cd monorepo-unset/packages/a && mise install"
+assert_contains "cat monorepo-unset/packages/a/mise.lock" '[[tools.tiny]]'
+assert_fail "test -f monorepo-unset/mise.lock"
+
+echo "=== [monorepo] lockfile = true routes subprojects to root ==="
+mkdir -p monorepo/packages/a monorepo/packages/b
+cat >monorepo/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+cat >monorepo/packages/b/mise.toml <<'EOF'
+[tools]
+tiny = "2.1.0"
+dummy = "1.0.0"
+EOF
+touch monorepo/mise.lock
+
+assert "cd monorepo/packages/a && mise install"
+assert_contains "cat monorepo/mise.lock" 'version = "1.0.0"'
+assert_fail "test -f monorepo/packages/a/mise.lock"
+
+assert "cd monorepo/packages/b && mise install"
+assert_contains "cat monorepo/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo/mise.lock" 'version = "2.1.0"'
+assert_contains "cat monorepo/mise.lock" '[[tools.dummy]]'
+assert_fail "test -f monorepo/packages/b/mise.lock"
+
+echo "=== mise lock prunes from the full monorepo view ==="
+cat >monorepo/packages/b/mise.toml <<'EOF'
+[tools]
+tiny = "2.1.0"
+EOF
+output=$(cd monorepo && mise lock --platform linux-x64 2>&1)
+assert_contains "echo '$output'" "Pruned 1 stale tool entry"
+assert_not_contains "cat monorepo/mise.lock" '[[tools.dummy]]'
+assert_contains "cat monorepo/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo/mise.lock" 'version = "2.1.0"'
+
+echo "=== subproject lockfiles migrate into root lockfiles ==="
+mkdir -p monorepo-migrate/packages/a monorepo-migrate/packages/b/.mise
+cat >monorepo-migrate/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-migrate/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+cat >monorepo-migrate/packages/a/mise.lock <<'EOF'
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:tiny"
+EOF
+cat >monorepo-migrate/packages/b/.mise/config.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+cat >monorepo-migrate/packages/b/.mise/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+
+output=$(cd monorepo-migrate && mise lock --platform linux-x64 2>&1)
+assert_contains "echo '$output'" "migrated 2 subproject lockfile"
+assert_contains "cat monorepo-migrate/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-migrate/mise.lock" '[[tools.dummy]]'
+assert_fail "test -f monorepo-migrate/packages/a/mise.lock"
+assert_fail "test -f monorepo-migrate/packages/b/.mise/mise.lock"
+
+echo "=== idiomatic roots migrate colocated lockfiles into root lockfiles ==="
+mkdir -p monorepo-idiomatic-migrate/packages/a
+cat >monorepo-idiomatic-migrate/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+echo "2" >monorepo-idiomatic-migrate/packages/a/.dummy-version
+cat >monorepo-idiomatic-migrate/packages/a/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "2.0.0"
+backend = "asdf:dummy"
+EOF
+cat >monorepo-idiomatic-migrate/packages/a/mise.ci.lock <<'EOF'
+[[tools.dummy]]
+version = "2.0.0"
+backend = "asdf:dummy"
+EOF
+
+output=$(cd monorepo-idiomatic-migrate && mise lock --platform linux-x64 2>&1)
+assert_contains "echo '$output'" "migrated 2 subproject lockfile"
+assert_contains "cat monorepo-idiomatic-migrate/mise.lock" '[[tools.dummy]]'
+assert_contains "cat monorepo-idiomatic-migrate/mise.lock" 'version = "2.0.0"'
+assert_contains "cat monorepo-idiomatic-migrate/mise.ci.lock" '[[tools.dummy]]'
+assert_contains "cat monorepo-idiomatic-migrate/mise.ci.lock" 'version = "2.0.0"'
+assert_fail "test -f monorepo-idiomatic-migrate/packages/a/mise.lock"
+assert_fail "test -f monorepo-idiomatic-migrate/packages/a/mise.ci.lock"
+
+echo "=== dry-run reads legacy subproject lockfiles without migrating ==="
+mkdir -p monorepo-dry-run/packages/a
+cat >monorepo-dry-run/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-dry-run/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "latest"
+EOF
+cat >monorepo-dry-run/packages/a/mise.lock <<'EOF'
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:tiny"
+EOF
+
+rm -rf "$MISE_DATA_DIR/installs/tiny"
+output=$(cd monorepo-dry-run/packages/a && mise install --dry-run 2>&1)
+assert_contains "echo '$output'" "tiny@1.0.0"
+assert "test -f monorepo-dry-run/packages/a/mise.lock"
+assert_fail "test -f monorepo-dry-run/mise.lock"
+
+output=$(cd monorepo-dry-run && mise lock --dry-run --platform linux-x64 2>&1)
+assert_contains "echo '$output'" "tiny@1.0.0"
+assert "test -f monorepo-dry-run/packages/a/mise.lock"
+assert_fail "test -f monorepo-dry-run/mise.lock"
+
+echo "=== install --monorepo updates colocated subproject lockfiles ==="
+mkdir -p monorepo-install-colocated/packages/a monorepo-install-colocated/packages/b
+cat >monorepo-install-colocated/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = false
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-install-colocated/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+cat >monorepo-install-colocated/packages/b/mise.toml <<'EOF'
+[tools]
+tiny = "2.1.0"
+EOF
+touch monorepo-install-colocated/packages/a/mise.lock
+touch monorepo-install-colocated/packages/b/mise.lock
+
+rm -rf "$MISE_DATA_DIR/installs/tiny"
+assert "cd monorepo-install-colocated && mise install --monorepo"
+assert_contains "cat monorepo-install-colocated/packages/a/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-install-colocated/packages/b/mise.lock" 'version = "2.1.0"'
+assert_fail "test -f monorepo-install-colocated/mise.lock"
+
+echo "=== lockfile = true still routes to root when config_roots are invalid ==="
+mkdir -p monorepo-bad-roots/packages/a
+cat >monorepo-bad-roots/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["missing/*"]
+EOF
+cat >monorepo-bad-roots/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+touch monorepo-bad-roots/mise.lock
+
+rm -rf "$MISE_DATA_DIR/installs/tiny"
+output=$(cd monorepo-bad-roots/packages/a && mise install 2>&1)
+assert_contains "echo '$output'" "lockfile = true is set"
+assert_contains "cat monorepo-bad-roots/mise.lock" 'version = "1.0.0"'
+assert_fail "test -f monorepo-bad-roots/packages/a/mise.lock"
+
+echo "=== [monorepo] lockfile = false keeps subproject lockfiles ==="
+mkdir -p monorepo-optout/packages/a
+cat >monorepo-optout/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = false
+config_roots = ["packages/*"]
+
+[tools]
+dummy = "1.0.0"
+EOF
+cat >monorepo-optout/packages/a/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+touch monorepo-optout/packages/a/mise.lock
+
+assert "cd monorepo-optout/packages/a && mise install"
+assert_contains "cat monorepo-optout/packages/a/mise.lock" '[[tools.tiny]]'
+assert_fail "test -f monorepo-optout/mise.lock"
+
+output=$(cd monorepo-optout/packages/a && mise lock --dry-run --platform linux-x64 2>&1)
+assert_contains "echo '$output'" "tiny"
+assert_not_contains "echo '$output'" "dummy"

@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname -s)" != "Linux" ]] || ! sudo -n true 2>/dev/null; then
+  echo "skipping: bootstrap account tests require Linux and passwordless sudo"
+  exit 0
+fi
+for command in useradd usermod userdel groupadd groupmod groupdel getent; do
+  if ! command -v "$command" >/dev/null && [[ ! -x "/usr/sbin/$command" ]] && [[ ! -x "/sbin/$command" ]]; then
+    echo "skipping: bootstrap account tests require shadow-utils"
+    exit 0
+  fi
+done
+
+primary_group="misebs$$_p"
+extra_group="misebs$$_x"
+managed_user="misebs$$_u"
+managed_home="$PWD/account-home"
+managed_dir="$PWD/account-data"
+managed_file="$managed_dir/config"
+collision_group="misebs$$_c"
+collision_user="misebs$$_cu"
+replacement_group="misebs$$_r"
+
+cleanup_accounts() {
+  sudo userdel --remove "$managed_user" >/dev/null 2>&1 || true
+  sudo groupdel "$extra_group" >/dev/null 2>&1 || true
+  sudo groupdel "$primary_group" >/dev/null 2>&1 || true
+}
+trap cleanup_accounts EXIT
+
+# Numeric ID collisions are visible in dry runs and fail closed on apply.
+cat <<EOF >mise.toml
+[bootstrap.groups.$collision_group]
+gid = 0
+EOF
+assert_contains "mise bootstrap accounts apply --dry-run --yes 2>&1" "manual action required"
+assert_fail "mise bootstrap accounts apply --yes" "refusing unsafe change"
+assert_fail "getent group $collision_group"
+
+# Files cannot treat an unsafe account plan as a principal that will exist
+# after the accounts phase.
+cat <<EOF >mise.toml
+[bootstrap.users.$collision_user]
+uid = $(id -u)
+group = "$(id -gn)"
+
+[bootstrap.files."$PWD/unsafe-owner"]
+content = "unsafe"
+owner = "$collision_user"
+EOF
+assert_fail "mise bootstrap --only accounts,files --dry-run --yes" "bootstrap user cannot be safely converged"
+assert_fail "test -e $PWD/unsafe-owner"
+
+cat <<EOF >mise.toml
+[bootstrap.groups.$primary_group]
+system = true
+
+[bootstrap.groups.$extra_group]
+system = true
+
+[bootstrap.users.$managed_user]
+system = true
+group = "$primary_group"
+groups = ["$extra_group"]
+home = "$managed_home"
+shell = "/bin/sh"
+comment = "mise bootstrap account"
+create_home = true
+
+[bootstrap.directories."$managed_dir"]
+owner = "$managed_user"
+group = "$primary_group"
+mode = "0750"
+
+[bootstrap.files."$managed_file"]
+content = "managed"
+owner = "$managed_user"
+group = "$primary_group"
+mode = "0640"
+EOF
+
+assert_contains "mise bootstrap accounts apply --dry-run --yes" "would create group $primary_group"
+assert_contains "mise bootstrap plan --json" '"kind": "user"'
+assert_contains "mise bootstrap plan --json" '"kind": "group"'
+assert_contains "mise bootstrap plan --json" '"depends_on"'
+assert_fail "mise bootstrap --only files --dry-run --yes" "user '$managed_user' does not exist"
+assert_fail "mise bootstrap files status" "user '$managed_user' does not exist"
+assert_fail "mise bootstrap status" "user '$managed_user' does not exist"
+assert_succeed "mise bootstrap --only accounts,files --yes"
+assert_succeed "getent passwd $managed_user"
+assert_succeed "getent group $primary_group"
+assert_directory_exists "$managed_home"
+assert "sudo stat -c %U:%G $managed_file" "$managed_user:$primary_group"
+assert_succeed "mise bootstrap accounts status --missing"
+assert_succeed "mise bootstrap files status --missing"
+assert_succeed "mise bootstrap --only accounts,files --yes"
+
+# A group cannot be removed until a present user has moved off it.
+cat <<EOF >mise.toml
+[bootstrap.groups.$primary_group]
+state = "absent"
+
+[bootstrap.groups.$replacement_group]
+system = true
+
+[bootstrap.users.$managed_user]
+group = "$replacement_group"
+EOF
+assert_succeed "mise bootstrap plan --json | jq -e '([.resources[].id | (.kind + \":\" + .name)] | index(\"user:$managed_user\")) < ([.resources[].id | (.kind + \":\" + .name)] | index(\"group:$primary_group\"))'"
+
+# Account removals are preflighted against dependent files before any mutation.
+cat <<EOF >mise.toml
+[bootstrap.users.$managed_user]
+state = "absent"
+
+[bootstrap.groups.$primary_group]
+state = "absent"
+
+[bootstrap.files."$managed_file"]
+content = "still managed"
+owner = "$managed_user"
+group = "$primary_group"
+EOF
+assert_fail "mise bootstrap --only accounts,files --yes" "bootstrap user is absent"
+assert_fail "mise bootstrap files apply --dry-run --yes" "bootstrap user is absent"
+assert_fail "mise bootstrap --only files --dry-run --yes" "bootstrap user is absent"
+assert_fail "mise bootstrap files status" "bootstrap user is absent"
+assert_fail "mise bootstrap status" "bootstrap user is absent"
+assert_succeed "getent passwd $managed_user"
+assert_succeed "getent group $primary_group"
+
+# Updates can manage fields and either append to or exactly converge groups.
+cat <<EOF >mise.toml
+[bootstrap.groups.$primary_group]
+system = true
+
+[bootstrap.groups.$extra_group]
+system = true
+
+[bootstrap.users.$managed_user]
+system = true
+group = "$primary_group"
+groups = []
+exclusive_groups = true
+home = "$managed_home"
+shell = "/bin/false"
+comment = "updated by mise"
+create_home = true
+EOF
+assert_succeed "mise bootstrap accounts apply --yes"
+assert "getent passwd $managed_user | cut -d: -f5" "updated by mise"
+assert "getent passwd $managed_user | cut -d: -f7" "/bin/false"
+assert_not_contains "id -nG $managed_user" "$extra_group"
+
+# Removal preserves homes by default and deletes them only with explicit opt-in.
+cat <<EOF >mise.toml
+[bootstrap.users.$managed_user]
+state = "absent"
+remove_home = true
+
+[bootstrap.groups.$extra_group]
+state = "absent"
+
+[bootstrap.groups.$primary_group]
+state = "absent"
+
+[bootstrap.files."$managed_file"]
+state = "absent"
+
+[bootstrap.directories."$managed_dir"]
+state = "absent"
+EOF
+assert_succeed "mise bootstrap --only accounts,files --yes"
+assert_fail "getent passwd $managed_user"
+assert_fail "getent group $primary_group"
+assert_fail "getent group $extra_group"
+assert_directory_not_exists "$managed_home"
+assert_directory_not_exists "$managed_dir"

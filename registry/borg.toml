@@ -1,0 +1,4 @@
+backends = ["aqua:borgbackup/borg", "asdf:lwiechec/asdf-borg"]
+description = "Deduplicating archiver with compression and authenticated encryption"
+test = { cmd = "borg --version", expected = "borg {{version}}" }
+version_order = "source"

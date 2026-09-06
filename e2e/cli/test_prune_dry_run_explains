@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# `mise prune` removes a version because *nothing* tracked resolved to it, so
+# the plain output has nothing to point at. --dry-run names the tracked configs
+# instead. https://github.com/jdx/mise/discussions/9045
+
+# Installed on its own, so no tracked config mentions dummy at all.
+assert "mise install dummy@1.0.0"
+assert_contains "mise prune --dry-run 2>&1" \
+  "dummy@1.0.0 is prunable: no tracked config or tool stub requires dummy"
+
+# Now a tracked config pins a different version: report that version and the
+# file it came from, which is the actual reason 1.0.0 is unreferenced. Match on
+# the directory name rather than the full path — macOS resolves the temporary
+# directory through /private, so the recorded path is not literally $project.
+project="$(mktemp -d)"
+cd "$project" || exit 1
+assert "mise use dummy@2.0.0"
+cd "$(mktemp -d)" || exit 1
+assert_contains "mise prune --dry-run 2>&1" \
+  "dummy@1.0.0 is prunable: dummy is required at 2.0.0 by "
+assert_contains "mise prune --dry-run 2>&1" "$(basename "$project")/mise.toml"
+
+# --dry-run-code previews the same removals, so it explains them too.
+assert_fail_contains "mise prune --dry-run-code 2>&1" "dummy@1.0.0 is prunable:"
+
+# A real prune is unchanged: it acts rather than explains.
+MISE_YES=1 assert_not_contains "mise prune 2>&1" "is prunable:"
+assert_fail "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert "ls $MISE_DATA_DIR/installs/dummy/2.0.0"

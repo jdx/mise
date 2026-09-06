@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.source = "{{ env.MISE_CONFIG_DIR }}/source.sh"
+EOF
+
+cat >"$MISE_CONFIG_DIR/source.sh" <<EOF
+export MISE_TEST_SOURCE=1234
+export PATH="$HOME/newbin:$PATH"
+EOF
+
+assert "mise env -s bash | grep MISE_TEST_SOURCE" "export MISE_TEST_SOURCE=1234"
+assert_contains "mise env -s bash | grep PATH" "export PATH='$HOME/newbin:"
+
+# Verify that sourcing a script that prepends to PATH does not inject the config root
+# See: https://github.com/jdx/mise/discussions/8931
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.source = "{{ env.MISE_CONFIG_DIR }}/source.sh"
+EOF
+
+cat >"$MISE_CONFIG_DIR/source.sh" <<EOF
+export PATH="/custom-test-dir:\$PATH"
+EOF
+
+assert_not_contains "mise env -s bash | grep PATH" "$MISE_CONFIG_DIR"
+
+# PATH changes other than prepends are intentionally unsupported. Appending must not be
+# misinterpreted as a prepend or leak into the activated environment.
+cat >"$MISE_CONFIG_DIR/source.sh" <<EOF
+export PATH="\$PATH:/unsupported-append-test-dir"
+EOF
+
+assert_not_contains "mise env -s bash | grep PATH" "/unsupported-append-test-dir"
+
+# Env vars exported by `_.source` are visible to a later `_.path` template.
+# Directives inside `[env]._` now resolve in the order they are written, so
+# `_.source` (written first) runs before `_.path`. Regression test for
+# https://github.com/jdx/mise/discussions/3783
+cat >"$MISE_CONFIG_DIR/source.sh" <<EOF
+export MISE_TEST_SOURCE=1234
+EOF
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.source = "{{ env.MISE_CONFIG_DIR }}/source.sh"
+_.path = [
+    "/{{ env.MISE_TEST_SOURCE }}",
+]
+EOF
+
+assert_contains "mise env -s bash | grep PATH" "export PATH='/1234:"

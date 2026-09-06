@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# shellcheck disable=SC2016
+
+export MISE_SHIMS_DIR="$HOME/.local/share/mise/user-shims"
+
+# The environment `mise env` prints places the shim farms on PATH for lazy
+# declarations, and the eval'd shell that consumes it has no command-not-found
+# handler to fall back on (discussion #12678). Evaluating the printed env must
+# therefore leave working bootstrap shims behind, exactly like the env mise
+# builds for tasks and `mise x`.
+case ":$PATH:" in
+  *":$MISE_SHIMS_DIR:"*) fail "expected user shims to be absent from PATH: $PATH" ;;
+esac
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] }
+EOF
+assert_fail "test -e '$MISE_SHIMS_DIR/dummy'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+
+mise_path="$(MISE_NOT_FOUND_AUTO_INSTALL=0 mise env -s bash | sed -n 's/^export PATH=//p' | tr -d "'\"")"
+case "$mise_path" in
+  *"$MISE_SHIMS_DIR:"*) ;;
+  *) fail "expected the shim farm in the printed PATH: $mise_path" ;;
+esac
+# printing the env must not install lazy tools eagerly; the install must
+# happen only when the evaluated shell actually runs one of their commands
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+
+# Evaluating the printed env installs the lazy tool the first time one of its
+# commands runs, the same way it does in a task or `mise x` child.
+assert_contains 'eval "$(MISE_NOT_FOUND_AUTO_INSTALL=0 mise env -s bash)" && dummy --version' "This is Dummy 1.0.0"
+assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"

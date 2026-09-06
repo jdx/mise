@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+# Test that ruby.compile=false requires precompiled binaries with no ruby-build fallback
+export MISE_RUBY_COMPILE=false
+
+# 1.9.3 is a ruby-build definition that will never have a precompiled binary, so the
+# install must fail instead of quietly compiling from source
+assert_fail_contains "mise install ruby@1.9.3" "no precompiled ruby found"
+
+# fuzzy versions only resolve to versions that actually have a precompiled binary
+assert_not_contains "mise ls-remote ruby" "1.9.3"
+assert_contains "mise ls-remote ruby" "3.4."

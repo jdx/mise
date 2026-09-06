@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+FIXTURES="$TMPDIR/http-system-install-fixtures"
+PORT_FILE="$TMPDIR/http-system-install-port"
+SYSTEM_DATA="$HOME/.local/share/mise-system-http"
+SYSTEM_INSTALLS="$SYSTEM_DATA/installs"
+SHARED_INSTALLS="$HOME/.local/share/mise-shared-http"
+USER_INSTALLS="$MISE_DATA_DIR/installs"
+
+mkdir -p "$FIXTURES/archive/bin"
+cat >"$FIXTURES/archive/bin/system-archive" <<'EOF'
+#!/usr/bin/env bash
+echo system-archive-ok
+EOF
+chmod +x "$FIXTURES/archive/bin/system-archive"
+tar czf "$FIXTURES/system-archive.tar.gz" -C "$FIXTURES" archive
+
+mkdir -p "$FIXTURES/install-into-exact/bin"
+cat >"$FIXTURES/install-into-exact/bin/system-archive" <<'EOF'
+#!/usr/bin/env bash
+echo install-into-exact-ok
+EOF
+chmod +x "$FIXTURES/install-into-exact/bin/system-archive"
+tar czf "$FIXTURES/install-into-exact.tar.gz" -C "$FIXTURES" install-into-exact
+
+mkdir -p "$FIXTURES/shared-archive/bin"
+cat >"$FIXTURES/shared-archive/bin/shared-archive" <<'EOF'
+#!/usr/bin/env bash
+echo shared-archive-ok
+EOF
+chmod +x "$FIXTURES/shared-archive/bin/shared-archive"
+tar czf "$FIXTURES/shared-archive.tar.gz" -C "$FIXTURES" shared-archive
+
+cat >"$FIXTURES/system-raw" <<'EOF'
+#!/usr/bin/env bash
+echo system-raw-ok
+EOF
+chmod +x "$FIXTURES/system-raw"
+printf 'latest\n' >"$FIXTURES/versions.txt"
+printf '1.0.0\n' >"$FIXTURES/exact-versions.txt"
+
+python3 -u - "$FIXTURES" "$PORT_FILE" <<'PY' >/dev/null 2>&1 &
+import functools
+import http.server
+import socketserver
+import sys
+from pathlib import Path
+
+root = sys.argv[1]
+port_file = Path(sys.argv[2])
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
+with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
+    port_file.write_text(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+wait_for_file "$PORT_FILE" "HTTP system install test server port file" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+export MISE_SYSTEM_DATA_DIR="$SYSTEM_DATA"
+export MISE_SHARED_INSTALL_DIRS="$SHARED_INSTALLS"
+
+cat >mise.toml <<EOF
+[tools."http:system-archive"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/system-archive.tar.gz"
+bin_path = "archive/bin"
+EOF
+
+mise install --system
+
+SYSTEM_ARCHIVE="$SYSTEM_INSTALLS/http-system-archive/1.0.0"
+assert_directory_exists "$SYSTEM_ARCHIVE"
+assert "test ! -L '$SYSTEM_ARCHIVE' && echo directory" directory
+assert "test ! -e '$USER_INSTALLS/http-system-archive/1.0.0' && test ! -L '$USER_INSTALLS/http-system-archive/1.0.0' && echo missing" missing
+assert_contains "mise x -- system-archive" system-archive-ok
+assert "mise ls --json http:system-archive | jq -r '.[0].install_path'" "$SYSTEM_ARCHIVE"
+
+# Explicit destinations contain the real installation and leave no hidden cache.
+assert "test ! -e '$SYSTEM_INSTALLS/http-system-archive/.http-tarballs' && echo missing" missing
+rm -rf "$MISE_DATA_DIR/http-tarballs"
+assert_contains "mise x -- system-archive" system-archive-ok
+
+cat >mise.toml <<EOF
+[tools."http:system-raw"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/system-raw"
+bin = "system-raw"
+bin_path = "bin"
+EOF
+
+mise install --system
+
+SYSTEM_RAW="$SYSTEM_INSTALLS/http-system-raw/1.0.0/bin/system-raw"
+assert "test -f '$SYSTEM_RAW' && test ! -L '$SYSTEM_RAW' && echo file" file
+assert_contains "mise x -- system-raw" system-raw-ok
+
+cat >mise.toml <<EOF
+[tools."http:shared-archive"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/shared-archive.tar.gz"
+bin_path = "shared-archive/bin"
+EOF
+
+mise install --shared "$SHARED_INSTALLS"
+
+SHARED_ARCHIVE="$SHARED_INSTALLS/http-shared-archive/1.0.0"
+assert_directory_exists "$SHARED_ARCHIVE"
+assert "test ! -L '$SHARED_ARCHIVE' && echo directory" directory
+assert "test ! -e '$USER_INSTALLS/http-shared-archive/1.0.0' && test ! -L '$USER_INSTALLS/http-shared-archive/1.0.0' && echo missing" missing
+assert_contains "mise x -- shared-archive" shared-archive-ok
+assert "mise ls --json http:shared-archive | jq -r '.[0].install_path'" "$SHARED_ARCHIVE"
+assert "test ! -e '$SHARED_INSTALLS/http-shared-archive/.http-tarballs' && echo missing" missing
+
+# Discovering an existing shared install must not redirect a normal forced
+# reinstall into the shared destination, or remove the shared installation.
+rm -rf "$MISE_DATA_DIR/http-tarballs"
+mise install --force
+
+USER_ARCHIVE="$USER_INSTALLS/http-shared-archive/1.0.0"
+assert "test -L '$USER_ARCHIVE' && echo symlink" symlink
+assert_directory_exists "$MISE_DATA_DIR/http-tarballs"
+assert_contains "'$SHARED_ARCHIVE/shared-archive/bin/shared-archive'" shared-archive-ok
+
+# Relative shared destinations are resolved before installation, so their
+# contents never depend on the symlink's working directory.
+RELATIVE_SHARED="$PWD/relative-shared"
+mise install --shared relative-shared --force
+assert_contains "'$RELATIVE_SHARED/http-shared-archive/1.0.0/shared-archive/bin/shared-archive'" shared-archive-ok
+
+# latest keeps a content-derived real directory and an alias inside the system tree.
+cat >mise.toml <<EOF
+[tools."http:system-latest"]
+version = "latest"
+url = "http://127.0.0.1:$PORT/system-archive.tar.gz"
+version_list_url = "http://127.0.0.1:$PORT/versions.txt"
+bin_path = "archive/bin"
+EOF
+
+# A primary latest installation and runtime alias must not redirect discovery
+# or validation away from an explicitly requested system destination.
+mise install
+USER_LATEST="$USER_INSTALLS/http-system-latest/latest"
+assert "test -L '$USER_LATEST' && echo symlink" symlink
+
+mise install --system --force
+SYSTEM_LATEST="$SYSTEM_INSTALLS/http-system-latest/latest"
+assert "test -L '$SYSTEM_LATEST' && echo symlink" symlink
+assert "test -d '$SYSTEM_LATEST' && echo directory" directory
+assert_contains "'$SYSTEM_LATEST/archive/bin/system-archive'" system-archive-ok
+
+# Install the same tool normally first and create a fuzzy runtime alias. Exact
+# install-into binary discovery must not remap through this existing install.
+mise install \
+  "http:install-into[url=http://127.0.0.1:$PORT/system-archive.tar.gz,bin_path=archive/bin,version_list_url=http://127.0.0.1:$PORT/exact-versions.txt]@1.0.0"
+
+# install-into is also self-contained and does not link into the user's cache.
+INSTALL_INTO="$HOME/http-install-into"
+mise install-into \
+  "http:install-into[url=http://127.0.0.1:$PORT/install-into-exact.tar.gz,bin_path=install-into-exact/bin,version_list_url=http://127.0.0.1:$PORT/exact-versions.txt]@1" \
+  "$INSTALL_INTO"
+assert_directory_exists "$INSTALL_INTO"
+assert "test ! -L '$INSTALL_INTO' && echo directory" directory
+assert "test ! -e '$HOME/1.0.0' && test ! -L '$HOME/1.0.0' && echo missing" missing
+rm -rf "$MISE_DATA_DIR/http-tarballs"
+assert_contains "'$INSTALL_INTO/install-into-exact/bin/system-archive'" install-into-exact-ok

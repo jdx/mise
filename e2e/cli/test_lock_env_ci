@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# Test that env-specific tools are NOT installed when MISE_ENV is unset.
+# Demonstrates that CI running `mise install --locked` without MISE_ENV
+# will not pick up dev tools from mise.dev.toml.
+
+export MISE_LOCKFILE=1
+
+echo "=== Setup: create base + dev configs ==="
+
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "1"
+EOF
+
+cat >mise.dev.toml <<'EOF'
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+
+rm -f mise.lock mise.dev.lock
+
+# Generate lockfile with dev env active
+assert "MISE_ENV=dev mise lock --platform linux-x64"
+
+# Verify base tool is in mise.lock, NOT in mise.dev.lock
+assert_contains "cat mise.lock" '[[tools.tiny]]'
+assert_not_contains "cat mise.lock" 'jqlang/jq'
+
+# Verify dev tool is in mise.dev.lock, NOT in mise.lock
+assert_contains "cat mise.dev.lock" 'jqlang/jq'
+assert_not_contains "cat mise.dev.lock" '[[tools.tiny]]'
+
+# Neither lockfile should have env fields
+assert_not_contains "cat mise.lock" 'env = '
+assert_not_contains "cat mise.dev.lock" 'env = '
+
+echo "=== CI scenario: mise install --locked without MISE_ENV ==="
+
+# Simulate CI: no MISE_ENV set, only mise.toml is loaded
+# mise ls should only show tiny, not jq
+output=$(mise ls 2>&1)
+assert_contains "echo '$output'" "tiny"
+assert_not_contains "echo '$output'" "jq"
+
+echo "=== Verify: with MISE_ENV=dev, both tools are visible ==="
+
+output=$(MISE_ENV=dev mise ls 2>&1)
+assert_contains "echo '$output'" "tiny"
+assert_contains "echo '$output'" "jq"
+
+echo "=== Cleanup ==="
+rm -f mise.lock mise.dev.lock mise.toml mise.dev.toml
+
+echo "mise lock env CI isolation test passed!"

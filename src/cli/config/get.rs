@@ -1,0 +1,105 @@
+use crate::config::{
+    ConfigPathOptions, resolve_target_config_path, system_config_path, top_toml_config,
+};
+use crate::file::display_path;
+use eyre::bail;
+use std::path::PathBuf;
+
+/// Display a value from a mise.toml file
+#[derive(Debug, usage_rs::Args)]
+#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+pub(super) struct ConfigGet {
+    /// Dotted key path to display, e.g. `tools.python`; omit to print the whole file
+    pub key: Option<String>,
+
+    /// The path to the mise.toml file to read
+    ///
+    /// Can be a file path or directory. If a directory is provided, the config file in that directory is used.
+    ///
+    /// If not provided, the nearest mise.toml file will be used
+    #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
+    pub file: Option<PathBuf>,
+
+    /// Read the global config file.
+    #[usage(long, short = 'g', conflicts = ["file", "system"])]
+    pub global: bool,
+
+    /// Read the system config file.
+    #[usage(long, conflicts = ["file", "global"])]
+    pub system: bool,
+}
+
+impl ConfigGet {
+    pub(super) fn run(self) -> eyre::Result<()> {
+        // Only an explicitly named target goes through the shared resolver — the default is a
+        // different rule (the top TOML config of the loaded set, not the nearest writable one).
+        let file = match self.file {
+            Some(path) => Some(resolve_target_config_path(ConfigPathOptions {
+                path: Some(path),
+                prefer_toml: true,
+                ..Default::default()
+            })?),
+            None if self.global => Some(resolve_target_config_path(ConfigPathOptions {
+                global: true,
+                prefer_toml: true,
+                ..Default::default()
+            })?),
+            None if self.system => Some(system_config_path()),
+            None => top_toml_config(),
+        };
+        if let Some(file) = file {
+            if !file.exists() {
+                bail!("config file not found: {}", display_path(&file));
+            }
+            let content = std::fs::read_to_string(&file)?;
+            let config: toml::Value = toml::de::from_str(&content)?;
+            let mut value = &config;
+            if let Some(key) = &self.key {
+                for k in key.split('.') {
+                    value = value.get(k).ok_or_else(|| {
+                        eyre::eyre!("Key not found: {} in {}", key, display_path(&file))
+                    })?;
+                }
+            }
+
+            match value {
+                toml::Value::String(s) => miseprintln!("{}", s),
+                toml::Value::Integer(i) => miseprintln!("{}", i),
+                toml::Value::Boolean(b) => miseprintln!("{}", b),
+                toml::Value::Float(f) => miseprintln!("{}", f),
+                toml::Value::Datetime(d) => miseprintln!("{}", d),
+                toml::Value::Array(a) => {
+                    // seems that the toml crate does not have a way to serialize an array directly?
+                    // workaround which only handle non-nested arrays
+                    let elements: Vec<String> = a
+                        .iter()
+                        .map(|v| match v {
+                            toml::Value::String(s) => format!("\"{s}\""),
+                            toml::Value::Integer(i) => i.to_string(),
+                            toml::Value::Boolean(b) => b.to_string(),
+                            toml::Value::Float(f) => f.to_string(),
+                            toml::Value::Datetime(d) => d.to_string(),
+                            toml::Value::Array(_) => "[...]".to_string(),
+                            toml::Value::Table(_) => "{...}".to_string(),
+                        })
+                        .collect();
+                    miseprintln!("[{}]", elements.join(", "));
+                }
+                toml::Value::Table(t) => {
+                    miseprintln!("{}", toml::to_string(t)?);
+                }
+            }
+        } else {
+            bail!("No mise.toml file found");
+        }
+        Ok(())
+    }
+}
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise toml get tools.python</bold>
+    3.12
+"#
+);

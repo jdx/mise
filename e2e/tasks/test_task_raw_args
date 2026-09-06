@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+# Tests for the raw_args opt-in and the `-- --help` passthrough escape hatch.
+# See https://github.com/jdx/mise/discussions/5460
+
+cat <<'EOF' >mise.toml
+[tasks.proxy]
+raw_args = true
+run = 'echo "got:$@"'
+
+[tasks.spec_proxy]
+raw_args = true
+usage = '''
+arg "[args]" var=#true
+'''
+run = 'echo "got:$@"'
+
+[tasks.normal]
+usage = '''
+arg "[args]" var=#true
+'''
+run = 'echo "got:${usage_args}"'
+EOF
+
+# raw_args: --help is forwarded to the script instead of being intercepted by mise
+assert "mise run proxy --help" "got: --help"
+assert "mise run proxy -h" "got: -h"
+assert "mise proxy --help" "got: --help"
+
+# raw_args: arbitrary flags pass through unchanged
+assert "mise run proxy --foo bar baz" "got: --foo bar baz"
+
+# raw_args also works when a usage spec is defined (parser is still bypassed)
+assert "mise run spec_proxy --help" "got: --help"
+
+# Bug fix: `-- --help` now bypasses the usage parser even without raw_args.
+# Previously the usage crate intercepted --help regardless of `--`.
+assert "mise run normal -- --help" "got: --help"
+assert "mise run normal -- -h" "got: -h"
+
+# Without `--` and without raw_args, mise still owns --help (no regression)
+assert_contains "mise run normal --help 2>&1 || true" "Usage: normal"
+
+# A second `--` is task-side data after the mise boundary. It should be
+# forwarded along with --help instead of being consumed by the task usage parser.
+assert "mise run -q normal -- -- --help 2>&1" "got: -- --help"
+
+# File-based task with raw_args=true: shebang script gets real positional
+# parameters, so $@ actually receives the forwarded args (unlike inline
+# TOML scripts where args are appended to the command string).
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/file_proxy
+#!/usr/bin/env bash
+#MISE raw_args=true
+echo "got:$*"
+EOF
+chmod +x mise-tasks/file_proxy
+assert "mise run file_proxy --help" "got:--help"
+assert "mise run file_proxy migrate --fake" "got:migrate --fake"

@@ -1,0 +1,36 @@
+self-hosted-runner:
+  # Labels of self-hosted runner in array of strings.
+  labels:
+    - jdx-perf-v1
+    - bamboo-perf
+    - macos-14
+    - namespace-profile-endev-macos-arm64
+    - namespace-profile-endev-macos-arm64;overrides.cache-tag=cache
+    - namespace-profile-endev-macos-arm64-large;overrides.cache-tag=cache
+    - namespace-profile-endev-linux-amd64;overrides.cache-tag=cache
+    - namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache
+    - namespace-profile-endev-linux-amd64-xlarge
+    - namespace-profile-endev-linux-amd64-xlarge;overrides.cache-tag=cache
+    - namespace-profile-endev-linux-amd64
+    - buildjet-32vcpu-ubuntu-2204-arm
+    - buildjet-16vcpu-ubuntu-2204-arm
+    - buildjet-8vcpu-ubuntu-2204-arm
+    - buildjet-4vcpu-ubuntu-2204-arm
+    - buildjet-2vcpu-ubuntu-2204-arm
+    - buildjet-32vcpu-ubuntu-2204
+    - buildjet-16vcpu-ubuntu-2204
+    - buildjet-8vcpu-ubuntu-2204
+    - buildjet-4vcpu-ubuntu-2204
+    - buildjet-2vcpu-ubuntu-2204
+
+# Configuration variables in array of strings defined in your repository or
+# organization. `null` means disabling configuration variables check.
+# Empty array means no configuration variable is allowed.
+config-variables: null
+
+paths:
+  .github/workflows/test-impl.yml:
+    # actionlint 1.7.12 predates GitHub's native parallel step groups.
+    # Remove this once actionlint recognizes the `parallel` keyword.
+    ignore:
+      - 'step must run script with "run" section or run action with "uses" section'

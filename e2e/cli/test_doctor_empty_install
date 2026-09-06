@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# An interrupted download can leave the install directory in place but empty.
+# `is_version_installed` decides on path existence alone, so mise reports the
+# tool as installed and doctor used to say nothing about it.
+# https://github.com/jdx/mise/discussions/9324
+
+mise use dummy@1.0.0
+
+# `mise doctor` exits non-zero whenever it finds any problem, and this harness
+# has unrelated ones (mise is not activated here), so assert on the text only.
+assert_not_contains "mise doctor 2>&1 || true" "directory is empty"
+
+# Empty the install directory, leaving the directory itself in place.
+find "$MISE_DATA_DIR/installs/dummy/1.0.0" -mindepth 1 -delete
+assert "test -d $MISE_DATA_DIR/installs/dummy/1.0.0"
+
+assert_contains "mise doctor 2>&1 || true" "is installed but its directory is empty"
+assert_contains "mise doctor 2>&1 || true" "mise install --force dummy@1.0.0"
+
+# Both outputs have to classify it the same way; a check that only runs on one
+# path is a hole in the other.
+assert "mise doctor -J 2>/dev/null | jq -e '.errors | map(contains(\"directory is empty\")) | any' >/dev/null"
+assert "mise doctor -J 2>/dev/null | jq -e '.toolset.dummy[0].empty == true' >/dev/null"
+
+# Reinstalling clears it, so the check tracks the real state rather than latching.
+assert "mise install --force dummy@1.0.0"
+assert_not_contains "mise doctor 2>&1 || true" "directory is empty"
+
+# `@system` points at a tool mise did not install, so a stray directory under
+# installs/ says nothing about its health and `--force` would be nonsense advice.
+mise use dummy@system
+mkdir -p "$MISE_DATA_DIR/installs/dummy/system"
+assert_not_contains "mise doctor 2>&1 || true" "directory is empty"

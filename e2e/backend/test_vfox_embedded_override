@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# Test that embedded vfox plugins can be overridden by installing a filesystem plugin
+
+# Verify embedded plugin works without installation - use the short "bfs" name
+# which goes through the versions host cache (doesn't require network to the plugin)
+assert_contains "mise ls-remote bfs" "4.0"
+
+# Embedded plugins don't show git info in plugins list
+assert_not_contains "mise plugins --urls" "vfox-bfs"
+
+# Install the same vfox plugin as a filesystem override
+mise plugin install vfox-bfs https://github.com/mise-plugins/vfox-bfs
+
+# Verify the filesystem plugin is now shown with git URL (overrides embedded)
+assert_contains "mise plugins --urls" "vfox-bfs"
+assert_contains "mise plugins --urls" "github.com/mise-plugins/vfox-bfs"
+
+# Verify it still works (now using filesystem version)
+assert_contains "mise ls-remote bfs" "4.0"
+
+# Uninstall the override
+mise plugin uninstall vfox-bfs
+
+# Verify it falls back to embedded (no longer in plugins list with URL)
+assert_not_contains "mise plugins --urls" "vfox-bfs"
+
+# Verify embedded still works after uninstall
+assert_contains "mise ls-remote bfs" "4.0"

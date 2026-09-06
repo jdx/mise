@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+mise i vfox:version-fox/vfox-nodejs@23.2.0
+assert "mise x vfox:version-fox/vfox-nodejs@23.2.0 -- node -v" "v23.2.0"

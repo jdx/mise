@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Test HTTP backend rename_exe option for renaming executables in archives
+
+set -euo pipefail
+export MISE_EXPERIMENTAL=1
+
+# Test: rename_exe renames the executable inside the archive
+# The hello-world archive contains hello-world-1.0.0/bin/hello-world
+# We use strip_components=1 and bin_path=bin to get to the binary,
+# then rename_exe to rename it to "my-hello"
+cat <<EOF >mise.toml
+[tools]
+"http:hello-rename" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz", strip_components = 1, bin_path = "bin", rename_exe = "my-hello", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/bin/my-hello" }
+EOF
+
+mise install
+mise env
+
+# Verify the renamed binary works
+assert_contains "mise x -- my-hello" "hello world"
+
+# Test: rename_exe with bin_path - binary should be renamed in the bin_path directory
+cat <<EOF >mise.toml
+[tools]
+"http:fd-rename" = { version = "8.7.0", url = "https://mise.jdx.dev/test-fixtures/fd-8.7.0.tar.gz", bin_path = "fd-8.7.0/bin", rename_exe = "my-fd", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/fd-8.7.0/bin/my-fd" }
+EOF
+
+mise install
+mise env
+
+# Verify the renamed binary works
+assert_contains "mise x -- my-fd --version" "8.7.0"

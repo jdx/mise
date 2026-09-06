@@ -1,0 +1,50 @@
+name: test-vfox implementation
+
+on:
+  workflow_call:
+    inputs:
+      trusted:
+        required: true
+        type: boolean
+    secrets:
+      MISE_GH_TOKEN:
+        required: false
+
+concurrency:
+  group: test-vfox-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MBX_DISABLE: "1"
+  CARGO_TERM_COLOR: always
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  MISE_EXPERIMENTAL: 1
+  MISE_LOCKFILE: 1
+  RUST_BACKTRACE: 1
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  "test-vfox":
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
+        if: inputs.trusted
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
+        with:
+          shared-key: build
+          save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release') }}
+      - run: |
+          cargo build --all-features --ignore-rust-version
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - run: mise -v
+      - run: cargo build
+        working-directory: crates/vfox
+      - run: mise --cd crates/vfox run lint
+      - run: cargo test
+        working-directory: crates/vfox

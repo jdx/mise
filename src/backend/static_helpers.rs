@@ -1,0 +1,2828 @@
+// Shared template logic for backends
+use crate::backend::platform_target::PlatformTarget;
+use crate::file;
+use crate::hash;
+use crate::http::HTTP;
+use crate::toolset::ToolVersion;
+use crate::toolset::ToolVersionOptions;
+use crate::ui::progress_report::SingleReport;
+use eyre::{Result, bail};
+use indexmap::IndexSet;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::LazyLock;
+
+use super::platform_tokens::{
+    BINARY_ARCH_TOKENS, BINARY_OS_TOKENS, is_arch_token, is_os_token, is_platform_or_version_token,
+};
+
+/// Regex pattern for matching version suffixes like -v1.2.3, _1.2.3, etc.
+static VERSION_PATTERN: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"[-_]v?\d+(\.\d+)*(-[a-zA-Z0-9]+(\.\d+)?)?$").unwrap());
+
+// ========== Checksum Fetching Helpers ==========
+
+/// Fetches a checksum for a specific file from a SHASUMS256.txt-style file.
+/// Uses cached HTTP requests since the same SHASUMS file is fetched for all platforms.
+///
+/// The algorithm is detected from the SHASUMS file name (e.g. `*.sha512`,
+/// `SHA512SUMS`, defaulting to sha256), since the file lists bare hashes without
+/// declaring it.
+///
+/// # Arguments
+/// * `shasums_url` - URL to the SHASUMS256.txt file
+/// * `filename` - The filename to look up in the SHASUMS file
+///
+/// # Returns
+/// * `Some("<algo>:<hash>")` if found
+/// * `None` if the SHASUMS file couldn't be fetched or filename not found
+pub(crate) async fn fetch_checksum_from_shasums(
+    shasums_url: &str,
+    filename: &str,
+) -> Option<String> {
+    match HTTP.get_text_cached(shasums_url).await {
+        Ok(shasums_content) => {
+            let shasums = hash::parse_shasums(&shasums_content);
+            let algo = crate::backend::asset_matcher::detect_checksum_algorithm(
+                &get_filename_from_url(shasums_url),
+            );
+            shasums.get(filename).map(|h| format!("{algo}:{h}"))
+        }
+        Err(e) => {
+            debug!("Failed to fetch SHASUMS from {}: {e}", shasums_url);
+            None
+        }
+    }
+}
+
+/// Returns `true` if the file at `shasums_url` parses as a SHASUMS-style list
+/// with at least one `<hash>  <filename>` entry (as opposed to a bare individual
+/// checksum file that has only a hash).
+///
+/// Used to decide whether a [`fetch_checksum_from_shasums`] miss means "this is
+/// an individual checksum file, scan it for the hash" or "this is a SHASUMS list
+/// that simply has no row for our artifact" — in which case falling back to a
+/// first-hash scan would silently pick another platform's checksum.
+pub(crate) async fn shasums_has_entries(shasums_url: &str) -> bool {
+    match HTTP.get_text_cached(shasums_url).await {
+        Ok(content) => !hash::parse_shasums(&content).is_empty(),
+        Err(_) => false,
+    }
+}
+
+/// Fetches a checksum from an individual checksum file (e.g., file.tar.gz.sha256).
+/// The checksum file should contain just the hash, optionally followed by filename.
+///
+/// # Arguments
+/// * `checksum_url` - URL to the checksum file (e.g., `https://example.com/file.tar.gz.sha256`)
+/// * `algo` - The algorithm name to prefix (e.g., "sha256")
+///
+/// # Returns
+/// * `Some("<algo>:<hash>")` if found
+/// * `None` if the checksum file couldn't be fetched
+///
+/// Uses the in-process cache so that resolving an individual checksum file
+/// doesn't re-fetch the same URL already probed by [`fetch_checksum_from_shasums`]
+/// / [`shasums_has_entries`] for that platform.
+pub(crate) async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
+    match HTTP.get_text_cached(checksum_url).await {
+        Ok(content) => parse_checksum_file_content(&content, algo),
+        Err(e) => {
+            debug!("Failed to fetch checksum from {}: {e}", checksum_url);
+            None
+        }
+    }
+}
+
+fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
+    // PowerShell Get-FileHash output:
+    // Hash      : 7FDD...
+    for line in content.lines() {
+        if let Some((key, value)) = line.split_once(':')
+            && key.trim().eq_ignore_ascii_case("hash")
+        {
+            let hash = value.trim();
+            if is_checksum_hex(hash, algo) {
+                return Some(format!("{algo}:{}", hash.to_lowercase()));
+            }
+        }
+    }
+
+    // Standard formats are typically "<hash>  <filename>" or just "<hash>".
+    content
+        .split_whitespace()
+        .find(|token| is_checksum_hex(token, algo))
+        .map(|hash| format!("{algo}:{}", hash.to_lowercase()))
+}
+
+/// Evaluate a checksum expression (expr-lang) against a manifest body to extract
+/// a single checksum string for a target platform.
+///
+/// The raw manifest is injected as a `body` string; `vars` supplies additional
+/// context such as `version`, `os`, `arch`, `url`, and `filename` so the
+/// expression can select the right entry. The expression must evaluate to an
+/// `algo:hash` string. Manifests that store the hash and algorithm separately
+/// build the prefix in the expression itself, e.g. `entry.algo + ":" + entry.hash`
+/// (or a literal `"sha256:" + entry.hash` when the algorithm is fixed).
+///
+/// The result is normalized to `algo:hash`. Returns `None` when evaluation fails
+/// or the result is not a usable `algo:hash`.
+pub(crate) fn eval_checksum_expr(
+    expr_str: &str,
+    body: &str,
+    vars: &[(&str, &str)],
+) -> Option<String> {
+    use expr::{Context, Environment, Value};
+
+    let mut ctx = Context::default();
+    ctx.insert("body".to_string(), Value::String(body.to_string()));
+    for (key, value) in vars {
+        ctx.insert((*key).to_string(), Value::String((*value).to_string()));
+    }
+
+    let env = Environment::new();
+    match env.eval(expr_str, &ctx) {
+        Ok(Value::String(s)) => normalize_checksum(&s),
+        Ok(other) => {
+            debug!("checksum_expr did not evaluate to a string: {other:?}");
+            None
+        }
+        Err(e) => {
+            debug!("failed to evaluate checksum_expr '{expr_str}': {e}");
+            None
+        }
+    }
+}
+
+/// Normalize an `algo:hash` checksum string. The algorithm name is
+/// case-insensitive (e.g. `SHA256` from a manifest). Returns `None` when the
+/// value has no `algo:` prefix or the hash isn't valid hex for that algorithm.
+///
+/// mise stores and verifies checksums as `algo:hash` everywhere, so a bare hash
+/// is rejected rather than guessed — the expression must qualify it (e.g.
+/// `"sha256:" + entry.hash`).
+fn normalize_checksum(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    let Some((algo, hash)) = raw.split_once(':') else {
+        debug!("checksum_expr result is not in algo:hash form: {raw}");
+        return None;
+    };
+    let algo = algo.trim().to_ascii_lowercase();
+    let hash = hash.trim();
+    if is_checksum_hex(hash, &algo) {
+        Some(format!("{algo}:{}", hash.to_lowercase()))
+    } else {
+        debug!("checksum value is not valid {algo} hex: {hash}");
+        None
+    }
+}
+
+fn is_checksum_hex(s: &str, algo: &str) -> bool {
+    let expected_len = match algo {
+        "sha1" => 40,
+        "sha256" | "blake3" => 64,
+        "sha512" => 128,
+        "md5" => 32,
+        _ => return false,
+    };
+
+    s.len() == expected_len && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+pub(crate) trait VerifiableError: Sized + Send + Sync + 'static {
+    fn is_not_found(&self) -> bool;
+    fn into_eyre(self) -> eyre::Report;
+}
+
+impl VerifiableError for eyre::Report {
+    fn is_not_found(&self) -> bool {
+        if self.to_string().contains("404") {
+            return true;
+        }
+        self.chain().any(|cause| {
+            if let Some(err) = cause.downcast_ref::<reqwest::Error>() {
+                err.status() == Some(reqwest::StatusCode::NOT_FOUND)
+            } else {
+                false
+            }
+        })
+    }
+
+    fn into_eyre(self) -> eyre::Report {
+        self
+    }
+}
+
+/// Helper to try both prefixed and non-prefixed tags for a resolver function
+pub(crate) async fn try_with_v_prefix<F, Fut, T, E>(
+    version: &str,
+    version_prefix: Option<&str>,
+    resolver: F,
+) -> Result<T>
+where
+    F: Fn(String) -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    E: VerifiableError,
+{
+    try_with_v_prefix_and_repo(version, version_prefix, None, resolver).await
+}
+
+/// Helper to try various tag formats for a resolver function
+/// Tries version_prefix (if set), v prefix, and optionally repo@version formats
+pub(crate) async fn try_with_v_prefix_and_repo<F, Fut, T, E>(
+    version: &str,
+    version_prefix: Option<&str>,
+    repo: Option<&str>,
+    resolver: F,
+) -> Result<T>
+where
+    F: Fn(String) -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    E: VerifiableError,
+{
+    let mut errors = vec![];
+
+    // Generate candidates based on version prefix configuration
+    let mut candidates = if let Some(prefix) = version_prefix {
+        // If a custom prefix is configured, try both prefixed and non-prefixed versions
+        if version.starts_with(prefix) {
+            vec![
+                version.to_string(),
+                version.trim_start_matches(prefix).to_string(),
+            ]
+        } else {
+            vec![format!("{}{}", prefix, version), version.to_string()]
+        }
+    } else if version == "latest" {
+        vec![version.to_string()]
+    } else if version.starts_with('v') {
+        vec![
+            version.to_string(),
+            version.trim_start_matches('v').to_string(),
+        ]
+    } else {
+        vec![format!("v{version}"), version.to_string()]
+    };
+
+    // Also try repo@version formats (e.g., tectonic@0.15.0) when no prefix is configured
+    // Try both the repo short name and full repo name
+    // Skip this for "latest" since it's a special keyword, not an actual tag
+    if version_prefix.is_none()
+        && version != "latest"
+        && let Some(full_repo) = repo
+    {
+        // Try short name first (more common), e.g., "tectonic@0.15.0"
+        if let Some(short_name) = full_repo.split('/').next_back() {
+            candidates.push(format!("{}@{}", short_name, version));
+        }
+        // Also try full repo name, e.g., "tectonic-typesetting/tectonic@0.15.0"
+        candidates.push(format!("{}@{}", full_repo, version));
+    }
+
+    for candidate in candidates {
+        match resolver(candidate).await {
+            Ok(res) => return Ok(res),
+            Err(e) => {
+                if e.is_not_found() {
+                    errors.push(e.into_eyre());
+                } else {
+                    return Err(e.into_eyre());
+                }
+            }
+        }
+    }
+    Err(errors
+        .pop()
+        .unwrap_or_else(|| eyre::eyre!("No matching release found for {version}")))
+}
+
+/// Returns all possible aliases for the current platform (os, arch),
+/// with the preferred spelling first (macos/x64, linux/x64, etc).
+pub(crate) fn platform_aliases() -> Vec<(String, String)> {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    let mut aliases = vec![];
+
+    // OS aliases
+    let os_aliases = match os {
+        "macos" | "darwin" => vec!["macos", "darwin"],
+        "linux" => vec!["linux"],
+        "windows" => vec!["windows"],
+        _ => vec![os],
+    };
+
+    // Arch aliases
+    let arch_aliases = match arch {
+        "x86_64" | "amd64" => vec!["x64", "amd64", "x86_64"],
+        "aarch64" | "arm64" => vec!["arm64", "aarch64"],
+        _ => vec![arch],
+    };
+
+    for os in &os_aliases {
+        for arch in &arch_aliases {
+            aliases.push((os.to_string(), arch.to_string()));
+        }
+    }
+    aliases
+}
+
+/// Looks up a value in ToolVersionOptions using nested platform key format.
+/// Supports nested format (platforms.macos-x64.url) with os-arch dash notation.
+/// Also supports both "platforms" and "platform" prefixes.
+pub(crate) fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<String> {
+    lookup_platform_value_for_aliases(
+        platform_aliases(),
+        key_type,
+        |key| opts.get_nested_string(key),
+        |key| opts.get_string(key),
+    )
+}
+
+/// Looks up an option value with platform-specific fallback.
+/// First tries platform-specific lookup, then falls back to the base key.
+///
+/// # Arguments
+/// * `opts` - The tool version options to search
+/// * `key` - The option key to look up (e.g., "bin_path", "checksum")
+///
+/// # Returns
+/// * `Some(value)` if found in platform-specific or base options
+/// * `None` if not found
+pub(crate) fn lookup_with_fallback(opts: &ToolVersionOptions, key: &str) -> Option<String> {
+    lookup_platform_key(opts, key).or_else(|| opts.get_string(key))
+}
+
+/// Looks up a raw option value with platform-specific fallback.
+/// Like [`lookup_with_fallback`] but preserves the original `toml::Value` so
+/// callers can distinguish scalar and table forms (e.g. `rename_exe`).
+pub(crate) fn lookup_value_with_fallback<'a>(
+    opts: &'a ToolVersionOptions,
+    key: &str,
+) -> Option<&'a toml::Value> {
+    lookup_platform_value(opts, key).or_else(|| opts.opts.get(key))
+}
+
+fn lookup_nested_value<'a>(opts: &'a ToolVersionOptions, key: &str) -> Option<&'a toml::Value> {
+    let parts: Vec<&str> = key.split('.').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let mut value = opts.opts.get(parts[0])?;
+    for part in &parts[1..] {
+        let table = value.as_table()?;
+        value = table.get(*part)?;
+    }
+    Some(value)
+}
+
+fn lookup_platform_value_for_aliases<T>(
+    aliases: Vec<(String, String)>,
+    key_type: &str,
+    mut nested_lookup: impl FnMut(&str) -> Option<T>,
+    mut flat_lookup: impl FnMut(&str) -> Option<T>,
+) -> Option<T> {
+    for (os, arch) in aliases {
+        for prefix in ["platforms", "platform"] {
+            let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
+            if let Some(val) = nested_lookup(&nested_key) {
+                return Some(val);
+            }
+
+            let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
+            if let Some(val) = flat_lookup(&flat_key) {
+                return Some(val);
+            }
+        }
+    }
+    None
+}
+
+/// Returns all possible aliases for a given platform target (os, arch).
+fn target_platform_aliases(target: &PlatformTarget) -> Vec<(String, String)> {
+    let os = target.os_name();
+    let arch = target.arch_name();
+    let mut aliases = vec![];
+
+    // OS aliases
+    let os_aliases = match os {
+        "macos" | "darwin" => vec!["macos", "darwin"],
+        "linux" => vec!["linux"],
+        "windows" => vec!["windows"],
+        _ => vec![os],
+    };
+
+    // Arch aliases
+    let arch_aliases = match arch {
+        "x64" | "amd64" | "x86_64" => vec!["x64", "amd64", "x86_64"],
+        "arm64" | "aarch64" => vec!["arm64", "aarch64"],
+        _ => vec![arch],
+    };
+
+    for os in &os_aliases {
+        for arch in &arch_aliases {
+            aliases.push((os.to_string(), arch.to_string()));
+        }
+    }
+    aliases
+}
+
+/// Looks up a value in ToolVersionOptions for a specific target platform.
+/// Used for cross-platform lockfile generation.
+pub(crate) fn lookup_platform_key_for_target(
+    opts: &ToolVersionOptions,
+    key_type: &str,
+    target: &PlatformTarget,
+) -> Option<String> {
+    lookup_platform_value_for_aliases(
+        target_platform_aliases(target),
+        key_type,
+        |key| opts.get_nested_string(key),
+        |key| opts.get_string(key),
+    )
+}
+
+/// Looks up a raw option value for a specific target platform.
+pub(crate) fn lookup_platform_value_for_target<'a>(
+    opts: &'a ToolVersionOptions,
+    key_type: &str,
+    target: &PlatformTarget,
+) -> Option<&'a toml::Value> {
+    lookup_platform_value_for_aliases(
+        target_platform_aliases(target),
+        key_type,
+        |key| lookup_nested_value(opts, key),
+        |key| opts.opts.get(key),
+    )
+}
+
+/// Looks up a raw platform-specific option value.
+pub(crate) fn lookup_platform_value<'a>(
+    opts: &'a ToolVersionOptions,
+    key_type: &str,
+) -> Option<&'a toml::Value> {
+    lookup_platform_value_for_aliases(
+        platform_aliases(),
+        key_type,
+        |key| lookup_nested_value(opts, key),
+        |key| opts.opts.get(key),
+    )
+}
+
+/// Whether the lookup this list describes would get a value out of `value`.
+///
+/// Existence is not enough. `ToolVersionOptions`'s nested lookup converts scalars and returns
+/// nothing for a table or an array, so a `url` written as either resolves to no URL — and listing
+/// its platform as available would send the reader looking for a key that is already there.
+fn resolves_to_a_value(value: &toml::Value) -> bool {
+    crate::toolset::scalar_value_to_string(value).is_some()
+}
+
+/// Lists platform keys (e.g. "macos-x64") for which a given key_type exists (e.g. "url").
+pub(crate) fn list_available_platforms_with_key(
+    opts: &ToolVersionOptions,
+    key_type: &str,
+) -> Vec<String> {
+    let mut set = IndexSet::new();
+
+    // Gather from flat keys
+    for (k, v) in opts.iter() {
+        if let Some(rest) = k
+            .strip_prefix("platforms_")
+            .or_else(|| k.strip_prefix("platform_"))
+            && let Some(platform_part) = rest.strip_suffix(&format!("_{}", key_type))
+            && resolves_to_a_value(v)
+        {
+            // Only convert the OS/arch separator underscore to a dash, preserving
+            // underscores inside architecture names like x86_64
+            let platform_key = if let Some((os_part, rest)) = platform_part.split_once('_') {
+                format!("{os_part}-{rest}")
+            } else {
+                platform_part.to_string()
+            };
+            set.insert(platform_key);
+        }
+    }
+
+    // Read the keys that are actually there rather than probing a grid of known OS and arch
+    // tokens. The grid could only see platforms it already knew the name of, so a key mise does
+    // not recognise -- a typo like `lnux-x64`, an underscore where a dash belongs -- came back as
+    // nothing at all, and the caller reported "requires 'url' option" to someone who had written
+    // one. Naming what is declared is the whole point of this list.
+    //
+    // Two shapes, because `ToolVersionOptions::contains_key` resolves both: a nested table, and a
+    // literal dotted key at the top level. Together they are a superset of what the grid saw.
+    for (k, v) in opts.iter() {
+        // `platforms = { "lnux-x64" = { url = "..." } }`
+        if k == "platforms" || k == "platform" {
+            if let Some(table) = v.as_table() {
+                for (platform_key, entry) in table {
+                    if entry
+                        .as_table()
+                        .and_then(|entry| entry.get(key_type))
+                        .is_some_and(resolves_to_a_value)
+                    {
+                        set.insert(platform_key.clone());
+                    }
+                }
+            }
+            continue;
+        }
+        // `"platforms.lnux-x64.url" = "..."` written as one key
+        for prefix in ["platforms.", "platform."] {
+            if let Some(rest) = k.strip_prefix(prefix)
+                && let Some(platform_key) = rest.strip_suffix(&format!(".{key_type}"))
+                && resolves_to_a_value(v)
+            {
+                set.insert(platform_key.to_string());
+            }
+        }
+    }
+
+    set.into_iter().collect()
+}
+
+pub(crate) fn template_string(template: &str, tv: &ToolVersion) -> String {
+    // `os()`/`arch()` resolve to the current host platform.
+    render_template(template, &tv.version, crate::tera::get_tera(None))
+}
+
+/// Like [`template_string`] but renders `os()`/`arch()` for an explicit target
+/// platform instead of the current host. Used by cross-platform `mise lock` to
+/// build URLs and checksum-file URLs for platforms other than the one mise runs on.
+pub(crate) fn template_string_for_target(
+    template: &str,
+    tv: &ToolVersion,
+    target: &PlatformTarget,
+) -> String {
+    render_template(
+        template,
+        &tv.version,
+        crate::tera::get_tera_for_target(None, target.os_name(), target.arch_name()),
+    )
+}
+
+fn render_template(template: &str, version: &str, mut tera: crate::tera::TeraEngine) -> String {
+    // Check for legacy {version} syntax and emit deprecation warning
+    if template.contains("{version}") && !template.contains("{{version}}") {
+        deprecated_at!(
+            "2026.3.0",
+            "2027.3.0",
+            "legacy-version-template",
+            "Use {{{{ version }}}} instead of {{version}} in URL templates"
+        );
+        // Legacy support: replace {version} placeholder
+        return template.replace("{version}", version);
+    }
+
+    if !crate::tera::contains_template_syntax(template) {
+        return template.to_string();
+    }
+
+    // Use Tera rendering for templates
+    // Supports {{ version }}, {{ os() }}, {{ arch() }}, etc.
+    let mut ctx = crate::tera::BASE_CONTEXT.clone();
+    ctx.insert("version", version);
+
+    match crate::tera::render_str(&mut tera, template, &ctx) {
+        Ok(rendered) => rendered,
+        Err(e) => {
+            warn!("Failed to render template '{}': {}", template, e);
+            template.to_string()
+        }
+    }
+}
+
+pub(crate) fn get_filename_from_url(url_str: &str) -> String {
+    let filename = if let Ok(url) = url::Url::parse(url_str) {
+        // Use proper URL parsing to get the path and extract filename
+        url.path_segments()
+            .and_then(|mut segments| segments.next_back())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| url_str.to_string())
+    } else {
+        // Fallback to simple parsing for non-URL strings or malformed URLs
+        url_str
+            .split('/')
+            .next_back()
+            .unwrap_or(url_str)
+            .to_string()
+    };
+    urlencoding::decode(&filename)
+        .map(|s| s.to_string())
+        .unwrap_or(filename)
+}
+
+/// Whether anything describes what is inside the archive.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArchiveLayout {
+    /// A signed manifest names each executable by path, so a file has to keep
+    /// the name it was given: renaming it would put it somewhere the manifest
+    /// does not point.
+    Declared,
+    /// Nothing describes the release, so mise reads the layout off the archive
+    /// and may tidy an obvious platform suffix off a lone binary.
+    Guessed,
+}
+
+pub(crate) fn install_artifact(
+    tv: &crate::toolset::ToolVersion,
+    file_path: &Path,
+    opts: &ToolVersionOptions,
+    layout: ArchiveLayout,
+    pr: Option<&dyn SingleReport>,
+) -> eyre::Result<()> {
+    let install_path = tv.install_path();
+    let mut strip_components = lookup_platform_key(opts, "strip_components")
+        .or_else(|| opts.get_string("strip_components"))
+        .and_then(|s| s.parse().ok());
+
+    // `bin` historically accepts a path within the install directory (for
+    // example `bin/tiny`), while rename_exe names a file in one search dir.
+    if let Some(name) = lookup_with_fallback(opts, "bin") {
+        ensure_safe_relative_bin_path("bin", &name)?;
+    }
+    // Table-form rename_exe is not a scalar and is validated in apply_rename_exe.
+    if let Some(name) = lookup_with_fallback(opts, "rename_exe") {
+        ensure_plain_bin_name("rename_exe", &name)?;
+    }
+
+    file::remove_all(&install_path)?;
+    file::create_dir_all(&install_path)?;
+
+    // Use ExtractionFormat for format detection
+    // Check for explicit format option first, then fall back to file extension
+    let format = if let Some(format_opt) = lookup_with_fallback(opts, "format") {
+        file::ExtractionFormat::from_ext(&format_opt).unwrap_or(file::ExtractionFormat::Raw)
+    } else {
+        file::ExtractionFormat::from_file_name(
+            &file_path.file_name().unwrap_or_default().to_string_lossy(),
+        )
+    };
+
+    // Get file extension and detect format
+    let file_name = file_path.file_name().unwrap().to_string_lossy();
+
+    if !format.is_archive() && format != file::ExtractionFormat::Raw {
+        // Handle compressed single binary
+        let ext = Path::new(&*file_name)
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
+
+        // Determine the destination path with support for bin_path
+        let rename_exe = lookup_with_fallback(opts, "rename_exe");
+        let dest = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
+            let bin_path = template_string(&bin_path_template, tv);
+            let bin_dir = install_path.join(&bin_path);
+            file::create_dir_all(&bin_dir)?;
+            if let Some(rename_to) = rename_exe {
+                bin_dir.join(rename_binary_name(decompressed_name, &rename_to))
+            } else {
+                bin_dir.join(decompressed_name)
+            }
+        } else if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
+            install_path.join(&bin_name)
+        } else if let Some(rename_to) = rename_exe {
+            install_path.join(rename_binary_name(decompressed_name, &rename_to))
+        } else {
+            // Auto-clean binary names by removing OS/arch suffixes
+            let cleaned_name = clean_binary_name(decompressed_name, Some(&tv.ba().tool_name));
+            install_path.join(cleaned_name)
+        };
+
+        file::decompress_file(file_path, &dest, format)?;
+
+        file::make_executable(&dest)?;
+    } else if format == file::ExtractionFormat::Raw {
+        // Copy the file directly to the bin_path directory or install_path
+        if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
+            let bin_path = template_string(&bin_path_template, tv);
+            let bin_dir = install_path.join(&bin_path);
+            file::create_dir_all(&bin_dir)?;
+            let original_name = file_path.file_name().unwrap().to_string_lossy();
+            let dest_name = lookup_with_fallback(opts, "rename_exe")
+                .map(|rename_to| rename_binary_name(&original_name, &rename_to))
+                .unwrap_or_else(|| original_name.to_string());
+            let dest = bin_dir.join(dest_name);
+            file::copy(file_path, &dest)?;
+            file::make_executable(&dest)?;
+        } else if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
+            // If bin is specified, rename the file to this name
+            let dest = install_path.join(&bin_name);
+            file::copy(file_path, &dest)?;
+            file::make_executable(&dest)?;
+        } else if let Some(rename_to) = lookup_with_fallback(opts, "rename_exe") {
+            let original_name = file_path.file_name().unwrap().to_string_lossy();
+            let dest = install_path.join(rename_binary_name(&original_name, &rename_to));
+            file::copy(file_path, &dest)?;
+            file::make_executable(&dest)?;
+        } else {
+            // Always auto-clean binary names by removing OS/arch suffixes
+            let original_name = file_path.file_name().unwrap().to_string_lossy();
+            let cleaned_name = clean_binary_name(&original_name, Some(&tv.ba().tool_name));
+            let dest = install_path.join(cleaned_name);
+            file::copy(file_path, &dest)?;
+            file::make_executable(&dest)?;
+        }
+    } else {
+        // Handle archive formats
+        // Auto-detect if we need strip_components=1 before extracting
+        // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
+        if strip_components.is_none()
+            && lookup_with_fallback(opts, "bin_path").is_none()
+            && let Ok(should_strip) = file::should_strip_components(file_path, format)
+            && should_strip
+        {
+            debug!("Auto-detected single directory archive, extracting with strip_components=1");
+            strip_components = Some(1);
+        }
+        let extract_opts = file::ExtractOptions {
+            strip_components: strip_components.unwrap_or(0),
+            pr,
+            ..Default::default()
+        };
+
+        // Extract with determined strip_components
+        file::extract_archive(file_path, &install_path, format, &extract_opts)?;
+
+        // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
+        let full_tool_name = tv.ba().tool_name.as_str();
+        let tool_name = full_tool_name.rsplit('/').next().unwrap_or(full_tool_name);
+
+        // Determine search directory based on bin_path option
+        let explicit_bin_path = lookup_with_fallback(opts, "bin_path")
+            .map(|t| install_path.join(template_string(&t, tv)));
+
+        // Handle bin= option for archives (renames executable to specified name)
+        // bin= values are relative to install_path, so always use install_path or explicit bin_path
+        if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
+            let search_dir = explicit_bin_path.as_deref().unwrap_or(&install_path);
+            make_configured_bin_executable(search_dir, &bin_name)?;
+            rename_executable_in_dir(search_dir, &bin_name, Some(tool_name))?;
+        }
+
+        // Handle rename_exe option for archives
+        // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
+        // the same logic used by discover_bin_paths() for PATH construction
+        if let Some(rename_value) = lookup_value_with_fallback(opts, "rename_exe") {
+            let search_dir = archive_bin_search_dir(&install_path, explicit_bin_path.as_deref());
+            apply_rename_exe(&search_dir, rename_value, Some(tool_name))?;
+        }
+
+        // When neither bin= nor rename_exe= is set, auto-clean a single extracted
+        // binary whose filename carries an OS/arch platform suffix (e.g. a linux
+        // archive shipping `tool-macos-aarch64`), mirroring the behavior for
+        // single-file (non-archive) downloads. See discussion #6532.
+        if may_clean_archive_binary(layout, opts) {
+            let search_dir = archive_bin_search_dir(&install_path, explicit_bin_path.as_deref());
+            auto_clean_single_archive_binary(&search_dir, tool_name)?;
+        }
+    }
+    Ok(())
+}
+
+/// Directory to search for an archive's executable: an explicit `bin_path` when
+/// configured, else the conventional `bin/` subdirectory if it exists, else the
+/// install root. Mirrors the `bin/` auto-detection used by `discover_bin_paths()`
+/// for PATH construction so renaming/auto-cleaning targets the same location.
+fn archive_bin_search_dir(install_path: &Path, explicit_bin_path: Option<&Path>) -> PathBuf {
+    if let Some(dir) = explicit_bin_path {
+        return dir.to_path_buf();
+    }
+    let bin_dir = install_path.join("bin");
+    if bin_dir.is_dir() {
+        bin_dir
+    } else {
+        install_path.to_path_buf()
+    }
+}
+
+/// When an archive contains a single binary whose filename carries an OS/arch
+/// platform suffix (e.g. `tool-macos-aarch64`), rename it to the cleaned name
+/// (`tool`), matching what single-file (non-archive) downloads already do.
+///
+/// Only acts when the directory holds exactly one file (after dropping hidden
+/// files, LICENSE/README, and docs) and cleaning actually changes its name, so
+/// multi-file archives and files without a platform suffix are left untouched.
+/// See discussion #6532.
+/// Whether mise may rename the archive's lone binary to the tool's name.
+/// Only when nothing else has said what the file should be called: not when
+/// the caller was handed a manifest, and not when `bin=` or `rename_exe=`
+/// already names it.
+fn may_clean_archive_binary(layout: ArchiveLayout, opts: &ToolVersionOptions) -> bool {
+    layout == ArchiveLayout::Guessed
+        && lookup_with_fallback(opts, "bin").is_none()
+        && lookup_value_with_fallback(opts, "rename_exe").is_none()
+}
+
+fn auto_clean_single_archive_binary(dir: &Path, tool_name: &str) -> eyre::Result<()> {
+    // Only act on an unambiguously single-binary archive: exactly one file after
+    // dropping obvious non-binaries (hidden files, LICENSE/README, and known doc
+    // extensions via should_skip_file). Any other companion file makes the
+    // archive multi-file and we must not rename — a clean-named companion binary
+    // and a plain metadata file (e.g. CHANGELOG) are indistinguishable when a zip
+    // extracts them without an exec bit and they carry no platform suffix, so the
+    // only safe, deterministic choice is to leave multi-file archives untouched
+    // (users can disambiguate with `bin=`/`rename_exe=`). See discussion #6532.
+    let files = file::ls(dir)?
+        .into_iter()
+        .filter(|p| p.is_file())
+        .filter(|p| {
+            let name = p.file_name().unwrap_or_default().to_string_lossy();
+            !should_skip_file(&name, true)
+        })
+        .collect::<Vec<_>>();
+    let [path] = files.as_slice() else {
+        return Ok(());
+    };
+    let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+    let cleaned_name = clean_binary_name(&file_name, Some(tool_name));
+    // The sole file has no platform suffix; nothing to clean.
+    if cleaned_name == file_name {
+        return Ok(());
+    }
+    let dest = dir.join(&cleaned_name);
+    if dest.exists() {
+        return Ok(());
+    }
+    file::rename(path, &dest)?;
+    file::make_executable(&dest)?;
+    debug!("Auto-cleaned archive binary {file_name} -> {cleaned_name}");
+    Ok(())
+}
+
+fn make_configured_bin_executable(search_dir: &Path, bin_name: &str) -> Result<()> {
+    ensure_safe_relative_bin_path("bin", bin_name)?;
+    let bin_path = search_dir.join(bin_name);
+    if bin_path.is_file() {
+        file::make_executable(bin_path)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn verify_artifact(
+    _tv: &crate::toolset::ToolVersion,
+    file_path: &Path,
+    opts: &crate::toolset::ToolVersionOptions,
+    pr: Option<&dyn SingleReport>,
+) -> Result<()> {
+    // Check platform-specific checksum first, then fall back to generic
+    let checksum = lookup_with_fallback(opts, "checksum");
+
+    if let Some(checksum) = checksum {
+        verify_checksum_str(file_path, &checksum, pr)?;
+    }
+
+    // Check platform-specific size first, then fall back to generic
+    let size_str = lookup_with_fallback(opts, "size");
+
+    if let Some(size_str) = size_str {
+        let expected_size: u64 = size_str.parse()?;
+        let actual_size = file_path.metadata()?.len();
+        if actual_size != expected_size {
+            bail!(
+                "Size mismatch: expected {}, got {}",
+                expected_size,
+                actual_size
+            );
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn verify_checksum_str(
+    file_path: &Path,
+    checksum: &str,
+    pr: Option<&dyn SingleReport>,
+) -> Result<()> {
+    if let Some((algo, hash_str)) = checksum.split_once(':') {
+        hash::ensure_checksum(file_path, hash_str, pr, algo)?;
+    } else {
+        bail!("Invalid checksum format: {}", checksum);
+    }
+    Ok(())
+}
+
+/// File extensions that indicate non-binary files.
+const SKIP_EXTENSIONS: &[&str] = &[".txt", ".md", ".json", ".yml", ".yaml"];
+
+/// File names (case-insensitive) that should be skipped when looking for executables.
+const SKIP_FILE_NAMES: &[&str] = &["LICENSE", "README"];
+
+/// Checks if a file should be skipped when searching for executables.
+///
+/// # Arguments
+/// * `file_name` - The file name to check
+/// * `strict` - If true, also checks against SKIP_FILE_NAMES and README.* patterns
+///
+/// # Returns
+/// * `true` if the file should be skipped (not a binary)
+/// * `false` if the file might be a binary
+fn should_skip_file(file_name: &str, strict: bool) -> bool {
+    // Skip hidden files
+    if file_name.starts_with('.') {
+        return true;
+    }
+
+    // Skip known non-binary extensions
+    if SKIP_EXTENSIONS.iter().any(|ext| file_name.ends_with(ext)) {
+        return true;
+    }
+
+    // In strict mode, also skip LICENSE/README files
+    if strict {
+        let upper = file_name.to_uppercase();
+        if SKIP_FILE_NAMES.iter().any(|name| upper == *name) || upper.starts_with("README.") {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Renames the first executable file found in a directory to a new name.
+/// Used by the `rename_exe` and `bin` options to rename binaries after archive extraction.
+///
+/// # Parameters
+/// - `dir`: The directory to search for executables
+/// - `new_name`: The new name for the executable
+/// - `tool_name`: Optional hint for finding non-executable files by name matching.
+///   When provided, if no executable is found, will search for files matching the tool name
+///   and make them executable before renaming.
+pub(crate) fn rename_executable_in_dir(
+    dir: &Path,
+    new_name: &str,
+    tool_name: Option<&str>,
+) -> eyre::Result<()> {
+    // This helper is shared by `bin`, which may be a nested path within the
+    // install directory, and scalar `rename_exe`, which is validated as a plain
+    // file name by apply_rename_exe before reaching here.
+    ensure_safe_relative_bin_path("rename target", new_name)?;
+    let target_path = dir.join(new_name);
+
+    // Check if target already exists before iterating
+    // (read_dir order is non-deterministic, so we must check first)
+    if target_path.is_file() && file::is_executable(&target_path) {
+        return Ok(());
+    }
+
+    // Check for stripped macOS .app bundle (Contents/MacOS at root level)
+    // This happens when auto-strip removes the .app wrapper directory
+    let contents_macos = dir.join("Contents").join("MacOS");
+    if contents_macos.is_dir() {
+        // Rename within Contents/MacOS instead of moving to root
+        let target_in_macos = contents_macos.join(new_name);
+        if rename_executable_in_app_bundle(&contents_macos, &target_in_macos, tool_name)? {
+            return Ok(());
+        }
+    }
+
+    // Check for macOS .app bundles and look inside Contents/MacOS/
+    for entry in file::ls(dir)? {
+        if entry.is_dir() {
+            let dir_name = entry.file_name().unwrap().to_string_lossy();
+            if dir_name.ends_with(".app") {
+                let macos_dir = entry.join("Contents").join("MacOS");
+                if macos_dir.is_dir() {
+                    // Try to rename executable inside the .app bundle
+                    if rename_executable_in_app_bundle(&macos_dir, &target_path, tool_name)? {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    // First pass: Find executables in the directory (non-recursive for top level)
+    // When tool_name is available, prefer an exact match, then a substring match,
+    // then fall back to the first executable found.
+    let mut substring_match: Option<PathBuf> = None;
+    let mut fallback_path: Option<PathBuf> = None;
+    for path in file::ls(dir)? {
+        if path.is_file() && file::is_executable(&path) {
+            let file_name = path.file_name().unwrap().to_string_lossy();
+            if should_skip_file(&file_name, false) {
+                continue;
+            }
+            if let Some(tool_name) = tool_name {
+                if *file_name == *tool_name {
+                    let target_path_with_extension =
+                        keep_required_extensions(dir, &file_name, new_name, target_path);
+                    file::rename(&path, &target_path_with_extension)?;
+                    debug!(
+                        "Renamed {} to {}",
+                        path.display(),
+                        target_path_with_extension.display()
+                    );
+                    return Ok(());
+                }
+                if file_name.to_lowercase().contains(&tool_name.to_lowercase()) {
+                    if substring_match.is_none() {
+                        substring_match = Some(path);
+                    }
+                } else if fallback_path.is_none() {
+                    fallback_path = Some(path);
+                }
+            } else {
+                let target_path_with_extension =
+                    keep_required_extensions(dir, &file_name, new_name, target_path);
+                file::rename(&path, &target_path_with_extension)?;
+                debug!(
+                    "Renamed {} to {}",
+                    path.display(),
+                    target_path_with_extension.display()
+                );
+                return Ok(());
+            }
+        }
+    }
+    // Prefer substring match over arbitrary fallback
+    let best_match = substring_match.or(fallback_path);
+    if let Some(path) = best_match {
+        let file_name = path.file_name().unwrap().to_string_lossy();
+        let target_path_with_extension =
+            keep_required_extensions(dir, &file_name, new_name, target_path.clone());
+        file::rename(&path, &target_path_with_extension)?;
+        debug!(
+            "Renamed {} to {} (fallback)",
+            path.display(),
+            target_path_with_extension.display()
+        );
+        return Ok(());
+    }
+
+    // Second pass: Find non-executable files by name matching (for ZIP archives without exec bit)
+    if let Some(tool_name) = tool_name {
+        for path in file::ls(dir)? {
+            if path.is_file() {
+                let file_name = path.file_name().unwrap().to_string_lossy();
+                if should_skip_file(&file_name, true) {
+                    continue;
+                }
+
+                // Check if filename matches tool name pattern or the target name
+                if file_name.to_lowercase().contains(&tool_name.to_lowercase())
+                    || *file_name == *new_name
+                {
+                    let target_path_with_extension =
+                        keep_required_extensions(dir, &file_name, new_name, target_path);
+
+                    file::make_executable(&path)?;
+                    file::rename(&path, &target_path_with_extension)?;
+                    debug!(
+                        "Found and renamed {} to {} (added exec permissions)",
+                        path.display(),
+                        target_path_with_extension.display()
+                    );
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Applies the `rename_exe` option to freshly-extracted archive contents.
+///
+/// Two forms are supported:
+/// - String — `rename_exe = "plz"` — renames the tool's primary executable
+///   (located via the `tool_name` hint) to the given name. This is the original
+///   single-binary behavior.
+/// - Table — `rename_exe = { "ols-*" = "ols", "odinfmt-*" = "odinfmt" }` — renames
+///   every matched executable. Keys are source names that may contain glob
+///   patterns (matched against the file name); values are the new names. This
+///   lets archives that ship several binaries expose all of them under clean
+///   names.
+pub(crate) fn apply_rename_exe(
+    search_dir: &Path,
+    value: &toml::Value,
+    tool_name: Option<&str>,
+) -> eyre::Result<()> {
+    match value {
+        toml::Value::Table(entries) => {
+            // Validate every target before renaming anything, so a bad entry
+            // fails the install without leaving a half-applied table.
+            for target in entries.values() {
+                if let Some(target) = target.as_str() {
+                    ensure_plain_bin_name("rename_exe", target)?;
+                }
+            }
+            // Snapshot the directory once and consume each matched file, so a
+            // rename's *output* can never become a later entry's *input*
+            // (e.g. `tool-*`→`tool` then `tool`→`x` must not rename twice) and a
+            // single file satisfies at most one mapping. `file::ls` is sorted, so
+            // a glob matching several files resolves deterministically.
+            let mut available: Vec<PathBuf> = file::ls(search_dir)?
+                .into_iter()
+                // Do not follow archive-provided symlinks: chmod on a symlink
+                // follows its target and could change permissions outside the
+                // extraction directory.
+                .filter(|p| {
+                    matches!(
+                        p.symlink_metadata(),
+                        Ok(metadata) if metadata.file_type().is_file()
+                    )
+                })
+                .collect();
+            for (source, target) in entries {
+                let Some(target) = target.as_str() else {
+                    warn!("rename_exe: target for '{source}' is not a string, skipping");
+                    continue;
+                };
+                match take_matching(&mut available, source)? {
+                    Some(path) => {
+                        let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+                        finish_rename(search_dir, &path, &file_name, target)?;
+                    }
+                    None => warn!(
+                        "rename_exe: no file matching '{source}' found in {}",
+                        search_dir.display()
+                    ),
+                }
+            }
+            Ok(())
+        }
+        toml::Value::String(new_name) => {
+            ensure_plain_bin_name("rename_exe", new_name)?;
+            rename_executable_in_dir(search_dir, new_name, tool_name)
+        }
+        other => {
+            warn!("rename_exe: expected a string or table, got {other}");
+            Ok(())
+        }
+    }
+}
+
+/// Removes and returns the first file in `available` matching `pattern` — an
+/// exact file name (preferred) or a glob such as `ols-*`. Consuming the match
+/// keeps one file from satisfying two mappings and keeps a rename output from
+/// being re-matched by a later pattern.
+fn take_matching(available: &mut Vec<PathBuf>, pattern: &str) -> eyre::Result<Option<PathBuf>> {
+    // An exact file name honors the user's explicit choice, even for files a glob
+    // heuristic would skip.
+    let exact = std::ffi::OsStr::new(pattern);
+    if let Some(idx) = available.iter().position(|p| p.file_name() == Some(exact)) {
+        return Ok(Some(available.remove(idx)));
+    }
+
+    // For a glob, skip obvious non-binary collateral (LICENSE, README, *.txt/.md,
+    // …) the same way the string-form rename path does, so e.g. `ols-*` grabs the
+    // real binary rather than `ols-license.txt`, which would sort first.
+    let glob = glob::Pattern::new(pattern)
+        .map_err(|e| eyre::eyre!("invalid rename_exe pattern '{pattern}': {e}"))?;
+    if let Some(idx) = available.iter().position(|p| {
+        p.file_name()
+            .map(|n| {
+                let name = n.to_string_lossy();
+                !should_skip_file(&name, true) && glob.matches(&name)
+            })
+            .unwrap_or(false)
+    }) {
+        return Ok(Some(available.remove(idx)));
+    }
+
+    Ok(None)
+}
+
+/// Rejects `bin`/`rename_exe` names that are not plain file names (`../tool`,
+/// `/abs/tool`, `bin/tool`), which would otherwise be joined onto the install
+/// or search directory and place the binary outside it.
+pub(crate) fn ensure_plain_bin_name(option: &str, name: &str) -> eyre::Result<()> {
+    if !file::is_plain_file_name(name) {
+        bail!(
+            "{option}: '{name}' must be a plain file name \
+             (no path separators or parent directories)"
+        );
+    }
+    Ok(())
+}
+
+/// Rejects a configured binary path that is absolute or contains parent
+/// components, while preserving the established `bin = "bin/tool"` form.
+pub(crate) fn ensure_safe_relative_bin_path(option: &str, path: &str) -> eyre::Result<()> {
+    if !file::is_safe_relative_path(path) {
+        bail!(
+            "{option}: '{path}' must be a safe relative path \
+             (no absolute paths or parent directories)"
+        );
+    }
+    Ok(())
+}
+
+/// Renames `path` (named `file_name`) to `target` within `dir`, preserving any
+/// required extension and ensuring the result is executable. A collision on the
+/// target (two mappings pointing at the same name, or the archive already
+/// containing that name) is unsatisfiable, so it fails the install loudly rather
+/// than silently dropping a binary and reporting success.
+fn finish_rename(dir: &Path, path: &Path, file_name: &str, target: &str) -> eyre::Result<()> {
+    let target_path = keep_required_extensions(dir, file_name, target, dir.join(target));
+    // Ensure the binary is executable whether or not we move it: ZIP archives drop
+    // the exec bit, and the file may already carry the desired name.
+    if !file::is_executable(path) {
+        file::make_executable(path)?;
+    }
+    if path == target_path {
+        return Ok(());
+    }
+    if target_path.exists() {
+        bail!(
+            "rename_exe: cannot rename '{}' to '{}': target already exists. \
+             Check for duplicate or overlapping rename_exe mappings.",
+            path.display(),
+            target_path.display()
+        );
+    }
+    file::rename(path, &target_path)?;
+    debug!("Renamed {} to {}", path.display(), target_path.display());
+    Ok(())
+}
+
+/// Helper function to rename executable inside a macOS .app bundle
+fn rename_executable_in_app_bundle(
+    macos_dir: &Path,
+    target_path: &Path,
+    tool_name: Option<&str>,
+) -> eyre::Result<bool> {
+    // Find the first executable in the Contents/MacOS directory
+    for path in file::ls(macos_dir)? {
+        if path.is_file() && file::is_executable(&path) {
+            let file_name = path.file_name().unwrap().to_string_lossy();
+            if should_skip_file(&file_name, false) {
+                continue;
+            }
+            file::rename(&path, target_path)?;
+            debug!(
+                "Renamed .app bundle executable {} to {}",
+                path.display(),
+                target_path.display()
+            );
+            return Ok(true);
+        }
+    }
+
+    // If no executable found, try matching by tool name
+    if let Some(tool_name) = tool_name {
+        for path in file::ls(macos_dir)? {
+            if path.is_file() {
+                let file_name = path.file_name().unwrap().to_string_lossy();
+                if should_skip_file(&file_name, true) {
+                    continue;
+                }
+                if file_name.to_lowercase().contains(&tool_name.to_lowercase()) {
+                    file::make_executable(&path)?;
+                    file::rename(&path, target_path)?;
+                    debug!(
+                        "Found and renamed .app bundle file {} to {} (added exec permissions)",
+                        path.display(),
+                        target_path.display()
+                    );
+                    return Ok(true);
+                }
+            }
+        }
+    }
+
+    Ok(false)
+}
+
+fn keep_required_extensions(
+    dir: &Path,
+    file_name: &str,
+    new_name: &str,
+    target_path: PathBuf,
+) -> PathBuf {
+    if cfg!(windows) {
+        return keep_extensions(
+            dir,
+            file_name,
+            new_name,
+            target_path,
+            &[".exe", ".cmd", ".bat"],
+        );
+    }
+    target_path
+}
+
+fn keep_extensions(
+    dir: &Path,
+    file_name: &str,
+    new_name: &str,
+    target_path: PathBuf,
+    exts: &[&str],
+) -> PathBuf {
+    for ext in exts {
+        if file_name.to_lowercase().ends_with(ext) && !new_name.to_lowercase().ends_with(ext) {
+            return dir.join(format!("{}{}", new_name, ext));
+        }
+    }
+    target_path
+}
+
+pub(crate) fn rename_binary_name(original_name: &str, new_name: &str) -> String {
+    for ext in [".exe", ".cmd", ".bat", ".sh", ".ps1", ".AppImage"] {
+        if original_name.to_lowercase().ends_with(&ext.to_lowercase())
+            && !new_name.to_lowercase().ends_with(&ext.to_lowercase())
+        {
+            return format!("{new_name}{ext}");
+        }
+    }
+    new_name.to_string()
+}
+
+/// Cleans a binary name by removing OS/arch suffixes and version numbers.
+/// This is useful when downloading single binaries that have platform-specific names.
+/// Executable extensions (.exe, .bat, .sh, etc.) are preserved.
+///
+/// # Parameters
+/// - `name`: The binary name to clean
+/// - `tool_name`: Optional hint for the expected tool name. When provided:
+///   - Version removal is more aggressive, only keeping the result if it matches the tool name
+///   - Helps ensure the cleaned name matches the expected tool
+///     – When `None`, version removal is more conservative to avoid over-cleaning
+///
+/// # Examples
+/// - "docker-compose-linux-x86_64" -> "docker-compose"
+/// - "tool-darwin-arm64.exe" -> "tool.exe" (preserves extension)
+/// - "mytool-v1.2.3-windows-amd64" -> "mytool"
+/// - "app-2.0.0-linux-x64" -> "app" (with tool_name="app")
+/// - "script-darwin-arm64.sh" -> "script.sh" (preserves .sh extension)
+pub(crate) fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
+    // Extract extension if present (to preserve it)
+    let (name_without_ext, extension) = if let Some(pos) = name.rfind('.') {
+        let potential_ext = &name[pos + 1..];
+        // Common executable extensions to preserve
+        let executable_extensions = [
+            "exe", "bat", "cmd", "sh", "ps1", "app", "AppImage", "run", "bin",
+        ];
+        if executable_extensions.contains(&potential_ext) {
+            (&name[..pos], Some(&name[pos..]))
+        } else {
+            // Not an executable extension, treat it as part of the name
+            (name, None)
+        }
+    } else {
+        (name, None)
+    };
+
+    // Helper to add extension back to a cleaned name
+    let with_ext = |s: String| -> String {
+        match extension {
+            Some(ext) => format!("{}{}", s, ext),
+            None => s,
+        }
+    };
+
+    // Try to find and remove platform suffixes
+    let mut cleaned = name_without_ext.to_string();
+
+    if let Some(stripped) = strip_platform_token_suffix(&cleaned) {
+        cleaned = stripped;
+        let result = clean_version_suffix(&cleaned, tool_name);
+        return with_ext(result);
+    }
+
+    // First try combined OS-arch patterns
+    for os in BINARY_OS_TOKENS {
+        if !cleaned.contains(os) {
+            continue;
+        }
+        for arch in BINARY_ARCH_TOKENS {
+            if !cleaned.contains(arch) {
+                continue;
+            }
+            // Try different separator combinations
+            let patterns = [
+                format!("-{os}-{arch}"),
+                format!("-{os}_{arch}"),
+                format!("_{os}-{arch}"),
+                format!("_{os}_{arch}"),
+                format!("-{arch}-{os}"), // Sometimes arch comes before OS
+                format!("_{arch}_{os}"),
+            ];
+
+            for pattern in &patterns {
+                if let Some(pos) = cleaned.rfind(pattern) {
+                    cleaned = cleaned[..pos].to_string();
+                    // Continue processing to also remove version numbers
+                    let result = clean_version_suffix(&cleaned, tool_name);
+                    return with_ext(result);
+                }
+            }
+        }
+    }
+
+    // Try just OS suffix (sometimes arch is omitted)
+    for os in BINARY_OS_TOKENS {
+        let patterns = [format!("-{os}"), format!("_{os}")];
+        for pattern in &patterns {
+            if let Some(pos) = cleaned.rfind(pattern.as_str()) {
+                // Only remove if it's at the end or followed by more platform info
+                let after = &cleaned[pos + pattern.len()..];
+                if after.is_empty() || after.starts_with('-') || after.starts_with('_') {
+                    // Check if what comes before looks like a valid name
+                    let before = &cleaned[..pos];
+                    if !before.is_empty() {
+                        cleaned = before.to_string();
+                        let result = clean_version_suffix(&cleaned, tool_name);
+                        // Add the extension back if we had one
+                        return with_ext(result);
+                    }
+                }
+            }
+        }
+    }
+
+    // Try just arch suffix (sometimes OS is omitted)
+    for arch in BINARY_ARCH_TOKENS {
+        let patterns = [format!("-{arch}"), format!("_{arch}")];
+        for pattern in &patterns {
+            if let Some(pos) = cleaned.rfind(pattern.as_str()) {
+                // Only remove if it's at the end or followed by more platform info
+                let after = &cleaned[pos + pattern.len()..];
+                if after.is_empty() || after.starts_with('-') || after.starts_with('_') {
+                    // Check if what comes before looks like a valid name
+                    let before = &cleaned[..pos];
+                    if !before.is_empty() {
+                        cleaned = before.to_string();
+                        let result = clean_version_suffix(&cleaned, tool_name);
+                        // Add the extension back if we had one
+                        return with_ext(result);
+                    }
+                }
+            }
+        }
+    }
+
+    // Try to remove version suffixes as a final step
+    let cleaned = clean_version_suffix(&cleaned, tool_name);
+
+    // Add the extension back if we had one
+    with_ext(cleaned)
+}
+
+fn strip_platform_token_suffix(name: &str) -> Option<String> {
+    let mut separators = name
+        .char_indices()
+        .filter_map(|(idx, c)| matches!(c, '-' | '_').then_some(idx))
+        .collect::<Vec<_>>();
+    separators.sort_unstable_by(|a, b| b.cmp(a));
+
+    for idx in separators {
+        if separator_inside_platform_token(name, idx) {
+            continue;
+        }
+        let suffix = &name[idx + 1..];
+        let tokens = suffix
+            .split(['-', '_'])
+            .filter(|token| !token.is_empty())
+            .collect::<Vec<_>>();
+        if tokens.len() < 2 {
+            continue;
+        }
+        if !tokens
+            .iter()
+            .all(|token| is_platform_or_version_token(token))
+        {
+            continue;
+        }
+        if !tokens.iter().any(|token| is_os_token(token)) {
+            continue;
+        }
+        if !tokens.iter().any(|token| is_arch_token(token)) {
+            continue;
+        }
+
+        let prefix = &name[..idx];
+        if !prefix.is_empty() {
+            return Some(prefix.to_string());
+        }
+    }
+
+    None
+}
+
+fn separator_inside_platform_token(name: &str, idx: usize) -> bool {
+    if !name[idx..].starts_with('_') {
+        return false;
+    }
+
+    let token_start = name[..idx]
+        .rfind(['-', '_'])
+        .map(|pos| pos + 1)
+        .unwrap_or(0);
+    let token_end = name[idx + 1..]
+        .find(['-', '_'])
+        .map(|pos| idx + 1 + pos)
+        .unwrap_or(name.len());
+    let token = &name[token_start..token_end];
+
+    is_platform_or_version_token(token)
+}
+
+/// Remove version suffixes from binary names.
+///
+/// When `tool_name` is provided, aggressively removes version patterns but only
+/// if the result matches or relates to the tool name. This prevents accidentally
+/// removing too much from the name.
+///
+/// When `tool_name` is None, only removes clear version patterns at the end
+/// while ensuring we don't leave an empty or invalid result.
+fn clean_version_suffix(name: &str, tool_name: Option<&str>) -> String {
+    // Common version patterns to remove
+    if let Some(tool) = tool_name {
+        // If we have a tool name, only remove version if what remains matches the tool
+        if let Some(m) = VERSION_PATTERN.find(name) {
+            let without_version = &name[..m.start()];
+            if without_version == tool
+                || tool.contains(without_version)
+                || without_version.contains(tool)
+            {
+                return without_version.to_string();
+            }
+        }
+    } else {
+        // No tool name hint, be more conservative
+        // Only remove if it looks like a clear version pattern at the end
+        if let Some(m) = VERSION_PATTERN.find(name) {
+            let without_version = &name[..m.start()];
+            // Make sure we're not left with nothing or just a dash/underscore
+            if !without_version.is_empty()
+                && !without_version.ends_with('-')
+                && !without_version.ends_with('_')
+            {
+                return without_version.to_string();
+            }
+        }
+    }
+
+    name.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::toolset::ToolVersionOptions;
+    use indexmap::IndexMap;
+
+    const SHA256_LOWER: &str = "7fdd1f42e6b0855421ecf27bb406e2492ade1087c85e30ebf0deab6280ea743c";
+    const SHA256_UPPER: &str = "7FDD1F42E6B0855421ECF27BB406E2492ADE1087C85E30EBF0DEAB6280EA743C";
+    const SHA512_LOWER: &str = "78b83c1f3aa14cfa6c5a551a92d90c147b3c029304429d96bc86560e0f08fc9cf69c343c2dc52fec0d7c7bceee894bb5647d4f3e3359816b231dafaee8799363";
+
+    #[test]
+    fn test_parse_checksum_file_content_standard_format() {
+        let content = format!("{SHA256_LOWER}  deno-x86_64-unknown-linux-gnu.zip\n");
+
+        assert_eq!(
+            parse_checksum_file_content(&content, "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_powershell_get_file_hash_format() {
+        let content = format!(
+            "\
+Algorithm : SHA256
+Hash      : {SHA256_UPPER}
+Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
+"
+        );
+
+        assert_eq!(
+            parse_checksum_file_content(&content, "sha256"),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_rejects_non_hash_tokens() {
+        let content = "Algorithm : SHA256\nPath      : deno.zip\n";
+
+        assert_eq!(parse_checksum_file_content(content, "sha256"), None);
+    }
+
+    #[test]
+    fn test_parse_checksum_file_content_rejects_unknown_algorithms() {
+        assert_eq!(parse_checksum_file_content(SHA256_LOWER, "sha3-256"), None);
+    }
+
+    #[test]
+    fn test_normalize_checksum_rejects_bare_hash() {
+        // A bare hash with no `algo:` prefix is rejected; the expression must
+        // qualify it (e.g. `"sha256:" + hash`).
+        assert_eq!(normalize_checksum(SHA256_LOWER), None);
+    }
+
+    #[test]
+    fn test_normalize_checksum_prefixed_hash_keeps_algo() {
+        assert_eq!(
+            normalize_checksum(&format!("sha256:{SHA256_UPPER}")),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_normalize_checksum_rejects_non_hex() {
+        assert_eq!(normalize_checksum("sha256:not-a-hash"), None);
+    }
+
+    #[test]
+    fn test_normalize_checksum_accepts_uppercase_algo() {
+        // Uppercase algorithm name in the prefix is normalized, not rejected.
+        assert_eq!(
+            normalize_checksum(&format!("SHA256:{SHA256_LOWER}")),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_selects_entry_by_target() {
+        // A julia-style manifest: pick the file matching os/arch and read sha256.
+        let body = format!(
+            r#"{{"files":[
+                {{"os":"linux","arch":"x64","sha256":"{SHA256_LOWER}"}},
+                {{"os":"macos","arch":"arm64","sha256":"{SHA256_UPPER}"}}
+            ]}}"#
+        );
+        let expr = r#""sha256:" + filter(fromJSON(body).files, {#.os == os and #.arch == arch})[0].sha256"#;
+        let vars = [("os", "macos"), ("arch", "arm64")];
+        assert_eq!(
+            eval_checksum_expr(expr, &body, &vars),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_julia_shaped_version_keyed_manifest() {
+        // julia versions.json shape: top-level keyed by version, files[] with url+sha256.
+        let body = format!(
+            r#"{{"1.10.0":{{"files":[
+                {{"url":"https://x/julia-1.10.0-linux-x86_64.tar.gz","sha256":"{SHA256_LOWER}"}},
+                {{"url":"https://x/julia-1.10.0-macaarch64.tar.gz","sha256":"{SHA256_UPPER}"}}
+            ]}}}}"#
+        );
+        // expr-lang treats a bare identifier in `[]` as a literal key, so a
+        // runtime version must be forced to evaluate via `version + ""`.
+        let expr =
+            r#""sha256:" + filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256"#;
+        let vars = [
+            ("version", "1.10.0"),
+            ("url", "https://x/julia-1.10.0-linux-x86_64.tar.gz"),
+        ];
+        assert_eq!(
+            eval_checksum_expr(expr, &body, &vars),
+            Some(format!("sha256:{SHA256_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_returns_none_on_no_match() {
+        let body = r#"{"files":[]}"#;
+        let expr = r#"len(fromJSON(body).files) > 0 ? fromJSON(body).files[0].sha256 : """#;
+        let vars: [(&str, &str); 0] = [];
+        assert_eq!(eval_checksum_expr(expr, body, &vars), None);
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_rejects_bare_hash_result() {
+        // A bare hash (no algo: prefix) is rejected rather than assumed sha256.
+        let body = format!(r#"{{"files":[{{"os":"linux","sha256":"{SHA256_LOWER}"}}]}}"#);
+        let expr = r#"filter(fromJSON(body).files, { #.os == os })[0].sha256"#;
+        let vars = [("os", "linux")];
+        assert_eq!(eval_checksum_expr(expr, &body, &vars), None);
+    }
+
+    #[test]
+    fn test_eval_checksum_expr_honors_explicit_algo_prefix() {
+        // When the algorithm varies, the expression builds the `algo:hash`
+        // string itself; the prefix is used as-is rather than the default.
+        let body = format!(
+            r#"{{"files":[{{"os":"linux","algo":"sha512","checksum":"{SHA512_LOWER}"}}]}}"#
+        );
+        let expr =
+            r#"let f = filter(fromJSON(body).files, { #.os == os })[0]; f.algo + ":" + f.checksum"#;
+        let vars = [("os", "linux")];
+        assert_eq!(
+            eval_checksum_expr(expr, &body, &vars),
+            Some(format!("sha512:{SHA512_LOWER}"))
+        );
+    }
+
+    #[test]
+    fn test_clean_binary_name() {
+        // Test basic OS/arch removal
+        assert_eq!(
+            clean_binary_name("docker-compose-linux-x86_64", None),
+            "docker-compose"
+        );
+        assert_eq!(
+            clean_binary_name("docker-compose-linux-x86_64.exe", None),
+            "docker-compose.exe"
+        );
+        assert_eq!(clean_binary_name("tool-darwin-arm64", None), "tool");
+        assert_eq!(
+            clean_binary_name("mytool-v1.2.3-windows-amd64", None),
+            "mytool"
+        );
+
+        // Test different separators
+        assert_eq!(clean_binary_name("app_linux_amd64", None), "app");
+        assert_eq!(clean_binary_name("app-linux_x64", None), "app");
+        assert_eq!(clean_binary_name("app_darwin-arm64", None), "app");
+
+        // Test arch before OS
+        assert_eq!(clean_binary_name("tool-x86_64-linux", None), "tool");
+        assert_eq!(clean_binary_name("tool_amd64_windows", None), "tool");
+        assert_eq!(
+            clean_binary_name(
+                "code2prompt-x86_64-pc-windows-msvc.exe",
+                Some("mufeedvh/code2prompt")
+            ),
+            "code2prompt.exe"
+        );
+
+        // Test with tool name hint
+        assert_eq!(
+            clean_binary_name("docker-compose-linux-x86_64", Some("docker-compose")),
+            "docker-compose"
+        );
+        assert_eq!(
+            clean_binary_name("compose-linux-x86_64", Some("compose")),
+            "compose"
+        );
+
+        // Test single OS or arch suffix
+        assert_eq!(clean_binary_name("binary-linux", None), "binary");
+        assert_eq!(clean_binary_name("binary-x86_64", None), "binary");
+        assert_eq!(clean_binary_name("binary_arm64", None), "binary");
+
+        // Test version removal
+        assert_eq!(clean_binary_name("tool-v1.2.3", None), "tool");
+        assert_eq!(clean_binary_name("app-2.0.0", None), "app");
+        assert_eq!(clean_binary_name("binary_v3.2.1", None), "binary");
+        assert_eq!(clean_binary_name("tool-1.0.0-alpha", None), "tool");
+        assert_eq!(clean_binary_name("app-v2.0.0-rc1", None), "app");
+
+        // Test version removal with tool name hint
+        assert_eq!(
+            clean_binary_name("docker-compose-v2.29.1", Some("docker-compose")),
+            "docker-compose"
+        );
+        assert_eq!(
+            clean_binary_name("compose-2.29.1", Some("compose")),
+            "compose"
+        );
+
+        // Test no cleaning needed
+        assert_eq!(clean_binary_name("simple-tool", None), "simple-tool");
+
+        // Test that executable extensions are preserved
+        assert_eq!(clean_binary_name("app-linux-x64.exe", None), "app.exe");
+        assert_eq!(
+            clean_binary_name("tool-v1.2.3-windows.bat", None),
+            "tool.bat"
+        );
+        assert_eq!(
+            clean_binary_name("script-darwin-arm64.sh", None),
+            "script.sh"
+        );
+        assert_eq!(
+            clean_binary_name("app-linux.AppImage", None),
+            "app.AppImage"
+        );
+        assert_eq!(
+            clean_binary_name("opengrep_osx_arm64", Some("opengrep/opengrep")),
+            "opengrep"
+        );
+        assert_eq!(
+            clean_binary_name("opengrep_manylinux_x86", Some("opengrep/opengrep")),
+            "opengrep"
+        );
+        assert_eq!(
+            clean_binary_name("opengrep_musllinux_x86", Some("opengrep/opengrep")),
+            "opengrep"
+        );
+
+        // Test edge cases
+        assert_eq!(clean_binary_name("linux", None), "linux"); // Just OS name
+        assert_eq!(clean_binary_name("", None), "");
+    }
+
+    #[test]
+    fn test_rename_binary_name_preserves_executable_extension() {
+        assert_eq!(
+            rename_binary_name("code2prompt-x86_64-pc-windows-msvc.exe", "code2prompt"),
+            "code2prompt.exe"
+        );
+        assert_eq!(
+            rename_binary_name("tool-linux-x64", "tool-renamed"),
+            "tool-renamed"
+        );
+    }
+
+    #[test]
+    fn test_strip_platform_token_suffix_uses_nearest_valid_suffix() {
+        assert_eq!(
+            strip_platform_token_suffix("code2prompt-x86_64-pc-windows-msvc"),
+            Some("code2prompt".to_string())
+        );
+        assert_eq!(
+            strip_platform_token_suffix("tool-v1.2.3-linux-x86_64"),
+            Some("tool-v1.2.3".to_string())
+        );
+    }
+
+    #[test]
+    fn test_keep_extensions() {
+        let dir = Path::new("/tmp");
+        let initial_target = dir.join("new_tool");
+
+        // Does not append extension not in the list
+        assert_eq!(
+            keep_extensions(
+                dir,
+                "mytool.sh",
+                "new_tool",
+                initial_target.clone(),
+                &[".exe"]
+            ),
+            initial_target
+        );
+
+        // Appends if in the list
+        assert_eq!(
+            keep_extensions(
+                dir,
+                "mytool.sh",
+                "new_tool",
+                initial_target.clone(),
+                &[".sh"]
+            ),
+            dir.join("new_tool.sh")
+        );
+
+        // Case insensitivity handled
+        assert_eq!(
+            keep_extensions(
+                dir,
+                "mytool.SH",
+                "new_tool",
+                initial_target.clone(),
+                &[".sh"]
+            ),
+            dir.join("new_tool.sh")
+        );
+
+        // New name already has extension - avoids double extension
+        assert_eq!(
+            keep_extensions(
+                dir,
+                "mytool.exe",
+                "new_tool.exe",
+                dir.join("new_tool.exe"),
+                &[".exe"]
+            ),
+            dir.join("new_tool.exe")
+        );
+    }
+
+    #[test]
+    fn test_keep_required_extensions() {
+        let dir = Path::new("/tmp");
+        let initial_target = dir.join("new_tool");
+
+        if cfg!(windows) {
+            // Keeps Windows executable extensions
+            assert_eq!(
+                keep_required_extensions(dir, "mytool.exe", "new_tool", initial_target.clone()),
+                dir.join("new_tool.exe")
+            );
+            assert_eq!(
+                keep_required_extensions(dir, "mytool.cmd", "new_tool", initial_target.clone()),
+                dir.join("new_tool.cmd")
+            );
+            assert_eq!(
+                keep_required_extensions(dir, "MYTOOL.BAT", "new_tool", initial_target.clone()),
+                dir.join("new_tool.bat")
+            );
+        } else {
+            // Does not append on non-windows
+            assert_eq!(
+                keep_required_extensions(dir, "mytool.exe", "new_tool", initial_target.clone()),
+                initial_target
+            );
+        }
+    }
+
+    /// `platforms = { "<name>" = { <key> = ... } }`, the shape a nested table takes.
+    fn nested_platforms(entries: &[(&str, &str)], key_type: &str) -> ToolVersionOptions {
+        let mut platforms = toml::value::Table::new();
+        for (platform_key, value) in entries {
+            let mut entry = toml::value::Table::new();
+            entry.insert(key_type.to_string(), toml::Value::String(value.to_string()));
+            platforms.insert(platform_key.to_string(), toml::Value::Table(entry));
+        }
+        let mut opts = IndexMap::new();
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
+        ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn list_available_platforms_names_keys_mise_does_not_recognise() {
+        // What the list is for: telling someone which platform keys their tool declares. Probing a
+        // grid of known OS and arch tokens could only ever name the ones mise already knew, so a
+        // typo came back as an empty list and the http backend told the author to provide a `url`
+        // they had written. Measured before the change, host windows-x64:
+        //
+        //     platforms = { lnux-x64  = { url = ... } }  ->  Http backend requires 'url' option
+        //     platforms = { linux-x64 = { url = ... } }  ->  ... Available: linux-x64.
+        let opts = nested_platforms(
+            &[
+                ("lnux-x64", "https://example.invalid/a.tar.gz"),
+                ("linux_x64", "https://example.invalid/b.tar.gz"),
+                ("plan9-mips", "https://example.invalid/c.tar.gz"),
+            ],
+            "url",
+        );
+
+        let platforms = list_available_platforms_with_key(&opts, "url");
+
+        assert!(platforms.contains(&"lnux-x64".to_string()), "{platforms:?}");
+        assert!(
+            platforms.contains(&"linux_x64".to_string()),
+            "{platforms:?}"
+        );
+        assert!(
+            platforms.contains(&"plan9-mips".to_string()),
+            "{platforms:?}"
+        );
+    }
+
+    #[test]
+    fn list_available_platforms_still_names_the_keys_the_grid_used_to_find() {
+        // The control for removing the token grid: everything it could see is still seen.
+        let opts = nested_platforms(
+            &[
+                ("linux-x64", "https://example.invalid/linux.tar.gz"),
+                ("macos-arm64", "https://example.invalid/macos.tar.gz"),
+                ("windows-x64", "https://example.invalid/windows.zip"),
+            ],
+            "url",
+        );
+
+        let platforms = list_available_platforms_with_key(&opts, "url");
+
+        for expected in ["linux-x64", "macos-arm64", "windows-x64"] {
+            assert!(platforms.contains(&expected.to_string()), "{platforms:?}");
+        }
+    }
+
+    #[test]
+    fn list_available_platforms_is_about_one_key_not_every_platform() {
+        // The second control, and the one that stops this from becoming "list every platform
+        // mentioned anywhere": a platform that declares a checksum but no url must not be offered
+        // as somewhere a url could be found.
+        let opts = nested_platforms(&[("linux-x64", "sha256:abc")], "checksum");
+
+        assert!(list_available_platforms_with_key(&opts, "url").is_empty());
+        assert_eq!(
+            list_available_platforms_with_key(&opts, "checksum"),
+            vec!["linux-x64".to_string()]
+        );
+    }
+
+    #[test]
+    fn list_available_platforms_skips_a_value_the_lookup_would_reject() {
+        // Existence is not enough. The nested lookup converts scalars and returns nothing for a
+        // table or an array, so a `url` written as either resolves to no URL -- and offering its
+        // platform as available sends the reader looking for a key that is already there. The
+        // token grid this replaced had the same hole, since `contains_key` only asks whether
+        // something is at the path.
+        let mut platforms = toml::value::Table::new();
+
+        let mut as_table = toml::value::Table::new();
+        as_table.insert(
+            "url".to_string(),
+            toml::Value::Table({
+                let mut inner = toml::value::Table::new();
+                inner.insert("href".to_string(), toml::Value::String("x".to_string()));
+                inner
+            }),
+        );
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(as_table));
+
+        let mut as_array = toml::value::Table::new();
+        as_array.insert(
+            "url".to_string(),
+            toml::Value::Array(vec![toml::Value::String("x".to_string())]),
+        );
+        platforms.insert("macos-arm64".to_string(), toml::Value::Table(as_array));
+
+        let mut as_string = toml::value::Table::new();
+        as_string.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.invalid/w.zip".to_string()),
+        );
+        platforms.insert("windows-x64".to_string(), toml::Value::Table(as_string));
+
+        let mut opts = IndexMap::new();
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        let platforms = list_available_platforms_with_key(&tool_opts, "url");
+
+        // The control is the third entry: a well-formed neighbour still shows up, so this is a
+        // value check rather than the list quietly emptying itself.
+        assert_eq!(platforms, vec!["windows-x64".to_string()]);
+    }
+
+    #[test]
+    fn list_available_platforms_reads_a_literal_dotted_key() {
+        // The other shape `ToolVersionOptions::contains_key` resolves, and the other half of what
+        // the grid was covering: the whole path written as one top-level key.
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platforms.lnux-x64.url".to_string(),
+            toml::Value::String("https://example.invalid/a.tar.gz".to_string()),
+        );
+        opts.insert(
+            "platform.macos-arm64.url".to_string(),
+            toml::Value::String("https://example.invalid/b.tar.gz".to_string()),
+        );
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        let platforms = list_available_platforms_with_key(&tool_opts, "url");
+
+        assert!(platforms.contains(&"lnux-x64".to_string()), "{platforms:?}");
+        assert!(
+            platforms.contains(&"macos-arm64".to_string()),
+            "{platforms:?}"
+        );
+    }
+
+    #[test]
+    fn test_list_available_platforms_with_key_flat_preserves_arch_underscore() {
+        let mut opts = IndexMap::new();
+        // Flat keys with os_arch_keytype naming
+        opts.insert(
+            "platforms_macos_x86_64_url".to_string(),
+            toml::Value::String("https://example.com/macos-x86_64.tar.gz".to_string()),
+        );
+        opts.insert(
+            "platforms_linux_x64_url".to_string(),
+            toml::Value::String("https://example.com/linux-x64.tar.gz".to_string()),
+        );
+        // Different prefix variant also supported
+        opts.insert(
+            "platform_windows_arm64_url".to_string(),
+            toml::Value::String("https://example.com/windows-arm64.zip".to_string()),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        let platforms = list_available_platforms_with_key(&tool_opts, "url");
+
+        // Should convert only the OS/arch separator underscore to dash
+        assert!(platforms.contains(&"macos-x86_64".to_string()));
+        assert!(!platforms.contains(&"macos-x86-64".to_string()));
+
+        assert!(platforms.contains(&"linux-x64".to_string()));
+        assert!(platforms.contains(&"windows-arm64".to_string()));
+    }
+
+    #[test]
+    fn test_verify_artifact_platform_specific() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platforms".to_string(),
+            toml::Value::String(
+                r#"
+[macos-x64]
+checksum = "blake3:abc123"
+size = "1024"
+
+[macos-arm64]
+checksum = "blake3:jkl012"
+size = "4096"
+
+[linux-x64]
+checksum = "blake3:def456"
+size = "2048"
+
+[linux-arm64]
+checksum = "blake3:mno345"
+size = "5120"
+
+[windows-x64]
+checksum = "blake3:ghi789"
+size = "3072"
+
+[windows-arm64]
+checksum = "blake3:mno345"
+size = "5120"
+"#
+                .to_string(),
+            ),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        // Test that platform-specific checksum and size are found
+        // This test verifies that lookup_platform_key is being used correctly
+        // The actual verification would require a real file, but we can test the lookup logic
+        let checksum = lookup_platform_key(&tool_opts, "checksum");
+        let size = lookup_platform_key(&tool_opts, "size");
+
+        // Skip the test if the current platform isn't supported in the test data
+        if checksum.is_none() || size.is_none() {
+            eprintln!(
+                "Skipping test_verify_artifact_platform_specific: current platform not supported in test data"
+            );
+            return;
+        }
+
+        // The exact values depend on the current platform, but we should get some value
+        // If we're not on a supported platform, the test should still pass
+        // since the function should handle missing platform-specific values gracefully
+        assert!(checksum.is_some());
+        assert!(size.is_some());
+    }
+
+    #[test]
+    fn test_verify_artifact_fallback_to_generic() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "checksum".to_string(),
+            toml::Value::String("blake3:generic123".to_string()),
+        );
+        opts.insert("size".to_string(), toml::Value::String("512".to_string()));
+
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        // Test that generic fallback works when no platform-specific values exist
+        let checksum = lookup_with_fallback(&tool_opts, "checksum");
+        let size = lookup_with_fallback(&tool_opts, "size");
+
+        assert_eq!(checksum, Some("blake3:generic123".to_string()));
+        assert_eq!(size, Some("512".to_string()));
+    }
+
+    #[test]
+    fn test_lookup_platform_key_bin_path() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platform".to_string(),
+            toml::Value::String(
+                r#"
+[macos-arm64]
+bin_path = "CMake.app/Contents/bin"
+
+[linux-x64]
+bin_path = "bin"
+
+[windows-x64]
+bin_path = "."
+"#
+                .to_string(),
+            ),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        // Test that platform-specific bin_path is found
+        let bin_path = lookup_platform_key(&tool_opts, "bin_path");
+
+        // The exact value depends on the current platform
+        if let Some(bp) = bin_path {
+            // Should be one of the platform-specific values
+            assert!(
+                bp == "CMake.app/Contents/bin" || bp == "bin" || bp == ".",
+                "Expected platform-specific bin_path, got: {}",
+                bp
+            );
+        }
+    }
+
+    #[test]
+    fn test_lookup_platform_key_bin() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platforms".to_string(),
+            toml::Value::String(
+                r#"
+[macos-arm64]
+bin = "xmake"
+
+[linux-x64]
+bin = "xmake"
+
+[windows-x64]
+bin = "xmake.exe"
+"#
+                .to_string(),
+            ),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        // Test that platform-specific bin is found
+        let bin = lookup_platform_key(&tool_opts, "bin");
+
+        // The exact value depends on the current platform
+        if let Some(b) = bin {
+            // Should be one of the platform-specific values
+            assert!(
+                b == "xmake" || b == "xmake.exe",
+                "Expected platform-specific bin, got: {}",
+                b
+            );
+        }
+    }
+
+    #[test]
+    fn test_lookup_platform_key_bin_with_fallback() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "bin".to_string(),
+            toml::Value::String("generic-tool".to_string()),
+        );
+        opts.insert(
+            "platforms".to_string(),
+            toml::Value::String(
+                r#"
+[windows-x64]
+bin = "tool.exe"
+"#
+                .to_string(),
+            ),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        // Test that platform-specific bin takes precedence, or falls back to generic
+        let bin = lookup_with_fallback(&tool_opts, "bin");
+
+        assert!(bin.is_some());
+        let bin_value = bin.unwrap();
+        // On Windows x64, should get "tool.exe", otherwise "generic-tool"
+        assert!(
+            bin_value == "tool.exe" || bin_value == "generic-tool",
+            "Expected platform-specific or generic bin, got: {}",
+            bin_value
+        );
+    }
+
+    #[test]
+    fn test_lookup_with_fallback_coerces_scalar_values() {
+        let mut opts = IndexMap::new();
+        opts.insert("strip_components".to_string(), toml::Value::Integer(1));
+        opts.insert("symlink_bins".to_string(), toml::Value::Boolean(true));
+
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            lookup_with_fallback(&tool_opts, "strip_components"),
+            Some("1".to_string())
+        );
+        assert_eq!(
+            lookup_with_fallback(&tool_opts, "symlink_bins"),
+            Some("true".to_string())
+        );
+    }
+
+    #[test]
+    fn test_lookup_platform_key_inline_format() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platforms_windows_x64_bin".to_string(),
+            toml::Value::String("xmake.exe".to_string()),
+        );
+        opts.insert(
+            "platforms_linux_x64_bin".to_string(),
+            toml::Value::String("xmake".to_string()),
+        );
+        opts.insert(
+            "platforms_macos_arm64_bin".to_string(),
+            toml::Value::String("xmake".to_string()),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        // Test that flat platform format works
+        let bin = lookup_platform_key(&tool_opts, "bin");
+
+        if let Some(b) = bin {
+            assert!(
+                b == "xmake" || b == "xmake.exe",
+                "Expected platform-specific bin from flat format, got: {}",
+                b
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_make_configured_bin_executable_marks_only_exact_bin() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let binary = tmp.path().join("selene");
+        let readme = tmp.path().join("README.md");
+        let config = tmp.path().join("selene.toml");
+        let unrelated = tmp.path().join("counselene");
+        std::fs::write(&binary, b"not-a-binary").unwrap();
+        std::fs::write(&readme, b"not-a-binary").unwrap();
+        std::fs::write(&config, b"not-a-binary").unwrap();
+        std::fs::write(&unrelated, b"not-a-binary").unwrap();
+
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&readme, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&unrelated, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        make_configured_bin_executable(tmp.path(), "selene").unwrap();
+        make_configured_bin_executable(tmp.path(), "missing").unwrap();
+
+        assert!(file::is_executable(&binary));
+        assert!(!file::is_executable(&readme));
+        assert!(!file::is_executable(&config));
+        assert!(!file::is_executable(&unrelated));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_renames_multiple_binaries_by_glob() {
+        // An archive that ships several binaries with platform-suffixed names.
+        // The table form should clean up all of them, not just one.
+        let tmp = tempfile::tempdir().unwrap();
+        let ols = tmp.path().join("ols-x86_64-unknown-linux-gnu");
+        let odinfmt = tmp.path().join("odinfmt-x86_64-unknown-linux-gnu");
+        std::fs::write(&ols, b"bin").unwrap();
+        std::fs::write(&odinfmt, b"bin").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert("ols-*".to_string(), toml::Value::String("ols".to_string()));
+            t.insert(
+                "odinfmt-*".to_string(),
+                toml::Value::String("odinfmt".to_string()),
+            );
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, Some("ols")).unwrap();
+
+        let ols_renamed = tmp.path().join("ols");
+        let odinfmt_renamed = tmp.path().join("odinfmt");
+        assert!(ols_renamed.is_file(), "ols should be renamed");
+        assert!(odinfmt_renamed.is_file(), "odinfmt should be renamed");
+        assert!(!ols.exists(), "original ols-* should be gone");
+        assert!(!odinfmt.exists(), "original odinfmt-* should be gone");
+        // ZIP archives drop the exec bit; rename should restore it.
+        assert!(file::is_executable(&ols_renamed));
+        assert!(file::is_executable(&odinfmt_renamed));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_exact_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        let please = tmp.path().join("please");
+        let other = tmp.path().join("please_sandbox");
+        std::fs::write(&please, b"bin").unwrap();
+        std::fs::write(&other, b"bin").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert("please".to_string(), toml::Value::String("plz".to_string()));
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, Some("please")).unwrap();
+
+        assert!(tmp.path().join("plz").is_file());
+        assert!(!please.exists());
+        // Untargeted binaries are left untouched.
+        assert!(other.is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_string_delegates_to_single_rename() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("please");
+        std::fs::write(&bin, b"bin").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let value = toml::Value::String("plz".to_string());
+        apply_rename_exe(tmp.path(), &value, Some("please")).unwrap();
+
+        assert!(tmp.path().join("plz").is_file());
+        assert!(!bin.exists());
+    }
+
+    #[test]
+    fn test_apply_rename_exe_table_missing_source_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("keep"), b"bin").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert(
+                "nonexistent-*".to_string(),
+                toml::Value::String("whatever".to_string()),
+            );
+            t
+        });
+
+        // No matching file: warns and leaves the directory untouched.
+        apply_rename_exe(tmp.path(), &value, None).unwrap();
+        assert!(tmp.path().join("keep").is_file());
+        assert!(!tmp.path().join("whatever").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_does_not_rename_its_own_output() {
+        // `tool-*` -> `tool` then `tool` -> `renamed` must not chain: the file
+        // produced by the first mapping must not be consumed by the second.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("tool-linux-x64"), b"bin").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert(
+                "tool-*".to_string(),
+                toml::Value::String("tool".to_string()),
+            );
+            t.insert(
+                "tool".to_string(),
+                toml::Value::String("renamed".to_string()),
+            );
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, None).unwrap();
+
+        // The `tool-*` mapping wins; the `tool` mapping finds nothing (its only
+        // candidate was the freshly-created output, which is not re-matched).
+        assert!(tmp.path().join("tool").is_file());
+        assert!(!tmp.path().join("renamed").exists());
+        assert!(!tmp.path().join("tool-linux-x64").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_errors_on_shared_target() {
+        // Two sources mapped to the same target is unsatisfiable: the install
+        // must fail loudly rather than silently drop one binary and report success.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a-bin"), b"aaa").unwrap();
+        std::fs::write(tmp.path().join("b-bin"), b"bbb").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert(
+                "a-bin".to_string(),
+                toml::Value::String("common".to_string()),
+            );
+            t.insert(
+                "b-bin".to_string(),
+                toml::Value::String("common".to_string()),
+            );
+            t
+        });
+
+        let err = apply_rename_exe(tmp.path(), &value, None).unwrap_err();
+        assert!(
+            err.to_string().contains("target already exists"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_apply_rename_exe_rejects_path_traversal_targets() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("tool"), b"bin").unwrap();
+
+        // Table form: a target escaping the directory fails before any rename.
+        for target in ["../tool", "/abs/tool", "sub/tool"] {
+            let value = toml::Value::Table({
+                let mut t = toml::value::Table::new();
+                t.insert("tool".to_string(), toml::Value::String(target.to_string()));
+                t
+            });
+            let err = apply_rename_exe(tmp.path(), &value, None).unwrap_err();
+            assert!(
+                err.to_string().contains("plain file name"),
+                "unexpected error for {target:?}: {err}"
+            );
+            assert!(tmp.path().join("tool").is_file(), "nothing may be renamed");
+        }
+
+        // String form takes the same validation path.
+        let value = toml::Value::String("../evil".to_string());
+        let err = apply_rename_exe(tmp.path(), &value, Some("tool")).unwrap_err();
+        assert!(err.to_string().contains("plain file name"), "{err}");
+        assert!(!tmp.path().join("..").join("evil").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_glob_skips_collateral_files() {
+        // A glob must pick the real binary, not a lexicographically-earlier
+        // collateral file like a license that also matches the pattern.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("ols-license.txt"), b"MIT").unwrap();
+        std::fs::write(tmp.path().join("ols-x86_64-unknown-linux-gnu"), b"bin").unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert("ols-*".to_string(), toml::Value::String("ols".to_string()));
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, None).unwrap();
+
+        // The binary is renamed; the license is untouched.
+        assert_eq!(std::fs::read(tmp.path().join("ols")).unwrap(), b"bin");
+        assert!(tmp.path().join("ols-license.txt").is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_sets_exec_bit_when_already_named() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // A ZIP-extracted file already carrying the target name must still be made
+        // executable, matching the behavior of renames that move a file.
+        let tmp = tempfile::tempdir().unwrap();
+        let tool = tmp.path().join("tool");
+        std::fs::write(&tool, b"bin").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(!file::is_executable(&tool));
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert("tool".to_string(), toml::Value::String("tool".to_string()));
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, None).unwrap();
+
+        assert!(tool.is_file());
+        assert!(file::is_executable(&tool));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rename_exe_table_ignores_symlinks() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::set_permissions(outside.path(), std::fs::Permissions::from_mode(0o600)).unwrap();
+        let link = tmp.path().join("tool-linux-x64");
+        symlink(outside.path(), &link).unwrap();
+
+        let value = toml::Value::Table({
+            let mut t = toml::value::Table::new();
+            t.insert(
+                "tool-*".to_string(),
+                toml::Value::String("tool".to_string()),
+            );
+            t
+        });
+
+        apply_rename_exe(tmp.path(), &value, None).unwrap();
+
+        assert!(
+            link.is_symlink(),
+            "the archive symlink must remain untouched"
+        );
+        assert!(!tmp.path().join("tool").exists());
+        assert_eq!(
+            outside.path().metadata().unwrap().permissions().mode() & 0o777,
+            0o600,
+            "the external target's permissions must not change"
+        );
+    }
+
+    #[test]
+    fn a_declared_layout_keeps_the_name_the_manifest_gave() {
+        let bare = ToolVersionOptions::default();
+        assert!(
+            may_clean_archive_binary(ArchiveLayout::Guessed, &bare),
+            "with nothing describing the archive, a lone suffixed binary is tidied"
+        );
+        assert!(
+            !may_clean_archive_binary(ArchiveLayout::Declared, &bare),
+            "a signed manifest names each executable by path, and renaming one \
+             would move it out from under that path"
+        );
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "bin".to_string(),
+            toml::Value::String("tool-linux-x86_64".to_string()),
+        );
+        let named = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+        assert!(!may_clean_archive_binary(ArchiveLayout::Guessed, &named));
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_strips_platform_suffix() {
+        // A single-file archive whose inner binary carries a platform suffix that
+        // doesn't match the host (linux archive shipping a macos-named binary)
+        // should still be renamed to the clean tool name. See discussion #6532.
+        let tmp = tempfile::tempdir().unwrap();
+        let extracted = tmp.path().join("gdscript-formatter-macos-aarch64");
+        std::fs::write(&extracted, b"not-a-binary").unwrap();
+
+        auto_clean_single_archive_binary(tmp.path(), "GDScript-formatter").unwrap();
+
+        let cleaned = tmp.path().join("gdscript-formatter");
+        assert!(cleaned.is_file(), "binary should be renamed to clean name");
+        // make_executable is a no-op on Windows (executability is inferred from
+        // the file extension there), so only assert it on Unix.
+        #[cfg(unix)]
+        assert!(file::is_executable(&cleaned));
+        assert!(!extracted.exists(), "suffixed name should no longer exist");
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_leaves_multi_file_archive() {
+        // With more than one relevant file we cannot tell which is the binary,
+        // so nothing should be renamed.
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("tool-linux-x86_64");
+        let b = tmp.path().join("helper-linux-x86_64");
+        std::fs::write(&a, b"x").unwrap();
+        std::fs::write(&b, b"x").unwrap();
+
+        auto_clean_single_archive_binary(tmp.path(), "tool").unwrap();
+
+        assert!(a.is_file());
+        assert!(b.is_file());
+        assert!(!tmp.path().join("tool").exists());
+        assert!(!tmp.path().join("helper").exists());
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_leaves_already_clean_name() {
+        // A single file without a platform suffix must be left untouched.
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("tool");
+        std::fs::write(&bin, b"x").unwrap();
+
+        auto_clean_single_archive_binary(tmp.path(), "tool").unwrap();
+
+        assert!(bin.is_file());
+        assert_eq!(file::ls(tmp.path()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_leaves_nonexec_companion() {
+        // A clean-named companion extracted without an exec bit (e.g. from a zip
+        // that stored no permissions) still makes the archive multi-file, so the
+        // suffixed binary must NOT be renamed — the outcome must not depend on
+        // executable permissions. Regression for the permission-dependent
+        // multi-binary guard. See discussion #6532.
+        let tmp = tempfile::tempdir().unwrap();
+        let suffixed = tmp.path().join("tool-linux-x86_64");
+        let companion = tmp.path().join("helper");
+        std::fs::write(&suffixed, b"x").unwrap();
+        std::fs::write(&companion, b"x").unwrap();
+        // Intentionally not marked executable.
+
+        auto_clean_single_archive_binary(tmp.path(), "tool").unwrap();
+
+        assert!(suffixed.is_file(), "suffixed binary must be left untouched");
+        assert!(companion.is_file(), "companion must be left untouched");
+        assert!(!tmp.path().join("tool").exists());
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_ignores_license_readme_siblings() {
+        // LICENSE/README are dropped by should_skip_file, so the common
+        // "binary + LICENSE + README" layout is still treated as single-binary
+        // and the suffix is cleaned. See discussion #6532.
+        let tmp = tempfile::tempdir().unwrap();
+        let extracted = tmp.path().join("tool-linux-x86_64");
+        std::fs::write(&extracted, b"x").unwrap();
+        std::fs::write(tmp.path().join("LICENSE"), b"lic").unwrap();
+        std::fs::write(tmp.path().join("README.md"), b"readme").unwrap();
+
+        auto_clean_single_archive_binary(tmp.path(), "tool").unwrap();
+
+        assert!(
+            tmp.path().join("tool").is_file(),
+            "binary should be cleaned"
+        );
+        assert!(!extracted.exists());
+    }
+
+    #[test]
+    fn test_archive_bin_search_dir_selection() {
+        let tmp = tempfile::tempdir().unwrap();
+        let install = tmp.path();
+
+        // No explicit bin_path and no bin/ dir -> install root.
+        assert_eq!(archive_bin_search_dir(install, None), install.to_path_buf());
+
+        // Implicit bin/ dir present -> bin/.
+        let bin_dir = install.join("bin");
+        std::fs::create_dir(&bin_dir).unwrap();
+        assert_eq!(archive_bin_search_dir(install, None), bin_dir);
+
+        // Explicit bin_path always wins.
+        let explicit = install.join("custom");
+        assert_eq!(
+            archive_bin_search_dir(install, Some(explicit.as_path())),
+            explicit
+        );
+    }
+
+    #[test]
+    fn test_auto_clean_single_archive_binary_in_implicit_bin_dir() {
+        // An archive whose sole platform-suffixed binary lives under bin/ should
+        // still be cleaned, since archive_bin_search_dir points there. See #6532.
+        let tmp = tempfile::tempdir().unwrap();
+        let install = tmp.path();
+        let bin_dir = install.join("bin");
+        std::fs::create_dir(&bin_dir).unwrap();
+        let extracted = bin_dir.join("tool-linux-x86_64");
+        std::fs::write(&extracted, b"x").unwrap();
+
+        let search_dir = archive_bin_search_dir(install, None);
+        assert_eq!(search_dir, bin_dir);
+        auto_clean_single_archive_binary(&search_dir, "tool").unwrap();
+
+        let cleaned = bin_dir.join("tool");
+        assert!(cleaned.is_file());
+        // make_executable is a no-op on Windows; only assert executability on Unix.
+        #[cfg(unix)]
+        assert!(file::is_executable(&cleaned));
+        assert!(!extracted.exists());
+    }
+
+    #[test]
+    fn test_rename_executable_in_dir_is_case_insensitive() {
+        // The tool_name (repo short name) can differ in case from the extracted
+        // file, e.g. `GDScript-formatter` vs `gdscript-formatter-macos-aarch64`.
+        // The substring match must be case-insensitive so `bin=`/`rename_exe=`
+        // can locate the file. See discussion #6532.
+        let tmp = tempfile::tempdir().unwrap();
+        let extracted = tmp.path().join("gdscript-formatter-macos-aarch64");
+        std::fs::write(&extracted, b"x").unwrap();
+        file::make_executable(&extracted).unwrap();
+
+        rename_executable_in_dir(tmp.path(), "gdscript-formatter", Some("GDScript-formatter"))
+            .unwrap();
+
+        assert!(tmp.path().join("gdscript-formatter").is_file());
+        assert!(!extracted.exists());
+    }
+}

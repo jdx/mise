@@ -1,0 +1,5 @@
+aliases = ["apollo-ios-cli"]
+backends = ["github:apollographql/apollo-ios"]
+description = "Apollo iOS Code Generation"
+os = ["macos"]
+version_order = "semver"

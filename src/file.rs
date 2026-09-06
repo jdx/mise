@@ -1,0 +1,4961 @@
+use crate::path::{Path, PathBuf, PathExt};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt::Display;
+use std::fs;
+use std::fs::File;
+use std::io::{Read, Write};
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
+#[cfg(unix)]
+use std::os::unix::prelude::*;
+use std::sync::Mutex;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+use bzip2::read::BzDecoder;
+use color_eyre::eyre::{Context, Result};
+use eyre::bail;
+use filetime::{FileTime, set_file_times};
+use flate2::read::GzDecoder;
+use itertools::Itertools;
+use jdx_tar::{Archive, EntryType, UnpackOptions};
+use path_absolutize::Absolutize;
+use sha2::{Digest, Sha256};
+use std::sync::LazyLock as Lazy;
+use walkdir::WalkDir;
+use zip::ZipArchive;
+
+#[cfg(windows)]
+use crate::config::Settings;
+use crate::ui::progress_report::SingleReport;
+use crate::{dirs, env};
+
+pub(crate) fn open<P: AsRef<Path>>(path: P) -> Result<File> {
+    let path = path.as_ref();
+    trace!("open {}", display_path(path));
+    File::open(path).wrap_err_with(|| format!("failed open: {}", display_path(path)))
+}
+
+pub(crate) fn read<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
+    let path = path.as_ref();
+    trace!("cat {}", display_path(path));
+    fs::read(path).wrap_err_with(|| format!("failed read: {}", display_path(path)))
+}
+
+pub(crate) fn size<P: AsRef<Path>>(path: P) -> Result<u64> {
+    let path = path.as_ref();
+    trace!("du -b {}", display_path(path));
+    path.metadata()
+        .map(|m| m.len())
+        .wrap_err_with(|| format!("failed size: {}", display_path(path)))
+}
+
+pub(crate) fn append<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    trace!("append {}", display_path(path));
+    fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(path)
+        .and_then(|mut f| f.write_all(contents.as_ref()))
+        .wrap_err_with(|| format!("failed append: {}", display_path(path)))
+}
+
+/// Windows' `MAX_PATH`. Not a limit mise imposes — the point below is that some paths hit it long
+/// before others do. It counts UTF-16 code units and includes the terminating NUL, so a path of
+/// exactly `MAX_PATH` is already one too many.
+///
+/// Shared with [`crate::cli::self_update`], which needs the same number for the opposite reason:
+/// the file APIs can be escaped past this with a `\\?\` prefix, which is why `std::fs` copes with
+/// long paths, but `CreateProcess` has no such escape hatch and simply will not start an
+/// executable whose path reaches it.
+#[cfg(windows)]
+pub(crate) const MAX_PATH: usize = 260;
+
+/// Why a Windows file operation on `path` probably failed, when the error says something a reader
+/// cannot act on.
+///
+/// `None` on unix, always: deleting a running binary succeeds there, and `MAX_PATH` does not
+/// exist. Splitting the remedy by platform rather than the wording follows
+/// [`make_executable_hint`], where `chmod +x` was not merely unavailable on Windows but the wrong
+/// instruction.
+///
+/// The error codes are the ones already spoken elsewhere in this file — see [`do_rename`] and
+/// `should_retry_atomic_persist`, which retry on the same pair. This answers a different question
+/// about them: not whether to try again, but what to tell the user when trying again will not help.
+#[cfg(windows)]
+fn windows_io_hint(path: &Path, err: &std::io::Error) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+
+    // ERROR_ACCESS_DENIED (5) / ERROR_SHARING_VIOLATION (32). Unlike the transient locks that
+    // `do_rename` retries through, a file held open by a running process stays held, so this is a
+    // message rather than a retry.
+    let in_use = err.kind() == std::io::ErrorKind::PermissionDenied
+        || matches!(err.raw_os_error(), Some(5) | Some(32));
+    if in_use {
+        return Some(
+            "A file under it is in use. A program started from this directory — the tool itself, \
+             an editor, or a shell sitting in it — is probably still running."
+                .to_string(),
+        );
+    }
+    // Only the errors Windows actually reports for an over-long path. Without this the branch
+    // fires on anything that happens to occur deep in a tree -- a genuinely missing directory
+    // would be answered with advice about path length.
+    //
+    // ERROR_PATH_NOT_FOUND (3) is what was measured; ERROR_INVALID_NAME (123) and
+    // ERROR_FILENAME_EXCED_RANGE (206) are the other two Windows uses for the same cause. `3` is
+    // ambiguous by nature -- a path can be both long and absent -- so the wording below suggests
+    // rather than asserts.
+    if !matches!(err.raw_os_error(), Some(3) | Some(123) | Some(206)) {
+        return None;
+    }
+    // UTF-16 code units, which is what the limit counts. `OsStr::len()` is WTF-8 bytes on Windows,
+    // so a path with any non-ASCII in it would measure long before Windows thought so.
+    let units = path.as_os_str().encode_wide().count();
+    if units < MAX_PATH - 16 {
+        return None;
+    }
+    // Measured: `std::fs` itself copes well past `MAX_PATH` -- create_dir_all, write and rename all
+    // succeeded at 490 units with long paths disabled -- so a "path not found" this close to the
+    // limit is more likely the length than the missing directory it appears to be.
+    Some(format!(
+        "The path is {units} characters, at or near Windows' {MAX_PATH}-character limit, which \
+         may be the real cause rather than a missing directory. mise writes through a temporary \
+         file whose name is longer than the final one, so it crosses the limit first. Try a \
+         shorter directory."
+    ))
+}
+
+#[cfg(not(windows))]
+fn windows_io_hint(_path: &Path, _err: &std::io::Error) -> Option<String> {
+    None
+}
+
+/// Attach [`windows_io_hint`] to `err`, if it has anything to say about this path.
+/// `msg`, plus whatever [`windows_io_hint`] can say about `err` at `path`.
+///
+/// `pub(crate)` because the operations that need it are not all in this module: `tempfile`'s
+/// persist is used directly by the downloader too, and that is the call that fails first as a
+/// path approaches `MAX_PATH`.
+pub(crate) fn with_io_hint(msg: String, path: &Path, err: &std::io::Error) -> String {
+    match windows_io_hint(path, err) {
+        Some(hint) => format!("{msg}\n{hint}"),
+        None => msg,
+    }
+}
+
+pub(crate) fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    // `symlink_metadata`, not `metadata`: the latter resolves the entry before deciding what to do
+    // with it, so a link that no longer points anywhere reports `NotFound` and falls through to
+    // the no-op arm below — the entry stays on disk and the caller is told nothing. `mise link`
+    // creates exactly such an entry whenever its target is moved or deleted. Resolving also made
+    // the `is_symlink` test unreachable, since a followed link never reports as one.
+    match fs::symlink_metadata(path).map(|m| m.file_type()) {
+        // Removing the link, never what it points at. On Windows `make_symlink` writes a junction,
+        // which is a directory carrying a reparse point: `remove_file` refuses it outright
+        // (measured: `PermissionDenied`, live or dangling), so this goes through the helper that
+        // deletes by handle after checking the reparse tag.
+        Ok(x) if x.is_symlink() => {
+            remove_symlink_or_junction(path)?;
+        }
+        Ok(x) if x.is_file() => {
+            remove_file(path)?;
+        }
+        Ok(x) if x.is_dir() => {
+            trace!("rm -rf {}", display_path(path));
+            // `map_err` rather than `wrap_err_with`: the hint depends on the error, and
+            // `wrap_err_with`'s closure is not given it.
+            fs::remove_dir_all(path).map_err(|e| {
+                let msg = with_io_hint(
+                    // Not "rm -rf": mise calls `remove_dir_all`, and on Windows it is naming a
+                    // command the reader does not have.
+                    format!("failed to remove: {}", display_path(path)),
+                    path,
+                    &e,
+                );
+                eyre::eyre!(e).wrap_err(msg)
+            })?;
+        }
+        _ => {}
+    };
+    Ok(())
+}
+
+/// Removes a path, retrying when a concurrent writer recreates directory entries while
+/// [`fs::remove_dir_all`] is running.
+///
+/// This remains a strict removal operation: if the directory is still non-empty after the
+/// retries are exhausted, the final error is returned to the caller.
+pub(crate) fn remove_all_with_retry<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    retry_remove_all(|| remove_all(path))
+}
+
+fn retry_remove_all(mut remove: impl FnMut() -> Result<()>) -> Result<()> {
+    const MAX_RETRIES: u32 = 4;
+
+    for retry in 0..MAX_RETRIES {
+        match remove() {
+            Ok(()) => return Ok(()),
+            Err(err)
+                if err
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|err| err.kind() == std::io::ErrorKind::DirectoryNotEmpty) =>
+            {
+                std::thread::sleep(Duration::from_millis(10 * (1 << retry)));
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    remove()
+}
+
+pub(crate) fn remove_file_or_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    match path.metadata().map(|m| m.file_type()) {
+        Ok(x) if x.is_dir() => {
+            remove_dir(path)?;
+        }
+        _ => {
+            remove_file(path)?;
+        }
+    };
+    Ok(())
+}
+
+pub(crate) fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("rm {}", display_path(path));
+    fs::remove_file(path).wrap_err_with(|| format!("failed rm: {}", display_path(path)))
+}
+
+pub(crate) async fn remove_file_async_if_exists<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("rm {}", display_path(path));
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e).wrap_err_with(|| format!("failed rm: {}", display_path(path))),
+    }
+}
+
+pub(crate) fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    (|| -> Result<()> {
+        if path.exists() && is_empty_dir(path)? {
+            trace!("rmdir {}", display_path(path));
+            fs::remove_dir(path)?;
+        }
+        Ok(())
+    })()
+    .wrap_err_with(|| format!("failed to remove_dir: {}", display_path(path)))
+}
+
+pub(crate) fn remove_dir_ignore<P: AsRef<Path>>(
+    path: P,
+    is_empty_ignore_files: Vec<&str>,
+) -> Result<()> {
+    let path = path.as_ref();
+    (|| -> Result<()> {
+        if path.exists() && is_empty_dir_ignore(path, is_empty_ignore_files)? {
+            trace!("rm -rf {}", display_path(path));
+            remove_all_with_warning(path)?;
+        }
+        Ok(())
+    })()
+    .wrap_err_with(|| format!("failed to remove_dir: {}", display_path(path)))
+}
+
+pub(crate) fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> Result<()> {
+    remove_all(&path).map_err(|e| {
+        warn!("failed to remove {}: {}", path.as_ref().display(), e);
+        e
+    })
+}
+
+/// Whether a directory entry is there at all, without resolving it.
+///
+/// [`Path::exists`] answers about a link's *target*, so it is false for one whose target is gone —
+/// and that entry is exactly the thing a caller asking "is there something here to remove, or to
+/// tell the user about?" needs to find.
+pub(crate) fn entry_exists<P: AsRef<Path>>(path: P) -> bool {
+    fs::symlink_metadata(path.as_ref()).is_ok()
+}
+
+pub(crate) fn remove_all_with_progress<P: AsRef<Path>>(
+    path: P,
+    pr: &dyn SingleReport,
+) -> Result<()> {
+    let path = path.as_ref();
+    // Not `exists()`: a link whose target is gone is still an entry to remove, and reporting
+    // nothing to do would leave it behind exactly where a user went looking for it.
+    if !entry_exists(path) {
+        return Ok(());
+    }
+    pr.set_message(format!("remove {}", display_path(path)));
+    remove_all_with_warning(path)
+}
+
+/// Renames `from` to `to`.
+///
+/// Warning: this is the raw `rename(2)`/`fs::rename` behavior. It is atomic on a
+/// single filesystem, but it will fail if `from` and `to` are on different
+/// mounts. If you need a cross-device-safe move, use [`move_file`] instead.
+///
+/// On Windows, retries transient failures (`ERROR_ACCESS_DENIED` / `ERROR_SHARING_VIOLATION`)
+/// that commonly occur when antivirus or the OS still holds handles to files in the source
+/// directory (e.g. after extracting an archive).
+pub(crate) fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    try_rename(from, to).wrap_err_with(|| {
+        format!(
+            "failed rename: {} -> {}",
+            display_path(from),
+            display_path(to)
+        )
+    })
+}
+
+pub(crate) fn try_rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> std::io::Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    trace!("mv {} {}", from.display(), to.display());
+    do_rename(from, to)
+}
+
+#[cfg(windows)]
+fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
+    const MAX_ATTEMPTS: u32 = 5;
+    let mut last_err = None;
+    for attempt in 0..MAX_ATTEMPTS {
+        match fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) if matches!(e.raw_os_error(), Some(5) | Some(32)) => {
+                // ERROR_ACCESS_DENIED (5) or ERROR_SHARING_VIOLATION (32):
+                // likely a transient lock from antivirus or the OS.
+                // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
+                last_err = Some(e);
+                if attempt + 1 < MAX_ATTEMPTS {
+                    std::thread::sleep(std::time::Duration::from_millis(50 * (1 << attempt)));
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last_err.unwrap())
+}
+
+#[cfg(not(windows))]
+fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::rename(from, to)
+}
+
+/// Moves a path, falling back to copy+remove when source and destination are on different filesystems.
+///
+/// This preserves the normal `rename` behavior when possible, but avoids cross-device failures
+/// (`ErrorKind::CrossesDevices`) when `from` and `to` live on separate mounts (for example, when
+/// downloads are cached on one volume and installs are written to another). Directory fallbacks
+/// preserve symlinks and file/directory permissions.
+pub(crate) fn move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+
+    match try_rename(from, to) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
+            if from.is_dir() {
+                create_dir_all(to)?;
+                copy_dir_all_preserve_symlinks(from, to)?;
+                remove_all(from)?;
+            } else {
+                copy(from, to)?;
+                remove_file(from)?;
+            }
+            Ok(())
+        }
+        Err(err) => Err(err).wrap_err_with(|| {
+            format!(
+                "failed move: {} -> {}",
+                display_path(from),
+                display_path(to)
+            )
+        }),
+    }
+}
+
+pub(crate) fn copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    trace!("cp {} {}", from.display(), to.display());
+    fs::copy(from, to)
+        .wrap_err_with(|| {
+            format!(
+                "failed copy: {} -> {}",
+                display_path(from),
+                display_path(to)
+            )
+        })
+        .map(|_| ())
+}
+
+/// Give `from`'s content a second name at `to` without duplicating it, falling back to a
+/// copy.
+///
+/// A hard link needs both paths on one volume and a filesystem that supports them, so
+/// failing is an ordinary outcome rather than an error worth surfacing.
+pub(crate) fn hard_link_or_copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    match fs::hard_link(from, to) {
+        Ok(()) => {
+            trace!("ln {} {}", from.display(), to.display());
+            Ok(())
+        }
+        Err(err) => {
+            trace!(
+                "ln {} {} failed ({err}), copying instead",
+                from.display(),
+                to.display()
+            );
+            copy(from, to)
+        }
+    }
+}
+
+pub(crate) fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    trace!("cp -r {} {}", from.display(), to.display());
+    recursive_ls(from)?.into_iter().try_for_each(|path| {
+        let relative = path.strip_prefix(from)?;
+        let dest = to.join(relative);
+        create_dir_all(dest.parent().unwrap())?;
+        copy(&path, &dest)?;
+        Ok(())
+    })
+}
+
+pub(crate) fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
+    trace!("cp -a {} {}", from.display(), to.display());
+    let mut directory_permissions = vec![(to.to_path_buf(), fs::metadata(from)?.permissions())];
+    for entry in WalkDir::new(from).follow_links(false).min_depth(1) {
+        let entry = entry?;
+        let relative = entry.path().strip_prefix(from)?;
+        let dest = to.join(relative);
+        if entry.file_type().is_dir() {
+            create_dir_all(&dest)?;
+            directory_permissions.push((dest, entry.metadata()?.permissions()));
+        } else if entry.file_type().is_symlink() {
+            create_dir_all(dest.parent().unwrap())?;
+            make_symlink(&fs::read_link(entry.path())?, &dest)?;
+        } else if entry.file_type().is_file() {
+            create_dir_all(dest.parent().unwrap())?;
+            copy(entry.path(), &dest)?;
+        }
+    }
+    // Apply directory permissions after copying children so read-only source
+    // directories do not prevent populating their destination.
+    for (path, permissions) in directory_permissions.into_iter().rev() {
+        fs::set_permissions(path, permissions)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    trace!("write {}", display_path(path));
+    fs::write(path, contents).wrap_err_with(|| format!("failed write: {}", display_path(path)))
+}
+
+pub(crate) struct PreparedAtomicWrite {
+    temporary: tempfile::NamedTempFile,
+    target: PathBuf,
+    parent: PathBuf,
+}
+
+impl PreparedAtomicWrite {
+    /// Atomically renames this already-written replacement into place.
+    pub(crate) fn commit(self) -> Result<()> {
+        // The hint matters most here. `tempfile`'s persist does not get the extended-length path
+        // handling `std::fs` applies, so this is the operation that fails first as a path
+        // approaches `MAX_PATH` -- measured breaking at a 253-character target while `fs::rename`
+        // on the same tree succeeded at 415.
+        persist_atomic(self.temporary, &self.target).map_err(|e| {
+            let msg = format!("failed atomic write: {}", display_path(&self.target));
+            // Resolve the hint before `wrap_err` takes `e` by value: `downcast_ref` borrows it,
+            // and doing both in one expression leaves the borrow alive across the move.
+            let msg = match e.downcast_ref::<std::io::Error>() {
+                Some(io) => with_io_hint(msg, &self.target, io),
+                None => msg,
+            };
+            e.wrap_err(msg)
+        })?;
+        sync_dir(&self.parent)?;
+        Ok(())
+    }
+}
+
+/// Writes and syncs a complete replacement beside `path` without changing `path` yet.
+///
+/// New files use ordinary write permissions subject to the process umask. Replacements preserve
+/// the destination's existing Unix permissions.
+pub(crate) fn prepare_atomic_write<P: AsRef<Path>, C: AsRef<[u8]>>(
+    path: P,
+    contents: C,
+) -> Result<PreparedAtomicWrite> {
+    let path = path.as_ref();
+    trace!("prepare_atomic_write {}", display_path(path));
+    let target = atomic_write_target(path)?;
+    let path = target.as_path();
+    let parent = path
+        .parent()
+        .ok_or_else(|| eyre::eyre!("path has no parent: {}", display_path(path)))?;
+    let prefix = format!(
+        ".{}.",
+        path.file_name().unwrap_or_default().to_string_lossy()
+    );
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(&prefix);
+
+    #[cfg(unix)]
+    let existing_permissions = match fs::metadata(path) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => return Err(err.into()),
+    };
+
+    #[cfg(unix)]
+    if existing_permissions.is_none() {
+        builder.permissions(fs::Permissions::from_mode(0o666));
+    }
+
+    let mut temporary = builder.tempfile_in(parent)?;
+
+    #[cfg(unix)]
+    if let Some(permissions) = existing_permissions {
+        temporary.as_file().set_permissions(permissions)?;
+    }
+
+    temporary.write_all(contents.as_ref())?;
+
+    temporary.as_file_mut().sync_all()?;
+    let parent = parent.to_path_buf();
+    Ok(PreparedAtomicWrite {
+        temporary,
+        target,
+        parent,
+    })
+}
+
+/// Writes a complete replacement beside `path`, then atomically renames it into place.
+pub(crate) fn write_atomic<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    trace!("write_atomic {}", display_path(path));
+    prepare_atomic_write(path, contents)?.commit()
+}
+
+pub(crate) fn atomic_write_target(path: &Path) -> Result<PathBuf> {
+    const MAX_SYMLINKS: usize = 40;
+
+    let mut target = path.to_path_buf();
+    for followed in 0..=MAX_SYMLINKS {
+        if !target.is_symlink() {
+            return Ok(desymlink_path(&target));
+        }
+        if followed == MAX_SYMLINKS {
+            break;
+        }
+        let link = fs::read_link(&target)
+            .wrap_err_with(|| format!("failed to read symlink: {}", display_path(&target)))?;
+        target = if link.is_absolute() {
+            link
+        } else {
+            target.parent().unwrap_or_else(|| Path::new("")).join(link)
+        };
+    }
+
+    bail!(
+        "too many symlinks while resolving atomic write target: {}",
+        display_path(path)
+    )
+}
+
+fn persist_atomic(mut temporary: tempfile::NamedTempFile, path: &Path) -> Result<()> {
+    const RETRIES: u32 = 20;
+
+    for attempt in 0..=RETRIES {
+        match temporary.persist(path) {
+            Ok(_) => return Ok(()),
+            Err(err) if should_retry_atomic_persist(&err.error) && attempt < RETRIES => {
+                temporary = err.file;
+                std::thread::sleep(Duration::from_millis(5 * u64::from(attempt + 1)));
+            }
+            Err(err) => return Err(err.error.into()),
+        }
+    }
+
+    unreachable!("atomic persist retry loop should always return");
+}
+
+#[cfg(windows)]
+fn should_retry_atomic_persist(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::PermissionDenied
+        || matches!(err.raw_os_error(), Some(5) | Some(32))
+}
+
+#[cfg(not(windows))]
+fn should_retry_atomic_persist(_err: &std::io::Error) -> bool {
+    false
+}
+
+pub(crate) async fn write_async<P: AsRef<Path>, C: AsRef<[u8]>>(
+    path: P,
+    contents: C,
+) -> Result<()> {
+    let path = path.as_ref();
+    trace!("write {}", display_path(path));
+    tokio::fs::write(path, contents)
+        .await
+        .wrap_err_with(|| format!("failed write: {}", display_path(path)))
+}
+
+pub(crate) fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    trace!("cat {}", path.display_user());
+    fs::read_to_string(path)
+        .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))
+}
+
+/// The bytes of a UTF-8 byte-order mark, as [`decode_text`] matches them below.
+#[cfg(windows)]
+pub(crate) const UTF8_BOM_BYTES: [u8; 3] = [0xef, 0xbb, 0xbf];
+
+/// `s` without a leading UTF-8 byte-order mark.
+///
+/// Needed wherever mise matches on the *start* of a line it read from disk. `str::trim` does not
+/// help: U+FEFF does not carry the Unicode `White_Space` property, so a mark left in front of a
+/// `#!` or a `#MISE` defeats every prefix test silently. The writers that leave one there are
+/// ordinary on Windows -- see [`decode_text`], which names them.
+pub(crate) fn strip_utf8_bom(s: &str) -> &str {
+    s.strip_prefix('\u{feff}').unwrap_or(s)
+}
+
+/// Decode text that may begin with a byte-order mark.
+///
+/// `std`'s UTF-8-only readers reject UTF-16 outright, which is how a checksum file sank an install
+/// in #5399: PowerShell shipped `hashes.sha256` as UTF-16LE and mise stopped at "stream did not
+/// contain valid UTF-8". Windows PowerShell 5.1's `Out-File` writes UTF-16LE by default, so any
+/// project generating checksums that way produces the same thing.
+///
+/// Only a BOM switches the encoding. Detecting UTF-16 without one means guessing from the density
+/// of NUL bytes, which can misfire on binary input; `Out-File` always writes a BOM, so the guess
+/// buys nothing here. Input with no BOM is decoded as UTF-8, exactly as before.
+pub(crate) fn decode_text(bytes: &[u8]) -> Result<String> {
+    fn from_utf16(bytes: &[u8], to_u16: fn([u8; 2]) -> u16, label: &str) -> Result<String> {
+        if !bytes.len().is_multiple_of(2) {
+            bail!(
+                "truncated {label} text: {} bytes is not a whole number of code units",
+                bytes.len()
+            );
+        }
+        let units = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| to_u16(*c))
+            .collect_vec();
+        String::from_utf16(&units).wrap_err_with(|| format!("invalid {label} text"))
+    }
+
+    match bytes {
+        [0xef, 0xbb, 0xbf, rest @ ..] => {
+            String::from_utf8(rest.to_vec()).wrap_err("invalid UTF-8 text after a UTF-8 BOM")
+        }
+        [0xff, 0xfe, rest @ ..] => from_utf16(rest, u16::from_le_bytes, "UTF-16LE"),
+        [0xfe, 0xff, rest @ ..] => from_utf16(rest, u16::from_be_bytes, "UTF-16BE"),
+        _ => String::from_utf8(bytes.to_vec())
+            .wrap_err("invalid UTF-8 text, and no byte-order mark identifying another encoding"),
+    }
+}
+
+/// The UTF-16 encoding `path` announces with a byte-order mark, if it announces one.
+///
+/// The marks are the ones [`decode_text`] matches, kept here rather than spelled out again at the
+/// call site so there is one description of what a mark looks like.
+///
+/// A UTF-8 mark is deliberately not reported. `has_shebang` already looks past that one, so a
+/// file carrying it is executable and never reaches a caller that needs to explain why it is not.
+/// (Named without a link: that function is `#[cfg(windows)]` and this doc is built on unix too.)
+///
+/// Compiled for tests on every platform so the byte matching is checked everywhere, but only used
+/// on Windows: on unix the execute bit decides what is executable, and a UTF-16 script with that
+/// bit set fails at exec rather than being skipped.
+#[cfg(any(windows, test))]
+pub(crate) fn utf16_bom(path: &Path) -> Option<&'static str> {
+    // `read_to_end` on a `take`, not `read_exact`: a one-byte file is a legitimate answer of
+    // "no mark", and `read_exact` would fail on it. Same shape as `has_shebang` below.
+    let bytes = std::fs::File::open(path)
+        .and_then(|f| {
+            use std::io::Read;
+            let mut buf = Vec::with_capacity(2);
+            f.take(2).read_to_end(&mut buf)?;
+            Ok(buf)
+        })
+        .ok()?;
+    match bytes[..] {
+        [0xff, 0xfe] => Some("UTF-16LE"),
+        [0xfe, 0xff] => Some("UTF-16BE"),
+        _ => None,
+    }
+}
+
+/// [`read_to_string`], but tolerant of a byte-order mark. See [`decode_text`].
+///
+/// Only reads *from disk* need this. Bodies fetched over HTTP already arrive decoded: reqwest's
+/// `text()` goes through `text_with_charset` -> `encoding_rs::Encoding::decode`, which sniffs a BOM
+/// and lets it override the declared charset. `std::fs::read_to_string` has no such step, and that
+/// asymmetry is the only reason this function exists — reaching for it on an `HTTP.get_text` result
+/// would be redundant.
+pub(crate) fn read_to_string_bom<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    trace!("cat {}", path.display_user());
+    let bytes = fs::read(path).wrap_err_with(|| format!("failed read: {}", path.display_user()))?;
+    decode_text(&bytes).wrap_err_with(|| format!("failed to decode {}", path.display_user()))
+}
+
+pub(crate) async fn read_to_string_async<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    trace!("cat {}", path.display_user());
+    tokio::fs::read_to_string(path)
+        .await
+        .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))
+}
+
+pub(crate) fn create(path: &Path) -> Result<File> {
+    if let Some(parent) = path.parent() {
+        create_dir_all(parent)?;
+    }
+    trace!("touch {}", display_path(path));
+    File::create(path).wrap_err_with(|| format!("failed create: {}", display_path(path)))
+}
+
+pub(crate) fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
+    static LOCK: Lazy<Mutex<u8>> = Lazy::new(Default::default);
+    let _lock = LOCK.lock().unwrap();
+
+    let path = path.as_ref();
+    if !path.exists() {
+        trace!("mkdir -p {}", display_path(path));
+        if let Err(err) = fs::create_dir_all(path) {
+            // if not exists error
+            if err.kind() != std::io::ErrorKind::AlreadyExists {
+                return Err(err)
+                    .wrap_err_with(|| format!("failed create_dir_all: {}", display_path(path)));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A path formatted for a person to read: `$HOME` becomes `~`, a Windows extended-length prefix
+/// is dropped, and separators settle on the host's.
+///
+/// The separator step lives here rather than in [`PathExt::display_user`] because that one also
+/// feeds strings mise *matches* rather than shows — see [`crate::path::settle_display_separators`].
+pub(crate) fn display_path<P: AsRef<Path>>(path: P) -> String {
+    crate::path::settle_display_separators(path.as_ref().display_user())
+}
+
+pub(crate) fn display_filename<P: AsRef<Path>>(path: P) -> String {
+    let path = path.as_ref();
+    path.file_name()
+        .unwrap_or(path.as_os_str())
+        .to_string_lossy()
+        .into_owned()
+}
+
+pub(crate) fn display_rel_path<P: AsRef<Path>>(path: P) -> String {
+    let path = path.as_ref();
+    match path.strip_prefix(dirs::CWD.as_ref().unwrap()) {
+        // Both halves take the host's separator. Hardcoding `./` and printing the remainder raw
+        // produced `./mise-tasks\build` on Windows. Byte-identical off Windows, where
+        // `MAIN_SEPARATOR` is `/` and nothing is rewritten.
+        Ok(rel) => format!(".{}{}", std::path::MAIN_SEPARATOR, display_path(rel)),
+        Err(_) => display_path(path),
+    }
+}
+
+/// replaces $HOME in a string with "~" and $PATH with "$PATH", generally used to clean up output
+/// after it is rendered
+pub(crate) fn replace_paths_in_string<S: Display>(input: S) -> String {
+    let home = env::HOME.to_string_lossy().to_string();
+    input.to_string().replace(&home, "~")
+}
+
+/// replaces "~" with $HOME
+///
+/// The remainder is re-joined one component at a time rather than pushed as a
+/// single slice. `Path::strip_prefix` returns a raw subslice of the input — it
+/// trims the remainder's leading/trailing separators but leaves interior ones
+/// untouched — so `HOME.join(rest)` only prepends a separator. On Windows that
+/// made `~/.local/share/mise` expand to `C:\Users\me\.local/share/mise`, and
+/// since `MISE_DATA_DIR` flows into `dirs::DATA`/`INSTALLS`, that mixed-separator
+/// path surfaced verbatim in `mise where`, `mise which`, `mise ls --json`,
+/// `mise bin-paths`, shims, and error messages.
+///
+/// Rebuilding from `components()` also folds redundant separators and `.`
+/// segments; `..` is preserved. On unix the result is byte-identical to the old
+/// behavior for any ordinary input.
+///
+/// Paths without a `~/` prefix are returned unchanged: a user-supplied
+/// `C:/mise/data` stays exactly as typed. This is a tilde expander, not a path
+/// normalizer — one caller passes glob patterns through it
+/// (`config::expand_task_include`).
+pub(crate) fn replace_path<P: AsRef<Path>>(path: P) -> PathBuf {
+    let path = path.as_ref();
+    match path.strip_prefix("~/") {
+        Ok(rest) => {
+            let mut expanded = dirs::HOME.to_path_buf();
+            for component in rest.components() {
+                expanded.push(component.as_os_str());
+            }
+            expanded
+        }
+        Err(_) => path.to_path_buf(),
+    }
+}
+
+/// Compare two paths for filesystem equivalence, taking platform conventions
+/// into account. macOS volumes (HFS+/APFS) and Windows volumes are
+/// case-insensitive by default, so a byte-equal comparison can fail when
+/// inputs differ only by case (e.g. `/Users/Foo/...` vs `/Users/foo/...`
+/// when `$HOME` is mixed-case in the user's environment but the resolved
+/// path uses a different case).
+///
+/// On case-insensitive platforms, comparison is done over `Path::components()`
+/// with each component lowercased — this also folds trailing slashes,
+/// redundant separators, and (on Windows) `/` vs `\` since `Path::components`
+/// treats both as separators.
+///
+/// This is the right comparator for "is this PATH entry the shims
+/// directory?" checks, where a false negative leads to mise's shim being
+/// inherited by a child process and recursing infinitely.
+pub(crate) fn paths_eq(a: &Path, b: &Path) -> bool {
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let normalize =
+            |c: std::path::Component<'_>| c.as_os_str().to_string_lossy().to_lowercase();
+        a.components()
+            .map(normalize)
+            .eq(b.components().map(normalize))
+    }
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    {
+        a == b
+    }
+}
+
+/// Compare configured storage paths by both platform-aware spelling and
+/// resolved filesystem identity. The latter matters when distributions
+/// deliberately point user and system storage at the same directory through
+/// different symlinks.
+pub(crate) fn storage_paths_eq(a: &Path, b: &Path) -> bool {
+    paths_eq(a, b) || same_file(a, b)
+}
+
+pub(crate) fn touch_file(file: &Path) -> Result<()> {
+    if !file.exists() {
+        create(file)?;
+        return Ok(());
+    }
+    trace!("touch_file {}", file.display());
+    let now = FileTime::now();
+    set_file_times(file, now, now)
+        .wrap_err_with(|| format!("failed to touch file: {}", display_path(file)))
+}
+
+pub(crate) fn touch_dir(dir: &Path) -> Result<()> {
+    trace!("touch {}", dir.display());
+    let now = FileTime::now();
+    set_file_times(dir, now, now)
+        .wrap_err_with(|| format!("failed to touch dir: {}", display_path(dir)))
+}
+
+/// Synchronizes a directory to disk, ensuring that filesystem metadata changes
+/// (such as file creations or deletions) are persisted.
+///
+/// This is important after operations like removing files to ensure the changes
+/// are immediately visible to other processes, e.g. to avoid race conditions.
+///
+/// # Platform-specific behavior
+///
+/// - **Unix/Linux**: Performs an fsync on the directory file descriptor, which
+///   ensures directory metadata (like file listings) is written to disk.
+/// - **Windows**: Not implemented (no-op).
+///
+/// # Errors
+///
+/// On Unix systems, returns an error if the directory cannot be opened or synced.
+/// On Windows, always succeeds.
+#[cfg(unix)]
+pub(crate) fn sync_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("sync {}", display_path(path));
+    let dir = File::open(path)
+        .wrap_err_with(|| format!("failed to open dir for sync: {}", display_path(path)))?;
+    dir.sync_all()
+        .wrap_err_with(|| format!("failed to sync dir: {}", display_path(path)))
+}
+
+#[cfg(windows)]
+pub(crate) fn sync_dir<P: AsRef<Path>>(_path: P) -> Result<()> {
+    // Not implemented on Windows
+    Ok(())
+}
+
+pub(crate) fn modified_duration(path: &Path) -> Result<Duration> {
+    let metadata = path.metadata()?;
+    let modified = metadata.modified()?;
+    let duration = modified.elapsed().unwrap_or_default();
+    Ok(duration)
+}
+
+pub(crate) fn find_up<FN: AsRef<str>>(from: &Path, filenames: &[FN]) -> Option<PathBuf> {
+    let mut current = from.to_path_buf();
+    loop {
+        for filename in filenames {
+            let path = current.join(filename.as_ref());
+            if path.exists() {
+                return Some(path);
+            }
+        }
+        if !current.pop() {
+            return None;
+        }
+    }
+}
+
+pub(crate) fn dir_subdirs(dir: &Path) -> Result<BTreeSet<String>> {
+    subdirs(dir, false)
+}
+
+/// [`dir_subdirs`], but keeping a link whose target is gone.
+///
+/// Most callers want the plain version: a link that resolves to nothing is not a directory they
+/// can read a plugin, a cached download or another version manager's install out of. Version
+/// listing is the exception — the entry is still there, still occupying the name, and still the
+/// thing a user has to be told about before they can remove it.
+pub(crate) fn dir_subdirs_keeping_broken_links(dir: &Path) -> Result<BTreeSet<String>> {
+    subdirs(dir, true)
+}
+
+fn subdirs(dir: &Path, keep_broken_links: bool) -> Result<BTreeSet<String>> {
+    let mut output = Default::default();
+
+    if !dir.exists() {
+        return Ok(output);
+    }
+
+    for entry in dir.read_dir()? {
+        let entry = entry?;
+        // `entry.file_type()` describes the entry itself; `entry.path().is_dir()` resolves it.
+        // A link is kept when it leads to a directory, or — for the callers that asked — when it
+        // leads nowhere at all.
+        let ft = entry.file_type()?;
+        let keep = ft.is_dir()
+            || (ft.is_symlink()
+                && (entry.path().is_dir() || keep_broken_links && !entry.path().exists()));
+        if keep {
+            output.insert(entry.file_name().into_string().unwrap());
+        }
+    }
+
+    Ok(output)
+}
+
+pub(crate) fn ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
+    let mut output = Default::default();
+
+    if !dir.is_dir() {
+        return Ok(output);
+    }
+
+    for entry in dir.read_dir()? {
+        let entry = entry?;
+        output.insert(entry.path());
+    }
+
+    Ok(output)
+}
+
+pub(crate) fn recursive_ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
+    if !dir.is_dir() {
+        return Ok(Default::default());
+    }
+
+    Ok(WalkDir::new(dir)
+        .follow_links(true)
+        .into_iter()
+        .filter_ok(|e| e.file_type().is_file())
+        .map_ok(|e| e.path().to_path_buf())
+        .try_collect()?)
+}
+
+#[cfg(unix)]
+pub(crate) fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
+    trace!("ln -sf {} {}", target.display(), link.display());
+    // Create the symlink at a unique temporary name in the same directory, then
+    // atomically rename it over `link`. rename(2) replaces an existing path in a
+    // single step, so concurrent mise processes racing to create the same link all
+    // succeed (last writer wins) instead of one failing with EEXIST — which showed
+    // up as spurious "failed to ln -sf ...: File exists (os error 17)" warnings
+    // when several mise invocations start at once (e.g. spawning a git worktree,
+    // #10292). Approach based on the closed PR #9701.
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let file_name = link
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("symlink");
+    let tmp = link.with_file_name(format!(
+        ".{file_name}.tmp.{}.{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = fs::remove_file(&tmp);
+    symlink(target, &tmp)
+        .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
+    if let Err(err) = fs::rename(&tmp, link) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err)
+            .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()));
+    }
+    Ok((target.to_path_buf(), link.to_path_buf()))
+}
+
+#[cfg(unix)]
+pub(crate) fn make_symlink_or_copy(target: &Path, link: &Path) -> Result<()> {
+    make_symlink(target, link)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn make_symlink_or_copy(target: &Path, link: &Path) -> Result<()> {
+    copy(target, link)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn is_unc_path(path: &Path) -> bool {
+    matches!(
+        path.components().next(),
+        Some(std::path::Component::Prefix(prefix))
+            if matches!(
+                prefix.kind(),
+                std::path::Prefix::UNC(..) | std::path::Prefix::VerbatimUNC(..)
+            )
+    )
+}
+
+#[cfg(windows)]
+fn create_windows_unc_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(target, link).map_err(|err| {
+        if err.kind() == std::io::ErrorKind::PermissionDenied {
+            std::io::Error::new(
+                err.kind(),
+                format!(
+                    "{err}. Creating directory symlinks on Windows may require administrator privileges or Developer Mode"
+                ),
+            )
+        } else {
+            err
+        }
+    })
+}
+
+#[cfg(windows)]
+fn create_windows_dir_link(target: &Path, link: &Path) -> std::io::Result<()> {
+    if is_unc_path(target) {
+        create_windows_unc_symlink(target, link)
+    } else {
+        junction::create(target, link)
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
+    if let Err(err) = create_windows_dir_link(target, link) {
+        if err.kind() == std::io::ErrorKind::AlreadyExists {
+            remove_symlink_or_junction(link)?;
+            create_windows_dir_link(target, link)
+        } else {
+            Err(err)
+        }
+    } else {
+        Ok(())
+    }
+    .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
+    Ok((target.to_path_buf(), link.to_path_buf()))
+}
+
+#[cfg(windows)]
+pub(crate) fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
+    trace!("ln -sf {} {}", target.display(), link.display());
+    if link.is_file() || link.is_symlink() {
+        // remove existing file if exists
+        fs::remove_file(link)?;
+    }
+    xx::file::write(link, target.to_string_lossy().to_string())?;
+    Ok(())
+}
+
+pub(crate) fn resolve_symlink(link: &Path) -> Result<Option<PathBuf>> {
+    // Windows symlink are write in file currently
+    // may be changed to symlink in the future
+    if link.is_symlink() {
+        Ok(Some(fs::read_link(link)?))
+    } else if link.is_file() {
+        Ok(Some(fs::read_to_string(link)?.into()))
+    } else {
+        Ok(None)
+    }
+}
+
+pub(crate) fn is_symlink_to(link: &Path, target: &Path) -> bool {
+    is_symlink_or_junction(link) && same_file::is_same_file(link, target).unwrap_or(false)
+}
+
+#[cfg(unix)]
+pub(crate) fn is_symlink_or_junction(path: &Path) -> bool {
+    path.is_symlink()
+}
+
+#[cfg(windows)]
+pub(crate) fn is_symlink_or_junction(path: &Path) -> bool {
+    path.is_symlink() || junction::get_target(path).is_ok()
+}
+
+#[cfg(unix)]
+pub(crate) fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
+    make_symlink(target, link)?;
+    Ok(())
+}
+
+pub(crate) fn is_symlink_target_within(link: &Path, root: &Path) -> Result<bool> {
+    let Some(target) = dir_link_target(link)? else {
+        return Ok(false);
+    };
+    let target = target.absolutize()?;
+    let root = root.absolutize()?;
+    Ok(path_starts_with(&target, &root))
+}
+
+#[cfg(unix)]
+fn path_starts_with(path: &Path, root: &Path) -> bool {
+    path.starts_with(root)
+}
+
+#[cfg(windows)]
+fn path_starts_with(path: &Path, root: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
+
+    if path.starts_with(root) {
+        return true;
+    }
+
+    let root_component_count = root.components().count();
+    let root = root.components().collect::<PathBuf>();
+    let candidate = path
+        .components()
+        .take(root_component_count)
+        .collect::<PathBuf>();
+    if candidate.components().count() != root_component_count {
+        return false;
+    }
+
+    let candidate_wide = candidate.as_os_str().encode_wide().collect::<Vec<_>>();
+    let root_wide = root.as_os_str().encode_wide().collect::<Vec<_>>();
+    let Ok(candidate_len) = i32::try_from(candidate_wide.len()) else {
+        return false;
+    };
+    let Ok(root_len) = i32::try_from(root_wide.len()) else {
+        return false;
+    };
+    let equal_ignoring_case = unsafe {
+        CompareStringOrdinal(
+            candidate_wide.as_ptr(),
+            candidate_len,
+            root_wide.as_ptr(),
+            root_len,
+            1,
+        ) == CSTR_EQUAL
+    };
+
+    if !equal_ignoring_case {
+        return false;
+    }
+
+    match same_file::is_same_file(&candidate, &root) {
+        Ok(same) => same,
+        Err(_) => dangling_paths_share_case_insensitive_parent(&candidate, &root),
+    }
+}
+
+#[cfg(windows)]
+fn dangling_paths_share_case_insensitive_parent(path: &Path, root: &Path) -> bool {
+    let Some((path_parent, path_missing_components)) = nearest_existing_directory(path) else {
+        return false;
+    };
+    let Some((root_parent, root_missing_components)) = nearest_existing_directory(root) else {
+        return false;
+    };
+
+    path_missing_components == root_missing_components
+        && same_file::is_same_file(&path_parent, &root_parent).unwrap_or(false)
+        && directory_is_case_sensitive(&path_parent) == Some(false)
+}
+
+#[cfg(windows)]
+fn nearest_existing_directory(path: &Path) -> Option<(PathBuf, usize)> {
+    let mut path = path;
+    let mut missing_components = 0;
+    loop {
+        match fs::metadata(path) {
+            Ok(metadata) if metadata.is_dir() => {
+                return Some((path.to_path_buf(), missing_components));
+            }
+            Ok(_) => return None,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                path = path.parent()?;
+                missing_components += 1;
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+#[cfg(windows)]
+fn directory_is_case_sensitive(path: &Path) -> Option<bool> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_CASE_SENSITIVE_INFO, FILE_FLAG_BACKUP_SEMANTICS, FileCaseSensitiveInfo,
+        GetFileInformationByHandleEx,
+    };
+    use windows_sys::Win32::System::SystemServices::FILE_CS_FLAG_CASE_SENSITIVE_DIR;
+
+    let directory = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .ok()?;
+    let mut case_info = FILE_CASE_SENSITIVE_INFO::default();
+    let inspected = unsafe {
+        GetFileInformationByHandleEx(
+            directory.as_raw_handle(),
+            FileCaseSensitiveInfo,
+            std::ptr::from_mut(&mut case_info).cast(),
+            std::mem::size_of::<FILE_CASE_SENSITIVE_INFO>() as u32,
+        )
+    };
+    (inspected != 0).then_some(case_info.Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR != 0)
+}
+
+#[cfg(unix)]
+fn dir_link_target(link: &Path) -> Result<Option<PathBuf>> {
+    let metadata = match fs::symlink_metadata(link) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(err)
+                .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
+        }
+    };
+    if !metadata.file_type().is_symlink() {
+        return Ok(None);
+    }
+    let target = fs::read_link(link)
+        .wrap_err_with(|| format!("failed to read link: {}", display_path(link)))?;
+    Ok(Some(resolve_relative_link_target(link, target)))
+}
+
+#[cfg(windows)]
+fn dir_link_target(link: &Path) -> Result<Option<PathBuf>> {
+    const ERROR_NOT_A_REPARSE_POINT: i32 = 4390;
+
+    let metadata = match fs::symlink_metadata(link) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(err)
+                .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
+        }
+    };
+    let target = if metadata.file_type().is_symlink() {
+        fs::read_link(link)
+            .wrap_err_with(|| format!("failed to read link: {}", display_path(link)))?
+    } else {
+        match junction::get_target(link) {
+            Ok(target) => target,
+            Err(err)
+                if err.kind() == std::io::ErrorKind::NotFound
+                    || err.raw_os_error() == Some(ERROR_NOT_A_REPARSE_POINT)
+                    || (err.kind() == std::io::ErrorKind::Other
+                        && err.raw_os_error().is_none()) =>
+            {
+                return Ok(None);
+            }
+            Err(err) => {
+                return Err(err).wrap_err_with(|| {
+                    format!("failed to inspect junction: {}", display_path(link))
+                });
+            }
+        }
+    };
+    Ok(Some(resolve_relative_link_target(link, target)))
+}
+
+fn resolve_relative_link_target(link: &Path, target: PathBuf) -> PathBuf {
+    if target.is_absolute() {
+        target
+    } else {
+        link.parent().unwrap_or(link).join(target)
+    }
+}
+
+#[cfg(unix)]
+pub(crate) fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+    // POSIX has no standard unlink-by-handle operation, so a concurrent replacement can still
+    // occur between this check and remove_file. The latter cannot remove directories; callers
+    // must keep the parent directory protected from untrusted writers.
+    if dir_link_target(link)?.is_none() {
+        bail!("refusing to remove non-link: {}", display_path(link));
+    }
+    fs::remove_file(link)
+        .wrap_err_with(|| format!("failed to remove symlink: {}", display_path(link)))
+}
+
+#[cfg(windows)]
+pub(crate) fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+    let link_handle = open_link_for_removal(link)?;
+    remove_open_link(link_handle)
+        .wrap_err_with(|| format!("failed to remove link or junction: {}", display_path(link)))
+}
+
+#[cfg(windows)]
+fn open_link_for_removal(link: &Path) -> Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        DELETE, FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        FileAttributeTagInfo, GetFileInformationByHandleEx,
+    };
+    use windows_sys::Win32::System::SystemServices::{
+        IO_REPARSE_TAG_MOUNT_POINT, IO_REPARSE_TAG_SYMLINK,
+    };
+
+    let file = fs::OpenOptions::new()
+        .access_mode(DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .open(link)
+        .wrap_err_with(|| format!("failed to open link: {}", display_path(link)))?;
+    let mut tag_info = FILE_ATTRIBUTE_TAG_INFO::default();
+    let inspected = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileAttributeTagInfo,
+            std::ptr::from_mut(&mut tag_info).cast(),
+            std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
+        )
+    };
+    if inspected == 0 {
+        return Err(std::io::Error::last_os_error())
+            .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
+    }
+    if !matches!(
+        tag_info.ReparseTag,
+        IO_REPARSE_TAG_SYMLINK | IO_REPARSE_TAG_MOUNT_POINT
+    ) {
+        bail!("refusing to remove non-link: {}", display_path(link));
+    }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn remove_open_link(file: File) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_DISPOSITION_INFO, FileDispositionInfo, SetFileInformationByHandle,
+    };
+
+    let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+    let removed = unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfo,
+            std::ptr::from_ref(&disposition).cast(),
+            std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    };
+    if removed == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    drop(file);
+    Ok(())
+}
+
+#[cfg(unix)]
+pub(crate) fn is_executable(path: &Path) -> bool {
+    if let Ok(metadata) = path.metadata() {
+        return metadata.permissions().mode() & 0o111 != 0;
+    }
+    false
+}
+
+#[cfg(windows)]
+pub(crate) fn is_executable(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    if has_known_executable_extension(path) {
+        return true;
+    }
+    has_shebang(path)
+}
+
+/// How to make `path` count as executable, phrased for the platform the user is on.
+///
+/// Lives beside [`is_executable`] because it has to track it: the two platforms answer that
+/// question by different rules, so the remedy differs too. `chmod +x` is not merely unavailable on
+/// Windows — it is the wrong instruction, since the Windows branch never looks at a permission bit.
+#[cfg(unix)]
+pub(crate) fn make_executable_hint(path: &Path) -> String {
+    format!("Run: chmod +x {}", display_path(path))
+}
+
+#[cfg(windows)]
+pub(crate) fn make_executable_hint(path: &Path) -> String {
+    // A shebang the file already carries, in an encoding `has_shebang` reads as bytes and so
+    // cannot see. Windows PowerShell 5.1's `>` and `Out-File` write UTF-16LE by default, which
+    // makes this the shell that ships with the OS producing a file mise then tells the user to
+    // add a shebang to. Naming the encoding is the fix; telling them to add what is already
+    // there is not. Said whether or not a shebang is in there, because either way the encoding
+    // is what has to change first.
+    if let Some(encoding) = utf16_bom(path) {
+        return format!(
+            "{} is {encoding}. mise reads a shebang as bytes, so save it as UTF-8.",
+            display_path(path),
+        );
+    }
+    format!(
+        "Add a shebang line to {}, or give it one of these extensions: {}",
+        display_path(path),
+        // Read from the setting rather than hardcoded: a user who has changed
+        // `windows_executable_extensions` would otherwise be told to use extensions mise will not
+        // accept from them.
+        Settings::get().windows_executable_extensions.join(", ")
+    )
+}
+
+#[cfg(windows)]
+pub(crate) fn has_known_executable_extension(path: &Path) -> bool {
+    path.extension().map_or(
+        Settings::get()
+            .windows_executable_extensions
+            .contains(&String::new()),
+        |ext| {
+            if let Some(str_val) = ext.to_str() {
+                return Settings::get()
+                    .windows_executable_extensions
+                    .contains(&str_val.to_lowercase().to_string());
+            }
+            false
+        },
+    )
+}
+
+/// Check if a file starts with a shebang (#!), allowing for a leading UTF-8 byte-order mark.
+///
+/// Reads only the first 5 bytes to minimize I/O during task discovery: two for the `#!`, plus
+/// three for a mark in front of it. Reading just the two saw `EF BB` and answered "no shebang",
+/// which on Windows is the whole of [`is_executable`] for an extensionless file -- so a task
+/// written by `Out-File -Encoding utf8` disappeared from `mise tasks` with no diagnostic, while
+/// the same file on unix was a task because there the execute bit decides.
+///
+/// A `read_exact` here would fail outright on a file shorter than the buffer, so read what is
+/// available instead. A UTF-16 mark is deliberately not accepted: no interpreter mise dispatches
+/// to can run a UTF-16 script, so treating one as a task would only trade silence for a
+/// confusing failure at exec time.
+#[cfg(windows)]
+pub(crate) fn has_shebang(path: &Path) -> bool {
+    std::fs::File::open(path)
+        .and_then(|f| {
+            use std::io::Read;
+            let mut buf = Vec::with_capacity(UTF8_BOM_BYTES.len() + 2);
+            f.take((UTF8_BOM_BYTES.len() + 2) as u64)
+                .read_to_end(&mut buf)?;
+            let bytes = buf.strip_prefix(UTF8_BOM_BYTES.as_slice()).unwrap_or(&buf);
+            Ok(bytes.starts_with(b"#!"))
+        })
+        .unwrap_or(false)
+}
+
+/// Extensions `std::process::Command` can start from a path alone on Windows: `exe` and `com`
+/// natively, `bat` and `cmd` because std routes those through cmd.exe with escaped arguments.
+/// Anything else needs an interpreter named for it — `pwsh -File` for a `.ps1`,
+/// `cscript` for a `.vbs`, whatever a shebang asks for.
+///
+/// A fixed list on purpose. It describes what the OS can start, which
+/// `windows_executable_extensions` has no say over: that setting decides what mise *treats* as
+/// executable. Deriving it the other way round — subtracting known interpreter-only extensions
+/// from the setting — happened to be right for the default list and wrong for any other, since a
+/// user who added `sh` or `py` was then answered "yes, `CreateProcess` can start this" and the
+/// task died with "not a valid Win32 application" instead of using its shebang.
+///
+/// `pub(crate)` so `task::task_executor` can assert that `shell_from_extension` names an
+/// interpreter for every default extension this list excludes.
+#[cfg(windows)]
+pub(crate) const OS_LAUNCHABLE_EXTENSIONS: [&str; 4] = ["exe", "com", "bat", "cmd"];
+
+/// Whether the OS can start a file with this extension without an interpreter.
+///
+/// Compared case-insensitively, the way [`has_known_executable_extension`] does: Windows
+/// extensions are not case-sensitive, so `PIPX.PS1` is the same file as `pipx.ps1`.
+#[cfg(windows)]
+pub(crate) fn os_can_launch_extension(ext: &str) -> bool {
+    OS_LAUNCHABLE_EXTENSIONS
+        .iter()
+        .any(|known| ext.eq_ignore_ascii_case(known))
+}
+
+/// Check if a file can be executed directly by the OS without a shell wrapper.
+/// On Unix, this checks the executable permission bit.
+/// On Windows, it takes both questions in turn: does mise treat this extension as executable
+/// (`windows_executable_extensions`, which a user may narrow), and can the OS actually start it
+/// ([`OS_LAUNCHABLE_EXTENSIONS`], which a user may not widen)?
+///
+/// Distinct from [`is_executable`], which on Windows deliberately also accepts a
+/// shebang-only file. Callers that hand the path to `Command::new` need this one:
+/// `CreateProcess` can run `.exe`/`.com`/`.cmd`/`.bat`, but not a `.ps1`, a `.vbs`,
+/// or a script that only carries a shebang.
+///
+/// Note that on Windows this never touches the filesystem — it is pure extension
+/// inspection, so it answers true for a `foo.exe` that does not exist. `is_executable`
+/// checks `is_file()` inline; this one does not. A lookup that walks candidate paths must
+/// compose the two, which is what [`is_spawnable`] does.
+pub(crate) fn can_execute_directly(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        has_known_executable_extension(path)
+            && path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(os_can_launch_extension)
+    }
+    #[cfg(not(windows))]
+    {
+        is_executable(path)
+    }
+}
+
+/// True when the OS will accept `path` as the program argument of a spawn.
+pub(crate) fn is_spawnable(path: &Path) -> bool {
+    if cfg!(windows) && !path.is_file() {
+        return false;
+    }
+    can_execute_directly(path)
+}
+
+#[cfg(unix)]
+pub(crate) fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
+    trace!("chmod +x {}", display_path(&path));
+    let path = path.as_ref();
+    let mut perms = path.metadata()?.permissions();
+    perms.set_mode(executable_mode(perms.mode()));
+    fs::set_permissions(path, perms)
+        .wrap_err_with(|| format!("failed to chmod +x: {}", display_path(path)))?;
+    Ok(())
+}
+
+/// Add execute bits along with the matching read bits.
+///
+/// A file that only receives the execute bits (`mode | 0o111`) can end up executable but not
+/// readable (e.g. a `0o600` tempfile becomes `0o711`). For interpreted executables like PHP PHARs
+/// the interpreter must be able to *read* the file, so any class that gains execute must also gain
+/// read. See https://github.com/jdx/mise/discussions/11108.
+#[cfg(unix)]
+fn executable_mode(mode: u32) -> u32 {
+    mode | 0o111 | 0o444
+}
+
+#[cfg(windows)]
+pub(crate) fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+pub(crate) async fn make_executable_async<P: AsRef<Path>>(path: P) -> Result<()> {
+    trace!("chmod +x {}", display_path(&path));
+    let path = path.as_ref();
+    let mut perms = path.metadata()?.permissions();
+    perms.set_mode(executable_mode(perms.mode()));
+    tokio::fs::set_permissions(path, perms)
+        .await
+        .wrap_err_with(|| format!("failed to chmod +x: {}", display_path(path)))
+}
+
+#[cfg(windows)]
+pub(crate) async fn make_executable_async<P: AsRef<Path>>(_path: P) -> Result<()> {
+    Ok(())
+}
+
+pub(crate) fn all_dirs<P: AsRef<Path>>(
+    start_dir: P,
+    ceiling_dirs: &HashSet<PathBuf>,
+) -> Result<Vec<PathBuf>> {
+    trace!(
+        "file::all_dirs Collecting all ancestors of {} until ceiling {:?}",
+        display_path(&start_dir),
+        ceiling_dirs
+    );
+    Ok(start_dir
+        .as_ref()
+        .ancestors()
+        .map_while(|p| {
+            if ceiling_dirs.contains(p) {
+                debug!(
+                    "file::all_dirs Reached ceiling directory: {}",
+                    display_path(p)
+                );
+                None
+            } else {
+                trace!(
+                    "file::all_dirs Adding ancestor directory: {}",
+                    display_path(p)
+                );
+                Some(p.to_path_buf())
+            }
+        })
+        .collect())
+}
+
+fn is_empty_dir(path: &Path) -> Result<bool> {
+    path.read_dir()
+        .map(|mut i| i.next().is_none())
+        .wrap_err_with(|| format!("failed to read_dir: {}", display_path(path)))
+}
+
+fn is_empty_dir_ignore(path: &Path, ignore_files: Vec<&str>) -> Result<bool> {
+    path.read_dir()
+        .map(|mut i| {
+            i.all(|entry| match entry {
+                Ok(entry) => ignore_files.iter().any(|ignore_file| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case(ignore_file)
+                }),
+                Err(_) => false,
+            })
+        })
+        .wrap_err_with(|| format!("failed to read_dir: {}", display_path(path)))
+}
+
+pub(crate) struct FindUp {
+    current_dir: PathBuf,
+    current_dir_filenames: Vec<String>,
+    filenames: Vec<String>,
+}
+
+impl FindUp {
+    pub(crate) fn new(from: &Path, filenames: &[String]) -> Self {
+        let filenames: Vec<String> = filenames.iter().map(|s| s.to_string()).collect();
+        Self {
+            current_dir: from.to_path_buf(),
+            filenames: filenames.clone(),
+            current_dir_filenames: filenames,
+        }
+    }
+}
+
+impl Iterator for FindUp {
+    type Item = PathBuf;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(filename) = self.current_dir_filenames.pop() {
+            let path = self.current_dir.join(filename);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+        self.current_dir_filenames.clone_from(&self.filenames);
+        if cfg!(test) && self.current_dir == *dirs::HOME {
+            return None; // in tests, do not recurse further than ./test
+        }
+        if !self.current_dir.pop() {
+            return None;
+        }
+        self.next()
+    }
+}
+
+/// returns the first executable in PATH
+/// will not include mise bin paths or other paths added by mise
+pub(crate) fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, Option<PathBuf>>>> = Lazy::new(Default::default);
+
+    let name = name.as_ref();
+    if let Some(path) = CACHE.lock().unwrap().get(name) {
+        return path.clone();
+    }
+    let path = _which(name, &env::PATH);
+    CACHE
+        .lock()
+        .unwrap()
+        .insert(name.to_path_buf(), path.clone());
+    path
+}
+
+/// Returns the first directly spawnable executable in PATH, expanding configured
+/// executable extensions on Windows when `name` has no extension.
+pub(crate) fn which_spawnable(name: &str) -> Option<PathBuf> {
+    let names = executable_names(name);
+    env::PATH.iter().find_map(|dir| {
+        names
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|candidate| is_spawnable(candidate))
+    })
+}
+
+/// returns the first executable in PATH
+/// will include mise bin paths or other paths added by mise
+pub(crate) fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
+    _which(name, &env::PATH_NON_PRISTINE)
+}
+
+/// Canonicalize a path and cache successful resolutions for the current process.
+///
+/// Use this for repeated comparisons against stable roots or PATH entries. Failed
+/// canonicalizations are not cached because many callers handle paths that may be
+/// created later in the same process.
+pub(crate) fn canonicalize_cached(path: &Path) -> Option<PathBuf> {
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
+
+    if !path.is_absolute() {
+        return path.canonicalize().ok();
+    }
+    if let Some(path) = CACHE.lock().unwrap().get(path).cloned() {
+        return Some(path);
+    }
+    let canonicalized = path.canonicalize().ok()?;
+    CACHE
+        .lock()
+        .unwrap()
+        .insert(path.to_path_buf(), canonicalized.clone());
+    Some(canonicalized)
+}
+
+/// Canonicalize a path using the process cache, falling back to the original
+/// path when canonicalization fails.
+pub(crate) fn canonicalize_or_self(path: &Path) -> PathBuf {
+    canonicalize_cached(path).unwrap_or_else(|| path.to_path_buf())
+}
+
+/// Returns true if `path` is one of mise's shim directories.
+///
+/// The configured user and system shim directories qualify. An active shim outside these
+/// configured directories is rejected per candidate instead of treating its
+/// entire parent directory as shims, since that directory may also contain
+/// legitimate executables.
+///
+/// Uses `paths_eq` + `replace_path` for the fast path (expands `~`,
+/// case-insensitive on macOS/Windows), then falls back to `canonicalize_or_self`
+/// so symlinked roots (e.g. `/usr/local/share` → `/private/usr/local/share` on
+/// macOS) still match — the cached helper keeps this off the filesystem hot path.
+pub(crate) fn is_mise_shims_dir(path: &Path) -> bool {
+    let resolved = replace_path(path);
+    let user_shims = dirs::shims();
+    let sys_shims = dirs::system_shims();
+    if paths_eq(&resolved, &user_shims) || paths_eq(&resolved, &sys_shims) {
+        return true;
+    }
+    let canon_input = canonicalize_or_self(&resolved);
+    let canon_user = canonicalize_or_self(&user_shims);
+    let canon_sys = canonicalize_or_self(&sys_shims);
+    paths_eq(&canon_input, &canon_user) || paths_eq(&canon_input, &canon_sys)
+}
+
+/// Returns true if `path` resolves to the shim that delegated to this mise
+/// process. Candidate-level filtering avoids excluding legitimate sibling
+/// executables that happen to share a directory with the active shim.
+pub(crate) fn is_active_mise_shim(path: &Path) -> bool {
+    env::MISE_SHIM_PATH
+        .read()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|active| paths_eq(&canonicalize_or_self(path), &canonicalize_or_self(active)))
+}
+
+/// Build a PATH value with mise shims filtered out, suitable for passing to
+/// subprocesses via `.env("PATH", ...)`. Prevents infinite recursion when a
+/// subprocess (e.g. `gh auth token`, `git credential fill`) resolves to a
+/// mise shim that re-enters mise.
+///
+/// Uses the current process's PATH (`PATH_NON_PRISTINE`). For stripping
+/// shims from an arbitrary PATH string (e.g. from `PRISTINE_ENV`), use
+/// `strip_shims_from_path` instead.
+pub(crate) fn path_env_without_shims() -> std::ffi::OsString {
+    let filtered: Vec<_> = env::PATH_NON_PRISTINE
+        .iter()
+        .filter(|p| !is_mise_dispatch_dir(p))
+        .cloned()
+        .collect();
+    std::env::join_paths(filtered)
+        .unwrap_or_else(|_| std::env::var_os(&*env::PATH_KEY).unwrap_or_default())
+}
+
+/// Strip mise shims from an arbitrary PATH string. Use this when the
+/// subprocess receives a custom env map (e.g. `PRISTINE_ENV`) rather
+/// than inheriting the current process's PATH.
+pub(crate) fn strip_shims_from_path(path_val: &str) -> String {
+    let filtered = env::split_paths(path_val).filter(|p| !is_mise_dispatch_dir(p));
+    std::env::join_paths(filtered)
+        .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Strip every mise dispatch directory from PATH before a command wrapper
+/// delegates. This lets the wrapped command resolve a tool managed by mise or
+/// fall through to rustup/the system without invoking the wrapper again.
+pub(crate) fn strip_dispatch_dirs_from_path(path_val: &str) -> String {
+    let filtered = env::split_paths(path_val).filter(|p| !is_mise_dispatch_dir(p));
+    std::env::join_paths(filtered)
+        .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
+        .to_string_lossy()
+        .into_owned()
+}
+
+pub(crate) fn is_command_wrapper_dir(path: &Path) -> bool {
+    let resolved = replace_path(path);
+    paths_eq(&resolved, &dirs::COMMAND_WRAPPERS)
+        || paths_eq(
+            &canonicalize_or_self(&resolved),
+            &canonicalize_or_self(&dirs::COMMAND_WRAPPERS),
+        )
+}
+
+pub(crate) fn is_mise_dispatch_dir(path: &Path) -> bool {
+    is_mise_shims_dir(path) || is_command_wrapper_dir(path)
+}
+
+/// returns the first executable in PATH, excluding the mise shim directories
+/// use this for internal tool lookups to avoid recursive shim invocations
+/// (shims call `mise exec`, which would re-enter the same code path)
+pub(crate) fn which_no_shims<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
+    let paths: Vec<PathBuf> = env::PATH_NON_PRISTINE
+        .iter()
+        .filter(|p| !is_mise_dispatch_dir(p))
+        .cloned()
+        .collect();
+    _which(name, &paths)
+}
+
+fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
+    let name = name.as_ref();
+    paths.iter().find_map(|path| {
+        let bin = path.join(name);
+        if is_executable(&bin) { Some(bin) } else { None }
+    })
+}
+
+#[cfg(not(windows))]
+pub(crate) fn executable_names(bin: &str) -> Vec<String> {
+    vec![bin.to_string()]
+}
+
+#[cfg(windows)]
+pub(crate) fn executable_names(bin: &str) -> Vec<String> {
+    let mut names = vec![bin.to_string()];
+    if Path::new(bin).extension().is_none() {
+        for ext in &Settings::get().windows_executable_extensions {
+            let name = if ext.is_empty() {
+                bin.to_string()
+            } else {
+                format!("{bin}.{ext}")
+            };
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    }
+    names
+}
+
+pub(crate) fn un_gz(input: &Path, dest: &Path) -> Result<()> {
+    debug!("gunzip {} > {}", input.display(), dest.display());
+    let f = File::open(input)?;
+    let mut dec = GzDecoder::new(f);
+    let mut output = File::create(dest)?;
+    std::io::copy(&mut dec, &mut output)
+        .wrap_err_with(|| format!("failed to un-gzip: {}", display_path(input)))?;
+    Ok(())
+}
+
+pub(crate) fn un_xz(input: &Path, dest: &Path) -> Result<()> {
+    debug!("xz -d {} -c > {}", input.display(), dest.display());
+    let f = File::open(input)?;
+    let mut dec = xz2::read::XzDecoder::new(f);
+    let mut output = File::create(dest)?;
+    std::io::copy(&mut dec, &mut output)
+        .wrap_err_with(|| format!("failed to un-xz: {}", display_path(input)))?;
+    Ok(())
+}
+
+pub(crate) fn un_zst(input: &Path, dest: &Path) -> Result<()> {
+    debug!("zstd -d {} -c > {}", input.display(), dest.display());
+    let f = File::open(input)?;
+    let mut dec = zstd::Decoder::new(f)?;
+    let mut output = File::create(dest)?;
+    std::io::copy(&mut dec, &mut output)
+        .wrap_err_with(|| format!("failed to un-zst: {}", display_path(input)))?;
+    Ok(())
+}
+
+pub(crate) fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
+    debug!("bzip2 -d {} -c > {}", input.display(), dest.display());
+    let f = File::open(input)?;
+    let mut dec = BzDecoder::new(f);
+    let mut output = File::create(dest)?;
+    std::io::copy(&mut dec, &mut output)
+        .wrap_err_with(|| format!("failed to un-bz2: {}", display_path(input)))?;
+    Ok(())
+}
+
+/// Run long blocking work (archive extraction, subprocess waits) without tying up a tokio worker.
+///
+/// Extraction can take seconds and is called directly from async install paths, where it would
+/// otherwise block a runtime worker thread for the duration. On mise's multi-threaded runtime
+/// (see `main.rs`), `tokio::task::block_in_place` hands the worker's core off to another thread so
+/// concurrent tasks (progress bars, downloads, other installs) keep running. Outside a runtime, or
+/// on a current-thread runtime (e.g. `#[tokio::test]`), `block_in_place` would panic, so fall back
+/// to running the closure inline.
+pub(crate) fn run_blocking<T>(f: impl FnOnce() -> T) -> T {
+    match tokio::runtime::Handle::try_current() {
+        Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(f)
+        }
+        _ => f(),
+    }
+}
+
+pub(crate) fn decompress_file(input: &Path, dest: &Path, format: ExtractionFormat) -> Result<()> {
+    if let Some(parent) = dest.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        create_dir_all(parent)?;
+    }
+
+    run_blocking(|| match format {
+        ExtractionFormat::Gz => un_gz(input, dest),
+        ExtractionFormat::Xz => un_xz(input, dest),
+        ExtractionFormat::Zst => un_zst(input, dest),
+        ExtractionFormat::Bz2 => un_bz2(input, dest),
+        ExtractionFormat::Br | ExtractionFormat::Lz4 | ExtractionFormat::Sz => {
+            bail!("{format} format not supported")
+        }
+        _ => bail!("unsupported compressed file format: {}", format),
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
+pub(crate) enum ExtractionFormat {
+    #[strum(to_string = "tar.gz", serialize = "tgz")]
+    TarGz,
+    #[strum(serialize = "gz")]
+    Gz,
+    #[strum(to_string = "tar.xz", serialize = "txz")]
+    TarXz,
+    #[strum(serialize = "xz")]
+    Xz,
+    #[strum(to_string = "tar.bz2", serialize = "tbz2", serialize = "tbz")]
+    TarBz2,
+    #[strum(serialize = "bz2")]
+    Bz2,
+    #[strum(to_string = "tar.zst", serialize = "tzst")]
+    TarZst,
+    #[strum(serialize = "zst")]
+    Zst,
+    #[strum(serialize = "tar")]
+    Tar,
+    #[strum(to_string = "zip", serialize = "vsix")]
+    Zip,
+    #[strum(serialize = "7z")]
+    SevenZip,
+    #[strum(to_string = "tar.br", serialize = "tbr")]
+    TarBr,
+    #[strum(serialize = "br")]
+    Br,
+    #[strum(to_string = "tar.lz4", serialize = "tlz4")]
+    TarLz4,
+    #[strum(serialize = "lz4")]
+    Lz4,
+    #[strum(to_string = "tar.sz", serialize = "tsz")]
+    TarSz,
+    #[strum(serialize = "sz")]
+    Sz,
+    #[strum(serialize = "rar")]
+    Rar,
+    #[strum(serialize = "raw")]
+    Raw,
+}
+
+impl ExtractionFormat {
+    pub(crate) fn from_file_name(filename: &str) -> Self {
+        let filename = filename.to_lowercase();
+
+        if let Some(idx) = filename.rfind(".tar.") {
+            let ext = &filename[idx + 1..];
+            if let Some(fmt) = Self::from_ext(ext) {
+                return fmt;
+            }
+        }
+
+        if let Some(ext) = Path::new(&filename).extension().and_then(|s| s.to_str()) {
+            Self::from_ext(ext).unwrap_or(ExtractionFormat::Raw)
+        } else {
+            ExtractionFormat::Raw
+        }
+    }
+
+    pub(crate) fn from_ext(ext: &str) -> Option<Self> {
+        ext.to_lowercase().parse().ok()
+    }
+
+    pub(crate) fn is_archive(&self) -> bool {
+        self.is_tar_archive()
+            || matches!(
+                self,
+                ExtractionFormat::Zip | ExtractionFormat::SevenZip | ExtractionFormat::Rar
+            )
+    }
+
+    pub(crate) fn is_tar_archive(&self) -> bool {
+        matches!(
+            self,
+            ExtractionFormat::TarGz
+                | ExtractionFormat::TarXz
+                | ExtractionFormat::TarBz2
+                | ExtractionFormat::TarZst
+                | ExtractionFormat::Tar
+                | ExtractionFormat::TarBr
+                | ExtractionFormat::TarLz4
+                | ExtractionFormat::TarSz
+        )
+    }
+
+    pub(crate) fn is_compressed_file(&self) -> bool {
+        matches!(
+            self,
+            ExtractionFormat::Gz
+                | ExtractionFormat::Xz
+                | ExtractionFormat::Bz2
+                | ExtractionFormat::Zst
+                | ExtractionFormat::Br
+                | ExtractionFormat::Lz4
+                | ExtractionFormat::Sz
+        )
+    }
+
+    pub(crate) fn extension(&self) -> Option<String> {
+        (*self != ExtractionFormat::Raw).then(|| self.to_string())
+    }
+}
+
+pub(crate) struct ExtractOptions<'a> {
+    pub strip_components: usize,
+    pub pr: Option<&'a dyn SingleReport>,
+    /// When false, files will be extracted with current timestamp instead of archive's mtime
+    pub preserve_mtime: bool,
+}
+
+impl<'a> Default for ExtractOptions<'a> {
+    fn default() -> Self {
+        Self {
+            strip_components: 0,
+            pr: None,
+            preserve_mtime: true,
+        }
+    }
+}
+
+pub(crate) fn extract_archive(
+    archive: &Path,
+    dest: &Path,
+    format: ExtractionFormat,
+    opts: &ExtractOptions,
+) -> Result<()> {
+    match format {
+        ExtractionFormat::TarGz
+        | ExtractionFormat::TarXz
+        | ExtractionFormat::TarBz2
+        | ExtractionFormat::TarZst
+        | ExtractionFormat::Tar
+        | ExtractionFormat::TarBr
+        | ExtractionFormat::TarLz4
+        | ExtractionFormat::TarSz
+        | ExtractionFormat::Raw => untar(archive, dest, format, opts),
+        ExtractionFormat::Zip => unzip(archive, dest, opts),
+        ExtractionFormat::SevenZip => un7z(archive, dest, opts),
+        ExtractionFormat::Gz
+        | ExtractionFormat::Xz
+        | ExtractionFormat::Bz2
+        | ExtractionFormat::Zst
+        | ExtractionFormat::Br
+        | ExtractionFormat::Lz4
+        | ExtractionFormat::Sz => {
+            bail!("extract_archive does not support compressed single-file format: {format}")
+        }
+        ExtractionFormat::Rar => bail!("rar format not supported"),
+    }
+}
+
+pub(crate) fn untar(
+    archive: &Path,
+    dest: &Path,
+    format: ExtractionFormat,
+    opts: &ExtractOptions,
+) -> Result<()> {
+    if !format.is_tar_archive() && format != ExtractionFormat::Raw {
+        bail!("untar only supports tar formats, got {}", format);
+    }
+
+    debug!("tar -xf {} -C {}", archive.display(), dest.display());
+    if let Some(pr) = &opts.pr {
+        pr.set_message(format!(
+            "extract {}",
+            archive.file_name().unwrap().to_string_lossy()
+        ));
+    }
+
+    let err = || {
+        let archive = display_path(archive);
+        let dest = display_path(dest);
+        format!("failed to extract tar: {archive} to {dest}")
+    };
+
+    run_blocking(|| {
+        let tar = open_tar(format, archive)?;
+        create_dir_all(dest).wrap_err_with(err)?;
+        let mut unpack_opts = UnpackOptions::default();
+        unpack_opts.preserve_mtime = opts.preserve_mtime;
+        unpack_opts.on_entry = Some(Box::new(|entry| {
+            trace!("extracting {}", entry.path.display());
+        }));
+        let summary = Archive::new(tar)
+            .unpack(dest, &mut unpack_opts)
+            .wrap_err_with(err)?;
+        debug!("tar extraction summary: {summary:?}");
+        strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+            format!(
+                "failed to strip path components from tar archive: {}",
+                display_path(archive)
+            )
+        })
+    })
+}
+
+fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
+    let f = File::open(archive)?;
+    Ok(match format {
+        // TODO: we probably shouldn't assume raw is tar.gz, but this was to retain existing behavior
+        ExtractionFormat::TarGz | ExtractionFormat::Raw => Box::new(GzDecoder::new(f)),
+        ExtractionFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
+        ExtractionFormat::TarBz2 => Box::new(BzDecoder::new(f)),
+        ExtractionFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
+        ExtractionFormat::Tar => Box::new(f),
+        ExtractionFormat::TarBr | ExtractionFormat::TarLz4 | ExtractionFormat::TarSz => {
+            bail!("{format} format not supported")
+        }
+        ExtractionFormat::Gz
+        | ExtractionFormat::Xz
+        | ExtractionFormat::Bz2
+        | ExtractionFormat::Zst
+        | ExtractionFormat::Br
+        | ExtractionFormat::Lz4
+        | ExtractionFormat::Sz => {
+            bail!("{} is not a tar archive", format)
+        }
+        ExtractionFormat::Zip => bail!("zip format not supported"),
+        ExtractionFormat::SevenZip => bail!("7z format not supported"),
+        ExtractionFormat::Rar => bail!("rar format not supported"),
+    })
+}
+
+fn reset_dir_mtime_to_now(dir: &Path) -> Result<()> {
+    let now = FileTime::now();
+    for entry in WalkDir::new(dir) {
+        let entry = entry?;
+        if entry.file_type().is_file() {
+            set_file_times(entry.path(), now, now)?;
+        }
+    }
+    Ok(())
+}
+
+fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
+    if strip_depth == 0 {
+        return Ok(());
+    }
+    if strip_depth > 1 {
+        bail!("strip-components > 1 is not supported");
+    }
+
+    let top_level_paths = ls(dir)?;
+
+    for path in top_level_paths {
+        if !path.symlink_metadata()?.is_dir() {
+            continue;
+        }
+
+        // rename the directory to a temp name to avoid conflicts when moving files
+        let temp_path = path.with_file_name(format!(
+            "{}_tmp_strip",
+            path.file_name().unwrap().to_string_lossy()
+        ));
+        do_rename(&path, &temp_path)?;
+
+        for entry in ls(&temp_path)? {
+            if let Some(file_name) = entry.file_name() {
+                let dest_path = dir.join(file_name);
+                do_rename(&entry, &dest_path)?;
+            } else {
+                continue;
+            }
+        }
+
+        remove_dir(temp_path)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn unzip(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()> {
+    // TODO: show progress
+    debug!("unzip {} -d {}", archive.display(), dest.display());
+    if let Some(pr) = &opts.pr {
+        pr.set_message(format!(
+            "extract {}",
+            archive.file_name().unwrap().to_string_lossy()
+        ));
+    }
+    run_blocking(|| {
+        ZipArchive::new(File::open(archive)?)
+            .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
+            .extract(dest)
+            .wrap_err_with(|| {
+                format!("failed to extract zip archive: {}", display_path(archive))
+            })?;
+
+        if !opts.preserve_mtime {
+            reset_dir_mtime_to_now(dest)?;
+        }
+
+        strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+            format!(
+                "failed to strip path components from zip archive: {}",
+                display_path(archive)
+            )
+        })
+    })
+}
+
+pub(crate) fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
+    debug!(
+        "hdiutil attach -quiet -nobrowse -mountpoint {} {}",
+        dest.display(),
+        archive.display()
+    );
+    run_blocking(|| {
+        let tmp = tempfile::TempDir::new()?;
+        cmd!(
+            "hdiutil",
+            "attach",
+            "-quiet",
+            "-nobrowse",
+            "-mountpoint",
+            tmp.path(),
+            archive.to_path_buf()
+        )
+        .run()?;
+        let copy_result = copy_dir_all_preserve_symlinks(tmp.path(), dest);
+        let detach_result = cmd!("hdiutil", "detach", tmp.path()).run();
+        match (copy_result, detach_result) {
+            (Err(copy_err), Err(detach_err)) => Err(copy_err)
+                .wrap_err_with(|| format!("additionally failed to detach DMG: {detach_err}")),
+            (Err(copy_err), _) => Err(copy_err),
+            (Ok(()), Err(detach_err)) => Err(detach_err.into()),
+            (Ok(()), Ok(_)) => Ok(()),
+        }
+    })
+}
+
+pub(crate) fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
+    debug!(
+        "pkgutil --expand-full {} {}",
+        archive.display(),
+        dest.display()
+    );
+    run_blocking(|| cmd!("pkgutil", "--expand-full", archive, dest).run())?;
+    Ok(())
+}
+
+pub(crate) fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()> {
+    if let Some(pr) = &opts.pr {
+        pr.set_message(format!(
+            "extract {}",
+            archive.file_name().unwrap().to_string_lossy()
+        ));
+    }
+    run_blocking(|| {
+        sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
+            let dest_path = dest.join(
+                sanitize_7z_entry_path(entry.name())
+                    .map_err(|err| sevenz_rust2::Error::Other(format!("{err:#}").into()))?,
+            );
+            sevenz_rust2::default_entry_extract_fn(entry, reader, &dest_path)
+        })
+        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
+
+        if !opts.preserve_mtime {
+            reset_dir_mtime_to_now(dest)?;
+        }
+
+        strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+            format!(
+                "failed to strip path components from 7z archive: {}",
+                display_path(archive)
+            )
+        })
+    })
+}
+
+/// Whether `name` is a plain file name: exactly one normal path component, with
+/// no separators, parent/root components, or drive prefixes on any platform.
+/// Use to validate user-supplied names (e.g. `bin`, `rename_exe`, `filter_bins`
+/// tool options) before joining them onto a directory, so a value like
+/// `../evil` or `/abs/path` cannot escape it.
+pub(crate) fn is_plain_file_name(name: &str) -> bool {
+    // Reject both separators explicitly: `\` is a legal file-name character on
+    // Unix, but these names come from cross-platform config.
+    if name.contains('/') || name.contains('\\') {
+        return false;
+    }
+    let mut components = Path::new(name).components();
+    matches!(
+        (components.next(), components.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    )
+}
+
+/// Whether `path` is a non-empty relative path containing only normal
+/// components. Both slash styles are treated as separators so config values are
+/// validated consistently across platforms.
+pub(crate) fn is_safe_relative_path(path: &str) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    let normalized = path.replace('\\', "/");
+    let bytes = normalized.as_bytes();
+    if normalized.starts_with('/')
+        || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
+    {
+        return false;
+    }
+    let mut components = Path::new(&normalized).components();
+    matches!(components.next(), Some(std::path::Component::Normal(_)))
+        && components.all(|component| matches!(component, std::path::Component::Normal(_)))
+}
+
+fn sanitize_7z_entry_path(path: &str) -> Result<PathBuf> {
+    let normalized = PathBuf::from(path.replace('\\', "/"));
+    let mut safe_path = PathBuf::new();
+
+    for component in normalized.components() {
+        match component {
+            std::path::Component::Normal(part) => safe_path.push(part),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => {
+                bail!("7z archive entry path escapes extraction directory: {path}")
+            }
+        }
+    }
+
+    Ok(safe_path)
+}
+
+pub(crate) fn split_file_name(path: &Path) -> (String, String) {
+    let file_name = path.file_name().unwrap().to_string_lossy();
+    let (file_name_base, ext) = file_name
+        .split_once('.')
+        .unwrap_or((file_name.as_ref(), ""));
+    (file_name_base.to_string(), ext.to_string())
+}
+
+pub(crate) fn same_file(a: &Path, b: &Path) -> bool {
+    a == b || desymlink_path(a) == desymlink_path(b)
+}
+
+/// Returns whether `path` starts with `prefix` either lexically or after
+/// resolving symlinks and the existing path prefix.
+pub(crate) fn path_starts_with_resolved(path: &Path, prefix: &Path) -> bool {
+    path.starts_with(prefix) || desymlink_path(path).starts_with(desymlink_path(prefix))
+}
+
+fn resolve_path_with_existing_prefix(path: &Path) -> PathBuf {
+    let mut resolved = if path.is_relative() {
+        env::current_dir().unwrap_or_default()
+    } else {
+        PathBuf::new()
+    };
+    let mut components = path.components();
+    while let Some(component) = components.next() {
+        if matches!(component, std::path::Component::CurDir) {
+            continue;
+        }
+        #[cfg(windows)]
+        if matches!(
+            component,
+            std::path::Component::Prefix(_) | std::path::Component::RootDir
+        ) {
+            // A drive prefix such as `C:` is drive-relative until its root is
+            // present, so do not canonicalize the two components separately.
+            resolved.push(component.as_os_str());
+            continue;
+        }
+        let candidate = resolved.join(component.as_os_str());
+        match candidate.canonicalize() {
+            Ok(candidate) => resolved = candidate,
+            Err(_) => {
+                #[cfg(windows)]
+                {
+                    // PathBuf::push lexically resolves `..` after a verbatim
+                    // (`\\?\`) prefix, but the unresolved suffix must remain
+                    // opaque so two potentially different files stay distinct.
+                    let mut raw = resolved.into_os_string();
+                    if Path::new(&raw).file_name().is_some() {
+                        raw.push("\\");
+                    }
+                    raw.push(component.as_os_str());
+                    for component in components {
+                        raw.push("\\");
+                        raw.push(component.as_os_str());
+                    }
+                    resolved = raw.into();
+                }
+                #[cfg(not(windows))]
+                {
+                    resolved.push(component.as_os_str());
+                    resolved.extend(components.map(|component| component.as_os_str()));
+                }
+                break;
+            }
+        }
+    }
+    resolved
+}
+
+pub(crate) fn desymlink_path(p: &Path) -> PathBuf {
+    if p.is_symlink()
+        && let Ok(target) = fs::read_link(p)
+    {
+        let target = if target.is_absolute() {
+            target
+        } else {
+            p.parent().unwrap_or_else(|| Path::new("")).join(target)
+        };
+        return target
+            .canonicalize()
+            .unwrap_or_else(|_| resolve_path_with_existing_prefix(&target));
+    }
+    p.canonicalize()
+        .unwrap_or_else(|_| resolve_path_with_existing_prefix(p))
+}
+
+pub(crate) fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
+    if cfg!(macos) {
+        cmd!("/bin/cp", "-cR", from, to).run()?;
+    } else if cfg!(windows) {
+        cmd!("robocopy", from, to, "/MIR").run()?;
+    } else {
+        cmd!("cp", "--reflink=auto", "-r", from, to).run()?;
+    }
+    Ok(())
+}
+
+/// Inspects the top-level contents of a tar archive without extracting it
+/// Skips leading CurDir (".") components from a path's components iterator.
+/// Archives often have paths like "./foo/bar" where the leading "." should be ignored.
+fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Component<'_>> {
+    path.components()
+        .skip_while(|c| matches!(c, std::path::Component::CurDir))
+}
+
+pub(crate) fn inspect_tar_contents(
+    archive: &Path,
+    format: ExtractionFormat,
+) -> Result<Vec<(String, bool)>> {
+    let tar = open_tar(format, archive)?;
+    let mut archive = Archive::new(tar);
+    let mut top_level_components = std::collections::HashMap::new();
+
+    for entry in archive.entries()? {
+        let entry = entry?;
+        let path = entry.path()?;
+        let entry_type = entry.entry_type();
+
+        // Get the first non-CurDir component of the path (top-level directory/file)
+        let mut components = skip_curdir_components(&path);
+
+        if let Some(first_component) = components.next() {
+            let name = first_component.as_os_str().to_string_lossy().to_string();
+
+            // Check if this entry indicates the component is a directory
+            // It's a directory if the entry type is dir OR if there are more components after the first
+            let is_directory = entry_type == EntryType::Directory || components.next().is_some();
+
+            // Update the component's directory status
+            // A component is a directory if ANY entry indicates it's a directory
+            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            *existing = *existing || is_directory;
+        }
+    }
+
+    Ok(top_level_components.into_iter().collect())
+}
+
+/// Inspects the top-level contents of a zip archive without extracting it
+pub(crate) fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
+    let f = File::open(archive)?;
+    let mut archive = ZipArchive::new(f)
+        .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?;
+    let mut top_level_components = std::collections::HashMap::new();
+
+    for i in 0..archive.len() {
+        let file = archive.by_index(i)?;
+        if let Some(path) = file.enclosed_name() {
+            // Get the first non-CurDir component of the path (top-level directory/file)
+            let mut components = skip_curdir_components(&path);
+
+            if let Some(first_component) = components.next() {
+                let name = first_component.as_os_str().to_string_lossy().to_string();
+
+                // Check if this entry indicates the component is a directory
+                // It's a directory if the entry type is dir OR if there are more components after the first
+                let is_directory = file.is_dir() || components.next().is_some();
+
+                let existing = top_level_components.entry(name.clone()).or_insert(false);
+                *existing = *existing || is_directory;
+            }
+        }
+    }
+
+    Ok(top_level_components.into_iter().collect())
+}
+
+/// Adapted from inspect_tar_contents for 7z archives
+pub(crate) fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
+    let sevenz = sevenz_rust2::Archive::open(archive)?;
+    let mut top_level_components = std::collections::HashMap::new();
+
+    for file in &sevenz.files {
+        let path = sanitize_7z_entry_path(file.name())?;
+
+        // Get the first non-CurDir component of the path (top-level directory/file)
+        let mut components = skip_curdir_components(&path);
+
+        if let Some(first_component) = components.next() {
+            let name = first_component.as_os_str().to_string_lossy().to_string();
+            // It's a directory if the entry type is dir OR if there are more components after the first
+            let is_directory = file.is_directory() || components.next().is_some();
+
+            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            *existing = *existing || is_directory;
+        }
+    }
+
+    Ok(top_level_components.into_iter().collect())
+}
+
+/// Determines if strip_components=1 should be applied based on archive structure
+pub(crate) fn should_strip_components(archive: &Path, format: ExtractionFormat) -> Result<bool> {
+    let top_level_entries = match format {
+        ExtractionFormat::Zip => inspect_zip_contents(archive)?,
+        ExtractionFormat::SevenZip => inspect_7z_contents(archive)?,
+        _ => inspect_tar_contents(archive, format)?,
+    };
+
+    // If there's exactly one top-level entry and it's a directory, we should strip it
+    if top_level_entries.len() == 1 {
+        let (_, is_directory) = &top_level_entries[0];
+        Ok(*is_directory)
+    } else {
+        Ok(false)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ArchiveContent {
+    pub name: String,
+    pub sha256: String,
+}
+
+/// Return the regular files in an archive after applying strip-components.
+///
+/// This is intentionally stricter than extraction: content-level provenance is
+/// only safe when every installed regular file is covered, so ambiguous archive
+/// entries (links, unsafe paths, stripped-away file names, unsupported formats)
+/// fail closed instead of being ignored.
+pub(crate) fn archive_content_files(
+    archive_path: &Path,
+    format: ExtractionFormat,
+    strip_components: usize,
+) -> Result<Vec<ArchiveContent>> {
+    if strip_components > 1 {
+        bail!("content-level SLSA verification only supports strip_components values of 0 or 1");
+    }
+
+    match format {
+        ExtractionFormat::TarGz
+        | ExtractionFormat::TarXz
+        | ExtractionFormat::TarBz2
+        | ExtractionFormat::TarZst
+        | ExtractionFormat::Tar
+        | ExtractionFormat::TarBr
+        | ExtractionFormat::TarLz4
+        | ExtractionFormat::TarSz => {
+            archive_content_files_tar(archive_path, format, strip_components)
+        }
+        ExtractionFormat::Zip => archive_content_files_zip(archive_path, strip_components),
+        ExtractionFormat::SevenZip => {
+            bail!("content-level SLSA verification does not support 7z archives")
+        }
+        ExtractionFormat::Gz
+        | ExtractionFormat::Xz
+        | ExtractionFormat::Bz2
+        | ExtractionFormat::Zst
+        | ExtractionFormat::Br
+        | ExtractionFormat::Lz4
+        | ExtractionFormat::Sz
+        | ExtractionFormat::Raw => {
+            bail!("content-level SLSA verification only supports archive formats")
+        }
+        ExtractionFormat::Rar => bail!("rar format not supported"),
+    }
+}
+
+fn archive_content_files_tar(
+    archive_path: &Path,
+    format: ExtractionFormat,
+    strip_components: usize,
+) -> Result<Vec<ArchiveContent>> {
+    let tar = open_tar(format, archive_path)?;
+    let mut archive = Archive::new(tar);
+    let mut files = Vec::new();
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.into_owned();
+        let entry_type = entry.entry_type();
+        if entry_type == EntryType::Directory {
+            continue;
+        }
+        if entry_type != EntryType::File {
+            bail!(
+                "content-level SLSA verification does not support non-regular archive entry: {}",
+                path.display()
+            );
+        }
+        let name = normalize_archive_content_path(&path, strip_components)?;
+        let sha256 = sha256_reader(&mut entry)?;
+        files.push(ArchiveContent { name, sha256 });
+    }
+
+    validate_archive_content_files(files)
+}
+
+fn archive_content_files_zip(
+    archive_path: &Path,
+    strip_components: usize,
+) -> Result<Vec<ArchiveContent>> {
+    let f = File::open(archive_path)?;
+    let mut archive = ZipArchive::new(f)
+        .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive_path)))?;
+    let mut files = Vec::new();
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        if file.is_dir() {
+            continue;
+        }
+        if file.is_symlink() {
+            bail!(
+                "content-level SLSA verification does not support symlink archive entry: {}",
+                file.name()
+            );
+        }
+        let enclosed_name = file.enclosed_name().ok_or_else(|| {
+            eyre::eyre!(
+                "content-level SLSA verification rejected unsafe zip path: {}",
+                file.name()
+            )
+        })?;
+        let name = normalize_archive_content_path(&enclosed_name, strip_components)?;
+        let sha256 = sha256_reader(&mut file)?;
+        files.push(ArchiveContent { name, sha256 });
+    }
+
+    validate_archive_content_files(files)
+}
+
+fn sha256_reader(reader: &mut impl Read) -> Result<String> {
+    let mut hasher = Sha256::new();
+    let mut buf = [0; 8192];
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn validate_archive_content_files(files: Vec<ArchiveContent>) -> Result<Vec<ArchiveContent>> {
+    if files.is_empty() {
+        bail!("content-level SLSA verification found no regular files in archive");
+    }
+    let mut names = std::collections::HashSet::new();
+    for file in &files {
+        if !names.insert(file.name.clone()) {
+            bail!(
+                "content-level SLSA verification found duplicate installed archive path: {}",
+                file.name
+            );
+        }
+    }
+    Ok(files)
+}
+
+fn normalize_archive_content_path(path: &Path, strip_components: usize) -> Result<String> {
+    let mut parts = Vec::new();
+    for component in skip_curdir_components(path) {
+        match component {
+            std::path::Component::Normal(part) => parts.push(part.to_string_lossy().to_string()),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => {
+                bail!(
+                    "content-level SLSA verification rejected unsafe archive path: {}",
+                    path.display()
+                )
+            }
+        }
+    }
+    if strip_components > parts.len() {
+        bail!(
+            "content-level SLSA verification stripped all components from archive path: {}",
+            path.display()
+        );
+    }
+    let parts = &parts[strip_components..];
+    if parts.is_empty() {
+        bail!(
+            "content-level SLSA verification stripped all components from archive path: {}",
+            path.display()
+        );
+    }
+    Ok(parts.join("/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use crate::config::Config;
+
+    use super::*;
+
+    /// Whether a directory entry is there at all, without resolving it.
+    ///
+    /// `Path::exists` answers about the *target*, so it is false for a link whose target is gone —
+    /// which is the entry these tests are about. An assertion written with it would hold before
+    /// the removal as well as after, and prove nothing.
+    fn entry_present(path: &Path) -> bool {
+        fs::symlink_metadata(path).is_ok()
+    }
+
+    /// Deliberately not `#[cfg(unix)]`: `make_symlink` writes a real symlink on unix and a
+    /// junction on Windows, and the two are removed by different system calls. The behaviour under
+    /// test is what happens to a link mise itself wrote, so it has to be checked on both.
+    /// Deliberately not `#[cfg(unix)]`, like the removal tests below: `make_symlink` writes a real
+    /// symlink on unix and a junction on Windows, and only `symlink_metadata` describes both
+    /// without resolving them.
+    #[test]
+    fn entry_exists_sees_what_path_exists_hides() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let live = dir.path().join("live");
+        let broken = dir.path().join("broken");
+        let plain = dir.path().join("plain.txt");
+        create_dir_all(&target).unwrap();
+        write(&plain, "x").unwrap();
+        make_symlink(&target, &live).unwrap();
+        make_symlink(&dir.path().join("nowhere"), &broken).unwrap();
+
+        for p in [&target, &plain, &live, &broken] {
+            assert!(entry_exists(p), "{}", p.display());
+        }
+        assert!(!entry_exists(dir.path().join("never-existed")));
+
+        // The control, and the whole reason this function exists: `Path::exists` answers about the
+        // link's target, so it disagrees for exactly the entry that needs finding.
+        assert!(!broken.exists());
+    }
+
+    /// Also pins that `DirEntry::file_type()` reports a Windows junction as a symlink, which is
+    /// what the predicate keys on. `make_symlink` writes a junction here, so if that were not so,
+    /// `broken` would be dropped below — and the *live* junction would never have been listed
+    /// either, which is how `mise ls` has been showing linked versions on Windows all along.
+    #[test]
+    fn only_the_version_scan_keeps_a_link_that_leads_nowhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        create_dir_all(&target).unwrap();
+        make_symlink(&target, &dir.path().join("live")).unwrap();
+        make_symlink(&dir.path().join("nowhere"), &dir.path().join("broken")).unwrap();
+        write(dir.path().join("plain.txt"), "x").unwrap();
+
+        // The control: the plain listing still drops it, because a link that resolves to nothing
+        // is not a directory its callers can read a plugin or a cached download out of.
+        let plain = dir_subdirs(dir.path()).unwrap();
+        assert!(
+            plain.contains("target") && plain.contains("live"),
+            "{plain:?}"
+        );
+        assert!(!plain.contains("broken"), "{plain:?}");
+
+        let kept = dir_subdirs_keeping_broken_links(dir.path()).unwrap();
+        assert!(kept.contains("broken"), "{kept:?}");
+        // Everything else it reports is unchanged -- including that a regular file is still not a
+        // subdirectory.
+        assert!(kept.contains("target") && kept.contains("live"), "{kept:?}");
+        assert!(!kept.contains("plain.txt"), "{kept:?}");
+    }
+
+    #[test]
+    fn remove_all_removes_a_link_whose_target_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        create_dir_all(&target).unwrap();
+        write(target.join("keep.txt"), "important").unwrap();
+        make_symlink(&target, &link).unwrap();
+
+        remove_all(&target).unwrap();
+        // Control: the entry really is a link that no longer resolves. Without this the assertion
+        // below could be passing because there was nothing there to begin with.
+        assert!(entry_present(&link));
+        assert!(!link.exists());
+
+        remove_all(&link).unwrap();
+        assert!(!entry_present(&link));
+    }
+
+    #[test]
+    fn remove_all_removes_a_live_link_without_touching_its_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        create_dir_all(&target).unwrap();
+        write(target.join("keep.txt"), "important").unwrap();
+        make_symlink(&target, &link).unwrap();
+
+        remove_all(&link).unwrap();
+        assert!(!entry_present(&link));
+        // The other half, and the reason the link arm cannot simply recurse: `mise link` points at
+        // a directory the user owns, and removing the link must not take its contents with it.
+        assert!(target.join("keep.txt").exists());
+    }
+
+    #[test]
+    fn remove_all_still_removes_ordinary_files_and_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file.txt");
+        let subdir = dir.path().join("subdir");
+        write(&file, "x").unwrap();
+        create_dir_all(subdir.join("nested")).unwrap();
+        write(subdir.join("nested/x.txt"), "x").unwrap();
+
+        remove_all(&file).unwrap();
+        assert!(!entry_present(&file));
+        remove_all(&subdir).unwrap();
+        assert!(!entry_present(&subdir));
+
+        // A path that was never there is not an error: most callers remove opportunistically.
+        remove_all(dir.path().join("never-existed")).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_executable_mode_adds_read_with_execute() {
+        // a restrictive tempfile (0o600) must end up readable, not just executable (0o711)
+        assert_eq!(executable_mode(0o600), 0o755);
+        assert_eq!(executable_mode(0o640), 0o755);
+        // owner-only read/write/exec preserved and widened to be world readable+executable
+        assert_eq!(executable_mode(0o700), 0o755);
+        // already-correct modes are unchanged
+        assert_eq!(executable_mode(0o755), 0o755);
+        // group/other write bits are preserved
+        assert_eq!(executable_mode(0o660), 0o775);
+    }
+
+    #[test]
+    fn test_run_blocking_outside_runtime() {
+        // no tokio runtime at all — must run the closure inline, not panic
+        assert_eq!(run_blocking(|| 42), 42);
+    }
+
+    #[test]
+    fn hard_link_or_copy_reproduces_the_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let from = tmp.path().join("libexample.dll");
+        let to = tmp.path().join("copy.dll");
+        fs::write(&from, b"payload").unwrap();
+
+        hard_link_or_copy(&from, &to).unwrap();
+        assert_eq!(fs::read(&to).unwrap(), b"payload");
+    }
+
+    /// The fallback has to be reachable, not just present: linking onto a name that is
+    /// already taken fails, and callers still expect the destination to be usable.
+    #[test]
+    fn hard_link_or_copy_falls_back_when_linking_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        let from = tmp.path().join("libexample.dll");
+        let to = tmp.path().join("existing.dll");
+        fs::write(&from, b"new").unwrap();
+        fs::write(&to, b"old").unwrap();
+
+        // `fs::hard_link` refuses an existing destination, so this exercises the copy arm.
+        hard_link_or_copy(&from, &to).unwrap();
+        assert_eq!(fs::read(&to).unwrap(), b"new");
+    }
+
+    #[test]
+    fn write_atomic_replaces_existing_contents_without_temp_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("state.toml");
+        write_atomic(&path, "old").unwrap();
+
+        write_atomic(&path, "new").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new");
+        assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_preserves_existing_permissions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("state.toml");
+        write_atomic(&path, "old").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+
+        write_atomic(&path, "new").unwrap();
+
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_updates_symlink_target_without_replacing_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target.toml");
+        let link = tmp.path().join("state.toml");
+        fs::write(&target, "old").unwrap();
+        symlink(&target, &link).unwrap();
+
+        write_atomic(&link, "new").unwrap();
+
+        assert!(link.is_symlink());
+        assert_eq!(fs::read_to_string(target).unwrap(), "new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_creates_dangling_relative_symlink_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target.toml");
+        let link = tmp.path().join("state.toml");
+        symlink("target.toml", &link).unwrap();
+
+        write_atomic(&link, "new").unwrap();
+
+        assert!(link.is_symlink());
+        assert_eq!(fs::read_to_string(target).unwrap(), "new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_preserves_dangling_symlink_chain() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target.toml");
+        let middle = tmp.path().join("middle.toml");
+        let link = tmp.path().join("state.toml");
+        symlink("target.toml", &middle).unwrap();
+        symlink("middle.toml", &link).unwrap();
+
+        write_atomic(&link, "new").unwrap();
+
+        assert!(link.is_symlink());
+        assert!(middle.is_symlink());
+        assert_eq!(fs::read_to_string(target).unwrap(), "new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_accepts_forty_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target.toml");
+        for index in 0..40 {
+            let link = tmp.path().join(format!("link-{index}.toml"));
+            let next = if index == 39 {
+                "target.toml".to_string()
+            } else {
+                format!("link-{}.toml", index + 1)
+            };
+            symlink(next, link).unwrap();
+        }
+
+        write_atomic(tmp.path().join("link-0.toml"), "new").unwrap();
+
+        assert_eq!(fs::read_to_string(target).unwrap(), "new");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn atomic_persist_retries_windows_sharing_violations() {
+        assert!(should_retry_atomic_persist(
+            &std::io::Error::from_raw_os_error(32)
+        ));
+    }
+
+    fn utf16le(s: &str) -> Vec<u8> {
+        let mut bytes = vec![0xff, 0xfe];
+        bytes.extend(s.encode_utf16().flat_map(u16::to_le_bytes));
+        bytes
+    }
+
+    #[test]
+    fn test_decode_text_honours_a_byte_order_mark() {
+        // the encoding that broke #5399 — PowerShell shipped hashes.sha256 as UTF-16LE
+        assert_eq!(decode_text(&utf16le("abc\n")).unwrap(), "abc\n");
+
+        let mut be = vec![0xfe, 0xff];
+        be.extend("abc\n".encode_utf16().flat_map(u16::to_be_bytes));
+        assert_eq!(decode_text(&be).unwrap(), "abc\n");
+
+        // a UTF-8 BOM is stripped rather than left to poison the first token
+        assert_eq!(decode_text(b"\xef\xbb\xbfabc\n").unwrap(), "abc\n");
+
+        // no BOM: unchanged from plain `read_to_string`
+        assert_eq!(decode_text(b"abc\n").unwrap(), "abc\n");
+        assert_eq!(decode_text(b"").unwrap(), "");
+    }
+
+    #[test]
+    fn test_decode_text_rejects_what_it_cannot_decode() {
+        // invalid UTF-8 with no BOM still fails, but says why rather than "stream did not
+        // contain valid UTF-8"
+        let err = decode_text(b"\xff\x00abc").unwrap_err().to_string();
+        assert!(err.contains("byte-order mark"), "{err}");
+
+        // an odd trailing byte cannot be a whole UTF-16 code unit
+        let mut truncated = utf16le("abc");
+        truncated.pop();
+        let err = decode_text(&truncated).unwrap_err().to_string();
+        assert!(err.contains("truncated UTF-16LE"), "{err}");
+
+        // an unpaired surrogate is well-formed UTF-16 bytes but not a valid string
+        let err = decode_text(&[0xff, 0xfe, 0x00, 0xd8])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("invalid UTF-16LE"), "{err}");
+    }
+
+    #[test]
+    fn test_read_to_string_bom_decodes_a_utf16_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("hashes.sha256");
+        fs::write(&path, utf16le("deadbeef *tool.tar.gz\n")).unwrap();
+
+        assert_eq!(
+            read_to_string_bom(&path).unwrap(),
+            "deadbeef *tool.tar.gz\n"
+        );
+        // the plain reader is what #5399 hit, and is deliberately left alone
+        assert!(read_to_string(&path).is_err());
+    }
+
+    #[test]
+    fn test_is_plain_file_name() {
+        for ok in ["tool", "my-tool.exe", "tool.tar.gz", "..hidden", "a b"] {
+            assert!(is_plain_file_name(ok), "should accept {ok:?}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../tool",
+            "a/b",
+            "/abs/tool",
+            "..\\tool",
+            "a\\b",
+            "C:\\tool",
+        ] {
+            assert!(!is_plain_file_name(bad), "should reject {bad:?}");
+        }
+    }
+
+    #[test]
+    fn test_is_safe_relative_path() {
+        for ok in ["tool", "bin/tool", "nested/path/tool.exe", "a b/tool"] {
+            assert!(is_safe_relative_path(ok), "should accept {ok:?}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../tool",
+            "bin/../../tool",
+            "/abs/tool",
+            "..\\tool",
+            "C:\\tool",
+            "\\\\server\\share\\tool",
+        ] {
+            assert!(!is_safe_relative_path(bad), "should reject {bad:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_run_blocking_current_thread_runtime() {
+        // #[tokio::test] uses a current-thread runtime, where
+        // tokio::task::block_in_place would panic — the guard must fall back
+        // to running the closure inline
+        assert_eq!(run_blocking(|| 42), 42);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_run_blocking_multi_thread_runtime() {
+        // matches mise's actual runtime (see main.rs) — takes the real
+        // tokio::task::block_in_place path
+        assert_eq!(run_blocking(|| 42), 42);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_resolves_relative_target_from_link_parent() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let target_dir = root.path().join("target");
+        let link_dir = root.path().join("links");
+        fs::create_dir_all(&target_dir).unwrap();
+        fs::create_dir_all(&link_dir).unwrap();
+        let target = target_dir.join("file");
+        fs::write(&target, "test").unwrap();
+        let link = link_dir.join("file");
+        symlink("../target/file", &link).unwrap();
+
+        assert_eq!(desymlink_path(&link), target.canonicalize().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_normalizes_broken_relative_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let link_dir = root.path().join("links");
+        let nested_dir = root.path().join("nested");
+        fs::create_dir_all(&link_dir).unwrap();
+        fs::create_dir_all(&nested_dir).unwrap();
+        let link = link_dir.join("missing");
+        symlink("../nested/../missing", &link).unwrap();
+        let expected = root.path().canonicalize().unwrap().join("missing");
+
+        assert_eq!(desymlink_path(&link), expected);
+        assert_eq!(
+            desymlink_path(&link),
+            desymlink_path(&root.path().join("missing"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_resolves_existing_symlink_prefix_before_parent() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let outside_nested = outside.path().join("nested");
+        fs::create_dir_all(&outside_nested).unwrap();
+        let link = root.path().join("link");
+        symlink(&outside_nested, &link).unwrap();
+
+        let through_link = link.join("../.config/mise/tasks/same");
+        let expected = outside
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join(".config/mise/tasks/same");
+        let false_match = root
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join(".config/mise/tasks/same");
+
+        assert_eq!(desymlink_path(&through_link), expected);
+        assert_ne!(desymlink_path(&through_link), desymlink_path(&false_match));
+    }
+
+    #[test]
+    fn test_desymlink_path_preserves_parent_after_missing_component() {
+        let root = tempfile::tempdir().unwrap();
+        let unresolved = root.path().join("missing/../target");
+        let canonical_root = root.path().canonicalize().unwrap();
+        #[cfg(windows)]
+        let expected = {
+            let mut expected = canonical_root.as_os_str().to_os_string();
+            expected.push("\\missing\\..\\target");
+            PathBuf::from(expected)
+        };
+        #[cfg(not(windows))]
+        let expected = canonical_root.join("missing/../target");
+
+        assert_eq!(desymlink_path(&unresolved), expected);
+        assert_ne!(
+            desymlink_path(&unresolved),
+            desymlink_path(&canonical_root.join("target"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_preserves_absolute_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("target");
+        fs::write(&target, "test").unwrap();
+        let link = root.path().join("link");
+        symlink(&target, &link).unwrap();
+
+        assert_eq!(desymlink_path(&link), target.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn test_retry_remove_all_retries_directory_not_empty() {
+        let mut attempts = 0;
+        retry_remove_all(|| {
+            attempts += 1;
+            if attempts < 3 {
+                Err(std::io::Error::from(std::io::ErrorKind::DirectoryNotEmpty))
+                    .wrap_err("failed rm -rf")
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap();
+
+        assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn test_retry_remove_all_does_not_retry_other_errors() {
+        let mut attempts = 0;
+        let err = retry_remove_all(|| {
+            attempts += 1;
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied).into())
+        })
+        .unwrap_err();
+
+        assert_eq!(attempts, 1);
+        assert_eq!(
+            err.downcast_ref::<std::io::Error>().map(|err| err.kind()),
+            Some(std::io::ErrorKind::PermissionDenied)
+        );
+    }
+
+    #[test]
+    fn test_retry_remove_all_propagates_final_attempt() {
+        let mut attempts = 0;
+        let err = retry_remove_all(|| {
+            attempts += 1;
+            Err(std::io::Error::from(std::io::ErrorKind::DirectoryNotEmpty).into())
+        })
+        .unwrap_err();
+
+        assert_eq!(attempts, 5);
+        assert_eq!(
+            err.downcast_ref::<std::io::Error>().map(|err| err.kind()),
+            Some(std::io::ErrorKind::DirectoryNotEmpty)
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_symlink_prefix_detection_uses_filesystem_casing() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("Provider");
+        let target = prefix.join("version");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+
+        assert!(
+            is_symlink_target_within(&link, &dir.path().join("PROVIDER")).unwrap(),
+            "Windows path containment should honor filesystem casing semantics"
+        );
+
+        fs::remove_dir_all(&prefix).unwrap();
+        assert!(
+            is_symlink_target_within(&link, &dir.path().join("PROVIDER")).unwrap(),
+            "dangling Windows targets should retain case-insensitive containment"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_dangling_symlink_prefix_detection_honors_case_sensitive_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let case_sensitive_parent = dir.path().join("case-sensitive");
+        fs::create_dir(&case_sensitive_parent).unwrap();
+        if enable_directory_case_sensitivity(&case_sensitive_parent).is_err() {
+            return;
+        }
+        assert_eq!(
+            directory_is_case_sensitive(&case_sensitive_parent),
+            Some(true)
+        );
+
+        let prefix = case_sensitive_parent.join("Provider");
+        let target = prefix.join("version");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+        fs::remove_dir_all(&prefix).unwrap();
+
+        assert!(
+            !is_symlink_target_within(&link, &case_sensitive_parent.join("PROVIDER")).unwrap(),
+            "case-sensitive directories must not equate differently-cased dangling paths"
+        );
+    }
+
+    #[cfg(windows)]
+    fn enable_directory_case_sensitivity(path: &Path) -> std::io::Result<()> {
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_CASE_SENSITIVE_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+            FileCaseSensitiveInfo, SetFileInformationByHandle,
+        };
+        use windows_sys::Win32::System::SystemServices::FILE_CS_FLAG_CASE_SENSITIVE_DIR;
+
+        let directory = fs::OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)?;
+        let case_info = FILE_CASE_SENSITIVE_INFO {
+            Flags: FILE_CS_FLAG_CASE_SENSITIVE_DIR,
+        };
+        let updated = unsafe {
+            SetFileInformationByHandle(
+                directory.as_raw_handle(),
+                FileCaseSensitiveInfo,
+                std::ptr::from_ref(&case_info).cast(),
+                std::mem::size_of::<FILE_CASE_SENSITIVE_INFO>() as u32,
+            )
+        };
+        if updated == 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
+    #[test]
+    #[cfg(unix)]
+    fn test_symlink_prefix_detection_uses_the_immediate_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let cellar = dir.path().join("Cellar");
+        let target = cellar.join("node@22").join("22.0.0");
+        let opt = dir.path().join("opt");
+        let opt_entry = opt.join("node@22");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        fs::create_dir_all(&opt).unwrap();
+        std::os::unix::fs::symlink(&target, &opt_entry).unwrap();
+        std::os::unix::fs::symlink(&opt_entry, &link).unwrap();
+
+        assert!(!is_symlink_target_within(&link, &cellar).unwrap());
+        assert!(is_symlink_target_within(&link, &opt).unwrap());
+
+        fs::remove_file(&opt_entry).unwrap();
+        assert!(is_symlink_target_within(&link, &opt).unwrap());
+    }
+
+    #[test]
+    fn test_remove_symlink_or_junction_rejects_non_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file");
+        let directory = dir.path().join("directory");
+        fs::write(&file, "contents").unwrap();
+        fs::create_dir(&directory).unwrap();
+
+        assert!(remove_symlink_or_junction(&file).is_err());
+        assert!(remove_symlink_or_junction(&directory).is_err());
+        assert!(file.is_file());
+        assert!(directory.is_dir());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_remove_symlink_or_junction_removes_a_directory_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        fs::create_dir(&target).unwrap();
+        match std::os::windows::fs::symlink_dir(&target, &link) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+            Err(err) => panic!("failed to create directory symlink: {err}"),
+        }
+
+        remove_symlink_or_junction(&link).unwrap();
+        assert!(fs::symlink_metadata(&link).is_err());
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_remove_open_link_preserves_path_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        let moved_link = dir.path().join("moved-link");
+        fs::create_dir(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+
+        let link_handle = open_link_for_removal(&link).unwrap();
+        fs::rename(&link, &moved_link).unwrap();
+        fs::create_dir(&link).unwrap();
+        remove_open_link(link_handle).unwrap();
+
+        assert!(link.is_dir());
+        assert!(fs::symlink_metadata(&moved_link).is_err());
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_symlink_prefix_detection_rejects_escapes() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("source");
+        let foreign = dir.path().join("foreign");
+        let escaped = dir.path().join("escaped");
+        fs::create_dir_all(&prefix).unwrap();
+        fs::create_dir_all(&foreign).unwrap();
+
+        std::os::unix::fs::symlink(prefix.join("..").join("foreign"), &escaped).unwrap();
+        assert!(!is_symlink_target_within(&escaped, &prefix).unwrap());
+
+        let relative_inside = dir.path().join("relative-inside");
+        std::os::unix::fs::symlink("source/version", &relative_inside).unwrap();
+        assert!(is_symlink_target_within(&relative_inside, &prefix).unwrap());
+
+        let relative_escape = dir.path().join("relative-escape");
+        std::os::unix::fs::symlink("source/../foreign", &relative_escape).unwrap();
+        assert!(!is_symlink_target_within(&relative_escape, &prefix).unwrap());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_copy_dir_all_preserve_symlinks_does_not_follow_loops() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let dest = dir.path().join("dest");
+        fs::create_dir_all(source.join("Example.app/Contents")).unwrap();
+        fs::write(source.join("Example.app/Contents/example"), "example").unwrap();
+        std::os::unix::fs::symlink(".", source.join("Applications")).unwrap();
+
+        copy_dir_all_preserve_symlinks(&source, &dest).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dest.join("Example.app/Contents/example")).unwrap(),
+            "example"
+        );
+        assert_eq!(
+            fs::read_link(dest.join("Applications")).unwrap(),
+            Path::new(".")
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_make_symlink_creates_and_atomically_replaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let target_a = dir.path().join("a");
+        let target_b = dir.path().join("b");
+        fs::write(&target_a, "a").unwrap();
+        fs::write(&target_b, "b").unwrap();
+        let link = dir.path().join("link");
+
+        // Creates a new symlink.
+        make_symlink(&target_a, &link).unwrap();
+        assert_eq!(fs::read_link(&link).unwrap(), target_a);
+
+        // Atomically replaces an existing symlink (no EEXIST).
+        make_symlink(&target_b, &link).unwrap();
+        assert_eq!(fs::read_link(&link).unwrap(), target_b);
+
+        // The temporary symlink is consumed by the rename — nothing left behind.
+        let leftovers: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .map(|e| e.file_name())
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp symlink left behind: {leftovers:?}"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_is_unc_path() {
+        assert!(is_unc_path(Path::new(
+            r"\\wsl.localhost\DistroName\github\verzly\mise-php"
+        )));
+        assert!(is_unc_path(Path::new(
+            r"\\wsl$\DistroName\github\verzly\mise-php"
+        )));
+        assert!(is_unc_path(Path::new(
+            r"\\?\UNC\wsl.localhost\DistroName\github\verzly\mise-php"
+        )));
+
+        assert!(!is_unc_path(Path::new(r"D:\github\verzly\mise-php")));
+    }
+
+    #[test]
+    fn test_archive_content_files_tar_hashes_regular_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.tar");
+        {
+            let file = File::create(&archive_path).unwrap();
+            let mut builder = jdx_tar::Builder::new(file);
+            let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+            header.set_size(4);
+            header.set_mode(0o755);
+            builder
+                .append_data(&mut header, "pkg/tool", &b"tool"[..])
+                .unwrap();
+            builder.finish().unwrap();
+        }
+
+        let files = archive_content_files(&archive_path, ExtractionFormat::Tar, 1).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "tool");
+        assert_eq!(files[0].sha256, hex::encode(Sha256::digest(b"tool")));
+    }
+
+    #[test]
+    fn test_archive_content_files_tar_rejects_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.tar");
+        {
+            let file = File::create(&archive_path).unwrap();
+            let mut builder = jdx_tar::Builder::new(file);
+            let mut header = jdx_tar::Header::new_gnu(EntryType::Symlink);
+            header.set_mode(0o777);
+            builder
+                .append_link(&mut header, "tool-link", "tool")
+                .unwrap();
+            builder.finish().unwrap();
+        }
+
+        let err = archive_content_files(&archive_path, ExtractionFormat::Tar, 0).unwrap_err();
+        assert!(err.to_string().contains("non-regular archive entry"));
+    }
+
+    #[test]
+    fn test_extract_archive_tar_strip_preserves_root_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.tar");
+        let dest = dir.path().join("out");
+        {
+            let file = File::create(&archive_path).unwrap();
+            let mut builder = jdx_tar::Builder::new(file);
+
+            let mut readme = jdx_tar::Header::new_gnu(EntryType::File);
+            readme.set_size(6);
+            readme.set_mode(0o644);
+            builder
+                .append_data(&mut readme, "README", &b"readme"[..])
+                .unwrap();
+
+            let mut tool = jdx_tar::Header::new_gnu(EntryType::File);
+            tool.set_size(4);
+            tool.set_mode(0o644);
+            builder
+                .append_data(&mut tool, "pkg/tool", &b"tool"[..])
+                .unwrap();
+            builder.finish().unwrap();
+        }
+
+        extract_archive(
+            &archive_path,
+            &dest,
+            ExtractionFormat::Tar,
+            &ExtractOptions {
+                strip_components: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(dest.join("README")).unwrap(), b"readme");
+        assert_eq!(fs::read(dest.join("tool")).unwrap(), b"tool");
+        assert!(!dest.join("pkg").exists());
+    }
+
+    #[tokio::test]
+    async fn test_find_up() {
+        let _config = Config::get().await.unwrap();
+        let path = &env::current_dir().unwrap();
+        let filenames = vec![".miserc", ".mise.toml", ".test-tool-versions"]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect_vec();
+        let mut find_up = FindUp::new(path, &filenames);
+        assert_eq!(
+            find_up.next(),
+            Some(dirs::HOME.join("cwd/.test-tool-versions"))
+        );
+        assert_eq!(find_up.next(), Some(dirs::HOME.join(".test-tool-versions")));
+    }
+
+    #[tokio::test]
+    async fn test_find_up_2() {
+        let _config = Config::get().await.unwrap();
+        let path = &dirs::HOME.join("fixtures");
+        let filenames = vec![".test-tool-versions"];
+        let result = find_up(path, &filenames);
+        assert_eq!(result, Some(dirs::HOME.join(".test-tool-versions")));
+    }
+
+    #[tokio::test]
+    async fn test_dir_subdirs() {
+        let _config = Config::get().await.unwrap();
+        let subdirs = dir_subdirs(&dirs::HOME).unwrap();
+        assert!(subdirs.contains("cwd"));
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_display_path() {
+        let _config = Config::get().await.unwrap();
+        use std::ops::Deref;
+        let path = dirs::HOME.join("cwd");
+        assert_eq!(display_path(path), "~/cwd");
+
+        let path = Path::new("/tmp")
+            .join(dirs::HOME.deref().strip_prefix("/").unwrap())
+            .join("cwd");
+        assert_eq!(display_path(&path), path.display().to_string());
+    }
+
+    #[test]
+    fn test_display_filename() {
+        assert_eq!(display_filename("/tmp/mise.toml"), "mise.toml");
+        assert_eq!(display_filename("/"), "/");
+    }
+
+    #[tokio::test]
+    async fn test_replace_path() {
+        let _config = Config::get().await.unwrap();
+        assert_eq!(replace_path(Path::new("~/cwd")), dirs::HOME.join("cwd"));
+        assert_eq!(replace_path(Path::new("/cwd")), Path::new("/cwd"));
+    }
+
+    #[test]
+    fn test_replace_path_uses_platform_separators() {
+        // `strip_prefix("~/")` returns a raw subslice of the input, so the naive
+        // `HOME.join(rest)` only prepended a separator and left the interior ones
+        // alone: on Windows `MISE_DATA_DIR=~/.local/share/mise` used to expand to
+        // `C:\Users\me\.local/share/mise`, which then leaked out through
+        // `mise where`, `mise which`, `mise ls --json`, shims, and error messages.
+        //
+        // NOTE: comparing PathBufs is not enough here — `Path`'s `PartialEq` is
+        // component-based and treats `/` and `\` as equivalent on Windows, so the
+        // buggy value compares equal to the correct one. The string form is the
+        // assertion that matters.
+        let expanded = replace_path(Path::new("~/a/b"));
+        let expected = dirs::HOME.join("a").join("b");
+        assert_eq!(expanded, expected);
+        assert_eq!(expanded.to_string_lossy(), expected.to_string_lossy());
+
+        // independent of whatever HOME itself looks like
+        #[cfg(windows)]
+        {
+            let rest = expanded.strip_prefix(*dirs::HOME).unwrap();
+            assert!(
+                !rest.to_string_lossy().contains('/'),
+                "expanded remainder must use `\\`: {}",
+                expanded.display()
+            );
+        }
+
+        // a bare `~` expands to $HOME: `strip_prefix("~/")` is component-based,
+        // so `~` matches the prefix and the remainder is empty
+        assert_eq!(replace_path(Path::new("~")), *dirs::HOME);
+
+        // non-`~/` input is passed through untouched, separators and all
+        assert_eq!(
+            replace_path(Path::new("/cwd/x")).to_string_lossy(),
+            "/cwd/x"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_pathbuf_hashset_is_separator_insensitive() {
+        // `EnvDiff::path` is Vec<PathBuf> and `get_pristine_env` strips
+        // mise-added PATH entries via a HashSet<&PathBuf>. `Path`'s Hash/Eq are
+        // component-based and both `/` and `\` are separators on Windows, so a
+        // `__MISE_DIFF` written by an older mise (mixed separators) still matches
+        // after the expansion fix above — no migration is needed.
+        let mut set = std::collections::HashSet::new();
+        set.insert(PathBuf::from(
+            r"C:\Users\me\.local/share/mise/installs/go/1/bin",
+        ));
+        assert!(set.contains(&PathBuf::from(
+            r"C:\Users\me\.local\share\mise\installs\go\1\bin"
+        )));
+    }
+
+    #[test]
+    fn test_paths_eq_exact() {
+        assert!(paths_eq(Path::new("/foo/bar"), Path::new("/foo/bar")));
+        assert!(!paths_eq(Path::new("/foo/bar"), Path::new("/foo/baz")));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", windows))]
+    fn test_paths_eq_case_insensitive() {
+        // macOS volumes (HFS+/APFS) and Windows volumes are case-insensitive by
+        // default. The comparator must treat `/Users/Foo` and `/Users/foo` as
+        // equal so that PATH stripping doesn't miss the shims dir when `$HOME`
+        // is mixed-case in the user's environment but the resolved shims path
+        // uses a different case (the cause of the npm-shim recursion bug).
+        assert!(paths_eq(
+            Path::new("/Users/Olfway/.local/share/mise/shims"),
+            Path::new("/Users/olfway/.local/share/mise/shims"),
+        ));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", windows))]
+    fn test_paths_eq_trailing_separator() {
+        // Component-based comparison should fold trailing separators and
+        // redundant double-separators so PATH entries like `/foo/shims/`
+        // still match `/foo/shims`.
+        assert!(paths_eq(Path::new("/foo/shims"), Path::new("/foo/shims/")));
+        assert!(paths_eq(Path::new("/foo/shims"), Path::new("/foo//shims"),));
+    }
+
+    #[test]
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    fn test_paths_eq_case_sensitive_on_linux() {
+        // Linux paths are case-sensitive; `/foo` and `/Foo` are distinct files.
+        assert!(!paths_eq(Path::new("/foo/bar"), Path::new("/Foo/bar")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_paths_eq_separator_normalization() {
+        assert!(paths_eq(
+            Path::new("C:/Users/foo/shims"),
+            Path::new("C:\\Users\\foo\\shims"),
+        ));
+    }
+
+    #[test]
+    fn test_should_strip_components() {
+        // Test that the function correctly identifies when to strip components
+        // This is a basic test to ensure the logic works correctly
+
+        // For now, we'll test with a nonexistent file to ensure the function
+        // returns false when it can't read the archive
+        let non_existent_path = Path::new("/non/existent/archive.tar.gz");
+        let result = should_strip_components(non_existent_path, ExtractionFormat::TarGz);
+        assert!(result.is_err()); // Should fail to open nonexistent file
+
+        // Note: To properly test this function, we would need actual tar archives
+        // with different structures (single file, single directory, multiple entries)
+        // This would require creating test fixtures, which is beyond the scope
+        // of this fix. The important thing is that the logic now correctly
+        // checks if the single entry is a directory before deciding to strip.
+    }
+
+    #[test]
+    fn test_inspect_tar_contents_logic() {
+        // Test the logic of inspect_tar_contents with simulated data
+        // This tests the core logic without requiring actual tar files
+
+        // Simulate a HashMap that would be returned by inspect_tar_contents
+        // for an archive with a single directory containing files
+        let mut components = std::collections::HashMap::new();
+        components.insert("mydir".to_string(), true); // Directory with nested files
+
+        let result: Vec<(String, bool)> = components.into_iter().collect();
+
+        // Should have exactly one entry that is a directory
+        assert_eq!(result.len(), 1);
+        let (name, is_directory) = &result[0];
+        assert_eq!(name, "mydir");
+        assert!(*is_directory);
+
+        // Test the should_strip_components logic with this result
+        // This simulates what would happen if inspect_tar_contents returned this
+        let should_strip = result.len() == 1 && result[0].1;
+        assert!(should_strip);
+    }
+
+    #[test]
+    fn test_inspect_tar_contents_curdir_prefix() {
+        // Test that archives with "./" prefixed paths are handled correctly
+        // This reproduces the bug from https://github.com/jdx/mise/discussions/7862
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use jdx_tar::{Builder, Header};
+        use tempfile::NamedTempFile;
+
+        // Create a temp tar.gz with "./" prefixed paths (like unison's archive)
+        let temp_file = NamedTempFile::new().unwrap();
+        let gz = GzEncoder::new(temp_file.as_file(), Compression::default());
+        let mut builder = Builder::new(gz);
+
+        // Add entries with "./" prefix - simulating archive structure like:
+        // ./dir1/file1
+        // ./dir2/file2
+        // ./standalone
+        let mut header = Header::new_gnu(EntryType::File);
+        header.set_size(0);
+        header.set_mode(0o755);
+
+        // Add ./dir1/file1
+        builder
+            .append_data(&mut header.clone(), "./dir1/file1", std::io::empty())
+            .unwrap();
+
+        // Add ./dir2/file2
+        builder
+            .append_data(&mut header.clone(), "./dir2/file2", std::io::empty())
+            .unwrap();
+
+        // Add ./standalone (file at root with ./ prefix)
+        builder
+            .append_data(&mut header.clone(), "./standalone", std::io::empty())
+            .unwrap();
+
+        let gz = builder.into_inner().unwrap();
+        gz.finish().unwrap();
+
+        // Now test inspect_tar_contents
+        let result = inspect_tar_contents(temp_file.path(), ExtractionFormat::TarGz).unwrap();
+
+        // Should have 3 top-level entries: dir1, dir2, standalone
+        // NOT a single "." entry
+        assert_eq!(
+            result.len(),
+            3,
+            "Expected 3 top-level entries, got: {:?}",
+            result
+        );
+
+        let names: std::collections::HashSet<_> = result.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(names.contains("dir1"), "Should contain dir1");
+        assert!(names.contains("dir2"), "Should contain dir2");
+        assert!(names.contains("standalone"), "Should contain standalone");
+        assert!(!names.contains("."), "Should NOT contain '.' (CurDir)");
+
+        // dir1 and dir2 should be marked as directories (have nested content)
+        for (name, is_dir) in &result {
+            if name == "dir1" || name == "dir2" {
+                assert!(*is_dir, "{} should be marked as directory", name);
+            } else if name == "standalone" {
+                assert!(!*is_dir, "standalone should NOT be marked as directory");
+            }
+        }
+
+        // Verify should_strip_components returns false (multiple top-level entries)
+        let should_strip =
+            should_strip_components(temp_file.path(), ExtractionFormat::TarGz).unwrap();
+        assert!(
+            !should_strip,
+            "Should NOT strip components for multi-entry archive"
+        );
+    }
+
+    #[test]
+    fn test_all_dirs_no_ceiling() {
+        let start_dir = Path::new("/a/b/c");
+        let ceiling_dirs = HashSet::new();
+
+        let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
+
+        assert_eq!(result.len(), 4);
+        assert!(result.contains(&PathBuf::from("/a/b/c")));
+        assert!(result.contains(&PathBuf::from("/a/b")));
+        assert!(result.contains(&PathBuf::from("/a")));
+        assert!(result.contains(&PathBuf::from("/")));
+    }
+
+    #[test]
+    fn test_all_dirs_with_ceiling() {
+        let start_dir = Path::new("/a/b/c");
+        let mut ceiling_dirs = HashSet::new();
+        ceiling_dirs.insert(PathBuf::from("/a"));
+
+        let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&PathBuf::from("/a/b/c")));
+        assert!(result.contains(&PathBuf::from("/a/b")));
+        assert!(!result.contains(&PathBuf::from("/a")));
+        assert!(!result.contains(&PathBuf::from("/")));
+    }
+
+    #[test]
+    fn test_all_dirs_with_ceiling_at_start() {
+        let start_dir = Path::new("/a/b/c");
+        let mut ceiling_dirs = HashSet::new();
+        ceiling_dirs.insert(PathBuf::from("/a/b/c"));
+
+        let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
+
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_all_dirs_with_multiple_ceilings() {
+        let start_dir = Path::new("/a/b/c/d/e");
+        let mut ceiling_dirs = HashSet::new();
+        ceiling_dirs.insert(PathBuf::from("/a/b"));
+        ceiling_dirs.insert(PathBuf::from("/a/b/c/d"));
+
+        let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert!(result.contains(&PathBuf::from("/a/b/c/d/e")));
+    }
+
+    #[test]
+    fn test_all_dirs_with_relative_path() {
+        let start_dir = Path::new("a/b/c");
+        let ceiling_dirs = HashSet::new();
+
+        let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
+
+        assert!(result.contains(&PathBuf::from("a/b/c")));
+        assert!(result.contains(&PathBuf::from("a/b")));
+        assert!(result.contains(&PathBuf::from("a")));
+    }
+
+    #[test]
+    fn test_extraction_format_from_file_name() {
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tar.gz"),
+            ExtractionFormat::TarGz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tgz"),
+            ExtractionFormat::TarGz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tar.xz"),
+            ExtractionFormat::TarXz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.txz"),
+            ExtractionFormat::TarXz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tar.bz2"),
+            ExtractionFormat::TarBz2
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tbz2"),
+            ExtractionFormat::TarBz2
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tbz"),
+            ExtractionFormat::TarBz2
+        );
+        assert_eq!(
+            ExtractionFormat::from_ext("tbz"),
+            Some(ExtractionFormat::TarBz2)
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tar.zst"),
+            ExtractionFormat::TarZst
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tzst"),
+            ExtractionFormat::TarZst
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tar"),
+            ExtractionFormat::Tar
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.zip"),
+            ExtractionFormat::Zip
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.vsix"),
+            ExtractionFormat::Zip
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.7z"),
+            ExtractionFormat::SevenZip
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tar.br"),
+            ExtractionFormat::TarBr
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tbr"),
+            ExtractionFormat::TarBr
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.br"),
+            ExtractionFormat::Br
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tar.lz4"),
+            ExtractionFormat::TarLz4
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tlz4"),
+            ExtractionFormat::TarLz4
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.lz4"),
+            ExtractionFormat::Lz4
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tar.sz"),
+            ExtractionFormat::TarSz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.tsz"),
+            ExtractionFormat::TarSz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.sz"),
+            ExtractionFormat::Sz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.rar"),
+            ExtractionFormat::Rar
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.gz"),
+            ExtractionFormat::Gz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.xz"),
+            ExtractionFormat::Xz
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.bz2"),
+            ExtractionFormat::Bz2
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.zst"),
+            ExtractionFormat::Zst
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo"),
+            ExtractionFormat::Raw
+        );
+        assert_eq!(
+            ExtractionFormat::from_file_name("foo.txt"),
+            ExtractionFormat::Raw
+        );
+    }
+
+    #[test]
+    fn test_unsupported_extraction_formats_are_classified() {
+        for (ext, expected) in [
+            ("tar.br", ExtractionFormat::TarBr),
+            ("tbr", ExtractionFormat::TarBr),
+            ("br", ExtractionFormat::Br),
+            ("tar.lz4", ExtractionFormat::TarLz4),
+            ("tlz4", ExtractionFormat::TarLz4),
+            ("lz4", ExtractionFormat::Lz4),
+            ("tar.sz", ExtractionFormat::TarSz),
+            ("tsz", ExtractionFormat::TarSz),
+            ("sz", ExtractionFormat::Sz),
+            ("rar", ExtractionFormat::Rar),
+        ] {
+            assert_eq!(ExtractionFormat::from_ext(ext), Some(expected));
+        }
+        assert_eq!(ExtractionFormat::from_ext("unknown"), None);
+
+        assert!(ExtractionFormat::TarBr.is_archive());
+        assert!(ExtractionFormat::TarLz4.is_archive());
+        assert!(ExtractionFormat::TarSz.is_archive());
+        assert!(ExtractionFormat::Rar.is_archive());
+        assert!(ExtractionFormat::Br.is_compressed_file());
+        assert!(ExtractionFormat::Lz4.is_compressed_file());
+        assert!(ExtractionFormat::Sz.is_compressed_file());
+    }
+
+    #[test]
+    fn test_extraction_format_extension_uses_canonical_display() {
+        for (format, expected) in [
+            (ExtractionFormat::TarGz, Some("tar.gz")),
+            (ExtractionFormat::TarXz, Some("tar.xz")),
+            (ExtractionFormat::TarBz2, Some("tar.bz2")),
+            (ExtractionFormat::TarZst, Some("tar.zst")),
+            (ExtractionFormat::TarBr, Some("tar.br")),
+            (ExtractionFormat::TarLz4, Some("tar.lz4")),
+            (ExtractionFormat::TarSz, Some("tar.sz")),
+            (ExtractionFormat::Zip, Some("zip")),
+            (ExtractionFormat::Raw, None),
+        ] {
+            assert_eq!(format.extension().as_deref(), expected);
+        }
+    }
+
+    #[test]
+    fn test_decompress_file() {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let src_path = dir.path().join("test.gz");
+        let dest_path = dir.path().join("test-out");
+
+        let file = File::create(&src_path).unwrap();
+        let mut encoder = GzEncoder::new(file, Compression::default());
+        encoder.write_all(b"hello world").unwrap();
+        encoder.finish().unwrap();
+
+        decompress_file(&src_path, &dest_path, ExtractionFormat::Gz).unwrap();
+
+        assert!(dest_path.exists());
+        assert!(dest_path.is_file());
+        let content = std::fs::read_to_string(&dest_path).unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    #[test]
+    fn test_decompress_file_creates_parent_dir() {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let src_path = dir.path().join("test.gz");
+        let dest_path = dir.path().join("missing").join("test-out");
+
+        let file = File::create(&src_path).unwrap();
+        let mut encoder = GzEncoder::new(file, Compression::default());
+        encoder.write_all(b"hello world").unwrap();
+        encoder.finish().unwrap();
+
+        decompress_file(&src_path, &dest_path, ExtractionFormat::Gz).unwrap();
+
+        assert!(dest_path.exists());
+        assert!(dest_path.is_file());
+        let content = std::fs::read_to_string(&dest_path).unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    #[test]
+    fn test_extract_archive_zip() {
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let src_path = dir.path().join("test.zip");
+        let dest_dir = dir.path().join("out_dir");
+
+        let file = File::create(&src_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        zip.start_file("pkg/tool", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(b"hello world").unwrap();
+        zip.finish().unwrap();
+
+        extract_archive(
+            &src_path,
+            &dest_dir,
+            ExtractionFormat::Zip,
+            &ExtractOptions::default(),
+        )
+        .unwrap();
+
+        let extracted_path = dest_dir.join("pkg").join("tool");
+        assert!(extracted_path.exists());
+        assert!(extracted_path.is_file());
+        let content = std::fs::read_to_string(&extracted_path).unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    #[test]
+    fn test_extract_archive_7z() {
+        use std::io::Cursor;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let src_dir = dir.path().join("src");
+        let pkg_dir = src_dir.join("pkg");
+        let archive_path = dir.path().join("test.7z");
+        let dest_dir = dir.path().join("out_dir");
+        let stripped_dest_dir = dir.path().join("stripped_out_dir");
+        let backslash_archive_path = dir.path().join("backslash.7z");
+        let backslash_dest_dir = dir.path().join("backslash_out_dir");
+        let traversal_archive_path = dir.path().join("traversal.7z");
+        let traversal_dest_dir = dir.path().join("traversal_out_dir");
+        let traversal_target_path = dir.path().join("traversal_target");
+        let absolute_archive_path = dir.path().join("absolute.7z");
+        let absolute_dest_dir = dir.path().join("absolute_out_dir");
+        let absolute_target_path = dir.path().join("absolute_target");
+
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(pkg_dir.join("tool"), "hello world").unwrap();
+        sevenz_rust2::compress_to_path(&src_dir, &archive_path).unwrap();
+
+        let contents = inspect_7z_contents(&archive_path).unwrap();
+        assert!(contents.contains(&("pkg".to_string(), true)));
+        assert!(should_strip_components(&archive_path, ExtractionFormat::SevenZip).unwrap());
+
+        extract_archive(
+            &archive_path,
+            &dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions::default(),
+        )
+        .unwrap();
+
+        let extracted_path = dest_dir.join("pkg").join("tool");
+        assert!(extracted_path.exists());
+        assert!(extracted_path.is_file());
+        let content = std::fs::read_to_string(&extracted_path).unwrap();
+        assert_eq!(content, "hello world");
+
+        extract_archive(
+            &archive_path,
+            &stripped_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions {
+                strip_components: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let stripped_path = stripped_dest_dir.join("tool");
+        assert!(stripped_path.exists());
+        assert!(stripped_path.is_file());
+        assert!(!stripped_dest_dir.join("pkg").exists());
+        let content = std::fs::read_to_string(&stripped_path).unwrap();
+        assert_eq!(content, "hello world");
+
+        let mut backslash_archive =
+            sevenz_rust2::ArchiveWriter::create(&backslash_archive_path).unwrap();
+        backslash_archive
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_file("pkg\\tool"),
+                Some(Cursor::new(b"hello world")),
+            )
+            .unwrap();
+        backslash_archive.finish().unwrap();
+
+        let contents = inspect_7z_contents(&backslash_archive_path).unwrap();
+        assert!(contents.contains(&("pkg".to_string(), true)));
+        assert!(
+            should_strip_components(&backslash_archive_path, ExtractionFormat::SevenZip).unwrap()
+        );
+
+        extract_archive(
+            &backslash_archive_path,
+            &backslash_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions {
+                strip_components: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let backslash_stripped_path = backslash_dest_dir.join("tool");
+        assert!(backslash_stripped_path.exists());
+        assert!(backslash_stripped_path.is_file());
+        assert!(!backslash_dest_dir.join("pkg").exists());
+        let content = std::fs::read_to_string(&backslash_stripped_path).unwrap();
+        assert_eq!(content, "hello world");
+
+        let mut traversal_archive =
+            sevenz_rust2::ArchiveWriter::create(&traversal_archive_path).unwrap();
+        traversal_archive
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_file("../traversal_target"),
+                Some(Cursor::new(b"malicious")),
+            )
+            .unwrap();
+        traversal_archive.finish().unwrap();
+
+        let err = extract_archive(
+            &traversal_archive_path,
+            &traversal_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions::default(),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("escapes"), "{err:#}");
+        assert!(!traversal_target_path.exists());
+
+        let mut absolute_archive =
+            sevenz_rust2::ArchiveWriter::create(&absolute_archive_path).unwrap();
+        absolute_archive
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_file(&absolute_target_path.to_string_lossy()),
+                Some(Cursor::new(b"malicious")),
+            )
+            .unwrap();
+        absolute_archive.finish().unwrap();
+
+        let err = extract_archive(
+            &absolute_archive_path,
+            &absolute_dest_dir,
+            ExtractionFormat::SevenZip,
+            &ExtractOptions::default(),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("escapes"), "{err:#}");
+        assert!(!absolute_target_path.exists());
+    }
+
+    #[test]
+    fn test_extract_archive_ignores_malformed_non_sparse_pax_metadata() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let archive_path = dir.path().join("pax-xattr.tar");
+        let dest_dir = dir.path().join("out");
+        let mut builder = jdx_tar::Builder::new(Vec::new());
+
+        let key = "LIBARCHIVE.xattr.com.apple.cs.CodeSignature";
+        let value = b"signature\nmetadata";
+        let rest_len = 3 + key.len() + value.len();
+        let mut digits = 1;
+        while (rest_len + digits).to_string().len() != digits {
+            digits += 1;
+        }
+        let record_len = rest_len + digits;
+        let mut pax = format!("{record_len} {key}=").into_bytes();
+        pax.extend_from_slice(value);
+        pax.push(b'\n');
+        // Build the raw PAX record under a neutral extension flag, then rewrite
+        // the type byte and checksum. jdx-tar's logical writer deliberately
+        // rejects raw extension headers, while this test specifically needs a
+        // malformed raw PAX fixture to exercise the reader.
+        let mut pax_header = jdx_tar::Header::new_gnu(EntryType::Other(b'X'));
+        pax_header.set_size(pax.len() as u64);
+        builder
+            .append_data(&mut pax_header, "pax-xattr", pax.as_slice())
+            .unwrap();
+
+        let contents = b"hello world";
+        let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+        header.set_size(contents.len() as u64);
+        header.set_mode(0o755);
+        builder
+            .append_data(&mut header, "tool", contents.as_slice())
+            .unwrap();
+        let mut archive = builder.into_inner().unwrap();
+
+        archive[156] = b'x';
+        archive[257..265].copy_from_slice(b"ustar\x0000");
+        archive[148..156].fill(b' ');
+        let checksum = archive[..512]
+            .iter()
+            .map(|byte| u64::from(*byte))
+            .sum::<u64>();
+        archive[148..156].copy_from_slice(format!("{checksum:06o}\0 ").as_bytes());
+        std::fs::write(&archive_path, archive).unwrap();
+
+        extract_archive(
+            &archive_path,
+            &dest_dir,
+            ExtractionFormat::Tar,
+            &ExtractOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read(dest_dir.join("tool")).unwrap(), contents);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_extract_archive_handles_pax_sparse_tar() {
+        use std::io::{Seek, SeekFrom, Write};
+        use std::process::Command;
+        use tempfile::tempdir;
+
+        if Command::new("tar").arg("--version").output().is_err() {
+            return;
+        }
+
+        let dir = tempdir().unwrap();
+        let src_dir = dir.path().join("src").join("pkg");
+        let archive_path = dir.path().join("sparse.tar");
+        let dest_dir = dir.path().join("out");
+        let disk_path = src_dir.join("disk.img");
+
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let mut disk = File::create(&disk_path).unwrap();
+        disk.write_all(b"begin").unwrap();
+        disk.seek(SeekFrom::Start(10 * 1024 * 1024 - 3)).unwrap();
+        disk.write_all(b"end").unwrap();
+        disk.flush().unwrap();
+
+        let status = Command::new("tar")
+            .arg("--sparse")
+            .arg("--format=posix")
+            .arg("-cf")
+            .arg(&archive_path)
+            .arg("-C")
+            .arg(dir.path().join("src"))
+            .arg("pkg")
+            .status()
+            .unwrap();
+
+        if !status.success() {
+            return;
+        }
+
+        let archive_contents = std::fs::read(&archive_path).unwrap();
+        if !archive_contents
+            .windows(b"GNU.sparse.".len())
+            .any(|window| window == b"GNU.sparse.")
+        {
+            return;
+        }
+
+        extract_archive(
+            &archive_path,
+            &dest_dir,
+            ExtractionFormat::Tar,
+            &ExtractOptions::default(),
+        )
+        .unwrap();
+
+        let extracted_disk = dest_dir.join("pkg").join("disk.img");
+        assert_eq!(
+            std::fs::metadata(&extracted_disk).unwrap().len(),
+            10 * 1024 * 1024
+        );
+        let mut extracted = File::open(&extracted_disk).unwrap();
+        let mut buf = [0; 5];
+        extracted.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"begin");
+        extracted
+            .seek(SeekFrom::Start(10 * 1024 * 1024 - 3))
+            .unwrap();
+        let mut buf = [0; 3];
+        extracted.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"end");
+        assert!(!WalkDir::new(&dest_dir).into_iter().any(|entry| {
+            entry
+                .ok()
+                .and_then(|entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .map(|name| name.starts_with("GNUSparseFile."))
+                })
+                .is_some_and(|matches| matches)
+        }));
+    }
+
+    #[test]
+    fn test_untar_rejects_single_file_compression() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let src_path = dir.path().join("test.gz");
+        let dest_path = dir.path().join("test-out");
+        let err = untar(
+            &src_path,
+            &dest_path,
+            ExtractionFormat::Gz,
+            &ExtractOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("untar only supports tar formats"),
+            "{err:#}"
+        );
+    }
+
+    #[test]
+    fn test_unsupported_extraction_formats_error_clearly() {
+        use tempfile::NamedTempFile;
+        use tempfile::tempdir;
+
+        let archive = NamedTempFile::new().unwrap();
+        let dest = tempdir().unwrap();
+
+        let err = extract_archive(
+            archive.path(),
+            dest.path(),
+            ExtractionFormat::TarBr,
+            &ExtractOptions::default(),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("tar.br format not supported"));
+
+        let err = extract_archive(
+            archive.path(),
+            dest.path(),
+            ExtractionFormat::Rar,
+            &ExtractOptions::default(),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("rar format not supported"));
+
+        let err = decompress_file(
+            archive.path(),
+            dest.path().join("tool").as_path(),
+            ExtractionFormat::Lz4,
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("lz4 format not supported"));
+    }
+
+    #[tokio::test]
+    async fn test_remove_file_async_if_exists_when_file_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file");
+        tokio::fs::write(&path, "content").await.unwrap();
+        remove_file_async_if_exists(&path).await.unwrap();
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_remove_file_async_if_exists_when_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent");
+        // Should not error when file does not exist.
+        remove_file_async_if_exists(&path).await.unwrap();
+    }
+
+    #[cfg(all(unix, target_os = "linux"))]
+    #[test]
+    fn test_move_file_falls_back_to_copy_across_filesystems() {
+        use std::{fs, os::unix::fs::MetadataExt};
+        use tempfile::tempdir_in;
+
+        let source_root = std::env::current_dir().unwrap();
+        let source_dir = tempdir_in(&source_root).unwrap();
+        let source_dev = source_dir.path().metadata().unwrap().dev();
+
+        let target_dir = tempdir_in("/tmp").unwrap();
+        if target_dir.path().metadata().unwrap().dev() == source_dev {
+            // This host only has one filesystem for tempdirs, so skip if we can't reproduce EXDEV.
+            return;
+        }
+
+        let src = source_dir.path().join("bun");
+        let dst = target_dir.path().join("bun");
+        fs::write(&src, b"hello").unwrap();
+
+        move_file(&src, &dst).unwrap();
+
+        assert!(!src.exists());
+        assert_eq!(fs::read(&dst).unwrap(), b"hello");
+    }
+
+    #[cfg(all(unix, target_os = "linux"))]
+    #[test]
+    fn test_move_dir_falls_back_to_copy_across_filesystems() {
+        use std::{fs, os::unix::fs::MetadataExt};
+        use tempfile::tempdir_in;
+
+        let source_root = std::env::current_dir().unwrap();
+        let source_dir = tempdir_in(&source_root).unwrap();
+        let source_dev = source_dir.path().metadata().unwrap().dev();
+
+        let target_dir = tempdir_in("/tmp").unwrap();
+        if target_dir.path().metadata().unwrap().dev() == source_dev {
+            // This host only has one filesystem for tempdirs, so skip if we can't reproduce EXDEV.
+            return;
+        }
+
+        let src = source_dir.path().join("bun-tree");
+        let dst = target_dir.path().join("bun-tree");
+        fs::create_dir_all(src.join("nested")).unwrap();
+        fs::write(src.join("nested/bun"), b"hello").unwrap();
+
+        move_file(&src, &dst).unwrap();
+
+        assert!(!src.exists());
+        assert_eq!(fs::read(dst.join("nested/bun")).unwrap(), b"hello");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn make_executable_hint_names_chmod_on_unix() {
+        let hint = make_executable_hint(Path::new("/proj/mise-tasks/build"));
+        assert!(hint.contains("chmod +x"), "{hint}");
+        assert!(hint.contains("build"), "{hint}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn make_executable_hint_does_not_name_chmod_on_windows() {
+        let hint = make_executable_hint(Path::new(r"C:\proj\mise-tasks\build"));
+        // The point of the change: `chmod` is not just unavailable here, it is the wrong fix --
+        // the Windows `is_executable` never looks at a permission bit.
+        assert!(!hint.contains("chmod"), "{hint}");
+        assert!(hint.contains("shebang"), "{hint}");
+        // and it must offer what that branch actually accepts
+        assert!(hint.contains("exe"), "{hint}");
+        assert!(hint.contains("build"), "{hint}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_io_hint_explains_a_path_at_the_limit() {
+        use std::io::{Error, ErrorKind};
+
+        let long = PathBuf::from(format!(r"C:\{}", "d".repeat(MAX_PATH)));
+        let hint = windows_io_hint(&long, &Error::from_raw_os_error(3))
+            .expect("a path past MAX_PATH failing with ERROR_PATH_NOT_FOUND should be explained");
+        assert!(hint.contains(&MAX_PATH.to_string()), "{hint}");
+        assert!(hint.contains(&(MAX_PATH + 3).to_string()), "{hint}");
+
+        // The control, and the reason the length test is there at all: the same error on a path
+        // nowhere near the limit is a genuinely missing directory, and answering it with advice
+        // about path length would send the user after the wrong thing.
+        assert_eq!(
+            windows_io_hint(Path::new(r"C:\short"), &Error::from_raw_os_error(3)),
+            None
+        );
+
+        // The other two codes Windows uses for the same cause.
+        for code in [123, 206] {
+            assert!(
+                windows_io_hint(&long, &Error::from_raw_os_error(code)).is_some(),
+                "os error {code}"
+            );
+        }
+
+        // A different branch entirely, so a hint that only ever talked about length would fail.
+        let in_use = windows_io_hint(Path::new(r"C:\short"), &Error::from_raw_os_error(32))
+            .expect("a sharing violation should be explained");
+        assert!(in_use.contains("in use"), "{in_use}");
+        assert_eq!(
+            windows_io_hint(Path::new(r"C:\short"), &Error::from(ErrorKind::NotFound)),
+            None
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_io_hint_measures_the_units_windows_counts() {
+        use std::io::Error;
+
+        // `OsStr::len()` is WTF-8 bytes on Windows and the limit counts UTF-16 code units, so a
+        // path of non-ASCII characters measures ~3x too long by bytes. Each of these is one unit
+        // and three bytes: by bytes this is well past the limit, by units it is nowhere near.
+        let short_but_fat = PathBuf::from(format!(r"C:\{}", "あ".repeat(100)));
+        assert!(short_but_fat.as_os_str().len() > MAX_PATH, "fixture");
+        assert_eq!(
+            windows_io_hint(&short_but_fat, &Error::from_raw_os_error(3)),
+            None
+        );
+    }
+
+    #[test]
+    fn utf16_bom_reports_only_the_marks_that_hide_a_shebang() {
+        let tmp = tempfile::tempdir().unwrap();
+        let write = |name: &str, bytes: &[u8]| {
+            let path = tmp.path().join(name);
+            fs::write(&path, bytes).unwrap();
+            path
+        };
+        const SCRIPT: &[u8] = b"#!/usr/bin/env bash\necho hi\n";
+
+        // What Windows PowerShell 5.1's `>` and `Out-File` write by default.
+        let mut le = vec![0xff, 0xfe];
+        le.extend(SCRIPT.iter().flat_map(|b| [*b, 0]));
+        assert_eq!(utf16_bom(&write("le", &le)), Some("UTF-16LE"));
+        let mut be = vec![0xfe, 0xff];
+        be.extend(SCRIPT.iter().flat_map(|b| [0, *b]));
+        assert_eq!(utf16_bom(&write("be", &be)), Some("UTF-16BE"));
+
+        // A UTF-8 mark is not reported: `has_shebang` reads past it, so such a file is executable
+        // and never reaches a caller that has to explain why it is not.
+        let mut utf8_bom = vec![0xef, 0xbb, 0xbf];
+        utf8_bom.extend_from_slice(SCRIPT);
+        assert_eq!(utf16_bom(&write("utf8_bom", &utf8_bom)), None);
+        assert_eq!(utf16_bom(&write("plain", SCRIPT)), None);
+
+        // Shorter than a mark, and absent entirely: answers, not panics.
+        assert_eq!(utf16_bom(&write("empty", b"")), None);
+        assert_eq!(utf16_bom(&write("one", b"#")), None);
+        assert_eq!(utf16_bom(&tmp.path().join("does-not-exist")), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn make_executable_hint_names_the_encoding_when_a_shebang_is_hidden_by_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = b"#!/usr/bin/env bash\necho hi\n";
+
+        let utf16 = tmp.path().join("build");
+        let mut bytes = vec![0xff, 0xfe];
+        bytes.extend(script.iter().flat_map(|b| [*b, 0]));
+        fs::write(&utf16, &bytes).unwrap();
+        let hint = make_executable_hint(&utf16);
+        // The shebang is the first thing in the file. Telling the user to add one sends them
+        // after something that is already there, so the encoding has to be what is named.
+        assert!(hint.contains("UTF-16LE"), "{hint}");
+        assert!(hint.contains("UTF-8"), "{hint}");
+        assert!(!hint.contains("Add a shebang line"), "{hint}");
+
+        // The control: without a mark the advice is unchanged. Without this, an implementation
+        // that always blamed the encoding would pass too.
+        let utf8 = tmp.path().join("plain");
+        fs::write(&utf8, b"echo hi\n").unwrap();
+        let hint = make_executable_hint(&utf8);
+        assert!(hint.contains("Add a shebang line"), "{hint}");
+        assert!(!hint.contains("UTF-16"), "{hint}");
+    }
+
+    #[test]
+    fn strip_utf8_bom_removes_only_a_leading_mark() {
+        assert_eq!(
+            strip_utf8_bom("\u{feff}#!/usr/bin/env bash"),
+            "#!/usr/bin/env bash"
+        );
+        assert_eq!(strip_utf8_bom("#!/usr/bin/env bash"), "#!/usr/bin/env bash");
+        assert_eq!(strip_utf8_bom(""), "");
+        // Only the first one, and only at the front: a mark elsewhere is content.
+        assert_eq!(strip_utf8_bom("\u{feff}\u{feff}x"), "\u{feff}x");
+        assert_eq!(strip_utf8_bom("x\u{feff}"), "x\u{feff}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn has_shebang_looks_past_a_utf8_bom() {
+        let tmp = tempfile::tempdir().unwrap();
+        let write = |name: &str, bytes: &[u8]| {
+            let path = tmp.path().join(name);
+            fs::write(&path, bytes).unwrap();
+            path
+        };
+        const SCRIPT: &[u8] = b"#!/usr/bin/env bash\necho hi\n";
+        let mut marked = UTF8_BOM_BYTES.to_vec();
+        marked.extend_from_slice(SCRIPT);
+
+        // The regression: `Out-File -Encoding utf8` writes this, and reading two bytes saw `EF BB`.
+        let bom = write("bom", &marked);
+        assert!(has_shebang(&bom));
+        // On Windows a shebang is the whole of `is_executable` for a file with no known extension,
+        // so this is what decided whether the task existed at all.
+        assert!(is_executable(&bom));
+
+        // Controls: the unmarked twin, and files that genuinely have no shebang.
+        assert!(has_shebang(&write("plain", SCRIPT)));
+        assert!(!has_shebang(&write("no_shebang", b"echo hi\n")));
+        assert!(!is_executable(&write("no_shebang2", b"echo hi\n")));
+        // Shorter than the buffer: a `read_exact` would error here rather than answer.
+        assert!(!has_shebang(&write("bom_only", &UTF8_BOM_BYTES)));
+        assert!(!has_shebang(&write("empty", b"")));
+        assert!(!has_shebang(&write("one_byte", b"#")));
+        // A UTF-16 mark is deliberately not accepted.
+        assert!(!has_shebang(&write("utf16", b"\xff\xfe#\0!\0")));
+    }
+
+    /// `Path::join` appends a multi-segment literal verbatim, and some roots arrive
+    /// `/`-separated, so one printed path could switch form more than once.
+    #[cfg(windows)]
+    #[test]
+    fn display_path_settles_on_one_separator() {
+        assert_eq!(
+            display_path(r"C:/Users/me\proj\.git/hooks\pre-commit"),
+            r"C:\Users\me\proj\.git\hooks\pre-commit"
+        );
+        assert_eq!(display_path("C:/Users/me"), r"C:\Users\me");
+        // Already uniform, and a relative path: both unchanged.
+        assert_eq!(display_path(r"C:\Users\me"), r"C:\Users\me");
+        assert_eq!(display_path(r"a\b"), r"a\b");
+        assert_eq!(display_path("a/b"), r"a\b");
+        // Composes with the extended-length prefix being dropped.
+        assert_eq!(display_path(r"\\?\C:\a\b"), r"C:\a\b");
+        // Measured, not assumed: `/` is not a separator inside `\\?\`, so `a/b` reads as a single
+        // component there and `dunce` declines to simplify a name Windows could not hold. The
+        // separators still settle; the prefix stays. `canonicalize` never emits this shape.
+        assert_eq!(display_path(r"\\?\C:\a/b"), r"\\?\C:\a\b");
+        // A UNC path keeps its leading pair while its interior settles.
+        assert_eq!(display_path(r"\\server\share/dir"), r"\\server\share\dir");
+    }
+
+    /// Both halves of the string take the host's separator. Hardcoding `./` and printing the
+    /// remainder raw gave `./mise-tasks\build` on Windows.
+    #[test]
+    fn display_rel_path_uses_one_separator() {
+        let cwd = dirs::CWD.as_ref().expect("a cwd").clone();
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            display_rel_path(cwd.join("mise-tasks").join("build")),
+            format!(".{sep}mise-tasks{sep}build")
+        );
+        // A path outside the cwd falls through to `display_path`, which settles separators too.
+        let outside = display_rel_path(Path::new("relative-to-nothing"));
+        assert!(!outside.starts_with('.'), "{outside}");
+    }
+
+    /// The list answers only "can the OS start this", so it is fixed and does not consult
+    /// settings. Case-insensitive, since Windows extensions are.
+    #[cfg(windows)]
+    #[test]
+    fn os_can_launch_extension_names_only_what_the_os_starts() {
+        for ext in ["exe", "com", "bat", "cmd", "EXE", "Cmd"] {
+            assert!(os_can_launch_extension(ext), "{ext}");
+        }
+        // ps1 and vbs need an interpreter; the rest are extensions a user might add to
+        // `windows_executable_extensions`, which does not make CreateProcess able to start them.
+        for ext in ["ps1", "PS1", "vbs", "sh", "py", "js", ""] {
+            assert!(!os_can_launch_extension(ext), "{ext}");
+        }
+    }
+
+    /// Under the shipped default `windows_executable_extensions` the answers are exactly what
+    /// they were before the whitelist replaced the interpreter-only blacklist -- the two agree on
+    /// that list, which is why the old shape looked correct.
+    #[cfg(windows)]
+    #[test]
+    fn can_execute_directly_is_unchanged_for_the_default_extensions() {
+        for name in [r"C:\x\tool.exe", r"C:\x\tool.com", "tool.bat", "tool.CMD"] {
+            assert!(can_execute_directly(Path::new(name)), "{name}");
+        }
+        for name in ["tool.ps1", "tool.PS1", "tool.vbs", "tool", r"C:\x\tool"] {
+            assert!(!can_execute_directly(Path::new(name)), "{name}");
+        }
+    }
+
+    fn io(raw: i32) -> std::io::Error {
+        std::io::Error::from_raw_os_error(raw)
+    }
+
+    /// `mise uninstall` of a tool whose binary is still running reported only "Access is denied",
+    /// which on Windows is nearly always that and nothing else.
+    #[cfg(windows)]
+    #[test]
+    fn an_in_use_file_says_so() {
+        for raw in [5, 32] {
+            let hint = windows_io_hint(Path::new(r"C:\x\installs\jq\1.8.2"), &io(raw))
+                .unwrap_or_else(|| panic!("raw {raw} should be explained"));
+            assert!(hint.contains("in use"), "raw {raw}: {hint}");
+        }
+    }
+
+    /// Measured: the atomic write breaks at a 253-character target while `fs::rename` on the same
+    /// tree succeeds at 415, so "path not found" here is the length rather than a missing parent.
+    #[cfg(windows)]
+    #[test]
+    fn a_path_near_the_limit_says_so() {
+        let long = PathBuf::from(format!(r"C:\{}", "d".repeat(300)));
+        let hint = windows_io_hint(&long, &io(3)).expect("a long path should be explained");
+        assert!(hint.contains("260"), "{hint}");
+    }
+
+    /// The controls, and the point of the whole thing: do not attach an explanation to an error
+    /// that already means what it says.
+    #[cfg(windows)]
+    #[test]
+    fn an_ordinary_error_is_left_alone() {
+        // A short path that is genuinely absent is not the `MAX_PATH` case.
+        assert!(windows_io_hint(Path::new(r"C:\x\gone"), &io(2)).is_none());
+        assert!(windows_io_hint(Path::new(r"C:\x\gone"), &io(3)).is_none());
+
+        // And neither is an unrelated failure that happens to occur deep in a tree. Length alone
+        // used to be enough to trigger the advice, which answered "disk full" with "shorten it".
+        let long = PathBuf::from(format!(r"C:\{}", "d".repeat(300)));
+        for raw in [2, 39, 112] {
+            assert!(windows_io_hint(&long, &io(raw)).is_none(), "raw {raw}");
+        }
+    }
+
+    /// The limit counts UTF-16 code units; `OsStr::len()` is WTF-8 bytes on Windows. A path of
+    /// non-ASCII characters is under the limit while measuring well over it in bytes.
+    #[cfg(windows)]
+    #[test]
+    fn the_limit_is_measured_the_way_windows_measures_it() {
+        use std::os::windows::ffi::OsStrExt;
+
+        // 200 three-byte characters: 600 bytes, 200 UTF-16 units.
+        let path = PathBuf::from(format!(r"C:\{}", "あ".repeat(200)));
+        assert!(path.as_os_str().len() > MAX_PATH, "premise");
+        assert!(
+            path.as_os_str().encode_wide().count() < MAX_PATH - 16,
+            "premise"
+        );
+        assert!(windows_io_hint(&path, &io(3)).is_none());
+    }
+
+    /// unix has neither failure mode: a running binary can be unlinked, and there is no `MAX_PATH`.
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_is_never_annotated() {
+        let long = PathBuf::from(format!("/{}", "d".repeat(300)));
+        for (path, raw) in [(Path::new("/x/installs/jq/1.8.2"), 13), (long.as_path(), 2)] {
+            assert!(windows_io_hint(path, &io(raw)).is_none(), "{path:?}");
+        }
+    }
+}

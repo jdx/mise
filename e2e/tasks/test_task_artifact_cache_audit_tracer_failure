@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+
+mkdir -p bin
+cat <<'EOF' >bin/strace
+#!/usr/bin/env bash
+set -euo pipefail
+
+daemonize=false
+trace=
+while (($#)); do
+  case $1 in
+  -D)
+    daemonize=true
+    shift
+    ;;
+  -o)
+    trace=$2
+    shift 2
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *) shift ;;
+  esac
+done
+
+# The capability probe has no output file. Requiring -D here also verifies that
+# mise does not enable an incompatible strace and fail later during the task.
+if [[ -z $trace ]]; then
+  $daemonize || exit 1
+  exec "$@"
+fi
+
+if $daemonize; then
+  if [[ ${FAKE_PROBE_FAILURE:-0} == 1 ]]; then
+    sh -c "${trace#|}" </dev/null
+    echo 'strace: ptrace(PTRACE_TRACEME): Operation not permitted' >&2
+    exec "$@"
+  fi
+  if [[ ${FAKE_INCOMPLETE:-0} == 1 ]]; then
+    { sleep 10 | sh -c "${trace#|}"; } >/dev/null 2>&1 &
+    exec "$@"
+  fi
+  # Model strace -D: the original process becomes the task while the tracer is
+  # a grandchild whose internal failure cannot replace the task's exit status.
+  (
+    sleep 0.05
+    if [[ $trace == \|* ]]; then
+      sink=${trace#|}
+      record="123 openat(AT_FDCWD<$PWD>, \"secret.txt\", O_RDONLY) = 3"
+      printf '%s\n' "$record" | sh -c "$sink"
+    else
+      record="123 execve(\"$1\", [\"$1\"], 0x0) = 0"
+      printf '%s\n' "$record" >"$trace"
+    fi
+    echo 'strace: ptrace(PTRACE_LISTEN,pid:123,sig:0): Input/output error' >&2
+    exit 1
+  ) &
+  exec "$@"
+fi
+
+# Without -D, strace is the process mise waits for and its internal status wins.
+cat <<TRACE >"$trace"
+123 openat(AT_FDCWD<$PWD>, "secret.txt", O_RDONLY) = 3
+TRACE
+"$@"
+exit 1
+EOF
+chmod +x bin/strace
+
+printf 'input\n' >input.txt
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.success]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, audit = true }
+
+[tasks.failure]
+run = "exit 42"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, audit = true }
+
+[tasks.incomplete]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, audit = true }
+env = { FAKE_INCOMPLETE = "1" }
+
+EOF
+
+export PATH="$PWD/bin:$PATH"
+
+# A failure in the advisory tracer must not replace a successful task status.
+status=0
+output=$(mise run --force success 2>&1) || status=$?
+assert "test $status -eq 0"
+assert_contains_text "$output" "ptrace(PTRACE_LISTEN"
+assert_contains_text "$output" "cache audit detected undeclared read: secret.txt"
+
+# Daemonizing the tracer must not mask a real task failure either.
+status=0
+output=$(mise run --force failure 2>&1) || status=$?
+assert "test $status -eq 42"
+
+# A long-lived traced descendant must not hang the completed task indefinitely.
+output=$(mise run --force incomplete 2>&1)
+assert_contains_text "$output" "cache audit tracer exceeded its drain grace; report may be incomplete"
+
+# A daemonized capability probe must still detect a tracer startup failure.
+output=$(FAKE_PROBE_FAILURE=1 mise run --force success 2>&1)
+assert_contains_text "$output" "cache audit could not start strace; running without filesystem auditing"

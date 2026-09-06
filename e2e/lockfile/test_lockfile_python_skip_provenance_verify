@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_PYTHON_COMPILE=0
+export MISE_PYTHON_GITHUB_ATTESTATIONS=1
+export MISE_GITHUB_ATTESTATIONS=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+mkdir -p fake-python/python/bin
+cat <<'EOF' >fake-python/python/bin/python
+#!/usr/bin/env bash
+echo "Python 3.13.5"
+EOF
+chmod +x fake-python/python/bin/python
+tar -czf python-3.13.5.tar.gz -C fake-python python
+
+if command -v sha256sum >/dev/null 2>&1; then
+  CHECKSUM=$(sha256sum python-3.13.5.tar.gz | cut -d' ' -f1)
+else
+  CHECKSUM=$(shasum -a 256 python-3.13.5.tar.gz | cut -d' ' -f1)
+fi
+SIZE=$(wc -c <python-3.13.5.tar.gz | tr -d ' ')
+
+HTTP_PORT_FILE="$TMPDIR/mise_python_tarball_port"
+python3 -u - "$PWD" "$HTTP_PORT_FILE" <<'PY' >/dev/null 2>&1 &
+import functools
+import http.server
+import socketserver
+import sys
+from pathlib import Path
+
+root = sys.argv[1]
+port_file = Path(sys.argv[2])
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
+with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
+    port_file.write_text(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+wait_for_file "$HTTP_PORT_FILE" "Python tarball server port file" 30 "$SERVER_PID"
+HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+
+cat <<EOF >mise.toml
+[tools]
+python = { version = "3.13.5", patch_sysconfig = false }
+EOF
+
+cat <<EOF >mise.lock
+[[tools.python]]
+version = "3.13.5"
+backend = "core:python"
+"platforms.$PLATFORM" = { checksum = "sha256:$CHECKSUM", size = $SIZE, url = "http://127.0.0.1:$HTTP_PORT/python-3.13.5.tar.gz", provenance = "github-attestations" }
+EOF
+
+# If install re-verifies GitHub attestations, this fake tarball fails verification.
+# With checksum + provenance already in the lockfile, install should trust the
+# checksum and only ensure the provenance setting is still enabled.
+MISE_GITHUB_TOKEN=invalid GITHUB_TOKEN=invalid mise install python -f
+
+assert "$MISE_DATA_DIR/installs/python/3.13.5/bin/python --version" "Python 3.13.5"

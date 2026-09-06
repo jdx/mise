@@ -1,0 +1,5 @@
+backends = ["github:cloudflare/workerd"]
+bins = ["workerd"]
+description = "The JavaScript/Wasm runtime that powers Cloudflare Workers"
+test = { cmd = "workerd --version | tr -d '-'", expected = "workerd {{ (version | split(pat='.'))[1] }}" }
+version_order = "source"

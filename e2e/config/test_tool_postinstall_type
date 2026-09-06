@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# Tool-level postinstall hooks execute shell code, so runtime parsing must match
+# the schema and reject TOML scalars instead of converting them to commands.
+for postinstall in 123 true 1.23 2026-07-17T12:34:56Z; do
+  cat >mise.toml <<TOML
+[tools]
+dummy = { version = "latest", postinstall = $postinstall }
+TOML
+
+  assert_fail "mise config ls" "postinstall must be a string"
+
+  cat >mise.toml <<TOML
+[tasks.build]
+run = "echo ok"
+
+[tasks.build.tools]
+dummy = { version = "latest", postinstall = $postinstall }
+TOML
+
+  assert_fail "mise run build" "postinstall must be a string"
+done
+
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "latest", postinstall = "echo ok" }
+TOML
+
+assert_succeed "mise config ls"

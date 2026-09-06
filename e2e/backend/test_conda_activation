@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+
+CHANNEL_ROOT="$TMPDIR/conda-channel"
+PORT_FILE="$TMPDIR/conda-channel-port"
+mkdir -p "$CHANNEL_ROOT"
+
+python3 - "$CHANNEL_ROOT" "$PORT_FILE" <<'PY' &
+import hashlib
+import http.server
+import io
+import json
+import socketserver
+import sys
+import tarfile
+from pathlib import Path
+
+root = Path(sys.argv[1])
+port_file = Path(sys.argv[2])
+subdir = root / "noarch"
+subdir.mkdir(parents=True)
+
+
+def package(name, files, depends=None):
+    depends = depends or []
+    paths = []
+    for path, content in files.items():
+        paths.append({
+            "_path": path,
+            "path_type": "hardlink",
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "size_in_bytes": len(content),
+        })
+
+    index = {
+        "name": name,
+        "version": "1.0.0",
+        "build": "0",
+        "build_number": 0,
+        "depends": depends,
+        "subdir": "noarch",
+    }
+    metadata = {
+        "info/index.json": json.dumps(index).encode(),
+        "info/paths.json": json.dumps({"paths_version": 1, "paths": paths}).encode(),
+        "info/files": ("\n".join(files) + "\n").encode(),
+    }
+    archive_name = f"{name}-1.0.0-0.tar.bz2"
+    archive_path = subdir / archive_name
+    with tarfile.open(archive_path, "w:bz2") as archive:
+        for path, content in {**files, **metadata}.items():
+            info = tarfile.TarInfo(path)
+            info.size = len(content)
+            info.mode = 0o755 if path.startswith("bin/") else 0o644
+            archive.addfile(info, io.BytesIO(content))
+
+    data = archive_path.read_bytes()
+    return archive_name, {
+        **index,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "size": len(data),
+    }
+
+
+def tool_package(name, marker):
+    return package(name, {
+        f"bin/{name}": (
+            "#!/bin/sh\n"
+            "printf '%s|%s|%s|%s\\n' "
+            f"'{marker}' \"$CONDA_PREFIX\" \"$CONDA_TEST_ACTIVATED\" "
+            "\"$(dependency-command)\"\n"
+        ).encode(),
+        "etc/conda/activate.d/fixture.sh": b"export CONDA_TEST_ACTIVATED=activated\n",
+    }, ["fixture-dependency >=1.0.0"])
+
+
+packages = dict([
+    package("fixture-dependency", {
+        "bin/dependency-command": b"#!/bin/sh\nprintf dependency-output\n",
+    }),
+    tool_package("fixture-one", "one"),
+    tool_package("fixture-two", "two"),
+])
+(subdir / "repodata.json").write_text(json.dumps({
+    "info": {"subdir": "noarch"},
+    "packages": packages,
+    "packages.conda": {},
+    "removed": [],
+    "repodata_version": 1,
+}))
+
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=root, **kwargs)
+
+    def log_message(self, *_args):
+        pass
+
+
+with socketserver.TCPServer(("127.0.0.1", 0), Handler) as server:
+    port_file.write_text(str(server.server_address[1]))
+    server.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+  wait "$SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "conda channel port" 30 "$SERVER_PID"
+SERVER_PORT="$(cat "$PORT_FILE")"
+
+cat >mise.toml <<EOF
+[settings]
+lockfile = true
+
+[tools]
+"conda:fixture-one" = { version = "1.0.0", channel = "http://127.0.0.1:$SERVER_PORT" }
+"conda:fixture-two" = { version = "1.0.0", channel = "http://127.0.0.1:$SERVER_PORT" }
+EOF
+
+mise install
+
+one_prefix="$MISE_DATA_DIR/installs/conda-fixture-one/1.0.0"
+two_prefix="$MISE_DATA_DIR/installs/conda-fixture-two/1.0.0"
+assert "mise exec -- fixture-one" "one|$one_prefix|activated|dependency-output"
+assert "mise exec -- fixture-two" "two|$two_prefix|activated|dependency-output"
+assert_fail "mise exec -- sh -c 'command -v dependency-command'"
+assert_succeed "test ! -e '$one_prefix/.mise-bins/dependency-command'"
+assert_succeed "test ! -e '$two_prefix/.mise-bins/dependency-command'"
+
+# Locked installs use the same launcher generation path.
+mise uninstall -a conda:fixture-one
+mise install
+assert "mise exec -- fixture-one" "one|$one_prefix|activated|dependency-output"

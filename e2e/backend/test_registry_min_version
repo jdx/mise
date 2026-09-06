@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# hk started publishing Packslip manifests in 1.58.1. Earlier releases must
+# continue to install through the registry shorthand, using Aqua.
+export MISE_EXPERIMENTAL=0
+export MISE_MINIMUM_RELEASE_AGE=0
+export MISE_REGISTRY_FLOATING=0
+
+# Registry CI must exercise the newly published preferred backend immediately.
+MISE_MINIMUM_RELEASE_AGE=90d mise test-tool hk
+
+assert_contains "mise ls-remote hk@1.57" "1.57.0"
+assert_contains "mise ls-remote hk 1.57" "1.57.0"
+assert_contains "mise ls-remote hk@sub-0.1:1.58.1" "1.57.0"
+assert_contains "mise ls-remote hk@prefix:1.57" "1.57.0"
+assert "mise latest hk@1.57" "1.57.0"
+assert "mise latest hk 1.57" "1.57.0"
+assert_not_contains "MISE_BACKENDS_HK=packslip:github.com/jdx/hk mise ls-remote hk@1.57" "1.57"
+assert_fail_contains "MISE_DISABLE_BACKENDS=aqua mise latest hk@1.57" "none of its backends"
+
+cat >mise.toml <<'TOML'
+[tools]
+hk = ["1.57.0", "1.58.1"]
+
+[settings]
+lockfile = true
+TOML
+mise install
+assert_contains "mise exec hk@1.57.0 -- hk --version" "hk 1.57.0"
+assert_contains "mise exec hk@1.58.1 -- hk --version" "hk 1.58.1"
+assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'
+assert_contains "cat mise.lock" 'backend = "packslip:github.com/jdx/hk"'
+assert_contains "MISE_OFFLINE=1 mise --locked exec hk@1.57.0 -- hk --version" "hk 1.57.0"
+assert_contains "MISE_OFFLINE=1 mise --locked exec hk@1.58.1 -- hk --version" "hk 1.58.1"
+assert_fail_contains "MISE_DISABLE_BACKENDS=aqua mise latest hk@1.57" "none of its backends"
+
+# Aliases can cross the boundary after their version string is resolved.
+cat >>mise.toml <<'TOML'
+[tool_alias.hk.versions]
+old = "1.57.0"
+old_prefix = "prefix:1.57"
+TOML
+assert_contains "mise exec hk@old -- hk --version" "hk 1.57.0"
+assert "mise latest hk@old" "1.57.0"
+assert_contains "mise ls-remote hk@old" "1.57.0"
+assert_contains "mise ls-remote hk@old_prefix" "1.57.0"
+
+# Explicit backends remain explicit; no fallback after a verification error.
+assert_fail_contains "mise install --force packslip:github.com/jdx/hk@1.57.0" "no release"

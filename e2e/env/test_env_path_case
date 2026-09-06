@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# A guard, not a reproduction: this passes before the fix too.
+#
+# On Windows `Path` and `PATH` are one variable, and mise owns it, so a config declaring either
+# spelling has to land on the single key the toolset later overwrites. Here names are
+# case-sensitive and `Path` is a variable in its own right — folding it onto PATH the way Windows
+# needs would silently drop a variable the user asked for.
+
+cat <<'EOF' >mise.toml
+[env]
+Path = "/custom-from-mise"
+EOF
+
+# `Path` survives as itself...
+assert "mise env --json | jq -r '.Path'" "/custom-from-mise"
+
+# ...and PATH is not the thing that was declared.
+assert_not_contains "mise env --json | jq -r '.PATH'" "/custom-from-mise"

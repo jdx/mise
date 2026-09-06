@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+mise i vfox:version-fox/vfox-python@3.12.0
+assert "mise x vfox:version-fox/vfox-python@3.12.0 -- python3 -V" "Python 3.12.0"

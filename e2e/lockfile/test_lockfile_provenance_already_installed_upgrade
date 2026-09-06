@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+# Regression test: upgrading a github backend tool to a version that is already
+# installed on disk left both versions in the lockfile.
+#
+# The already-installed upgrade skips the download, so the provenance regression
+# check is deferred to the auto-lock pass and the old provenance-bearing entry is
+# kept as a baseline for it. Once auto-lock verifies the new version, that
+# baseline must be dropped rather than shipped as a second version of the tool.
+#
+# NOTE: This test depends on github:jdx/mr-boxington releases 1.5.0 and 1.8.1
+# existing and carrying GitHub attestations.
+
+cat <<TOML >mise.toml
+[tools]
+"github:jdx/mr-boxington" = "1.5.0"
+TOML
+
+# Lock the old version for this platform only; lock-time verification records
+# its provenance without installing it.
+mise lock --platform "$PLATFORM"
+assert_contains "cat mise.lock" 'version = "1.5.0"'
+assert_contains "cat mise.lock" 'provenance = "github-attestations"'
+
+# Get 1.8.1 onto disk without touching the lockfile so the upgrade below finds
+# it already installed and skips the download.
+MISE_LOCKFILE=0 mise install "github:jdx/mr-boxington@1.8.1"
+assert_not_contains "cat mise.lock" 'version = "1.8.1"'
+
+mise use "github:jdx/mr-boxington@1.8.1"
+assert_contains "cat mise.lock" 'version = "1.8.1"'
+assert_contains "cat mise.lock" 'provenance = "github-attestations"'
+assert_not_contains "cat mise.lock" 'version = "1.5.0"'
+# mr-boxington is the only tool, so exactly one entry should remain.
+assert "grep -c '^version = ' mise.lock" "1"

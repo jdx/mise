@@ -1,0 +1,5 @@
+backends = ["aqua:chainguard-dev/melange", "asdf:omissis/asdf-melange"]
+description = "build APKs from source code"
+os = ["linux", "macos"]
+test = { cmd = "melange version", expected = "GitVersion:    v{{version}}" }
+version_order = "semver"

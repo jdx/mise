@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[task_config]
+rust_cache = true
+
+[tasks.first]
+run = '''
+test -z "${MISE_CACHE_SOCKET:-}"
+test -z "${MISE_CACHE_STAGING_DIR:-}"
+test -z "${MISE_CACHE_TASK:-}"
+test -z "${CARGO_INCREMENTAL:-}"
+test "${RUSTC_WRAPPER:-}" = /usr/bin/env
+echo first-ran
+'''
+
+[tasks.second]
+run = "echo second-ran"
+
+[tasks.disabled]
+rust_cache = false
+run = "echo disabled-ran"
+
+[tasks.verify-compat]
+rust_cache = { verify = true }
+run = "echo verify-ran"
+EOF
+
+output="$(MISE_EXPERIMENTAL=0 RUSTC_WRAPPER=/usr/bin/env mise run first ::: second 2>&1)"
+assert_contains_text "$output" "first-ran"
+assert_contains_text "$output" "second-ran"
+assert_contains_text "$output" "rust_cache"
+assert_contains_text "$output" "https://mr-boxington.jdx.dev/getting-started"
+test "$(printf '%s\n' "$output" | grep -c 'no longer enables Rust action caching')" = 1
+
+disabled="$(MISE_EXPERIMENTAL=0 mise run disabled 2>&1)"
+assert_contains_text "$disabled" "disabled-ran"
+assert_not_contains_text "$disabled" "no longer enables Rust action caching"
+
+verify="$(MISE_EXPERIMENTAL=0 mise run verify-compat 2>&1)"
+assert_contains_text "$verify" "verify-ran"
+assert_contains_text "$verify" "no longer enables Rust action caching"

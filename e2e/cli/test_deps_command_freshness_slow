@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+
+printf 'input\n' >input.txt
+
+cat >mise.toml <<'EOF'
+[deps.command]
+sources = ["input.txt"]
+outputs = ["output.txt"]
+run = "printf 'first\\n' >> runs.txt; cp input.txt output.txt"
+EOF
+
+assert_contains "mise deps --only command 2>&1" "Installed: command"
+assert "cat runs.txt" "first"
+assert_contains "mise deps --only command 2>&1" "up to date"
+
+cat >mise.toml <<'EOF'
+[deps.command]
+sources = ["input.txt"]
+outputs = ["output.txt"]
+run = "printf 'second\\n' >> runs.txt; cp input.txt output.txt"
+EOF
+
+assert_contains "mise deps --dry-run --only command 2>&1" "provider command changed"
+assert_contains "mise deps command --explain 2>&1 || true" "provider command changed"
+assert_contains "mise deps --only command 2>&1" "Installed: command"
+assert "cat runs.txt" $'first\nsecond'
+assert_contains "mise deps --only command 2>&1" "up to date"
+
+mkdir -p "$HOME/.config/mise"
+cat >"$HOME/.config/mise/config.toml" <<'EOF'
+[settings]
+unix_default_inline_shell_args = "sh -c -o errexit"
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.shell]
+sources = ["input.txt"]
+outputs = ["shell-output.txt"]
+run = "printf 'run\\n' >> shell-runs.txt; cp input.txt shell-output.txt"
+EOF
+
+mise deps --only shell >/dev/null
+assert "cat shell-runs.txt" "run"
+assert_contains "mise deps --only shell 2>&1" "up to date"
+
+cat >"$HOME/.config/mise/config.toml" <<'EOF'
+[settings]
+unix_default_inline_shell_args = "sh -c"
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.shell]
+sources = ["input.txt"]
+outputs = ["shell-output.txt"]
+run = "printf 'run\\n' >> shell-runs.txt; cp input.txt shell-output.txt"
+EOF
+
+assert_contains "mise deps --dry-run --only shell 2>&1" "provider command changed"
+assert_contains "mise deps --only shell 2>&1" "Installed: shell"
+assert "wc -l < shell-runs.txt | tr -d ' '" "2"
+assert_contains "mise deps --only shell 2>&1" "up to date"
+
+cat >mise.toml <<'EOF'
+[deps.environment]
+sources = ["input.txt"]
+outputs = ["env-output.txt"]
+run = "printf '%s\\n' \"$MODE\" >> env-runs.txt; cp input.txt env-output.txt"
+env = { MODE = "one" }
+EOF
+
+mise deps --only environment >/dev/null
+assert "cat env-runs.txt" "one"
+
+cat >mise.toml <<'EOF'
+[deps.environment]
+sources = ["input.txt"]
+outputs = ["env-output.txt"]
+run = "printf '%s\\n' \"$MODE\" >> env-runs.txt; cp input.txt env-output.txt"
+env = { MODE = "two" }
+EOF
+
+assert_contains "mise deps --dry-run --only environment 2>&1" "provider command changed"
+mise deps --only environment >/dev/null
+assert "cat env-runs.txt" $'one\ntwo'
+
+mkdir -p dir-a dir-b
+printf 'input\n' >dir-a/input.txt
+printf 'input\n' >dir-b/input.txt
+printf 'input\n' >dir-b/output.txt
+
+cat >mise.toml <<'EOF'
+[deps.directory]
+sources = ["input.txt"]
+outputs = ["output.txt"]
+run = "cp input.txt output.txt; pwd >> ../dir-runs.txt"
+dir = "dir-a"
+EOF
+
+mise deps --only directory >/dev/null
+
+cat >mise.toml <<'EOF'
+[deps.directory]
+sources = ["input.txt"]
+outputs = ["output.txt"]
+run = "cp input.txt output.txt; pwd >> ../dir-runs.txt"
+dir = "dir-b"
+EOF
+
+assert_contains "mise deps --dry-run --only directory 2>&1" "provider command changed"
+mise deps --only directory >/dev/null
+assert_contains "tail -n 1 dir-runs.txt" "/dir-b"
+
+cat >mise.toml <<'EOF'
+[deps.failure]
+sources = ["input.txt"]
+outputs = ["failure-output.txt"]
+run = "cp input.txt failure-output.txt"
+EOF
+
+mise deps --only failure >/dev/null
+
+cat >mise.toml <<'EOF'
+[deps.failure]
+sources = ["input.txt"]
+outputs = ["failure-output.txt"]
+run = "exit 7"
+EOF
+
+assert_fail "mise deps --only failure 2>&1" "exit code 7"
+assert_contains "mise deps --dry-run --only failure 2>&1" "provider command changed"
+
+cat >mise.toml <<'EOF'
+[deps.legacy]
+sources = ["input.txt"]
+outputs = ["legacy-output.txt"]
+run = "printf 'run\\n' >> legacy-runs.txt; cp input.txt legacy-output.txt"
+EOF
+
+mise deps --only legacy >/dev/null
+state_file="$(find "$MISE_STATE_DIR/deps" -type f -name '*.toml')"
+sed -i.bak '/^\[command_hashes\]/,$d' "$state_file"
+assert_contains "mise deps --dry-run --only legacy 2>&1" "provider command changed"
+mise deps --only legacy >/dev/null
+assert "wc -l < legacy-runs.txt | tr -d ' '" "2"
+assert_contains "mise deps --only legacy 2>&1" "up to date"
+
+printf 'existing\n' >no-sources-output.txt
+cat >mise.toml <<'EOF'
+[deps.no_sources]
+outputs = ["no-sources-output.txt"]
+run = "printf 'unexpected\\n' >> no-sources-runs.txt"
+EOF
+
+assert_contains "mise deps --only no_sources 2>&1" "up to date"
+assert "test ! -e no-sources-runs.txt && echo skipped" "skipped"
+
+cat >mise.toml <<'EOF'
+[deps.no_sources]
+outputs = ["no-sources-output.txt"]
+run = "printf 'still unexpected\\n' >> no-sources-runs.txt"
+EOF
+
+assert "mise deps --dry-run --only no_sources 2>&1" ""
+assert "test ! -e no-sources-runs.txt && echo skipped" "skipped"

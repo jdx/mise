@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+
+mise use -g tombi@$TOMBI_VERSION
+
+SCHEMA_PATH="$ROOT/schema/mise.json"
+TASK_SCHEMA_PATH="$ROOT/schema/mise-task.json"
+TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
+TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
+assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
+
+cat >"$HOME/tombi.toml" <<EOF
+toml-version = "v1.0.0"
+
+[schema]
+enabled = true
+strict = true
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise-tool-selectors.toml", "mise-bad-tool-selectors.toml"]
+
+[[schemas]]
+path = "file://$TASK_SCHEMA_PATH"
+include = ["mise-task-tool-selectors.toml", "mise-bad-task-tool-selectors.toml"]
+EOF
+
+cat >"$HOME/workdir/mise-tool-selectors.toml" <<'TOML'
+[tools]
+node = { version = "20" }
+go = { prefix = "1.22" }
+python = { ref = "main" }
+shellcheck = { path = "/opt/shellcheck" }
+ruby = [{ prefix = "3.3", os = "linux-x64" }]
+
+[tasks.check]
+run = "echo check"
+
+[tasks.check.tools]
+node = { version = "20", backend_options = { nested = [1, true] } }
+go = { prefix = "1.22" }
+python = { ref = "main" }
+shellcheck = { path = "/opt/shellcheck" }
+TOML
+
+cd "$HOME/workdir"
+assert_succeed "$TOMBI_LINT mise-tool-selectors.toml"
+
+cat >mise-task-tool-selectors.toml <<'TOML'
+[check]
+run = "echo check"
+
+[check.tools]
+node = { version = "20", backend_options = { nested = [1, true] } }
+go = { prefix = "1.22" }
+python = { ref = "main" }
+shellcheck = { path = "/opt/shellcheck" }
+TOML
+assert_succeed "$TOMBI_LINT mise-task-tool-selectors.toml"
+
+cat >mise-bad-tool-selectors.toml <<'TOML'
+[tools]
+node = { version = "20", prefix = "20" }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-tool-selectors.toml"
+
+cat >mise-bad-task-tool-selectors.toml <<'TOML'
+[check]
+run = "echo check"
+
+[check.tools]
+node = { version = "20", prefix = "20" }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-task-tool-selectors.toml"
+
+cat >mise-bad-task-tool-selectors.toml <<'TOML'
+[check]
+run = "echo check"
+
+[check.tools]
+node = { os = "linux" }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-task-tool-selectors.toml"
+
+cat >mise-bad-task-tool-selectors.toml <<'TOML'
+[check]
+run = "echo check"
+
+[check.tools]
+node = { prefix = 20 }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-task-tool-selectors.toml"
+
+cat >mise-bad-tool-selectors.toml <<'TOML'
+[tools]
+node = [{ path = "/opt/node", ref = "main" }]
+TOML
+assert_fail "$TOMBI_LINT mise-bad-tool-selectors.toml"
+
+cat >mise-bad-tool-selectors.toml <<'TOML'
+[tasks.check]
+run = "echo check"
+
+[tasks.check.tools]
+node = { version = "20", prefix = "20" }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-tool-selectors.toml"
+
+cat >mise-bad-tool-selectors.toml <<'TOML'
+[tasks.check]
+run = "echo check"
+
+[tasks.check.tools]
+node = { os = "linux" }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-tool-selectors.toml"

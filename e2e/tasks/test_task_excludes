@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+mkdir -p .mise/tasks/problem .mise/tasks/generated .mise/tasks/keep
+
+cat <<'EOF' >.mise/tasks/problem/_default
+#!/usr/bin/env bash
+echo problem
+EOF
+chmod +x .mise/tasks/problem/_default
+
+cat <<'EOF' >.mise/tasks/problem/pyproject.toml
+[project]
+name = "problem"
+version = "0.1.0"
+EOF
+
+cat <<'EOF' >.mise/tasks/keep/_default
+#!/usr/bin/env bash
+echo keep
+EOF
+chmod +x .mise/tasks/keep/_default
+
+cat <<'EOF' >.mise/tasks/generated/hidden.toml
+[generated]
+run = "echo generated"
+EOF
+
+cat <<'EOF' >standalone.toml
+[standalone]
+run = "echo standalone"
+EOF
+
+# Config-defined task.disable_paths entries resolve from the declaring config root.
+cat <<'EOF' >.mise/config.toml
+[settings.task]
+disable_paths = [".mise/tasks/problem"]
+EOF
+
+assert_contains "mise tasks" "keep"
+assert_not_contains "mise tasks" "problem"
+
+# Scoped excludes support directories, globs, and direct TOML includes.
+cat <<'EOF' >.mise/config.toml
+[task_config]
+includes = [".mise/tasks", "standalone.toml"]
+excludes = [
+  ".mise/tasks/problem",
+  ".mise/tasks/generated/*.toml",
+  "standalone.toml",
+]
+EOF
+
+assert_contains "mise tasks" "keep"
+assert_not_contains "mise tasks" "problem"
+assert_not_contains "mise tasks" "generated"
+assert_not_contains "mise tasks" "standalone"
+assert "mise run keep" "keep"

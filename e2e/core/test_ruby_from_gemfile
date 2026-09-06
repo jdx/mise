@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Read ruby version from Gemfile
+
+# Enable idiomatic version files for ruby
+mise settings set idiomatic_version_file_enable_tools ruby
+
+cat >Gemfile <<EOF
+ruby "3.3.6"
+EOF
+
+assert "mise current ruby" "3.3.6"

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Settings the config loader consumes before any config file is read cannot be set in one.
+# Writing them used to succeed and then be ignored, and `mise settings get` echoed the stored
+# value back as if it were live.
+#
+# See: https://github.com/jdx/mise/discussions/5791
+
+# the write is refused, and the message names the variable that does work
+assert_fail "mise settings set default_config_filename .mise.toml" "MISE_DEFAULT_CONFIG_FILENAME"
+assert_fail "mise settings add default_config_filename .mise.toml" "MISE_DEFAULT_CONFIG_FILENAME"
+assert_fail "mise settings set global_config_file /tmp/elsewhere.toml" "MISE_GLOBAL_CONFIG_FILE"
+
+# hand-writing it into a config is dropped at load rather than reported as active — this is the
+# half that matters, since `settings get` returning the value is what convinced the reporter it
+# had taken effect
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+default_config_filename = ".mise.toml"
+EOF
+assert_not_contains "mise settings get default_config_filename" ".mise.toml"
+assert "mise settings get default_config_filename" "mise.toml"
+
+# the env var is the supported route and is untouched. The config above is left in place on
+# purpose: its value is dropped at load, so this also covers the env var still working while a
+# config file names the same setting.
+mkdir -p envonly
+cd envonly || exit 1
+MISE_DEFAULT_CONFIG_FILENAME=.mise.toml mise use dummy@1
+assert_contains "cat .mise.toml" 'dummy = "1"'
+assert_fail "test -f mise.toml"
+cd .. || exit 1

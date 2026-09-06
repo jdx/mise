@@ -1,0 +1,390 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/mise-cache-core",
+  "crates/vfox",
+  "crates/aqua-registry",
+  "crates/mise-interactive-config",
+  "crates/mise-shim",
+  "crates/mise-sigstore",
+]
+
+[package]
+name = "mise"
+version = "2026.9.1"
+edition = "2024"
+description = "Dev tools, env vars, and tasks in one CLI"
+authors = ["Jeff Dickey (@jdx)"]
+homepage = "https://mise.jdx.dev"
+documentation = "https://mise.jdx.dev"
+repository = "https://github.com/jdx/mise"
+readme = "README.md"
+license = "MIT"
+keywords = ["mise"]
+categories = ["command-line-utilities"]
+include = [
+  "/Cargo.lock",
+  "/LICENSE",
+  "/README.md",
+  "/build.rs",
+  "/completions/*",
+  "/minisign.pub",
+  "/registry/*.toml",
+  "/settings.toml",
+  "/zipsign.pub",
+  "/src/**/*.rs",
+  "/src/assets/**",
+  "/src/plugins/core/assets/**",
+  "/src/system/packages/brew/cask_shim.rb",
+  "/src/system/packages/brew/shim.rb",
+  "/vendor/aqua-registry/LICENSE",
+  "/vendor/aqua-registry/metadata.json",
+  "/vendor/aqua-registry/registry.yml",
+]
+build = "build.rs"
+rust-version = "1.95"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "mise"
+path = "src/main.rs"
+
+#[[bench]]
+#name = "config_bench"
+#harness = false
+
+[profile.release]
+# debug = 0 # note that higher levels greatly increase the binary size for linux
+
+[profile.serious]
+inherits = "release"
+lto = true
+panic = "abort"
+
+[profile.dev.package.backtrace]
+opt-level = 3
+
+[dependencies]
+age = { version = "0.12", features = ["ssh"] }
+aho-corasick = "1"
+aube-registry = { version = "2", default-features = false, features = [
+  "rustls",
+] }
+aube = { version = "2", default-features = false, features = ["rustls"] }
+async-backtrace = "0.2"
+async-trait = "0.1"
+aws-config = { version = "1", default-features = false, features = [
+  "behavior-version-latest",
+  "default-https-client",
+  "rt-tokio",
+  "sso",
+] }
+aws-lc-rs = { version = "1", optional = true, features = [
+  "bindgen",
+] } # TODO: this is only for armv7 currently
+aws-sdk-s3 = { version = "1", default-features = false, features = [
+  "behavior-version-latest",
+  "default-https-client",
+] }
+base64 = "0.23"
+bytesize = "2"
+bzip2 = "0.6"
+calm_io = "0.1"
+chrono = { version = "0.4", default-features = false, features = [
+  "std",
+  "clock",
+] }
+ci_info = "0.14"
+usage_rs = { package = "usage-rs", version = "6", features = [
+  "completions",
+  "diagnostics",
+  "validation",
+] }
+usage-cli = "6"
+color-eyre = "0.6"
+color-print = "0.3"
+comfy-table = "8"
+confique = { version = "0.4", default-features = false }
+console = "0.16"
+contracts = "0.6"
+dashmap = "6"
+demand = "2"
+diffy = "0.5"
+digest = "0.11"
+dotenvy = "0.15"
+duct = "1"
+dunce = "1"
+homedir = "0.3"
+expr-lang = "2"
+eyre = "0.6"
+filetime = "0.2"
+flate2 = "1"
+futures-util = "0.3"
+mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
+mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
+fslock = "0.2"
+gix = { version = "<1", features = ["worktree-mutation"] }
+glob = "0.3"
+globwalk = "0.9"
+globset = "0.4"
+ignore = { version = "0.4", features = [] }
+heck = "0.5"
+hex = "0.4"
+http = "1"
+axum = { version = "0.8", default-features = false, features = [
+  "http1",
+  "tokio",
+] }
+indenter = "0.3"
+indexmap = { version = "2", features = ["serde"] }
+ipnet = { version = "2", features = ["serde"] }
+clx = "3"
+indoc = "2"
+itertools = "0.15"
+jdx-tar = "1"
+jiff = "0.2"
+junction = "2"
+log = "0.4"
+minisign-verify = "0.2"
+md-5 = "0.11"
+miette = { version = "7", features = ["fancy"] }
+netrc-rs = "0.1"
+nodejs-semver = "5"
+nucleo-matcher = "0.3"
+num_cpus = "1"
+once_cell = "1"
+packslip = { version = "0.3", default-features = false }
+openssl = { version = "0.10", optional = true }
+path-absolutize = "4"
+petgraph = "0.8"
+pgp = "0.20"
+phf = "0.14"
+rand = "0.10"
+rattler = { version = "0.48", default-features = false }
+rattler_conda_types = { version = "0.51", default-features = false }
+rattler_repodata_gateway = { version = "0.33", default-features = false, features = [
+  "gateway",
+] }
+rattler_solve = { version = "9", default-features = false, features = [
+  "resolvo",
+] }
+rattler_package_streaming = { version = "0.27", default-features = false }
+rattler_virtual_packages = { version = "5", default-features = false }
+regex = "1"
+plist = "1"
+reqwest = { version = "0.13", default-features = false, features = [
+  "json",
+  "form",
+  "gzip",
+  "zstd",
+  "charset",
+  "http2",
+  "socks",
+  "stream",
+  "system-proxy",
+] }
+reqwest-middleware = { package = "astral-reqwest-middleware", version = "0.5" }
+rmcp = { version = "3", features = ["server", "transport-io", "schemars"] }
+rmp-serde = "1"
+rops = { version = "0.1", default-features = false, features = [
+  "aes-gcm",
+  "sha2",
+  "yaml",
+  "json",
+  "toml",
+  "age",
+] }
+# Not used directly. age renders its error messages through fluent, and
+# rust-embed only bakes the translations into the binary for release builds
+# unless `debug-embed` is on. Without it a debug mise that formats an age error
+# outside the crate's source tree — e2e inside a container — panics in age's
+# lazy_static instead of reporting the error.
+rust-embed = { version = "8", features = ["debug-embed"] }
+same-file = "1"
+serde = { version = "1", features = ["derive"] }
+serde_ignored = "0.1"
+serde_json = "1"
+serde_yaml = "0.9"
+semver = "1"
+sevenz-rust2 = "0.22"
+sha1 = "0.11"
+sha2 = "0.11"
+blake3 = "1"
+chacha20poly1305 = "0.11"
+shell-escape = "0.1"
+shell-words = "1"
+signal-hook = "0.4"
+siphasher = "1"
+strum = { version = "0.28", features = ["derive"] }
+supports-hyperlinks = "3"
+tabled = { version = "0.21", features = ["ansi"] }
+taplo = "0.14"
+tempfile = "3"
+tera = "2"
+tera1 = { package = "tera", version = "1" }
+tera-contrib = { version = "0.2", features = [
+  "base64",
+  "date",
+  "filesize_format",
+  "format",
+  "json",
+  "rand",
+  "regex",
+  "slug",
+  "urlencode",
+] }
+terminal_size = "0.4"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io", "rt"] }
+toml = { version = "1", features = ["parse", "preserve_order"] }
+toml_edit = { version = "0.25", features = ["parse"] }
+ubi = { version = "0.12", default-features = false }
+url = "2"
+urlencoding = "2"
+usage-lib = { version = "6", features = ["docs"] }
+versions = { version = "7", features = ["serde"] }
+vfox = { path = "crates/vfox", default-features = false }
+aqua-registry = { path = "crates/aqua-registry" }
+mise-interactive-config = { path = "crates/mise-interactive-config", version = "2026" }
+walkdir = "2"
+which = "8"
+xx = { version = "2", default-features = false, features = ["glob"] }
+xz2 = "0.1"
+zip = { version = "8", default-features = false, features = ["deflate"] }
+zstd = "0.13"
+
+[target.'cfg(unix)'.dependencies]
+exec = "0.3"
+nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
+self_update = { version = "1", optional = true, default-features = false, features = [
+  "archive-tar",
+  "compression-tar-gz",
+  "signatures",
+  "reqwest",
+  "github",
+  "progress-bar",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"
+seccompiler = "0.5"
+
+[target.'cfg(windows)'.dependencies]
+self_update = { version = "1", optional = true, default-features = false, features = [
+  "archive-zip",
+  "compression-zip-deflate",
+  "signatures",
+  "reqwest",
+  "github",
+  "progress-bar",
+] }
+zipsign-api = "0.2"
+winapi = { version = "0.3", features = ["consoleapi", "minwindef"] }
+windows-sys = { version = "0.61", features = [
+  "Win32_Globalization",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_SystemServices",
+  "Win32_System_Threading",
+] }
+
+[build-dependencies]
+aqua-registry = { path = "crates/aqua-registry" }
+built = { version = "0.8", features = ["chrono"] }
+cfg_aliases = "0.2"
+eyre = "0.6"
+heck = "0.5"
+indexmap = "2"
+phf_codegen = "0.14"
+semver = "1"
+serde = "1"
+serde_yaml = "0.9"
+toml = "1"
+
+[dev-dependencies]
+ctor = "1"
+insta = { version = "1", features = ["filters", "json"] }
+mockito = "1"
+pretty_assertions = "1"
+test-log = "0.2"
+
+[features]
+default = ["native-tls", "vfox/vendored-lua", "self_update"]
+native-tls = [
+  "gix/blocking-http-transport-reqwest-native-tls",
+  "reqwest/native-tls",
+  "rattler/native-tls",
+  "rattler_repodata_gateway/native-tls",
+  "mise-sigstore/native-tls",
+  "mise-cache-core/native-tls",
+  "ubi/native-tls",
+  "vfox/native-tls",
+  "xx/native-tls",
+  "self_update?/native-tls",
+]
+rustls = [
+  "gix/blocking-http-transport-reqwest-rust-tls",
+  "reqwest/rustls",
+  "rattler/rustls",
+  "rattler_repodata_gateway/rustls",
+  "mise-sigstore/rustls",
+  "mise-cache-core/rustls",
+  "ubi/rustls-tls",
+  "vfox/rustls",
+  "xx/rustls",
+  "self_update?/rustls",
+]
+rustls-native-roots = [
+  "gix/blocking-http-transport-reqwest-rust-tls",
+  "reqwest/rustls",
+  "rattler/rustls",
+  "rattler_repodata_gateway/rustls",
+  "mise-sigstore/rustls",
+  "mise-cache-core/rustls-native-roots",
+  "ubi/rustls-tls",
+  "vfox/rustls-native-roots",
+  "xx/rustls-native-roots",
+  "self_update?/rustls",
+]
+
+[package.metadata.binstall]
+bin-dir = "mise/bin/mise"
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-macos-arm64{ archive-suffix }"
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-macos-x64{ archive-suffix }"
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-arm64{ archive-suffix }"
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ archive-suffix }"
+[package.metadata.binstall.overrides.armv7-unknown-linux-gnueabihf]
+pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
+
+[package.metadata.cargo-machete]
+ignored = [
+  "aws-lc-rs",
+  "built",
+  "cfg_aliases",
+  "openssl",
+  "phf_codegen",
+  "rust-embed",
+]
+
+[package.metadata.release]
+pre-release-replacements = [
+  { file = "docs/installing-mise.md", search = "MISE_VERSION=v[0-9]+\\.[0-9]+\\.[0-9]+", replace = "MISE_VERSION=v{{version}}" },
+  { file = "docs/installing-mise.md", search = "/download/v[0-9]+\\.[0-9]+\\.[0-9]+/mise-v[0-9]+\\.[0-9]+\\.[0-9]+-linux-x64", replace = "/download/v{{version}}/mise-v{{version}}-linux-x64" },
+]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+  'cfg(coverage,coverage_nightly)',
+] }
+
+[profile.dev]
+debug = 1

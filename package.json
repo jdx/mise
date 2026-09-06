@@ -1,0 +1,33 @@
+{
+  "name": "mise",
+  "version": "1.0.0",
+  "type": "module",
+  "directories": {
+    "doc": "docs",
+    "man": "man",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "node --test docs/.vitepress/social-images.test.mjs && vitepress build docs && node docs/.vitepress/check-social-images.mjs docs/.vitepress/dist",
+    "docs:preview": "vitepress preview docs"
+  },
+  "author": "@jdx",
+  "resolutions": {
+    "esbuild": "0.28.2"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@tsconfig/node24": "^24.0.0",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^26.0.0",
+    "js-toml": "^2.0.0",
+    "markdown-it": "^15.0.0",
+    "toml": "^5.0.0",
+    "vitepress": "1.6.4",
+    "vitepress-plugin-group-icons": "^1.6.5",
+    "vitepress-plugin-mermaid": "2.0.17",
+    "vitepress-plugin-tabs": "^0.9.0"
+  }
+}

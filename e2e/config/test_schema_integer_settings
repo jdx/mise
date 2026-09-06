@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+SCHEMA_PATH="$ROOT/schema/mise.json"
+
+assert "jq -r '.[\"\$defs\"].settings.properties.http_retries.type' '$SCHEMA_PATH'" "integer"
+assert "jq -r '.[\"\$defs\"].settings.properties.jobs.type' '$SCHEMA_PATH'" "integer"
+assert "jq -r '.[\"\$defs\"].settings.properties.node.properties.concurrency.type' '$SCHEMA_PATH'" "integer"
+assert "jq -r '.[\"\$defs\"].settings.properties.task.properties.monorepo_depth.type' '$SCHEMA_PATH'" "integer"

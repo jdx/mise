@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Regression test for a tracked config that cannot be a config file.
+#
+# `MISE_GLOBAL_CONFIG_FILE=/dev/null` used to be a way to disable the global
+# config, so older versions tracked it. mise now rejects unknown config file
+# types, and the leftover entry survived every `mise prune` — cleaning asked
+# whether the *entry* existed, and a symlink to /dev/null does exist — so every
+# run that loads tracked configs warned about it forever.
+
+tracked="$MISE_STATE_DIR/tracked-configs"
+mkdir -p "$tracked"
+ln -s /dev/null "$tracked/deadbeefdeadbeef"
+
+out="$(mise prune 2>&1)"
+assert_contains "echo '$out'" "pruned configuration links"
+assert_not_contains "echo '$out'" "unknown config file type"
+
+# The entry is gone, so it cannot come back on the next command either.
+assert_fail "test -e '$tracked/deadbeefdeadbeef'"
+assert_not_contains "mise ls 2>&1" "unknown config file type"

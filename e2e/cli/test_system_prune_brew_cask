@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Linux" ]]; then
+  exit 0
+fi
+
+prefix="$PWD/brew-prefix"
+version_dir="$prefix/Caskroom/example/1.0.0"
+binary="$version_dir/bin/example"
+target="$prefix/bin/example"
+state="$PWD/state"
+
+mkdir -p "$version_dir/bin" "$prefix/bin"
+printf '#!/bin/sh\n' >"$binary"
+ln -s "$binary" "$target"
+digest="$(printf %s "$binary" | sha256sum | cut -d' ' -f1)"
+
+cat >"$version_dir/.mise-cask.toml" <<EOF
+schema_version = 3
+version = "1.0.0"
+binaries = ["$target"]
+prune_safe = true
+
+[[targets]]
+path = "$target"
+
+[targets.fingerprint]
+kind = "symlink"
+digest = "$digest"
+EOF
+
+cat >mise.toml <<EOF
+[bootstrap.packages]
+EOF
+
+assert_contains \
+  "MISE_SYSTEM_BREW_PREFIX=$prefix MISE_STATE_DIR=$state mise bootstrap packages prune --manager brew-cask --dry-run" \
+  "remove brew-cask:example@1.0.0"
+assert_succeed \
+  "MISE_SYSTEM_BREW_PREFIX=$prefix MISE_STATE_DIR=$state mise bootstrap packages prune --manager brew-cask --yes"
+assert_fail "test -e $target"
+assert_fail "test -e $prefix/Caskroom/example"

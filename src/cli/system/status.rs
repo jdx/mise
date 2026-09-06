@@ -1,0 +1,178 @@
+use eyre::Result;
+use serde_json::json;
+
+use crate::config::Config;
+use crate::system;
+use crate::system::packages::{PackageDesiredState, PackageState};
+use crate::ui::table::MiseTable;
+
+/// Show the status of system packages from `[bootstrap.packages]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub(crate) struct SystemStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured packages are not in their desired state
+    #[usage(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
+impl SystemStatus {
+    pub(crate) async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let mgrs = system::packages_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_out = serde_json::Map::new();
+        for mp in mgrs {
+            let name = mp.manager.name();
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else {
+                mp.manager.unavailable_reason_async().await
+            };
+            if let Some(reason) = reason {
+                if self.json {
+                    json_out.insert(
+                        name.to_string(),
+                        json!({
+                            "available": false,
+                            "reason": reason,
+                            "packages": mp.requests.iter().map(|req| {
+                                json!({
+                                    "package": req.name,
+                                    "requested_version": req.version.clone().unwrap_or_else(|| "latest".to_string()),
+                                    "desired_state": match req.desired {
+                                        PackageDesiredState::Present => "present",
+                                        PackageDesiredState::Absent => "absent",
+                                    },
+                                    "state": "skipped",
+                                    "installed_version": "",
+                                })
+                            }).collect::<Vec<_>>(),
+                        }),
+                    );
+                } else {
+                    for req in &mp.requests {
+                        rows.push(vec![
+                            name.to_string(),
+                            req.to_string(),
+                            "".to_string(),
+                            format!("skipped ({reason})"),
+                        ]);
+                    }
+                }
+                continue;
+            }
+            let statuses = mp.manager.installed(&mp.requests).await?;
+            let mut json_pkgs = vec![];
+            for s in statuses {
+                let auto_updates = s.state.auto_updates();
+                let desired_absent = s.request.desired == PackageDesiredState::Absent;
+                let (installed_version, state, reason) = match (&s.state, desired_absent) {
+                    (PackageState::Missing, true) => ("".to_string(), "absent", None::<&str>),
+                    (PackageState::Installed { version }, true)
+                    | (PackageState::NeedsRepair { installed: version }, true)
+                    | (PackageState::VersionMismatch { installed: version }, true) => {
+                        any_missing = true;
+                        (version.clone(), "unexpectedly installed", None)
+                    }
+                    #[cfg(unix)]
+                    (PackageState::InstalledAutoUpdates { version }, true) => {
+                        any_missing = true;
+                        (version.clone(), "unexpectedly installed", None)
+                    }
+                    (PackageState::Installed { version }, false) => {
+                        (version.clone(), "installed", None::<&str>)
+                    }
+                    #[cfg(unix)]
+                    (PackageState::InstalledAutoUpdates { version }, false) => {
+                        (version.clone(), "installed", None::<&str>)
+                    }
+                    (PackageState::Missing, false) => {
+                        any_missing = true;
+                        ("".to_string(), "missing", None)
+                    }
+                    (PackageState::NeedsRepair { installed }, false) => {
+                        any_missing = true;
+                        (installed.clone(), "needs repair", None)
+                    }
+                    (PackageState::VersionMismatch { installed }, false) => {
+                        any_missing = true;
+                        (installed.clone(), "version mismatch", None)
+                    }
+                    #[cfg(unix)]
+                    (PackageState::Unavailable { reason }, _) => {
+                        ("".to_string(), "skipped", Some(reason.as_str()))
+                    }
+                };
+                if self.json {
+                    let mut package = json!({
+                        "package": s.request.name,
+                        "requested_version": s.request.version.clone().unwrap_or_else(|| "latest".to_string()),
+                        "desired_state": if desired_absent { "absent" } else { "present" },
+                        "state": state.replace(' ', "_"),
+                        "installed_version": installed_version,
+                    });
+                    if let Some(reason) = reason {
+                        package["reason"] = json!(reason);
+                    }
+                    if auto_updates {
+                        package["auto_updates"] = json!(true);
+                    }
+                    json_pkgs.push(package);
+                } else {
+                    rows.push(vec![
+                        name.to_string(),
+                        s.request.to_string(),
+                        installed_version,
+                        if auto_updates {
+                            format!("{state} (auto-updates)")
+                        } else {
+                            reason.map_or_else(
+                                || state.to_string(),
+                                |reason| format!("{state} ({reason})"),
+                            )
+                        },
+                    ]);
+                }
+            }
+            if self.json {
+                json_out.insert(
+                    name.to_string(),
+                    json!({ "available": true, "packages": json_pkgs }),
+                );
+            }
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else {
+            if rows.is_empty() {
+                info!("nothing configured in [bootstrap.packages]");
+            }
+            if !rows.is_empty() {
+                let mut table =
+                    MiseTable::new(false, &["Manager", "Package", "Installed", "State"]);
+                for row in rows {
+                    table.add_row(row);
+                }
+                table.print()?;
+            }
+        }
+        if self.missing && any_missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise bootstrap packages status</bold>
+    $ <bold>mise bootstrap packages status --json</bold>
+    $ <bold>mise bootstrap packages status --missing</bold> # exit 1 if anything is out of sync
+"#
+);

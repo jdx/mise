@@ -1,0 +1,3 @@
+backends = ["aqua:derailed/popeye", "asdf:nlamirault/asdf-popeye"]
+description = "A Kubernetes cluster resource sanitizer"
+version_order = "semver"

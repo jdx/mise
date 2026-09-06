@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+# usage_* values are outputs of one task invocation and must not leak into the
+# next task's optional arguments. Explicit env= inputs remain supported.
+
+mkdir -p .mise/tasks
+
+cat <<'EOF' >.mise/tasks/file-child
+#!/usr/bin/env bash
+#USAGE arg "[model]"
+printf 'file model=%s\n' "${usage_model-UNSET}"
+EOF
+chmod +x .mise/tasks/file-child
+
+cat <<'EOF' >mise.toml
+[tasks.toml-child]
+usage = 'arg "[model]"'
+run = 'printf "toml model=%s\n" "${usage_model-UNSET}"'
+
+[tasks.env-child]
+usage = 'arg "[model]" env="MODEL"'
+run = 'printf "env model=%s\n" "${usage_model-UNSET}"'
+
+[tasks.tera-child]
+usage = 'arg "[model]"'
+run = 'printf "tera model=%s\n" "{{ env.usage_model | default(value="UNSET") }}"'
+
+[tasks.flag-child]
+usage = 'flag "--model <model>"'
+run = 'printf "flag model=%s\n" "${usage_model-UNSET}"'
+
+[tasks.tera-spec-child]
+usage = '''
+flag "--baseline"
+{% if env.usage_model is defined %}
+arg "<leaked>"
+{% endif %}
+'''
+run = 'printf "spec env=%s\n" "{{ env.usage_model | default(value="UNSET") }}"'
+
+[tasks.tera-vars-spec-child]
+usage = '''
+{% if vars.copied == "ambient" %}
+arg "<leaked>"
+{% endif %}
+'''
+run = 'printf "vars spec=%s\n" "{{ vars.copied }}"'
+
+[tasks.tera-vars-spec-child.vars]
+copied = '{{ env.usage_model | default(value="UNSET") }}'
+
+[tasks.raw-child]
+raw_args = true
+run = 'printf "raw model=%s\n" "${usage_model-UNSET}"'
+
+[tasks.plain-child]
+run = 'printf "plain model=%s\n" "${usage_model-UNSET}"'
+
+[tasks.help-child]
+run = 'printf "help model=%s\n" "${usage_model-UNSET}"; :'
+
+[tasks.dep-parent]
+usage = 'arg "<model>"'
+depends = [{ task = "env-child", env = { MODEL = "{{usage.model}}" } }]
+run = ':'
+EOF
+
+# Ambient values from a shell or parent task do not satisfy omitted arguments.
+assert "usage_model=ambient mise run file-child" "file model=UNSET"
+assert "usage_model=ambient mise run toml-child" "toml model=UNSET"
+assert "usage_model=ambient mise run tera-child" "tera model=UNSET"
+assert "usage_model=ambient mise run flag-child" "flag model=UNSET"
+assert "usage_model=ambient mise run tera-spec-child" "spec env=UNSET"
+assert "usage_model=ambient mise run tera-vars-spec-child" "vars spec=UNSET"
+assert "usage_model=ambient mise run plain-child" "plain model=UNSET"
+
+# Display-only spec discovery uses the same clean environment as execution.
+assert_contains "usage_model=ambient mise run tera-spec-child --help 2>&1" "--baseline"
+assert_not_contains "usage_model=ambient mise run tera-spec-child --help 2>&1" "<leaked>"
+
+# raw_args is the compatibility escape hatch for inherited usage_* values.
+assert "usage_model=ambient mise run raw-child" "raw model=ambient"
+assert "usage_model=ambient mise run help-child -- --help" "help model=UNSET"
+
+# Values parsed for this invocation still win.
+assert "usage_model=ambient mise run file-child explicit" "file model=explicit"
+assert "usage_model=ambient mise run toml-child explicit" "toml model=explicit"
+assert "usage_model=ambient mise run flag-child --model explicit" "flag model=explicit"
+
+# Intentional inheritance uses a separate, explicitly declared input variable.
+assert "usage_model=ambient MODEL=inherited mise run env-child" "env model=inherited"
+assert_contains "mise run dep-parent forwarded" "env model=forwarded"
+
+cat <<'EOF' >.mise/tasks/parent
+#!/usr/bin/env bash
+#USAGE arg "<model>"
+mise run file-child
+mise run toml-child
+EOF
+chmod +x .mise/tasks/parent
+
+# A nested mise process does not leak the parent task's parsed argument.
+assert "mise run parent parent-value" "file model=UNSET
+toml model=UNSET"

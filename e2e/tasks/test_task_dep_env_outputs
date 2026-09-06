@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# Test 1: basic output caching works with dependencies
+cat <<EOF >mise.toml
+[tasks.build]
+run = 'mkdir -p out && echo built > out/result.txt && echo built'
+sources = ['src/**/*']
+outputs = ['out/result.txt']
+
+[tasks.deploy]
+depends = ["build"]
+run = 'echo deployed'
+EOF
+
+mkdir -p src
+echo "v1" >src/main.txt
+
+# First run builds
+assert_contains "mise run deploy" "built"
+# Second run uses cache
+assert_not_contains "mise run deploy" "built"
+# Touch source invalidates cache
+touch src/main.txt
+assert_contains "mise run deploy" "built"
+
+# Test 2: output templates are re-rendered when dependency injects env vars
+# The build task uses {{env.BUILD_DIR}} in its output path with a default.
+# When deploy depends on "BUILD_DIR=custom build", the output path should
+# be re-rendered to "custom/result.txt" using the injected env.
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = 'mkdir -p ${BUILD_DIR:-out} && echo built > ${BUILD_DIR:-out}/result.txt && echo built'
+sources = ['src/**/*']
+outputs = ['{{ env.BUILD_DIR | default(value="out") }}/result.txt']
+
+[tasks.deploy]
+depends = ["BUILD_DIR=custom build"]
+run = 'echo deployed'
+EOF
+
+rm -rf out custom
+mkdir -p src
+echo "v1" >src/main.txt
+
+# First run should build (output doesn't exist yet)
+assert_contains "mise run deploy" "built"
+# Verify output was written to "custom" dir (not "out")
+assert "test -f custom/result.txt && echo yes" "yes"
+# Second run should use cache (output exists at custom/result.txt)
+assert_not_contains "mise run deploy" "built"
+# Touch source invalidates cache
+touch src/main.txt
+assert_contains "mise run deploy" "built"

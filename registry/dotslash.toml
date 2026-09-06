@@ -1,0 +1,5 @@
+backends = ["github:facebook/dotslash"]
+bins = ["dotslash"]
+description = "Simplified executable deployment"
+test = { cmd = "dotslash --version", expected = "DotSlash" }
+version_order = "source"

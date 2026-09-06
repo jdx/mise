@@ -1,0 +1,227 @@
+use std::path::PathBuf;
+use std::process::ExitStatus;
+
+use crate::cli::args::BackendArg;
+use crate::file::display_path;
+use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+use eyre::Report;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub(crate) enum Error {
+    #[error("[{ts}] {tr}: {source:#}")]
+    FailedToResolveVersion {
+        tr: Box<ToolRequest>,
+        ts: ToolSource,
+        source: Report,
+    },
+    #[error("failed to resolve required rolling channel {backend}@{version}")]
+    RequiredChannelResolution {
+        backend: Box<BackendArg>,
+        version: String,
+    },
+    #[error("[{0}] plugin not installed")]
+    PluginNotInstalled(String),
+    #[error("{0}@{1} not installed")]
+    VersionNotInstalled(Box<BackendArg>, String),
+    #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
+    ScriptFailed(String, Option<ExitStatus>),
+    #[error("task interrupted before process start")]
+    TaskInterrupted,
+    #[error(
+        "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
+        display_path(.0)
+    )]
+    UntrustedConfig(PathBuf),
+    #[error("{}", format_install_failures(.failed_installations))]
+    InstallFailed {
+        successful_installations: Vec<ToolVersion>,
+        failed_installations: Vec<(ToolRequest, Report)>,
+    },
+}
+
+fn render_exit_status(exit_status: &Option<ExitStatus>) -> String {
+    if let Some(code) = exit_status.and_then(|s| s.code()) {
+        return format!("exit code {code}");
+    }
+    // No code means the process was signalled, and the signal is right there.
+    // Reporting "no exit status" threw it away and left nothing to act on.
+    #[cfg(unix)]
+    if let Some(signal) = exit_status.and_then(|s| {
+        use std::os::unix::process::ExitStatusExt;
+        s.signal()
+    }) {
+        return match nix::sys::signal::Signal::try_from(signal) {
+            Ok(signal) => format!("killed by {signal}"),
+            Err(_) => format!("killed by signal {signal}"),
+        };
+    }
+    "no exit status".into()
+}
+
+fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> String {
+    if failed_installations.is_empty() {
+        return "Installation failed".to_string();
+    }
+
+    // For a single failure, show the underlying error directly to preserve
+    // the original error location for better debugging
+    if failed_installations.len() == 1 {
+        let (tr, error) = &failed_installations[0];
+        // Show the underlying error with the tool context
+        // Use {:#} to show full error chain (includes wrapped errors)
+        return format!(
+            "Failed to install {}@{}: {:#}",
+            tr.ba().full(),
+            tr.version(),
+            error
+        );
+    }
+
+    // For multiple failures, show a summary and then each error
+    // Sort by tool name for deterministic output (parallel installs complete in arbitrary order)
+    let mut sorted_failures: Vec<_> = failed_installations
+        .iter()
+        .map(|(tr, err)| (format!("{}@{}", tr.ba().full(), tr.version()), err))
+        .collect();
+    sorted_failures.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut output = vec![];
+    let failed_tools: Vec<&str> = sorted_failures
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+
+    output.push(format!(
+        "Failed to install tools: {}",
+        failed_tools.join(", ")
+    ));
+
+    // Show detailed errors for each failure (in sorted order)
+    // Use {:#} to show full error chain (includes wrapped errors)
+    for (name, error) in sorted_failures.iter() {
+        output.push(format!("\n{}: {:#}", name, error));
+    }
+
+    output.join("\n")
+}
+
+/// Split an install result into successful versions and a result preserving any error.
+pub(crate) fn split_install_result(
+    result: Result<Vec<ToolVersion>, Report>,
+) -> (Vec<ToolVersion>, Result<(), Report>) {
+    match result {
+        Ok(versions) => (versions, Ok(())),
+        Err(err) => {
+            let versions = match err.downcast_ref::<Error>() {
+                Some(Error::InstallFailed {
+                    successful_installations,
+                    ..
+                }) => successful_installations.clone(),
+                _ => vec![],
+            };
+            (versions, Err(err))
+        }
+    }
+}
+
+impl Error {
+    pub(crate) fn get_exit_status(err: &Report) -> Option<i32> {
+        if let Some(Error::ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
+            status.code()
+        } else {
+            None
+        }
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn is_sigint(err: &Report) -> bool {
+        use std::os::unix::process::ExitStatusExt;
+
+        err.downcast_ref::<Error>().is_some_and(|err| {
+            matches!(
+                err,
+                Error::ScriptFailed(_, Some(status))
+                    if status.signal() == Some(nix::sys::signal::SIGINT as i32)
+            )
+        })
+    }
+
+    #[cfg(not(unix))]
+    pub(crate) fn is_sigint(_err: &Report) -> bool {
+        false
+    }
+
+    pub(crate) fn is_task_interrupted_before_start(err: &Report) -> bool {
+        matches!(err.downcast_ref::<Error>(), Some(Error::TaskInterrupted))
+    }
+
+    pub(crate) fn is_argument_err(err: &Report) -> bool {
+        err.downcast_ref::<Error>()
+            .map(|e| {
+                matches!(
+                    e,
+                    Error::FailedToResolveVersion {
+                        ts: ToolSource::Argument,
+                        ..
+                    }
+                )
+            })
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn is_required_channel_resolution_err(err: &Report) -> bool {
+        err.chain().any(|source| {
+            matches!(
+                source.downcast_ref::<Error>(),
+                Some(Error::RequiredChannelResolution { .. })
+            )
+        })
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::process::ExitStatusExt;
+
+    #[test]
+    fn detects_sigint_script_failure() {
+        let status = ExitStatus::from_raw(nix::sys::signal::SIGINT as i32);
+        let err = Report::new(Error::ScriptFailed("sh".into(), Some(status)));
+
+        assert!(Error::is_sigint(&err));
+    }
+
+    #[test]
+    fn does_not_treat_exit_code_as_sigint() {
+        let status = ExitStatus::from_raw(2 << 8);
+        let err = Report::new(Error::ScriptFailed("sh".into(), Some(status)));
+
+        assert!(!Error::is_sigint(&err));
+    }
+
+    #[test]
+    fn renders_the_signal_that_killed_the_process() {
+        // "no exit status" threw away the one fact that explains the failure.
+        let status = ExitStatus::from_raw(nix::sys::signal::SIGINT as i32);
+        assert_eq!(render_exit_status(&Some(status)), "killed by SIGINT");
+
+        let status = ExitStatus::from_raw(nix::sys::signal::SIGTERM as i32);
+        assert_eq!(render_exit_status(&Some(status)), "killed by SIGTERM");
+    }
+
+    #[test]
+    fn renders_an_exit_code_unchanged() {
+        let status = ExitStatus::from_raw(2 << 8);
+        assert_eq!(render_exit_status(&Some(status)), "exit code 2");
+        assert_eq!(render_exit_status(&None), "no exit status");
+    }
+
+    #[test]
+    fn detects_interruption_before_process_start() {
+        let err = Report::new(Error::TaskInterrupted);
+
+        assert!(Error::is_task_interrupted_before_start(&err));
+    }
+}

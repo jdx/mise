@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+marker="$MISE_TMP_DIR/monorepo-config-render-count"
+mkdir -p apps/example
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["apps/*"]
+EOF
+
+cat >apps/example/mise.toml <<EOF
+[tasks.render-once]
+description = "{{ exec(command='echo rendered >> $marker') }}"
+run = "echo render-once"
+EOF
+ln -s mise.toml apps/example/mise.local.toml
+
+mise tasks --all >/dev/null
+assert "wc -l < '$marker' | tr -d ' '" "1"

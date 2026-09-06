@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# A passphrase-protected SSH identity parses fine but can never match a stanza,
+# so age reports "No matching keys found" — blaming the recipient rather than
+# the key mise could not read. https://github.com/jdx/mise/discussions/10829
+
+if ! command -v ssh-keygen >/dev/null 2>&1; then
+  echo "skipping: no ssh-keygen on this host"
+  exit 0
+fi
+
+export MISE_EXPERIMENTAL=true
+keys="$PWD/keys"
+mkdir -p "$keys"
+ssh-keygen -t ed25519 -N '' -C plain -f "$keys/plain" -q
+ssh-keygen -t ed25519 -N 'hunter2' -C locked -f "$keys/locked" -q
+
+# Control: an identity mise can read decrypts as usual.
+cat >mise.toml <<TOML
+[settings.age]
+ssh_identity_files = ["$keys/plain"]
+TOML
+assert "mise set --age-encrypt --age-ssh-recipient \"$(cat "$keys/plain.pub")\" PLAIN_SECRET=works"
+assert_contains "mise env" "PLAIN_SECRET=works"
+
+# The reported case: identical except the identity needs a passphrase.
+cat >mise.toml <<TOML
+[settings.age]
+ssh_identity_files = ["$keys/locked"]
+TOML
+assert "mise set --age-encrypt --age-ssh-recipient \"$(cat "$keys/locked.pub")\" LOCKED_SECRET=nope"
+assert_fail_contains "mise env 2>&1" "is protected by a passphrase"
+assert_fail_contains "mise env 2>&1" "keys/locked"
+assert_fail_contains "mise env 2>&1" "settings.age.key_file"

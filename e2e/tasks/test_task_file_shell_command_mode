@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# A file task hands its shell a script *path*. A shell left in `-c` mode reads that path as a
+# command string instead, so the task's own arguments land on `$0` onward and never reach the
+# script.
+#
+# An executable file task is spawned directly here, so the file shell is only reached at all
+# with this setting -- without it the `shell` below is never consulted.
+export MISE_USE_FILE_SHELL_FOR_EXECUTABLE_TASKS=1
+
+cat <<'EOF' >mise.toml
+[tasks]
+EOF
+
+mkdir -p mise-tasks
+
+cat <<'EOF' >mise-tasks/sh_c
+#!/usr/bin/env bash
+#MISE shell="sh -c"
+printf 'sh -c: [%s] [%s]\n' "$1" "$2"
+EOF
+
+# fish is not POSIX here: it has no `$0`/`$@` and rejects `$@` outright, so it needs its own
+# payload. Covered because `is_posix_shell_program` counts it, which makes it easy to reach for
+# the wrong one.
+cat <<'EOF' >mise-tasks/fish_c
+#!/usr/bin/env bash
+#MISE shell="fish -c"
+printf 'fish -c: [%s]\n' "$1"
+EOF
+
+# Control: no `shell`, so this takes the default file shell -- `sh`, with no `-c` -- which has
+# always forwarded arguments. It pins the shape that already worked.
+cat <<'EOF' >mise-tasks/plain
+#!/usr/bin/env bash
+printf 'plain: [%s]\n' "$1"
+EOF
+
+# A guard rather than a reproduction: this one passes before the fix too. The shebang chooses the
+# interpreter, and it has to keep doing so. `${a[1]}` is a bash array, which the `sh` named as the
+# task's shell cannot parse -- so dropping the `-c` and handing the script to `sh` to *interpret*,
+# rather than keeping `-c` and having it *run* the script, would turn this into a syntax error.
+cat <<'EOF' >mise-tasks/shebang_wins
+#!/usr/bin/env bash
+#MISE shell="sh -c"
+a=(x y)
+printf 'shebang wins: %s\n' "${a[1]}"
+EOF
+
+chmod +x mise-tasks/sh_c mise-tasks/fish_c mise-tasks/plain mise-tasks/shebang_wins
+
+assert "mise run plain ARG1" "plain: [ARG1]"
+assert "mise run sh_c ARG1 ARG2" "sh -c: [ARG1] [ARG2]"
+assert "mise run shebang_wins" "shebang wins: y"
+assert "mise run fish_c ARG1" "fish -c: [ARG1]"

@@ -1,0 +1,6 @@
+pre-commit:
+  commands:
+    build:
+      glob: "*"
+      run: npm run docs:build
+      interactive: true

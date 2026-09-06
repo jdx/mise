@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+assert_fail "mise install cargo" "cargo not found in mise tool registry"
+assert_fail "mise install gem" "gem not found in mise tool registry"

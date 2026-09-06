@@ -1,0 +1,1357 @@
+mod path;
+
+use crate::plugins::PluginEnum;
+use std::collections::HashSet;
+use std::{collections::BTreeMap, sync::Arc};
+
+use crate::backend::backend_type::BackendType;
+use crate::build_time::built_info;
+use crate::cli::self_update::SelfUpdate;
+use crate::cli::version;
+use crate::cli::version::VERSION;
+use crate::config::{Config, IGNORED_CONFIG_FILES};
+use crate::env::PATH_KEY;
+use crate::file::{canonicalize_cached, canonicalize_or_self, display_path};
+use crate::git::Git;
+use crate::plugins::PluginType;
+use crate::plugins::core::CORE_PLUGINS;
+use crate::registry::REGISTRY;
+use crate::toolset::install_state;
+use crate::toolset::{ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
+use crate::ui::{info, style};
+use crate::{backend, dirs, duration, env, file, shims};
+use console::{Alignment, pad_str, style};
+use heck::ToSnakeCase;
+use indexmap::IndexMap;
+use indoc::formatdoc;
+use itertools::Itertools;
+use std::env::split_paths;
+use std::path::{Path, PathBuf};
+use strum::IntoEnumIterator;
+
+/// Check mise installation for possible problems
+#[derive(Debug, usage_rs::Args)]
+#[usage(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub(crate) struct Doctor {
+    #[usage(subcommand)]
+    subcommand: Option<Commands>,
+    #[usage(skip)]
+    errors: Vec<String>,
+    #[usage(skip)]
+    warnings: Vec<String>,
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+pub(crate) enum Commands {
+    Path(path::Path),
+}
+
+/// outcome of the `[bootstrap.macos.defaults]` doctor check
+enum SystemDefaultsDiagnosis {
+    Unavailable {
+        requested: usize,
+        reason: String,
+    },
+    Checked {
+        requested: usize,
+        out_of_sync: usize,
+    },
+    CheckFailed {
+        requested: usize,
+        error: String,
+    },
+}
+
+/// outcome of the `[bootstrap.user].login_shell` doctor check
+enum SystemLoginShellDiagnosis {
+    Unavailable {
+        reason: String,
+        shell: String,
+    },
+    Checked {
+        shell: String,
+        current: String,
+        out_of_sync: bool,
+    },
+    CheckFailed {
+        shell: String,
+        error: String,
+    },
+}
+
+impl Doctor {
+    pub(crate) async fn run(self) -> eyre::Result<()> {
+        if let Some(cmd) = self.subcommand {
+            match cmd {
+                Commands::Path(cmd) => cmd.run().await,
+            }
+        } else if self.json {
+            self.doctor_json().await
+        } else {
+            self.doctor().await
+        }
+    }
+
+    async fn doctor_json(mut self) -> crate::Result<()> {
+        let mut data: BTreeMap<String, _> = BTreeMap::new();
+        data.insert(
+            "version".into(),
+            serde_json::Value::String(VERSION.to_string()),
+        );
+        data.insert("activated".into(), env::is_activated().into());
+        data.insert("shims_on_path".into(), shims_on_path().into());
+        data.insert(
+            "self_update_available".into(),
+            SelfUpdate::is_available().into(),
+        );
+        data.insert(
+            "build_info".into(),
+            build_info()
+                .into_iter()
+                .map(|(k, v)| (k.to_snake_case(), v))
+                .collect(),
+        );
+
+        let shell = shell();
+        let mut shell_lines = shell.lines();
+        let mut shell = serde_json::Map::new();
+        if let Some(name) = shell_lines.next() {
+            shell.insert("name".into(), name.into());
+        }
+        if let Some(version) = shell_lines.next() {
+            shell.insert("version".into(), version.into());
+        }
+        data.insert("shell".into(), shell.into());
+        data.insert(
+            "dirs".into(),
+            mise_dirs()
+                .into_iter()
+                .map(|(k, p)| (k, p.to_string_lossy().to_string()))
+                .collect(),
+        );
+        let mut aqua = serde_json::Map::new();
+        let aqua_registry_metadata =
+            crate::aqua::standard_registry::AQUA_STANDARD_REGISTRY_METADATA;
+        aqua.insert(
+            "baked_in_registry_repository".into(),
+            aqua_registry_metadata.repository.into(),
+        );
+        aqua.insert(
+            "baked_in_registry_tag".into(),
+            aqua_registry_metadata.tag.into(),
+        );
+        aqua.insert(
+            "baked_in_registry_tools".into(),
+            aqua_registry_count().into(),
+        );
+        data.insert("aqua".into(), aqua.into());
+        data.insert("env_vars".into(), mise_env_vars().into_iter().collect());
+        data.insert(
+            "settings".into(),
+            serde_json::from_str(&cmd!(&*env::MISE_BIN, "settings", "-J").read()?)?,
+        );
+
+        let config = Config::get().await?;
+        let ts = config.get_toolset().await?;
+        let desired_shims = self.analyze_shims(&config, ts).await;
+        self.analyze_plugins();
+        self.analyze_backend_mismatches();
+        self.analyze_system_deps(ts).await;
+        self.analyze_new_version().await;
+        #[cfg(all(windows, feature = "self_update"))]
+        self.analyze_self_update_leftovers();
+        self.check_path_ordering(ts, &config).await;
+        self.check_shim_shadowing(&desired_shims).await;
+        data.insert(
+            "paths".into(),
+            self.paths(ts)
+                .await?
+                .into_iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect(),
+        );
+        data.insert(
+            "config_files".into(),
+            config
+                .config_files
+                .keys()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect(),
+        );
+        data.insert(
+            "env_files".into(),
+            config
+                .env_results()
+                .await?
+                .env_files
+                .iter()
+                .map(|f| f.to_string_lossy().to_string())
+                .collect(),
+        );
+        data.insert(
+            "ignored_config_files".into(),
+            IGNORED_CONFIG_FILES
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect(),
+        );
+        data.insert("plugins".into(), render_plugins_json());
+
+        let tools = ts.list_versions_by_plugin().into_iter().map(|(f, tvl)| {
+            let versions: serde_json::Value = tvl
+                .os_supported_versions()
+                .map(|tv: &ToolVersion| {
+                    let mut tool = serde_json::Map::new();
+                    match f.is_version_installed(&config, tv, true) {
+                        true if install_is_empty(tv) => {
+                            tool.insert("version".into(), tv.version.to_string().into());
+                            tool.insert("empty".into(), true.into());
+                            self.errors.push(empty_install_error(tv));
+                        }
+                        true => {
+                            tool.insert("version".into(), tv.version.to_string().into());
+                        }
+                        false => {
+                            tool.insert("version".into(), tv.version.to_string().into());
+                            tool.insert("missing".into(), true.into());
+                            self.errors.push(format!(
+                                "tool {tv} is not installed, install with `mise install`"
+                            ));
+                        }
+                    }
+                    serde_json::Value::from(tool)
+                })
+                .collect();
+            (f.ba().to_string(), versions)
+        });
+        data.insert("toolset".into(), tools.collect());
+
+        if let Some(system_packages) = self.system_packages_json(&config).await {
+            data.insert("system_packages".into(), system_packages);
+        }
+
+        if let Some(system_defaults) = self.system_defaults_json(&config).await {
+            data.insert("system_defaults".into(), system_defaults);
+        }
+
+        if let Some(system_login_shell) = self.system_login_shell_json(&config).await {
+            data.insert("system_login_shell".into(), system_login_shell);
+        }
+
+        if !self.errors.is_empty() {
+            data.insert("errors".into(), self.errors.clone().into_iter().collect());
+        }
+        if !self.warnings.is_empty() {
+            data.insert(
+                "warnings".into(),
+                self.warnings.clone().into_iter().collect(),
+            );
+        }
+
+        let out = serde_json::to_string_pretty(&data)?;
+        println!("{out}");
+
+        if !self.errors.is_empty() {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+
+    async fn doctor(mut self) -> eyre::Result<()> {
+        info::inline_section("version", &*VERSION)?;
+        #[cfg(unix)]
+        info::inline_section("activated", yn(env::is_activated()))?;
+        info::inline_section("shims_on_path", yn(shims_on_path()))?;
+        info::inline_section("self_update_available", yn(SelfUpdate::is_available()))?;
+        if !SelfUpdate::is_available()
+            && let Some(instructions) = crate::cli::self_update::upgrade_instructions_text()
+        {
+            info::section("self_update_instructions", instructions)?;
+        }
+        // Warn about shims+activate conflict, but not when not_found_auto_install is enabled
+        // since that intentionally preserves shims for auto-install functionality
+        let build_info = build_info()
+            .into_iter()
+            .map(|(k, v)| format!("{k}: {v}"))
+            .join("\n");
+        info::section("build_info", build_info)?;
+        info::section("shell", shell())?;
+        info::section("aqua", aqua_registry_count_str())?;
+
+        let mise_dirs = mise_dirs()
+            .into_iter()
+            .map(|(k, p)| format!("{k}: {}", display_path(p)))
+            .join("\n");
+        info::section("dirs", mise_dirs)?;
+
+        match Config::get().await {
+            Ok(config) => self.analyze_config(&config).await?,
+            Err(err) => self.errors.push(format!("failed to load config: {err}")),
+        }
+
+        self.analyze_plugins();
+        self.analyze_backend_mismatches();
+        if let Ok(config) = Config::get().await
+            && let Ok(ts) = config.get_toolset().await
+        {
+            self.analyze_system_deps(ts).await;
+        }
+
+        let env_vars = mise_env_vars()
+            .into_iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .join("\n");
+        if env_vars.is_empty() {
+            info::section("env_vars", "(none)")?;
+        } else {
+            info::section("env_vars", env_vars)?;
+        }
+        self.analyze_settings()?;
+
+        self.analyze_new_version().await;
+        #[cfg(all(windows, feature = "self_update"))]
+        self.analyze_self_update_leftovers();
+
+        miseprintln!();
+
+        if !self.warnings.is_empty() {
+            let warnings_plural = if self.warnings.len() == 1 { "" } else { "s" };
+            let warning_summary =
+                format!("{} warning{warnings_plural} found:", self.warnings.len());
+            miseprintln!("{}\n", style(warning_summary).yellow().bold());
+            for (i, check) in self.warnings.iter().enumerate() {
+                let num = style::nyellow(format!("{}.", i + 1));
+                miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
+            }
+        }
+
+        if self.errors.is_empty() {
+            miseprintln!("No problems found");
+        } else {
+            let errors_plural = if self.errors.len() == 1 { "" } else { "s" };
+            let error_summary = format!("{} problem{errors_plural} found:", self.errors.len());
+            miseprintln!("{}\n", style(error_summary).red().bold());
+            for (i, check) in self.errors.iter().enumerate() {
+                let num = style::nred(format!("{}.", i + 1));
+                miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
+            }
+            return Err(crate::request_exit(1));
+        }
+
+        Ok(())
+    }
+
+    /// Warn about missing required system prerequisites declared by the
+    /// plugins backing the current toolset (php needs bison, etc.). Optional
+    /// deps and tools whose plugin isn't installed are silently skipped.
+    async fn analyze_system_deps(&mut self, ts: &Toolset) {
+        let mut seen = std::collections::HashSet::new();
+        for (ba, tvl) in &ts.versions {
+            // Skip tools not supported on this OS, matching bootstrap's
+            // collect_plugin_deps — otherwise we'd warn about prerequisites for
+            // a tool that will never install on this platform.
+            if !tvl.requests.iter().any(|tr| tr.is_os_supported()) {
+                continue;
+            }
+            if !seen.insert(ba.short.clone()) {
+                continue;
+            }
+            let Some(backend) = crate::backend::get(ba) else {
+                continue;
+            };
+            let deps = backend.system_dependencies();
+            if deps.is_empty() {
+                continue;
+            }
+            for status in crate::system::deps::detect(&deps).await {
+                if status.satisfied || status.dep.optional.is_some() {
+                    continue;
+                }
+                let msg = match (&status.found, &status.reason) {
+                    (Some(found), _) => format!(
+                        "{} requires system dependency {} (found {found})",
+                        ba.tool_name,
+                        status.dep.label()
+                    ),
+                    (None, Some(reason)) => format!(
+                        "{} requires system dependency {} ({reason})",
+                        ba.tool_name,
+                        status.dep.label()
+                    ),
+                    (None, None) => format!(
+                        "{} requires system dependency {}",
+                        ba.tool_name,
+                        status.dep.label()
+                    ),
+                };
+                self.warnings.push(msg);
+            }
+        }
+    }
+
+    /// Both outputs render `self.warnings`, so a check only one path runs is a hole in the other.
+    ///
+    /// The stderr notice is presentation rather than diagnosis, and `-J` is asked for by something
+    /// reading the JSON: it gets the warning below instead of a message aimed at a person.
+    async fn analyze_new_version(&mut self) {
+        if let Some(latest) = version::check_for_new_version(duration::HOURLY).await {
+            if !self.json {
+                version::show_latest().await;
+            }
+            self.warnings.push(format!(
+                "new mise version {latest} available, currently on {}",
+                *version::V
+            ));
+        }
+    }
+
+    /// Windows `self-update` moves the running mise.exe aside and spawns a copy of it to do the
+    /// deleting; when that copy fails to remove itself both stay in `TEMP`, a full mise.exe each.
+    /// Only another `self-update` collects them, so without this nothing says they are there: they
+    /// sit outside the cache, and their generated names mean nothing to anyone reading a directory
+    /// listing. Reported rather than deleted — `doctor` is not a command that should remove files.
+    #[cfg(all(windows, feature = "self_update"))]
+    fn analyze_self_update_leftovers(&mut self) {
+        let orphans = crate::cli::self_update::helper_orphans();
+        if orphans.is_empty() {
+            return;
+        }
+        let total: u64 = orphans.iter().map(|(_, size)| size).sum();
+        let plural = if orphans.len() == 1 { "y" } else { "ies" };
+        self.warnings.push(format!(
+            "{} stale cop{plural} of mise ({}) left by self-update in {}\n`mise self-update` removes them",
+            orphans.len(),
+            bytesize::ByteSize::b(total).display().iec(),
+            display_path(std::env::temp_dir()),
+        ));
+    }
+
+    fn analyze_settings(&mut self) -> eyre::Result<()> {
+        match cmd!("mise", "settings").read() {
+            Ok(settings) => {
+                info::section("settings", settings)?;
+            }
+            Err(err) => self.errors.push(format!("failed to load settings: {err}")),
+        }
+        Ok(())
+    }
+    async fn analyze_config(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        info::section("config_files", render_config_files(config))?;
+        info::section("env_files", render_env_files(config).await?)?;
+        if IGNORED_CONFIG_FILES.is_empty() {
+            println!();
+            info::inline_section("ignored_config_files", "(none)")?;
+        } else {
+            info::section(
+                "ignored_config_files",
+                IGNORED_CONFIG_FILES.iter().map(display_path).join("\n"),
+            )?;
+        }
+        info::section("backends", render_backends())?;
+        info::section("plugins", render_plugins())?;
+
+        for backend in backend::list() {
+            if let Some(plugin) = backend.plugin()
+                && !plugin.is_installed()
+            {
+                self.errors
+                    .push(format!("plugin {} is not installed", plugin.name()));
+                continue;
+            }
+        }
+
+        if !env::is_activated() && !shims_on_path() {
+            let shims = style::ncyan(display_path(dirs::shims()));
+            if cfg!(windows) {
+                self.errors.push(formatdoc!(
+                    r#"mise shims are not on PATH
+                    Add this directory to PATH: {shims}"#
+                ));
+            } else {
+                let cmd = style::nyellow("mise help activate");
+                let url = style::nunderline("https://mise.jdx.dev");
+                self.errors.push(formatdoc!(
+                    r#"mise is not activated, run {cmd} or
+                        read documentation at {url} for activation instructions.
+                        Alternatively, add the shims directory {shims} to PATH.
+                        Using the shims directory is preferred for non-interactive setups."#
+                ));
+            }
+        }
+
+        match ToolsetBuilder::new().build(config).await {
+            Ok(ts) => {
+                let desired_shims = self.analyze_shims(config, &ts).await;
+                self.analyze_toolset(&ts).await?;
+                self.analyze_paths(&ts).await?;
+                self.check_path_ordering(&ts, config).await;
+                self.check_shim_shadowing(&desired_shims).await;
+            }
+            Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
+        }
+
+        self.analyze_system_packages(config).await?;
+        self.analyze_system_defaults(config).await?;
+        self.analyze_system_login_shell(config).await?;
+
+        Ok(())
+    }
+
+    /// same diagnostics as [`Self::analyze_system_packages`] for `doctor -J`
+    async fn system_packages_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
+        let mgrs = crate::system::packages_from_config(config);
+        if mgrs.is_empty() {
+            return None;
+        }
+        let mut map = serde_json::Map::new();
+        let mut total_missing = 0;
+        for mp in mgrs {
+            let name = mp.manager.name();
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else {
+                mp.manager.unavailable_reason_async().await
+            };
+            if let Some(reason) = reason {
+                map.insert(
+                    name.into(),
+                    serde_json::json!({
+                        "available": false,
+                        "reason": reason,
+                        "requested": mp.requests.len(),
+                    }),
+                );
+                continue;
+            }
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    let missing = statuses
+                        .iter()
+                        .filter(|s| {
+                            s.request.desired
+                                == crate::system::packages::PackageDesiredState::Present
+                                && !s.state.is_installed()
+                                && !s.state.is_unavailable()
+                        })
+                        .count();
+                    total_missing += missing;
+                    map.insert(
+                        name.into(),
+                        serde_json::json!({
+                            "available": true,
+                            "requested": statuses.len(),
+                            "missing": missing,
+                        }),
+                    );
+                }
+                Err(err) => self
+                    .warnings
+                    .push(format!("failed to check {name} system packages: {err}")),
+            }
+        }
+        if total_missing > 0 {
+            self.warnings.push(format!(
+                "{total_missing} system package(s) are missing, install them with `mise bootstrap packages apply`"
+            ));
+        }
+        Some(map.into())
+    }
+
+    /// Shared `[bootstrap.macos.defaults]` check for the text and JSON doctor paths.
+    /// Pushes the relevant warnings; returns None when nothing is configured.
+    async fn check_system_defaults(
+        &mut self,
+        config: &Arc<Config>,
+    ) -> Option<SystemDefaultsDiagnosis> {
+        let defaults = crate::system::defaults_from_config(config);
+        if defaults.is_empty() {
+            return None;
+        }
+        let requested = defaults.len();
+        if !crate::system::defaults::is_available() {
+            return Some(SystemDefaultsDiagnosis::Unavailable {
+                requested,
+                reason: crate::system::defaults::unavailable_reason(),
+            });
+        }
+        match crate::system::defaults::status(&defaults).await {
+            Ok(statuses) => {
+                let out_of_sync = statuses
+                    .iter()
+                    .filter(|s| s.state != crate::system::defaults::DefaultsState::Set)
+                    .count();
+                if out_of_sync > 0 {
+                    self.warnings.push(format!(
+                        "{out_of_sync} macOS default(s) are out of sync, apply them with `mise bootstrap macos defaults apply`"
+                    ));
+                }
+                Some(SystemDefaultsDiagnosis::Checked {
+                    requested,
+                    out_of_sync,
+                })
+            }
+            Err(err) => {
+                self.warnings
+                    .push(format!("failed to check macOS defaults: {err}"));
+                Some(SystemDefaultsDiagnosis::CheckFailed {
+                    requested,
+                    error: err.to_string(),
+                })
+            }
+        }
+    }
+
+    /// same diagnostics as [`Self::analyze_system_defaults`] for `doctor -J`
+    async fn system_defaults_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
+        let json = match self.check_system_defaults(config).await? {
+            SystemDefaultsDiagnosis::Unavailable { requested, reason } => serde_json::json!({
+                "available": false,
+                "reason": reason,
+                "requested": requested,
+            }),
+            SystemDefaultsDiagnosis::Checked {
+                requested,
+                out_of_sync,
+            } => serde_json::json!({
+                "available": true,
+                "requested": requested,
+                "out_of_sync": out_of_sync,
+            }),
+            SystemDefaultsDiagnosis::CheckFailed { requested, error } => serde_json::json!({
+                "available": true,
+                "requested": requested,
+                "error": error,
+            }),
+        };
+        Some(json)
+    }
+
+    async fn analyze_system_defaults(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        let Some(diagnosis) = self.check_system_defaults(config).await else {
+            return Ok(());
+        };
+        let line = match diagnosis {
+            SystemDefaultsDiagnosis::Unavailable { requested, reason } => {
+                format!("unavailable ({reason}), {requested} entry(ies) skipped")
+            }
+            SystemDefaultsDiagnosis::Checked {
+                requested,
+                out_of_sync,
+            } => format!("{requested} requested, {out_of_sync} out of sync"),
+            SystemDefaultsDiagnosis::CheckFailed { requested, error } => {
+                format!("{requested} requested, check failed: {error}")
+            }
+        };
+        info::section("system_defaults", line)?;
+        Ok(())
+    }
+
+    /// Shared `[bootstrap.user].login_shell` check for the text and JSON doctor paths.
+    /// Pushes the relevant warnings; returns None when nothing is configured.
+    async fn check_system_login_shell(
+        &mut self,
+        config: &Arc<Config>,
+    ) -> Option<SystemLoginShellDiagnosis> {
+        let request = crate::system::login_shell_from_config(config)?;
+        if !crate::system::login_shell::is_available() {
+            return Some(SystemLoginShellDiagnosis::Unavailable {
+                reason: crate::system::login_shell::unavailable_reason(),
+                shell: request.shell,
+            });
+        }
+        match crate::system::login_shell::status(&request) {
+            Ok(status) => {
+                let out_of_sync = status.state != crate::system::login_shell::LoginShellState::Set;
+                if out_of_sync {
+                    self.warnings.push(
+                        "login shell is out of sync, apply it with `mise bootstrap user apply`"
+                            .to_string(),
+                    );
+                }
+                Some(SystemLoginShellDiagnosis::Checked {
+                    shell: status.request.shell,
+                    current: status.current,
+                    out_of_sync,
+                })
+            }
+            Err(err) => {
+                self.warnings
+                    .push(format!("failed to check login shell: {err}"));
+                Some(SystemLoginShellDiagnosis::CheckFailed {
+                    shell: request.shell,
+                    error: err.to_string(),
+                })
+            }
+        }
+    }
+
+    /// same diagnostics as [`Self::analyze_system_login_shell`] for `doctor -J`
+    async fn system_login_shell_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
+        let json = match self.check_system_login_shell(config).await? {
+            SystemLoginShellDiagnosis::Unavailable { reason, shell } => serde_json::json!({
+                "available": false,
+                "reason": reason,
+                "shell": shell,
+            }),
+            SystemLoginShellDiagnosis::Checked {
+                shell,
+                current,
+                out_of_sync,
+            } => serde_json::json!({
+                "available": true,
+                "shell": shell,
+                "current": current,
+                "out_of_sync": out_of_sync,
+            }),
+            SystemLoginShellDiagnosis::CheckFailed { shell, error } => serde_json::json!({
+                "available": true,
+                "shell": shell,
+                "error": error,
+            }),
+        };
+        Some(json)
+    }
+
+    async fn analyze_system_login_shell(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        let Some(diagnosis) = self.check_system_login_shell(config).await else {
+            return Ok(());
+        };
+        let line = match diagnosis {
+            SystemLoginShellDiagnosis::Unavailable { reason, shell } => {
+                format!("{shell}: unavailable ({reason}), skipped")
+            }
+            SystemLoginShellDiagnosis::Checked {
+                shell,
+                current,
+                out_of_sync,
+            } => format!("{shell} requested, current {current}, out_of_sync={out_of_sync}"),
+            SystemLoginShellDiagnosis::CheckFailed { shell, error } => {
+                format!("{shell} requested, check failed: {error}")
+            }
+        };
+        info::section("system_login_shell", line)?;
+        Ok(())
+    }
+
+    async fn analyze_system_packages(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        let mgrs = crate::system::packages_from_config(config);
+        if mgrs.is_empty() {
+            return Ok(());
+        }
+        let mut lines = vec![];
+        let mut total_missing = 0;
+        for mp in mgrs {
+            let name = mp.manager.name();
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else {
+                mp.manager.unavailable_reason_async().await
+            };
+            if let Some(reason) = reason {
+                lines.push(format!(
+                    "{name}: unavailable ({reason}), {} package(s) skipped",
+                    mp.requests.len()
+                ));
+                continue;
+            }
+            match mp.manager.installed(&mp.requests).await {
+                Ok(statuses) => {
+                    let missing = statuses
+                        .iter()
+                        .filter(|s| {
+                            s.request.desired
+                                == crate::system::packages::PackageDesiredState::Present
+                                && !s.state.is_installed()
+                                && !s.state.is_unavailable()
+                        })
+                        .count();
+                    lines.push(format!(
+                        "{name}: {} requested, {missing} missing",
+                        statuses.len()
+                    ));
+                    total_missing += missing;
+                }
+                Err(err) => self
+                    .warnings
+                    .push(format!("failed to check {name} system packages: {err}")),
+            }
+        }
+        if total_missing > 0 {
+            self.warnings.push(format!(
+                "{total_missing} system package(s) are missing, install them with `mise bootstrap packages apply`"
+            ));
+        }
+        info::section("system_packages", lines.join("\n"))?;
+        Ok(())
+    }
+
+    async fn analyze_toolset(&mut self, ts: &Toolset) -> eyre::Result<()> {
+        let config = Config::get().await?;
+        let tools = ts
+            .list_current_versions()
+            .into_iter()
+            .map(|(f, tv)| match f.is_version_installed(&config, &tv, true) {
+                true if install_is_empty(&tv) => {
+                    self.errors.push(empty_install_error(&tv));
+                    (tv.to_string(), style::ndim("(empty)"))
+                }
+                true => (tv.to_string(), style::nstyle("")),
+                false => {
+                    self.errors.push(format!(
+                        "tool {tv} is not installed, install with `mise install`"
+                    ));
+                    (tv.to_string(), style::ndim("(missing)"))
+                }
+            })
+            .collect_vec();
+        let max_tool_len = tools
+            .iter()
+            .map(|(t, _)| t.len())
+            .max()
+            .unwrap_or(0)
+            .min(20);
+        let tools = tools
+            .into_iter()
+            .map(|(t, s)| format!("{}  {s}", pad_str(&t, max_tool_len, Alignment::Left, None)))
+            .sorted()
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        info::section("toolset", tools)?;
+        Ok(())
+    }
+
+    async fn analyze_shims(&mut self, config: &Arc<Config>, toolset: &Toolset) -> HashSet<String> {
+        let mise_bin = shims::mise_bin_for_shims();
+
+        let shims_dir = dirs::shims();
+        let scope = if file::storage_paths_eq(&shims_dir, &dirs::system_shims()) {
+            shims::ShimScope::Both
+        } else {
+            shims::ShimScope::User
+        };
+        if let Ok(diffs) =
+            shims::get_shim_diffs(config, mise_bin, toolset, &shims_dir, scope, false).await
+        {
+            let cmd = style::nyellow("mise reshim");
+
+            if !diffs.missing.is_empty() {
+                self.errors.push(formatdoc!(
+                    "shims are missing, run {cmd} to create them
+                     Missing shims: {missing}",
+                    missing = diffs.missing.into_iter().join(", ")
+                ));
+            }
+
+            if !diffs.extra.is_empty() {
+                self.errors.push(formatdoc!(
+                    "unused shims are present, run {cmd} to remove them
+                     Unused shims: {extra}",
+                    extra = diffs.extra.into_iter().join(", ")
+                ));
+            }
+            time!("doctor::analyze_shims");
+            return diffs.desired;
+        }
+        time!("doctor::analyze_shims");
+        HashSet::new()
+    }
+
+    fn analyze_plugins(&mut self) {
+        for plugin in backend::list() {
+            let is_core = CORE_PLUGINS.contains_key(plugin.id());
+            let plugin_type = plugin.get_plugin_type();
+
+            if is_core && matches!(plugin_type, Some(PluginType::Asdf | PluginType::Vfox)) {
+                self.warnings
+                    .push(format!("plugin {} overrides a core plugin", plugin.id()));
+            }
+        }
+    }
+
+    fn analyze_backend_mismatches(&mut self) {
+        for (short, ist) in install_state::list_tools().iter() {
+            // Skip plugin-based tools (they use the plugin as backend)
+            if install_state::get_plugin_type(short).is_some() {
+                continue;
+            }
+
+            // Get stored backend, skip if none
+            let Some(stored_full) = &ist.full else {
+                continue;
+            };
+
+            // Get registry entry, skip if not in registry
+            let Some(rt) = REGISTRY.get(short.as_str()) else {
+                continue;
+            };
+
+            // Get recommended backend for current platform
+            let backends = rt.backends();
+            let Some(registry_full) = backends.first() else {
+                continue;
+            };
+
+            // Strip options for comparison (e.g., "github:repo[exe=bin]" -> "github:repo")
+            let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
+            let registry_stripped = registry_full.split('[').next().unwrap_or(registry_full);
+
+            // Compare backends
+            if stored_stripped != registry_stripped {
+                let msg = if ist.explicit_backend {
+                    formatdoc!(
+                        r#"tool '{short}' installed with explicit backend '{stored_full}'
+                           differs from registry recommendation '{registry_full}'.
+                           To switch: mise uninstall --all {short} && mise install {short}"#
+                    )
+                } else {
+                    formatdoc!(
+                        r#"tool '{short}' installed with backend '{stored_full}'
+                           but registry now recommends '{registry_full}'.
+                           To migrate: mise uninstall --all {short} && mise install {short}"#
+                    )
+                };
+                self.warnings.push(msg);
+            }
+        }
+    }
+
+    async fn paths(&mut self, ts: &Toolset) -> eyre::Result<Vec<PathBuf>> {
+        let config = Config::get().await?;
+        let env = ts.full_env(&config).await?;
+        let path = env
+            .get(&*PATH_KEY)
+            .ok_or_else(|| eyre::eyre!("Path not found"))?;
+        Ok(split_paths(path).collect())
+    }
+
+    async fn analyze_paths(&mut self, ts: &Toolset) -> eyre::Result<()> {
+        let paths = self
+            .paths(ts)
+            .await?
+            .into_iter()
+            .map(display_path)
+            .join("\n");
+
+        info::section("path", paths)?;
+        Ok(())
+    }
+
+    /// Check that mise tool paths appear before system paths in the current PATH.
+    /// This detects cases where shell configuration (e.g. brew, system profile) has
+    /// inserted entries before mise's paths, causing system tools to shadow mise-managed ones.
+    async fn check_path_ordering(&mut self, ts: &Toolset, config: &Arc<Config>) {
+        if !env::is_activated() {
+            return;
+        }
+
+        // Get all mise-managed paths (tool installs, env._.path, UV venv, MISE_ADD_PATH, etc.)
+        let mise_paths = match ts.final_env(config).await {
+            Ok((_env, env_results)) => match ts.list_final_paths(config, env_results).await {
+                Ok(paths) => paths,
+                Err(_) => return,
+            },
+            Err(_) => return,
+        };
+        if mise_paths.is_empty() {
+            return;
+        }
+
+        let current_path = &*env::PATH_NON_PRISTINE;
+        if current_path.is_empty() {
+            return;
+        }
+
+        let resolve = |p: &PathBuf| canonicalize_or_self(p);
+
+        // Resolve all mise-managed paths for comparison
+        let mise_paths_resolved: HashSet<PathBuf> = mise_paths.iter().map(resolve).collect();
+
+        // Also exclude the mise binary's own directory
+        let mise_bin_parent = env::MISE_BIN.parent().and_then(canonicalize_cached);
+
+        // Find the index of the first mise-managed path in the current PATH
+        // Note: mise_bin_parent is intentionally excluded here — it's a directory like
+        // /opt/homebrew/bin that happens to contain the mise binary, not a mise tool path.
+        // Including it would mask the exact PATH ordering issue we're trying to detect.
+        let first_mise_idx = current_path
+            .iter()
+            .position(|p| mise_paths_resolved.contains(&resolve(p)));
+
+        let Some(first_mise_idx) = first_mise_idx else {
+            // No mise paths found in current PATH at all — this is already
+            // covered by the activation check
+            return;
+        };
+
+        if first_mise_idx == 0 {
+            return;
+        }
+
+        // Everything before first_mise_idx is by definition not a mise-managed path.
+        // Filter out the mise binary's own directory (e.g. /opt/homebrew/bin) since
+        // that's not a problematic entry — it's just where mise itself is installed.
+        let paths_display = current_path[..first_mise_idx]
+            .iter()
+            .filter(|p| mise_bin_parent.as_ref().is_none_or(|bp| bp != &resolve(p)))
+            .map(display_path)
+            .join("\n  ");
+
+        if paths_display.is_empty() {
+            return;
+        }
+        self.warnings.push(formatdoc!(
+            r#"mise tool paths are not first in PATH. These paths take precedence:
+              {paths_display}
+            This may cause system-installed tools to be used instead of mise-managed versions.
+            Ensure `mise activate` runs after other PATH modifications in your shell rc file."#
+        ));
+    }
+
+    /// Check whether commands provided by mise shims resolve to another executable first.
+    /// Paths before the shim directory are allowed to take precedence intentionally, so report
+    /// only concrete command collisions instead of warning merely because shims are not first.
+    async fn check_shim_shadowing(&mut self, desired_shims: &HashSet<String>) {
+        if env::is_activated() || !shims_on_path() {
+            return;
+        }
+
+        let path = match std::env::join_paths(&*env::PATH) {
+            Ok(path) => path,
+            Err(_) => return,
+        };
+        let cwd = dirs::CWD.clone().unwrap_or_default();
+        let mut shadowed = BTreeMap::new();
+        let mut checked_commands = HashSet::new();
+
+        for shim in desired_shims {
+            let shims_dir = dirs::shims();
+            if !shims_dir.join(shim).exists() {
+                continue;
+            }
+            let command = shim_command_name(shim);
+            if !checked_commands.insert(command.clone()) {
+                continue;
+            }
+            let Ok(resolved) = which::which_in(&command, Some(&path), &cwd) else {
+                continue;
+            };
+            let is_mise_shim = resolved
+                .parent()
+                .is_some_and(|parent| file::paths_eq(&file::replace_path(parent), &shims_dir));
+            if !is_mise_shim {
+                shadowed.insert(command, resolved);
+            }
+        }
+
+        if shadowed.is_empty() {
+            return;
+        }
+
+        let shadowed = shadowed
+            .into_iter()
+            .map(|(command, path)| format!("{command}: {}", display_path(path)))
+            .join("\n  ");
+        self.warnings.push(formatdoc!(
+            r#"mise shims are shadowed by executables earlier in PATH:
+              {shadowed}
+            Move {} earlier in PATH to use the mise-managed versions."#,
+            display_path(dirs::shims()),
+        ));
+    }
+}
+
+fn shim_command_name(shim: &str) -> String {
+    if cfg!(windows) {
+        let lower = shim.to_ascii_lowercase();
+        if lower.ends_with(".exe") || lower.ends_with(".cmd") {
+            shim[..shim.len() - 4].to_string()
+        } else {
+            shim.to_string()
+        }
+    } else {
+        shim.to_string()
+    }
+}
+
+fn shims_on_path() -> bool {
+    env::PATH
+        .iter()
+        .any(|path| crate::file::is_mise_shims_dir(path))
+}
+
+fn yn(b: bool) -> String {
+    if b {
+        style("yes").green().to_string()
+    } else {
+        style("no").red().to_string()
+    }
+}
+
+fn mise_dirs() -> Vec<(String, PathBuf)> {
+    vec![
+        ("cache".into(), dirs::CACHE.to_path_buf()),
+        ("config".into(), dirs::CONFIG.to_path_buf()),
+        ("data".into(), dirs::DATA.to_path_buf()),
+        ("shims".into(), dirs::shims()),
+        ("system_shims".into(), dirs::system_shims()),
+        ("state".into(), dirs::STATE.to_path_buf()),
+    ]
+}
+
+fn mise_env_vars() -> Vec<(String, String)> {
+    const REDACT_KEYS: &[&str] = &[
+        "MISE_GITHUB_TOKEN",
+        "MISE_GITLAB_TOKEN",
+        "MISE_GITHUB_ENTERPRISE_TOKEN",
+        "MISE_GITLAB_ENTERPRISE_TOKEN",
+    ];
+    env::vars_safe()
+        .filter(|(k, _)| k.starts_with("MISE_"))
+        .map(|(k, v)| {
+            let v = if REDACT_KEYS.contains(&k.as_str()) {
+                style::ndim("REDACTED").to_string()
+            } else {
+                v
+            };
+            (k, v)
+        })
+        .collect()
+}
+
+fn render_config_files(config: &Config) -> String {
+    config
+        .config_files
+        .keys()
+        .rev()
+        .map(display_path)
+        .join("\n")
+}
+
+async fn render_env_files(config: &Arc<Config>) -> eyre::Result<String> {
+    let env_files = &config.env_results().await?.env_files;
+    if env_files.is_empty() {
+        Ok("(none)".to_string())
+    } else {
+        Ok(env_files.iter().map(display_path).join("\n"))
+    }
+}
+
+fn render_backends() -> String {
+    BackendType::iter()
+        .filter(|b| b != &BackendType::Unknown)
+        .map(|b| {
+            if backend::is_disabled_backend_type(&b) {
+                format!("{b} {}", style::ndim("(disabled)"))
+            } else {
+                b.to_string()
+            }
+        })
+        .join("\n")
+}
+
+fn render_plugins() -> String {
+    let plugins = installed_plugins();
+    let max_plugin_name_len = plugins
+        .iter()
+        .map(|p| p.name().len())
+        .max()
+        .unwrap_or(0)
+        .min(40);
+    plugins
+        .into_iter()
+        .map(|p| {
+            let padded_name = pad_str(p.name(), max_plugin_name_len, Alignment::Left, None);
+            let extra = plugin_extra(&p);
+            format!("{padded_name}  {}", style::ndim(extra))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn render_plugins_json() -> serde_json::Value {
+    installed_plugins()
+        .into_iter()
+        .map(|plugin| {
+            let mut value = serde_json::Map::new();
+            value.insert(
+                "type".into(),
+                serde_json::Value::String(plugin_type_name(plugin.get_plugin_type()).to_string()),
+            );
+            if let Some(git) = plugin_git(&plugin)
+                && let Some(url) = git.get_remote_url()
+            {
+                value.insert("url".into(), serde_json::Value::String(url));
+                if let Ok(ref_) = git.current_abbrev_ref() {
+                    value.insert("ref".into(), serde_json::Value::String(ref_));
+                }
+                if let Ok(sha) = git.current_sha_short() {
+                    value.insert("sha".into(), serde_json::Value::String(sha));
+                }
+            }
+            (plugin.name().to_string(), serde_json::Value::Object(value))
+        })
+        .collect::<serde_json::Map<_, _>>()
+        .into()
+}
+
+fn installed_plugins() -> Vec<PluginEnum> {
+    install_state::list_plugins()
+        .iter()
+        .map(|(name, plugin_type)| plugin_type.plugin(name.clone()))
+        .filter(|plugin| plugin.is_installed())
+        .collect()
+}
+
+fn plugin_extra(plugin: &PluginEnum) -> String {
+    let Some(git) = plugin_git(plugin) else {
+        return "".to_string();
+    };
+    match git.get_remote_url() {
+        Some(url) => {
+            let sha = git
+                .current_sha_short()
+                .unwrap_or_else(|_| "(unknown)".to_string());
+            format!("{url}#{sha}")
+        }
+        None => "".to_string(),
+    }
+}
+
+fn plugin_git(plugin: &PluginEnum) -> Option<Git> {
+    let path = dirs::PLUGINS.join(plugin.name());
+    if path.join(".git").exists() {
+        Some(Git::new(path))
+    } else {
+        None
+    }
+}
+
+fn plugin_type_name(plugin_type: PluginType) -> &'static str {
+    match plugin_type {
+        PluginType::Asdf => "asdf",
+        PluginType::Vfox => "vfox",
+        PluginType::VfoxBackend => "vfox_backend",
+        PluginType::Package => "package",
+    }
+}
+
+fn build_info() -> IndexMap<String, &'static str> {
+    let mut s = IndexMap::new();
+    s.insert("Target".into(), built_info::TARGET);
+    s.insert("Features".into(), built_info::FEATURES_STR);
+    s.insert("Built".into(), built_info::BUILT_TIME_UTC);
+    s.insert("Rust Version".into(), built_info::RUSTC_VERSION);
+    s.insert("Profile".into(), built_info::PROFILE);
+    s
+}
+
+fn shell() -> String {
+    match env::MISE_SHELL.map(|s| s.to_string()) {
+        Some(shell) => {
+            let shell_cmd = if env::SHELL.ends_with(shell.as_str()) {
+                &*env::SHELL
+            } else {
+                &shell
+            };
+            let version = cmd!(shell_cmd, "--version")
+                .read()
+                .unwrap_or_else(|e| format!("failed to get shell version: {e}"));
+            format!("{shell_cmd}\n{version}")
+        }
+        None => "(unknown)".to_string(),
+    }
+}
+
+fn aqua_registry_count() -> usize {
+    crate::aqua::standard_registry::AQUA_STANDARD_REGISTRY_FILES.len()
+}
+
+fn aqua_registry_count_str() -> String {
+    let metadata = crate::aqua::standard_registry::AQUA_STANDARD_REGISTRY_METADATA;
+    format!(
+        "baked in registry: {}@{}\nbaked in registry tools: {}",
+        metadata.repository,
+        metadata.tag,
+        aqua_registry_count()
+    )
+}
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise doctor</bold>
+    [WARN] plugin node is not installed
+"#
+);
+
+/// An install directory that is there but holds nothing.
+///
+/// `Backend::is_version_installed` decides on path existence alone, so an
+/// interrupted download leaves a directory that passes it while providing
+/// nothing to run: `mise install` then reports "all tools are installed" and
+/// `mise ls` lists the version. `mise which` already notices; doctor did not
+/// (discussions #9324 and #9826).
+///
+/// Deliberately only the empty case. A directory holding files but no runnable
+/// binary cannot be told apart from a tool that legitimately ships none, and
+/// calling a healthy install broken is worse than missing one.
+/// Whether an install is present but has nothing in it.
+///
+/// `@system` is excluded: it points at a tool mise did not install, so a stray
+/// directory under `installs/` says nothing about its health, and
+/// `mise install --force <tool>@system` would be nonsense advice.
+fn install_is_empty(tv: &ToolVersion) -> bool {
+    if matches!(tv.request, ToolRequest::System { .. }) {
+        return false;
+    }
+    install_dir_is_empty(&tv.install_path())
+}
+
+/// One wording for an empty install, so the text and JSON paths cannot drift.
+fn empty_install_error(tv: &ToolVersion) -> String {
+    format!(
+        "tool {tv} is installed but its directory is empty, reinstall with \
+         `mise install --force {}@{}`",
+        tv.ba(),
+        tv.version
+    )
+}
+
+fn install_dir_is_empty(path: &Path) -> bool {
+    match std::fs::read_dir(path) {
+        Ok(mut entries) => entries.next().is_none(),
+        // Unreadable, and missing, are not the same as empty. Say nothing.
+        Err(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::install_dir_is_empty;
+
+    #[test]
+    fn empty_directory_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(install_dir_is_empty(dir.path()));
+    }
+
+    #[test]
+    fn directory_with_anything_in_it_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("jq"), "").unwrap();
+        assert!(!install_dir_is_empty(dir.path()));
+    }
+
+    #[test]
+    fn missing_directory_is_not_reported() {
+        // A path that is not there means "not installed", which
+        // `is_version_installed` already covers. Claiming it is empty would
+        // duplicate that as a second, wronger message.
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!install_dir_is_empty(&dir.path().join("nope")));
+    }
+}

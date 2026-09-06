@@ -1,0 +1,21 @@
+Summary: Dev tools, env vars, and tasks in one CLI
+Name: mise
+Version: 2026.9.1
+Release: 1
+URL: https://github.com/jdx/mise/
+Group: System
+License: MIT
+Packager: @jdx
+BuildRoot: /root/mise
+
+%description
+mise prepares your development environment before each command runs.
+
+%install
+mkdir -p %{buildroot}/usr/bin/
+cp /root/mise/target/release/mise %{buildroot}/usr/bin
+cp /root/mise/man/man1/mise.1 %{buildroot}/%{_mandir}/man1
+
+%files
+/usr/bin/mise
+%{_mandir}/man1/mise.1

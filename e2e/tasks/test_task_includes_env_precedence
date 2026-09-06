@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+mkdir -p prod-tasks ci-tasks prod-work ci-work
+
+cat <<'TOML' >mise.prod.toml
+[task_config]
+includes = ["prod-tasks"]
+dir = "{{config_root}}/prod-work"
+TOML
+
+cat <<'SCRIPT' >prod-tasks/prod-task
+#!/usr/bin/env bash
+pwd
+SCRIPT
+chmod +x prod-tasks/prod-task
+
+cat <<'TOML' >mise.ci.toml
+[task_config]
+includes = ["ci-tasks"]
+dir = "{{config_root}}/ci-work"
+TOML
+
+cat <<'SCRIPT' >ci-tasks/ci-task
+#!/usr/bin/env bash
+pwd
+SCRIPT
+chmod +x ci-tasks/ci-task
+
+assert_contains "MISE_ENV=prod,ci mise tasks ls" "ci-task"
+assert_not_contains "MISE_ENV=prod,ci mise tasks ls" "prod-task"
+assert "MISE_ENV=prod,ci mise run ci-task" "$(pwd)/ci-work"

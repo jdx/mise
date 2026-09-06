@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF
+
+mise lock dummy --jobs 0
+assert_contains "cat mise.lock" "1.0.0"

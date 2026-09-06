@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# Test that config_root in hooks correctly points to the project root
+# even when the config file is in a .mise/ subdirectory
+# See: https://github.com/jdx/mise/discussions/6531
+
+# Create project structure with .mise/config.toml
+mkdir -p .mise
+cat <<EOF >.mise/config.toml
+[hooks]
+enter = 'echo CONFIG_ROOT={{config_root}}'
+EOF
+
+# Initialize mise and go to home first
+eval "$(mise hook-env)"
+
+# Leave the workdir (go home)
+cd ~ || exit 1
+eval "$(mise hook-env)"
+
+# Now re-enter the workdir to trigger the enter hook
+cd ~/workdir || exit 1
+
+# The config_root should be ~/workdir, not ~/workdir/.mise
+assert_contains "mise hook-env 2>&1" "CONFIG_ROOT=$HOME/workdir"
+assert_not_contains "mise hook-env 2>&1" "CONFIG_ROOT=$HOME/workdir/.mise"

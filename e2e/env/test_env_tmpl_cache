@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[env]
+NOW="{{ exec(command='date') }}"
+EOF
+
+now=$(mise env --json | jq -r '.NOW')
+sleep 1
+assert_not_contains "mise env --json | jq -r '.NOW'" "$now"
+
+cat <<'EOF' >mise.toml
+[env]
+NOW="{{ exec(command='date', cache_key='now') }}"
+EOF
+
+now=$(mise env --json | jq -r '.NOW')
+sleep 1
+assert "mise env --json | jq -r '.NOW'" "$now"
+
+cat <<'EOF' >mise.toml
+[env]
+NOW="{{ exec(command='date', cache_duration='2s') }}"
+EOF
+
+now=$(mise env --json | jq -r '.NOW')
+sleep 1
+assert "mise env --json | jq -r '.NOW'" "$now"
+sleep 1
+assert_not_contains "mise env --json | jq -r '.NOW'" "$now"

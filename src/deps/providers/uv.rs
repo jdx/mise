@@ -1,0 +1,55 @@
+use std::path::{Path, PathBuf};
+
+use eyre::Result;
+
+use crate::deps::rule::DepsProviderConfig;
+use crate::deps::{DepsCommand, DepsProvider, DepsProviderApplicability};
+
+use super::ProviderBase;
+
+/// Deps provider for uv (uv.lock)
+#[derive(Debug)]
+pub(crate) struct UvDepsProvider {
+    base: ProviderBase,
+}
+
+impl UvDepsProvider {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+        Self {
+            base: ProviderBase::new("uv", project_root, config),
+        }
+    }
+}
+
+impl DepsProvider for UvDepsProvider {
+    fn base(&self) -> &ProviderBase {
+        &self.base
+    }
+
+    fn sources(&self) -> Vec<PathBuf> {
+        let root = self.base.config_root();
+        self.base
+            .sources(vec![root.join("uv.lock"), root.join("pyproject.toml")])
+    }
+
+    fn outputs(&self) -> Vec<PathBuf> {
+        self.base.outputs(vec![])
+    }
+
+    fn optional_outputs(&self) -> Vec<PathBuf> {
+        // `uv sync` creates `.venv` in the project root by default, but
+        // `UV_PROJECT_ENVIRONMENT` can redirect it elsewhere. Track as optional
+        // so the default case detects deletion while custom-env-path setups
+        // still rely on source hashes.
+        self.base
+            .optional_outputs(vec![self.base.config_root().join(".venv")])
+    }
+
+    fn install_command(&self) -> Result<DepsCommand> {
+        self.base.install_command("uv", &["sync"], "uv sync")
+    }
+
+    fn applicability(&self) -> DepsProviderApplicability {
+        DepsProviderApplicability::require_file(&self.base.config_root().join("uv.lock"))
+    }
+}

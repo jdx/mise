@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+assert "mise x vfox:cmake@3.30.2 -- cmake --version" "cmake version 3.30.2
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake)."

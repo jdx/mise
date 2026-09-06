@@ -1,0 +1,452 @@
+@font-face {
+  font-family: "Roc Grotesk";
+  src: url("/fonts/rocgrotesk-light-webfont.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roc Grotesk";
+  src: url("/fonts/rocgrotesk-regular-webfont.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roc Grotesk";
+  src: url("/fonts/rocgrotesk-medium-webfont.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roc Grotesk";
+  src: url("/fonts/rocgrotesk-bold-webfont.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Non-home pages: mirror VitePress's `.VPNavBar.has-sidebar` layout before
+   hydration adds the class, so the search box and menu don't jump right.
+   Values copied from vitepress/dist/client/theme-default (VPNavBar.vue). */
+@media (min-width: 960px) {
+  .preboot-sidebar .VPNavBar .wrapper {
+    padding: 0;
+  }
+
+  .preboot-sidebar .VPNavBar .container {
+    max-width: 100%;
+  }
+
+  .preboot-sidebar .VPNavBar .title {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    padding: 0 32px;
+    width: var(--vp-sidebar-width);
+    height: var(--vp-nav-height);
+    background-color: transparent;
+  }
+
+  .preboot-sidebar .VPNavBar .content {
+    position: relative;
+    z-index: 1;
+    padding-right: 32px;
+    padding-left: var(--vp-sidebar-width);
+  }
+
+  .preboot-sidebar .VPNavBar .divider {
+    padding-left: var(--vp-sidebar-width);
+  }
+}
+
+@media (min-width: 1440px) {
+  .preboot-sidebar .VPNavBar .title {
+    padding-left: max(
+      32px,
+      calc((100% - (var(--vp-layout-max-width) - 64px)) / 2)
+    );
+    width: calc(
+      (100% - (var(--vp-layout-max-width) - 64px)) / 2 +
+        var(--vp-sidebar-width) - 32px
+    );
+  }
+
+  .preboot-sidebar .VPNavBar .content {
+    padding-right: calc((100vw - var(--vp-layout-max-width)) / 2 + 32px);
+    padding-left: calc(
+      (100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)
+    );
+  }
+
+  .preboot-sidebar .VPNavBar .divider {
+    padding-left: calc(
+      (100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)
+    );
+  }
+}
+
+.VPNavBarTitle:hover .VPImage.logo {
+  transform: scale(1.1);
+  filter: drop-shadow(0 0 10px rgba(139, 34, 82, 0.4));
+}
+
+.EndevFooter {
+  align-items: center;
+  border-top: 1px solid var(--vp-c-divider);
+  color: var(--vp-c-text-2);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 14px;
+  gap: 8px;
+  justify-content: center;
+  line-height: 28px;
+  margin-top: auto;
+  padding: 22px 24px 26px;
+  text-align: center;
+}
+
+.EndevFooterLink {
+  align-items: center;
+  color: inherit;
+  display: inline-flex;
+  gap: 8px;
+  line-height: 28px;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.EndevFooterLink:hover {
+  color: var(--vp-c-brand-1);
+}
+
+.EndevFooterLogo {
+  border-radius: 8px;
+  display: inline-block;
+  height: 28px;
+  vertical-align: middle;
+  width: 28px;
+}
+
+/* Shared palette. Keep the burgundy identity; use quieter surfaces for reading. */
+:root {
+  --vp-font-family-base:
+    "Roc Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --vp-font-family-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  --vp-font-family-heading: "Cormorant Garamond", Georgia, serif;
+  --vp-layout-max-width: 1440px;
+  --vp-c-brand-1: #8b2252;
+  --vp-c-brand-2: #721a43;
+  --vp-c-brand-3: #8b2252;
+  --vp-c-brand-soft: #8b225210;
+  --vp-c-bg: #fffcf9;
+  --vp-c-bg-alt: #f7f3ef;
+  --vp-c-bg-soft: #f4efeb;
+  --vp-c-bg-mute: #ebe4df;
+  --vp-c-divider: #e2d9d3;
+  --vp-c-border: #cbbdb4;
+  --vp-c-text-1: #2c2428;
+  --vp-c-text-2: #60565b;
+  --vp-c-text-3: #756971;
+  --vp-c-success-1: #43643d;
+  --vp-c-success-2: #587c4e;
+  --vp-c-success-soft: #587c4e12;
+  --vp-c-warning-1: #866024;
+  --vp-c-warning-2: #a07938;
+  --vp-c-warning-soft: #a0793812;
+  --vp-c-danger-1: #ae3838;
+  --vp-c-danger-2: #bb4c4c;
+  --vp-c-danger-soft: #bb4c4c12;
+  --vp-code-color: var(--vp-c-brand-1);
+  --vp-code-bg: var(--vp-c-bg-soft);
+  --vp-code-block-bg: var(--vp-c-bg-alt);
+  --vp-code-block-divider-color: var(--vp-c-divider);
+  --vp-button-brand-bg: #8b2252;
+  --vp-button-brand-hover-bg: #721a43;
+  --vp-button-brand-text: #fff;
+  --vp-button-brand-hover-text: #fff;
+  --mise-accent-gold: #e1bd87;
+  --pillar-tools: var(--vp-c-brand-1);
+  --pillar-env: #866024;
+  --pillar-tasks: #43643d;
+  --pillar-boot: #a34b36;
+}
+
+.dark {
+  --vp-c-brand-1: #ed9fbc;
+  --vp-c-brand-2: #f5bbd0;
+  --vp-c-brand-3: #d98bac;
+  --vp-c-brand-soft: #ed9fbc15;
+  --vp-c-bg: #191619;
+  --vp-c-bg-alt: #211d21;
+  --vp-c-bg-soft: #292329;
+  --vp-c-bg-mute: #342c33;
+  --vp-c-divider: #3b323a;
+  --vp-c-border: #64535e;
+  --vp-c-text-1: #f1e9ed;
+  --vp-c-text-2: #c1b3bc;
+  --vp-c-text-3: #a3949f;
+  --vp-c-success-1: #adce9c;
+  --vp-c-success-2: #8bab7d;
+  --vp-c-success-soft: #adce9c12;
+  --vp-c-warning-1: #e1bd87;
+  --vp-c-warning-2: #c4a06b;
+  --vp-c-warning-soft: #e1bd8712;
+  --vp-c-danger-1: #f0a19b;
+  --vp-c-danger-2: #d28580;
+  --vp-c-danger-soft: #f0a19b12;
+  --vp-button-brand-bg: #ed9fbc;
+  --vp-button-brand-hover-bg: #f5bbd0;
+  --vp-button-brand-text: #311522;
+  --vp-button-brand-hover-text: #311522;
+  --pillar-env: #e1bd87;
+  --pillar-tasks: #adce9c;
+  --pillar-boot: #eaa58e;
+}
+
+.pillar-tools {
+  --pillar: var(--pillar-tools);
+}
+.pillar-env {
+  --pillar: var(--pillar-env);
+}
+.pillar-tasks {
+  --pillar: var(--pillar-tasks);
+}
+.pillar-boot {
+  --pillar: var(--pillar-boot);
+}
+
+::selection {
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+}
+
+:where(a, button, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 4px;
+}
+
+/* Navigation keeps a stable, visible brand on every route. */
+.VPNav,
+.VPNavBar:not(.has-sidebar),
+.VPNavBar .content-body {
+  background: var(--vp-c-bg) !important;
+}
+
+.VPNavBar .divider-line {
+  background: var(--vp-c-divider) !important;
+}
+.VPNavBarTitle .VPImage.logo {
+  height: 34px;
+  width: auto;
+}
+.VPNavBarTitle .title {
+  font-size: 1.1rem;
+  letter-spacing: -0.025em;
+}
+.VPNavBarMenu .VPNavBarMenuLink {
+  font-size: 0.875rem;
+}
+.preboot .VPNavBar,
+.preboot .VPNavBar .divider-line {
+  transition: none !important;
+}
+
+.DocSearch-Button {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 7px;
+}
+
+.DocSearch {
+  --docsearch-primary-color: var(--vp-c-brand-1);
+  --docsearch-highlight-color: var(--vp-c-brand-1);
+  --docsearch-text-color: var(--vp-c-text-1);
+  --docsearch-muted-color: var(--vp-c-text-2);
+  --docsearch-searchbox-background: var(--vp-c-bg-soft);
+  --docsearch-searchbox-focus-background: var(--vp-c-bg);
+  --docsearch-modal-background: var(--vp-c-bg-alt);
+  --docsearch-hit-background: var(--vp-c-bg);
+  --docsearch-hit-color: var(--vp-c-text-1);
+  --docsearch-hit-active-color: var(--vp-c-bg);
+  --docsearch-footer-background: var(--vp-c-bg);
+}
+
+.VPSocialLinks {
+  align-items: center;
+}
+.VPSocialLinks a[href*="github.com/jdx/mise"] {
+  position: relative;
+  margin-bottom: 6px;
+}
+.VPSocialLinks .star-count {
+  position: absolute;
+  top: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--vp-c-text-2);
+}
+.star-glyph {
+  margin-right: 3px;
+}
+
+/* Documentation: sans-serif hierarchy, generous line-height, clear navigation. */
+.VPDoc .vp-doc h1,
+.VPDoc .vp-doc h2,
+.VPDoc .vp-doc h3,
+.VPDoc .vp-doc h4 {
+  font-family: var(--vp-font-family-base);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  text-wrap: pretty;
+}
+.VPDoc .vp-doc h1 {
+  font-size: clamp(2rem, 4vw, 2.6rem);
+  line-height: 1.2;
+}
+.VPDoc .vp-doc h2 {
+  margin-top: 44px;
+  padding-top: 28px;
+  font-size: 1.65rem;
+}
+.VPDoc .vp-doc h3 {
+  font-size: 1.25rem;
+}
+.vp-doc p,
+.vp-doc li {
+  line-height: 1.8;
+}
+.VPDoc .vp-doc > div > h1 + p {
+  font-size: 1.125rem;
+  color: var(--vp-c-text-2);
+}
+.vp-doc :not(pre) > code {
+  font-size: 0.875em;
+  border-radius: 4px;
+}
+.vp-doc a {
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+.vp-doc a:hover {
+  text-decoration: underline;
+}
+.vp-doc .header-anchor {
+  text-decoration: none;
+}
+
+.VPSidebar {
+  background: var(--vp-c-bg-alt);
+}
+.VPSidebarItem.level-0 > .item > .text,
+.VPSidebarItem.level-0 > .item > .link > .text {
+  font-family: var(--vp-font-family-base);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.VPSidebarItem > .item > .link {
+  padding: 2px 8px;
+  margin-left: -8px;
+  border-radius: 5px;
+  transition: background-color 0.15s;
+}
+.VPSidebarItem > .item > .link:hover {
+  background: var(--vp-c-bg-mute);
+}
+.VPSidebarItem.is-active > .item > .link {
+  background: var(--vp-c-brand-soft);
+  box-shadow: inset 2px 0 var(--vp-c-brand-1);
+}
+.VPSidebarItem.is-active > .item > .link > .text {
+  font-weight: 500;
+}
+.VPDocAsideOutline .outline-title {
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+.VPDocAsideOutline .outline-link {
+  font-size: 0.875rem;
+}
+.VPDocFooter .pager-link {
+  border-radius: 8px;
+  background: var(--vp-c-bg-alt);
+}
+
+.vp-doc div[class*="language-"] {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+.vp-code-group {
+  border-radius: 8px;
+}
+.vp-code-group .tabs {
+  box-shadow: inset 0 -1px var(--vp-c-divider);
+}
+.vp-doc div[class*="language-"] code {
+  font-size: 0.875rem;
+}
+.vp-doc div[class*="language-"] .lang {
+  color: var(--vp-c-text-3);
+}
+.vp-doc div[class*="language-"] .copy {
+  border-radius: 5px;
+}
+.vp-doc table {
+  display: block;
+  overflow-x: auto;
+  font-size: 0.9375rem;
+}
+.vp-doc th {
+  background: var(--vp-c-bg-soft);
+  font-weight: 500;
+}
+.vp-doc td,
+.vp-doc th {
+  padding: 10px 16px;
+}
+.custom-block {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+.custom-block.tip {
+  background: var(--vp-c-success-soft);
+  border-color: var(--vp-c-success-2);
+}
+.custom-block.warning {
+  background: var(--vp-c-warning-soft);
+  border-color: var(--vp-c-warning-2);
+}
+.custom-block.danger {
+  background: var(--vp-c-danger-soft);
+  border-color: var(--vp-c-danger-2);
+}
+.custom-block-title {
+  font-weight: 500;
+}
+.VPButton {
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .VPSocialLinks .star-count {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}

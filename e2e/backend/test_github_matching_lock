@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# Regression: `mise lock` must not write a polluting, url-less entry for a tool
+# whose `matching_regex` is invalid.
+#
+# `mise lock` is best-effort (since #7113): a platform it can't resolve is skipped,
+# not fatal. But `resolve_lock_info` caught the invalid-regex hard error and
+# returned an empty `PlatformInfo`, so the tool was written to the lockfile with its
+# options but no resolved url/checksum — and miscounted as a successful platform
+# entry ("Updated 1 (0 skipped)"). Failing closed in `resolve_lock_info` instead
+# makes the orchestration skip the platform (nothing written), consistent with the
+# best-effort model. The install path already validates up front, so this only
+# affects the cross-platform lock path.
+
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+
+cat <<EOF >mise.toml
+[tools]
+"github:oxc-project/oxc" = { version = "apps_v1.69.0", matching_regex = "oxlint(" }
+EOF
+
+touch mise.lock
+
+# Best-effort: locking a platform that can't resolve is a skip, not a hard error,
+# so the command itself succeeds.
+mise lock --platform linux-x64
+
+# With the bug, the lockfile gained a `github:oxc-project/oxc` entry carrying the
+# options but no platform data (url/checksum). Failing closed skips the tool, so no
+# entry is written — assert the unresolved tool did not get a (broken) lock entry.
+assert_not_contains "cat mise.lock" "oxc-project/oxc"

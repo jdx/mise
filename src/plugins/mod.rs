@@ -1,0 +1,1009 @@
+use crate::errors::Error::PluginNotInstalled;
+use crate::file::{self, display_path};
+use crate::git::{CloneOptions, Git};
+use crate::plugins::asdf_plugin::AsdfPlugin;
+use crate::plugins::vfox_plugin::VfoxPlugin;
+use crate::registry::REGISTRY;
+use crate::remote_source::RemoteSource;
+use crate::toolset::install_state;
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::SingleReport;
+use crate::{config::Config, dirs};
+use async_trait::async_trait;
+use eyre::{Result, bail, eyre};
+use heck::ToKebabCase;
+use regex::Regex;
+pub(crate) use script_manager::{Script, ScriptManager};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock as Lazy;
+use std::vec;
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
+};
+
+pub(crate) mod asdf_plugin;
+pub(crate) mod core;
+pub(crate) mod mise_plugin_toml;
+pub(crate) mod script_manager;
+pub(crate) mod vfox_plugin;
+
+#[derive(Clone, Debug)]
+pub(crate) struct ExternalCommand {
+    pub topic: String,
+    pub subcommands: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
+pub(crate) enum PluginType {
+    Asdf,
+    Vfox,
+    VfoxBackend,
+    Package,
+}
+
+#[derive(Debug)]
+pub(crate) enum PluginEnum {
+    Asdf(Arc<AsdfPlugin>),
+    Vfox(Arc<VfoxPlugin>),
+    VfoxBackend(Arc<VfoxPlugin>),
+    Package(Arc<VfoxPlugin>),
+}
+
+impl PluginEnum {
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.name(),
+            PluginEnum::Vfox(plugin) => plugin.name(),
+            PluginEnum::VfoxBackend(plugin) => plugin.name(),
+            PluginEnum::Package(plugin) => plugin.name(),
+        }
+    }
+
+    pub(crate) fn path(&self) -> PathBuf {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.path(),
+            PluginEnum::Vfox(plugin) => plugin.path(),
+            PluginEnum::VfoxBackend(plugin) => plugin.path(),
+            PluginEnum::Package(plugin) => plugin.path(),
+        }
+    }
+
+    pub(crate) fn get_plugin_type(&self) -> PluginType {
+        match self {
+            PluginEnum::Asdf(_) => PluginType::Asdf,
+            PluginEnum::Vfox(_) => PluginType::Vfox,
+            PluginEnum::VfoxBackend(_) => PluginType::VfoxBackend,
+            PluginEnum::Package(_) => PluginType::Package,
+        }
+    }
+
+    pub(crate) fn get_remote_url(&self) -> eyre::Result<Option<String>> {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.get_remote_url(),
+            PluginEnum::Vfox(plugin) => plugin.get_remote_url(),
+            PluginEnum::VfoxBackend(plugin) => plugin.get_remote_url(),
+            PluginEnum::Package(plugin) => plugin.get_remote_url(),
+        }
+    }
+
+    pub(crate) fn set_remote_url(&self, url: String) {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.set_remote_url(url),
+            PluginEnum::Vfox(plugin) => plugin.set_remote_url(url),
+            PluginEnum::VfoxBackend(plugin) => plugin.set_remote_url(url),
+            PluginEnum::Package(plugin) => plugin.set_remote_url(url),
+        }
+    }
+
+    pub(crate) fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.current_abbrev_ref(),
+            PluginEnum::Vfox(plugin) => plugin.current_abbrev_ref(),
+            PluginEnum::VfoxBackend(plugin) => plugin.current_abbrev_ref(),
+            PluginEnum::Package(plugin) => plugin.current_abbrev_ref(),
+        }
+    }
+
+    pub(crate) fn current_sha_short(&self) -> eyre::Result<Option<String>> {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.current_sha_short(),
+            PluginEnum::Vfox(plugin) => plugin.current_sha_short(),
+            PluginEnum::VfoxBackend(plugin) => plugin.current_sha_short(),
+            PluginEnum::Package(plugin) => plugin.current_sha_short(),
+        }
+    }
+
+    pub(crate) fn remote_sha(&self) -> eyre::Result<Option<String>> {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.remote_sha(),
+            PluginEnum::Vfox(plugin) => plugin.remote_sha(),
+            PluginEnum::VfoxBackend(plugin) => plugin.remote_sha(),
+            PluginEnum::Package(plugin) => plugin.remote_sha(),
+        }
+    }
+
+    pub(crate) fn external_commands(&self) -> eyre::Result<Vec<ExternalCommand>> {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.external_commands(),
+            PluginEnum::Vfox(plugin) => plugin.external_commands(),
+            PluginEnum::VfoxBackend(plugin) => plugin.external_commands(),
+            PluginEnum::Package(plugin) => plugin.external_commands(),
+        }
+    }
+
+    pub(crate) fn execute_external_command(
+        &self,
+        command: &str,
+        args: Vec<String>,
+    ) -> eyre::Result<()> {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.execute_external_command(command, args),
+            PluginEnum::Vfox(plugin) => plugin.execute_external_command(command, args),
+            PluginEnum::VfoxBackend(plugin) => plugin.execute_external_command(command, args),
+            PluginEnum::Package(plugin) => plugin.execute_external_command(command, args),
+        }
+    }
+
+    pub(crate) async fn update(
+        &self,
+        pr: &dyn SingleReport,
+        gitref: Option<String>,
+    ) -> eyre::Result<()> {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.update(pr, gitref).await,
+            PluginEnum::Vfox(plugin) => plugin.update(pr, gitref).await,
+            PluginEnum::VfoxBackend(plugin) => plugin.update(pr, gitref).await,
+            PluginEnum::Package(plugin) => plugin.update(pr, gitref).await,
+        }
+    }
+
+    pub(crate) async fn uninstall(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.uninstall(pr).await,
+            PluginEnum::Vfox(plugin) => plugin.uninstall(pr).await,
+            PluginEnum::VfoxBackend(plugin) => plugin.uninstall(pr).await,
+            PluginEnum::Package(plugin) => plugin.uninstall(pr).await,
+        }
+    }
+
+    pub(crate) fn is_installed(&self) -> bool {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.is_installed(),
+            PluginEnum::Vfox(plugin) => plugin.is_installed(),
+            PluginEnum::VfoxBackend(plugin) => plugin.is_installed(),
+            PluginEnum::Package(plugin) => plugin.is_installed(),
+        }
+    }
+
+    pub(crate) fn is_installed_err(&self) -> eyre::Result<()> {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.is_installed_err(),
+            PluginEnum::Vfox(plugin) => plugin.is_installed_err(),
+            PluginEnum::VfoxBackend(plugin) => plugin.is_installed_err(),
+            PluginEnum::Package(plugin) => plugin.is_installed_err(),
+        }
+    }
+
+    pub(crate) async fn ensure_installed(
+        &self,
+        config: &Arc<Config>,
+        mpr: &MultiProgressReport,
+        force: bool,
+        dry_run: bool,
+    ) -> eyre::Result<()> {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.ensure_installed(config, mpr, force, dry_run).await,
+            PluginEnum::Vfox(plugin) => plugin.ensure_installed(config, mpr, force, dry_run).await,
+            PluginEnum::VfoxBackend(plugin) => {
+                plugin.ensure_installed(config, mpr, force, dry_run).await
+            }
+            PluginEnum::Package(plugin) => {
+                plugin.ensure_installed(config, mpr, force, dry_run).await
+            }
+        }
+    }
+}
+
+impl PluginType {
+    pub(crate) fn from_full(full: &str) -> eyre::Result<Self> {
+        match full.split(':').next() {
+            Some("asdf") => Ok(Self::Asdf),
+            Some("vfox") => Ok(Self::Vfox),
+            Some("vfox-backend") => Ok(Self::VfoxBackend),
+            Some("package") => Ok(Self::Package),
+            _ => Err(eyre!("unknown plugin type: {full}")),
+        }
+    }
+
+    pub(crate) fn from_plugin_config(key: &str) -> (Self, &str) {
+        if let Some(name) = key.strip_prefix("vfox:") {
+            (Self::Vfox, name)
+        } else if let Some(name) = key.strip_prefix("vfox-backend:") {
+            (Self::VfoxBackend, name)
+        } else if let Some(name) = key.strip_prefix("package:") {
+            (Self::Package, name)
+        } else if let Some(name) = key.strip_prefix("asdf:") {
+            (Self::Asdf, name)
+        } else {
+            let path = dirs::PLUGINS.join(key.to_kebab_case());
+            (Self::from_plugin_path(&path).unwrap_or(Self::Asdf), key)
+        }
+    }
+
+    pub(crate) fn from_plugin_path(path: &Path) -> Option<Self> {
+        if path.join("metadata.lua").exists() {
+            let hooks = path.join("hooks");
+            if hooks.join("backend_install.lua").exists() {
+                Some(Self::VfoxBackend)
+            } else if hooks.join("package_install.lua").exists()
+                && hooks.join("package_installed.lua").exists()
+            {
+                Some(Self::Package)
+            } else {
+                Some(Self::Vfox)
+            }
+        } else if path.join("bin").join("list-all").exists() {
+            Some(Self::Asdf)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn plugin(&self, short: String) -> PluginEnum {
+        let path = dirs::PLUGINS.join(short.to_kebab_case());
+        match self {
+            PluginType::Asdf => PluginEnum::Asdf(Arc::new(AsdfPlugin::new(short, path))),
+            PluginType::Vfox => PluginEnum::Vfox(Arc::new(VfoxPlugin::new(short, path))),
+            PluginType::VfoxBackend => {
+                PluginEnum::VfoxBackend(Arc::new(VfoxPlugin::new(short, path)))
+            }
+            PluginType::Package => PluginEnum::Package(Arc::new(VfoxPlugin::new(short, path))),
+        }
+    }
+}
+
+/// Warn if a plugin is an env-only vfox plugin that shadows a registry entry.
+/// Env-only plugins have `hooks/mise_env.lua` but not `hooks/available.lua`.
+pub(crate) fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
+    let hooks = plugin_path.join("hooks");
+    let is_env_only = hooks.join("mise_env.lua").exists() && !hooks.join("available.lua").exists();
+    if is_env_only && REGISTRY.contains_key(name) {
+        warn!(
+            "plugin '{name}' is an env plugin and is shadowing the '{name}' registry tool - \
+            consider renaming the plugin or removing it with: mise plugins rm {name}"
+        );
+    }
+}
+
+pub(crate) static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|snapshot|SNAPSHOT|master|\d(?:alpha|beta|rc)\d*\b)"
+    )
+        .unwrap()
+});
+
+/// PEP 440 separator-less pre-release segment, grounded in the canonical
+/// public version grammar:
+///
+/// > `[N!]N(.N)*[{a|b|rc}N][.postN][.devN]`
+///
+/// The pre-release segment (`{a|b|rc}N`) must follow the release segment, so
+/// the regex requires a leading digit. `c` is included as PEP 440's recognized
+/// alternate spelling for `rc`. The trailing boundary `(?:$|[^a-z0-9])` keeps
+/// it from matching inside hex hashes or other identifiers.
+///
+/// Only consulted by Python-flavored backends (currently `pipx`); other
+/// backends would false-positive on hex hashes like `f149714c1d54`.
+pub(crate) static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> =
+    Lazy::new(|| Regex::new(r"(?i)[0-9](?:a|b|c|rc)[0-9]+(?:$|[^a-z0-9])").unwrap());
+
+pub(crate) fn get(short: &str) -> Result<PluginEnum> {
+    let (name, full) = short.split_once(':').unwrap_or((short, short));
+
+    // For plugin:tool format, look up the plugin by just the plugin name
+    let plugin_lookup_key = if short.contains(':') {
+        // Check if the part before the colon is a plugin name
+        if let Some(_plugin_type) = install_state::list_plugins().get(name) {
+            name
+        } else {
+            short
+        }
+    } else {
+        short
+    };
+
+    let plugin_type =
+        if let Some(plugin_type) = install_state::list_plugins().get(plugin_lookup_key) {
+            *plugin_type
+        } else {
+            PluginType::from_full(full)?
+        };
+    Ok(plugin_type.plugin(name.to_string()))
+}
+
+#[allow(unused_variables)]
+#[async_trait]
+pub(crate) trait Plugin: Debug + Send {
+    fn name(&self) -> &str;
+    fn path(&self) -> PathBuf;
+    fn get_remote_url(&self) -> eyre::Result<Option<String>>;
+    fn set_remote_url(&self, url: String) {}
+    fn current_abbrev_ref(&self) -> eyre::Result<Option<String>>;
+    fn current_sha_short(&self) -> eyre::Result<Option<String>>;
+    fn remote_sha(&self) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
+    fn is_installed(&self) -> bool {
+        true
+    }
+    fn is_installed_err(&self) -> eyre::Result<()> {
+        if !self.is_installed() {
+            return Err(PluginNotInstalled(self.name().to_string()).into());
+        }
+        Ok(())
+    }
+
+    async fn ensure_installed(
+        &self,
+        _config: &Arc<Config>,
+        _mpr: &MultiProgressReport,
+        _force: bool,
+        _dry_run: bool,
+    ) -> eyre::Result<()> {
+        Ok(())
+    }
+    async fn update(&self, _pr: &dyn SingleReport, _gitref: Option<String>) -> eyre::Result<()> {
+        Ok(())
+    }
+    async fn uninstall(&self, _pr: &dyn SingleReport) -> eyre::Result<()> {
+        Ok(())
+    }
+    async fn install(&self, _config: &Arc<Config>, _pr: &dyn SingleReport) -> eyre::Result<()> {
+        Ok(())
+    }
+    fn external_commands(&self) -> eyre::Result<Vec<ExternalCommand>> {
+        Ok(vec![])
+    }
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> eyre::Result<()> {
+        unimplemented!(
+            "execute_external_command not implemented for {}",
+            self.name()
+        )
+    }
+}
+
+impl Ord for PluginEnum {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.name().cmp(other.name())
+    }
+}
+
+impl PartialOrd for PluginEnum {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for PluginEnum {
+    fn eq(&self, other: &Self) -> bool {
+        self.name() == other.name()
+    }
+}
+
+impl Eq for PluginEnum {}
+
+impl Display for PluginEnum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum PluginSource {
+    /// Git repository with URL and optional ref
+    Git {
+        url: String,
+        git_ref: Option<String>,
+        subdir: Option<String>,
+    },
+    /// Zip file accessible via HTTPS
+    Zip { url: String },
+}
+
+impl PluginSource {
+    pub(crate) fn parse(repository: &str) -> Self {
+        if let Some(source) = RemoteSource::parse_git(repository) {
+            return PluginSource::Git {
+                url: source.url,
+                git_ref: source.git_ref,
+                subdir: Some(source.path),
+            };
+        }
+        // Split Parameters
+        let url_path = repository
+            .split('?')
+            .next()
+            .unwrap_or(repository)
+            .split('#')
+            .next()
+            .unwrap_or(repository);
+        // Check if it's a zip file (ends with -zip)
+        if url_path.to_lowercase().ends_with(".zip") {
+            return PluginSource::Zip {
+                url: repository.to_string(),
+            };
+        }
+        // Otherwise treat as git repository
+        let (url, git_ref) = Git::split_url_and_ref(repository);
+        PluginSource::Git {
+            url: url.to_string(),
+            git_ref: git_ref.map(|s| s.to_string()),
+            subdir: None,
+        }
+    }
+}
+
+pub(crate) fn git_plugin_repo_path(plugin_name: &str) -> PathBuf {
+    dirs::DATA
+        .join("plugin-repos")
+        .join(plugin_name.to_kebab_case())
+}
+
+pub(crate) fn managed_git_plugin_repo_path(
+    plugin_name: &str,
+    plugin_path: &Path,
+) -> Result<Option<PathBuf>> {
+    if !plugin_path.is_symlink() {
+        return Ok(None);
+    }
+
+    let target = fs::read_link(plugin_path)?;
+    let target = if target.is_absolute() {
+        target
+    } else {
+        plugin_path
+            .parent()
+            .unwrap_or_else(|| Path::new(""))
+            .join(target)
+    };
+    let repo_path = git_plugin_repo_path(plugin_name);
+    Ok(target.starts_with(&repo_path).then_some(repo_path))
+}
+
+pub(crate) fn remove_git_plugin_source(
+    plugin_name: &str,
+    plugin_path: &Path,
+    pr: &dyn SingleReport,
+) -> Result<()> {
+    let repo_path = managed_git_plugin_repo_path(plugin_name, plugin_path)?;
+    file::remove_all_with_progress(plugin_path, pr)?;
+    if let Some(repo_path) = repo_path {
+        file::remove_all_with_progress(repo_path, pr)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn install_git_plugin_source(
+    plugin_name: &str,
+    plugin_path: &Path,
+    repo_url: &str,
+    git_ref: Option<&str>,
+    subdir: Option<&str>,
+    pr: &dyn SingleReport,
+) -> Result<Git> {
+    if let Some(subdir) = subdir {
+        let repo_path = git_plugin_repo_path(plugin_name);
+        file::remove_all_with_progress(plugin_path, pr)?;
+        file::remove_all_with_progress(&repo_path, pr)?;
+
+        let git = Git::new(&repo_path);
+        pr.set_message(format!("clone {repo_url}"));
+        git.clone(repo_url, CloneOptions::default().pr(pr))?;
+        if let Some(ref_) = git_ref {
+            pr.set_message(format!("check out {ref_}"));
+            git.update(Some(ref_.to_string()))?;
+        }
+
+        let subdir_path = repo_path.join(subdir);
+        if !subdir_path.is_dir() {
+            let _ = file::remove_all(&repo_path);
+            return Err(eyre!(
+                "plugin subdirectory does not exist: {}",
+                file::display_path(&subdir_path)
+            ));
+        }
+        pr.set_message(format!("link {}", file::display_path(plugin_path)));
+        file::make_symlink(&subdir_path, plugin_path)?;
+        Ok(Git::new(plugin_path))
+    } else {
+        let git = Git::new(plugin_path);
+        pr.set_message(format!("clone {repo_url}"));
+        git.clone(repo_url, CloneOptions::default().pr(pr))?;
+        if let Some(ref_) = git_ref {
+            pr.set_message(format!("check out {ref_}"));
+            git.update(Some(ref_.to_string()))?;
+        }
+        Ok(git)
+    }
+}
+
+pub(crate) fn local_plugin_source_path(repository: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(repository);
+    let source = PluginSource::parse(repository);
+    if path.is_absolute() && path.is_dir() && matches!(&source, PluginSource::Zip { .. }) {
+        return Some(path);
+    }
+
+    match source {
+        PluginSource::Git {
+            url,
+            git_ref: None,
+            subdir: None,
+        } if url == repository => path.is_absolute().then_some(path),
+        _ => None,
+    }
+}
+
+pub(crate) fn validate_local_plugin_source(source: &Path, plugin_path: &Path) -> Result<()> {
+    if !source.exists() {
+        bail!(
+            "local plugin directory does not exist: {}",
+            display_path(source)
+        );
+    }
+    if !source.is_dir() {
+        bail!(
+            "local plugin source is not a directory: {}",
+            display_path(source)
+        );
+    }
+    let resolved_source = file::desymlink_path(source);
+    let resolved_plugin_path = match (plugin_path.parent(), plugin_path.file_name()) {
+        (Some(parent), Some(file_name)) => file::desymlink_path(parent).join(file_name),
+        _ => plugin_path.to_path_buf(),
+    };
+    if resolved_source
+        .ancestors()
+        .any(|path| file::paths_eq(path, &resolved_plugin_path))
+        || resolved_plugin_path
+            .ancestors()
+            .any(|path| file::paths_eq(path, &resolved_source))
+    {
+        bail!(
+            "local plugin source cannot contain, be, or be inside the plugin install path: {}",
+            display_path(source)
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn install_local_plugin_source(
+    plugin_path: &Path,
+    source: &Path,
+    pr: &dyn SingleReport,
+) -> Result<()> {
+    let parent = plugin_path.parent().ok_or_else(|| {
+        eyre!(
+            "plugin install path has no parent: {}",
+            display_path(plugin_path)
+        )
+    })?;
+    file::create_dir_all(parent)?;
+    pr.set_message(format!("link {}", display_path(source)));
+    file::make_symlink(source, plugin_path)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_local_plugin_source_path_requires_plain_absolute_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().to_string_lossy();
+
+        assert_eq!(
+            local_plugin_source_path(&source),
+            Some(temp.path().to_path_buf())
+        );
+        let source_with_ref = format!("{source}#main");
+        assert_eq!(local_plugin_source_path(&source_with_ref), None);
+        assert!(matches!(
+            PluginSource::parse(&source_with_ref),
+            PluginSource::Git {
+                url,
+                git_ref: Some(git_ref),
+                subdir: None,
+            } if url == source && git_ref == "main"
+        ));
+
+        let referenced_directory = temp.path().join("plugin#main");
+        fs::create_dir_all(&referenced_directory).unwrap();
+        assert_eq!(
+            local_plugin_source_path(&referenced_directory.to_string_lossy()),
+            None
+        );
+
+        let zip_directory = temp.path().join("plugin.zip");
+        fs::create_dir_all(&zip_directory).unwrap();
+        assert_eq!(
+            local_plugin_source_path(&zip_directory.to_string_lossy()),
+            Some(zip_directory)
+        );
+
+        let archive = temp.path().join("plugin-archive.zip");
+        fs::write(&archive, b"archive").unwrap();
+        let archive = archive.to_string_lossy();
+        assert_eq!(local_plugin_source_path(&archive), None);
+        assert!(matches!(
+            PluginSource::parse(&archive),
+            PluginSource::Zip { url } if url == archive
+        ));
+    }
+
+    #[test]
+    fn test_validate_local_plugin_source_rejects_recursive_layouts() {
+        let temp = tempfile::tempdir().unwrap();
+        let plugins_dir = temp.path().join("plugins");
+        let plugin_path = plugins_dir.join("example");
+        let descendant = plugin_path.join("source");
+        let separate_source = temp.path().join("source");
+        fs::create_dir_all(&descendant).unwrap();
+        fs::create_dir_all(&separate_source).unwrap();
+
+        assert!(validate_local_plugin_source(&plugins_dir, &plugin_path).is_err());
+        assert!(validate_local_plugin_source(&plugin_path, &plugin_path).is_err());
+        assert!(validate_local_plugin_source(&descendant, &plugin_path).is_err());
+        assert!(validate_local_plugin_source(&separate_source, &plugin_path).is_ok());
+    }
+
+    #[test]
+    fn test_validate_local_plugin_source_resolves_symlink_aliases() {
+        let temp = tempfile::tempdir().unwrap();
+        let plugins_dir = temp.path().join("plugins");
+        let plugin_path = plugins_dir.join("example");
+        let plugin_alias = temp.path().join("plugin-alias");
+        let parent_alias = temp.path().join("parent-alias");
+        fs::create_dir_all(&plugin_path).unwrap();
+        file::make_symlink(&plugin_path, &plugin_alias).unwrap();
+        file::make_symlink(&plugins_dir, &parent_alias).unwrap();
+
+        assert!(validate_local_plugin_source(&plugin_alias, &plugin_path).is_err());
+        assert!(validate_local_plugin_source(&parent_alias, &plugin_path).is_err());
+    }
+
+    #[test]
+    fn test_validate_local_plugin_source_preserves_symlinked_install_slot() {
+        let temp = tempfile::tempdir().unwrap();
+        let plugins_dir = temp.path().join("plugins");
+        let plugin_path = plugins_dir.join("example");
+        let old_source = temp.path().join("old-source");
+        let new_source = temp.path().join("new-source");
+        fs::create_dir_all(&plugins_dir).unwrap();
+        fs::create_dir_all(&old_source).unwrap();
+        fs::create_dir_all(&new_source).unwrap();
+        file::make_symlink(&old_source, &plugin_path).unwrap();
+
+        assert!(validate_local_plugin_source(&plugins_dir, &plugin_path).is_err());
+        assert!(validate_local_plugin_source(&new_source, &plugin_path).is_ok());
+    }
+
+    #[test]
+    fn test_plugin_source_parse_git() {
+        // Test parsing Git URL
+        let source = PluginSource::parse("https://github.com/user/plugin.git");
+        match source {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
+                assert_eq!(url, "https://github.com/user/plugin.git");
+                assert_eq!(git_ref, None);
+                assert_eq!(subdir, None);
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_git_with_ref() {
+        // Test parsing Git URL with refs
+        let source = PluginSource::parse("https://github.com/user/plugin.git#v1.0.0");
+        match source {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
+                assert_eq!(url, "https://github.com/user/plugin.git");
+                assert_eq!(git_ref, Some("v1.0.0".to_string()));
+                assert_eq!(subdir, None);
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_zip() {
+        // Test parsing zip URL
+        let source = PluginSource::parse("https://example.com/plugins/my-plugin.zip");
+        match source {
+            PluginSource::Zip { url } => {
+                assert_eq!(url, "https://example.com/plugins/my-plugin.zip");
+            }
+            _ => panic!("Expected a Zip source"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_uppercase_zip_with_query() {
+        // Test parsing zip URL with query
+        let source =
+            PluginSource::parse("https://example.com/plugins/my-plugin.ZIP?version=v1.0.0");
+        match source {
+            PluginSource::Zip { url } => {
+                assert_eq!(
+                    url,
+                    "https://example.com/plugins/my-plugin.ZIP?version=v1.0.0"
+                );
+            }
+            _ => panic!("Expected a Zip source"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_remote_git_zip_subdir() {
+        let source = PluginSource::parse(
+            "git::https://github.com/user/plugin.git//plugins/my-plugin.zip?ref=main",
+        );
+        match source {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
+                assert_eq!(url, "https://github.com/user/plugin.git");
+                assert_eq!(git_ref, Some("main".to_string()));
+                assert_eq!(subdir, Some("plugins/my-plugin.zip".to_string()));
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_edge_cases() {
+        // Test parsing git url which contains `.zip`
+        let source = PluginSource::parse("https://example.com/.zip/plugin");
+        match source {
+            PluginSource::Git { .. } => {}
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_remote_git_https() {
+        let source = PluginSource::parse(
+            "git::https://github.com/org/repo.git//dev/plugins/tool?ref=feature/test",
+        );
+        match source {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
+                assert_eq!(url, "https://github.com/org/repo.git");
+                assert_eq!(git_ref, Some("feature/test".to_string()));
+                assert_eq!(subdir, Some("dev/plugins/tool".to_string()));
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_remote_git_ssh() {
+        let source = PluginSource::parse(
+            "git::ssh://git@git.acme.com:1222/org/repo.git//plugins/tool?ref=main",
+        );
+        match source {
+            PluginSource::Git {
+                url,
+                git_ref,
+                subdir,
+            } => {
+                assert_eq!(url, "ssh://git@git.acme.com:1222/org/repo.git");
+                assert_eq!(git_ref, Some("main".to_string()));
+                assert_eq!(subdir, Some("plugins/tool".to_string()));
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_type_from_plugin_config() {
+        assert_eq!(
+            PluginType::from_plugin_config("vfox:node"),
+            (PluginType::Vfox, "node")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("vfox-backend:npm"),
+            (PluginType::VfoxBackend, "npm")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("package:vscode"),
+            (PluginType::Package, "vscode")
+        );
+        assert_eq!(
+            PluginType::from_full("package:vscode").unwrap(),
+            PluginType::Package
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("asdf:node"),
+            (PluginType::Asdf, "node")
+        );
+        assert_eq!(
+            PluginType::from_plugin_config("missing-test-plugin"),
+            (PluginType::Asdf, "missing-test-plugin")
+        );
+    }
+
+    #[test]
+    fn test_plugin_type_from_plugin_path() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(PluginType::from_plugin_path(dir.path()), None);
+
+        let asdf = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(asdf.path().join("bin")).unwrap();
+        std::fs::write(asdf.path().join("bin").join("list-all"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(asdf.path()),
+            Some(PluginType::Asdf)
+        );
+
+        let vfox = tempfile::tempdir().unwrap();
+        std::fs::write(vfox.path().join("metadata.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(vfox.path()),
+            Some(PluginType::Vfox)
+        );
+
+        let backend = tempfile::tempdir().unwrap();
+        std::fs::write(backend.path().join("metadata.lua"), "").unwrap();
+        std::fs::create_dir_all(backend.path().join("hooks")).unwrap();
+        std::fs::write(backend.path().join("hooks").join("backend_install.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(backend.path()),
+            Some(PluginType::VfoxBackend)
+        );
+
+        let package = tempfile::tempdir().unwrap();
+        fs::write(package.path().join("metadata.lua"), "").unwrap();
+        file::create_dir_all(package.path().join("hooks")).unwrap();
+        fs::write(package.path().join("hooks/package_install.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(package.path()),
+            Some(PluginType::Vfox)
+        );
+        fs::write(package.path().join("hooks/package_installed.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(package.path()),
+            Some(PluginType::Package)
+        );
+
+        fs::write(package.path().join("hooks/backend_install.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_plugin_path(package.path()),
+            Some(PluginType::VfoxBackend)
+        );
+    }
+
+    #[test]
+    fn test_version_regex_filters_prerelease() {
+        // Standard pre-release patterns
+        assert!(VERSION_REGEX.is_match("1.0.0-alpha"));
+        assert!(VERSION_REGEX.is_match("1.0.0-beta"));
+        assert!(VERSION_REGEX.is_match("1.0.0-rc1"));
+        assert!(VERSION_REGEX.is_match("1.0.0.rc1"));
+        assert!(VERSION_REGEX.is_match("1.0.0-dev"));
+        assert!(VERSION_REGEX.is_match("1.0.0-pre1"));
+        assert!(VERSION_REGEX.is_match("1.0.0.pre1"));
+
+        // PHP separator-less pre-release suffixes (GitHub discussion #4720)
+        assert!(VERSION_REGEX.is_match("8.5.9alpha1"));
+        assert!(VERSION_REGEX.is_match("8.5.9beta2"));
+        assert!(VERSION_REGEX.is_match("8.5.9RC1"));
+        assert!(VERSION_REGEX.is_match("4.0.1RC"));
+        assert!(VERSION_REGEX.is_match("8.3.1RC1-clean"));
+
+        // PEP 440 dot-separated dev versions (GitHub discussion #8784)
+        assert!(
+            VERSION_REGEX.is_match("2026.3.3.dev0"),
+            "PEP 440 .dev suffix should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("2026.3.3.162408.dev0"),
+            "PEP 440 .dev suffix with build number should be filtered"
+        );
+
+        // npm prerelease channels (GitHub discussion #9503).
+        // Use suffixes that don't accidentally match `([abc])[0-9]+`, so each
+        // assertion exercises only the channel-tag alternative it names.
+        assert!(
+            VERSION_REGEX.is_match("0.42.0-nightly.20260429.g6d9911393"),
+            "npm -nightly tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("13.0.0-canary"),
+            "npm -canary tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("18.0.0-experimental.1"),
+            "npm -experimental tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("1.99.0-insider"),
+            "npm -insider tag should be filtered"
+        );
+        assert!(
+            VERSION_REGEX.is_match("1.99.0-edge"),
+            "npm -edge tag should be filtered"
+        );
+
+        // Stable versions should NOT match
+        assert!(!VERSION_REGEX.is_match("1.0.0"));
+        assert!(!VERSION_REGEX.is_match("2026.3.3"));
+        assert!(!VERSION_REGEX.is_match("22.6.0"));
+        assert!(!VERSION_REGEX.is_match("4.0.1pl1"));
+        assert!(!VERSION_REGEX.is_match("4.0.4REL"));
+
+        // PEP 440 separator-less suffixes (`3.12.0a1`, `1.2.3c1`) live in
+        // PEP440_PRERELEASE_REGEX, not the general regex — see that test below.
+        assert!(!VERSION_REGEX.is_match("3.12.0a1"));
+        assert!(!VERSION_REGEX.is_match("1.2.3c1"));
+
+        // Go pseudo-versions and other identifiers with incidental `[abc]\d`
+        // substrings (commit hashes) must not be flagged.
+        assert!(!VERSION_REGEX.is_match("2.0.0-20260404020628-f149714c1d54"));
+    }
+
+    #[test]
+    fn test_pep440_prerelease_regex() {
+        // Canonical PEP 440 pre-release segments: `aN`, `bN`, `rcN`, plus the
+        // recognized `cN` alias for `rcN`.
+        assert!(PEP440_PRERELEASE_REGEX.is_match("3.12.0a1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("3.12.0b2"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.2.3c1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.2.3rc1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0c1+build"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0a1.dev0"));
+
+        // Stable releases — including `.postN`, which PEP 440 specifies as a
+        // post-release (after a stable), NOT a pre-release.
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("3.12.0"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0.post1"));
+
+        // The `{a|b|rc}N` segment must follow the release segment per the
+        // PEP 440 grammar — the leading-digit anchor enforces that. Identifiers
+        // whose hex hashes happen to contain `c1` / `a1` / `b2` substrings
+        // (e.g. Go pseudo-versions) do not match because the `[abc]` is
+        // preceded by a hex letter, not a digit.
+        assert!(
+            !PEP440_PRERELEASE_REGEX.is_match("2.0.0-20260404020628-f149714c1d54"),
+            "Go pseudo-version with `c1` in hash should not match"
+        );
+        assert!(
+            !PEP440_PRERELEASE_REGEX.is_match("1.0.0-20240101000000-a1b2c3d4e5f6"),
+            "Go pseudo-version with `a1`/`b2`/`c3` in hash should not match"
+        );
+
+        // Bare `aN` / `bN` / `cN` not attached to a release segment (uncommon
+        // but possible identifier shapes) is also rejected.
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("a1"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("b1234567"));
+    }
+}

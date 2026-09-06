@@ -1,0 +1,23 @@
+description = "Kotlin is a modern but already mature programming language designed to make developers happier. It's concise, safe, interoperable with Java and other languages, and provides many ways to reuse code between multiple platforms for productive programming"
+version_order = "semver"
+
+bins = [
+  "kapt",
+  "kotlin",
+  "kotlinc",
+  "kotlinc-js",
+  "kotlinc-jvm",
+  "kotlinc-wasm",
+]
+[[backends]]
+full = "github:JetBrains/kotlin"
+
+[backends.options]
+asset_pattern = "kotlin-compiler-*.zip"
+bin_path = "kotlinc/bin"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-kotlin"
+
+[[backends]]
+full = "vfox:mise-plugins/vfox-kotlin"

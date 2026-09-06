@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+installs_dir="$MISE_DATA_DIR/installs/dummy"
+
+mise install dummy@1.0.0
+assert "test \"\$(readlink '$installs_dir/latest')\" = ./1.0.0"
+assert "test \"\$(readlink '$installs_dir/1.0')\" = ./1.0.0"
+
+# Model aliases created for an install that is later cleaned up after failing.
+ln -sfn ./other-dummy "$installs_dir/latest"
+ln -sfn ./other-dummy "$installs_dir/1.0"
+
+# Planning an install must not repair or otherwise mutate runtime aliases.
+assert_contains "mise install dummy@other-dummy --dry-run 2>&1" "would install"
+assert "test \"\$(readlink '$installs_dir/latest')\" = ./other-dummy"
+assert "test \"\$(readlink '$installs_dir/1.0')\" = ./other-dummy"
+
+install_error=$(quiet_assert_fail "mise install dummy@other-dummy 2>&1")
+assert_contains_text "$install_error" "Failed to install asdf:dummy@other-dummy"
+assert_contains_text "$install_error" "Dummy couldn't install version: other-dummy (on purpose)"
+assert "test ! -e '$installs_dir/other-dummy'"
+assert "test \"\$(readlink '$installs_dir/latest')\" = ./1.0.0"
+assert "test \"\$(readlink '$installs_dir/1.0')\" = ./1.0.0"
+
+# A dependent blocked before its installer starts must not have its pre-existing
+# aliases repaired as a side effect of the dependency's failure.
+blocked_installs_dir="$MISE_DATA_DIR/installs/needs-dummy"
+mise install needs-dummy@1.0.0
+ln -sfn ./blocked-target "$blocked_installs_dir/latest"
+blocked_error=$(quiet_assert_fail "mise install dummy@other-dummy 'needs-dummy[depends=dummy]@1.0.0' 2>&1")
+assert_contains_text "$blocked_error" "Skipped due to failed dependency"
+assert "test \"\$(readlink '$blocked_installs_dir/latest')\" = ./blocked-target"
+
+# With no valid install left, a failed install should remove dangling aliases.
+mise uninstall dummy@1.0.0
+mkdir -p "$installs_dir"
+ln -s ./other-dummy "$installs_dir/latest"
+ln -s ./other-dummy "$installs_dir/1.0"
+
+install_error=$(quiet_assert_fail "mise install dummy@other-dummy 2>&1")
+assert_contains_text "$install_error" "Failed to install asdf:dummy@other-dummy"
+assert_contains_text "$install_error" "Dummy couldn't install version: other-dummy (on purpose)"
+assert "test ! -L '$installs_dir/latest'"
+assert "test ! -L '$installs_dir/1.0'"

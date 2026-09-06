@@ -1,0 +1,5 @@
+backends = ["github:achannarasappa/ticker"]
+bins = ["ticker"]
+description = "Terminal stock ticker with live updates and position tracking"
+test = { cmd = "ticker --version", expected = "ticker version {{version}}" }
+version_order = "semver"

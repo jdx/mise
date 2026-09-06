@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+assert_colored() {
+  local output="$1"
+  if [[ $output != *$'\033['* ]]; then
+    fail "expected ANSI colors in output: $output"
+  fi
+}
+
+assert_uncolored() {
+  local output="$1"
+  if [[ $output == *$'\033['* ]]; then
+    fail "expected no ANSI colors in output: $output"
+  fi
+}
+
+forced_pipe="$TMPDIR/mise-ls-forced-pipe"
+forced_file="$TMPDIR/mise-ls-forced-file"
+plain_pipe="$TMPDIR/mise-ls-plain-pipe"
+force_zero="$TMPDIR/mise-ls-force-zero"
+mise_color_zero="$TMPDIR/mise-ls-mise-color-zero"
+no_color="$TMPDIR/mise-ls-no-color"
+clicolor_zero="$TMPDIR/mise-ls-clicolor-zero"
+force_overrides_clicolor="$TMPDIR/mise-ls-force-overrides-clicolor"
+
+# These independent invocations run concurrently to keep the regression test fast.
+CLICOLOR_FORCE=1 mise ls dummy | cat >"$forced_pipe" &
+pids=("$!")
+CLICOLOR_FORCE=1 mise ls dummy >"$forced_file" &
+pids+=("$!")
+mise ls dummy | cat >"$plain_pipe" &
+pids+=("$!")
+CLICOLOR_FORCE=0 mise ls dummy | cat >"$force_zero" &
+pids+=("$!")
+MISE_COLOR=0 mise ls dummy | cat >"$mise_color_zero" &
+pids+=("$!")
+NO_COLOR=1 mise ls dummy | cat >"$no_color" &
+pids+=("$!")
+CLICOLOR=0 mise ls dummy | cat >"$clicolor_zero" &
+pids+=("$!")
+CLICOLOR=0 CLICOLOR_FORCE=1 mise ls dummy | cat >"$force_overrides_clicolor" &
+pids+=("$!")
+
+for pid in "${pids[@]}"; do
+  wait "$pid"
+done
+
+assert_colored "$(cat "$forced_pipe")"
+assert_colored "$(cat "$forced_file")"
+assert_uncolored "$(cat "$plain_pipe")"
+assert_uncolored "$(cat "$force_zero")"
+assert_uncolored "$(cat "$mise_color_zero")"
+assert_uncolored "$(cat "$no_color")"
+assert_uncolored "$(cat "$clicolor_zero")"
+
+# CLICOLOR_FORCE takes precedence over CLICOLOR=0.
+assert_colored "$(cat "$force_overrides_clicolor")"
+
+forced_output="$(cat "$forced_pipe")"
+[[ $forced_output == *"dummy"* ]] || fail "forced color output omitted table content"

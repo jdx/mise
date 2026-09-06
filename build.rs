@@ -1,0 +1,1177 @@
+#![allow(unknown_lints)]
+#![deny(dead_code_pub_in_binary, unreachable_pub)]
+
+use heck::ToUpperCamelCase;
+use indexmap::IndexMap;
+use serde::Serialize as _;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::{env, fs};
+
+use aqua_registry::encode_package_rkyv;
+use aqua_registry::types::{AquaPackage, AquaPackageType, RegistryPackageRow, RegistryYaml};
+use eyre::{Result, eyre};
+use serde_yaml::Value;
+
+// cfg_aliases 0.2.1 emits semicolon-terminated helper macros in expression
+// position, which the latest nightly compiler rejects as future-incompatible.
+#[allow(semicolon_in_expressions_from_macros)]
+fn main() -> Result<()> {
+    cfg_aliases::cfg_aliases! {
+        asdf: { any(feature = "asdf", not(target_os = "windows")) },
+        macos: { target_os = "macos" },
+        linux: { target_os = "linux" },
+        vfox: { any(feature = "vfox", target_os = "windows") },
+    }
+    built::write_built_file()?;
+
+    let aqua_registry = load_aqua_registry()?;
+    codegen_settings();
+    codegen_registry(&aqua_registry.packages);
+    codegen_aqua_standard_registry(&aqua_registry)?;
+    Ok(())
+}
+
+#[derive(Debug)]
+struct AquaPackageRegistry {
+    id: String,
+    content: Vec<u8>,
+    aliases: Vec<String>,
+    search_backend: Option<String>,
+    search_overrides: Vec<AquaSearchOverrideRegistry>,
+}
+
+#[derive(Debug)]
+struct AquaSearchOverrideRegistry {
+    goos: Option<String>,
+    goarch: Option<String>,
+    envs: Vec<String>,
+    libc: Option<String>,
+    backend: Option<String>,
+}
+
+/// Generate a raw string literal that safely contains the given content.
+/// Dynamically determines the minimum number of '#' needed.
+fn raw_string_literal(s: &str) -> String {
+    // Find the longest sequence of '#' characters following a '"' in the string
+    let mut max_hashes = 0;
+    let mut current_hashes = 0;
+    let mut after_quote = false;
+
+    for c in s.chars() {
+        if after_quote {
+            if c == '#' {
+                current_hashes += 1;
+                max_hashes = max_hashes.max(current_hashes);
+            } else {
+                after_quote = false;
+                current_hashes = 0;
+            }
+        }
+        if c == '"' {
+            after_quote = true;
+            current_hashes = 0;
+        }
+    }
+
+    // Use one more '#' than the longest sequence found
+    let hashes = "#".repeat(max_hashes + 1);
+    format!("r{hashes}\"{s}\"{hashes}")
+}
+
+/// Parse options from a TOML value into a Vec of (key, value) pairs
+fn parse_options(opts: Option<&toml::Value>) -> Vec<(String, String)> {
+    opts.map(|opts| {
+        if let Some(table) = opts.as_table() {
+            table
+                .iter()
+                .map(|(k, v)| {
+                    let mut value = String::new();
+                    v.serialize(toml::ser::ValueSerializer::new(&mut value))
+                        .unwrap_or_else(|e| panic!("failed to serialize registry option {k}: {e}"));
+                    (k.clone(), value)
+                })
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        }
+    })
+    .unwrap_or_default()
+}
+
+fn load_registry_tools() -> toml::map::Map<String, toml::Value> {
+    let mut tools = toml::map::Map::new();
+    let registry_dir = Path::new("registry");
+
+    println!("cargo:rerun-if-changed=registry");
+
+    let mut files: Vec<_> = fs::read_dir(registry_dir)
+        .expect("registry directory not found")
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "toml"))
+        .collect();
+    files.sort();
+
+    for file in files {
+        println!("cargo:rerun-if-changed={}", file.display());
+        let tool_name = file
+            .file_stem()
+            .expect("file has no stem")
+            .to_str()
+            .expect("filename is not valid UTF-8")
+            .to_string();
+        let content = fs::read_to_string(&file)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {}", file.display(), e));
+        let tool_info: toml::Value = toml::de::from_str(&content)
+            .unwrap_or_else(|e| panic!("Failed to parse {}: {}", file.display(), e));
+        tools.insert(tool_name, tool_info);
+    }
+    tools
+}
+
+fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
+    let out_dir = env::var_os("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("registry.rs");
+    let mut generated_entries = BTreeMap::new();
+
+    let tools = load_registry_tools();
+    let aqua_bins = aqua_package_bin_names(aqua_packages);
+    for (short, info) in &tools {
+        let info = info.as_table().unwrap();
+        let version_order = match info.get("version_order").and_then(|v| v.as_str()) {
+            Some("source") => "VersionOrder::Source",
+            Some("semver") => "VersionOrder::Semver",
+            Some(_) => panic!("[{short}] 'version_order' must be 'source' or 'semver'"),
+            None => {
+                panic!("[{short}] 'version_order' must be explicitly set to 'source' or 'semver'")
+            }
+        };
+        let aliases = info
+            .get("aliases")
+            .cloned()
+            .unwrap_or(toml::Value::Array(vec![]))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        let test = info.get("test").map(|t| {
+            let t = t
+                .as_table()
+                .unwrap_or_else(|| panic!("[{short}] 'test' field must be a table"));
+            let cmd = t
+                .get("cmd")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| panic!("[{short}] 'test.cmd' must be a string"))
+                .to_string();
+            let expected = t
+                .get("expected")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| panic!("[{short}] 'test.expected' must be a string"))
+                .to_string();
+            let tools = t
+                .get("tools")
+                .map(|tools| {
+                    let mut tools = tools
+                        .as_array()
+                        .unwrap_or_else(|| panic!("[{short}] 'test.tools' must be an array"))
+                        .iter()
+                        .map(|v| {
+                            v.as_str()
+                                .unwrap_or_else(|| {
+                                    panic!("[{short}] 'test.tools' must contain only strings")
+                                })
+                                .to_string()
+                        })
+                        .collect::<Vec<_>>();
+                    tools.sort();
+                    tools
+                })
+                .unwrap_or_default();
+            (cmd, expected, tools)
+        });
+        let mut backends = vec![];
+        for backend in info.get("backends").unwrap().as_array().unwrap() {
+            match backend {
+                toml::Value::String(backend) => {
+                    backends.push(format!(
+                        r##"RegistryBackend{{
+                            full: r#"{backend}"#,
+                            platforms: &[],
+                            min_version: None,
+                            options: &[],
+                        }}"##
+                    ));
+                }
+                toml::Value::Table(backend) => {
+                    let full = backend.get("full").unwrap().as_str().unwrap();
+                    let platforms = backend
+                        .get("platforms")
+                        .map(|p| {
+                            p.as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|p| p.as_str().unwrap().to_string())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    let min_version = backend
+                        .get("min_version")
+                        .map(|value| {
+                            let value = value
+                                .as_str()
+                                .expect("backend min_version must be a string");
+                            assert_eq!(
+                                version_order, "VersionOrder::Semver",
+                                "[{short}] backend min_version requires version_order = semver"
+                            );
+                            semver::Version::parse(value)
+                                .expect("backend min_version must be a semantic version");
+                            format!("Some({})", raw_string_literal(value))
+                        })
+                        .unwrap_or_else(|| "None".to_string());
+                    let backend_options = parse_options(backend.get("options"));
+                    backends.push(format!(
+                        r##"RegistryBackend{{
+                            full: r#"{full}"#,
+                            platforms: &[{platforms}],
+                            min_version: {min_version},
+                            options: &[{options}],
+                        }}"##,
+                        platforms = platforms
+                            .into_iter()
+                            .map(|p| format!("\"{p}\""))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        options = backend_options
+                            .iter()
+                            .map(|(k, v)| format!(
+                                "({}, {})",
+                                raw_string_literal(k),
+                                raw_string_literal(v)
+                            ))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+                _ => panic!("Unknown backend type"),
+            }
+        }
+        let os = info
+            .get("os")
+            .map(|os| {
+                let os = os.as_array().unwrap();
+                let mut os = os
+                    .iter()
+                    .map(|o| o.as_str().unwrap().to_string())
+                    .collect::<Vec<_>>();
+                os.sort();
+                os
+            })
+            .unwrap_or_default();
+        let description = info
+            .get("description")
+            .map(|d| d.as_str().unwrap().to_string());
+        let bins = info
+            .get("bins")
+            .map(|bins| {
+                bins.as_array()
+                    .unwrap_or_else(|| panic!("[{short}] 'bins' must be an array"))
+                    .iter()
+                    .map(|bin| {
+                        bin.as_str()
+                            .unwrap_or_else(|| panic!("[{short}] 'bins' must contain only strings"))
+                            .to_string()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| {
+                let preferred_aqua_package = info
+                    .get("backends")
+                    .and_then(toml::Value::as_array)
+                    .and_then(|backends| backends.first())
+                    .and_then(registry_backend_full)
+                    .and_then(|backend| backend.strip_prefix("aqua:"));
+                let Some(package) = preferred_aqua_package else {
+                    return vec![];
+                };
+                let bins = aqua_bins.get(package).unwrap_or_else(|| {
+                    panic!("[{short}] preferred Aqua package {package:?} was not found")
+                });
+                assert!(
+                    !bins.is_empty(),
+                    "[{short}] preferred Aqua package {package:?} has no inferred bins"
+                );
+                bins.clone()
+            });
+        let idiomatic_files = info
+            .get("idiomatic_files")
+            .map(|idiomatic_files| {
+                idiomatic_files
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|f| match f {
+                        toml::Value::String(path) => format!(
+                            "RegistryIdiomaticFile {{ path: {}, version_regex: None, version_json_path: None, version_expr: None, deprecated: None }}",
+                            raw_string_literal(path)
+                        ),
+                        toml::Value::Table(spec) => {
+                            for key in spec.keys() {
+                                assert!(
+                                    matches!(
+                                        key.as_str(),
+                                        "path"
+                                            | "version_regex"
+                                            | "version_json_path"
+                                            | "version_expr"
+                                            | "deprecated"
+                                    ),
+                                    "[{short}] unknown idiomatic file field: {key}"
+                                );
+                            }
+                            let required = |key: &str| {
+                                spec.get(key)
+                                    .and_then(|value| value.as_str())
+                                    .unwrap_or_else(|| {
+                                        panic!(
+                                            "[{short}] idiomatic_files.{key} must be a string"
+                                        )
+                                    })
+                            };
+                            let optional = |key: &str| {
+                                spec.get(key)
+                                    .map(|value| {
+                                        value.as_str().unwrap_or_else(|| {
+                                            panic!(
+                                                "[{short}] idiomatic_files.{key} must be a string"
+                                            )
+                                        })
+                                    })
+                                    .map(raw_string_literal)
+                                    .map(|value| format!("Some({value})"))
+                                    .unwrap_or_else(|| "None".to_string())
+                            };
+                            format!(
+                                "RegistryIdiomaticFile {{ path: {}, version_regex: {}, version_json_path: {}, version_expr: {}, deprecated: {} }}",
+                                raw_string_literal(required("path")),
+                                optional("version_regex"),
+                                optional("version_json_path"),
+                                optional("version_expr"),
+                                optional("deprecated"),
+                            )
+                        }
+                        _ => panic!(
+                            "[{short}] idiomatic_files entries must be strings or tables"
+                        ),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let detect = info
+            .get("detect")
+            .map(|detect| {
+                detect
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|f| f.as_str().unwrap().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let overrides = info
+            .get("overrides")
+            .map(|overrides| {
+                overrides
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|f| f.as_str().unwrap().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let rt = format!(
+            r#"RegistryTool{{short: "{short}", description: {description}, version_order: {version_order}, backends: &[{backends}], bins: &[{bins}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
+            version_order = version_order,
+            description = description
+                .map(|d| format!("Some({})", raw_string_literal(&d)))
+                .unwrap_or("None".to_string()),
+            backends = backends.into_iter().collect::<Vec<_>>().join(", "),
+            bins = bins
+                .iter()
+                .map(|bin| raw_string_literal(bin))
+                .collect::<Vec<_>>()
+                .join(", "),
+            aliases = aliases
+                .iter()
+                .map(|a| format!("\"{a}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            test = test
+                .map(|(cmd, expected, tools)| format!(
+                    "Some(RegistryToolTest{{ cmd: {}, expected: {}, tools: &[{}] }})",
+                    raw_string_literal(&cmd),
+                    raw_string_literal(&expected),
+                    tools
+                        .iter()
+                        .map(|tool| format!("\"{tool}\""))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))
+                .unwrap_or("None".to_string()),
+            os = os
+                .iter()
+                .map(|o| format!("\"{o}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            idiomatic_files = idiomatic_files.to_vec().join(", "),
+            detect = detect
+                .iter()
+                .map(|f| format!("\"{f}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            overrides = overrides
+                .iter()
+                .map(|f| format!("\"{f}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        generated_entries.insert(short.clone(), rt.clone());
+        for alias in aliases {
+            generated_entries.insert(alias, rt.clone());
+        }
+    }
+
+    let entries = generated_entries.into_iter().collect::<Vec<_>>();
+    fs::write(&dest_path, registry_code(&entries)).unwrap();
+}
+
+fn registry_code(entries: &[(String, String)]) -> String {
+    let mut code = String::from("Registry {\n    entries: &[\n");
+    for (key, tool) in entries {
+        code.push_str(&format!("        ({key:?}, {tool}),\n"));
+    }
+    code.push_str("    ],\n    lookup: RegistryLookup::Static(");
+    code.push_str(&phf_usize_map_code(
+        entries
+            .iter()
+            .enumerate()
+            .map(|(index, (key, _))| (key.clone(), index.to_string()))
+            .collect::<Vec<_>>(),
+    ));
+    code.push_str("),\n    missing_version_order: false,\n}");
+    code
+}
+
+fn phf_usize_map_code(entries: Vec<(String, String)>) -> String {
+    let mut map = phf_codegen::Map::new();
+    for (key, value) in &entries {
+        map.entry(key, value);
+    }
+    map.build().to_string()
+}
+
+fn load_aqua_registry() -> Result<RegistryYaml> {
+    let registry_file = Path::new("vendor/aqua-registry/registry.yml");
+    println!("cargo:rerun-if-changed={}", registry_file.display());
+    Ok(serde_yaml::from_str::<RegistryYaml>(&fs::read_to_string(
+        registry_file,
+    )?)?)
+}
+
+fn registry_backend_full(backend: &toml::Value) -> Option<&str> {
+    match backend {
+        toml::Value::String(backend) => Some(backend),
+        toml::Value::Table(backend) => backend.get("full")?.as_str(),
+        _ => None,
+    }
+}
+
+fn aqua_package_bin_names(rows: &[RegistryPackageRow]) -> HashMap<String, Vec<String>> {
+    let mut bins = HashMap::new();
+    for row in rows {
+        let Some(id) = aqua_canonical_package_id(&row.package) else {
+            continue;
+        };
+        let package_bins = row.package.possible_bin_names();
+        bins.insert(id, package_bins.clone());
+        for alias in &row.aliases {
+            bins.insert(alias.clone(), package_bins.clone());
+        }
+    }
+    bins
+}
+
+fn codegen_aqua_standard_registry(registry_yaml: &RegistryYaml) -> Result<()> {
+    let out_dir = env::var("OUT_DIR")?;
+    let files_dest_path = Path::new(&out_dir).join("aqua_standard_registry_files.rs");
+    let aliases_dest_path = Path::new(&out_dir).join("aqua_standard_registry_aliases.rs");
+    let search_dest_path = Path::new(&out_dir).join("aqua_standard_registry_search.rs");
+    let metadata_dest_path = Path::new(&out_dir).join("aqua_standard_registry_metadata.rs");
+    let packages_dir = Path::new(&out_dir).join("aqua_standard_registry_packages");
+
+    let metadata_file = Path::new("vendor/aqua-registry/metadata.json");
+
+    println!("cargo:rerun-if-changed={}", metadata_file.display());
+
+    let registries = aqua_package_registries(&registry_yaml.packages)?;
+    if registries.is_empty() {
+        return Err(eyre!(
+            "Aqua registry file {} contains no packages",
+            "vendor/aqua-registry/registry.yml"
+        ));
+    }
+
+    fs::create_dir_all(&packages_dir)?;
+    fs::write(
+        files_dest_path,
+        aqua_registry_files_code(&registries, &packages_dir)?,
+    )?;
+    fs::write(aliases_dest_path, aqua_registry_aliases_code(&registries)?)?;
+    fs::write(search_dest_path, aqua_registry_search_code(&registries))?;
+
+    let metadata = serde_yaml::from_str::<Value>(&fs::read_to_string(metadata_file)?)?;
+    let repository = yaml_string_field(&metadata, "repository").ok_or_else(|| {
+        eyre!(
+            "Aqua registry metadata file {} does not contain a repository",
+            metadata_file.display()
+        )
+    })?;
+    let tag = yaml_string_field(&metadata, "tag").ok_or_else(|| {
+        eyre!(
+            "Aqua registry metadata file {} does not contain a tag",
+            metadata_file.display()
+        )
+    })?;
+
+    fs::write(
+        metadata_dest_path,
+        format!("AquaRegistryMetadata {{ repository: {repository:?}, tag: {tag:?} }}"),
+    )?;
+
+    Ok(())
+}
+
+fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackageRegistry>> {
+    let mut registries = Vec::new();
+    let mut canonical_ids = HashMap::new();
+    for (index, row) in rows.iter().enumerate() {
+        let package = &row.package;
+        let Some(id) = aqua_canonical_package_id(package) else {
+            println!(
+                "cargo:warning=skipping aqua registry package row {index}: missing name, repo_owner/repo_name, and path"
+            );
+            continue;
+        };
+        if let Some(existing) = canonical_ids.insert(id.clone(), index) {
+            return Err(eyre!(
+                "baked aqua registry package id collision for {id:?}: rows {existing} and {index}"
+            ));
+        }
+        let content = encode_package_rkyv(package)?;
+        let (effective_package, allow_go_repo_fallback) =
+            package.clone().with_unconditional_version_override();
+        let search_backend = aqua_search_backend(&effective_package, allow_go_repo_fallback);
+        let mut search_overrides = effective_package
+            .platform_overrides()
+            .into_iter()
+            .map(|package_override| AquaSearchOverrideRegistry {
+                goos: package_override.goos,
+                goarch: package_override.goarch,
+                envs: package_override.envs,
+                libc: package_override.libc,
+                backend: aqua_search_backend(&package_override.package, allow_go_repo_fallback),
+            })
+            .collect::<Vec<_>>();
+        if search_overrides
+            .iter()
+            .all(|package_override| package_override.backend == search_backend)
+        {
+            search_overrides.clear();
+        }
+        registries.push(AquaPackageRegistry {
+            id,
+            content,
+            aliases: row.aliases.clone(),
+            search_backend,
+            search_overrides,
+        });
+    }
+    Ok(registries)
+}
+
+fn aqua_search_backend(package: &AquaPackage, allow_go_repo_fallback: bool) -> Option<String> {
+    match package.package_type() {
+        AquaPackageType::Cargo => package
+            .crate_name
+            .as_deref()
+            .or_else(|| {
+                package
+                    .name
+                    .as_deref()
+                    .and_then(|name| name.strip_prefix("crates.io/"))
+            })
+            .filter(|name| !is_aqua_template(name))
+            .map(|name| format!("cargo:{name}"))
+            .or(Some(String::new())),
+        AquaPackageType::GoInstall => package
+            .path
+            .as_deref()
+            .filter(|path| !is_aqua_template(path))
+            .map(|path| format!("go:{path}"))
+            .or_else(|| {
+                (allow_go_repo_fallback
+                    && !package.repo_owner.is_empty()
+                    && !package.repo_name.is_empty()
+                    && !is_aqua_template(&package.repo_owner)
+                    && !is_aqua_template(&package.repo_name))
+                .then(|| format!("go:github.com/{}/{}", package.repo_owner, package.repo_name))
+            })
+            .or(Some(String::new())),
+        AquaPackageType::GoBuild => Some(String::new()),
+        AquaPackageType::GithubArchive
+        | AquaPackageType::GithubContent
+        | AquaPackageType::GithubRelease
+        | AquaPackageType::Http => None,
+    }
+}
+
+fn is_aqua_template(value: &str) -> bool {
+    value.contains("{{") || value.contains("}}")
+}
+
+fn aqua_registry_files_code(
+    registries: &[AquaPackageRegistry],
+    packages_dir: &Path,
+) -> Result<String> {
+    let mut used_stems = HashMap::new();
+    let mut entries = registries
+        .iter()
+        .map(|registry| {
+            let stem = aqua_package_file_stem(&registry.id);
+            if let Some(other_id) = used_stems.insert(stem.clone(), registry.id.as_str()) {
+                return Err(eyre!(
+                    "baked aqua registry package filename collision for {other_id:?} and {:?}: {stem}",
+                    registry.id
+                ));
+            }
+            let filename = format!("{stem}.rkyv");
+            let path = packages_dir.join(filename);
+            fs::write(&path, &registry.content)?;
+            Ok((registry.id.clone(), path))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    Ok(aqua_registry_bytes_map_code(&entries))
+}
+
+fn aqua_registry_bytes_map_code(entries: &[(String, PathBuf)]) -> String {
+    let mut map = phf_codegen::Map::new();
+    let mut values = Vec::new();
+    for (key, path) in entries {
+        values.push((
+            key.clone(),
+            format!(
+                "include_bytes!({:?}).as_slice()",
+                path.display().to_string()
+            ),
+        ));
+    }
+    for (key, value) in &values {
+        map.entry(key, value);
+    }
+    map.build().to_string()
+}
+
+/// Hashes the canonical package ID with FNV-1a 64-bit to generate compact,
+/// deterministic baked package filenames without leaking path separators.
+fn aqua_package_file_stem(id: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in id.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn aqua_registry_aliases_code(registries: &[AquaPackageRegistry]) -> Result<String> {
+    let canonical_ids = registries
+        .iter()
+        .map(|registry| registry.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut aliases = BTreeMap::new();
+
+    for registry in registries {
+        for alias in &registry.aliases {
+            if alias != &registry.id
+                && !canonical_ids.contains(alias.as_str())
+                && let Some(existing) = aliases.insert(alias.clone(), registry.id.clone())
+                && existing != registry.id
+            {
+                return Err(eyre!(
+                    "baked aqua registry alias collision for {alias:?}: {existing:?} and {:?}",
+                    registry.id
+                ));
+            }
+        }
+    }
+
+    let entries = aliases.into_iter().collect::<Vec<_>>();
+
+    Ok(aqua_registry_string_map_code(&entries))
+}
+
+fn aqua_registry_search_code(registries: &[AquaPackageRegistry]) -> String {
+    let entries = registries
+        .iter()
+        .filter_map(|registry| {
+            if registry.search_backend.is_none() && registry.search_overrides.is_empty() {
+                return None;
+            }
+            let overrides = registry
+                .search_overrides
+                .iter()
+                .map(|package_override| {
+                    let envs = package_override
+                        .envs
+                        .iter()
+                        .map(|env| format!("{env:?}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(
+                        "AquaSearchBackendOverride {{ goos: {}, goarch: {}, envs: &[{envs}], libc: {}, backend: {} }}",
+                        rust_option_str(package_override.goos.as_deref()),
+                        rust_option_str(package_override.goarch.as_deref()),
+                        rust_option_str(package_override.libc.as_deref()),
+                        rust_option_str(package_override.backend.as_deref()),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some((
+                registry.id.clone(),
+                format!(
+                    "AquaSearchBackends {{ default: {}, overrides: &[{overrides}] }}",
+                    rust_option_str(registry.search_backend.as_deref()),
+                ),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let mut map = phf_codegen::Map::new();
+    for (key, value) in &entries {
+        map.entry(key, value);
+    }
+    map.build().to_string()
+}
+
+fn rust_option_str(value: Option<&str>) -> String {
+    value.map_or_else(|| "None".to_string(), |value| format!("Some({value:?})"))
+}
+
+fn aqua_registry_string_map_code(entries: &[(String, String)]) -> String {
+    let mut map = phf_codegen::Map::new();
+    let mut values = Vec::new();
+    for (key, value) in entries {
+        values.push((key.clone(), format!("{value:?}")));
+    }
+    for (key, value) in &values {
+        map.entry(key, value);
+    }
+    map.build().to_string()
+}
+
+fn aqua_canonical_package_id(package: &AquaPackage) -> Option<String> {
+    package
+        .name
+        .clone()
+        .or_else(|| {
+            if package.repo_owner.is_empty() || package.repo_name.is_empty() {
+                None
+            } else {
+                Some(format!("{}/{}", package.repo_owner, package.repo_name))
+            }
+        })
+        .or_else(|| package.path.clone())
+}
+
+fn yaml_string_field(value: &Value, key: &str) -> Option<String> {
+    value.get(key)?.as_str().map(str::to_string)
+}
+
+/// Generate Rust setting types, metadata, and file-layer merge behavior from settings.toml.
+fn codegen_settings() {
+    let out_dir = env::var_os("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("settings.rs");
+    let mut lines = vec![
+        r#"#[derive(Config, Default, Debug, Clone, Serialize)]
+#[config(layer_attr(derive(Clone, Serialize, Default)))]
+pub(crate) struct Settings {"#
+            .to_string(),
+    ];
+
+    println!("cargo:rerun-if-changed=settings.toml");
+    let settings_toml = fs::read_to_string("settings.toml").expect("Failed to read settings.toml");
+    let settings: toml::Table =
+        toml::de::from_str(&settings_toml).expect("Failed to parse settings.toml");
+    /// Build a collision-resistant generated Rust type name for a settings path.
+    fn settings_struct_name(path: &[&str]) -> String {
+        if let [part] = path {
+            return format!("Settings{}", part.to_upper_camel_case());
+        }
+
+        let mut name = "SettingsNested".to_string();
+        for part in path {
+            // Encode both component boundaries and the original bytes so distinct
+            // TOML paths cannot collapse to the same generated Rust type name.
+            name.push('P');
+            name.push_str(&part.len().to_string());
+            name.push('X');
+            for byte in part.as_bytes() {
+                name.push_str(&format!("{byte:02X}"));
+            }
+        }
+        name
+    }
+
+    /// Render one settings.toml entry as a field in a generated settings struct.
+    fn props_to_code(key: &str, props: &toml::Value, parent_path: &[&str]) -> String {
+        let mut lines = vec![];
+        let props = props.as_table().unwrap();
+        if let Some(description) = props.get("description") {
+            lines.push(format!("    /// {}", description.as_str().unwrap()));
+        }
+        let type_ = props
+            .get("rust_type")
+            .map(|rt| rt.as_str().unwrap())
+            .or_else(|| {
+                props.get("type").map(|t| match t.as_str().unwrap() {
+                    "Bool" => "bool",
+                    "String" => "String",
+                    "Integer" => "i64",
+                    "Url" => "String",
+                    "Path" => "PathBuf",
+                    "Duration" => "String",
+                    "ListString" => "Vec<String>",
+                    "ListPath" => "Vec<PathBuf>",
+                    "SetString" => "BTreeSet<String>",
+                    "IndexMap<String, String>" => "IndexMap<String, String>",
+                    "BoolOrString" => {
+                        panic!(r#"type \"BoolOrString\" requires a `rust_type` to be specified"#)
+                    }
+                    t => panic!("Unknown type: {t}"),
+                })
+            });
+        if let Some(type_) = type_ {
+            let type_ = if props.get("optional").is_some_and(|v| v.as_bool().unwrap()) {
+                format!("Option<{type_}>")
+            } else {
+                type_.to_string()
+            };
+            let mut opts = IndexMap::new();
+            if let Some(env) = props.get("env") {
+                opts.insert("env".to_string(), env.to_string());
+            }
+            if let Some(default) = props.get("default") {
+                opts.insert("default".to_string(), default.to_string());
+            } else if type_ == "bool" {
+                opts.insert("default".to_string(), "false".to_string());
+            }
+            if let Some(parse_env) = props.get("parse_env") {
+                opts.insert(
+                    "parse_env".to_string(),
+                    parse_env.as_str().unwrap().to_string(),
+                );
+            }
+            if let Some(deserialize_with) = props.get("deserialize_with") {
+                opts.insert(
+                    "deserialize_with".to_string(),
+                    deserialize_with.as_str().unwrap().to_string(),
+                );
+            }
+            lines.push(format!(
+                "    #[config({})]",
+                opts.iter()
+                    .map(|(k, v)| format!("{k} = {v}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+            lines.push(format!("    pub {key}: {type_},"));
+        } else {
+            lines.push("    #[config(nested)]".to_string());
+            let mut path = parent_path.to_vec();
+            path.push(key);
+            lines.push(format!("    pub {key}: {},", settings_struct_name(&path)));
+        }
+        lines.join("\n")
+    }
+    for (key, props) in &settings {
+        lines.push(props_to_code(key, props, &[]));
+    }
+    lines.push("}".to_string());
+
+    /// Emit generated settings structs for every nested settings.toml table.
+    fn emit_nested_settings(lines: &mut Vec<String>, table: &toml::Table, parent_path: &[&str]) {
+        for (child, props) in table
+            .iter()
+            .filter(|(_, value)| !value.as_table().unwrap().contains_key("type"))
+        {
+            let mut path = parent_path.to_vec();
+            path.push(child);
+            lines.push(format!(
+                r#"
+#[derive(Config, Default, Debug, Clone, Serialize)]
+#[config(layer_attr(derive(Clone, Serialize, Default)))]
+#[config(layer_attr(serde(deny_unknown_fields)))]
+pub(crate) struct {name} {{"#,
+                name = settings_struct_name(&path)
+            ));
+
+            for (key, props) in props.as_table().unwrap() {
+                lines.push(props_to_code(key, props, &path));
+            }
+            lines.push("}".to_string());
+            emit_nested_settings(lines, props.as_table().unwrap(), &path);
+        }
+    }
+    emit_nested_settings(&mut lines, &settings, &[]);
+
+    lines.push(
+        r#"
+/// Validate collection values constrained by `enum` in settings.toml.
+pub(crate) fn validate_settings_enum_values(settings: &Settings) -> Result<()> {"#
+            .to_string(),
+    );
+    /// Emit runtime validators for constrained string collections.
+    fn emit_collection_enum_validators(
+        lines: &mut Vec<String>,
+        table: &toml::Table,
+        path: &[&str],
+    ) {
+        for (key, value) in table {
+            let props = value.as_table().unwrap();
+            let mut field_path = path.to_vec();
+            field_path.push(key);
+            let Some(type_) = props.get("type").and_then(toml::Value::as_str) else {
+                emit_collection_enum_validators(lines, props, &field_path);
+                continue;
+            };
+            if !matches!(type_, "ListString" | "SetString") {
+                continue;
+            }
+            let Some(allowed) = props.get("enum").and_then(toml::Value::as_array) else {
+                continue;
+            };
+            let allowed = allowed
+                .iter()
+                .map(|value| {
+                    value.as_str().unwrap_or_else(|| {
+                        panic!("enum values for {} must be strings", field_path.join("."))
+                    })
+                })
+                .collect::<Vec<_>>();
+            let allowed_code = allowed
+                .iter()
+                .map(|value| format!("{value:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let name = field_path.join(".");
+            let field = format!("settings.{name}");
+            let values = if props.get("optional").is_some_and(|v| v.as_bool().unwrap()) {
+                format!("{field}.as_ref().into_iter().flatten().map(String::as_str)")
+            } else {
+                format!("{field}.iter().map(String::as_str)")
+            };
+            lines.push(format!(
+                "    validate_setting_enum_values({name:?}, {values}, &[{allowed_code}])?;"
+            ));
+        }
+    }
+    emit_collection_enum_validators(&mut lines, &settings, &[]);
+    lines.push("    Ok(())".to_string());
+    lines.push("}".to_string());
+
+    lines.push(
+        r#"
+/// Apply the merge strategies declared in settings.toml to config-file layers.
+pub(crate) fn merge_settings_file_layers(layers: &mut [SettingsPartial]) {"#
+            .to_string(),
+    );
+    for (key, props) in &settings {
+        let props = props.as_table().unwrap();
+        let Some(strategy) = props.get("merge") else {
+            continue;
+        };
+        let strategy = strategy
+            .as_str()
+            .expect("setting merge strategy must be a string");
+        match (strategy, props.get("type").and_then(toml::Value::as_str)) {
+            ("append_unique", Some("ListString")) => lines.push(format!(
+                r#"    {{
+        let mut found = false;
+        let values = layers
+            .iter_mut()
+            .rev()
+            .filter_map(|layer| {{
+                let values = layer.{key}.take();
+                found |= values.is_some();
+                values
+            }})
+            .flatten()
+            .unique()
+            .collect();
+        if found {{
+            layers[0].{key} = Some(values);
+        }}
+    }}"#
+            )),
+            _ => panic!(
+                "unsupported merge strategy {strategy:?} for setting {key:?}; append_unique requires ListString"
+            ),
+        }
+    }
+    lines.push("}".to_string());
+
+    lines.push(
+        r#"
+pub(crate) static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new(|| {
+    indexmap!{"#
+            .to_string(),
+    );
+    /// Emit deprecation metadata shared by each generated settings metadata entry.
+    fn push_deprecated_fields(lines: &mut Vec<String>, props: &toml::Table) {
+        let deprecated = props
+            .get("deprecated")
+            .map(|v| v.as_str().unwrap().to_string());
+        let warn_at = props
+            .get("deprecated_warn_at")
+            .map(|v| v.as_str().unwrap().to_string());
+        let remove_at = props
+            .get("deprecated_remove_at")
+            .map(|v| v.as_str().unwrap().to_string());
+        match deprecated {
+            Some(msg) => lines.push(format!(
+                "        deprecated: Some({}),",
+                raw_string_literal(&msg)
+            )),
+            None => lines.push("        deprecated: None,".to_string()),
+        }
+        match warn_at {
+            Some(v) => lines.push(format!("        deprecated_warn_at: Some({v:?}),")),
+            None => lines.push("        deprecated_warn_at: None,".to_string()),
+        }
+        match remove_at {
+            Some(v) => lines.push(format!("        deprecated_remove_at: Some({v:?}),")),
+            None => lines.push("        deprecated_remove_at: None,".to_string()),
+        }
+        lines.push(format!(
+            "        global_only: {},",
+            props
+                .get("global_only")
+                .is_some_and(|v| v.as_bool().unwrap())
+        ));
+        lines.push(format!(
+            "        env_only: {},",
+            props.get("env_only").is_some_and(|v| v.as_bool().unwrap())
+        ));
+    }
+    /// Emit flattened runtime metadata for settings and nested settings tables.
+    fn emit_settings_meta(lines: &mut Vec<String>, table: &toml::Table, prefix: &str) {
+        for (key, value) in table {
+            let name = if prefix.is_empty() {
+                key.clone()
+            } else {
+                format!("{prefix}.{key}")
+            };
+            let props = value.as_table().unwrap();
+            if let Some(type_) = props.get("type").map(|value| value.as_str().unwrap()) {
+                // We could shadow the 'type_' variable, but its a best practice to avoid shadowing.
+                // Thus, we introduce 'meta_type' here.
+                let meta_type = match type_ {
+                    "IndexMap<String, String>" => "IndexMap",
+                    other => other,
+                };
+                lines.push(format!(
+                    r#"    "{name}" => SettingsMeta {{
+        type_: SettingsType::{meta_type},"#,
+                ));
+                if let Some(description) = props.get("description") {
+                    let description = description.as_str().unwrap().to_string();
+                    lines.push(format!(
+                        "        description: {},",
+                        raw_string_literal(&description)
+                    ));
+                }
+                match props.get("env").and_then(|value| value.as_str()) {
+                    Some(env) => lines.push(format!("        env: Some({env:?}),")),
+                    None => lines.push("        env: None,".to_string()),
+                }
+                push_deprecated_fields(lines, props);
+                lines.push("    },".to_string());
+            } else {
+                emit_settings_meta(lines, props, &name);
+            }
+        }
+    }
+    emit_settings_meta(&mut lines, &settings, "");
+    lines.push(
+        r#"    }
+});
+    "#
+        .to_string(),
+    );
+
+    // Generate MisercSettings struct for early initialization settings
+    lines.push(
+        r#"
+/// Settings that can be set in .miserc.toml for early initialization.
+/// These settings affect config file discovery and must be loaded before
+/// the main config files are parsed.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub(crate) struct MisercSettings {"#
+            .to_string(),
+    );
+
+    for (key, props) in &settings {
+        let props = props.as_table().unwrap();
+        // Only include settings with rc = true
+        if props
+            .get("rc")
+            .is_some_and(|v| v.as_bool().unwrap_or(false))
+        {
+            if let Some(description) = props.get("description") {
+                lines.push(format!("    /// {}", description.as_str().unwrap()));
+            }
+            let type_ = props
+                .get("rust_type")
+                .map(|rt| rt.as_str().unwrap())
+                .or_else(|| {
+                    props.get("type").map(|t| match t.as_str().unwrap() {
+                        "Bool" => "bool",
+                        "String" => "String",
+                        "Integer" => "i64",
+                        "Url" => "String",
+                        "Path" => "PathBuf",
+                        "Duration" => "String",
+                        "ListString" => "Vec<String>",
+                        "ListPath" => "Vec<PathBuf>",
+                        "SetString" => "BTreeSet<String>",
+                        "IndexMap<String, String>" => "IndexMap<String, String>",
+                        "BoolOrString" => panic!(
+                            r#"type \"BoolOrString\" requires a `rust_type` to be specified"#
+                        ),
+                        t => panic!("Unknown type: {t}"),
+                    })
+                });
+            if let Some(type_) = type_ {
+                // All miserc settings are optional
+                let type_ = format!("Option<{type_}>");
+                lines.push(format!("    pub {key}: {type_},"));
+            }
+        }
+    }
+    lines.push("}".to_string());
+
+    fs::write(&dest_path, lines.join("\n")).unwrap();
+}

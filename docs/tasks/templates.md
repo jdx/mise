@@ -1,0 +1,187 @@
+# Task Templates
+
+Task templates let you define reusable task definitions that multiple tasks can extend. They are particularly useful in monorepos or projects with similar task patterns across components.
+
+The Python examples below assume a uv project whose development dependencies
+include `pytest` and, for coverage, `pytest-cov`. Declaring Python as a tool does
+not install those project packages.
+
+## Defining Templates
+
+Templates are defined in the `[task_templates.*]` section of your `mise.toml`:
+
+```toml
+[task_templates."python:build"]
+description = "Build a Python project"
+run = "uv build"
+tools = { python = "3.12", uv = "latest" }
+env = { PYTHONPATH = "src" }
+
+[task_templates."python:test"]
+description = "Run Python tests"
+run = "uv run pytest"
+tools = { python = "3.12", uv = "latest" }
+depends = ["build"]
+```
+
+## Extending Templates
+
+Tasks can extend templates using the `extends` field:
+
+```toml
+[tasks.build]
+extends = "python:build"
+
+[tasks.test]
+extends = "python:test"
+run = "uv run pytest --cov"  # Override run while keeping tools, depends
+```
+
+## Template Naming
+
+Templates use colon (`:`) separators for namespacing, similar to task naming conventions in monorepos:
+
+- `python:build`
+- `python:test`
+- `rust:cargo:build`
+- `node:npm:test`
+
+## Merge Semantics
+
+When a task extends a template, fields are merged according to these rules:
+
+| Field                                             | Behavior                                                          |
+| ------------------------------------------------- | ----------------------------------------------------------------- |
+| `run`, `run_windows`                              | Local overrides completely                                        |
+| `tools`                                           | Deep merge (local tools add to or override the template's values) |
+| `env`                                             | Deep merge (local env adds to or overrides the template's values) |
+| `depends`, `depends_post`, `wait_for`             | Local overrides completely (not merged)                           |
+| `dir`                                             | Local overrides; defaults to config_root if not in template       |
+| `sources`, `outputs`, `cache`                     | Local overrides completely                                        |
+| `output`                                          | Local overrides template (if set)                                 |
+| Sandbox deny fields                               | Compose with task-local settings                                  |
+| Sandbox allow fields                              | Template and task-local values are combined                       |
+| `description`, `shell`, `timeout`, etc.           | Local overrides template (if set)                                 |
+| `quiet`, `hide`, `raw`, `interactive`, `raw_args` | Not supported on templates (set explicitly on each task)          |
+
+For `run`, `run_windows`, `depends`, `depends_post`, `wait_for`, and `sources`, an
+empty local list currently inherits the template's value. In particular,
+`depends = []` does not clear template dependencies. Use a separate template when
+a task must omit those prerequisites. `outputs = []` is an explicit no-files
+output declaration; `cache = { enabled = false }` explicitly disables inherited caching.
+
+### Example: Deep Merge for Tools
+
+```toml
+[task_templates."fullstack:build"]
+tools = { python = "3.12", node = "18" }
+
+[tasks.build]
+extends = "fullstack:build"
+tools = { node = "20" }  # Override node, keep python from template
+# Result: tools = { python = "3.12", node = "20" }
+```
+
+### Example: Deep Merge for Env
+
+```toml
+[task_templates."python:build"]
+env = { PYTHONPATH = "src", DEBUG = "0" }
+
+[tasks.build]
+extends = "python:build"
+env = { DEBUG = "1" }  # Override DEBUG, keep PYTHONPATH from template
+# Result: env = { PYTHONPATH = "src", DEBUG = "1" }
+```
+
+### Example: Complete Override for Depends
+
+```toml
+[task_templates."python:test"]
+depends = ["lint", "typecheck"]
+
+[tasks.test]
+extends = "python:test"
+depends = ["build"]  # Completely replaces template depends
+# Result: depends = ["build"] (lint and typecheck NOT included)
+```
+
+## Tera Templating
+
+Templates support Tera templating, rendered in the **context of the project that uses them**:
+
+```toml
+[task_templates."python:build"]
+description = "Build Python project"
+dir = "{{ config_root }}"  # Resolves to the PROJECT's directory
+run = "uv build"
+env = { PROJECT = "{{ config_root | basename }}" }
+```
+
+Available variables (same as regular tasks):
+
+- <code v-pre>{{ config_root }}</code> - The project using the template (NOT where the template is defined)
+- <code v-pre>{{ env.VAR }}</code> - Environment variables
+- <code v-pre>{{ cwd }}</code> - Current working directory
+- <code v-pre>{{ vars.* }}</code> - User-defined variables from config
+
+## Monorepo Usage
+
+Task templates are especially useful in monorepos where multiple packages share similar build patterns:
+
+```toml
+# Root mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/api", "packages/worker"]
+
+[task_templates."python:build"]
+run = "uv build"
+tools = { python = "3.12", uv = "latest" }
+
+[task_templates."python:test"]
+run = "uv run pytest"
+tools = { python = "3.12", uv = "latest" }
+depends = ["build"]
+
+[task_templates."python:lint"]
+run = "ruff check ."
+tools = { python = "3.12", ruff = "latest" }
+```
+
+```toml
+# packages/api/mise.toml
+[tasks.build]
+extends = "python:build"
+
+[tasks.test]
+extends = "python:test"
+run = "uv run pytest --cov"  # Add coverage
+
+[tasks.lint]
+extends = "python:lint"
+```
+
+```toml
+# packages/worker/mise.toml
+[tasks.build]
+extends = "python:build"
+
+[tasks.test]
+extends = "python:test"
+
+[tasks.lint]
+extends = "python:lint"
+```
+
+## Template scope
+
+Templates come from the active configuration hierarchy, including global and
+parent configurations. A task selects one by name with `extends`; declaring a
+template does not create a runnable task. Use `mise tasks info <task>` to inspect
+the resulting task after inheritance.
+
+Prefer repository-owned templates for behavior teammates and CI need to share.
+Global templates are useful for personal tasks, but another machine will need
+the same template definition to resolve `extends`.

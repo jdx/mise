@@ -1,0 +1,8 @@
+backends = [
+  "aqua:kovetskiy/mark",
+  "github:kovetskiy/mark",
+  "asdf:jfreeland/asdf-mark",
+]
+description = "Sync your markdown files with Confluence pages"
+test = { cmd = "mark --version", expected = "{{version}}" }
+version_order = "source"

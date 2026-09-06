@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#MISE description="Run all tests with coverage report"
+
+echo "::group::Setup"
+set -euxo pipefail
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
+export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
+
+echo "::endgroup::"
+echo "::group::mise install"
+mise install
+mise x -- bun i
+echo "::endgroup::"
+mise x -- ./e2e/run_all_tests

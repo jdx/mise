@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+export MISE_SYSTEM_CONFIG_FILE="$HOME/system-mise.toml"
+mkdir -p "$MISE_CONFIG_DIR"
+
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[settings]
+shims_dir = "~/system-user-shims"
+system_installs_dir = "~/system-installs"
+system_shims_dir = "~/system-shims"
+EOF
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+shims_dir = "~/global-user-shims"
+system_installs_dir = "~/global-system-installs"
+system_shims_dir = "~/global-system-shims"
+EOF
+
+assert "mise settings get shims_dir" "$HOME/global-user-shims"
+assert "mise settings get system_installs_dir" "$HOME/global-system-installs"
+assert "mise settings get system_shims_dir" "$HOME/global-system-shims"
+
+assert "MISE_SHIMS_DIR='$HOME/env-user-shims' mise settings get shims_dir" "$HOME/env-user-shims"
+assert "MISE_SYSTEM_INSTALLS_DIR='$HOME/env-system-installs' mise settings get system_installs_dir" "$HOME/env-system-installs"
+assert "MISE_SYSTEM_SHIMS_DIR='$HOME/env-system-shims' mise settings get system_shims_dir" "$HOME/env-system-shims"
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+shims_dir = "relative/shims"
+EOF
+assert_fail_contains "mise settings get shims_dir 2>&1" "must resolve to an absolute path"

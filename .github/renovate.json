@@ -1,0 +1,49 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>jdx/renovate-config", "helpers:pinGitHubActionDigests"],
+  "automerge": false,
+  "asdf": {
+    "enabled": false
+  },
+  "nodenv": {
+    "enabled": false
+  },
+  "packageRules": [
+    {
+      "description": "copr image is rebuilt from source on Dockerfile changes; pinning a digest would cause stale image regressions.",
+      "matchPackageNames": ["ghcr.io/jdx/mise"],
+      "matchCurrentValue": "copr",
+      "enabled": false
+    },
+    {
+      "matchPackageNames": ["taiki-e/install-action"],
+      "matchManagers": ["github-actions"],
+      "enabled": false
+    },
+    {
+      "description": "rattler crates are tightly version-locked across the workspace; bump together.",
+      "matchPackageNames": ["/^rattler($|_)/"],
+      "matchManagers": ["cargo"],
+      "groupName": "rattler",
+      "separateMajorMinor": false
+    },
+    {
+      "description": "Sigstore crates are versioned together; bump together.",
+      "matchPackageNames": ["/^sigstore-/"],
+      "matchManagers": ["cargo"],
+      "groupName": "sigstore crates"
+    },
+    {
+      "description": "phf runtime and codegen must stay compatible for generated baked registry maps.",
+      "matchPackageNames": ["phf", "phf_codegen"],
+      "matchManagers": ["cargo"],
+      "groupName": "phf"
+    },
+    {
+      "description": "decmpfs 0.1.2 fails to compile for musl targets because its FICLONE ioctl request type does not match musl libc. Hold at 0.1.0 until upstream fixes it.",
+      "matchPackageNames": ["decmpfs"],
+      "matchManagers": ["cargo"],
+      "allowedVersions": "<=0.1.0"
+    }
+  ]
+}

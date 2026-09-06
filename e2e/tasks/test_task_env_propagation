@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.echo]
+env = { "SUB_TASK" = "sub_task_env" }
+run = 'echo "\$SUB_TASK \$MY_VAR"'
+
+
+[tasks.propagation]
+run = [{ task = "echo" }]
+env = { "MY_VAR" = "my_variable" }
+EOF
+
+assert_contains "mise run echo" "sub_task_env " # with trailing space
+assert_contains "mise run propagation" "sub_task_env my_variable"

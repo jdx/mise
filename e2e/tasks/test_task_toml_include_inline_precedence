@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+
+mkdir -p .config .mise
+
+cat <<'EOF' >metadata-file
+#!/usr/bin/env bash
+echo included metadata file
+EOF
+chmod +x metadata-file
+
+cat <<'EOF' >tasks.toml
+[plain]
+run = "echo included plain"
+
+[with-file]
+file = "does-not-exist"
+
+[metadata]
+run = "echo included metadata"
+
+[metadata-file]
+file = "./metadata-file"
+
+[higher-include]
+run = "echo higher include"
+EOF
+
+cat <<'EOF' >.mise/config.toml
+[task_config]
+includes = ["tasks.toml"]
+
+[tasks.plain]
+run = "echo inline plain"
+
+[tasks.with-file]
+run = "echo inline file"
+
+[tasks.metadata]
+description = "inline metadata"
+
+[tasks.metadata-file]
+description = "inline file metadata"
+EOF
+
+cat <<'EOF' >.config/mise.toml
+[tasks.higher-include]
+run = "echo lower inline"
+EOF
+
+# Inline tasks override same-named TOML includes, including included tasks
+# whose execution type sets `file`. That field describes execution and must
+# not be used as task-source provenance.
+assert "mise run plain" "inline plain"
+assert "mise run with-file" "inline file"
+
+# An inline block without its own command decorates the included task instead
+# of replacing its command with an empty task.
+assert "mise run metadata" "included metadata"
+assert_contains "mise tasks metadata" "inline metadata"
+assert "mise run metadata-file" "included metadata file"
+assert_contains "mise tasks metadata-file" "inline file metadata"
+
+# A lower-precedence config cannot replace a TOML task included by a
+# higher-precedence config.
+assert "mise run higher-include" "higher include"
+
+# Conversely, a higher-precedence inline task overrides a TOML include selected
+# by a lower-precedence config.
+cat <<'EOF' >.mise/config.toml
+[tasks.higher-inline]
+run = "echo higher inline"
+EOF
+
+cat <<'EOF' >.config/mise.toml
+[task_config]
+includes = ["tasks.toml"]
+EOF
+
+cat <<'EOF' >>tasks.toml
+
+[higher-inline]
+run = "echo lower include"
+EOF
+
+assert "mise run higher-inline" "higher inline"

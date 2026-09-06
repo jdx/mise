@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+cat <<'EOF' >mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+lockfile = true
+EOF
+
+echo "24" >.node-version
+
+assert_contains "mise ls --current node" ".node-version"
+
+mise lock --platform "$PLATFORM"
+
+assert_contains "cat mise.lock" '[[tools.node]]'
+assert_contains "cat mise.lock" 'backend = "core:node"'
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
+
+assert_contains "mise install --locked --dry-run node 2>&1" "would install"
+
+rm -f mise.toml mise.lock .node-version
+
+cat <<'EOF' >mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["dummy"]
+lockfile = true
+
+[tools]
+dummy = "2"
+EOF
+
+echo "1" >.dummy-version
+
+output=$(mise lock --dry-run --platform "$PLATFORM" 2>&1)
+assert_contains "echo '$output'" "dummy@1.1.0"
+assert_contains "echo '$output'" "dummy@2.0.0"
+
+rm -f mise.toml .dummy-version
+
+cat <<'EOF' >mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["dummy"]
+lockfile = true
+EOF
+
+# Keep mise.toml and .mise/config.toml together to verify that an idiomatic
+# .dummy-version maps to .mise/mise.lock instead of the root mise.lock.
+mkdir -p .mise
+cat <<'EOF' >.mise/config.toml
+[settings]
+idiomatic_version_file_enable_tools = ["dummy"]
+lockfile = true
+EOF
+
+echo "1" >.dummy-version
+
+output=$(mise lock --dry-run --platform "$PLATFORM" 2>&1)
+assert_contains "echo '$output'" ".mise/mise.lock"
+assert_not_contains "echo '$output'" "for ~/workdir/mise.lock"
+
+rm -rf mise.toml .mise .dummy-version
+
+cat <<'EOF' >mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["dummy"]
+lockfile = true
+EOF
+
+echo "1" >.dummy-version
+touch mise.lock
+
+mise install dummy
+
+assert_contains "cat mise.lock" '[[tools.dummy]]'
+assert_contains "cat mise.lock" 'backend = "asdf:dummy"'
+assert "mise install --locked --dry-run dummy >/dev/null 2>&1"
+
+rm -f mise.toml mise.lock .dummy-version

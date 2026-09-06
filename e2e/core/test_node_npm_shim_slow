@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# Tests the node.npm_shim setting (MISE_NODE_NPM_SHIM).
+# By default mise installs a bash wrapper at bin/npm that runs `mise reshim`
+# after global installs. Setting node.npm_shim=false skips that wrapper so
+# bin/npm stays node's own npm (letting corepack or `npm i -g npm@x` manage it).
+
+node_version="$(mise latest node@22)"
+
+# Default: the npm shim is installed, so bin/npm is the mise bash wrapper.
+mise i -f "node@$node_version"
+node_path="$(mise where "node@$node_version")"
+assert_succeed "grep -q 'mise reshim' '$node_path/bin/npm'"
+assert_succeed "test ! -L '$node_path/bin/npm'"
+assert_contains "mise x node@$node_version -- npm --version" "."
+
+# Opt out: bin/npm is node's own npm (a symlink), not the mise wrapper.
+export MISE_NODE_NPM_SHIM=0
+mise i -f "node@$node_version"
+node_path="$(mise where "node@$node_version")"
+assert_fail "grep -q 'mise reshim' '$node_path/bin/npm'"
+assert_succeed "test -L '$node_path/bin/npm'"
+assert_contains "mise x node@$node_version -- npm --version" "."
+
+# Corepack: ensure npm is managed by corepack, when node.corepack=true and node.npm_shim=false.
+export MISE_NODE_NPM_SHIM=0
+export MISE_NODE_COREPACK=1
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+mise i -y -f "node@$node_version"
+node_path="$(mise where "node@$node_version")"
+assert_fail "grep -q 'mise reshim' '$node_path/bin/npm'"
+assert_succeed "test -L '$node_path/bin/npm'"
+assert_contains "realpath '$node_path/bin/npm'" "/corepack/"
+assert_contains "mise x node@$node_version -- npm --version" "."

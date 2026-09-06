@@ -1,0 +1,11 @@
+bins = ["ghui"]
+description = "Terminal UI for GitHub pull requests"
+test = { cmd = "ghui --version", expected = "{{version}}" }
+version_order = "semver"
+
+[[backends]]
+full = "npm:@kitlangton/ghui"
+
+[backends.options]
+# Curated registry entry; explicitly permit the package below aube's threshold.
+allow_low_downloads = true

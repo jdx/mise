@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.test]
+run = 'cat input > test.txt && echo done'
+sources = ['input']
+outputs = ['test.txt']
+EOF
+echo "hello world" >input
+
+mkdir subdir && cd subdir || exit 1
+assert "mise -q test" "done"
+assert_not_contains "mise -q test" "done"
+touch ../input
+assert "mise -q test" "done"
+touch ../test.txt
+assert_not_contains "mise -q test" "done"
+touch ../mise.toml
+assert "mise -q test" "done"
+
+cat <<EOF >mise.toml
+[tasks.hi]
+sources = ["o*"]
+outputs = ["newer"]
+run = "echo hi"
+EOF
+
+touch older
+sleep 0.1
+touch newer
+mkdir subdir && cd subdir || exit 1
+assert_empty "mise -q hi"
+assert_empty "mise -q hi"
+touch ../older
+assert "mise -q hi" "hi"
+
+cat <<EOF >mise.toml
+[tasks.hi]
+sources = ["{{cwd}}/input"]
+run = "echo hi"
+EOF
+
+mkdir subdir && cd subdir || exit 1
+assert "mise -q hi" "hi"
+assert_empty "mise -q hi"
+touch input
+assert "mise -q hi" "hi"
+assert_empty "mise -q hi"
+
+cat <<EOF >mise.toml
+[tasks.hi]
+sources = ["{{cwd}}/input"]
+outputs = { auto = true }
+run = "echo hi"
+EOF
+
+mkdir subdir && cd subdir || exit 1
+assert "mise -q hi" "hi"
+assert_empty "mise -q hi"
+touch input
+assert "mise -q hi" "hi"
+assert_empty "mise -q hi"
+
+mkdir src out
+cat <<EOF >mise.toml
+[tasks.build]
+sources = ["{{cwd}}/src/**/*"]
+outputs = ["{{cwd}}/out/**/*"]
+run = "touch out/done.txt && echo done"
+EOF
+assert "touch src/foo.txt"
+assert "mise build" "done"
+assert_empty "mise build"
+assert "touch src/foo.txt"
+assert "touch src/bar.txt"
+assert "mise build" "done"
+assert_empty "mise build"
+assert "rm src/foo.txt"
+assert "mise build" "done"
+assert_empty "mise build"
+
+mkdir source-files-project && cd source-files-project || exit 1
+cat <<EOF >mise.toml
+[tasks.source-files]
+sources = ["pen", "apple"]
+run = "echo {{ task_source_files() | join(sep=' ') }} {{ arg(name='value') }}"
+EOF
+touch pen apple
+mkdir child && cd child || exit 1
+assert "mise run -q source-files test" "pen apple test"
+
+cd ../.. || exit 1
+mkdir brace-globs && cd brace-globs || exit 1
+cat <<'EOF' >mise.toml
+[settings.task]
+source_freshness_hash_contents = true
+
+[tasks.build]
+sources = ["{a,b}.txt"]
+outputs = ["{a,b}.out"]
+run = "cp a.txt a.out; cp b.txt b.out; echo run"
+
+[tasks.list-sources]
+sources = ["{a,b}.txt"]
+run = "echo {{ task_source_files() | join(sep=' ') }}"
+EOF
+touch a.txt b.txt
+assert "mise run -q build" "run"
+assert_empty "mise run -q build"
+touch -r b.txt b.txt.mtime
+echo changed >b.txt
+touch -r b.txt.mtime b.txt
+rm b.txt.mtime
+assert "mise run -q build" "run"
+assert_empty "mise run -q build"
+rm b.out
+assert "mise run -q build" "run"
+assert "mise run -q list-sources" "a.txt b.txt"
+
+cd .. || exit 1
+mkdir literal-braces && cd literal-braces || exit 1
+cat <<'EOF' >mise.toml
+[settings.task]
+source_freshness_hash_contents = true
+
+[tasks.build]
+sources = ["{generated}.txt"]
+outputs = ["{generated}.out"]
+run = "cp '{generated}.txt' '{generated}.out'; echo run"
+
+[tasks.list-sources]
+sources = ["{generated}.txt"]
+run = "echo {{ task_source_files() | join(sep=' ') }}"
+
+[tasks.list-later-alternates]
+sources = ["{generated}.{txt,out}"]
+run = "echo {{ task_source_files() | join(sep=' ') }}"
+EOF
+touch '{generated}.txt'
+assert "mise run -q build" "run"
+assert_empty "mise run -q build"
+echo changed >'{generated}.txt'
+assert "mise run -q build" "run"
+assert_empty "mise run -q build"
+rm '{generated}.out'
+assert "mise run -q build" "run"
+assert "mise run -q list-sources" "{generated}.txt"
+assert "mise run -q list-later-alternates" "{generated}.txt {generated}.out"
+
+cd .. || exit 1
+mkdir brace-globs-mtime && cd brace-globs-mtime || exit 1
+cat <<'EOF' >mise.toml
+[tasks.build]
+sources = ["{a,b}.txt"]
+outputs = ["{a,b}.out"]
+run = "cp a.txt a.out; cp b.txt b.out; echo run"
+EOF
+touch a.txt b.txt
+assert "mise run -q build" "run"
+assert_empty "mise run -q build"
+sleep 1
+touch b.txt
+assert "mise run -q build" "run"

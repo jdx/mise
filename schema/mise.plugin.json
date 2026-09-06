@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mise.jdx.dev/schema/mise.plugin.json",
+  "title": "mise-plugin",
+  "description": "config file for a mise plugin",
+  "type": "object",
+  "unevaluatedProperties": false,
+  "$defs": {
+    "plugin-script-config": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "cache-key": {
+          "description": "cache the script results separately based on these values; only consumed for list-bin-paths and exec-env, accepted elsewhere",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "data": {
+          "description": "static data to use instead of executing the script; only consumed for list-aliases, list-idiomatic-filenames, and list-legacy-filenames, accepted elsewhere",
+          "type": "string"
+        }
+      }
+    }
+  },
+  "properties": {
+    "list-aliases": {
+      "description": "configuration for bin/list-aliases script",
+      "$ref": "#/$defs/plugin-script-config"
+    },
+    "list-legacy-filenames": {
+      "description": "configuration for bin/list-legacy-filenames script",
+      "$ref": "#/$defs/plugin-script-config"
+    },
+    "list-idiomatic-filenames": {
+      "description": "configuration for idiomatic filename discovery",
+      "$ref": "#/$defs/plugin-script-config"
+    },
+    "list-bin-paths": {
+      "description": "configuration for bin/list-bin-paths script",
+      "$ref": "#/$defs/plugin-script-config"
+    },
+    "exec-env": {
+      "description": "configuration for bin/exec-env script",
+      "$ref": "#/$defs/plugin-script-config"
+    },
+    "idiomatic-filenames": {
+      "description": "legacy key from old plugins that is ignored; when present, mise stops parsing the file entirely",
+      "deprecated": true
+    },
+    "legacy-filenames": {
+      "description": "legacy key from old plugins that is ignored; when present, mise stops parsing the file entirely",
+      "deprecated": true
+    },
+    "package-manager": {
+      "description": "configuration for a package-manager plugin",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "requires": {
+          "description": "host binaries required by the package-manager plugin",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "supports_version_pins": {
+          "description": "whether the package manager supports version-pinned requests",
+          "type": "boolean"
+        },
+        "supports-version-pins": {
+          "description": "whether the package manager supports version-pinned requests",
+          "type": "boolean"
+        },
+        "os": {
+          "description": "operating systems supported by the package-manager plugin",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

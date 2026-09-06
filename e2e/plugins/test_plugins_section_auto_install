@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# Test that plugins in [plugins] section are auto-installed during mise install
+# even when there are no corresponding tools in [tools]
+
+# Use mise-env-fnox - an env-only plugin with no corresponding tool
+rm -rf "$MISE_DATA_DIR/plugins/fnox-env"
+mise plugin uninstall fnox-env 2>/dev/null || true
+
+# Create a config with only a plugin (no tools using it)
+cat <<EOF >mise.toml
+[plugins]
+fnox-env = "https://github.com/jdx/mise-env-fnox"
+EOF
+
+# Run mise install - plugin should be auto-installed even with no tools
+mise install
+
+# Verify plugin was actually installed (has git refs, not just registered)
+# Using --refs shows URL and git info only for installed plugins
+assert_contains "mise plugin ls --refs" "fnox-env"
+assert_contains "mise plugin ls --refs" "https://github.com/jdx/mise-env-fnox"
+
+# Now test with both a plugin-only entry and a tool
+rm -rf "$MISE_DATA_DIR/plugins/fnox-env"
+rm -rf "$MISE_DATA_DIR/plugins/zprint"
+mise plugin uninstall fnox-env 2>/dev/null || true
+mise plugin uninstall zprint 2>/dev/null || true
+
+cat <<EOF >mise.toml
+[plugins]
+fnox-env = "https://github.com/jdx/mise-env-fnox"
+zprint = "https://github.com/mise-plugins/mise-zprint"
+
+[tools]
+zprint = "latest"
+EOF
+
+# Run mise install - both plugins should be installed, zprint tool should be installed
+mise install
+
+# Verify both plugins were actually installed (have git refs)
+# The URL only appears in --refs output when the plugin is actually installed
+assert_contains "mise plugin ls --refs" "https://github.com/jdx/mise-env-fnox"
+assert_contains "mise plugin ls --refs" "https://github.com/mise-plugins/mise-zprint"
+
+# Verify zprint tool was installed
+assert_contains "mise ls --installed zprint" "zprint"

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/discussions/3544
+#
+# `trusted_config_paths` (MISE_TRUSTED_CONFIG_PATHS) must take effect even when
+# a config was previously ignored — either by answering "No" to the trust
+# prompt or by running `mise trust --ignore`. Before the fix the persisted
+# ignore list was consulted before `trusted_config_paths`, so the setting was
+# silently ignored for any config the user had once dismissed.
+
+# Override the blanket trust the e2e harness sets so trust is enforced.
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+mkdir -p project
+cat <<EOF >project/.mise.toml
+[env]
+PROJECT = "trusted-via-settings"
+EOF
+
+cd project
+DIR="$(pwd)"
+
+# Simulate the user dismissing the trust prompt: the config is added to the
+# persisted ignore list. (The "ignored" message is written to stderr.)
+assert_contains "mise trust --ignore 2>&1" "ignored"
+
+# While ignored and without trusted_config_paths, the config is not loaded.
+assert_not_contains "mise env" "PROJECT=trusted-via-settings"
+
+# trusted_config_paths must override the persisted ignore and load the config.
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$DIR mise env" "PROJECT=trusted-via-settings"
+
+# `mise trust --show` should reflect that the config is trusted via settings.
+# `--show` lists the config's trust root (the directory), so match
+# "project: trusted"; note "project: untrusted" does not contain this substring.
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$DIR mise trust --show" "project: trusted"

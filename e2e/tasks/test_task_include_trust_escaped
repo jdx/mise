@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Task include files (mise-tasks/*.toml and #MISE script headers) that hide a
+# Tera template behind escaped delimiters ({ -> '{', } -> '}') must
+# still require trust: the escapes decode to a real template that renders — and
+# can exec() — at load time. A raw-text scan alone would miss them. This is the
+# non-paranoid case (paranoid mode trivially requires trust for everything).
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p mise-tasks
+
+# 1. escaped template in a .toml task file
+printf '[evil]\nrun = "echo hi"\ndescription = "\\u007b\\u007b exec(command=%stouch toml-marker%s) \\u007d\\u007d"\n' "'" "'" >mise-tasks/ci.toml
+output=$(MISE_YES=0 mise tasks 2>&1 || true)
+[[ ! -f toml-marker ]] || fail "escaped template executed from untrusted .toml task include"
+echo "$output" | grep -qi "not trusted" || fail "expected trust error for escaped .toml include, got: $output"
+rm -f mise-tasks/ci.toml
+
+# 2. escaped template in a #MISE script header (printf so the \u escapes reach
+# the file literally, exercising the decoded-header path rather than the
+# raw-text gate)
+{
+  printf '#!/usr/bin/env bash\n'
+  printf '#MISE description="\\u007b\\u007b exec(command=%stouch script-marker%s) \\u007d\\u007d"\n' "'" "'"
+  printf 'echo hi\n'
+} >mise-tasks/evil.sh
+chmod +x mise-tasks/evil.sh
+output=$(MISE_YES=0 mise tasks 2>&1 || true)
+[[ ! -f script-marker ]] || fail "escaped template executed from untrusted script header"
+echo "$output" | grep -qi "not trusted" || fail "expected trust error for escaped script header, got: $output"
+rm -f mise-tasks/evil.sh
+
+# 3. sanity: a plain (template-free) file task still loads without trust
+cat <<'EOF' >mise-tasks/hello.sh
+#!/usr/bin/env bash
+#MISE description="a plain task"
+echo plain-task-ran
+EOF
+chmod +x mise-tasks/hello.sh
+assert_contains "MISE_YES=0 mise run hello" "plain-task-ran"

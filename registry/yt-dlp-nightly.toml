@@ -1,0 +1,22 @@
+# yt-dlp's stable channel ships irregularly -- recent gaps between releases have
+# reached 84 days -- while extractors break far more often than that: YouTube and
+# other sites roll out Cloudflare challenges, captchas and signature changes
+# continuously, and each one can break downloads until an extractor fix ships.
+# The nightly channel is built by the yt-dlp org from the same repository and is
+# documented upstream via `yt-dlp --update-to nightly`.
+#
+# Both entries install a binary named `yt-dlp`, so `overrides` places this one
+# earlier on PATH when the stable entry is also installed.
+description = "Nightly builds of yt-dlp, a feature-rich command-line audio/video downloader"
+overrides = ["yt-dlp"]
+test = { cmd = "yt-dlp --version", expected = "{{version}}" }
+version_order = "source"
+
+bins = ["yt-dlp"]
+[[backends]]
+full = "github:yt-dlp/yt-dlp-nightly-builds"
+
+# Releases ship bare per-platform binaries (yt-dlp_macos, yt-dlp_linux,
+# yt-dlp_linux_aarch64, ...), so normalise them onto one name.
+[backends.options]
+rename_exe = "yt-dlp"

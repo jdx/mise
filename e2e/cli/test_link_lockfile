@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# Test that linked tools are not reported as missing when a lockfile exists
+# Regression test for https://github.com/jdx/mise/discussions/8049
+
+export MISE_LOCKFILE=1
+
+echo "=== Setup: install tiny and create a linked version ==="
+rm -f mise.toml mise.lock
+mise install tiny@3.1.0
+
+# Create a directory to link as a fake "brew" version
+mkdir -p "$PWD/tmp/tiny-brew"
+
+# Link it as tiny@brew (absolute symlink, like `mise link hk@brew $(brew --prefix hk)`)
+mise link tiny@brew "$PWD/tmp/tiny-brew"
+assert_contains "mise ls tiny" "brew (symlink)"
+
+echo "=== Create mise.toml requesting latest and a lockfile pinning 3.1.0 ==="
+cat <<EOF >mise.toml
+[tools]
+tiny = "latest"
+EOF
+
+# Create a lockfile that pins tiny to 3.1.0
+cat <<EOF >mise.lock
+[tools.tiny]
+version = "3.1.0"
+EOF
+
+echo "=== Verify linked version is used instead of lockfile version ==="
+# The linked version should take priority over the lockfile entry
+# Previously this would show tiny@3.1.0 as (missing) alongside the linked version
+assert_contains "mise ls tiny" "brew (symlink)"
+assert_not_contains "mise ls tiny" "missing"
+
+echo "=== Cleanup ==="
+rm -rf mise.toml mise.lock tmp/tiny-brew
+mise uninstall tiny@brew 2>/dev/null || true
+
+echo "mise link + lockfile tests passed!"

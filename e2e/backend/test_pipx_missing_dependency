@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# When a pipx package cannot use uvx, the missing-dependency message must not point at uv,
+# and mise must fail with those instructions rather than a bare ENOENT from `pipx install`.
+# Discussion: https://github.com/jdx/mise/discussions/6803
+
+MISE_BIN=$(command -v mise)
+EMPTY_BIN="$PWD/empty-bin"
+mkdir -p "$EMPTY_BIN"
+
+# PATH with neither pipx nor uv on it, so the dependency really is missing
+install_cmd() {
+  echo "env PATH=$EMPTY_BIN $* $MISE_BIN install"
+}
+
+# uvx disabled by the pipx.uvx setting: uv is not an alternative here
+out="$(quiet_assert_fail "$(install_cmd MISE_PIPX_UVX=0) pipx:cowsay@6.1")"
+assert_contains_text "$out" "mise use pipx@latest"
+assert_contains_text "$out" "pipx.uvx"
+assert_not_contains_text "$out" "mise use uv@latest"
+assert_not_contains_text "$out" "os error 2"
+
+# uvx disabled by the package itself
+out="$(quiet_assert_fail "$(install_cmd) 'pipx:cowsay[uvx=false]@6.1'")"
+assert_contains_text "$out" "uvx = false"
+assert_contains_text "$out" "mise use pipx@latest"
+assert_not_contains_text "$out" "mise use uv@latest"
+assert_not_contains_text "$out" "os error 2"
+
+# uvx allowed: uv is still offered, since installing it does solve the problem there
+out="$(quiet_assert_fail "$(install_cmd) pipx:cowsay@6.1")"
+assert_contains_text "$out" "mise use uv@latest"
+assert_contains_text "$out" "mise use pipx@latest"
+assert_not_contains_text "$out" "os error 2"
+
+# The executable can disappear or have an unavailable interpreter after validation. Preserve
+# Unix PATH-based selection, but still translate that spawn failure into the actionable error.
+BROKEN_BIN="$PWD/broken-bin"
+mkdir -p "$BROKEN_BIN"
+cat >"$BROKEN_BIN/pipx" <<'EOF'
+#!/definitely/missing/pipx-interpreter
+EOF
+chmod +x "$BROKEN_BIN/pipx"
+out="$(quiet_assert_fail "env PATH=$BROKEN_BIN MISE_PIPX_UVX=0 MISE_PIPX_VERSION=system $MISE_BIN install pipx:cowsay@6.1")"
+assert_contains_text "$out" "pipx was found during dependency validation but could not be launched"
+assert_contains_text "$out" "mise which pipx"
+assert_not_contains_text "$out" "os error 2"
+
+# A configured `pipx` request must not suppress the executable check. The install graph has
+# already processed configured dependencies before the pipx package starts, so `system` here
+# means no runnable pipx will appear later in this invocation.
+out="$(quiet_assert_fail "$(install_cmd MISE_PIPX_UVX=0 MISE_PIPX_VERSION=system) pipx:cowsay@6.1")"
+assert_contains_text "$out" "pipx is configured but its executable was not found or is not runnable"
+assert_contains_text "$out" "mise use pipx@latest"
+assert_not_contains_text "$out" "os error 2"

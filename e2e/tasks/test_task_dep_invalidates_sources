@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+
+# Test that when a dependency task runs (sources changed), the dependent task
+# also runs even if the dependent's own sources haven't changed.
+# See: https://github.com/jdx/mise/discussions/8960
+
+mkdir -p core frontend
+
+cat <<'EOF' >mise.toml
+[tasks."core:build"]
+run = "echo core-built >> log.txt && touch core/out.txt"
+sources = ["core/src.txt"]
+outputs = ["core/out.txt"]
+
+[tasks."frontend:build"]
+run = "echo frontend-built >> log.txt && touch frontend/out.txt"
+sources = ["frontend/src.txt"]
+outputs = ["frontend/out.txt"]
+depends = ["core:build"]
+EOF
+
+# Create initial source files
+echo "v1" >core/src.txt
+echo "v1" >frontend/src.txt
+
+# First run: both tasks should execute
+mise run frontend:build
+assert_contains "cat log.txt" "core-built"
+assert_contains "cat log.txt" "frontend-built"
+rm -f log.txt
+
+# Second run: both should be skipped (nothing changed)
+mise run frontend:build
+assert "cat log.txt 2>/dev/null || echo empty" "empty"
+
+# Now change core's source - both should run because frontend depends on core
+sleep 0.1
+touch core/src.txt
+mise run frontend:build
+assert_contains "cat log.txt" "core-built"
+assert_contains "cat log.txt" "frontend-built"
+rm -f log.txt
+
+# Verify skipping still works when nothing changed
+mise run frontend:build
+assert "cat log.txt 2>/dev/null || echo empty" "empty"
+
+# --- Edge case: dependency has no sources (always runs) ---
+# A dep without sources always runs, but should NOT invalidate
+# the dependent's source freshness check. Otherwise sources on
+# the dependent would be useless.
+
+cat <<'EOF' >mise.toml
+[tasks.setup]
+run = "echo setup-ran >> log2.txt"
+
+[tasks.compile]
+run = "echo compiled >> log2.txt && touch out.txt"
+sources = ["src.txt"]
+outputs = ["out.txt"]
+depends = ["setup"]
+EOF
+
+rm -f log2.txt out.txt
+echo "v1" >src.txt
+
+# First run: both should execute
+mise run compile
+assert_contains "cat log2.txt" "setup-ran"
+assert_contains "cat log2.txt" "compiled"
+rm -f log2.txt
+
+# Second run: setup runs (no sources) but compile should be
+# skipped because its own sources haven't changed
+mise run compile
+assert_contains "cat log2.txt" "setup-ran"
+assert_not_contains "cat log2.txt" "compiled"
+rm -f log2.txt
+
+# --- Edge case: dependency has sources, dependent has no sources ---
+# Dependent with no sources always runs regardless, so no behavior change needed.
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo built >> log3.txt && touch build-out.txt"
+sources = ["build-src.txt"]
+outputs = ["build-out.txt"]
+
+[tasks.deploy]
+run = "echo deployed >> log3.txt"
+depends = ["build"]
+EOF
+
+rm -f log3.txt build-out.txt
+echo "v1" >build-src.txt
+
+# First run: both execute
+mise run deploy
+assert_contains "cat log3.txt" "built"
+assert_contains "cat log3.txt" "deployed"
+rm -f log3.txt
+
+# Second run: build is skipped (sources fresh), deploy still runs (no sources)
+mise run deploy
+assert_not_contains "cat log3.txt" "built"
+assert_contains "cat log3.txt" "deployed"

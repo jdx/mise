@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+
+mkdir tree
+printf 'input\n' >tree/input.txt
+printf 'cache input\n' >cache-input.txt
+printf 'hash input\n' >hash-input.txt
+printf 'mtime input\n' >mtime-input.txt
+ln -s . tree/a
+ln -s . tree/b
+ln -s missing tree/dangling
+ln -s self tree/self
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[settings.task]
+source_freshness_hash_contents = true
+
+[tasks.cached]
+run = "echo cached"
+sources = ["tree/**/*"]
+outputs = []
+cache = { enabled = true }
+
+[tasks.render-sources]
+run = "echo {{ task_source_files() | join(sep=' ') }}"
+sources = ["tree/**/*"]
+
+[tasks.cached-output]
+run = "echo cached output"
+sources = ["cache-input.txt"]
+outputs = ["tree/**/*"]
+cache = { enabled = true }
+
+[tasks.hash-output]
+run = "touch tree/input.txt && echo hash output"
+sources = ["hash-input.txt"]
+outputs = ["tree/**/*"]
+
+[tasks.mtime-output]
+run = "touch tree/input.txt && echo mtime output"
+sources = ["mtime-input.txt"]
+outputs = ["tree/**/*"]
+
+[tasks.missing-output]
+run = "mkdir -p generated && touch generated/output.txt && echo ran >> missing-output-runs.txt && echo generated output"
+sources = ["cache-input.txt"]
+outputs = ["generated/**/*"]
+cache = { enabled = true }
+
+[tasks.created-dangling-output]
+run = "mkdir -p links && ln -sfn missing links/broken && echo ran >> dangling-output-runs.txt && echo dangling output"
+sources = ["cache-input.txt"]
+outputs = ["links/**/*"]
+cache = { enabled = true }
+EOF
+
+# Recursive source expansion must skip ancestor symlink loops while retaining
+# ordinary files, both for artifact-cache inputs and task_source_files().
+assert "mise run -q cached" "cached"
+assert "mise run -q render-sources" "tree/input.txt"
+
+# Artifact-cache output enumeration must likewise prune loops without aborting
+# task preparation.
+assert "mise run -q cached-output" "cached output"
+
+# Content-based output hashing must prune loop errors and retain a usable
+# freshness baseline.
+assert "mise run -q hash-output" "hash output"
+assert_empty "mise run -q hash-output"
+
+# Mtime-based freshness uses a separate traversal path and must also prune the
+# same loops.
+printf 'changed\n' >mtime-input.txt
+assert "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS=false mise run -q mtime-output" "mtime output"
+assert_empty "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS=false mise run -q mtime-output"
+
+# A not-yet-created literal output prefix is zero matches during cache
+# preparation, not a traversal failure.
+assert "mise run -q missing-output" "generated output"
+assert "mise run -q missing-output" "generated output"
+assert "wc -l < missing-output-runs.txt | tr -d ' '" "1"
+
+# A dangling symlink created by the task must be stored in the artifact cache
+# so the second invocation does not execute the task body again.
+assert "mise run -q created-dangling-output" "dangling output"
+assert "mise run -q created-dangling-output" "dangling output"
+assert "wc -l < dangling-output-runs.txt | tr -d ' '" "1"

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+mkdir foo
+cat <<EOF >mise.toml
+[tools]
+dummy = 'latest'
+
+[settings]
+enable_tools = ["foo"]
+EOF
+
+assert_not_contains "mise tool dummy 2>&1" "Config Source"

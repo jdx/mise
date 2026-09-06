@@ -1,0 +1,5 @@
+---
+source: src/direnv.rs
+expression: "diff.new.get(\"PATH\").unwrap()"
+---
+/tmp

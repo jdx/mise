@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# `mise use` names its config-file option --path while `mise set` names it --file, so which one
+# works depends on the command. `--path` reaches every one of them; `--file` is accepted as an
+# alias wherever `-f` is not already `--force` (which excludes `use` and `dotfiles add`).
+# See: https://github.com/jdx/mise/discussions/4881
+
+mkdir -p "$HOME/workdir/aliases"
+cd "$HOME/workdir/aliases" || exit 1
+
+# `--path` is the spelling that works everywhere
+mise use --path alias.toml dummy@1
+assert "cat alias.toml" '[tools]
+dummy = "1"'
+
+# `mise set --path` is `mise set --file`
+mise set --path alias.toml ALIAS_VAR=set-via-path
+assert_contains "cat alias.toml" 'ALIAS_VAR = "set-via-path"'
+
+# both names reach the same argument, so the cwd's own config is untouched either way
+assert_fail "test -f mise.toml"
+
+# the canonical names still work
+mise use --path alias.toml dummy@2
+assert_contains "cat alias.toml" 'dummy = "2"'
+mise set --file alias.toml ALIAS_VAR=set-via-file
+assert_contains "cat alias.toml" 'ALIAS_VAR = "set-via-file"'
+
+# `mise use` does not take --file: -f there is --force, so the alias would teach a flag that
+# does something else entirely. Match the parser's own message — a bare exit-status check
+# would also pass if --file were still accepted and the install failed for its own reasons.
+assert_fail "mise use --file alias.toml dummy@1" "unexpected argument '--file' found"
+
+# the commands that undo those two take the same pair of names
+# `mise unuse --file` is `mise unuse --path`
+mise unuse --no-prune --file alias.toml dummy@2
+assert_not_contains "cat alias.toml" "dummy"
+
+# `mise unset --path` is `mise unset --file`
+mise unset --path alias.toml ALIAS_VAR
+assert_not_contains "cat alias.toml" "ALIAS_VAR"
+
+# and their canonical names are unaffected
+mise use --path alias.toml dummy@3
+mise set --file alias.toml ALIAS_VAR=again
+mise unuse --no-prune --path alias.toml dummy@3
+assert_not_contains "cat alias.toml" "dummy"
+mise unset --file alias.toml ALIAS_VAR
+assert_not_contains "cat alias.toml" "ALIAS_VAR"
+
+# all four accept a directory as well as a file, under whichever names they take: the argument
+# resolves to the config file inside that directory
+mkdir -p subdir
+
+mise use --path subdir dummy@1
+assert_contains "cat subdir/mise.toml" 'dummy = "1"'
+mise set --path subdir SUBDIR_VAR=via-dir
+assert_contains "cat subdir/mise.toml" 'SUBDIR_VAR = "via-dir"'
+
+mise unuse --no-prune --file subdir dummy@1
+assert_not_contains "cat subdir/mise.toml" "dummy"
+mise unset --path subdir SUBDIR_VAR
+assert_not_contains "cat subdir/mise.toml" "SUBDIR_VAR"
+
+# the commands that write to a config under `--path` take --file too. `brew tap`/`untap` only
+# edit `[bootstrap.brew.taps]` — they do not touch a Homebrew installation — so they are the
+# cheap way to exercise this end to end; the rest are covered by the clap assertions in
+# src/cli/mod.rs, since running them installs or applies something.
+mise bootstrap packages brew tap acme/tools --file tap-alias.toml
+assert_contains "cat tap-alias.toml" "acme/tools"
+
+mise bootstrap packages brew untap acme/tools --file tap-alias.toml
+assert_not_contains "cat tap-alias.toml" "acme/tools"
+
+# and the canonical name is unaffected
+mise bootstrap packages brew tap acme/tools --path tap-alias.toml
+assert_contains "cat tap-alias.toml" "acme/tools"
+mise bootstrap packages brew untap acme/tools --path tap-alias.toml
+assert_not_contains "cat tap-alias.toml" "acme/tools"
+
+# `mise config get` and `mise config set` name the option --file; both take --path too
+printf '[tools]\ndummy = "1"\n' >cfg.toml
+mise config set --path cfg.toml tools.dummy 2
+assert "mise config get --file cfg.toml tools.dummy" "2"
+mise config set --file cfg.toml tools.dummy 3
+assert "mise config get --path cfg.toml tools.dummy" "3"
+
+# and a directory resolves to the config file inside it, as it does for the commands above
+mkdir -p cfgdir
+printf '[tools]\ndummy = "1"\n' >cfgdir/mise.toml
+mise config set --path cfgdir tools.dummy 2
+assert "mise config get -f cfgdir tools.dummy" "2"
+assert_contains "cat cfgdir/mise.toml" 'dummy = "2"'
+
+# unlike the write commands above, these two do not create the file — a target that resolves to
+# nothing names itself instead of surfacing a bare io error. The resolved path is asserted and not
+# just the message, since for a directory that is what shows the argument reached the config file
+# inside it rather than being used as-is.
+mkdir -p emptydir
+assert_fail "mise config get --path ./nope.toml tools.dummy" "config file not found: ~/workdir/aliases/nope.toml"
+assert_fail "mise config get --path ./emptydir tools.dummy" "config file not found: ~/workdir/aliases/emptydir/mise.toml"
+assert_fail "mise config set --path ./emptydir tools.dummy 1" "config file not found: ~/workdir/aliases/emptydir/mise.toml"

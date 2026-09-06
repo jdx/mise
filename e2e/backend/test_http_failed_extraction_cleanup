@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Regression test: a failed extraction must not leave its temp directory behind.
+#
+# `extract_to_cache` extracts into `<key>.tmp-<pid>-<ms>` beside the real entries
+# and renames it into place. The name is unique to the process and millisecond,
+# so the "clean up any stale temp directory" check before it can never match what
+# an earlier run left, and before the fix nothing removed one on the way out of a
+# failure. Every failed extraction leaked a hash-named directory into
+# `http-tarballs` permanently. `mise prune` cannot reclaim them either — it skips
+# `.tmp-` names so it cannot destroy an extraction in flight.
+
+FIXTURES="$TMPDIR/http-failed-extraction-fixtures"
+PORT_FILE="$TMPDIR/http-failed-extraction-port"
+TARBALLS="$MISE_DATA_DIR/http-tarballs"
+
+mkdir -p "$FIXTURES"
+
+# Named like a tarball, but the bytes are not gzip. With no checksum configured
+# `verify_artifact` has nothing to reject, so this fails during extraction —
+# which is the path under test.
+printf 'this is not a gzip stream\n' >"$FIXTURES/broken.tar.gz"
+
+mkdir -p "$FIXTURES/good/bin"
+cat >"$FIXTURES/good/bin/good-tool" <<'EOF'
+#!/usr/bin/env bash
+echo good-tool-ok
+EOF
+chmod +x "$FIXTURES/good/bin/good-tool"
+tar czf "$FIXTURES/good.tar.gz" -C "$FIXTURES" good
+
+python3 -u - "$FIXTURES" "$PORT_FILE" <<'PY' >/dev/null 2>&1 &
+import functools
+import http.server
+import socketserver
+import sys
+from pathlib import Path
+
+root = sys.argv[1]
+port_file = Path(sys.argv[2])
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
+with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
+    port_file.write_text(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+wait_for_file "$PORT_FILE" "http failed extraction test server port file" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+# Recursive so the shared-install case does not depend on the tool directory's
+# name, and harmless for the cache dir where the entries are one level down.
+leftover_temps() {
+  find "$1" -name "$2" 2>/dev/null | wc -l | tr -d ' '
+}
+
+cat >mise.toml <<EOF
+[tools."http:broken"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/broken.tar.gz"
+bin_path = "bin"
+EOF
+
+assert_fail "mise install"
+
+# Before the fix this found one directory per failed attempt, forever.
+assert "test '$(leftover_temps "$TARBALLS" '*.tmp-*')' = 0"
+
+# Failing twice must not accumulate either.
+assert_fail "mise install"
+assert "test '$(leftover_temps "$TARBALLS" '*.tmp-*')' = 0"
+
+# The same artifact through the shared-install branch, which extracts straight
+# to the install path rather than the cache. That one already cleaned up after
+# itself — pinned here so it stays that way.
+SHARED_INSTALLS="$TMPDIR/http-failed-extraction-shared"
+mkdir -p "$SHARED_INSTALLS"
+assert_fail "mise install --shared '$SHARED_INSTALLS'"
+assert "test '$(leftover_temps "$SHARED_INSTALLS" '.mise-tmp-*')' = 0"
+
+# And a working install still works afterwards.
+cat >mise.toml <<EOF
+[tools."http:good"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/good.tar.gz"
+bin_path = "good/bin"
+EOF
+
+mise install
+assert_contains "mise x -- good-tool" "good-tool-ok"
+assert "test '$(leftover_temps "$TARBALLS" '*.tmp-*')' = 0"

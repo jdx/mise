@@ -1,0 +1,12 @@
+---
+source: src/plugins/mise_plugin_toml.rs
+expression: cf.exec_env
+---
+MisePluginTomlScriptConfig {
+    cache_key: Some(
+        [
+            "{{'1234'}}",
+        ],
+    ),
+    data: None,
+}

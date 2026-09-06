@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+unix_default_inline_shell_args = "bash -c"
+
+[tools]
+dummy = 'latest'
+
+[hooks]
+preinstall = [
+  { run_windows = '{{ exec(command="mise-run-windows-template-should-not-execute") }}' },
+  { run_windows = 'echo PRE_WINDOWS_ONLY' },
+  { run = 'echo PRE_UNIX', run_windows = 'echo PRE_WINDOWS' },
+]
+EOF
+
+output=$(mise install 2>&1)
+
+assert_contains "echo '$output'" "PRE_UNIX"
+assert_not_contains "echo '$output'" "PRE_WINDOWS"
+assert_not_contains "echo '$output'" "PRE_WINDOWS_ONLY"

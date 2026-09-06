@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+task.cache_max_size = "1B"
+
+[task_config.cache]
+enabled = true
+
+[tasks.build]
+run = '''
+mkdir -p dist
+cp input.txt dist/result.txt
+printf 'ran\n' >>runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+EOF
+
+printf 'input\n' >input.txt
+
+# An entry larger than the configured limit is evicted after publication.
+mise run build
+assert "find \"$MISE_CACHE_DIR/task-artifacts/v2\" -name '*.json' | wc -l | tr -d ' '" "0"
+rm -rf dist
+mise run build
+assert "wc -l <runs.txt | tr -d ' '" "2"
+
+# Age limits also reject stale entries before restore.
+rm -rf dist
+MISE_TASK_CACHE_MAX_SIZE=0 MISE_TASK_CACHE_MAX_AGE=1s mise run build
+
+# A current-output replay counts as access for age and LRU enforcement.
+find "$MISE_CACHE_DIR/task-artifacts/v2" -type f -exec touch -t 202001010000 {} +
+assert_contains "MISE_TASK_CACHE_MAX_SIZE=0 MISE_TASK_CACHE_MAX_AGE=4000d mise run build 2>&1" "sources up-to-date, skipping"
+assert "find \"$MISE_CACHE_DIR/task-artifacts/v2\" -type f -mmin -1 | wc -l | tr -d ' '" "2"
+assert "wc -l <runs.txt | tr -d ' '" "3"
+
+find "$MISE_CACHE_DIR/task-artifacts/v2" -type f -exec touch -t 197001010000 {} +
+# Keep the outputs in place to exercise the sources-up-to-date shortcut. The
+# expired cache entry must still force task execution instead of replaying logs.
+assert_contains "MISE_TASK_CACHE_MAX_SIZE=0 MISE_TASK_CACHE_MAX_AGE=1s mise run build 2>&1" "cache entry exceeded its age limit"
+assert "wc -l <runs.txt | tr -d ' '" "4"
+
+assert_fail_contains "MISE_TASK_CACHE_MAX_SIZE=invalid mise run build" "invalid task.cache_max_size"
+assert_fail_contains "MISE_TASK_CACHE_MAX_AGE=invalid mise run build" "invalid task.cache_max_age"

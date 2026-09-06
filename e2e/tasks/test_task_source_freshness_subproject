@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# Bug: when a task in a subproject uses a workspace-rooted source glob, edits
+# to files inside the subproject directory do not trigger a rebuild.
+#
+# Setup: workspace root with a task defined in lib/worker/ (a subproject).
+# The task watches lib/**/* — a pattern rooted at the workspace, not at lib/worker/.
+# Editing worker.go (inside lib/worker/) should trigger a rebuild, but doesn't.
+
+WORKSPACE="$PWD"
+
+# Workspace root: defines workspace_root var so subproject can reference it.
+cat <<EOF >mise.toml
+[vars]
+workspace_root = "{{ config_root }}"
+
+[settings.task]
+source_freshness_hash_contents = true
+EOF
+
+# Subproject: task watches all files under workspace lib/ — including its own files.
+mkdir -p lib/worker
+cat <<EOF >lib/worker/mise.toml
+[tasks.build]
+run = "echo built"
+sources = ["{{ vars.workspace_root }}/lib/**/*"]
+outputs = { auto = true }
+EOF
+
+echo "initial" >lib/worker/worker.go
+echo "initial" >lib/shared.go
+
+cd "$WORKSPACE/lib/worker"
+
+# First run: no prior state, task must run.
+assert "mise run -q build" "built"
+
+# Second run: nothing changed, task must be skipped.
+assert_empty "mise run -q build"
+
+# Edit a file inside the subproject (covered by lib/**/*) — must trigger a rebuild.
+echo "changed" >worker.go
+assert "mise run -q build" "built"
+
+# Edit the shared file outside the subproject — must also trigger a rebuild.
+echo "changed" >"$WORKSPACE/lib/shared.go"
+assert "mise run -q build" "built"

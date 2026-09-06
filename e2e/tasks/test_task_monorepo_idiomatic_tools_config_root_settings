@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Regression test: a monorepo config root's own idiomatic_version_file_enable_tools
+# setting must be honored when a task is dispatched cross-directory (e.g. from the
+# monorepo root via `mise run //path/to/root:task`), not just when invoked with cwd
+# already inside that config root.
+#
+# The monorepo root here does NOT enable idiomatic version files for "tiny" - only
+# packages/app1's own [settings] does. Explicit [tools] entries (packages/app2)
+# already resolve correctly across directories; idiomatic version files did not.
+export MISE_EXPERIMENTAL=1
+
+# Install the tiny plugin which supports idiomatic .tiny-version files
+mise plugin install tiny
+
+# Root config intentionally leaves idiomatic_version_file_enable_tools unset/empty -
+# it must not need "tiny" enabled globally for this to work.
+cat <<EOF >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+
+# Subproject enables idiomatic version files for "tiny" only in its OWN config,
+# diverging from the root's settings.
+mkdir -p packages/app1
+echo "1.0.1" >packages/app1/.tiny-version
+cat <<EOF >packages/app1/mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["tiny"]
+
+[tasks.check]
+run = 'rtx-tiny'
+EOF
+
+# Comparison subproject using an explicit [tools] entry instead of an idiomatic file.
+mkdir -p packages/app2
+cat <<EOF >packages/app2/mise.toml
+[tools]
+tiny = "2.0.1"
+
+[tasks.check]
+run = 'rtx-tiny'
+EOF
+
+# Install tools from within each subdirectory, where the config root's own settings
+# are naturally in effect.
+mise -C packages/app1 install
+mise -C packages/app2 install
+
+# Test 1: Explicit [tools] entry resolves cross-directory from the monorepo root.
+echo "=== Test 1: Cross-directory task with explicit [tools] ==="
+assert_contains "mise run //packages/app2:check" "v2.0.1"
+
+# Test 2: Idiomatic version file, enabled only via the config root's own [settings],
+# must also resolve cross-directory from the monorepo root - not just when cwd is
+# already inside packages/app1.
+echo "=== Test 2: Cross-directory task with config-root-local idiomatic version file ==="
+assert_contains "mise run //packages/app1:check" "v1.0.1"
+
+echo "=== All config-root-local idiomatic tool monorepo tests passed! ==="

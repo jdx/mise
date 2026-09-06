@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+mkdir -p "$HOME/.config/mise"
+cat >"$HOME/.config/mise/config.toml" <<'TOML'
+[env]
+LOCAL_ONLY = "true"
+TOML
+cat >"$HOME/.config/mise/config-global.toml" <<'TOML'
+[env]
+GLOBAL_ONLY = "true"
+TOML
+export MISE_GLOBAL_CONFIG_FILE="$HOME/.config/mise/config-global.toml"
+
+cd "$HOME" || exit 1
+
+assert "mise set FOO=bar" ""
+assert_contains "cat $HOME/.config/mise/config-global.toml" 'FOO = "bar"'
+assert_not_contains "cat $HOME/.config/mise/config.toml" "FOO"
+
+assert "mise unset FOO" ""
+assert_not_contains "cat $HOME/.config/mise/config-global.toml" "FOO"
+
+assert_contains "mise use dummy@system" "mise ~/.config/mise/config-global.toml tools: dummy@system"
+assert_contains "cat $HOME/.config/mise/config-global.toml" 'dummy = "system"'
+assert_not_contains "cat $HOME/.config/mise/config.toml" "dummy"
+
+assert_contains "mise unuse -y dummy 2>&1" "mise removed: dummy from ~/.config/mise/config-global.toml"
+assert_not_contains "cat $HOME/.config/mise/config-global.toml" "dummy"

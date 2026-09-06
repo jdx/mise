@@ -1,0 +1,197 @@
+# Node.js
+
+Like `nvm` (or `volta`, `fnm`, or `asdf`), `mise` can manage multiple versions of Node.js on the same system.
+
+## Usage
+
+Select Node.js for the current project and verify it without depending on shell
+activation:
+
+```sh
+mise use node@26
+mise exec -- node --version
+```
+
+Use `mise use -g node@26` for a personal default. Project versions override that
+default when you enter the project with shell activation, run a task, or use
+`mise exec`. Use `mise upgrade node` to update within the configured request.
+
+See the [Node.js Cookbook](/mise-cookbook/nodejs.html) for common tasks and examples.
+
+These instructions use mise's built-in node support. An installed external
+plugin with the same name can change the behavior; use `mise plugins ls` to
+check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/node.rs)
+for backend details.
+
+## Run projects with aube
+
+[aube](https://aube.jdx.dev/) is a fast Node.js package manager with strong supply-chain security defaults. It reads
+and writes existing `package-lock.json`, `pnpm-lock.yaml`, and `yarn.lock` files in place, so a project can try it
+without a lockfile migration. Its `aubr` command installs stale dependencies automatically before running a package
+script and skips the install when dependencies are already current.
+
+Install it with mise, then run an existing package script:
+
+```sh
+mise use aube
+mise exec -- aubr test
+```
+
+See [aube's security overview](https://aube.jdx.dev/security) for its release-cooling, trust-policy, malicious-package,
+and lifecycle-script protections.
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `node` backend.
+These options go in the `[tools]` section in `mise.toml`.
+
+### `install_env`
+
+Set environment variables for source builds, default package installation, Corepack setup, and
+install-time verification commands run by the core `node` backend:
+
+```toml
+[tools]
+node = { version = "latest", install_env = { CFLAGS = "-O2" } }
+```
+
+## Pinning npm version
+
+By default, Node.js ships with a bundled version of npm. If you need a specific npm version
+(e.g. to keep your entire team on the same version and avoid `package-lock.json` conflicts),
+you can pin it alongside Node in your `mise.toml`:
+
+```toml [mise.toml]
+[tools]
+node = "26"
+npm = "11"
+```
+
+To pin both to exact versions:
+
+```sh
+mise use --pin node@lts npm@latest
+```
+
+This writes the resolved concrete versions to `mise.toml`. The numbers depend on
+the current releases; inspect the result with `mise ls --current` or read the
+config file.
+
+The separately configured npm takes precedence over Node's bundled npm inside
+the mise environment. Check it with `mise exec -- npm --version`. This selects
+the package-manager executable; the project's dependency lockfile still controls
+its npm packages.
+
+## `.nvmrc`, `.node-version` and `package.json` support
+
+By default, mise uses a `mise.toml` file for auto-switching between software versions.
+
+It also supports `.tool-versions` files for asdf compatibility. `.nvmrc`, `.node-version`, and the `devEngines` field in `package.json` are also supported but must be explicitly enabled (see the tip below).
+
+See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
+
+::: tip
+Idiomatic version files (`.nvmrc`, `.node-version`, `devEngines` field in `package.json`) are disabled by default and must be explicitly enabled:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools node
+```
+
+Or in `~/.config/mise/config.toml`:
+
+```toml
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+```
+
+To keep `.nvmrc` or `.node-version` enabled while preventing node from using
+`devEngines.runtime` in `package.json`:
+
+```sh
+mise settings add idiomatic_version_file_disable_files node:package.json
+```
+
+:::
+
+## Default node packages
+
+::: warning Planned deprecation
+Default package files are deprecated. They are still supported for now, but mise will start warning
+in `2026.11.0` and support will be removed in `2027.11.0`.
+
+For npm CLIs, install the tool directly with the [npm backend](/dev-tools/backends/npm.html):
+
+```toml
+[tools]
+"npm:typescript" = "latest"
+```
+
+For packages that really should be installed into every Node.js version, use a tool-level
+`postinstall` hook:
+
+```toml
+[tools]
+node = { version = "22", postinstall = "npm install -g typescript" }
+```
+
+:::
+
+mise can automatically install a default set of npm packages right after installing a node
+version. To use this legacy feature, provide a `$HOME/.default-npm-packages` file that lists one
+package per line, for example:
+
+```text
+typescript
+eslint
+```
+
+You can specify a different location for this file with the `MISE_NODE_DEFAULT_PACKAGES_FILE` variable.
+
+## "nodejs" -> "node" Alias
+
+You cannot install/use a plugin named "nodejs". If you try, mise renames it to
+"node". See the [FAQ](/faq.html#what-is-the-difference-between-nodejs-and-node-or-golang-and-go)
+for an explanation.
+
+## Building from source
+
+If compiling from source, see [BUILDING.md](https://github.com/nodejs/node/blob/main/BUILDING.md#building-nodejs-on-supported-platforms) in node's documentation for
+required system dependencies.
+
+```shell
+mise settings node.compile=1
+mise use node@latest
+```
+
+## Unofficial Builds
+
+Nodejs.org offers a set of [unofficial builds](https://unofficial-builds.nodejs.org/) for
+some platforms that the official binaries do not support. These are a nice alternative to
+compiling from source on those platforms.
+
+To use them, first point the mirror URL at the unofficial builds:
+
+```sh
+mise settings node.mirror_url=https://unofficial-builds.nodejs.org/download/release/
+```
+
+If you only need to support an alternative arch/OS like linux-loong64 or linux-armv6l, this is
+all that is required. Node also provides flavors such as musl or glibc-217 (an older glibc version
+than the official binaries are built with).
+
+To use these, set `node.flavor`:
+
+```sh
+mise settings node.flavor=musl
+mise settings node.flavor=glibc-217
+```
+
+For the common musl case, `mise settings libc=musl` also selects Node's `musl`
+flavor when `node.flavor` is unset.
+
+## Settings
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="node" :level="3" />

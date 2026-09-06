@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tasks.check-config-root]
+run = 'echo "config_root={{config_root}}"'
+TOML
+
+assert "mise run check-config-root" "config_root=$HOME"
+
+custom_root="$PWD/custom-global-root"
+mkdir -p "$custom_root"
+assert "MISE_GLOBAL_CONFIG_ROOT='$custom_root' mise run check-config-root" "config_root=$custom_root"

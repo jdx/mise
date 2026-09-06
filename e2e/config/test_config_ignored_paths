@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+# Test MISE_IGNORED_CONFIG_PATHS with multiple colon-separated paths.
+# This exercises the env.rs early-init parsing which was fixed to use
+# std::env::split_paths instead of v.split(':').
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+mkdir -p child
+
+cat <<EOF >.mise.toml
+[env]
+PARENT = "true"
+EOF
+
+cat <<EOF >child/.mise.toml
+[env]
+CHILD = "true"
+EOF
+
+assert "mise trust --all"
+cd child
+
+WORKDIR="$(cd .. && pwd)"
+CHILD_DIR="$(pwd)"
+
+# Baseline: both configs are visible from child dir
+assert_contains "mise env" "PARENT"
+assert_contains "mise env" "CHILD"
+
+# Single ignored path: child config ignored, parent still visible
+assert_not_contains "MISE_IGNORED_CONFIG_PATHS=$CHILD_DIR mise env" "CHILD"
+assert_contains "MISE_IGNORED_CONFIG_PATHS=$CHILD_DIR mise env" "PARENT"
+
+# Multiple colon-separated paths: both configs ignored
+assert_not_contains "MISE_IGNORED_CONFIG_PATHS=$CHILD_DIR:$WORKDIR mise env" "CHILD"
+assert_not_contains "MISE_IGNORED_CONFIG_PATHS=$CHILD_DIR:$WORKDIR mise env" "PARENT"
+
+# Relative paths in a local .config/miserc.toml are based on the declaring
+# file, and recursive glob patterns selectively ignore matching config names.
+cd "$WORKDIR"
+mkdir -p .config vendor/jj/.config
+cat <<EOF >vendor/jj/.config/mise.toml
+[env]
+IGNORED_VENDOR_CONFIG = "true"
+EOF
+cat <<EOF >vendor/jj/.mise.toml
+[env]
+VISIBLE_VENDOR_CONFIG = "true"
+EOF
+cat <<EOF >.config/miserc.toml
+ignored_config_paths = ["../vendor/./**/mise.toml"]
+EOF
+
+assert_not_contains "mise -C vendor/jj env" "IGNORED_VENDOR_CONFIG"
+assert_contains "mise -C vendor/jj env" "VISIBLE_VENDOR_CONFIG"
+
+# Environment values use the invocation directory as their relative base,
+# even when -C changes the directory used for config discovery.
+rm .config/miserc.toml
+assert_not_contains \
+  "MISE_IGNORED_CONFIG_PATHS='vendor/**/mise.toml' mise -C vendor/jj env" \
+  "IGNORED_VENDOR_CONFIG"
+assert_contains \
+  "MISE_IGNORED_CONFIG_PATHS='vendor/**/mise.toml' mise -C vendor/jj env" \
+  "VISIBLE_VENDOR_CONFIG"

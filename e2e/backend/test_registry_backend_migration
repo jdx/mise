@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# Simulate npm installed through the old registry default. Non-explicit short
+# names should migrate to the current aqua backend as a single unit: backend
+# type and tool name must both come from aqua:npm/cli.
+mkdir -p "$MISE_DATA_DIR/installs/npm/11.0.0"
+cat <<'EOF' >"$MISE_DATA_DIR/installs/npm/.mise.backend.toml"
+short = "npm"
+full = "npm:npm"
+explicit_backend = false
+EOF
+
+mise cache clear
+assert "mise tool npm --backend" "aqua:npm/cli"
+assert_succeed "mise latest npm"

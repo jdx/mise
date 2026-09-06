@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+# Test Tera rendering and home expansion for task_config.includes.
+
+mkdir -p root-tasks "$HOME/home-tasks" "$HOME/env-home-tasks"
+
+cat >root-tasks/task.toml <<'EOF'
+[root_include]
+run = 'echo "root include"'
+EOF
+
+cat >"$HOME/home-tasks/task.toml" <<'EOF'
+[tilde_include]
+run = 'echo "tilde include"'
+EOF
+
+cat >"$HOME/env-home-tasks/task.toml" <<'EOF'
+[env_home_include]
+run = 'echo "env home include"'
+EOF
+
+cat >mise.toml <<'EOF'
+[task_config]
+includes = [
+    "{{ config_root }}/root-tasks/*.toml",
+    "~/home-tasks/*.toml",
+    "{{ env.HOME }}/env-home-tasks/*.toml",
+]
+EOF
+
+assert_contains "mise tasks" "root_include"
+assert_contains "mise tasks" "tilde_include"
+assert_contains "mise tasks" "env_home_include"
+
+assert "mise run root_include" "root include"
+assert "mise run tilde_include" "tilde include"
+assert "mise run env_home_include" "env home include"
+
+# Root vars are available when rendering child config task includes.
+mkdir -p monorepo/folder1 monorepo/tasks-v1
+
+cat >monorepo/mise.toml <<'EOF'
+monorepo_root = true
+
+[vars]
+central_ref = "v1"
+
+[monorepo]
+config_roots = ["folder1"]
+EOF
+
+cat >monorepo/tasks-v1/tasks.toml <<'EOF'
+[shared_include]
+run = 'echo "shared include"'
+EOF
+
+cat >monorepo/folder1/mise.toml <<'EOF'
+[task_config]
+includes = ["../tasks-{{vars.central_ref}}/*.toml"]
+EOF
+
+cd monorepo
+assert_contains "mise tasks ls --all" "//folder1:shared_include"
+assert "mise run //folder1:shared_include" "shared include"

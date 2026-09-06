@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'EOF'
+# tool header comment
+[tools.dummy]
+# version explanation
+version = "1.0.0" # selector comment
+foo = "bar" # option comment
+
+[tools.dummy.install_env]
+# nested explanation
+FOO = "bar" # nested comment
+EOF
+
+mise use dummy@2.0.0
+assert "cat mise.toml" '# tool header comment
+[tools.dummy]
+# version explanation
+version = "2.0.0" # selector comment
+foo = "bar" # option comment
+
+[tools.dummy.install_env]
+# nested explanation
+FOO = "bar" # nested comment'
+
+mise use 'dummy[foo=baz,install_env.FOO=updated]@1.0.0'
+assert "cat mise.toml" '# tool header comment
+[tools.dummy]
+# version explanation
+version = "1.0.0" # selector comment
+foo = "baz" # option comment
+
+[tools.dummy.install_env]
+# nested explanation
+FOO = "updated" # nested comment'

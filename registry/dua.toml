@@ -1,0 +1,4 @@
+backends = ["aqua:Byron/dua-cli", "cargo:dua-cli"]
+description = "View disk space usage and delete unwanted data, fast"
+test = { cmd = "dua --version", expected = "dua {{version}}" }
+version_order = "semver"

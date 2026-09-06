@@ -1,0 +1,4793 @@
+use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Arc;
+
+use eyre::{Result, bail};
+use heck::ToKebabCase;
+use serde::Serialize;
+use serde_json::{Value, json};
+
+use super::dotfiles::{
+    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesStatus, DotfilesUnapply,
+};
+use super::install::Install;
+use super::plugins::install::install_plugin;
+use super::run;
+use super::system::driver::{self, Action, DriverOpts};
+use super::system::{import, install, prune, status, upgrade, r#use};
+use crate::config::{self, Config};
+use crate::dirs;
+use crate::path::PathExt;
+use crate::system;
+use crate::system::defaults::DefaultsState;
+use crate::system::files::{FileMode, FileRequest, FileState};
+use crate::system::hooks::{self, BootstrapHookPhase};
+use crate::system::launchd::LaunchdState;
+use crate::system::login_shell::LoginShellState;
+use crate::system::packages::{PackageDesiredState, PackageState};
+use crate::system::repos::RepoState;
+use crate::system::resources::{ResourceAction, ResourceId};
+use crate::system::systemd::SystemdState;
+use crate::toolset::ResolveOptions;
+use crate::ui::table::MiseTable;
+/// Set up a machine for the current config in one command
+///
+/// Runs the bootstrap steps for the current config in order:
+///
+/// 0. `mise bootstrap accounts apply` — converge `[bootstrap.users]` and
+///    `[bootstrap.groups]` (Linux)
+/// 1. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
+///    1.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
+/// 2. Install built-in-manager entries from `[bootstrap.packages]`
+/// 3. `mise bootstrap files apply` — converge `[bootstrap.files]` and
+///    `[bootstrap.directories]`
+/// 4. `mise bootstrap services apply` — converge `[bootstrap.services]`
+///    systemd system services (Linux)
+/// 5. `mise bootstrap firewall apply` — converge `[bootstrap.linux.firewall]`
+///    host firewall policy and rules (Linux)
+/// 6. `mise bootstrap compose apply` — converge `[bootstrap.compose]`
+///    Docker Compose projects
+/// 7. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
+///    surrounded by `pre-repos`/`post-repos` hooks
+/// 8. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
+///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
+/// 9. `mise bootstrap mise-shell-activate apply` — configure shell activation
+///    from `[bootstrap.mise_shell_activate]`
+/// 10. `mise bootstrap macos defaults apply` — write
+///     `[bootstrap.macos.defaults]` entries (macOS)
+///     surrounded by `pre-defaults`/`post-defaults` hooks
+/// 11. `mise bootstrap macos launchd-agents apply` — install/load
+///     `[bootstrap.macos.launchd.agents]`
+/// 12. `mise bootstrap linux systemd-units apply` — install/start
+///     `[bootstrap.linux.systemd.units]`
+/// 13. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+///     (Unix)
+///     surrounded by `pre-user`/`post-user` hooks
+/// 14. `mise install` — install missing tools from `[tools]`
+///     surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
+///     from `[bootstrap.packages]` install afterward, followed by
+///     `[bootstrap.hooks.post-packages]`
+/// 15. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 16. `[bootstrap.hooks.final]` — optional final hook
+///
+/// The declarative steps converge — anything already in its desired state
+/// is skipped, so re-running is safe. The `bootstrap` task runs on every
+/// invocation; keep it idempotent. Use it for any project-specific setup
+/// that doesn't fit the declarative sections (seeding databases, auth flows,
+/// etc.) — it runs with the installed tools on PATH.
+///
+/// Use `--skip <part>` to skip named parts, or `--only <part>` to run just
+/// named parts. Both flags can be repeated or comma-separated, but they
+/// cannot be used together.
+#[derive(Debug, usage_rs::Args)]
+#[usage(
+    verbatim_doc_comment,
+    after_long_help = AFTER_LONG_HELP
+)]
+pub(crate) struct Bootstrap {
+    #[usage(subcommand)]
+    command: Option<Commands>,
+
+    /// Clone a git repository and bootstrap from its configuration
+    #[usage(long, value_name = "GIT_URL")]
+    from: Option<String>,
+
+    /// Clone a git repository into the global mise config directory and bootstrap
+    #[usage(long, value_name = "GIT_URL", conflicts = "from")]
+    from_git: Option<String>,
+
+    /// Directory used for the repository cloned by --from
+    #[usage(long, value_name = "DIR", requires = "from")]
+    from_dir: Option<PathBuf>,
+
+    /// Print what would happen without installing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip confirmation prompts
+    #[usage(long, short = 'y')]
+    yes: bool,
+
+    /// Skip configured repos with local changes instead of failing
+    #[usage(long)]
+    skip_dirty: bool,
+
+    /// Overwrite existing files that conflict with whole-file dotfile entries
+    #[usage(long)]
+    force_dotfiles: bool,
+
+    /// Run only one or more bootstrap parts
+    ///
+    /// Can be passed multiple times or as a comma-separated list.
+    /// Cannot be used with `--skip`.
+    #[usage(long, value_enum, delimiter = ',', conflicts = "skip")]
+    only: Vec<BootstrapPart>,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
+
+    /// Skip one or more bootstrap parts
+    ///
+    /// Can be passed multiple times or as a comma-separated list.
+    #[usage(long, value_enum, delimiter = ',')]
+    skip: Vec<BootstrapPart>,
+
+    /// Refresh package manager metadata and update configured repos
+    #[usage(long)]
+    update: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, usage_rs::ValueEnum)]
+enum BootstrapPart {
+    Plugins,
+    Packages,
+    Accounts,
+    Files,
+    Services,
+    Firewall,
+    Compose,
+    Repos,
+    Dotfiles,
+    #[usage(name = "mise-shell-activate", visible_alias = "shell")]
+    Shell,
+    #[usage(name = "macos-defaults", visible_alias = "defaults")]
+    Defaults,
+    #[usage(name = "macos-launchd-agents", visible_alias = "launchd")]
+    Launchd,
+    #[usage(name = "linux-systemd-units", visible_alias = "systemd")]
+    Systemd,
+    User,
+    Tools,
+    Task,
+    FinalHook,
+}
+
+impl BootstrapPart {
+    // Keep this in sync with every enum variant. `--only` computes a
+    // complement from ALL, so an omitted variant would always run.
+    const ALL: [Self; 17] = [
+        Self::Plugins,
+        Self::Packages,
+        Self::Accounts,
+        Self::Files,
+        Self::Services,
+        Self::Firewall,
+        Self::Compose,
+        Self::Repos,
+        Self::Dotfiles,
+        Self::Shell,
+        Self::Defaults,
+        Self::Launchd,
+        Self::Systemd,
+        Self::User,
+        Self::Tools,
+        Self::Task,
+        Self::FinalHook,
+    ];
+}
+
+type BootstrapPredictionGraph = HashMap<ResourceId, (ResourceAction, Vec<ResourceId>)>;
+
+fn run_bootstrap_git<const N: usize>(checkout: &Path, args: [&str; N]) -> Result<()> {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(checkout).args(args);
+    crate::git::sanitize_git_command(&mut command);
+    let status = command.status()?;
+    if !status.success() {
+        bail!("git command failed with {status}");
+    }
+    Ok(())
+}
+
+fn validate_bootstrap_checkout(checkout: &Path, url: &str) -> Result<()> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(checkout)
+        .args(["config", "--get", "remote.origin.url"]);
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output()?;
+    if !output.status.success() {
+        bail!(
+            "{} exists but is not a git checkout with an origin remote",
+            checkout.display_user()
+        );
+    }
+    let origin = String::from_utf8(output.stdout)?.trim().to_string();
+    if origin != url {
+        bail!(
+            "{} has origin {origin:?}, expected {url:?}",
+            checkout.display_user()
+        );
+    }
+    Ok(())
+}
+
+fn bootstrap_resource_is_skipped(resource: &ResourceId, skip: &HashSet<BootstrapPart>) -> bool {
+    let part = match resource.kind.as_str() {
+        "package" => BootstrapPart::Packages,
+        "file" | "directory" => BootstrapPart::Files,
+        "service" => BootstrapPart::Services,
+        "firewall" | "firewall-rule" => BootstrapPart::Firewall,
+        "user" | "group" => BootstrapPart::Accounts,
+        _ => return false,
+    };
+    skip.contains(&part)
+}
+
+fn bootstrap_prediction_has_skipped_change(
+    resource: &ResourceId,
+    resources: &BootstrapPredictionGraph,
+    skip: &HashSet<BootstrapPart>,
+    visited: &mut HashSet<ResourceId>,
+) -> bool {
+    if !visited.insert(resource.clone()) {
+        return false;
+    }
+    let Some((_, dependencies)) = resources.get(resource) else {
+        return false;
+    };
+    dependencies.iter().any(|dependency| {
+        let dependency_changes = resources.get(dependency).is_some_and(|(action, _)| {
+            matches!(
+                action,
+                ResourceAction::Create | ResourceAction::Update | ResourceAction::Remove
+            )
+        });
+        (dependency_changes && bootstrap_resource_is_skipped(dependency, skip))
+            || bootstrap_prediction_has_skipped_change(dependency, resources, skip, visited)
+    })
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum Commands {
+    #[usage(name = "__apply-account-plan", hide = true)]
+    ApplyAccountPlan(BootstrapApplyAccountPlan),
+    #[usage(name = "__apply-service-plan", hide = true)]
+    ApplyServicePlan(BootstrapApplyServicePlan),
+    #[usage(name = "__apply-firewall-plan", hide = true)]
+    ApplyFirewallPlan(BootstrapApplyFirewallPlan),
+    #[usage(name = "__apply-system-plan", hide = true)]
+    ApplySystemPlan(BootstrapApplySystemPlan),
+    #[usage(name = "__inspect-system-files", hide = true)]
+    InspectSystemFiles(BootstrapInspectSystemFiles),
+    #[usage(name = "__inspect-firewall-plan", hide = true)]
+    InspectFirewallPlan(BootstrapInspectFirewallPlan),
+    Accounts(BootstrapAccounts),
+    ConfigRoots(BootstrapConfigRoots),
+    Compose(BootstrapCompose),
+    Dotfiles(BootstrapDotfiles),
+    Files(BootstrapFiles),
+    Firewall(BootstrapFirewall),
+    #[usage(hide = true)]
+    Launchd(BootstrapLaunchd),
+    Linux(BootstrapLinux),
+    Macos(BootstrapMacos),
+    #[usage(hide = true)]
+    MacosDefaults(BootstrapMacosDefaults),
+    #[usage(name = "mise-shell-activate", alias = "shell")]
+    MiseShellActivate(BootstrapShell),
+    Packages(BootstrapPackages),
+    Plan(BootstrapPlan),
+    Plugins(BootstrapPlugins),
+    Remote(Box<BootstrapRemote>),
+    Repos(BootstrapRepos),
+    Secrets(BootstrapSecrets),
+    Services(BootstrapServices),
+    Status(BootstrapStatus),
+    #[usage(hide = true)]
+    Systemd(BootstrapSystemd),
+    User(BootstrapUser),
+}
+
+/// Show the aggregate bootstrap status
+#[derive(Debug, usage_rs::Args)]
+#[usage(visible_alias = "ls", verbatim_doc_comment)]
+struct BootstrapStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured bootstrap state is not in its desired state
+    #[usage(long, verbatim_doc_comment)]
+    missing: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
+}
+
+/// Show the changes declarative bootstrap resources would make
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapPlan {
+    /// Output a stable machine-readable plan in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
+    #[usage(long, verbatim_doc_comment)]
+    detailed_exitcode: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
+}
+
+/// Show non-composed bootstrap declarations in each selected configuration root
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapConfigRoots {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct BootstrapConfigRootsOutput {
+    roots: Vec<BootstrapConfigRootOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct BootstrapConfigRootOutput {
+    #[serde(serialize_with = "system::resources::serialize_path")]
+    config_root: PathBuf,
+    environments: Vec<String>,
+    declares: BootstrapConfigRootDeclarations,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct BootstrapConfigRootDeclarations {
+    packages: BootstrapDeclarationSurface,
+    repos: BootstrapDeclarationSurface,
+    accounts: BootstrapDeclarationSurface,
+    hooks: BootstrapHookDeclarationSurface,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct BootstrapDeclarationSurface {
+    count: usize,
+    provenance: Vec<BootstrapDeclarationOrigin>,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct BootstrapHookDeclarationSurface {
+    count: usize,
+    phases: Vec<String>,
+    provenance: Vec<BootstrapDeclarationOrigin>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct BootstrapDeclarationOrigin {
+    #[serde(serialize_with = "system::resources::serialize_path")]
+    config: PathBuf,
+    environment: Vec<String>,
+}
+
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapApplySystemPlan {}
+
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapApplyAccountPlan {}
+
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapApplyServicePlan {}
+
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapApplyFirewallPlan {}
+
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapInspectFirewallPlan {}
+
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapInspectSystemFiles {}
+
+/// Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapAccounts {
+    #[usage(subcommand)]
+    command: BootstrapAccountsCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapAccountsCommands {
+    Apply(BootstrapAccountsApply),
+    Status(BootstrapAccountsStatus),
+}
+
+/// Apply configured Linux users and groups
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapAccountsApply {
+    /// Print what would change without changing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+}
+
+/// Show configured Linux user and group state
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapAccountsStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any account is not converged
+    #[usage(long)]
+    missing: bool,
+}
+
+/// Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapFiles {
+    #[usage(subcommand)]
+    command: BootstrapFilesCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapFilesCommands {
+    Apply(BootstrapFilesApply),
+    Status(BootstrapFilesStatus),
+}
+
+/// Apply configured privileged files and directories
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapFilesApply {
+    /// Print what would change without changing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
+}
+
+/// Show configured privileged file and directory state
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapFilesStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any resource is not converged
+    #[usage(long)]
+    missing: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
+}
+
+/// Manage Linux system services from `[bootstrap.services]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapServices {
+    #[usage(subcommand)]
+    command: BootstrapServicesCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapServicesCommands {
+    Apply(BootstrapServicesApply),
+    Status(BootstrapServicesStatus),
+}
+
+/// Apply configured Linux system service state
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapServicesApply {
+    /// Print what would change without changing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+}
+
+/// Show configured Linux system service state
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapServicesStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any service is not converged
+    #[usage(long)]
+    missing: bool,
+}
+
+/// Manage the Linux host firewall from `[bootstrap.linux.firewall]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapFirewall {
+    #[usage(subcommand)]
+    command: BootstrapFirewallCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapFirewallCommands {
+    Apply(BootstrapFirewallApply),
+    Status(BootstrapFirewallStatus),
+}
+
+/// Apply the configured Linux host firewall
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapFirewallApply {
+    /// Print what would change without changing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+}
+
+/// Show configured Linux host firewall state
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapFirewallStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when the firewall is not converged
+    #[usage(long)]
+    missing: bool,
+}
+
+/// Manage Docker Compose projects from `[bootstrap.compose]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapCompose {
+    #[usage(subcommand)]
+    command: BootstrapComposeCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapComposeCommands {
+    Apply(BootstrapComposeApply),
+    Status(BootstrapComposeStatus),
+}
+
+/// Apply configured Docker Compose project state
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapComposeApply {
+    /// Print what would change without changing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+}
+
+/// Show configured Docker Compose project state
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapComposeStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any Compose project is not converged
+    #[usage(long)]
+    missing: bool,
+}
+
+/// Bootstrap one or more machines over OpenSSH
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapRemote {
+    /// Install a Git repository as persistent global configuration on each target
+    #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = ["source", "copy_link", "copy_links", "exclude"])]
+    from_git: Option<String>,
+    /// Borrow read-only GitHub access for this invocation
+    #[usage(long)]
+    github_relay_read_only: bool,
+    /// Approved GitHub repository; repeat for multiple repositories
+    #[usage(long, value_name = "OWNER/REPO")]
+    github_relay_repo: Vec<String>,
+    /// Explicitly authorize all repositories accessible locally
+    #[usage(long)]
+    github_relay_all_repos: bool,
+    /// Log sanitized relay requests on local stderr
+    #[usage(long, conflicts = "github_relay_no_log_requests")]
+    github_relay_log_requests: bool,
+    /// Disable request logging, overriding the saved preference
+    #[usage(long)]
+    github_relay_no_log_requests: bool,
+    /// Relay log and summary format: text or jsonl
+    #[usage(long, value_name = "FORMAT")]
+    github_relay_log_format: Option<String>,
+    /// Expire borrowed access after a duration such as 1h (0s: session lifetime)
+    #[usage(long, value_name = "DURATION")]
+    github_relay_max_duration: Option<String>,
+    /// Inventory host names from `[bootstrap.remote.hosts]`
+    #[usage(value_name = "TARGET")]
+    targets: Vec<String>,
+
+    /// Select every configured inventory host
+    #[usage(long)]
+    all: bool,
+
+    /// Explicit remote shell command that installs mise and places it on PATH
+    #[usage(
+        long,
+        value_name = "COMMAND",
+        conflicts = ["mise_bin", "remote_mise", "install_mise"]
+    )]
+    bootstrap_command: Option<String>,
+
+    /// SSH connection timeout in seconds
+    #[usage(long, default_value_t = 10, default = "10")]
+    connect_timeout: u16,
+
+    /// Dereference one source-relative symbolic link; repeat for multiple links
+    #[usage(long, value_name = "PATH", value_hint = usage_rs::ValueHint::AnyPath)]
+    copy_link: Vec<std::path::PathBuf>,
+
+    /// Dereference every symbolic link in the source archive
+    #[usage(long)]
+    copy_links: bool,
+
+    /// Additional archive pattern to exclude; repeat for multiple patterns
+    #[usage(long, value_name = "PATTERN")]
+    exclude: Vec<String>,
+
+    /// Stop after the first failed target
+    #[usage(long)]
+    fail_fast: bool,
+
+    /// Allow remote dotfile conflicts to be replaced
+    #[usage(long)]
+    force_dotfiles: bool,
+
+    /// Ad-hoc SSH destination (`[user@]host`); repeat for multiple hosts
+    #[usage(long, value_name = "[USER@]HOST")]
+    host: Vec<String>,
+
+    /// SSH identity file override
+    #[usage(long, short = 'i', value_hint = usage_rs::ValueHint::FilePath)]
+    identity_file: Option<std::path::PathBuf>,
+
+    /// Print the remote bootstrap changes without applying them
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Install the provisioned mise on each host instead of only staging it
+    ///
+    /// Defaults to `~/.local/bin/mise`; pass `--install-mise=<PATH>` for another
+    /// path.
+    #[usage(
+        long,
+        value_name = "PATH",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing = "~/.local/bin/mise",
+        conflicts = ["remote_mise", "bootstrap_command", "no_install_mise"]
+    )]
+    install_mise: Option<String>,
+
+    /// Keep the remote staging directory for debugging
+    #[usage(long)]
+    keep_staging: bool,
+
+    /// Local mise binary to upload (escape hatch for custom architectures)
+    #[usage(
+        long,
+        value_hint = usage_rs::ValueHint::FilePath,
+        conflicts = ["remote_mise", "bootstrap_command"]
+    )]
+    mise_bin: Option<std::path::PathBuf>,
+
+    /// Do not install mise on the host, even when the selected hosts configure it
+    #[usage(long)]
+    no_install_mise: bool,
+
+    /// Run only one or more remote bootstrap parts
+    #[usage(long, value_enum, delimiter = ',', conflicts = "skip")]
+    only: Vec<BootstrapPart>,
+
+    /// SSH port override
+    #[usage(long)]
+    port: Option<u16>,
+
+    /// Prompt securely for missing secret inputs on the remote host
+    #[usage(long)]
+    prompt_secrets: bool,
+
+    /// Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
+    #[usage(long, value_name = "ENV", delimiter = ',')]
+    remote_env: Option<Vec<String>>,
+
+    /// Existing mise executable name or path; relative paths use the staged project
+    #[usage(
+        long,
+        value_name = "COMMAND",
+        conflicts = ["mise_bin", "bootstrap_command", "install_mise"]
+    )]
+    remote_mise: Option<String>,
+
+    /// Skip one or more remote bootstrap parts
+    #[usage(long, value_enum, delimiter = ',')]
+    skip: Vec<BootstrapPart>,
+
+    /// Local directory archived and sent to each target
+    #[usage(long, value_hint = usage_rs::ValueHint::DirPath)]
+    source: Option<std::path::PathBuf>,
+
+    /// OpenSSH `-o` option; repeat for multiple options
+    #[usage(long, value_name = "OPTION")]
+    ssh_option: Vec<String>,
+
+    /// Select configured hosts with this tag; repeat to match any tag
+    #[usage(long, value_name = "TAG")]
+    tag: Vec<String>,
+
+    /// Refresh package manager metadata and update configured repos remotely
+    #[usage(long)]
+    update: bool,
+
+    /// Skip remote confirmation prompts
+    #[usage(long, short = 'y')]
+    yes: bool,
+}
+
+/// Inspect bootstrap secret inputs without revealing their values
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapSecrets {
+    #[usage(subcommand)]
+    command: BootstrapSecretsCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapSecretsCommands {
+    Status(BootstrapSecretsStatus),
+}
+
+/// Show whether declared bootstrap secret inputs are available
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapSecretsStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if a declared secret input is unavailable
+    #[usage(long)]
+    missing: bool,
+}
+
+/// Manage dotfiles from `[dotfiles]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapDotfiles {
+    #[usage(subcommand)]
+    command: BootstrapDotfilesCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapDotfilesCommands {
+    Add(DotfilesAdd),
+    Apply(BootstrapDotfilesApply),
+    Diff(DotfilesDiff),
+    Edit(DotfilesEdit),
+    Status(BootstrapDotfilesStatus),
+    Unapply(DotfilesUnapply),
+}
+
+/// Apply dotfiles from `[dotfiles]`
+///
+/// Applies configured whole-file entries and edits that aren't in their
+/// desired state. Whole-file entries may symlink, copy, or render templates.
+/// Edit entries manage a marker-delimited block or a single line in a file
+/// mise doesn't otherwise own.
+#[derive(Debug, usage_rs::Args)]
+#[usage(
+    verbatim_doc_comment,
+    after_long_help = BOOTSTRAP_DOTFILES_APPLY_AFTER_LONG_HELP
+)]
+struct BootstrapDotfilesApply {
+    #[usage(flatten)]
+    cmd: DotfilesApply,
+}
+
+/// Show the status of dotfiles from `[dotfiles]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(
+    visible_alias = "ls",
+    verbatim_doc_comment,
+    after_long_help = BOOTSTRAP_DOTFILES_STATUS_AFTER_LONG_HELP
+)]
+struct BootstrapDotfilesStatus {
+    #[usage(flatten)]
+    cmd: DotfilesStatus,
+}
+
+static BOOTSTRAP_DOTFILES_APPLY_AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise bootstrap dotfiles apply</bold>
+    $ <bold>mise bootstrap dotfiles apply --dry-run</bold>
+    $ <bold>mise bootstrap dotfiles apply --force --yes</bold>
+"#
+);
+
+static BOOTSTRAP_DOTFILES_STATUS_AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise bootstrap dotfiles status</bold>
+    $ <bold>mise bootstrap dotfiles status ~/.zshrc</bold>
+    $ <bold>mise bootstrap dotfiles status --json</bold>
+    $ <bold>mise bootstrap dotfiles status --missing</bold> # exit 1 if anything is out of sync
+"#
+);
+
+/// Manage bootstrap system packages from `[bootstrap.packages]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapPackages {
+    #[usage(subcommand)]
+    command: BootstrapPackagesCommands,
+}
+
+/// Manage package manager plugins declared in `[bootstrap.plugins]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapPlugins {
+    #[usage(subcommand)]
+    command: BootstrapPluginsCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapPluginsCommands {
+    Apply(BootstrapPluginsApply),
+    Status(BootstrapPluginsStatus),
+}
+
+/// Install package manager plugins declared in `[bootstrap.plugins]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapPluginsApply {
+    /// Print what would happen without installing plugins
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+}
+
+/// Show whether declared package manager plugins are installed
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapPluginsStatus {
+    /// Exit with code 1 if a declared plugin is missing
+    #[usage(long)]
+    missing: bool,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapPackagesCommands {
+    #[usage(alias = "install")]
+    Apply(install::SystemInstall),
+    #[cfg(unix)]
+    Brew(super::system::brew::SystemBrew),
+    Import(import::SystemImport),
+    Prune(prune::SystemPrune),
+    Status(status::SystemStatus),
+    Upgrade(upgrade::SystemUpgrade),
+    Use(r#use::SystemUse),
+}
+
+/// Manage git repo checkouts from `[bootstrap.repos]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapRepos {
+    #[usage(subcommand)]
+    command: BootstrapReposCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapReposCommands {
+    Apply(BootstrapReposApply),
+    Exec(BootstrapReposExec),
+    Status(BootstrapReposStatus),
+    Update(BootstrapReposUpdate),
+}
+
+/// Clone and converge git repos from `[bootstrap.repos]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapReposApply {
+    /// Print the commands that would run without running them
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+
+    /// Skip repos with local changes instead of failing
+    #[usage(long)]
+    skip_dirty: bool,
+}
+
+/// Pull the latest changes into configured git repos
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapReposUpdate {
+    /// Update only matching configured or expanded paths
+    #[usage(value_name = "PATH")]
+    paths: Vec<String>,
+
+    /// Print the commands that would run without running them
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+
+    /// Skip repos with local changes instead of failing
+    #[usage(long)]
+    skip_dirty: bool,
+}
+
+/// Run a command in each configured git repo
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapReposExec {
+    /// Run only in matching configured or expanded paths
+    #[usage(value_name = "PATH")]
+    paths: Vec<String>,
+
+    /// Continue running in other repos after a command fails
+    #[usage(long, short = 'c')]
+    continue_on_error: bool,
+
+    /// Print the commands that would run without running them
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Command and arguments to run in each repo
+    #[usage(double_dash = "required", required = true)]
+    command: Vec<String>,
+}
+
+/// Show the state of git repos from `[bootstrap.repos]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapReposStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured repo is not in its desired state
+    #[usage(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
+/// Manage macOS bootstrap config from `[bootstrap.macos]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapMacos {
+    #[usage(subcommand)]
+    command: BootstrapMacosCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapMacosCommands {
+    Defaults(BootstrapMacosDefaults),
+    #[usage(name = "launchd-agents", alias = "launchd")]
+    LaunchdAgents(BootstrapLaunchd),
+}
+
+/// Manage Linux bootstrap config from `[bootstrap.linux]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapLinux {
+    #[usage(subcommand)]
+    command: BootstrapLinuxCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapLinuxCommands {
+    #[usage(name = "systemd-units", alias = "systemd")]
+    SystemdUnits(BootstrapSystemd),
+}
+
+/// Manage macOS defaults from `[bootstrap.macos.defaults]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapMacosDefaults {
+    #[usage(subcommand)]
+    command: BootstrapMacosDefaultsCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapMacosDefaultsCommands {
+    Apply(BootstrapMacosDefaultsApply),
+    Status(BootstrapMacosDefaultsStatus),
+}
+
+/// Write macOS defaults from `[bootstrap.macos.defaults]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapMacosDefaultsApply {
+    /// Print the commands that would run without running them
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+}
+
+/// Show whether macOS defaults match `[bootstrap.macos.defaults]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapMacosDefaultsStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured defaults are not in their desired state
+    #[usage(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
+/// Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapLaunchd {
+    #[usage(subcommand)]
+    command: BootstrapLaunchdCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapLaunchdCommands {
+    Apply(BootstrapLaunchdApply),
+    Status(BootstrapLaunchdStatus),
+}
+
+/// Install and load LaunchAgents from `[bootstrap.macos.launchd.agents]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapLaunchdApply {
+    /// Print the commands that would run without running them
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+}
+
+/// Show the state of LaunchAgents from `[bootstrap.macos.launchd.agents]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapLaunchdStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured LaunchAgent is not in its desired state
+    #[usage(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
+/// Manage systemd user services from `[bootstrap.linux.systemd.units]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapSystemd {
+    #[usage(subcommand)]
+    command: BootstrapSystemdCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapSystemdCommands {
+    Apply(BootstrapSystemdApply),
+    Status(BootstrapSystemdStatus),
+}
+
+/// Install and start systemd user services from `[bootstrap.linux.systemd.units]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapSystemdApply {
+    /// Print the commands that would run without running them
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+}
+
+/// Show the state of systemd user services from `[bootstrap.linux.systemd.units]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapSystemdStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured systemd user service is not in its desired state
+    #[usage(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
+/// Manage mise shell activation from `[bootstrap.mise_shell_activate]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapShell {
+    #[usage(subcommand)]
+    command: BootstrapShellCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapShellCommands {
+    Apply(BootstrapShellApply),
+    Status(BootstrapShellStatus),
+}
+
+/// Configure shell activation from `[bootstrap.mise_shell_activate]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapShellApply {
+    /// Print the actions that would run without writing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+}
+
+/// Show whether shell activation matches `[bootstrap.mise_shell_activate]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapShellStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured shell activation is not in its desired state
+    #[usage(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
+/// Manage current-user bootstrap settings from `[bootstrap.user]`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapUser {
+    #[usage(subcommand)]
+    command: BootstrapUserCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapUserCommands {
+    Apply(BootstrapUserApply),
+    Status(BootstrapUserStatus),
+}
+
+/// Apply current-user settings from `[bootstrap.user]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapUserApply {
+    /// Print the commands that would run without running them
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+}
+
+/// Show whether current-user settings match `[bootstrap.user]`
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapUserStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured user setting is not in its desired state
+    #[usage(long, verbatim_doc_comment)]
+    missing: bool,
+}
+
+impl Bootstrap {
+    pub(super) fn is_dry_run(&self) -> bool {
+        self.dry_run
+    }
+
+    pub(super) fn inherit_root_flags(&mut self, dry_run: bool, yes: bool) {
+        self.dry_run |= dry_run;
+        self.yes |= yes;
+    }
+
+    #[cfg(test)]
+    pub(super) fn inherited_root_flags(&self) -> (bool, bool) {
+        (self.dry_run, self.yes)
+    }
+
+    pub(crate) async fn run(self) -> Result<()> {
+        if self.from.is_some() || self.from_git.is_some() {
+            if self.command.is_some() {
+                let flag = if self.from_git.is_some() {
+                    "--from-git"
+                } else {
+                    "--from"
+                };
+                bail!("{flag} cannot be used with a bootstrap subcommand");
+            }
+            return self.run_from();
+        }
+        if let Some(command) = self.command {
+            return command.run().await;
+        }
+        let mut config = Config::get().await?;
+        let mut hooks = system::hooks_from_config(&config);
+        let skip = self.skip_parts();
+        let accounts_enabled = !skip.contains(&BootstrapPart::Accounts);
+        let files_enabled = !skip.contains(&BootstrapPart::Files);
+        let configured_accounts =
+            if accounts_enabled || (cfg!(target_os = "linux") && files_enabled) {
+                Some(system::accounts::prepare_requests_from_config(&config)?)
+            } else {
+                None
+            };
+        let managed_accounts = accounts_enabled.then(|| {
+            configured_accounts
+                .as_ref()
+                .expect("enabled accounts were prepared")
+        });
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let managed_system_files = if !files_enabled {
+            None
+        } else {
+            Some(system::managed_files::prepare_requests_from_config(
+                &config, &secrets,
+            )?)
+        };
+        if let Some((files, directories)) = &managed_system_files {
+            system::managed_files::validate_principals(
+                files,
+                directories,
+                configured_accounts.as_ref(),
+                accounts_enabled,
+            )?;
+        }
+        let services_enabled = !skip.contains(&BootstrapPart::Services);
+        let notifications_configured =
+            managed_system_files
+                .as_ref()
+                .is_some_and(|(files, directories)| {
+                    files.iter().any(|file| !file.notify.is_empty())
+                        || directories
+                            .iter()
+                            .any(|directory| !directory.notify.is_empty())
+                });
+        let configured_services = if services_enabled || notifications_configured {
+            Some(system::services::prepare_requests_from_config(&config)?)
+        } else {
+            None
+        };
+        if notifications_configured {
+            let (files, directories) = managed_system_files
+                .as_ref()
+                .expect("configured notifications came from managed files");
+            let services = configured_services
+                .as_ref()
+                .expect("configured notifications prepared services");
+            system::services::validate_notifications(files, directories, services)?;
+        }
+        let mut managed_services =
+            services_enabled.then_some(configured_services.unwrap_or_default());
+        let mut managed_firewall = if skip.contains(&BootstrapPart::Firewall) {
+            None
+        } else {
+            system::firewall::prepare_request_from_config(&config)?
+        };
+        let mut managed_compose = if skip.contains(&BootstrapPart::Compose) {
+            None
+        } else {
+            Some(system::compose::prepare_requests_from_config(&config)?)
+        };
+        let dry_run_compose_actions = if self.dry_run
+            && managed_compose
+                .as_ref()
+                .is_some_and(|projects| !projects.is_empty())
+        {
+            let plan = system::resources::plan(&config, &secrets).await?;
+            let output = plan.output()?;
+            let resources = output
+                .resources
+                .iter()
+                .map(|resource| {
+                    (
+                        resource.id.clone(),
+                        (resource.action, resource.depends_on.clone()),
+                    )
+                })
+                .collect::<HashMap<_, _>>();
+            output
+                .resources
+                .into_iter()
+                .filter(|resource| resource.id.kind == "compose")
+                .filter(|resource| {
+                    !bootstrap_prediction_has_skipped_change(
+                        &resource.id,
+                        &resources,
+                        &skip,
+                        &mut HashSet::new(),
+                    )
+                })
+                .map(|resource| (resource.id.name.clone(), resource.action))
+                .collect()
+        } else {
+            HashMap::new()
+        };
+        let mut follow_up = BootstrapFollowUp::new(self.dry_run);
+        let mut notified_services = system::services::ServiceNotifications::default();
+        let mut dry_run_config_files = None;
+        let mut post_packages_ran = false;
+
+        let allow_pending_accounts = if let Some(accounts) = managed_accounts {
+            if accounts.groups.is_empty() && accounts.users.is_empty() {
+                debug!("bootstrap: no [bootstrap.groups] or [bootstrap.users] configured");
+                true
+            } else {
+                info!("bootstrap: accounts");
+                system::accounts::apply(accounts, self.dry_run, self.yes)?
+            }
+        } else {
+            debug!("bootstrap: accounts skipped");
+            false
+        };
+
+        if skip.contains(&BootstrapPart::Plugins) {
+            debug!("bootstrap: package plugins skipped");
+        } else {
+            apply_bootstrap_plugins(&config, self.dry_run).await?;
+        }
+
+        if skip.contains(&BootstrapPart::Packages) {
+            debug!("bootstrap: system packages skipped");
+        } else {
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PrePackages)
+                .await?;
+            let all_mgrs = system::packages_from_config(&config);
+            let has_plugin_packages = all_mgrs
+                .iter()
+                .any(|mp| mp.manager.is_plugin() && !mp.disabled)
+                || (self.dry_run
+                    && !system::pending_plugin_packages_from_config(&config).is_empty());
+            let mgrs = all_mgrs
+                .into_iter()
+                .filter(|mp| !mp.manager.is_plugin())
+                .collect::<Vec<_>>();
+            if mgrs.is_empty() {
+                debug!("bootstrap: no [bootstrap.packages] configured, skipping");
+            } else {
+                info!("bootstrap: system packages");
+                follow_up.add_package_skips(&mgrs).await;
+                let opts = DriverOpts {
+                    manager: None,
+                    explicit: false,
+                    allow_unavailable_manager: false,
+                    dry_run: self.dry_run,
+                    update: self.update,
+                    yes: self.yes,
+                };
+                driver::run(mgrs, Action::Install, &opts).await?;
+            }
+            if !has_plugin_packages {
+                self.run_hooks(&config, &hooks, BootstrapHookPhase::PostPackages)
+                    .await?;
+                post_packages_ran = true;
+            }
+        }
+
+        if skip.contains(&BootstrapPart::Files) {
+            debug!("bootstrap: system files skipped");
+        } else {
+            let (mut files, mut directories) = managed_system_files
+                .as_ref()
+                .expect("system files were preflighted when not skipped")
+                .clone();
+            system::managed_files::inspect_requests(&mut files, &mut directories)?;
+            if files.is_empty() && directories.is_empty() {
+                debug!("bootstrap: no [bootstrap.files] or [bootstrap.directories] configured");
+            } else {
+                info!("bootstrap: system files");
+                let report = system::managed_files::apply_with_accounts(
+                    &files,
+                    &directories,
+                    configured_accounts.as_ref(),
+                    allow_pending_accounts,
+                    self.dry_run,
+                    self.yes,
+                )?;
+                notified_services = report.notified_services;
+            }
+        }
+
+        if let Some(services) = &mut managed_services {
+            system::services::inspect_requests(services);
+            if services.is_empty() {
+                debug!("bootstrap: no [bootstrap.services] configured");
+            } else {
+                info!("bootstrap: system services");
+                system::services::apply_with_notifications(
+                    services,
+                    &notified_services,
+                    self.dry_run,
+                    self.yes,
+                )?;
+            }
+        } else {
+            debug!("bootstrap: system services skipped");
+        }
+
+        if skip.contains(&BootstrapPart::Firewall) {
+            debug!("bootstrap: firewall skipped");
+        } else if let Some(firewall) = &mut managed_firewall {
+            system::firewall::inspect_request(firewall)?;
+            info!("bootstrap: firewall");
+            system::firewall::apply(firewall, self.dry_run, self.yes)?;
+        } else {
+            debug!("bootstrap: no [bootstrap.linux.firewall] configured");
+        }
+
+        if let Some(projects) = &mut managed_compose {
+            system::compose::inspect_requests(projects);
+            if projects.is_empty() {
+                debug!("bootstrap: no [bootstrap.compose] configured");
+            } else {
+                info!("bootstrap: compose projects");
+                system::compose::apply_with_dry_run_actions(
+                    projects,
+                    &dry_run_compose_actions,
+                    self.dry_run,
+                    self.yes,
+                )?;
+            }
+        } else {
+            debug!("bootstrap: compose projects skipped");
+        }
+
+        if skip.contains(&BootstrapPart::Repos) {
+            debug!("bootstrap: repos skipped");
+        } else {
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PreRepos)
+                .await?;
+            let repos = system::repos_from_config(&config);
+            if repos.is_empty() {
+                debug!("bootstrap: no [bootstrap.repos] configured, skipping");
+            } else {
+                info!("bootstrap: repos");
+                if self.update {
+                    install::update_repos(repos, self.dry_run, self.yes, self.skip_dirty).await?;
+                } else {
+                    install::apply_repos(repos, self.dry_run, self.yes, self.skip_dirty).await?;
+                }
+            }
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PostRepos)
+                .await?;
+        }
+
+        if skip.contains(&BootstrapPart::Dotfiles) {
+            debug!("bootstrap: dotfiles skipped");
+            if !self.dry_run {
+                config = Config::reset().await?;
+                hooks = system::hooks_from_config(&config);
+            }
+        } else {
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles)
+                .await?;
+            let files = system::files::files_from_config(&config)?;
+            if files.is_empty() {
+                debug!("bootstrap: no whole-file [dotfiles] entries configured, skipping");
+            } else {
+                info!("bootstrap: dotfiles");
+                let opts = system::files::ApplyOpts {
+                    dry_run: self.dry_run,
+                    verbose: false,
+                    force: self.force_dotfiles,
+                    force_hint: "use --force-dotfiles or run `mise bootstrap dotfiles apply --force`",
+                    yes: self.yes,
+                };
+                if !system::files::apply(&config, &files, &opts)? {
+                    return Ok(());
+                }
+            }
+
+            let edits = system::edits::edits_from_config(&config)?;
+            if edits.is_empty() {
+                debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
+            } else {
+                info!("bootstrap: dotfile edits");
+                let opts = system::edits::ApplyOpts {
+                    dry_run: self.dry_run,
+                    verbose: false,
+                    yes: self.yes,
+                };
+                if !system::edits::apply(&config, &edits, &opts)? {
+                    return Ok(());
+                }
+            }
+            if self.dry_run {
+                let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+                config = config.with_bootstrap_dry_run_config_files(config_files.clone())?;
+                hooks = system::hooks_from_config(&config);
+                dry_run_config_files = Some(config_files);
+            } else {
+                config = Config::reset().await?;
+                hooks = system::hooks_from_config(&config);
+            }
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PostDotfiles)
+                .await?;
+        }
+
+        if skip.contains(&BootstrapPart::Shell) {
+            debug!("bootstrap: shell activation skipped");
+        } else {
+            let activations = dry_run_config_files
+                .as_ref()
+                .map(system::shell_activation_from_config_files)
+                .unwrap_or_else(|| system::shell_activation_from_config(&config));
+            if activations.is_empty() {
+                debug!("bootstrap: no [bootstrap.mise_shell_activate] configured, skipping");
+            } else {
+                info!("bootstrap: shell activation");
+                install::apply_shell_activation(&config, activations, self.dry_run, self.yes)?;
+            }
+        }
+
+        if skip.contains(&BootstrapPart::Defaults) {
+            debug!("bootstrap: system defaults skipped");
+        } else {
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PreDefaults)
+                .await?;
+            let defaults = system::defaults_from_config(&config);
+            if defaults.is_empty() {
+                debug!("bootstrap: no [bootstrap.macos.defaults] configured, skipping");
+            } else {
+                info!("bootstrap: system defaults");
+                let requested = defaults.len();
+                let report =
+                    install::apply_defaults_with_report(defaults, self.dry_run, self.yes, false)
+                        .await?;
+                if report.needs_follow_up {
+                    follow_up.add_macos_defaults();
+                }
+                if let Some(reason) = report.skipped_reason {
+                    follow_up.add_skipped(format!(
+                        "macOS defaults: {requested} entry(ies) skipped ({reason})"
+                    ));
+                }
+            }
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PostDefaults)
+                .await?;
+        }
+
+        if skip.contains(&BootstrapPart::Launchd) {
+            debug!("bootstrap: launchd agents skipped");
+        } else {
+            let agents = system::launchd_from_config(&config);
+            if agents.is_empty() {
+                debug!("bootstrap: no [bootstrap.macos.launchd.agents] configured, skipping");
+            } else {
+                info!("bootstrap: launchd agents");
+                let requested = agents.len();
+                let report =
+                    install::apply_launchd_with_report(agents, self.dry_run, self.yes).await?;
+                if let Some(reason) = report.skipped_reason {
+                    follow_up
+                        .add_skipped(format!("launchd: {requested} agent(s) skipped ({reason})"));
+                }
+            }
+        }
+
+        if skip.contains(&BootstrapPart::Systemd) {
+            debug!("bootstrap: systemd user services skipped");
+        } else {
+            let units = system::systemd_from_config(&config);
+            if units.is_empty() {
+                debug!("bootstrap: no [bootstrap.linux.systemd.units] configured, skipping");
+            } else {
+                info!("bootstrap: systemd user services");
+                let requested = units.len();
+                let report =
+                    install::apply_systemd_with_report(units, self.dry_run, self.yes).await?;
+                if let Some(reason) = report.skipped_reason {
+                    follow_up
+                        .add_skipped(format!("systemd: {requested} unit(s) skipped ({reason})"));
+                }
+            }
+        }
+
+        if skip.contains(&BootstrapPart::User) {
+            debug!("bootstrap: login shell skipped");
+        } else {
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PreUser)
+                .await?;
+            let login_shell = system::login_shell_from_config(&config);
+            if login_shell.is_none() {
+                debug!("bootstrap: no [bootstrap.user].login_shell configured, skipping");
+            } else {
+                let shell = login_shell.as_ref().map(|r| r.shell.clone());
+                info!("bootstrap: login shell");
+                let report = install::apply_login_shell_with_report(
+                    login_shell,
+                    self.dry_run,
+                    self.yes,
+                    false,
+                )?;
+                if report.needs_follow_up
+                    && let Some(shell) = shell.as_ref()
+                {
+                    follow_up.add_login_shell(shell);
+                }
+                if let Some(reason) = report.skipped_reason
+                    && let Some(shell) = shell
+                {
+                    follow_up.add_skipped(format!("login shell {shell}: skipped ({reason})"));
+                }
+            }
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PostUser)
+                .await?;
+        }
+
+        if skip.contains(&BootstrapPart::Tools) {
+            debug!("bootstrap: tools skipped");
+        } else {
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PreTools)
+                .await?;
+            info!("bootstrap: tools");
+            Install::new_bare(self.dry_run, self.yes).run().await?;
+            if !self.dry_run {
+                config = Config::reset().await?;
+                hooks = system::hooks_from_config(&config);
+            }
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PostTools)
+                .await?;
+        }
+
+        if !skip.contains(&BootstrapPart::Packages) {
+            let mgrs = system::packages_from_config(&config)
+                .into_iter()
+                .filter(|mp| mp.manager.is_plugin())
+                .collect::<Vec<_>>();
+            if !mgrs.is_empty() {
+                info!("bootstrap: plugin packages");
+                follow_up.add_package_skips(&mgrs).await;
+                driver::run(
+                    mgrs,
+                    Action::Install,
+                    &DriverOpts {
+                        manager: None,
+                        explicit: false,
+                        allow_unavailable_manager: false,
+                        dry_run: self.dry_run,
+                        update: self.update,
+                        yes: self.yes,
+                    },
+                )
+                .await?;
+            }
+            if self.dry_run {
+                for (name, requests) in system::pending_plugin_packages_from_config(&config) {
+                    let packages = requests
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    info!("{name}: would install {packages}");
+                }
+            }
+            if !post_packages_ran {
+                self.run_hooks(&config, &hooks, BootstrapHookPhase::PostPackages)
+                    .await?;
+            }
+        }
+
+        if skip.contains(&BootstrapPart::Task) {
+            debug!("bootstrap: `bootstrap` task skipped");
+        } else {
+            let tasks = config.tasks().await?;
+            if tasks.iter().any(|(_, t)| t.is_match("bootstrap")) {
+                info!("bootstrap: running `bootstrap` task");
+                self.run_task("bootstrap", skip.contains(&BootstrapPart::Tools))
+                    .await?;
+            } else {
+                debug!("bootstrap: no `bootstrap` task defined, skipping");
+            }
+        }
+        if skip.contains(&BootstrapPart::FinalHook) {
+            debug!("bootstrap: final hook skipped");
+        } else {
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::Final)
+                .await?;
+        }
+        follow_up.print()?;
+        Ok(())
+    }
+
+    fn run_from(&self) -> Result<()> {
+        let expanded = self
+            .from_git
+            .as_deref()
+            .map(crate::github_relay::expand_repository)
+            .transpose()?;
+        let (url, checkout) = if let Some(url) = expanded.as_deref() {
+            let checkout = crate::env::MISE_GLOBAL_CONFIG_FILE
+                .as_deref()
+                .map(|path| {
+                    path.parent()
+                        .filter(|parent| !parent.as_os_str().is_empty())
+                        .unwrap_or_else(|| Path::new("."))
+                })
+                .unwrap_or(*dirs::CONFIG)
+                .to_path_buf();
+            (url, checkout)
+        } else {
+            (
+                self.from.as_deref().expect("--from was provided"),
+                self.from_dir
+                    .clone()
+                    .unwrap_or_else(|| dirs::DATA.join("bootstrap-repo")),
+            )
+        };
+
+        let checkout_is_empty = checkout.is_dir() && checkout.read_dir()?.next().is_none();
+        if checkout.exists() && !checkout_is_empty {
+            validate_bootstrap_checkout(&checkout, url)?;
+            if self.update {
+                if self.dry_run {
+                    miseprintln!(
+                        "Would run: git -C {} pull --ff-only",
+                        checkout.display_user()
+                    );
+                } else {
+                    run_bootstrap_git(&checkout, ["pull", "--ff-only"])?;
+                }
+            }
+        } else if self.dry_run {
+            miseprintln!("Would run: git clone {} {}", url, checkout.display_user());
+            return Ok(());
+        } else {
+            if let Some(parent) = checkout
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+            {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut command = Command::new("git");
+            command.arg("clone").arg(url).arg(&checkout);
+            crate::git::sanitize_git_command(&mut command);
+            let status = command.status()?;
+            if !status.success() {
+                bail!("git clone failed with {status}");
+            }
+        }
+
+        let checkout = dunce::canonicalize(&checkout)?;
+        let mut command = Command::new(std::env::current_exe()?);
+        command.args(bootstrap_from_child_args(
+            &checkout,
+            &crate::env::ARGS.read().unwrap(),
+        ));
+        if self.from_git.is_some() {
+            let config_dir = crate::env::MISE_CONFIG_DIR.as_path();
+            let config_dir = if config_dir.is_absolute() {
+                config_dir.to_path_buf()
+            } else {
+                std::env::current_dir()?.join(config_dir)
+            };
+            command.env("MISE_CONFIG_DIR", config_dir);
+
+            if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
+                .as_deref()
+                .and_then(Path::file_name)
+            {
+                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
+            }
+        }
+
+        let mut trusted = std::env::split_paths(
+            &std::env::var_os("MISE_TRUSTED_CONFIG_PATHS").unwrap_or_default(),
+        )
+        .collect::<Vec<_>>();
+        trusted.push(checkout);
+        command.env("MISE_TRUSTED_CONFIG_PATHS", std::env::join_paths(trusted)?);
+        let status = command.status()?;
+        if !status.success() {
+            bail!("bootstrap from repository failed with {status}");
+        }
+        Ok(())
+    }
+
+    async fn run_hooks(
+        &self,
+        config: &Config,
+        hooks: &[hooks::BootstrapHook],
+        phase: BootstrapHookPhase,
+    ) -> Result<()> {
+        run_bootstrap_hooks(config, hooks, phase, self.dry_run).await
+    }
+
+    fn skip_parts(&self) -> HashSet<BootstrapPart> {
+        if self.only.is_empty() {
+            self.skip.iter().copied().collect()
+        } else {
+            let only = self.only.iter().copied().collect::<HashSet<_>>();
+            BootstrapPart::ALL
+                .into_iter()
+                .filter(|part| !only.contains(part))
+                .collect()
+        }
+    }
+
+    async fn run_task(&self, task: &str, skip_tools: bool) -> Result<()> {
+        run::Run {
+            task: Some(task.into()),
+            args: vec![],
+            args_last: vec![],
+            all: false,
+            affected: false,
+            affected_base: None,
+            affected_head: None,
+            affected_explain: false,
+            affected_json: false,
+            cd: None,
+            continue_on_error: false,
+            dry_run: self.dry_run,
+            force: false,
+            is_linear: false,
+            jobs: None,
+            no_timings: false,
+            output: None,
+            shell: None,
+            quiet: false,
+            silent: false,
+            raw: false,
+            timings: false,
+            tmpdir: Default::default(),
+            tool: Default::default(),
+            output_handler: None,
+            context_builder: Default::default(),
+            executor: None,
+            no_cache: Default::default(),
+            task_cache: crate::task::TaskCacheMode::from_env()?,
+            task_cache_explain: false,
+            task_cache_explain_json: false,
+            task_cache_stats: false,
+            timeout: None,
+            skip_deps: false,
+            // a dry run must not auto-install tools before the (not actually
+            // run) task, and --skip tools must keep the task runner from
+            // installing them implicitly before bootstrap tasks
+            skip_tools: self.dry_run || skip_tools,
+            no_deps: false,
+            fresh_env: false,
+            deny_all: false,
+            deny_read: false,
+            deny_write: false,
+            deny_net: false,
+            deny_env: false,
+            allow_read: vec![],
+            allow_write: vec![],
+            allow_net: vec![],
+            allow_env: vec![],
+        }
+        .run()
+        .await
+    }
+}
+
+/// Re-run the original bootstrap invocation from the checkout, preserving
+/// global controls such as `--no-hooks`. Remove only arguments that describe
+/// the parent checkout operation and replace any original working directory.
+fn bootstrap_from_child_args(checkout: &Path, args: &[String]) -> Vec<OsString> {
+    let mut forwarded = vec![OsString::from("--cd"), checkout.as_os_str().to_owned()];
+    let mut args = args.iter().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--from" | "--from-git" | "--from-dir" | "--cd" | "-C" => {
+                args.next();
+            }
+            _ if arg.starts_with("--from=")
+                || arg.starts_with("--from-git=")
+                || arg.starts_with("--from-dir=")
+                || arg.starts_with("--cd=")
+                || arg.starts_with("-C") && arg.len() > 2 => {}
+            _ => {
+                forwarded.push(arg.into());
+                if global_option_takes_value(arg)
+                    && let Some(value) = args.next()
+                {
+                    forwarded.push(value.into());
+                }
+            }
+        }
+    }
+    forwarded
+}
+
+fn global_option_takes_value(arg: &str) -> bool {
+    matches!(
+        arg,
+        "--env"
+            | "-E"
+            | "--jobs"
+            | "-j"
+            | "--profile"
+            | "-P"
+            | "--shell"
+            | "-s"
+            | "--tool"
+            | "-t"
+            | "--log-level"
+            | "--output"
+    )
+}
+
+struct BootstrapFollowUp {
+    dry_run: bool,
+    items: Vec<String>,
+    printed: bool,
+}
+
+impl BootstrapFollowUp {
+    fn new(dry_run: bool) -> Self {
+        Self {
+            dry_run,
+            items: vec![],
+            printed: false,
+        }
+    }
+
+    async fn add_package_skips(&mut self, mgrs: &[system::ManagerPackages]) {
+        for mp in mgrs {
+            let name = mp.manager.name();
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else {
+                mp.manager.unavailable_reason_async().await
+            };
+            if let Some(reason) = reason {
+                self.add_skipped(format!(
+                    "{name}: {} package(s) skipped ({reason})",
+                    mp.requests.len()
+                ));
+            }
+        }
+    }
+
+    fn add_macos_defaults(&mut self) {
+        self.items.push(
+            "relaunch apps that read changed macOS defaults (for example: `killall Dock`, \
+             `killall Finder`, `killall SystemUIServer`)"
+                .to_string(),
+        );
+    }
+
+    fn add_login_shell(&mut self, shell: &str) {
+        self.items.push(format!(
+            "start a new login session for {shell} to take effect"
+        ));
+    }
+
+    fn add_skipped(&mut self, message: String) {
+        self.items.push(message);
+    }
+
+    fn print(&mut self) -> Result<()> {
+        self.printed = true;
+        self.print_inner()
+    }
+
+    fn print_best_effort(&mut self) {
+        if self.printed {
+            return;
+        }
+        self.printed = true;
+        if let Err(err) = self.print_inner() {
+            debug!("bootstrap: failed to print follow-up after error: {err}");
+        }
+    }
+
+    fn print_inner(&self) -> Result<()> {
+        if self.items.is_empty() {
+            return Ok(());
+        }
+        if self.dry_run {
+            miseprintln!("bootstrap: follow-up if applied");
+        } else {
+            miseprintln!("bootstrap: follow-up");
+        }
+        for item in &self.items {
+            miseprintln!("  - {item}");
+        }
+        Ok(())
+    }
+}
+
+impl Drop for BootstrapFollowUp {
+    fn drop(&mut self) {
+        self.print_best_effort();
+    }
+}
+
+fn config_files_after_dotfiles_dry_run(
+    config: &Config,
+    files: &[FileRequest],
+    edits: &[system::edits::EditRequest],
+) -> Result<config::ConfigMap> {
+    let mut config_files = config.config_files.clone();
+    let mut bodies = indexmap::IndexMap::new();
+    let mut unavailable_bodies = HashSet::new();
+    for file in files {
+        if !is_mise_config_target(&file.target)
+            || (file.mode != system::files::FileMode::Content && !file.source.is_file())
+        {
+            continue;
+        }
+        if file.mode == FileMode::Template {
+            config_files.shift_remove(&file.target);
+            unavailable_bodies.insert(file.target.clone());
+            debug!(
+                "bootstrap: template config target {} skipped in dry-run config simulation \
+                 because template rendering may execute commands",
+                file.target.display()
+            );
+            continue;
+        }
+        let contents = if file.mode == system::files::FileMode::Content {
+            Ok(file.content.clone().expect("inline content"))
+        } else {
+            crate::file::read_to_string(&file.source)
+        };
+        match contents {
+            Ok(body) => match parse_mise_config_body(&file.target, &body) {
+                Ok(cf) => {
+                    bodies.insert(file.target.clone(), body);
+                    config_files.insert(file.target.clone(), cf);
+                }
+                Err(err) => {
+                    warn!(
+                        "[dotfiles].\"{}\": failed to parse config source {}: {err}",
+                        file.target_raw,
+                        file.source.display()
+                    );
+                }
+            },
+            Err(err) => {
+                warn!(
+                    "[dotfiles].\"{}\": failed to read config source {}: {err}",
+                    file.target_raw,
+                    file.source.display()
+                );
+            }
+        }
+    }
+    for edit in edits {
+        if !is_mise_config_target(&edit.path) {
+            continue;
+        }
+        if unavailable_bodies.contains(&edit.path) {
+            debug!(
+                "bootstrap: edit for config target {} skipped in dry-run config simulation \
+                 because the preceding file template was not rendered",
+                edit.path.display()
+            );
+            continue;
+        }
+        let body = match bodies.get(&edit.path) {
+            Some(body) => body.clone(),
+            None if edit.path.exists() => match crate::file::read_to_string(&edit.path) {
+                Ok(body) => body,
+                Err(err) => {
+                    warn!(
+                        "[dotfiles].\"{}\": failed to read config target {}: {err}",
+                        edit.config_key(),
+                        edit.path.display()
+                    );
+                    continue;
+                }
+            },
+            None => String::new(),
+        };
+        match system::edits::apply_dry_run_to_string(config, edit, &body) {
+            Ok(Some(body)) => match parse_mise_config_body(&edit.path, &body) {
+                Ok(cf) => {
+                    bodies.insert(edit.path.clone(), body);
+                    config_files.insert(edit.path.clone(), cf);
+                }
+                Err(err) => {
+                    warn!(
+                        "[dotfiles].\"{}\": failed to parse edited config target {}: {err}",
+                        edit.config_key(),
+                        edit.path.display()
+                    );
+                }
+            },
+            Ok(None) => {
+                debug!(
+                    "bootstrap: edited config target {} skipped in dry-run config simulation \
+                     because the edit requires template rendering",
+                    edit.path.display()
+                );
+            }
+            Err(err) => {
+                warn!(
+                    "[dotfiles].\"{}\": failed to simulate config edit for {}: {err}",
+                    edit.config_key(),
+                    edit.path.display()
+                );
+            }
+        }
+    }
+    Ok(config_files)
+}
+
+fn parse_mise_config_body(
+    path: &std::path::Path,
+    body: &str,
+) -> Result<Arc<dyn config::config_file::ConfigFile>> {
+    Ok(Arc::new(
+        config::config_file::mise_toml::MiseToml::from_str(body, path)?,
+    ))
+}
+
+fn is_mise_config_target(path: &std::path::Path) -> bool {
+    path.starts_with(*dirs::CONFIG)
+        || path.starts_with(*dirs::SYSTEM_CONFIG)
+        || config::DEFAULT_CONFIG_FILENAMES.iter().any(|filename| {
+            filename.ends_with(".toml") && !filename.contains('*') && path.ends_with(filename)
+        })
+        || (path.extension().is_some_and(|ext| ext == "toml")
+            && path
+                .parent()
+                .is_some_and(|parent| parent.ends_with(".config/mise/conf.d")))
+}
+
+impl Commands {
+    async fn run(self) -> Result<()> {
+        match self {
+            Self::ApplyAccountPlan(cmd) => cmd.run(),
+            Self::ApplyServicePlan(cmd) => cmd.run(),
+            Self::ApplyFirewallPlan(cmd) => cmd.run(),
+            Self::ApplySystemPlan(cmd) => cmd.run(),
+            Self::InspectSystemFiles(cmd) => cmd.run(),
+            Self::InspectFirewallPlan(cmd) => cmd.run(),
+            Self::Accounts(cmd) => cmd.run().await,
+            Self::ConfigRoots(cmd) => cmd.run().await,
+            Self::Compose(cmd) => cmd.run().await,
+            Self::Dotfiles(cmd) => cmd.run().await,
+            Self::Files(cmd) => cmd.run().await,
+            Self::Firewall(cmd) => cmd.run().await,
+            Self::Launchd(cmd) => cmd.run().await,
+            Self::Linux(cmd) => cmd.run().await,
+            Self::Macos(cmd) => cmd.run().await,
+            Self::MacosDefaults(cmd) => cmd.run().await,
+            Self::MiseShellActivate(cmd) => cmd.run().await,
+            Self::Packages(cmd) => cmd.run().await,
+            Self::Plan(cmd) => cmd.run().await,
+            Self::Plugins(cmd) => cmd.run().await,
+            Self::Remote(cmd) => cmd.run().await,
+            Self::Repos(cmd) => cmd.run().await,
+            Self::Secrets(cmd) => cmd.run().await,
+            Self::Services(cmd) => cmd.run().await,
+            Self::Status(cmd) => cmd.run().await,
+            Self::Systemd(cmd) => cmd.run().await,
+            Self::User(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapPlan {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let plan = system::resources::plan(&config, &secrets).await?;
+        let output = plan.output()?;
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&output)?);
+        } else if output.resources.is_empty() {
+            info!("nothing configured for bootstrap planning");
+        } else {
+            let mut table = MiseTable::new(
+                false,
+                &["Action", "Resource", "Current", "Desired", "Config"],
+            );
+            for resource in &output.resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current.clone(),
+                    resource.desired.clone(),
+                    resource
+                        .origin
+                        .as_ref()
+                        .map(|origin| origin.config.display_user())
+                        .unwrap_or_default(),
+                ]);
+            }
+            table.print()?;
+            miseprintln!(
+                "Plan: {} create, {} update, {} unchanged, {} remove, {} unknown",
+                output.summary.create,
+                output.summary.update,
+                output.summary.unchanged,
+                output.summary.remove,
+                output.summary.unknown,
+            );
+        }
+        if self.detailed_exitcode {
+            if output.summary.has_unknown() {
+                bail!("bootstrap plan contains resources with unknown state");
+            }
+            if output.summary.has_changes() {
+                return Err(crate::request_exit(2));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapConfigRoots {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let roots = config
+            .selected_bootstrap_config_maps()
+            .map(|(config_root, config_files)| {
+                let mut environments = vec![];
+                let mut declares = BootstrapConfigRootDeclarations::default();
+                for cf in config_files.values().rev() {
+                    let environment = config::environments_for_config_path(cf.get_path());
+                    for name in &environment {
+                        if !environments.contains(name) {
+                            environments.push(name.clone());
+                        }
+                    }
+                    let Some(bootstrap) = cf.bootstrap_config() else {
+                        continue;
+                    };
+                    let origin = BootstrapDeclarationOrigin {
+                        config: cf.get_path().to_path_buf(),
+                        environment,
+                    };
+                    declares.packages.add(bootstrap.packages.len(), &origin);
+                    declares.repos.add(bootstrap.repos.len(), &origin);
+                    declares
+                        .accounts
+                        .add(bootstrap.users.len() + bootstrap.groups.len(), &origin);
+                    declares.hooks.add(bootstrap.hooks.keys(), &origin);
+                }
+                BootstrapConfigRootOutput {
+                    config_root: config_root.to_path_buf(),
+                    environments,
+                    declares,
+                }
+            })
+            .collect();
+        let output = BootstrapConfigRootsOutput { roots };
+
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&output)?);
+        } else if output.roots.is_empty() {
+            info!("no [bootstrap].config_roots configured");
+        } else {
+            let mut table = MiseTable::new(
+                false,
+                &[
+                    "Config Root",
+                    "Environments",
+                    "Packages",
+                    "Repos",
+                    "Accounts",
+                    "Hooks",
+                    "Hook Phases",
+                ],
+            );
+            for root in output.roots {
+                table.add_row(vec![
+                    root.config_root.display_user().to_string(),
+                    root.environments.join(", "),
+                    root.declares.packages.count.to_string(),
+                    root.declares.repos.count.to_string(),
+                    root.declares.accounts.count.to_string(),
+                    root.declares.hooks.count.to_string(),
+                    root.declares.hooks.phases.join(", "),
+                ]);
+            }
+            table.print()?;
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapDeclarationSurface {
+    fn add(&mut self, count: usize, origin: &BootstrapDeclarationOrigin) {
+        if count == 0 {
+            return;
+        }
+        self.count += count;
+        if !self.provenance.contains(origin) {
+            self.provenance.push(origin.clone());
+        }
+    }
+}
+
+impl BootstrapHookDeclarationSurface {
+    fn add<'a>(
+        &mut self,
+        phases: impl IntoIterator<Item = &'a String>,
+        origin: &BootstrapDeclarationOrigin,
+    ) {
+        let mut count = 0;
+        for phase in phases {
+            count += 1;
+            let phase = BootstrapHookPhase::parse(phase)
+                .map(|phase| phase.to_string())
+                .unwrap_or_else(|| phase.clone());
+            if !self.phases.contains(&phase) {
+                self.phases.push(phase);
+            }
+        }
+        if count > 0 {
+            self.count += count;
+            if !self.provenance.contains(origin) {
+                self.provenance.push(origin.clone());
+            }
+        }
+    }
+}
+
+impl BootstrapApplySystemPlan {
+    fn run(self) -> Result<()> {
+        system::managed_files::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapApplyAccountPlan {
+    fn run(self) -> Result<()> {
+        system::accounts::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapApplyServicePlan {
+    fn run(self) -> Result<()> {
+        system::services::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapApplyFirewallPlan {
+    fn run(self) -> Result<()> {
+        system::firewall::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapInspectFirewallPlan {
+    fn run(self) -> Result<()> {
+        system::firewall::inspect_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapInspectSystemFiles {
+    fn run(self) -> Result<()> {
+        system::managed_files::inspect_privileged_files_from_stdin()
+    }
+}
+
+impl BootstrapAccounts {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapAccountsCommands::Apply(command) => command.run().await,
+            BootstrapAccountsCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapAccountsApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::accounts::requests_from_config(&config)?;
+        system::accounts::apply(&requests, self.dry_run, self.yes)?;
+        Ok(())
+    }
+}
+
+impl BootstrapAccountsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::accounts::requests_from_config(&config)?;
+        let resources = system::accounts::plans(&requests);
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no bootstrap users or groups configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapFiles {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapFilesCommands::Apply(command) => command.run().await,
+            BootstrapFilesCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapFilesApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let (files, directories) = system::managed_files::requests_from_config(&config, &secrets)?;
+        let mut services = if files.iter().any(|file| !file.notify.is_empty())
+            || directories
+                .iter()
+                .any(|directory| !directory.notify.is_empty())
+        {
+            let services = system::services::prepare_requests_from_config(&config)?;
+            system::services::validate_notifications(&files, &directories, &services)?;
+            Some(services)
+        } else {
+            None
+        };
+        let accounts = if cfg!(target_os = "linux") {
+            Some(system::accounts::requests_from_config(&config)?)
+        } else {
+            None
+        };
+        let report = system::managed_files::apply_with_accounts(
+            &files,
+            &directories,
+            accounts.as_ref(),
+            false,
+            self.dry_run,
+            self.yes,
+        )?;
+        if let Some(services) = &mut services {
+            system::services::inspect_requests(services);
+            system::services::apply_with_notifications(
+                services,
+                &report.notified_services,
+                self.dry_run,
+                self.yes,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapFilesStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let (files, directories, mut unavailable) =
+            system::managed_files::status_requests_from_config(&config, &secrets)?;
+        let accounts = system::accounts::prepare_requests_from_config(&config)?;
+        system::managed_files::validate_principals(
+            &files,
+            &directories,
+            cfg!(target_os = "linux").then_some(&accounts),
+            false,
+        )?;
+        let mut resources = directories
+            .into_iter()
+            .map(|request| request.plan())
+            .collect::<Result<Vec<_>>>()?;
+        resources.extend(
+            files
+                .into_iter()
+                .map(|request| request.plan())
+                .collect::<Result<Vec<_>>>()?,
+        );
+        resources.append(&mut unavailable);
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no system files or directories configured");
+        } else {
+            let mut table = MiseTable::new(
+                false,
+                &["Action", "Resource", "Current", "Desired", "Config"],
+            );
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                    resource
+                        .origin
+                        .map(|origin| origin.config.display_user())
+                        .unwrap_or_default(),
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapServices {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapServicesCommands::Apply(command) => command.run().await,
+            BootstrapServicesCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapServicesApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::services::requests_from_config(&config)?;
+        system::services::apply(&requests, self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapServicesStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::services::requests_from_config(&config)?;
+        let resources = system::services::plans_with_notifications(
+            &requests,
+            &system::services::ServiceNotifications::default(),
+        );
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no bootstrap system services configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapFirewall {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapFirewallCommands::Apply(command) => command.run().await,
+            BootstrapFirewallCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapFirewallApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let Some(request) = system::firewall::request_from_config(&config)? else {
+            info!("no bootstrap firewall configured");
+            return Ok(());
+        };
+        system::firewall::apply(&request, self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapFirewallStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let Some(request) = system::firewall::status_request_from_config(&config)? else {
+            info!("no bootstrap firewall configured");
+            return Ok(());
+        };
+        let resources = request.plans();
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapCompose {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapComposeCommands::Apply(command) => command.run().await,
+            BootstrapComposeCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapComposeApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::compose::requests_from_config(&config)?;
+        system::compose::apply(&requests, self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapComposeStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::compose::requests_from_config(&config)?;
+        let resources = system::compose::plans(&requests, false);
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no bootstrap compose projects configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapSecrets {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapSecretsCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapRemote {
+    async fn run(self) -> Result<()> {
+        crate::ui::ctrlc::exit_on_ctrl_c(false);
+        let relay = crate::github_relay::Scope::from_flags(
+            self.github_relay_read_only,
+            &self.github_relay_repo,
+            self.github_relay_all_repos,
+        )?;
+        let relay = crate::github_relay::configure(
+            relay,
+            self.github_relay_log_requests,
+            self.github_relay_no_log_requests,
+            self.github_relay_log_format.as_deref(),
+            self.github_relay_max_duration.as_deref(),
+        )?;
+        if relay.is_some() && !cfg!(unix) {
+            bail!("GitHub relay requires Linux or macOS");
+        }
+        if self.connect_timeout == 0 {
+            bail!("--connect-timeout must be greater than zero");
+        }
+        let config = Config::get().await?;
+        let config_excludes = system::remote::excludes_from_config(&config);
+        let inventory = system::remote::hosts_from_config(&config, &config_excludes)?;
+        let mut selected = select_remote_inventory(&inventory, &self.targets, self.all, &self.tag)?;
+        let ad_hoc_source = self.source.clone().unwrap_or(std::env::current_dir()?);
+        for destination in &self.host {
+            let host =
+                system::remote::ad_hoc_host(destination, ad_hoc_source.clone(), &config_excludes)?;
+            if selected.insert(host.name.clone(), host).is_some() {
+                bail!("remote target '{destination}' was selected more than once");
+            }
+        }
+        if selected.is_empty() {
+            if inventory.is_empty() {
+                bail!(
+                    "no remote targets configured; pass --host [user@]host or add [bootstrap.remote.hosts]"
+                );
+            }
+            bail!(
+                "select a remote target by name, --tag, or --all (configured: {})",
+                inventory.keys().cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
+
+        let overrides = system::remote::RemoteOverrides {
+            from_git: self.from_git.is_some(),
+            source: self.source,
+            mise_env: self.remote_env,
+            copy_links: self.copy_links,
+            copy_link: self.copy_link,
+            port: self.port,
+            identity_file: self.identity_file,
+            exclude: self.exclude,
+            ssh_options: self.ssh_option,
+            install_mise: self.install_mise,
+            no_install_mise: self.no_install_mise,
+            mise_bin: self.mise_bin,
+            remote_mise: self.remote_mise,
+            bootstrap_command: self.bootstrap_command,
+        };
+        let options = system::remote::RemoteRunOptions {
+            relay,
+            dry_run: self.dry_run,
+            yes: self.yes,
+            update: self.update,
+            prompt_secrets: self.prompt_secrets,
+            force_dotfiles: self.force_dotfiles,
+            skip: self.skip.iter().map(bootstrap_part_name).collect(),
+            only: self.only.iter().map(bootstrap_part_name).collect(),
+            keep_staging: self.keep_staging,
+            connect_timeout: self.connect_timeout,
+        };
+        let mut configuration_errors = vec![];
+        for host in selected.values_mut() {
+            if let Err(error) = host.apply_overrides(&overrides) {
+                configuration_errors.push(format!("{}: {error:#}", host.name));
+            }
+        }
+        if !configuration_errors.is_empty() {
+            bail!(
+                "remote bootstrap configuration is invalid for {} target(s):\n  {}",
+                configuration_errors.len(),
+                configuration_errors.join("\n  ")
+            );
+        }
+        let mut failures = vec![];
+        let repository = self
+            .from_git
+            .as_deref()
+            .map(crate::github_relay::expand_repository)
+            .transpose()?;
+        if let Some(origin) = &repository {
+            system::remote_repository::validate_origin(origin)?;
+            if self.dry_run {
+                for host in selected.values() {
+                    miseprintln!(
+                        "Would fetch one revision of {origin} locally, transfer it to {}, preview adoption/update of the persistent global configuration, and bootstrap there",
+                        host.name
+                    );
+                }
+                return Ok(());
+            }
+        }
+        let repository = if let Some(origin) = repository {
+            Some(
+                system::remote::interruptible(system::remote_repository::Source::fetch(origin))
+                    .await?,
+            )
+        } else {
+            None
+        };
+        let mut artifacts = system::remote::RemoteArtifactResolver::default();
+        for host in selected.values() {
+            if let Err(error) =
+                system::remote::run(host, &options, &mut artifacts, repository.as_ref()).await
+            {
+                if matches!(
+                    crate::exit::requested_exit_code(&error),
+                    Some(129 | 130 | 143)
+                ) {
+                    return Err(error);
+                }
+                error!("remote bootstrap failed on {}: {error:#}", host.name);
+                failures.push(format!("{}: {error:#}", host.name));
+                if self.fail_fast {
+                    break;
+                }
+            }
+        }
+        if !failures.is_empty() {
+            bail!(
+                "remote bootstrap failed on {} target(s):\n  {}",
+                failures.len(),
+                failures.join("\n  ")
+            );
+        }
+        info!("remote bootstrap completed on {} target(s)", selected.len());
+        Ok(())
+    }
+}
+
+fn select_remote_inventory(
+    inventory: &indexmap::IndexMap<String, system::remote::RemoteHost>,
+    targets: &[String],
+    all: bool,
+    tags: &[String],
+) -> Result<indexmap::IndexMap<String, system::remote::RemoteHost>> {
+    let mut selected = indexmap::IndexMap::new();
+    for target in targets {
+        let host = inventory.get(target).ok_or_else(|| {
+            eyre::eyre!(
+                "remote inventory target '{target}' not found; configured targets: {}",
+                inventory.keys().cloned().collect::<Vec<_>>().join(", ")
+            )
+        })?;
+        selected
+            .entry(target.clone())
+            .or_insert_with(|| host.clone());
+    }
+    if all {
+        for (name, host) in inventory {
+            selected.entry(name.clone()).or_insert_with(|| host.clone());
+        }
+    }
+    if !tags.is_empty() {
+        for (name, host) in inventory {
+            if tags.iter().any(|tag| host.tags.contains(tag)) {
+                selected.entry(name.clone()).or_insert_with(|| host.clone());
+            }
+        }
+    }
+    Ok(selected)
+}
+
+fn bootstrap_part_name(part: &BootstrapPart) -> String {
+    match part {
+        BootstrapPart::Shell => "mise-shell-activate".to_string(),
+        BootstrapPart::Defaults => "macos-defaults".to_string(),
+        BootstrapPart::Launchd => "macos-launchd-agents".to_string(),
+        BootstrapPart::Systemd => "linux-systemd-units".to_string(),
+        part => format!("{part:?}").to_kebab_case(),
+    }
+}
+
+impl BootstrapSecretsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let statuses = system::secrets::statuses(&config)?;
+        let unavailable = statuses
+            .iter()
+            .any(|status| status.state != system::secrets::SecretState::Available);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&statuses)?);
+        } else if statuses.is_empty() {
+            info!("no bootstrap secret inputs configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Secret", "Environment", "State"]);
+            for status in statuses {
+                table.add_row(vec![status.name, status.env, status.state.to_string()]);
+            }
+            table.print()?;
+        }
+        if self.missing && unavailable {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+struct BootstrapStatusReport {
+    rows: Vec<Vec<String>>,
+    json: serde_json::Map<String, Value>,
+    any_missing: bool,
+}
+
+impl BootstrapStatusReport {
+    fn new() -> Self {
+        Self {
+            rows: vec![],
+            json: serde_json::Map::new(),
+            any_missing: false,
+        }
+    }
+
+    fn row(
+        &mut self,
+        part: impl Into<String>,
+        item: impl Into<String>,
+        current: impl Into<String>,
+        state: impl Into<String>,
+        missing: bool,
+    ) {
+        self.any_missing |= missing;
+        self.rows
+            .push(vec![part.into(), item.into(), current.into(), state.into()]);
+    }
+}
+
+impl BootstrapStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let report = self.collect(&config, &secrets).await?;
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&report.json)?);
+        } else if report.rows.is_empty() {
+            info!("nothing configured for bootstrap");
+        } else {
+            let mut table = MiseTable::new(false, &["Part", "Item", "Current", "State"]);
+            for row in report.rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && report.any_missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+
+    async fn collect(
+        &self,
+        config: &Arc<Config>,
+        secrets: &system::secrets::SecretValues,
+    ) -> Result<BootstrapStatusReport> {
+        let mut report = BootstrapStatusReport::new();
+        let (files, directories, unavailable_files) =
+            system::managed_files::status_requests_from_config(config, secrets)?;
+        let accounts = system::accounts::prepare_requests_from_config(config)?;
+        system::managed_files::validate_principals(
+            &files,
+            &directories,
+            cfg!(target_os = "linux").then_some(&accounts),
+            false,
+        )?;
+        let service_requests = system::services::status_requests_from_config(config)?;
+        let firewall_request = system::firewall::status_request_from_config(config)?;
+        system::services::validate_notifications(&files, &directories, &service_requests)?;
+        let notified_services = system::managed_files::pending_notifications(&files, &directories)?;
+        let compose_requests = system::compose::requests_from_config(config)?;
+        self.collect_secrets(&secrets.used_statuses()?, &mut report);
+        self.collect_packages(config, &mut report).await?;
+        self.collect_accounts(&accounts, &mut report);
+        self.collect_files(files, directories, unavailable_files, &mut report)?;
+        self.collect_services(&service_requests, &notified_services, &mut report);
+        self.collect_firewall(firewall_request.as_ref(), &mut report);
+        self.collect_compose(&compose_requests, &mut report);
+        self.collect_repos(config, &mut report).await?;
+        self.collect_dotfiles(config, &mut report)?;
+        self.collect_shell(config, &mut report)?;
+        self.collect_defaults(config, &mut report).await?;
+        self.collect_launchd(config, &mut report).await?;
+        self.collect_systemd(config, &mut report).await?;
+        self.collect_user(config, &mut report)?;
+        self.collect_tools(config, &mut report).await?;
+        self.collect_plugin_deps(config, &mut report).await?;
+        Ok(report)
+    }
+
+    fn collect_secrets(
+        &self,
+        statuses: &[system::secrets::SecretStatus],
+        report: &mut BootstrapStatusReport,
+    ) {
+        for status in statuses {
+            report.row(
+                "secret",
+                &status.name,
+                status.state.to_string(),
+                &status.env,
+                status.state != system::secrets::SecretState::Available,
+            );
+        }
+        report.json.insert("secrets".to_string(), json!(statuses));
+    }
+
+    fn collect_accounts(
+        &self,
+        requests: &system::accounts::AccountRequests,
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = system::accounts::plans(requests);
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("accounts".to_string(), json!(resources));
+    }
+
+    fn collect_files(
+        &self,
+        files: Vec<system::managed_files::ManagedFileRequest>,
+        directories: Vec<system::managed_files::ManagedDirectoryRequest>,
+        mut unavailable: Vec<system::resources::ResourcePlan>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let mut resources = directories
+            .into_iter()
+            .map(|request| request.plan())
+            .collect::<Result<Vec<_>>>()?;
+        resources.extend(
+            files
+                .into_iter()
+                .map(|request| request.plan())
+                .collect::<Result<Vec<_>>>()?,
+        );
+        resources.append(&mut unavailable);
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("files".to_string(), json!(resources));
+        Ok(())
+    }
+
+    fn collect_services(
+        &self,
+        requests: &[system::services::ServiceRequest],
+        notified_services: &system::services::ServiceNotifications,
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = system::services::plans_with_notifications(requests, notified_services);
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("services".to_string(), json!(resources));
+    }
+
+    fn collect_firewall(
+        &self,
+        request: Option<&system::firewall::FirewallRequest>,
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = request.map(|request| request.plans()).unwrap_or_default();
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("firewall".to_string(), json!(resources));
+    }
+
+    fn collect_compose(
+        &self,
+        requests: &[system::compose::ComposeRequest],
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = system::compose::plans(requests, false);
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("compose".to_string(), json!(resources));
+    }
+
+    async fn collect_plugin_deps(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let trs = config.get_tool_request_set().await?;
+        let mut seen = HashSet::new();
+        let mut json_entries = vec![];
+        for tr in trs.tools.values().flatten() {
+            if !tr.is_os_supported() {
+                continue;
+            }
+            let ba = tr.ba();
+            if !seen.insert(ba.short.clone()) {
+                continue;
+            }
+            let Some(backend) = crate::backend::get(ba) else {
+                continue;
+            };
+            let deps = backend.system_dependencies();
+            if deps.is_empty() {
+                continue;
+            }
+            for status in crate::system::deps::detect(&deps).await {
+                let optional = status.dep.optional.is_some();
+                let (state, missing) = if status.satisfied {
+                    ("satisfied".to_string(), false)
+                } else if optional {
+                    ("optional missing".to_string(), false)
+                } else {
+                    ("missing".to_string(), true)
+                };
+                report.row(
+                    "plugin-deps",
+                    format!("{}: {}", ba.tool_name, status.dep.label()),
+                    status.found.clone().unwrap_or_default(),
+                    state.clone(),
+                    missing,
+                );
+                json_entries.push(json!({
+                    "tool": ba.tool_name,
+                    "dependency": status.dep.label(),
+                    "found": status.found,
+                    "optional": optional,
+                    "state": state.replace(' ', "_"),
+                }));
+            }
+        }
+        report
+            .json
+            .insert("plugin_deps".to_string(), json!(json_entries));
+        Ok(())
+    }
+
+    async fn collect_packages(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let mut json_out = serde_json::Map::new();
+        for mp in system::packages_from_config(config) {
+            let name = mp.manager.name();
+            let reason = if mp.disabled {
+                Some("excluded by the system_packages.managers setting".to_string())
+            } else {
+                mp.manager.unavailable_reason_async().await
+            };
+            if let Some(reason) = reason {
+                for req in &mp.requests {
+                    report.row(
+                        "packages",
+                        format!("{name}:{req}"),
+                        "",
+                        format!("skipped ({reason})"),
+                        false,
+                    );
+                }
+                json_out.insert(
+                    name.to_string(),
+                    json!({
+                        "available": false,
+                        "reason": reason,
+                        "packages": mp.requests.iter().map(|req| {
+                            json!({
+                                "package": req.name,
+                                "requested_version": req.version.clone().unwrap_or_else(|| "latest".to_string()),
+                                "desired_state": match req.desired {
+                                    PackageDesiredState::Present => "present",
+                                    PackageDesiredState::Absent => "absent",
+                                },
+                                "state": "skipped",
+                            })
+                        }).collect::<Vec<_>>(),
+                    }),
+                );
+                continue;
+            }
+            let statuses = mp.manager.installed(&mp.requests).await?;
+            let mut json_pkgs = vec![];
+            for s in statuses {
+                let auto_updates = s.state.auto_updates();
+                let desired_absent = s.request.desired == PackageDesiredState::Absent;
+                let (installed_version, state, reason, missing) = match (&s.state, desired_absent) {
+                    (PackageState::Missing, true) => {
+                        ("".to_string(), "absent", None::<&str>, false)
+                    }
+                    (PackageState::Installed { version }, true)
+                    | (PackageState::NeedsRepair { installed: version }, true)
+                    | (PackageState::VersionMismatch { installed: version }, true) => {
+                        (version.clone(), "unexpectedly installed", None, true)
+                    }
+                    #[cfg(unix)]
+                    (PackageState::InstalledAutoUpdates { version }, true) => {
+                        (version.clone(), "unexpectedly installed", None, true)
+                    }
+                    (PackageState::Installed { version }, false) => {
+                        (version.clone(), "installed", None::<&str>, false)
+                    }
+                    #[cfg(unix)]
+                    (PackageState::InstalledAutoUpdates { version }, false) => {
+                        (version.clone(), "installed", None::<&str>, false)
+                    }
+                    (PackageState::Missing, false) => ("".to_string(), "missing", None, true),
+                    (PackageState::NeedsRepair { installed }, false) => {
+                        (installed.clone(), "needs repair", None, true)
+                    }
+                    (PackageState::VersionMismatch { installed }, false) => {
+                        (installed.clone(), "version mismatch", None, true)
+                    }
+                    #[cfg(unix)]
+                    (PackageState::Unavailable { reason }, _) => {
+                        ("".to_string(), "skipped", Some(reason.as_str()), false)
+                    }
+                };
+                report.row(
+                    "packages",
+                    format!("{name}:{}", s.request),
+                    installed_version.clone(),
+                    if auto_updates {
+                        format!("{state} (auto-updates)")
+                    } else {
+                        reason.map_or_else(
+                            || state.to_string(),
+                            |reason| format!("{state} ({reason})"),
+                        )
+                    },
+                    missing,
+                );
+                let mut package = json!({
+                    "package": s.request.name,
+                    "requested_version": s.request.version.clone().unwrap_or_else(|| "latest".to_string()),
+                    "desired_state": if desired_absent { "absent" } else { "present" },
+                    "state": state.replace(' ', "_"),
+                    "installed_version": installed_version,
+                });
+                if let Some(reason) = reason {
+                    package["reason"] = json!(reason);
+                }
+                if auto_updates {
+                    package["auto_updates"] = json!(true);
+                }
+                json_pkgs.push(package);
+            }
+            json_out.insert(
+                name.to_string(),
+                json!({ "available": true, "packages": json_pkgs }),
+            );
+        }
+        report.json.insert("packages".to_string(), json!(json_out));
+        Ok(())
+    }
+
+    async fn collect_repos(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let repos = system::repos_from_config(config);
+        let mut json_entries = vec![];
+        for s in system::repos::status(&repos).await? {
+            let state = s.state.as_str();
+            let (row_state, reason, missing) = match &s.state {
+                RepoState::Current => ("current".to_string(), "".to_string(), false),
+                RepoState::Missing => ("missing".to_string(), "".to_string(), true),
+                RepoState::Differs => ("differs".to_string(), "".to_string(), true),
+                RepoState::Dirty => (
+                    "dirty (local changes)".to_string(),
+                    "local changes".to_string(),
+                    true,
+                ),
+                RepoState::Conflict(reason) => {
+                    (format!("conflict ({reason})"), reason.clone(), true)
+                }
+            };
+            report.row(
+                "repos",
+                s.request.path_raw.clone(),
+                s.current_ref.clone().unwrap_or_default(),
+                row_state,
+                missing,
+            );
+            json_entries.push(json!({
+                "path": s.request.path,
+                "path_raw": s.request.path_raw,
+                "url": s.request.url,
+                "ref": s.request.git_ref,
+                "origin": s.origin,
+                "current_ref": s.current_ref,
+                "current_sha": s.current_sha,
+                "state": state,
+                "reason": reason,
+            }));
+        }
+        report.json.insert("repos".to_string(), json!(json_entries));
+        Ok(())
+    }
+
+    fn collect_dotfiles(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let mut json_files = vec![];
+        let files = system::files::files_from_config(config)?;
+        system::files::validate_composed_file_footprints(&files)?;
+        for req in files {
+            let state = match system::files::check(config, &req) {
+                Ok(state) => state,
+                Err(err) => system::files::FileState::Differs(format!("{err}")),
+            };
+            let (state_str, state_json, missing) = match &state {
+                system::files::FileState::Applied => ("applied".to_string(), "applied", false),
+                system::files::FileState::Missing => ("missing".to_string(), "missing", true),
+                system::files::FileState::SourceMissing => {
+                    ("source missing".to_string(), "source_missing", true)
+                }
+                system::files::FileState::Differs(reason) => {
+                    (format!("differs ({reason})"), "differs", true)
+                }
+            };
+            report.row(
+                "dotfiles",
+                req.target_raw.clone(),
+                if req.mode == system::files::FileMode::Content {
+                    "content inline".to_string()
+                } else {
+                    format!("{} {}", req.mode.name(), req.source.display_user())
+                },
+                state_str,
+                missing,
+            );
+            json_files.push(json!({
+                "target": req.target_raw,
+                "source": (req.mode != system::files::FileMode::Content)
+                    .then(|| req.source.display_user()),
+                "mode": req.mode.name(),
+                "state": state_json,
+            }));
+        }
+
+        let mut json_edits = vec![];
+        for req in system::edits::edits_from_config(config)? {
+            let state = match system::edits::check(config, &req) {
+                Ok(state) => state,
+                Err(err) => system::files::FileState::Differs(format!("{err}")),
+            };
+            let (state_str, state_json, missing) = match &state {
+                system::files::FileState::Applied => ("applied".to_string(), "applied", false),
+                system::files::FileState::Missing => ("missing".to_string(), "missing", true),
+                system::files::FileState::SourceMissing => {
+                    ("source missing".to_string(), "source_missing", true)
+                }
+                system::files::FileState::Differs(reason) => {
+                    (format!("differs ({reason})"), "differs", true)
+                }
+            };
+            report.row(
+                "dotfiles",
+                req.path_raw.clone(),
+                req.describe_op(),
+                state_str,
+                missing,
+            );
+            json_edits.push(json!({
+                "path": req.path_raw,
+                "edit": req.describe_op(),
+                "state": state_json,
+            }));
+        }
+        report.json.insert(
+            "dotfiles".to_string(),
+            json!({ "files": json_files, "edits": json_edits }),
+        );
+        Ok(())
+    }
+
+    fn collect_shell(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let activations = system::shell_activation_from_config(config);
+        let mut json_entries = vec![];
+        for request in &activations {
+            let state = match system::edits::check(config, &request.edit) {
+                Ok(state) => state,
+                Err(err) => FileState::Differs(format!("{err}")),
+            };
+            let missing = state != FileState::Applied;
+            report.row(
+                "shell",
+                request.target.name(),
+                format!(
+                    "{} {} {}",
+                    request.shell.name(),
+                    request.edit.path_raw,
+                    request.mode.name()
+                ),
+                file_state_display(&state),
+                missing,
+            );
+            let mut entry = json!({
+                "target": request.target.name(),
+                "shell": request.shell.name(),
+                "path": request.edit.path_raw,
+                "mode": request.mode.name(),
+                "state": file_state_json(&state),
+            });
+            if let FileState::Differs(reason) = &state {
+                entry["reason"] = json!(reason);
+            }
+            json_entries.push(entry);
+        }
+        report
+            .json
+            .insert("mise_shell_activate".to_string(), json!(json_entries));
+        Ok(())
+    }
+
+    async fn collect_defaults(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let defaults = system::defaults_from_config(config);
+        if defaults.is_empty() {
+            report
+                .json
+                .insert("macos_defaults".to_string(), json!({ "entries": [] }));
+            return Ok(());
+        }
+        if !system::defaults::is_available() {
+            let reason = system::defaults::unavailable_reason();
+            for req in &defaults {
+                report.row(
+                    "defaults",
+                    format!("{} {}", req.domain, req.key),
+                    "",
+                    format!("skipped ({reason})"),
+                    false,
+                );
+            }
+            report.json.insert(
+                "macos_defaults".to_string(),
+                json!({
+                    "available": false,
+                    "reason": reason,
+                    "entries": defaults.iter().map(|req| {
+                        json!({
+                            "domain": req.domain,
+                            "key": req.key,
+                            "value": req.value.to_json(),
+                            "state": "skipped",
+                        })
+                    }).collect::<Vec<_>>(),
+                }),
+            );
+            return Ok(());
+        }
+
+        let mut json_entries = vec![];
+        for s in system::defaults::status(&defaults).await? {
+            let (current, state, missing) = match &s.state {
+                DefaultsState::Set => (s.request.value.to_string(), "set", false),
+                DefaultsState::Differs { current } => (current.clone(), "differs", true),
+                DefaultsState::Unset => ("".to_string(), "unset", true),
+            };
+            report.row(
+                "defaults",
+                format!("{} {}", s.request.domain, s.request.key),
+                current.clone(),
+                state,
+                missing,
+            );
+            json_entries.push(json!({
+                "domain": s.request.domain,
+                "key": s.request.key,
+                "value": s.request.value.to_json(),
+                "current": current,
+                "state": state,
+            }));
+        }
+        report.json.insert(
+            "macos_defaults".to_string(),
+            json!({ "available": true, "entries": json_entries }),
+        );
+        Ok(())
+    }
+
+    async fn collect_launchd(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let agents = system::launchd_from_config(config);
+        if agents.is_empty() {
+            report
+                .json
+                .insert("launchd".to_string(), json!({ "agents": [] }));
+            return Ok(());
+        }
+        if !system::launchd::is_available() {
+            let reason = system::launchd::unavailable_reason();
+            for req in &agents {
+                report.row(
+                    "launchd",
+                    req.name.clone(),
+                    req.label.clone(),
+                    format!("skipped ({reason})"),
+                    false,
+                );
+            }
+            report.json.insert(
+                "launchd".to_string(),
+                json!({
+                    "available": false,
+                    "reason": reason,
+                    "agents": agents.iter().map(|req| {
+                        json!({
+                            "name": req.name,
+                            "label": req.label,
+                            "state": "skipped",
+                        })
+                    }).collect::<Vec<_>>(),
+                }),
+            );
+            return Ok(());
+        }
+
+        let mut json_entries = vec![];
+        for s in system::launchd::status(&agents).await? {
+            let (state, missing) = match &s.state {
+                LaunchdState::Loaded => ("loaded", false),
+                LaunchdState::Unloaded => ("unloaded", true),
+                LaunchdState::Differs => ("differs", true),
+                LaunchdState::Missing => ("missing", true),
+            };
+            report.row(
+                "launchd",
+                s.request.name.clone(),
+                s.path.display().to_string(),
+                state,
+                missing,
+            );
+            json_entries.push(json!({
+                "name": s.request.name,
+                "label": s.request.label,
+                "path": s.path,
+                "loaded": s.loaded,
+                "state": state,
+            }));
+        }
+        report.json.insert(
+            "launchd".to_string(),
+            json!({ "available": true, "agents": json_entries }),
+        );
+        Ok(())
+    }
+
+    async fn collect_systemd(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let units = system::systemd_from_config(config);
+        if units.is_empty() {
+            report
+                .json
+                .insert("systemd".to_string(), json!({ "units": [] }));
+            return Ok(());
+        }
+        if !system::systemd::is_available() {
+            let reason = system::systemd::unavailable_reason();
+            for req in &units {
+                report.row(
+                    "systemd",
+                    req.name.clone(),
+                    req.unit.clone(),
+                    format!("skipped ({reason})"),
+                    false,
+                );
+            }
+            report.json.insert(
+                "systemd".to_string(),
+                json!({
+                    "available": false,
+                    "reason": reason,
+                    "units": units.iter().map(|req| {
+                        json!({
+                            "name": req.name,
+                            "unit": req.unit,
+                            "state": "skipped",
+                        })
+                    }).collect::<Vec<_>>(),
+                }),
+            );
+            return Ok(());
+        }
+
+        let mut json_entries = vec![];
+        for s in system::systemd::status(&units).await? {
+            let desired = s.is_desired();
+            let state = match &s.state {
+                SystemdState::Active => "active",
+                SystemdState::Inactive => "inactive",
+                SystemdState::Differs => "differs",
+                SystemdState::Missing => "missing",
+            };
+            let missing = !desired;
+            report.row(
+                "systemd",
+                s.request.name.clone(),
+                s.path.display().to_string(),
+                state,
+                missing,
+            );
+            json_entries.push(json!({
+                "name": s.request.name,
+                "unit": s.request.unit,
+                "path": s.path,
+                "active": s.active,
+                "enabled": s.enabled,
+                "desired": desired,
+                "state": state,
+            }));
+        }
+        report.json.insert(
+            "systemd".to_string(),
+            json!({ "available": true, "units": json_entries }),
+        );
+        Ok(())
+    }
+
+    fn collect_user(&self, config: &Arc<Config>, report: &mut BootstrapStatusReport) -> Result<()> {
+        let Some(req) = system::login_shell_from_config(config) else {
+            report.json.insert("login_shell".to_string(), json!(null));
+            return Ok(());
+        };
+        if !system::login_shell::is_available() {
+            let reason = system::login_shell::unavailable_reason();
+            report.row(
+                "user",
+                "login_shell",
+                "",
+                format!("skipped ({reason})"),
+                false,
+            );
+            report.json.insert(
+                "login_shell".to_string(),
+                json!({
+                    "available": false,
+                    "reason": reason,
+                    "shell": req.shell,
+                    "state": "skipped",
+                }),
+            );
+            return Ok(());
+        }
+
+        let status = system::login_shell::status(&req)?;
+        let (row_state, json_state, missing) = match &status.state {
+            LoginShellState::Set => ("set", "set", false),
+            LoginShellState::Differs { .. } => ("differs", "differs", true),
+            LoginShellState::MissingFromShells { .. } => {
+                ("missing from /etc/shells", "missing_from_shells", true)
+            }
+        };
+        report.row(
+            "user",
+            "login_shell",
+            status.current.clone(),
+            row_state,
+            missing,
+        );
+        report.json.insert(
+            "login_shell".to_string(),
+            json!({
+                "available": true,
+                "shell": status.request.shell,
+                "user": status.user,
+                "current": status.current,
+                "shell_listed": status.shell_listed,
+                "state": json_state,
+            }),
+        );
+        Ok(())
+    }
+
+    async fn collect_tools(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let trs = config.get_tool_request_set().await?;
+        let mut json_tools = vec![];
+        for ba in &trs.unknown_tools {
+            report.row("tools", ba.to_string(), "", "unknown", true);
+            json_tools.push(json!({
+                "tool": ba.to_string(),
+                "requested_version": null,
+                "resolved_version": null,
+                "state": "unknown",
+                "installed": false,
+            }));
+        }
+        for tr in trs.tools.values().flatten() {
+            if !tr.is_os_supported() {
+                continue;
+            }
+            let item = tr.to_string();
+            let resolved = match tr.resolve(config, &ResolveOptions::default()).await {
+                Ok(tv) => tv,
+                Err(err) => {
+                    let err = format!("{err:#}");
+                    report.row(
+                        "tools",
+                        item.clone(),
+                        "",
+                        format!("resolve error ({err})"),
+                        true,
+                    );
+                    json_tools.push(json!({
+                        "tool": tr.ba().to_string(),
+                        "requested_version": tr.version(),
+                        "resolved_version": null,
+                        "state": "resolve_error",
+                        "installed": false,
+                        "error": err,
+                    }));
+                    continue;
+                }
+            };
+            let installed = {
+                crate::backend::get(tr.ba())
+                    .is_some_and(|backend| backend.is_version_installed(config, &resolved, true))
+            };
+            let resolved_version = resolved.version;
+            let state = if installed { "installed" } else { "missing" };
+            report.row(
+                "tools",
+                item.clone(),
+                resolved_version.clone(),
+                state,
+                !installed,
+            );
+            json_tools.push(json!({
+                "tool": tr.ba().to_string(),
+                "requested_version": tr.version(),
+                "resolved_version": resolved_version,
+                "state": state,
+                "installed": installed,
+            }));
+        }
+        report.json.insert("tools".to_string(), json!(json_tools));
+        Ok(())
+    }
+}
+
+impl BootstrapDotfiles {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapDotfilesCommands::Add(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Diff(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Unapply(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapDotfilesApply {
+    async fn run(self) -> Result<()> {
+        let mut config = Config::get().await?;
+        let (files, edits) = self.cmd.requests(&config)?;
+        let dry_run = self.cmd.dry_run();
+        let hooks = system::hooks_from_config(&config);
+        run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
+        if !self.cmd.run().await? {
+            return Ok(());
+        }
+        let hooks = if dry_run {
+            let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+            config = config.with_bootstrap_dry_run_config_files(config_files)?;
+            system::hooks_from_config(&config)
+        } else {
+            config = Config::reset().await?;
+            system::hooks_from_config(&config)
+        };
+        run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PostDotfiles, dry_run).await
+    }
+}
+
+async fn run_bootstrap_hooks(
+    config: &Config,
+    hooks: &[hooks::BootstrapHook],
+    phase: BootstrapHookPhase,
+    dry_run: bool,
+) -> Result<()> {
+    if config::Settings::no_hooks()
+        || config::Settings::get().no_hooks.unwrap_or(false)
+        || config::Settings::get().safe
+    {
+        debug!("bootstrap: {phase} hooks disabled");
+        return Ok(());
+    }
+    hooks::run_phase(config, hooks, phase, dry_run).await
+}
+
+impl BootstrapDotfilesStatus {
+    async fn run(self) -> Result<()> {
+        self.cmd.run().await
+    }
+}
+
+impl BootstrapPackages {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapPackagesCommands::Apply(cmd) => cmd.run().await,
+            #[cfg(unix)]
+            BootstrapPackagesCommands::Brew(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Import(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Prune(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Status(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Upgrade(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Use(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapPlugins {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapPluginsCommands::Apply(cmd) => cmd.run().await,
+            BootstrapPluginsCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapPluginsApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        apply_bootstrap_plugins(&config, self.dry_run).await
+    }
+}
+
+impl BootstrapPluginsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let installed = crate::toolset::install_state::list_plugins();
+        let mut any_missing = false;
+        let mut table = MiseTable::new(false, &["Plugin", "URL", "State"]);
+        for (name, url) in system::plugins_from_config(&config) {
+            let present = installed.get(&name) == Some(&crate::plugins::PluginType::Package);
+            any_missing |= !present;
+            table.add_row(vec![
+                name,
+                url,
+                if present { "installed" } else { "missing" }.into(),
+            ]);
+        }
+        table.print()?;
+        if self.missing && any_missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+async fn apply_bootstrap_plugins(config: &Arc<Config>, dry_run: bool) -> Result<()> {
+    let plugins = system::plugins_from_config(config);
+    if plugins.is_empty() {
+        debug!("bootstrap: no [bootstrap.plugins] configured, skipping");
+        return Ok(());
+    }
+    info!("bootstrap: package plugins");
+    for (name, url) in plugins {
+        install_plugin(
+            config,
+            &format!("package:{name}"),
+            Some(url),
+            false,
+            dry_run,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+impl BootstrapRepos {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapReposCommands::Apply(cmd) => cmd.run().await,
+            BootstrapReposCommands::Exec(cmd) => cmd.run().await,
+            BootstrapReposCommands::Status(cmd) => cmd.run().await,
+            BootstrapReposCommands::Update(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapReposApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_repos(
+            system::repos_from_config(&config),
+            self.dry_run,
+            self.yes,
+            self.skip_dirty,
+        )
+        .await
+    }
+}
+
+impl BootstrapReposUpdate {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let repos = filter_repos(system::repos_from_config(&config), &self.paths)?;
+        install::update_repos(repos, self.dry_run, self.yes, self.skip_dirty).await
+    }
+}
+
+impl BootstrapReposExec {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let repos = filter_repos(system::repos_from_config(&config), &self.paths)?;
+        system::repos::exec(&repos, &self.command, self.dry_run, self.continue_on_error).await
+    }
+}
+
+fn filter_repos(
+    repos: Vec<system::repos::RepoRequest>,
+    filters: &[String],
+) -> Result<Vec<system::repos::RepoRequest>> {
+    if filters.is_empty() {
+        return Ok(repos);
+    }
+    for filter in filters {
+        let expanded = crate::file::replace_path(filter);
+        if !repos
+            .iter()
+            .any(|repo| repo.path_raw == *filter || repo.path == expanded)
+        {
+            eyre::bail!("no configured repo matched path: {filter}");
+        }
+    }
+    Ok(repos
+        .into_iter()
+        .filter(|repo| {
+            filters.iter().any(|filter| {
+                repo.path_raw == *filter || repo.path == crate::file::replace_path(filter)
+            })
+        })
+        .collect())
+}
+
+impl BootstrapReposStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let repos = system::repos_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_entries = vec![];
+        for s in system::repos::status(&repos).await? {
+            if !s.state.is_current() {
+                any_missing = true;
+            }
+            let state = s.state.as_str();
+            let reason = match &s.state {
+                RepoState::Conflict(reason) => reason.clone(),
+                RepoState::Dirty => "local changes".to_string(),
+                RepoState::Current | RepoState::Missing | RepoState::Differs => "".to_string(),
+            };
+            if self.json {
+                json_entries.push(json!({
+                    "path": s.request.path,
+                    "path_raw": s.request.path_raw,
+                    "url": s.request.url,
+                    "ref": s.request.git_ref,
+                    "origin": s.origin,
+                    "current_ref": s.current_ref,
+                    "current_sha": s.current_sha,
+                    "state": state,
+                    "reason": reason,
+                }));
+            } else {
+                rows.push(vec![
+                    s.request.path_raw,
+                    s.request.url,
+                    s.request.git_ref.unwrap_or_default(),
+                    state.to_string(),
+                    reason,
+                ]);
+            }
+        }
+        if self.json {
+            let mut json_out = serde_json::Map::new();
+            json_out.insert("repos".to_string(), json!(json_entries));
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.repos]");
+        } else {
+            let mut table = MiseTable::new(false, &["Path", "URL", "Ref", "State", "Reason"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapMacos {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapMacosCommands::Defaults(cmd) => cmd.run().await,
+            BootstrapMacosCommands::LaunchdAgents(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapLinux {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapLinuxCommands::SystemdUnits(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapMacosDefaults {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapMacosDefaultsCommands::Apply(cmd) => cmd.run().await,
+            BootstrapMacosDefaultsCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapLaunchd {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapLaunchdCommands::Apply(cmd) => cmd.run().await,
+            BootstrapLaunchdCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapLaunchdApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_launchd(system::launchd_from_config(&config), self.dry_run, self.yes).await
+    }
+}
+
+impl BootstrapLaunchdStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let agents = system::launchd_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_out = serde_json::Map::new();
+        if !agents.is_empty() {
+            if !system::launchd::is_available() {
+                let reason = system::launchd::unavailable_reason();
+                if self.json {
+                    json_out.insert(
+                        "launchd".to_string(),
+                        json!({ "available": false, "reason": reason }),
+                    );
+                } else {
+                    for req in &agents {
+                        rows.push(vec![
+                            req.name.clone(),
+                            req.label.clone(),
+                            "".to_string(),
+                            format!("skipped ({reason})"),
+                        ]);
+                    }
+                }
+            } else {
+                let statuses = system::launchd::status(&agents).await?;
+                let mut json_entries = vec![];
+                for s in statuses {
+                    let state = match &s.state {
+                        LaunchdState::Loaded => "loaded",
+                        LaunchdState::Unloaded => {
+                            any_missing = true;
+                            "unloaded"
+                        }
+                        LaunchdState::Differs => {
+                            any_missing = true;
+                            "differs"
+                        }
+                        LaunchdState::Missing => {
+                            any_missing = true;
+                            "missing"
+                        }
+                    };
+                    if self.json {
+                        json_entries.push(json!({
+                            "name": s.request.name,
+                            "label": s.request.label,
+                            "path": s.path,
+                            "loaded": s.loaded,
+                            "state": state,
+                        }));
+                    } else {
+                        rows.push(vec![
+                            s.request.name.clone(),
+                            s.request.label.clone(),
+                            s.path.display().to_string(),
+                            state.to_string(),
+                        ]);
+                    }
+                }
+                if self.json {
+                    json_out.insert(
+                        "launchd".to_string(),
+                        json!({ "available": true, "agents": json_entries }),
+                    );
+                }
+            }
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.macos.launchd.agents]");
+        } else {
+            let mut table = MiseTable::new(false, &["Name", "Label", "Path", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapSystemd {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapSystemdCommands::Apply(cmd) => cmd.run().await,
+            BootstrapSystemdCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapSystemdApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_systemd(system::systemd_from_config(&config), self.dry_run, self.yes).await
+    }
+}
+
+impl BootstrapSystemdStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let units = system::systemd_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_out = serde_json::Map::new();
+        if !units.is_empty() {
+            if !system::systemd::is_available() {
+                let reason = system::systemd::unavailable_reason();
+                if self.json {
+                    json_out.insert(
+                        "systemd".to_string(),
+                        json!({ "available": false, "reason": reason }),
+                    );
+                } else {
+                    for req in &units {
+                        rows.push(vec![
+                            req.name.clone(),
+                            req.unit.clone(),
+                            "".to_string(),
+                            format!("skipped ({reason})"),
+                        ]);
+                    }
+                }
+            } else {
+                let statuses = system::systemd::status(&units).await?;
+                let mut json_entries = vec![];
+                for s in statuses {
+                    let desired = s.is_desired();
+                    let state = match &s.state {
+                        SystemdState::Active => "active",
+                        SystemdState::Inactive => "inactive",
+                        SystemdState::Differs => {
+                            any_missing = true;
+                            "differs"
+                        }
+                        SystemdState::Missing => {
+                            any_missing = true;
+                            "missing"
+                        }
+                    };
+                    if !desired {
+                        any_missing = true;
+                    }
+                    if self.json {
+                        json_entries.push(json!({
+                            "name": s.request.name,
+                            "unit": s.request.unit,
+                            "path": s.path,
+                            "active": s.active,
+                            "enabled": s.enabled,
+                            "desired": desired,
+                            "state": state,
+                        }));
+                    } else {
+                        rows.push(vec![
+                            s.request.name.clone(),
+                            s.request.unit.clone(),
+                            s.path.display().to_string(),
+                            state.to_string(),
+                        ]);
+                    }
+                }
+                if self.json {
+                    json_out.insert(
+                        "systemd".to_string(),
+                        json!({ "available": true, "units": json_entries }),
+                    );
+                }
+            }
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.linux.systemd.units]");
+        } else {
+            let mut table = MiseTable::new(false, &["Name", "Unit", "Path", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapMacosDefaultsApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_defaults(
+            system::defaults_from_config(&config),
+            self.dry_run,
+            self.yes,
+        )
+        .await
+    }
+}
+
+impl BootstrapMacosDefaultsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let defaults = system::defaults_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_out = serde_json::Map::new();
+        if !defaults.is_empty() {
+            if !system::defaults::is_available() {
+                let reason = system::defaults::unavailable_reason();
+                if self.json {
+                    json_out.insert(
+                        "macos_defaults".to_string(),
+                        json!({ "available": false, "reason": reason }),
+                    );
+                } else {
+                    for req in &defaults {
+                        rows.push(vec![
+                            req.domain.clone(),
+                            req.key.clone(),
+                            req.value.to_string(),
+                            "".to_string(),
+                            format!("skipped ({reason})"),
+                        ]);
+                    }
+                }
+            } else {
+                let statuses = system::defaults::status(&defaults).await?;
+                let mut json_entries = vec![];
+                for s in statuses {
+                    let (current, state) = match &s.state {
+                        DefaultsState::Set => (s.request.value.to_string(), "set"),
+                        DefaultsState::Differs { current } => {
+                            any_missing = true;
+                            (current.clone(), "differs")
+                        }
+                        DefaultsState::Unset => {
+                            any_missing = true;
+                            ("".to_string(), "unset")
+                        }
+                    };
+                    if self.json {
+                        json_entries.push(json!({
+                            "domain": s.request.domain,
+                            "key": s.request.key,
+                            "value": s.request.value.to_json(),
+                            "current": current,
+                            "state": state,
+                        }));
+                    } else {
+                        rows.push(vec![
+                            s.request.domain.clone(),
+                            s.request.key.clone(),
+                            s.request.value.to_string(),
+                            current,
+                            state.to_string(),
+                        ]);
+                    }
+                }
+                if self.json {
+                    json_out.insert(
+                        "macos_defaults".to_string(),
+                        json!({ "available": true, "entries": json_entries }),
+                    );
+                }
+            }
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.macos.defaults]");
+        } else {
+            let mut table = MiseTable::new(false, &["Domain", "Key", "Value", "Current", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapShell {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapShellCommands::Apply(cmd) => cmd.run().await,
+            BootstrapShellCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapShellApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_shell_activation(
+            &config,
+            system::shell_activation_from_config(&config),
+            self.dry_run,
+            self.yes,
+        )
+    }
+}
+
+impl BootstrapShellStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let activations = system::shell_activation_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_entries = vec![];
+        for request in &activations {
+            let state = match system::edits::check(&config, &request.edit) {
+                Ok(state) => state,
+                Err(err) => FileState::Differs(format!("{err}")),
+            };
+            any_missing |= state != FileState::Applied;
+            if self.json {
+                let mut entry = json!({
+                    "target": request.target.name(),
+                    "shell": request.shell.name(),
+                    "path": request.edit.path_raw,
+                    "mode": request.mode.name(),
+                    "state": file_state_json(&state),
+                });
+                if let FileState::Differs(reason) = &state {
+                    entry["reason"] = json!(reason);
+                }
+                json_entries.push(entry);
+            } else {
+                rows.push(vec![
+                    request.target.name().to_string(),
+                    request.shell.name().to_string(),
+                    request.edit.path_raw.clone(),
+                    request.mode.name().to_string(),
+                    file_state_display(&state),
+                ]);
+            }
+        }
+        if self.json {
+            miseprintln!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "mise_shell_activate": json_entries,
+                }))?
+            );
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.mise_shell_activate]");
+        } else {
+            let mut table = MiseTable::new(false, &["Target", "Shell", "Path", "Mode", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapUser {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapUserCommands::Apply(cmd) => cmd.run().await,
+            BootstrapUserCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapUserApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        install::apply_login_shell(
+            system::login_shell_from_config(&config),
+            self.dry_run,
+            self.yes,
+        )
+    }
+}
+
+impl BootstrapUserStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let login_shell = system::login_shell_from_config(&config);
+        let mut any_missing = false;
+        let mut rows: Vec<Vec<String>> = vec![];
+        let mut json_out = serde_json::Map::new();
+        if let Some(req) = login_shell {
+            if !system::login_shell::is_available() {
+                let reason = system::login_shell::unavailable_reason();
+                if self.json {
+                    json_out.insert(
+                        "login_shell".to_string(),
+                        json!({
+                            "available": false,
+                            "reason": reason,
+                            "shell": req.shell,
+                        }),
+                    );
+                } else {
+                    rows.push(vec![
+                        req.shell,
+                        "".to_string(),
+                        format!("skipped ({reason})"),
+                    ]);
+                }
+            } else {
+                let status = system::login_shell::status(&req)?;
+                let state = match &status.state {
+                    LoginShellState::Set => "set",
+                    LoginShellState::Differs { .. } => {
+                        any_missing = true;
+                        "differs"
+                    }
+                    LoginShellState::MissingFromShells { .. } => {
+                        any_missing = true;
+                        "missing from /etc/shells"
+                    }
+                };
+                if self.json {
+                    json_out.insert(
+                        "login_shell".to_string(),
+                        json!({
+                            "available": true,
+                            "shell": status.request.shell,
+                            "user": status.user,
+                            "current": status.current,
+                            "shell_listed": status.shell_listed,
+                            "state": state,
+                        }),
+                    );
+                } else {
+                    rows.push(vec![
+                        status.request.shell,
+                        status.current,
+                        state.to_string(),
+                    ]);
+                }
+            }
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&json_out)?);
+        } else if rows.is_empty() {
+            info!("nothing configured in [bootstrap.user]");
+        } else {
+            let mut table = MiseTable::new(false, &["Shell", "Current", "State"]);
+            for row in rows {
+                table.add_row(row);
+            }
+            table.print()?;
+        }
+        if self.missing && any_missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise bootstrap</bold>                    # packages + repos + dotfiles + tools + bootstrap task
+    $ <bold>mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes</bold>
+    $ <bold>mise bootstrap --from-git git@github.com:example/mise-config.git --yes</bold>
+    $ <bold>mise bootstrap --force-dotfiles</bold>   # replace conflicting dotfile targets
+    $ <bold>mise bootstrap --skip tools,task</bold>  # skip tool installation and the bootstrap task
+    $ <bold>mise bootstrap --only tools</bold>       # run just tool installation
+    $ <bold>mise bootstrap status --missing</bold>
+    $ <bold>mise bootstrap packages apply --yes</bold>
+    $ <bold>mise bootstrap repos status</bold>
+    $ <bold>mise bootstrap repos apply --dry-run</bold>
+    $ <bold>mise bootstrap dotfiles status</bold>
+    $ <bold>mise bootstrap mise-shell-activate apply --dry-run</bold>
+    $ <bold>mise bootstrap macos defaults status</bold>
+    $ <bold>mise bootstrap macos launchd-agents apply --dry-run</bold>
+    $ <bold>mise bootstrap linux systemd-units apply --dry-run</bold>
+    $ <bold>mise bootstrap user apply --dry-run</bold>
+"#
+);
+
+fn file_state_display(state: &FileState) -> String {
+    match state {
+        FileState::Applied => "applied".to_string(),
+        FileState::Missing => "missing".to_string(),
+        FileState::SourceMissing => "source missing".to_string(),
+        FileState::Differs(reason) => format!("differs ({reason})"),
+    }
+}
+
+fn file_state_json(state: &FileState) -> &'static str {
+    match state {
+        FileState::Applied => "applied",
+        FileState::Missing => "missing",
+        FileState::SourceMissing => "source_missing",
+        FileState::Differs(_) => "differs",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use indexmap::{IndexMap, IndexSet};
+    use std::ffi::{OsStr, OsString};
+    use std::path::Path;
+
+    use super::{bootstrap_from_child_args, select_remote_inventory};
+    use crate::cli::{Cli, Commands};
+    use crate::system::remote;
+
+    #[test]
+    fn remote_from_git_parses_and_conflicts_with_source() {
+        let argv = [
+            "mise",
+            "bootstrap",
+            "remote",
+            "--host",
+            "devbox",
+            "--from-git",
+            "jdx/dotfiles",
+            "--github-relay-read-only",
+            "--github-relay-repo",
+            "jdx/dotfiles",
+        ]
+        .map(OsStr::new);
+        assert!(Cli::parse_from_argv(&argv).is_ok());
+        let conflict = [
+            "mise",
+            "bootstrap",
+            "remote",
+            "--host",
+            "devbox",
+            "--from-git",
+            "jdx/dotfiles",
+            "--source",
+            ".",
+        ]
+        .map(OsStr::new);
+        assert!(Cli::parse_from_argv(&conflict).is_err());
+        for archive_flag in ["--copy-link=link", "--copy-links", "--exclude=pattern"] {
+            let argv = [
+                "mise",
+                "bootstrap",
+                "remote",
+                "--host=devbox",
+                "--from-git=jdx/dotfiles",
+                archive_flag,
+            ]
+            .map(OsStr::new);
+            assert!(Cli::parse_from_argv(&argv).is_err(), "{archive_flag}");
+        }
+    }
+
+    #[test]
+    fn bootstrap_preserves_dry_run_and_yes_flags() {
+        let argv: Vec<&OsStr> = ["mise", "bootstrap", "--dry-run", "--yes", "status"]
+            .iter()
+            .map(OsStr::new)
+            .collect();
+        let cli = Cli::parse_from_argv(&argv).unwrap();
+        let Some(Commands::Bootstrap(parsed)) = cli.command else {
+            panic!("bootstrap should be the resolved command");
+        };
+        assert!(parsed.dry_run);
+        assert!(parsed.yes);
+    }
+
+    #[test]
+    fn bootstrap_from_reexec_preserves_global_flags() {
+        let args = [
+            "mise",
+            "--no-hooks",
+            "-E",
+            "work",
+            "-C",
+            "/old",
+            "bootstrap",
+            "--from-git=git@example.com:dotfiles.git",
+            "--from-dir",
+            "/old-checkout",
+            "--yes",
+            "--only",
+            "dotfiles",
+        ]
+        .map(String::from);
+
+        assert_eq!(
+            bootstrap_from_child_args(Path::new("/new-checkout"), &args),
+            [
+                "--cd",
+                "/new-checkout",
+                "--no-hooks",
+                "-E",
+                "work",
+                "bootstrap",
+                "--yes",
+                "--only",
+                "dotfiles",
+            ]
+            .map(OsString::from)
+        );
+    }
+
+    #[test]
+    fn bootstrap_from_reexec_preserves_flag_like_global_values() {
+        let args = [
+            "mise",
+            "-E",
+            "--cd",
+            "bootstrap",
+            "--from=git@example.com:dotfiles.git",
+            "--yes",
+        ]
+        .map(String::from);
+
+        assert_eq!(
+            bootstrap_from_child_args(Path::new("/new-checkout"), &args),
+            ["--cd", "/new-checkout", "-E", "--cd", "bootstrap", "--yes",].map(OsString::from)
+        );
+    }
+
+    #[test]
+    fn bootstrap_from_git_conflicts_with_project_checkout_options() {
+        for args in [
+            [
+                "mise",
+                "bootstrap",
+                "--from",
+                "project.git",
+                "--from-git",
+                "global.git",
+            ]
+            .as_slice(),
+            [
+                "mise",
+                "bootstrap",
+                "--from-git",
+                "global.git",
+                "--from-dir",
+                "checkout",
+            ]
+            .as_slice(),
+        ] {
+            let argv = args.iter().map(OsStr::new).collect::<Vec<_>>();
+            assert!(Cli::parse_from_argv(&argv).is_err(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn explicit_remote_targets_precede_all_and_tag_expansion() {
+        let source = std::env::current_dir().unwrap();
+        let mut inventory = IndexMap::new();
+        for (name, tags) in [
+            ("alpha", &[][..]),
+            ("beta", &["selected"][..]),
+            ("gamma", &["selected"][..]),
+        ] {
+            let mut host = remote::ad_hoc_host(name, source.clone(), &[]).unwrap();
+            host.tags = tags
+                .iter()
+                .map(|tag| (*tag).to_string())
+                .collect::<IndexSet<_>>();
+            inventory.insert(name.to_string(), host);
+        }
+
+        let selected = select_remote_inventory(
+            &inventory,
+            &["gamma".to_string(), "alpha".to_string()],
+            true,
+            &["selected".to_string()],
+        )
+        .unwrap();
+
+        assert_eq!(
+            selected.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["gamma", "alpha", "beta"]
+        );
+    }
+}

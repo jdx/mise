@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# The write target has to respect the same exclusions as config loading.
+#
+# `--path`/`--file` resolve to a file inside the named directory, but the lookup did not apply
+# the ignore filters, so `mise use --path <dir>` could pick a config that loading skips --
+# writing a tool somewhere mise never reads back.
+#
+# `ignored_config_paths` is the lever that produces this state. The persisted ignore list
+# (`mise trust --ignore`) cannot: `trusted_config_paths` overrides it, and without that override
+# the write fails the trust check instead of landing silently.
+
+mkdir -p mixed excluded plain
+
+cat <<EOF >mixed/mise.toml
+[env]
+FROM = "mise.toml"
+EOF
+cat <<EOF >mixed/mise.local.toml
+[env]
+FROM = "mise.local.toml"
+EOF
+
+#################################################################################
+# One file in the directory is excluded, a sibling is not
+#################################################################################
+
+# mise.toml sorts before mise.local.toml, so it is what the unfiltered lookup returned.
+MISE_IGNORED_CONFIG_PATHS="$PWD/mixed/mise.toml" mise use --path mixed dummy@1.0.0
+assert_not_contains "cat mixed/mise.toml" "dummy"
+assert_contains "cat mixed/mise.local.toml" "dummy"
+
+#################################################################################
+# The whole directory is excluded
+#################################################################################
+
+# It was named explicitly, so mise still creates what was asked for -- but says that it will
+# not be read back, instead of writing silently.
+assert_contains "MISE_IGNORED_CONFIG_PATHS=$PWD/excluded mise use --path excluded dummy@1.0.0 2>&1" \
+  "will not read back what it writes there"
+assert_contains "cat excluded/mise.toml" "dummy"
+
+#################################################################################
+# Nothing excluded: unchanged
+#################################################################################
+
+cat <<EOF >plain/mise.toml
+[env]
+FROM = "plain"
+EOF
+
+mise use --path plain dummy@1.0.0
+assert_contains "cat plain/mise.toml" "dummy"
+assert_not_contains "mise use --path plain dummy@2.0.0 2>&1" "will not read back what it writes there"

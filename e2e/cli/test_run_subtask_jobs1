@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# Test that tasks with mixed sub-task references and scripts don't deadlock with MISE_JOBS=1
+# Regression test for https://github.com/jdx/mise/discussions/8967
+
+cat >mise.toml <<'TOML'
+[tasks.foo]
+run = "echo foo"
+
+[tasks.test]
+run = [
+    { task = "foo" },
+    "echo bar",
+]
+TOML
+
+MISE_JOBS=1 assert "mise run test" "foo
+bar"

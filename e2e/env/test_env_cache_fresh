@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# Test --fresh-env flag with caching
+
+# Enable env caching
+export MISE_ENV_CACHE=1
+
+# Set up a cache encryption key as if activated
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+# Create config
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+FRESH_TEST_VAR="original"
+EOF
+
+# First run caches
+mise exec -- true
+
+# Modify config
+sleep 1
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+FRESH_TEST_VAR="modified"
+EOF
+
+# Normal exec should see cache invalidated due to mtime change
+assert_contains "mise exec -- bash -c 'echo \$FRESH_TEST_VAR'" "modified"
+
+# Verify --fresh-env flag exists on exec
+assert_contains "mise exec --help" "fresh-env"
+
+# Verify --fresh-env flag exists on run
+assert_contains "mise run --help" "fresh-env"

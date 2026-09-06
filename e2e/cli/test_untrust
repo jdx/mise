@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.untrust]
+run = "echo should not run; exit 42"
+EOF
+
+assert "mise trust mise.toml"
+assert_contains "mise trust --show" "trusted"
+assert_contains "mise untrust 2>&1" "untrusted"

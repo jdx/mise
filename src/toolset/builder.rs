@@ -1,0 +1,312 @@
+use std::sync::Arc;
+
+use eyre::Result;
+use itertools::Itertools;
+
+use crate::cli::args::{BackendArg, ToolArg};
+use crate::config::{Config, ConfigMap};
+use crate::env_diff::EnvMap;
+use crate::errors::Error;
+use crate::toolset::tool_request_set::{
+    configured_options_for_runtime_request, postinstall_tool_request,
+};
+use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, tool_from_env_var_name};
+use crate::{config, env};
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConfigScope {
+    /// Include tools from all config files
+    #[default]
+    All,
+    /// Only include tools from local (non-global) config files
+    LocalOnly,
+    /// Only include tools from the global config file
+    GlobalOnly,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct ToolsetBuilder {
+    args: Vec<ToolArg>,
+    scope: ConfigScope,
+    default_to_latest: bool,
+    resolve_options: ResolveOptions,
+    config_files: Option<ConfigMap>,
+}
+
+impl ToolsetBuilder {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn with_args(mut self, args: &[ToolArg]) -> Self {
+        self.args = args.to_vec();
+        self
+    }
+
+    pub(crate) fn with_default_to_latest(mut self, default_to_latest: bool) -> Self {
+        self.default_to_latest = default_to_latest;
+        self
+    }
+
+    pub(crate) fn with_scope(mut self, scope: ConfigScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    pub(crate) fn with_resolve_options(mut self, resolve_options: ResolveOptions) -> Self {
+        self.resolve_options = resolve_options;
+        self
+    }
+
+    /// Use custom config files instead of config.config_files
+    pub(crate) fn with_config_files(mut self, config_files: ConfigMap) -> Self {
+        self.config_files = Some(config_files);
+        self
+    }
+
+    pub(crate) async fn build(self, config: &Arc<Config>) -> Result<Toolset> {
+        let mut toolset = Toolset {
+            ..Default::default()
+        };
+        measure!("toolset_builder::build::load_config_files", {
+            self.load_config_files(config, &mut toolset)?;
+        });
+        measure!("toolset_builder::build::load_runtime_env", {
+            self.load_runtime_env(&mut toolset, env::vars_safe().collect())?;
+        });
+        measure!("toolset_builder::build::load_runtime_args", {
+            self.load_runtime_args(&mut toolset)?;
+        });
+        measure!("toolset_builder::build::resolve", {
+            if let Err(err) = toolset
+                .resolve_with_opts(config, &self.resolve_options)
+                .await
+            {
+                if Error::is_argument_err(&err) || Error::is_required_channel_resolution_err(&err) {
+                    return Err(err);
+                }
+                warn!("failed to resolve toolset: {err}");
+            }
+        });
+
+        time!("toolset::builder::build");
+        Ok(toolset)
+    }
+
+    fn load_config_files(&self, config: &Arc<Config>, ts: &mut Toolset) -> eyre::Result<()> {
+        let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
+
+        for cf in config_files.values().rev() {
+            let is_global = config::is_global_config(cf.get_path());
+            match self.scope {
+                ConfigScope::GlobalOnly if !is_global => continue,
+                ConfigScope::LocalOnly if is_global => continue,
+                _ => {}
+            }
+            ts.merge(cf.to_toolset()?);
+        }
+        Ok(())
+    }
+
+    fn load_runtime_env(&self, ts: &mut Toolset, env: EnvMap) -> eyre::Result<()> {
+        if self.scope == ConfigScope::LocalOnly {
+            // LocalOnly excludes env-based tool versions (MISE_*_VERSION).
+            return Ok(());
+        }
+        let postinstall = postinstall_tool_request(&env)?.map(|(mut request, source)| {
+            if let Some(config_options) = ts
+                .versions
+                .get(request.ba())
+                .and_then(|tvl| configured_options_for_runtime_request(&tvl.requests, &request))
+            {
+                request.apply_config_options(config_options);
+            }
+            (request, source)
+        });
+        for (k, v) in env {
+            if let Some(tool_name) = tool_from_env_var_name(&k) {
+                let ba: Arc<BackendArg> = Arc::new(tool_name.as_str().into());
+                let source = ToolSource::Environment(k, v.clone());
+                let mut env_ts = Toolset::new(source.clone());
+                for v in v.split_whitespace() {
+                    let tvr = ToolRequest::new(ba.clone(), v, source.clone())?;
+                    env_ts.add_version(tvr);
+                }
+                ts.merge(env_ts);
+            }
+        }
+        if let Some((request, source)) = postinstall {
+            let mut postinstall_ts = Toolset::new(source);
+            postinstall_ts.add_version(request);
+            ts.merge(postinstall_ts);
+        }
+        Ok(())
+    }
+
+    fn load_runtime_args(&self, ts: &mut Toolset) -> eyre::Result<()> {
+        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
+            let mut arg_ts = Toolset::new(ToolSource::Argument);
+            let configured = ts
+                .versions
+                .get(&args[0].ba)
+                .map(|tvl| tvl.requests.clone())
+                .unwrap_or_default();
+            let apply_arg_options = |mut tvr: ToolRequest| {
+                if let Some(config_options) =
+                    configured_options_for_runtime_request(&configured, &tvr)
+                {
+                    tvr.apply_config_options(config_options);
+                }
+                tvr
+            };
+            for arg in args {
+                if let Some(tvr) = &arg.tvr {
+                    let tvr = apply_arg_options(tvr.clone());
+                    arg_ts.add_version(tvr);
+                } else if self.default_to_latest {
+                    // this logic is required for `mise x` because with that specific command mise
+                    // should default to installing the "latest" version if no version is specified
+                    // in mise.toml
+
+                    // determine if we already have some active version in config
+                    let current_active = ts
+                        .list_current_requests()
+                        .into_iter()
+                        .filter(|tvr| tvr.is_os_supported())
+                        .find(|tvr| tvr.ba() == &arg.ba);
+
+                    if let Some(current_active) = current_active {
+                        // active version, so don't set "latest"
+                        let tvr = ToolRequest::new(
+                            arg.ba.clone(),
+                            &current_active.version(),
+                            ToolSource::Argument,
+                        )?;
+                        let tvr = apply_arg_options(tvr);
+                        arg_ts.add_version(tvr);
+                    } else {
+                        // no active version, so use "latest"
+                        let tvr = ToolRequest::new(arg.ba.clone(), "latest", ToolSource::Argument)?;
+                        let tvr = apply_arg_options(tvr);
+                        arg_ts.add_version(tvr);
+                    }
+                }
+            }
+            ts.merge(arg_ts);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::toolset::parse_tool_options;
+
+    #[tokio::test]
+    async fn test_postinstall_request_preserves_configured_options() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let configured = ToolRequest::new_with_options(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"selected="configured""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut ts = Toolset::new(ToolSource::Unknown);
+        ts.add_version(configured);
+        let env = EnvMap::from_iter([
+            ("MISE_TOOL_INSTALL_PATH".into(), "/tmp/dummy".into()),
+            ("MISE_TOOL_NAME".into(), "dummy".into()),
+            (env::MISE_TOOL_VERSION_ENV_VAR.into(), "2.0.0".into()),
+        ]);
+
+        ToolsetBuilder::new()
+            .load_runtime_env(&mut ts, env)
+            .unwrap();
+
+        let request = &ts.versions.get(&ba).unwrap().requests[0];
+        assert_eq!(request.version(), "2.0.0");
+        assert_eq!(request.options().get("selected"), Some("configured"));
+    }
+
+    #[tokio::test]
+    async fn test_bare_runtime_arg_uses_platform_supported_configured_version() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let inactive_os = match crate::cli::version::OS.as_str() {
+            "linux" => "macos",
+            _ => "linux",
+        };
+        let mut inactive_options = parse_tool_options(r#"selected="inactive""#);
+        inactive_options.core.os = Some(vec![inactive_os.to_string()]);
+        let inactive = ToolRequest::new_with_options(
+            ba.clone(),
+            "1.0.0",
+            inactive_options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let active = ToolRequest::new_with_options(
+            ba.clone(),
+            "2.0.0",
+            parse_tool_options(r#"selected="active""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(inactive);
+        toolset.add_version(active);
+
+        let arg = "dummy".parse::<ToolArg>().unwrap();
+        ToolsetBuilder::new()
+            .with_args(&[arg])
+            .with_default_to_latest(true)
+            .load_runtime_args(&mut toolset)
+            .unwrap();
+
+        let requests = &toolset.versions.get(&ba).unwrap().requests;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].version(), "2.0.0");
+        assert_eq!(requests[0].options().get("selected"), Some("active"));
+    }
+
+    #[tokio::test]
+    async fn test_runtime_arg_preserves_request_options_with_matching_config() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let configured = ToolRequest::new_with_options(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"selected="config""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(configured);
+
+        let mut arg = "dummy[inline_only=inline]@1.0.0"
+            .parse::<ToolArg>()
+            .unwrap();
+        arg.tvr = Some(
+            ToolRequest::new_with_options(
+                arg.ba.clone(),
+                "1.0.0",
+                parse_tool_options(r#"request_only="request""#),
+                ToolSource::Argument,
+            )
+            .unwrap(),
+        );
+        ToolsetBuilder::new()
+            .with_args(&[arg])
+            .load_runtime_args(&mut toolset)
+            .unwrap();
+
+        let requests = &toolset.versions.get(&ba).unwrap().requests;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].options().get("selected"), Some("config"));
+        assert_eq!(requests[0].options().get("request_only"), Some("request"));
+        assert_eq!(requests[0].options().get("inline_only"), Some("inline"));
+    }
+}

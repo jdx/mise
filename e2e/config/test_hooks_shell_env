@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# Test that shell hooks receive environment variables
+# (MISE_PROJECT_ROOT, MISE_CONFIG_ROOT, MISE_ORIGINAL_CWD)
+# See: https://github.com/jdx/mise/discussions/4013
+# See: https://github.com/jdx/mise/discussions/6054
+
+cat <<EOF >mise.toml
+[hooks.enter]
+shell = "bash"
+script = 'echo SHELL_PROJECT_ROOT=\$MISE_PROJECT_ROOT'
+EOF
+
+# Initialize session
+eval "$(mise hook-env)"
+
+# Leave workdir
+cd ~ || exit 1
+eval "$(mise hook-env)"
+
+# Re-enter to trigger enter hook - check that MISE_PROJECT_ROOT is exported
+cd ~/workdir || exit 1
+
+# The output should contain an export of MISE_PROJECT_ROOT before the script
+assert_contains "mise hook-env 2>&1" "MISE_PROJECT_ROOT"
+assert_contains "mise hook-env 2>&1" "MISE_CONFIG_ROOT"

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "1"
+
+[hooks]
+postinstall = "touch postinstall-ran"
+
+[deps.setup]
+auto = true
+run = "touch deps-ran"
+outputs = ["deps-ran"]
+
+[tasks.check]
+tools = { dummy = "1.0.0" }
+run = "touch task-ran"
+EOF
+
+rm -rf "$MISE_DATA_DIR/installs/tiny" "$MISE_DATA_DIR/installs/dummy" "$MISE_DATA_DIR/shims"
+rm -f deps-ran task-ran postinstall-ran mise.lock
+
+output="$(mise run --dry-run check 2>&1)"
+echo "$output"
+assert_contains_text "$output" "tiny@1"
+assert_contains_text "$output" "dummy@1.0.0"
+assert_contains_text "$output" "Would install dependency: setup"
+assert_contains_text "$output" "Would run postinstall hook"
+assert_contains_text "$output" "touch task-ran"
+tiny_previews="$(printf '%s\n' "$output" | grep -c 'tiny@1' || true)"
+assert "[ '$tiny_previews' -eq 1 ]"
+assert_fail "test -e deps-ran"
+assert_fail "test -e task-ran"
+assert_fail "test -e postinstall-ran"
+assert_fail "test -d '$MISE_DATA_DIR/installs/tiny'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy'"
+assert_fail "test -d '$MISE_DATA_DIR/shims'"
+assert_fail "test -e mise.lock"

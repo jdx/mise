@@ -1,0 +1,480 @@
+use std::path::{Path, PathBuf};
+
+use crate::config::Settings;
+use crate::env::PATH_KEY;
+use crate::file;
+use crate::file::{canonicalize_or_self, touch_dir};
+use crate::shell::{
+    ActivateOptions, ActivatePrelude, EXAMPLE_SHELL, Shell, ShellType, require_shell,
+};
+use crate::toolset::env_cache::CachedEnv;
+use crate::{dirs, env};
+use eyre::Result;
+
+/// Initialize mise in the current shell session
+///
+/// Add this to your shell's rc or profile file so it runs in every new shell.
+/// Otherwise, it only takes effect in the current session.
+/// (e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish, or $PROFILE for powershell)
+///
+/// Typically, this can be added with something like the following:
+///
+///     echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+///
+/// However, this requires that "mise" is in your PATH. If it is not, you need to
+/// specify the full path like this:
+///
+///     echo 'eval "$(/path/to/mise activate zsh)"' >> ~/.zshrc
+///
+/// Customize status output with `status` settings.
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub(crate) struct Activate {
+    /// Shell type to generate the script for
+    #[usage(value_enum)]
+    shell_type: Option<ShellType>,
+
+    /// Suppress non-error messages
+    #[usage(long, short)]
+    quiet: bool,
+
+    /// Shell type to generate the script for
+    #[usage(long, short, hide = true, value_enum)]
+    shell: Option<ShellType>,
+
+    /// Do not automatically call hook-env
+    ///
+    /// This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then
+    /// you can call `mise hook-env` manually which will output the env vars to stdout without actually
+    /// modifying the environment. That way you can do things like `mise hook-env --trace` to get more
+    /// information or just see the values that hook-env is outputting.
+    #[usage(long)]
+    no_hook_env: bool,
+
+    /// Use shims instead of modifying PATH
+    ///
+    /// Effectively the same as:
+    ///
+    ///     PATH="$HOME/.local/share/mise/shims:$PATH"
+    ///
+    /// `mise activate --shims` does not support all the features of `mise activate`.
+    /// See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
+    #[usage(long, verbatim_doc_comment)]
+    shims: bool,
+
+    /// Show "mise: <TOOL>@<VERSION>" message when changing directories
+    #[usage(long, hide = true)]
+    status: bool,
+}
+
+impl Activate {
+    pub(crate) fn run(self) -> Result<()> {
+        let shell = require_shell(
+            self.shell_type.or(self.shell),
+            &format!("Name the shell: `mise activate {EXAMPLE_SHELL}`."),
+        )?;
+
+        // touch ROOT to allow hook-env to run
+        let _ = touch_dir(&dirs::DATA);
+
+        let mise_bin = if cfg!(target_os = "linux") {
+            // linux dereferences symlinks, so use argv0 instead
+            let argv0 = PathBuf::from(&*env::ARGV0);
+            let path = if argv0.is_absolute() {
+                argv0
+            } else {
+                which::which(&*env::ARGV0).unwrap_or_else(|_| env::MISE_BIN.clone())
+            };
+            if path.is_absolute() {
+                path
+            } else {
+                std::env::current_dir()
+                    .map(|cwd| cwd.join(path))
+                    .unwrap_or_else(|_| env::MISE_BIN.clone())
+            }
+        } else {
+            env::MISE_BIN.clone()
+        };
+        match self.shims {
+            true => self.activate_shims(shell.as_ref(), &mise_bin)?,
+            false => self.activate(shell.as_ref(), &mise_bin)?,
+        }
+
+        Ok(())
+    }
+
+    fn activate_shims(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
+        let exe_dir = mise_bin.parent().unwrap();
+        let user_shims = dirs::shims();
+        let system_shims = dirs::system_shims();
+        let mut shim_dirs = vec![user_shims];
+        if system_shims.is_dir() && !file::storage_paths_eq(&shim_dirs[0], &system_shims) {
+            shim_dirs.push(system_shims);
+        }
+        let mut prelude = vec![];
+        // The shims dir is always (move-)prepended so it stays at the front of PATH
+        // even when activation is re-sourced (e.g. VS Code terminals) — see #8757.
+        // The mise executable's own dir only needs to be present so `mise` is
+        // callable, so it uses the guarded prepend: this avoids re-prepending (and
+        // thereby reordering) a system dir such as /usr/bin that is already in PATH
+        // for deb/rpm installs, which would otherwise move it ahead of
+        // /usr/local/bin (#10264).
+        let prepended_exe_dir = if let Some(p) = self.prepend_path(exe_dir) {
+            prelude.push(p);
+            true
+        } else {
+            false
+        };
+        let has_command_wrappers = dirs::COMMAND_WRAPPERS.is_dir();
+        let mut dispatch_dirs = shim_dirs.iter().map(PathBuf::as_path).collect::<Vec<_>>();
+        if has_command_wrappers {
+            dispatch_dirs.insert(0, dirs::COMMAND_WRAPPERS.as_path());
+        }
+        let dispatch_dirs_already_first = are_dirs_first_in_paths(&env::PATH, &dispatch_dirs);
+        if shell.supports_move_path() || prepended_exe_dir || !dispatch_dirs_already_first {
+            // Prepend in reverse order so user shims retain precedence over system
+            // shims in shells where each operation inserts at the front.
+            let mut path_changed = prepended_exe_dir;
+            for shims_dir in shim_dirs.iter().rev() {
+                if let Some(p) = self.shims_prepend_path(shell, shims_dir, path_changed) {
+                    prelude.push(p);
+                    path_changed = true;
+                }
+            }
+            if has_command_wrappers
+                && let Some(p) = self.shims_prepend_path(shell, &dirs::COMMAND_WRAPPERS, true)
+            {
+                prelude.push(p);
+            }
+        }
+        miseprint!("{}", shell.format_activate_prelude(&prelude))?;
+        Ok(())
+    }
+
+    fn activate(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
+        let mut prelude = vec![];
+        // Preserve the user's PATH before adding the shim boundary. Shell activation
+        // normally snapshots this after preludes run, which would otherwise make
+        // `mise deactivate` restore mise's own shim farms.
+        if env::__MISE_ORIG_PATH.is_none() {
+            let path = std::env::join_paths(&*env::PATH)
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+            prelude.push(ActivatePrelude::Set(
+                "__MISE_ORIG_PATH".to_string(),
+                path.to_string_lossy().to_string(),
+            ));
+        }
+        let shim_path_update = if Settings::get().not_found_auto_install {
+            position_shims_before_path()?
+        } else {
+            remove_shims_from_path()?
+        };
+        if let Some(set_path) = shim_path_update {
+            prelude.push(set_path);
+        }
+        let exe_dir = mise_bin.parent().unwrap();
+        let mut flags = vec![];
+        if self.quiet {
+            flags.push(" --quiet".to_string());
+        }
+        if self.status {
+            flags.push(" --status".to_string());
+        }
+        flags.extend(forwarded_logging_flags(&env::ARGS.read().unwrap()));
+        if let Some(prepend_path) = self.prepend_path(exe_dir) {
+            prelude.push(prepend_path);
+        }
+
+        // Generate encryption key for env cache if caching is enabled
+        // This key is session-scoped and lost when the shell closes
+        if Settings::get().env_cache {
+            let key = CachedEnv::ensure_encryption_key();
+            prelude.push(ActivatePrelude::Set(
+                "__MISE_ENV_CACHE_KEY".to_string(),
+                key,
+            ));
+        }
+
+        miseprint!(
+            "{}",
+            shell.activate(ActivateOptions {
+                exe: mise_bin.to_path_buf(),
+                flags: flags.join(""),
+                no_hook_env: self.no_hook_env,
+                prelude,
+            })
+        )?;
+        Ok(())
+    }
+
+    fn prepend_path(&self, p: &Path) -> Option<ActivatePrelude> {
+        if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
+            Some(ActivatePrelude::Prepend(
+                PATH_KEY.to_string(),
+                p.to_string_lossy().to_string(),
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Used by activate_shims for the shims directory. Shells with native path
+    /// deduplication move the existing entry to the front. Other shells prepend
+    /// only when the shims are not already first, which preserves precedence
+    /// without growing PATH on every re-source. If an earlier prelude changes
+    /// PATH, prepend again so the shims remain first after that change.
+    fn shims_prepend_path(
+        &self,
+        shell: &dyn Shell,
+        p: &Path,
+        path_changed_before: bool,
+    ) -> Option<ActivatePrelude> {
+        if !is_dir_not_in_nix(p) || p.is_relative() {
+            return None;
+        }
+        if shell.supports_move_path() {
+            Some(ActivatePrelude::MovePrepend(
+                PATH_KEY.to_string(),
+                p.to_string_lossy().to_string(),
+            ))
+        } else if should_prepend_shims(&env::PATH, p, path_changed_before) {
+            Some(ActivatePrelude::Prepend(
+                PATH_KEY.to_string(),
+                p.to_string_lossy().to_string(),
+            ))
+        } else {
+            None
+        }
+    }
+}
+
+/// Logging flags given to `mise activate` that have to keep applying to every later
+/// `hook-env`, since that — not `activate` — is what prints the per-directory output.
+///
+/// Only `--quiet` reaches [`Activate`] as a field; `--silent` and `--log-level` are global
+/// flags on [`crate::cli::Cli`], so they are read back from the argv `Cli::run` recorded.
+/// `--quiet` is left to `Activate::quiet` to avoid emitting it twice, and the verbosity
+/// flags (`-v`, `--debug`, `--trace`) are deliberately not forwarded — the same split
+/// `hook_env::has_preclap_logging_flag` draws between flags that suppress warnings and
+/// flags that do not.
+///
+/// Flags are forwarded in the order they were given, so `hook-env`'s own
+/// `overrides_with_all` resolves them exactly as this invocation did.
+/// `--log-level <LEVEL>` is normalized to `--log-level=<LEVEL>` so the flag survives as a
+/// single word when the shell templates split the flag string.
+fn forwarded_logging_flags(args: &[String]) -> Vec<String> {
+    let mut flags = vec![];
+    let mut remaining = args.iter();
+    while let Some(arg) = remaining.next() {
+        if arg == "--silent" {
+            flags.push(" --silent".to_string());
+        } else if let Some(level) = arg.strip_prefix("--log-level=") {
+            flags.push(format!(" --log-level={level}"));
+        } else if arg == "--log-level"
+            && let Some(level) = remaining.next()
+        {
+            flags.push(format!(" --log-level={level}"));
+        }
+    }
+    flags
+}
+
+fn position_shims_before_path() -> std::io::Result<Option<ActivatePrelude>> {
+    let user_shims = dirs::shims();
+    let system_shims = dirs::system_shims();
+    let mut path = vec![user_shims];
+    if system_shims.is_dir() && !file::storage_paths_eq(&path[0], &system_shims) {
+        path.push(system_shims);
+    }
+    path.extend(
+        env::PATH
+            .iter()
+            .filter(|path| !file::is_mise_shims_dir(path))
+            .cloned(),
+    );
+    let path = std::env::join_paths(path)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+    Ok(Some(ActivatePrelude::Set(
+        PATH_KEY.to_string(),
+        path.to_string_lossy().to_string(),
+    )))
+}
+
+fn remove_shims_from_path() -> std::io::Result<Option<ActivatePrelude>> {
+    if !env::PATH.iter().any(|path| file::is_mise_shims_dir(path)) {
+        return Ok(None);
+    }
+    let path = std::env::join_paths(
+        env::PATH
+            .iter()
+            .filter(|path| !file::is_mise_shims_dir(path)),
+    )
+    .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+    Ok(Some(ActivatePrelude::Set(
+        PATH_KEY.to_string(),
+        path.to_string_lossy().to_string(),
+    )))
+}
+
+fn is_dir_in_path(dir: &Path) -> bool {
+    let dir = canonicalize_or_self(dir);
+    env::PATH
+        .clone()
+        .into_iter()
+        .any(|p| canonicalize_or_self(&p) == dir)
+}
+
+fn should_prepend_shims(paths: &[PathBuf], dir: &Path, path_changed_before: bool) -> bool {
+    path_changed_before || !is_dir_first_in_paths(paths, dir)
+}
+
+fn is_dir_first_in_paths(paths: &[PathBuf], dir: &Path) -> bool {
+    let dir = canonicalize_or_self(dir);
+    paths
+        .first()
+        .is_some_and(|p| canonicalize_or_self(p) == dir)
+}
+
+fn are_dirs_first_in_paths(paths: &[PathBuf], dirs: &[&Path]) -> bool {
+    paths.len() >= dirs.len()
+        && paths
+            .iter()
+            .zip(dirs)
+            .all(|(path, dir)| canonicalize_or_self(path) == canonicalize_or_self(dir))
+}
+
+fn is_dir_not_in_nix(dir: &Path) -> bool {
+    !canonicalize_or_self(dir).starts_with("/nix/")
+}
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>eval "$(mise activate bash)"</bold>
+    $ <bold>eval "$(mise activate zsh)"</bold>
+    $ <bold>mise activate fish | source</bold>
+    $ <bold>execx($(mise activate xonsh))</bold>
+    $ <bold>(&mise activate pwsh) | Out-String | Invoke-Expression</bold>
+"#
+);
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        are_dirs_first_in_paths, forwarded_logging_flags, is_dir_first_in_paths,
+        should_prepend_shims,
+    };
+    use std::path::PathBuf;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn forwards_silent_so_it_reaches_hook_env() {
+        assert_eq!(
+            forwarded_logging_flags(&args(&["mise", "activate", "bash", "--silent"])),
+            vec![" --silent".to_string()]
+        );
+    }
+
+    #[test]
+    fn forwards_a_flag_given_before_the_subcommand_too() {
+        assert_eq!(
+            forwarded_logging_flags(&args(&["mise", "--silent", "activate", "bash"])),
+            vec![" --silent".to_string()]
+        );
+    }
+
+    #[test]
+    fn normalizes_both_log_level_spellings_to_one_word() {
+        let separate =
+            forwarded_logging_flags(&args(&["mise", "activate", "bash", "--log-level", "error"]));
+        let joined =
+            forwarded_logging_flags(&args(&["mise", "activate", "bash", "--log-level=error"]));
+        assert_eq!(separate, vec![" --log-level=error".to_string()]);
+        assert_eq!(separate, joined);
+    }
+
+    #[test]
+    fn keeps_the_order_so_hook_env_resolves_overrides_the_same_way() {
+        assert_eq!(
+            forwarded_logging_flags(&args(&[
+                "mise",
+                "activate",
+                "bash",
+                "--silent",
+                "--log-level=error"
+            ])),
+            vec![" --silent".to_string(), " --log-level=error".to_string()]
+        );
+    }
+
+    #[test]
+    fn leaves_quiet_to_the_activate_flag_and_skips_verbosity() {
+        // `--quiet` is carried by `Activate::quiet`; forwarding it here would duplicate it.
+        // `-v`/`--debug`/`--trace` raise the level rather than suppressing warnings.
+        for arg in ["-q", "--quiet", "-v", "--debug", "--trace"] {
+            assert!(
+                forwarded_logging_flags(&args(&["mise", "activate", "bash", arg])).is_empty(),
+                "{arg} should not be forwarded"
+            );
+        }
+    }
+
+    #[test]
+    fn a_trailing_log_level_without_a_value_is_dropped() {
+        assert!(
+            forwarded_logging_flags(&args(&["mise", "activate", "bash", "--log-level"])).is_empty()
+        );
+    }
+
+    #[test]
+    fn nothing_is_forwarded_without_a_logging_flag() {
+        assert!(forwarded_logging_flags(&args(&["mise", "activate", "bash"])).is_empty());
+    }
+
+    #[test]
+    fn detects_only_a_matching_first_path_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().to_path_buf();
+        let equivalent = target.join(".");
+        let other = PathBuf::from("/other");
+
+        assert!(!is_dir_first_in_paths(&[], &target));
+        assert!(is_dir_first_in_paths(&[equivalent, other.clone()], &target));
+        assert!(!is_dir_first_in_paths(&[other, target.clone()], &target));
+
+        assert!(!should_prepend_shims(
+            std::slice::from_ref(&target),
+            &target,
+            false
+        ));
+        assert!(should_prepend_shims(
+            std::slice::from_ref(&target),
+            &target,
+            true
+        ));
+    }
+
+    #[test]
+    fn detects_an_existing_dispatch_prefix() {
+        let root = tempfile::tempdir().unwrap();
+        let wrappers = root.path().join("wrappers");
+        let shims = root.path().join("shims");
+        let other = root.path().join("other");
+
+        assert!(are_dirs_first_in_paths(
+            &[wrappers.clone(), shims.clone(), other.clone()],
+            &[&wrappers, &shims]
+        ));
+        assert!(!are_dirs_first_in_paths(
+            &[shims.clone(), wrappers.clone(), other],
+            &[&wrappers, &shims]
+        ));
+        assert!(!are_dirs_first_in_paths(
+            std::slice::from_ref(&wrappers),
+            &[&wrappers, &shims]
+        ));
+    }
+}

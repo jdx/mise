@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+export MISE_SHIMS_DIR="$HOME/.local/share/mise/shims"
+export MISE_SYSTEM_SHIMS_DIR="$HOME/.local/share/mise/system-shims"
+export PATH="$MISE_SHIMS_DIR:$PATH"
+mkdir -p "$MISE_CONFIG_DIR" "$MISE_SHIMS_DIR"
+
+assert_shims_present() {
+  case ":$PATH:" in
+    *":$MISE_SHIMS_DIR:"*) ;;
+    *)
+      echo "FAIL: expected user shims in PATH: $PATH"
+      exit 1
+      ;;
+  esac
+}
+
+assert_shims_absent() {
+  case ":$PATH:" in
+    *":$MISE_SHIMS_DIR:"*)
+      echo "FAIL: expected user shims to be absent from PATH: $PATH"
+      exit 1
+      ;;
+    *) ;;
+  esac
+}
+
+# Preserve pre-lazy behavior for users who disabled general auto-install.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+not_found_auto_install = false
+EOF
+eval "$(mise activate bash --no-hook-env)"
+eval "$(mise hook-env --force --shell bash)"
+assert_shims_absent
+
+# An explicit lazy declaration opts into retaining the fallback boundary.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+not_found_auto_install = false
+
+[tools]
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] }
+EOF
+eval "$(mise hook-env --force --shell bash)"
+assert_shims_present
+
+# Removing the lazy declaration removes the boundary from the active shell.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+not_found_auto_install = false
+EOF
+eval "$(mise hook-env --force --shell bash)"
+assert_shims_absent
+
+# General not-found auto-install independently retains the existing behavior.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+not_found_auto_install = true
+EOF
+eval "$(mise hook-env --force --shell bash)"
+assert_shims_present

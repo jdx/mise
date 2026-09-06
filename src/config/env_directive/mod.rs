@@ -1,0 +1,1679 @@
+use crate::config::config_file::trust_check;
+use crate::dirs;
+use crate::env;
+use crate::env_diff::EnvMap;
+use crate::file::display_path;
+use crate::path_env::PathEnv;
+use crate::tera::{
+    TeraEngine, contains_template_syntax, get_tera, render_str, tera_exec, tera1_exec,
+};
+use crate::toolset::Toolset;
+use eyre::{Context, eyre};
+use indexmap::IndexMap;
+use itertools::Itertools;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::{Debug, Display, Formatter};
+use std::path::{Path, PathBuf};
+use std::{cmp::PartialEq, sync::Arc};
+
+use super::{Config, Settings};
+
+mod file;
+mod module;
+mod path;
+mod source;
+pub(crate) mod venv;
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) enum RequiredValue {
+    #[default]
+    False,
+    True,
+    Help(String),
+}
+
+impl RequiredValue {
+    pub(crate) fn is_required(&self) -> bool {
+        !matches!(self, RequiredValue::False)
+    }
+
+    pub(crate) fn help_text(&self) -> Option<&str> {
+        match self {
+            RequiredValue::Help(text) => Some(text.as_str()),
+            _ => None,
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RequiredValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+        use std::fmt;
+
+        struct RequiredVisitor;
+
+        impl<'de> Visitor<'de> for RequiredVisitor {
+            type Value = RequiredValue;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a boolean or a string")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(if value {
+                    RequiredValue::True
+                } else {
+                    RequiredValue::False
+                })
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(RequiredValue::Help(value.to_string()))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(RequiredValue::Help(value))
+            }
+        }
+
+        deserializer.deserialize_any(RequiredVisitor)
+    }
+}
+
+impl serde::Serialize for RequiredValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            RequiredValue::False => serializer.serialize_bool(false),
+            RequiredValue::True => serializer.serialize_bool(true),
+            RequiredValue::Help(text) => serializer.serialize_str(text),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct EnvDirectiveOptions {
+    #[serde(default)]
+    pub(crate) tools: bool,
+    #[serde(default)]
+    pub(crate) redact: Option<bool>,
+    #[serde(default)]
+    pub(crate) required: RequiredValue,
+    #[serde(default)]
+    pub(crate) expand: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub(crate) enum EnvValue {
+    String(String),
+    Integer(i64),
+    Boolean(bool),
+}
+
+impl EnvValue {
+    pub(crate) fn into_string(self) -> Option<String> {
+        match self {
+            Self::String(value) => Some(value),
+            Self::Integer(value) => Some(value.to_string()),
+            Self::Boolean(true) => Some("true".to_string()),
+            Self::Boolean(false) => None,
+        }
+    }
+
+    pub(crate) fn into_default_string(self) -> Option<String> {
+        match self {
+            Self::String(value) => Some(value),
+            Self::Integer(value) => Some(value.to_string()),
+            Self::Boolean(_) => None,
+        }
+    }
+}
+
+impl TryFrom<&toml::Value> for EnvValue {
+    type Error = String;
+
+    fn try_from(value: &toml::Value) -> Result<Self, Self::Error> {
+        match value {
+            toml::Value::String(value) => Ok(Self::String(value.clone())),
+            toml::Value::Integer(value) => Ok(Self::Integer(*value)),
+            toml::Value::Boolean(value) => Ok(Self::Boolean(*value)),
+            _ => Err("environment values must be strings, integers, or booleans".to_string()),
+        }
+    }
+}
+
+impl From<String> for EnvValue {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<&str> for EnvValue {
+    fn from(value: &str) -> Self {
+        Self::String(value.to_string())
+    }
+}
+
+impl From<i64> for EnvValue {
+    fn from(value: i64) -> Self {
+        Self::Integer(value)
+    }
+}
+
+impl From<bool> for EnvValue {
+    fn from(value: bool) -> Self {
+        Self::Boolean(value)
+    }
+}
+
+impl From<EnvValue> for toml_edit::Value {
+    fn from(value: EnvValue) -> Self {
+        match value {
+            EnvValue::String(value) => Self::from(value),
+            EnvValue::Integer(value) => Self::from(value),
+            EnvValue::Boolean(value) => Self::from(value),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum EnvDirective {
+    /// simple key/value pair
+    Val(String, String, EnvDirectiveOptions),
+    /// use a fallback value if the key is not already set
+    Default(String, String, EnvDirectiveOptions),
+    /// remove a key
+    Rm(String, EnvDirectiveOptions),
+    /// Required variable that must be defined elsewhere
+    Required(String, EnvDirectiveOptions),
+    /// dotenv file
+    File(String, EnvDirectiveOptions),
+    /// add a path to the PATH
+    Path(String, EnvDirectiveOptions),
+    /// run a bash script and apply the resulting env diff
+    Source(String, EnvDirectiveOptions),
+    /// [experimental] age-encrypted value
+    Age {
+        key: String,
+        value: String,
+        format: Option<AgeFormat>,
+        options: EnvDirectiveOptions,
+    },
+    PythonVenv {
+        path: String,
+        create: bool,
+        python: Option<String>,
+        uv_create_args: Option<Vec<String>>,
+        python_create_args: Option<Vec<String>>,
+        options: EnvDirectiveOptions,
+    },
+    Module(String, toml::Value, EnvDirectiveOptions),
+}
+
+impl EnvDirective {
+    pub(crate) fn options(&self) -> &EnvDirectiveOptions {
+        match self {
+            EnvDirective::Val(_, _, opts)
+            | EnvDirective::Default(_, _, opts)
+            | EnvDirective::Rm(_, opts)
+            | EnvDirective::Required(_, opts)
+            | EnvDirective::File(_, opts)
+            | EnvDirective::Path(_, opts)
+            | EnvDirective::Source(_, opts)
+            | EnvDirective::Age { options: opts, .. }
+            | EnvDirective::PythonVenv { options: opts, .. }
+            | EnvDirective::Module(_, _, opts) => opts,
+        }
+    }
+}
+
+impl From<(String, String)> for EnvDirective {
+    fn from((k, v): (String, String)) -> Self {
+        Self::Val(k, v, Default::default())
+    }
+}
+
+impl From<(String, i64)> for EnvDirective {
+    fn from((k, v): (String, i64)) -> Self {
+        (k, v.to_string()).into()
+    }
+}
+
+impl Display for EnvDirective {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
+            EnvDirective::Default(k, v, _) => write!(f, "{k} default={v}"),
+            EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
+            EnvDirective::Required(k, _) => write!(f, "{k} (required)"),
+            EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
+            EnvDirective::Path(path, _) => write!(f, "_.path = \"{}\"", display_path(path)),
+            EnvDirective::Source(path, _) => write!(f, "_.source = \"{}\"", display_path(path)),
+            EnvDirective::Age { key, format, .. } => {
+                write!(f, "{key} (age-encrypted")?;
+                if let Some(fmt) = format {
+                    let fmt_str = match fmt {
+                        AgeFormat::Zstd => "zstd",
+                        AgeFormat::Raw => "raw",
+                    };
+                    write!(f, ", {fmt_str}")?;
+                }
+                write!(f, ")")
+            }
+            EnvDirective::Module(name, _, _) => write!(f, "module {name}"),
+            EnvDirective::PythonVenv {
+                path,
+                create,
+                python,
+                uv_create_args,
+                python_create_args,
+                ..
+            } => {
+                write!(f, "python venv path={}", display_path(path))?;
+                if *create {
+                    write!(f, " create")?;
+                }
+                if let Some(python) = python {
+                    write!(f, " python={python}")?;
+                }
+                if let Some(args) = uv_create_args {
+                    write!(f, " uv_create_args={args:?}")?;
+                }
+                if let Some(args) = python_create_args {
+                    write!(f, " python_create_args={args:?}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub(crate) enum AgeFormat {
+    #[serde(rename = "zstd")]
+    Zstd,
+    #[serde(rename = "raw")]
+    #[default]
+    Raw,
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct EnvResults {
+    pub env: IndexMap<String, (String, PathBuf)>,
+    pub vars: IndexMap<String, (String, PathBuf)>,
+    pub env_remove: BTreeSet<String>,
+    pub env_files: Vec<PathBuf>,
+    pub env_paths: Vec<PathBuf>,
+    pub env_scripts: Vec<PathBuf>,
+    pub redactions: Vec<String>,
+    pub redaction_exclusions: BTreeSet<String>,
+    /// Keys whose effective value comes from the caller's environment rather than from
+    /// [`Self::env`]: `required` directives validate without assigning, and `default`
+    /// directives yield to a value the caller already set. Redaction resolves these keys
+    /// against the caller environment; only names are recorded, never values.
+    pub caller_env_keys: BTreeSet<String>,
+    pub tool_add_paths: Vec<PathBuf>,
+    /// Files to watch for cache invalidation (from modules and _.source directives)
+    pub watch_files: Vec<PathBuf>,
+    /// True if any directive declared cacheable=false or is a dynamic module
+    pub has_uncacheable: bool,
+}
+
+pub(super) struct EnvDirectiveContext<'a> {
+    config: &'a Arc<Config>,
+    tera_ctx: &'a mut tera::Context,
+    tera: &'a mut Option<TeraEngine>,
+    results: &'a mut EnvResults,
+    normalize_path: fn(&Path, PathBuf) -> PathBuf,
+    source: &'a Path,
+    exec_env: &'a EnvMap,
+    config_root: &'a Path,
+    /// The caller's resolved toolset, when the caller has one. `Toolset::env` does; plain
+    /// `Config::env` does not, because it runs before any toolset exists. Directives that need to
+    /// know *which* version of a tool is active — rather than just rendering `tools.*` templates —
+    /// read it from here, since CLI overrides such as `--tool python@3.12` only ever reach a
+    /// toolset and are never written back to `Config`.
+    toolset: Option<&'a Toolset>,
+}
+
+impl EnvDirectiveContext<'_> {
+    fn parse_template(&mut self, origin: &str, input: &str) -> eyre::Result<String> {
+        self.results.parse_template(
+            self.tera_ctx,
+            self.tera,
+            self.source,
+            self.exec_env,
+            origin,
+            input,
+        )
+    }
+
+    fn normalize_path(&self, path: PathBuf) -> PathBuf {
+        (self.normalize_path)(self.config_root, path)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) enum ToolsFilter {
+    ToolsOnly,
+    #[default]
+    NonToolsOnly,
+    Both,
+    /// `tools = true` directives, but only plain `Val` (`KEY = value`) entries.
+    /// Env *modules* (PythonVenv/Module/Source/File/Path) are skipped because they
+    /// may reference tools outside a partial (dependency) toolset and would error.
+    /// Used by `dependency_env` so a dependent tool's install sees `tools = true`
+    /// value vars like `CLOUDSDK_PYTHON = "{{ tools.python.path }}/..."`. (#10282)
+    ToolsOnlyVals,
+}
+
+pub(crate) struct EnvResolveOptions {
+    pub vars: bool,
+    pub tools: ToolsFilter,
+    pub warn_on_missing_required: bool,
+}
+
+impl EnvResults {
+    fn track_redaction_override(&mut self, key: &str, redact: Option<bool>) {
+        match redact {
+            Some(false) => {
+                self.redaction_exclusions.insert(key.to_string());
+            }
+            Some(true) | None => {
+                self.redaction_exclusions.remove(key);
+            }
+        }
+    }
+
+    /// Value map for [`crate::config::Config::add_redactions_excluding`]: the values this
+    /// resolution assigned, plus caller-supplied values for [`Self::caller_env_keys`], which
+    /// are absent from [`Self::env`] because those directives never assign.
+    pub(crate) fn redactable_env(&self, caller_env: &EnvMap) -> EnvMap {
+        let mut out: EnvMap = self
+            .env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        for k in &self.caller_env_keys {
+            if let Some(v) = caller_env.get(k) {
+                out.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+        }
+        out
+    }
+
+    pub(crate) async fn resolve(
+        config: &Arc<Config>,
+        ctx: tera::Context,
+        initial: &EnvMap,
+        input: Vec<(EnvDirective, PathBuf)>,
+        resolve_opts: EnvResolveOptions,
+    ) -> eyre::Result<Self> {
+        Self::resolve_with_toolset(config, ctx, initial, input, resolve_opts, None).await
+    }
+
+    /// [`Self::resolve`] for callers that already have a resolved toolset. See
+    /// [`EnvDirectiveContext::toolset`] for why a directive would want it.
+    pub(crate) async fn resolve_with_toolset(
+        config: &Arc<Config>,
+        mut ctx: tera::Context,
+        initial: &EnvMap,
+        input: Vec<(EnvDirective, PathBuf)>,
+        resolve_opts: EnvResolveOptions,
+        toolset: Option<&Toolset>,
+    ) -> eyre::Result<Self> {
+        // trace!("resolve: input: {:#?}", &input);
+        let mut env = initial
+            .iter()
+            .map(|(k, v)| (k.clone(), (v.clone(), None)))
+            .collect::<IndexMap<_, _>>();
+        let mut r = Self::default();
+        let normalize_path = |config_root: &Path, p: PathBuf| {
+            let p = p.strip_prefix("./").unwrap_or(&p);
+            match p.strip_prefix("~/") {
+                Ok(p) => dirs::HOME.join(p),
+                _ if p.is_relative() => config_root.join(p),
+                _ => p.to_path_buf(),
+            }
+        };
+        let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
+        let safe_mode = Settings::safe_mode();
+        // In safe mode, environment directives from project (non-global) config are
+        // ignored — they would otherwise be applied to the host environment and to
+        // subprocesses mise spawns during resolution (e.g. `go list`, vfox hooks),
+        // an indirect code-execution vector (PATH, LD_PRELOAD, DYLD_INSERT_LIBRARIES,
+        // NODE_OPTIONS, ...) that safe mode is meant to close. Global/system config
+        // is operator-owned and still applies, mirroring the trust model. `_.source`
+        // runs a shell script (code execution rather than env injection), so it is
+        // ignored regardless of source, including operator-owned global config.
+        let dropped_in_safe_mode = |directive: &EnvDirective, source: &Path| -> bool {
+            safe_mode
+                && (!crate::config::is_global_config(source)
+                    || matches!(directive, EnvDirective::Source(..)))
+        };
+        // Choose the last venv among directives that survive the safe-mode filter,
+        // so a dropped project venv can't cause an operator's global venv to be
+        // skipped as "not the last one".
+        let last_python_venv = input.iter().rev().find_map(|(d, source)| match d {
+            EnvDirective::PythonVenv { .. } if !dropped_in_safe_mode(d, source) => Some(d),
+            _ => None,
+        });
+        let filtered_input = input
+            .iter()
+            .fold(Vec::new(), |mut acc, (directive, source)| {
+                if dropped_in_safe_mode(directive, source) {
+                    return acc;
+                }
+                // Filter directives based on tools setting
+                let should_include = match &resolve_opts.tools {
+                    ToolsFilter::ToolsOnly => directive.options().tools,
+                    ToolsFilter::NonToolsOnly => !directive.options().tools,
+                    ToolsFilter::Both => true,
+                    ToolsFilter::ToolsOnlyVals => {
+                        directive.options().tools && matches!(directive, EnvDirective::Val(..))
+                    }
+                };
+
+                if !should_include {
+                    return acc;
+                }
+
+                if let Some(d) = &last_python_venv
+                    && matches!(directive, EnvDirective::PythonVenv { .. })
+                    && **d != *directive
+                {
+                    // skip venv directives if it's not the last one
+                    return acc;
+                }
+                acc.push((directive.clone(), source.clone()));
+                acc
+            });
+
+        // Save filtered_input for validation after processing
+        let filtered_input_for_validation = filtered_input.clone();
+        let required_env = if resolve_opts.vars {
+            &*env::PRISTINE_ENV
+        } else {
+            initial
+        };
+
+        for (directive, source) in filtered_input {
+            let mut tera = None;
+            // trace!(
+            //     "resolve: directive: {:?}, source: {:?}",
+            //     &directive,
+            //     &source
+            // );
+            let config_root = crate::config::config_file::config_root::config_root(&source);
+            ctx.insert("cwd", &*dirs::CWD);
+            ctx.insert("config_root", &config_root);
+            ctx.insert(
+                "config_source",
+                &crate::config::config_file::config_root::config_source(&source),
+            );
+            let env_vars = env
+                .iter()
+                .map(|(k, (v, _))| (k.clone(), v.clone()))
+                .collect::<EnvMap>();
+            ctx.insert("env", &env_vars);
+
+            let context_vars = Self::context_vars(&ctx);
+
+            let mut vars = context_vars.clone();
+            vars.extend(r.vars.iter().map(|(k, (v, _))| (k.clone(), v.clone())));
+
+            ctx.insert("vars", &vars);
+            let redact = directive.options().redact;
+            // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
+            match directive {
+                EnvDirective::Val(k, v, _opts) => {
+                    // `[vars]` are template variables rather than environment variables, so the
+                    // PATH rule does not apply to them.
+                    let k = if resolve_opts.vars {
+                        k
+                    } else {
+                        crate::env::normalize_path_key(k)
+                    };
+                    r.track_redaction_override(&k, redact);
+                    let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &k, &v)?;
+
+                    if resolve_opts.vars {
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        r.vars.insert(k, (v, source.clone()));
+                    } else {
+                        r.env_remove.remove(&k);
+                        // trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        env.insert(k, (v, Some(source.clone())));
+                    }
+                }
+                EnvDirective::Default(k, v, _opts) => {
+                    // Same fold as `Val` above, and for the same reason.
+                    let k = if resolve_opts.vars {
+                        k
+                    } else {
+                        crate::env::normalize_path_key(k)
+                    };
+                    if resolve_opts.vars {
+                        if let Some((v, _)) = r.vars.get(&k).filter(|(v, _)| !v.is_empty()) {
+                            if redact.unwrap_or(false) {
+                                r.redactions.push(k.clone());
+                            }
+                            r.vars.insert(k, (v.clone(), source.clone()));
+                            continue;
+                        }
+                        if let Some(v) = env::PRISTINE_ENV.get(&k).filter(|v| !v.is_empty()) {
+                            if redact.unwrap_or(false) {
+                                r.redactions.push(k.clone());
+                            }
+                            r.vars.insert(k, (v.clone(), source.clone()));
+                            continue;
+                        }
+                    } else if env.get(&k).is_some_and(|(v, _)| !v.is_empty()) {
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        r.caller_env_keys.insert(k.clone());
+                        continue;
+                    }
+
+                    r.track_redaction_override(&k, redact);
+                    let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &k, &v)?;
+
+                    if resolve_opts.vars {
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        r.vars.insert(k, (v, source.clone()));
+                    } else {
+                        r.env_remove.remove(&k);
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        env.insert(k, (v, Some(source.clone())));
+                    }
+                }
+                EnvDirective::Rm(k, _opts) => {
+                    // The same fold as `Val`, so that `_.unset` naming another spelling of PATH
+                    // reaches the key `Val` stored it under rather than missing silently.
+                    let k = if resolve_opts.vars {
+                        k
+                    } else {
+                        crate::env::normalize_path_key(k)
+                    };
+                    env.shift_remove(&k);
+                    r.redaction_exclusions.remove(&k);
+                    // The key is gone from the environment, so its caller value is no longer
+                    // reachable by the task. Leaving it here would let `redactable_env` resolve
+                    // it anyway and register a pattern that rewrites unrelated output.
+                    r.caller_env_keys.remove(&k);
+                    r.env_remove.insert(k);
+                }
+                EnvDirective::Required(k, _opts) => {
+                    // Required directives only validate; they never assign. Record the key so
+                    // redaction can resolve it against the caller environment.
+                    r.caller_env_keys.insert(k.clone());
+                    // A directive that assigns nothing expresses no redaction opinion unless
+                    // `redact` is set explicitly, so an exclusion from an earlier assignment
+                    // survives a later bare `required = true`.
+                    if redact.is_some() {
+                        r.track_redaction_override(&k, redact);
+                    }
+                    if redact == Some(true) {
+                        r.redactions.push(k.clone());
+                    }
+                    // Var required directives also surface process environment values so
+                    // `{{vars.KEY}}` can render.
+                    if resolve_opts.vars
+                        && !vars.contains_key(&k)
+                        && let Some(v) = required_env.get(&k)
+                    {
+                        r.vars.insert(k, (v.clone(), source.clone()));
+                    }
+                }
+                EnvDirective::Age {
+                    key: ref k,
+                    ref options,
+                    ..
+                } => {
+                    r.track_redaction_override(k, options.redact);
+                    // Decrypt age-encrypted value
+                    let res = crate::agecrypt::decrypt_age_directive(&directive).await;
+                    let decrypted_v = match res {
+                        Ok(decrypted_v) => {
+                            // Parse as template after decryption
+                            r.parse_template(&ctx, &mut tera, &source, &env_vars, k, &decrypted_v)?
+                        }
+                        Err(e) if Settings::get().age.strict => {
+                            return Err(e)
+                                .wrap_err(eyre!("[experimental] Failed to decrypt {}", k));
+                        }
+                        Err(e) => {
+                            debug!(
+                                "[experimental] Age decryption failed for {} but continuing in non-strict mode: {}",
+                                k, e
+                            );
+                            // continue to the next directive
+                            continue;
+                        }
+                    };
+
+                    if resolve_opts.vars {
+                        match options.redact {
+                            Some(false) => {}
+                            Some(true) | None => r.redactions.push(k.clone()),
+                        }
+                        r.vars.insert(k.clone(), (decrypted_v, source.clone()));
+                    } else {
+                        r.env_remove.remove(k);
+                        // Handle redaction for age-encrypted values
+                        // We're already in the EnvDirective::Age match arm, so we know this is an Age directive
+
+                        // For age-encrypted values, we default to redacting for security
+                        // With nullable redact, we can now distinguish between:
+                        // - None: not specified (default for age is to redact for security)
+                        // - Some(true): explicitly redact
+                        // - Some(false): explicitly don't redact
+                        debug!("Age directive {}: redact = {:?}", k, options.redact);
+                        match options.redact {
+                            Some(false) => {
+                                // User explicitly set redact = false - don't redact
+                                debug!(
+                                    "Age directive {}: NOT redacting (explicit redact = false)",
+                                    k
+                                );
+                            }
+                            Some(true) | None => {
+                                // Either explicitly redact or use age default (redact for security)
+                                debug!(
+                                    "Age directive {}: redacting (redact = {:?})",
+                                    k, options.redact
+                                );
+                                r.redactions.push(k.clone());
+                            }
+                        }
+                        env.insert(k.clone(), (decrypted_v, Some(source.clone())));
+                    }
+                }
+                EnvDirective::Path(input_str, _opts) => {
+                    let mut directive_ctx = EnvDirectiveContext {
+                        config,
+                        tera_ctx: &mut ctx,
+                        tera: &mut tera,
+                        results: &mut r,
+                        normalize_path,
+                        source: &source,
+                        exec_env: &env_vars,
+                        config_root: &config_root,
+                        toolset,
+                    };
+                    let path = Self::path(&mut directive_ctx, input_str).await?;
+                    paths.push((path.clone(), source.clone()));
+                    // Don't modify PATH in env - just add to env_paths
+                    // This allows consumers to control PATH ordering
+                }
+                EnvDirective::File(input, opts) => {
+                    let mut directive_ctx = EnvDirectiveContext {
+                        config,
+                        tera_ctx: &mut ctx,
+                        tera: &mut tera,
+                        results: &mut r,
+                        normalize_path,
+                        source: &source,
+                        exec_env: &env_vars,
+                        config_root: &config_root,
+                        toolset,
+                    };
+                    let files = Self::file(&mut directive_ctx, input, opts.expand).await?;
+                    for (f, new_env) in files {
+                        r.env_files.push(f.clone());
+                        for (k, v) in new_env {
+                            r.track_redaction_override(&k, redact);
+                            if resolve_opts.vars {
+                                if redact.unwrap_or(false) {
+                                    r.redactions.push(k.clone());
+                                }
+                                r.vars.insert(k, (v, f.clone()));
+                            } else {
+                                if redact.unwrap_or(false) {
+                                    r.redactions.push(k.clone());
+                                }
+                                env.insert(k, (v, Some(f.clone())));
+                            }
+                        }
+                    }
+                }
+                EnvDirective::Source(input, _opts) => {
+                    let mut directive_ctx = EnvDirectiveContext {
+                        config,
+                        tera_ctx: &mut ctx,
+                        tera: &mut tera,
+                        results: &mut r,
+                        normalize_path,
+                        source: &source,
+                        exec_env: &env_vars,
+                        config_root: &config_root,
+                        toolset,
+                    };
+                    let files = Self::source(&mut directive_ctx, &mut paths, input)?;
+                    for (f, new_env) in files {
+                        r.env_scripts.push(f.clone());
+                        for (k, v) in new_env {
+                            r.track_redaction_override(&k, redact);
+                            if resolve_opts.vars {
+                                if redact.unwrap_or(false) {
+                                    r.redactions.push(k.clone());
+                                }
+                                r.vars.insert(k, (v, f.clone()));
+                            } else {
+                                if redact.unwrap_or(false) {
+                                    r.redactions.push(k.clone());
+                                }
+                                env.insert(k, (v, Some(f.clone())));
+                            }
+                        }
+                    }
+                }
+                EnvDirective::PythonVenv {
+                    path,
+                    create,
+                    python,
+                    uv_create_args,
+                    python_create_args,
+                    options: _opts,
+                } => {
+                    let mut directive_ctx = EnvDirectiveContext {
+                        config,
+                        tera_ctx: &mut ctx,
+                        tera: &mut tera,
+                        results: &mut r,
+                        normalize_path,
+                        source: &source,
+                        exec_env: &env_vars,
+                        config_root: &config_root,
+                        toolset,
+                    };
+                    Self::venv(
+                        &mut directive_ctx,
+                        &mut env,
+                        path,
+                        create,
+                        venv::PythonVenvOptions {
+                            python,
+                            // filled in by `venv()` from the caller's toolset
+                            active_python: None,
+                            uv_create_args,
+                            python_create_args,
+                            require_uv: false,
+                        },
+                    )
+                    .await?;
+                }
+                EnvDirective::Module(name, value, _opts) => {
+                    let mut env_map: IndexMap<String, String> = env
+                        .iter()
+                        .map(|(k, (v, _))| (k.clone(), v.clone()))
+                        .collect();
+                    // Incorporate _.path entries accumulated so far into PATH
+                    // so that cmd.exec in the plugin can find tools on PATH.
+                    if !paths.is_empty() {
+                        let existing_path =
+                            env_map.get(&*env::PATH_KEY).cloned().unwrap_or_default();
+                        let mut path_env = PathEnv::from_path_str(&existing_path);
+                        for (p, path_source) in &paths {
+                            let config_root =
+                                crate::config::config_file::config_root::config_root(path_source);
+                            for s in env::split_paths(p) {
+                                path_env.add(normalize_path(&config_root, s));
+                            }
+                        }
+                        env_map.insert(env::PATH_KEY.to_string(), path_env.to_string());
+                    }
+                    if log::log_enabled!(log::Level::Trace) {
+                        if let Some(path) = env_map.get(&*env::PATH_KEY) {
+                            trace!("module {name}: PATH={path}");
+                        } else {
+                            trace!("module {name}: no PATH in env_map");
+                        }
+                    }
+                    let env_before: IndexMap<String, (String, PathBuf)> = r.env.clone();
+                    Self::module(&mut r, config, source, name, &value, redact, env_map).await?;
+                    // Merge entries that this module call added or changed into
+                    // the local `env` so they are visible in the Tera context
+                    // for subsequent directives.  Keys unchanged in `r.env`
+                    // (same value before and after this call) are skipped, which
+                    // preserves any Val/File/Source override in `env` applied
+                    // after a prior module emitted the same value.  When a
+                    // module emits a *different* value the merge writes it
+                    // through — "later directive wins", consistent with all
+                    // other directive pairs.
+                    for (k, (v, src)) in &r.env {
+                        let added_or_changed = match env_before.get(k) {
+                            Some((old_v, _)) => old_v != v,
+                            None => true,
+                        };
+                        if added_or_changed {
+                            env.insert(k.clone(), (v.clone(), Some(src.clone())));
+                        }
+                    }
+                }
+            };
+        }
+        let env_vars = env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect::<HashMap<_, _>>();
+        ctx.insert("env", &env_vars);
+        for (k, (v, source)) in env {
+            if let Some(source) = source {
+                r.env.insert(k, (v, source));
+            }
+        }
+        // trace!("resolve: paths: {:#?}", &paths);
+        // trace!("resolve: ctx.env: {:#?}", &ctx.get("env"));
+        for (source, paths) in &paths.iter().chunk_by(|(_, source)| source) {
+            // Use the computed config_root (project root for nested configs) for path resolution
+            // to be consistent with other env directives like _.source and _.file
+            let config_root = crate::config::config_file::config_root::config_root(source);
+            let paths = paths.map(|(p, _)| p).collect_vec();
+            let mut paths = paths
+                .iter()
+                .rev()
+                .flat_map(|path| env::split_paths(path))
+                .map(|s| normalize_path(&config_root, s))
+                .collect::<Vec<_>>();
+            // r.env_paths is already reversed and paths should prepend r.env_paths
+            paths.reverse();
+            paths.extend(r.env_paths);
+            r.env_paths = paths;
+        }
+
+        let context_vars_for_validation = Self::context_vars(&ctx);
+
+        // Validate required variables
+        Self::validate_required_vars(
+            &filtered_input_for_validation,
+            required_env,
+            &r,
+            &context_vars_for_validation,
+            resolve_opts.warn_on_missing_required,
+            resolve_opts.vars,
+        )?;
+
+        Ok(r)
+    }
+
+    fn validate_required_vars(
+        input: &[(EnvDirective, PathBuf)],
+        initial: &EnvMap,
+        env_results: &EnvResults,
+        context_vars: &EnvMap,
+        warn_mode: bool,
+        vars_mode: bool,
+    ) -> eyre::Result<()> {
+        let mut required_vars = Vec::new();
+
+        // Collect all required variables with their options
+        for (directive, source) in input {
+            match directive {
+                EnvDirective::Val(key, _, options) if options.required.is_required() => {
+                    required_vars.push((key.clone(), source.clone(), options.required.clone()));
+                }
+                EnvDirective::Default(key, _, options) if options.required.is_required() => {
+                    required_vars.push((key.clone(), source.clone(), options.required.clone()));
+                }
+                EnvDirective::Required(key, options) => {
+                    required_vars.push((key.clone(), source.clone(), options.required.clone()));
+                }
+                _ => {}
+            }
+        }
+
+        // Check if required variables are defined
+        for (var_name, declaring_source, required_value) in required_vars {
+            // Looked up under the folded name, reported under the one the config wrote. On
+            // Windows `Path = { required = true }` asks after the variable that is spelled
+            // `PATH` in the environment, and `Val`/`Default` store it folded, so a lookup on
+            // the literal name reads a variable that is set as missing.
+            let lookup = if vars_mode {
+                var_name.clone()
+            } else {
+                env::normalize_path_key(var_name.clone())
+            };
+
+            // Variable must be defined either:
+            // 1. In the initial environment (before mise runs), OR
+            // 2. In a config file processed later than the one declaring it as required
+            let is_predefined = initial.contains_key(&lookup);
+
+            let resolved_values = if vars_mode {
+                &env_results.vars
+            } else {
+                &env_results.env
+            };
+            let is_defined_later = if let Some((_, var_source)) = resolved_values.get(&lookup) {
+                // Check if the variable comes from a different config file
+                var_source != &declaring_source
+            } else {
+                false
+            };
+            let is_defined_in_context =
+                vars_mode && context_vars.get(&lookup).is_some_and(|v| !v.is_empty());
+
+            if !is_predefined && !is_defined_later && !is_defined_in_context {
+                let variable_kind = if vars_mode {
+                    "variable"
+                } else {
+                    "environment variable"
+                };
+                let base_message = format!(
+                    "Required {} '{}' is not defined. It must be set before mise runs or in a later config file. (Required in: {})",
+                    variable_kind,
+                    var_name,
+                    display_path(declaring_source)
+                );
+
+                let message = if let Some(help) = required_value.help_text() {
+                    format!("{}\nHelp: {}", base_message, help)
+                } else {
+                    base_message
+                };
+
+                if warn_mode {
+                    warn!("{}", message);
+                } else {
+                    return Err(eyre!("{}", message));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn context_vars(ctx: &tera::Context) -> EnvMap {
+        if let Some(existing_vars) = ctx.get("vars").and_then(|v| v.as_map()) {
+            existing_vars
+                .iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.to_string(), s.to_string())))
+                .collect()
+        } else {
+            EnvMap::new()
+        }
+    }
+
+    fn parse_template(
+        &self,
+        ctx: &tera::Context,
+        tera: &mut Option<TeraEngine>,
+        path: &Path,
+        exec_env: &EnvMap,
+        origin: &str,
+        input: &str,
+    ) -> eyre::Result<String> {
+        let mut output = input.to_string();
+
+        // Step 1: Tera template expansion
+        if contains_template_syntax(input) {
+            trust_check(path)?;
+            let tera = tera.get_or_insert_with(|| {
+                let mut tera = get_tera(path.parent());
+                // Re-bind exec() to the accumulated env vars — but never in safe
+                // mode, where get_tera has installed an erroring stub that this
+                // registration must not override.
+                if !Settings::get().safe {
+                    if let TeraEngine::V2(tera) = &mut tera {
+                        tera.register_function(
+                            "exec",
+                            tera_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
+                        );
+                    } else if let TeraEngine::V1(tera) = &mut tera {
+                        tera.register_function(
+                            "exec",
+                            tera1_exec(path.parent().map(|d| d.to_path_buf()), exec_env.clone()),
+                        );
+                    }
+                }
+                tera
+            });
+            output = render_str(tera, input, ctx)
+                .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
+        }
+
+        // Step 2: Shell-style $VAR expansion
+        if output.contains('$') && Settings::get().env_shell_expand {
+            let env_vars: BTreeMap<String, String> = ctx
+                .get("env")
+                .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok())
+                .unwrap_or_default();
+            let mut missing_vars = Vec::new();
+            output = shell_expand_env(&output, &env_vars, &mut missing_vars);
+            warn_unexpanded_vars(missing_vars, origin, path);
+        }
+
+        Ok(output)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.env.is_empty()
+            && self.vars.is_empty()
+            && self.env_remove.is_empty()
+            && self.env_files.is_empty()
+            && self.env_paths.is_empty()
+            && self.env_scripts.is_empty()
+            && self.tool_add_paths.is_empty()
+    }
+}
+
+/// The warning for a `$VAR` that `shell_expand_env` could not expand.
+///
+/// Built as a string rather than warned in place so it can be tested without
+/// `warn_once!`'s process-global dedup set, which would make any test asserting
+/// on emitted output depend on whatever ran before it.
+///
+/// Naming the missing variable alone was not actionable. The reporter in
+/// discussion #8232 could see *which* variable was missing but not which value
+/// referenced it, and `mise env` cannot show that: a missing variable is by
+/// definition absent from the environment. `origin` is the referencing `[env]`
+/// key where one exists, and the directive otherwise.
+fn unexpanded_var_warning(var: &str, origin: &str, path: &Path) -> String {
+    format!(
+        "env var '{var}' is not defined and will be left unexpanded, \
+         referenced by `{origin}` in {}. \
+         Use ${{{var}:-}} to default to an empty string and suppress this warning.",
+        display_path(path)
+    )
+}
+
+/// Warn once for each variable left unexpanded, naming what referenced it.
+pub(crate) fn warn_unexpanded_vars(missing: Vec<String>, origin: &str, path: &Path) {
+    for var in missing {
+        warn_once!("{}", unexpanded_var_warning(&var, origin, path));
+    }
+}
+
+pub(crate) fn shell_expand_env(
+    input: &str,
+    env_vars: &BTreeMap<String, String>,
+    missing_vars: &mut Vec<String>,
+) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.char_indices().peekable();
+
+    while let Some((idx, ch)) = chars.next() {
+        if ch != '$' {
+            output.push(ch);
+            continue;
+        }
+
+        match chars.peek().copied() {
+            Some((_, '$')) => {
+                chars.next();
+                output.push('$');
+            }
+            Some((_, '{')) => {
+                chars.next();
+                if let Some((end, expr)) = read_braced_expr(input, idx + 2) {
+                    output.push_str(&expand_braced_expr(
+                        expr,
+                        &input[idx..=end],
+                        env_vars,
+                        missing_vars,
+                    ));
+                    while chars.peek().is_some_and(|(i, _)| *i <= end) {
+                        chars.next();
+                    }
+                } else {
+                    output.push_str(&input[idx..]);
+                    break;
+                }
+            }
+            Some((_, next)) if is_var_start(next) => {
+                let start = chars.peek().map(|(i, _)| *i).unwrap_or(idx + 1);
+                let mut end = start;
+                while let Some((i, next)) = chars.peek().copied() {
+                    if is_var_char(next) {
+                        end = i + next.len_utf8();
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                let var = &input[start..end];
+                if let Some(value) = env_vars.get(var) {
+                    output.push_str(value);
+                } else {
+                    missing_vars.push(var.to_string());
+                    output.push_str(&input[idx..end]);
+                }
+            }
+            _ => output.push('$'),
+        }
+    }
+
+    output
+}
+
+fn read_braced_expr(input: &str, start: usize) -> Option<(usize, &str)> {
+    let mut depth = 1;
+    let mut command_depth = 0;
+    let mut chars = input[start..].char_indices().peekable();
+
+    while let Some((offset, ch)) = chars.next() {
+        let idx = start + offset;
+        if command_depth > 0 {
+            match ch {
+                '(' => command_depth += 1,
+                ')' => command_depth -= 1,
+                _ => {}
+            }
+            continue;
+        }
+
+        match ch {
+            '$' if chars.peek().is_some_and(|(_, next)| *next == '{') => {
+                chars.next();
+                depth += 1;
+            }
+            '$' if chars.peek().is_some_and(|(_, next)| *next == '(') => {
+                chars.next();
+                command_depth = 1;
+            }
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((idx, &input[start..idx]));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn expand_braced_expr(
+    expr: &str,
+    original: &str,
+    env_vars: &BTreeMap<String, String>,
+    missing_vars: &mut Vec<String>,
+) -> String {
+    let Some(var_end) = expr
+        .char_indices()
+        .take_while(|(_, ch)| is_var_char(*ch))
+        .last()
+        .map(|(idx, ch)| idx + ch.len_utf8())
+    else {
+        return original.to_string();
+    };
+
+    let var = &expr[..var_end];
+    if !var.chars().next().is_some_and(is_var_start) {
+        return original.to_string();
+    }
+
+    match expr.get(var_end..) {
+        Some("") => match env_vars.get(var) {
+            Some(value) => value.to_string(),
+            None => {
+                missing_vars.push(var.to_string());
+                original.to_string()
+            }
+        },
+        Some(rest) if rest.starts_with(":-") => {
+            let default = &rest[2..];
+            match env_vars.get(var) {
+                Some(value) if !value.is_empty() => value.to_string(),
+                _ => shell_expand_env(default, env_vars, missing_vars),
+            }
+        }
+        Some(rest) if rest.starts_with('-') => {
+            let default = &rest[1..];
+            match env_vars.get(var) {
+                Some(value) => value.to_string(),
+                None => shell_expand_env(default, env_vars, missing_vars),
+            }
+        }
+        _ => original.to_string(),
+    }
+}
+
+fn is_var_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+fn is_var_char(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
+impl Debug for EnvResults {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut ds = f.debug_struct("EnvResults");
+        if !self.env.is_empty() {
+            ds.field("env", &self.env.keys().collect::<Vec<_>>());
+        }
+        if !self.vars.is_empty() {
+            ds.field("vars", &self.vars.keys().collect::<Vec<_>>());
+        }
+        if !self.env_remove.is_empty() {
+            ds.field("env_remove", &self.env_remove);
+        }
+        if !self.env_paths.is_empty() {
+            ds.field("env_paths", &self.env_paths);
+        }
+        if !self.env_scripts.is_empty() {
+            ds.field("env_scripts", &self.env_scripts);
+        }
+        if !self.tool_add_paths.is_empty() {
+            ds.field("tool_add_paths", &self.tool_add_paths);
+        }
+        ds.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::env_diff::EnvMap;
+    use crate::tera::BASE_CONTEXT;
+
+    /// Naming the missing variable was never the hard part — finding what
+    /// referenced it was. See discussion #8232.
+    #[test]
+    fn test_unexpanded_var_warning_names_the_reference() {
+        let path = Path::new("/p/mise.toml");
+        let msg = unexpanded_var_warning("DB_HOST", "DATABASE_URL", path);
+        assert!(msg.contains("'DB_HOST'"), "{msg}");
+        assert!(msg.contains("`DATABASE_URL`"), "{msg}");
+        assert!(msg.contains(&display_path(path)), "{msg}");
+        // The existing escape hatch has to survive the rewording.
+        assert!(msg.contains("${DB_HOST:-}"), "{msg}");
+    }
+
+    /// `ToolsFilter::ToolsOnlyVals` must select only `tools = true` `Val`
+    /// directives — excluding `tools = false` vars and `tools = true` *modules*
+    /// (here a `Path`). This is what `dependency_env` relies on to surface vars
+    /// like `CLOUDSDK_PYTHON = "{{ tools.python.path }}/..."` during a dependent
+    /// tool's install without running env modules on a partial toolset. (#10282)
+    #[tokio::test]
+    async fn test_tools_only_vals_filter() {
+        let env = EnvMap::new();
+        let config = Config::get().await.unwrap();
+        let tools = EnvDirectiveOptions {
+            tools: true,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &env,
+            vec![
+                // tools = true Val -> included
+                (
+                    EnvDirective::Val("TOOLS_VAL".into(), "yes".into(), tools.clone()),
+                    PathBuf::from("/config"),
+                ),
+                // tools = false Val -> excluded
+                (
+                    EnvDirective::Val("PLAIN_VAL".into(), "no".into(), Default::default()),
+                    PathBuf::from("/config"),
+                ),
+                // tools = true module (Path) -> excluded
+                (
+                    EnvDirective::Path("/should/not/appear".into(), tools.clone()),
+                    PathBuf::from("/config"),
+                ),
+            ],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::ToolsOnlyVals,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+        let keys: Vec<String> = results.env.keys().cloned().collect();
+        assert_eq!(keys, vec!["TOOLS_VAL".to_string()]);
+        assert!(results.env_paths.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_skipped_default_does_not_override_redaction() {
+        let env = EnvMap::from_iter([("SECRET_TOKEN".to_string(), "secret".to_string())]);
+        let config = Config::get().await.unwrap();
+        let options = EnvDirectiveOptions {
+            redact: Some(false),
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &env,
+            vec![(
+                EnvDirective::Default("SECRET_TOKEN".into(), "fallback".into(), options),
+                PathBuf::from("/config"),
+            )],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!results.redaction_exclusions.contains("SECRET_TOKEN"));
+    }
+
+    #[tokio::test]
+    async fn test_reassignment_and_remove_clear_redaction_exclusion() {
+        let config = Config::get().await.unwrap();
+        let excluded = EnvDirectiveOptions {
+            redact: Some(false),
+            ..Default::default()
+        };
+        let initial = EnvMap::new();
+        let resolve = |directives| {
+            EnvResults::resolve(
+                &config,
+                BASE_CONTEXT.clone(),
+                &initial,
+                directives,
+                EnvResolveOptions {
+                    vars: false,
+                    tools: ToolsFilter::Both,
+                    warn_on_missing_required: false,
+                },
+            )
+        };
+
+        let reassigned = resolve(vec![
+            (
+                EnvDirective::Val("TOKEN".into(), "first".into(), excluded.clone()),
+                PathBuf::from("/global"),
+            ),
+            (
+                EnvDirective::Val("TOKEN".into(), "second".into(), Default::default()),
+                PathBuf::from("/local"),
+            ),
+        ])
+        .await
+        .unwrap();
+        assert!(!reassigned.redaction_exclusions.contains("TOKEN"));
+
+        let removed = resolve(vec![
+            (
+                EnvDirective::Val("TOKEN".into(), "first".into(), excluded),
+                PathBuf::from("/global"),
+            ),
+            (
+                EnvDirective::Rm("TOKEN".into(), Default::default()),
+                PathBuf::from("/local"),
+            ),
+        ])
+        .await
+        .unwrap();
+        assert!(!removed.redaction_exclusions.contains("TOKEN"));
+    }
+
+    /// A `required` directive validates that the caller set a key but must never assign it
+    /// into `env` — otherwise the value would leak into anything that reads `EnvResults::env`
+    /// directly. Redaction instead resolves the value from the caller environment via
+    /// `caller_env_keys` and `redactable_env`.
+    #[tokio::test]
+    async fn test_required_records_caller_key_without_assigning() {
+        let initial = EnvMap::from_iter([("ASC_KEY_ID".to_string(), "caller_key".to_string())]);
+        let config = Config::get().await.unwrap();
+        let options = EnvDirectiveOptions {
+            redact: Some(true),
+            required: RequiredValue::True,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &initial,
+            vec![(
+                EnvDirective::Required("ASC_KEY_ID".into(), options),
+                PathBuf::from("/config"),
+            )],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!results.env.contains_key("ASC_KEY_ID"));
+        assert!(results.caller_env_keys.contains("ASC_KEY_ID"));
+        assert!(results.redactions.contains(&"ASC_KEY_ID".to_string()));
+        assert_eq!(
+            results.redactable_env(&initial).get("ASC_KEY_ID"),
+            Some(&"caller_key".to_string())
+        );
+    }
+
+    /// A key removed by `_.rm` is unreachable by the task, so its caller value must stop being
+    /// resolvable for redaction. Otherwise `redactable_env` would keep supplying it and register
+    /// a pattern for a variable the config explicitly removed — over-redaction that rewrites
+    /// unrelated output when the value is short.
+    #[tokio::test]
+    async fn test_rm_clears_a_recorded_caller_key() {
+        let initial = EnvMap::from_iter([
+            ("ASC_KEY_ID".to_string(), "caller_key".to_string()),
+            ("DEF_TOKEN".to_string(), "caller_default".to_string()),
+        ]);
+        let config = Config::get().await.unwrap();
+        let redacted = EnvDirectiveOptions {
+            redact: Some(true),
+            required: RequiredValue::True,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &initial,
+            vec![
+                (
+                    EnvDirective::Required("ASC_KEY_ID".into(), redacted.clone()),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Default(
+                        "DEF_TOKEN".into(),
+                        "fallback".into(),
+                        EnvDirectiveOptions {
+                            redact: Some(true),
+                            ..Default::default()
+                        },
+                    ),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Rm("ASC_KEY_ID".into(), Default::default()),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Rm("DEF_TOKEN".into(), Default::default()),
+                    PathBuf::from("/config"),
+                ),
+            ],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!results.caller_env_keys.contains("ASC_KEY_ID"));
+        assert!(!results.caller_env_keys.contains("DEF_TOKEN"));
+        let redactable = results.redactable_env(&initial);
+        assert!(!redactable.contains_key("ASC_KEY_ID"));
+        assert!(!redactable.contains_key("DEF_TOKEN"));
+    }
+
+    /// `required = true, redact = false` on a directive that assigns nothing must still record
+    /// an exclusion, or a global `redactions` pattern would redact the caller's value anyway.
+    #[tokio::test]
+    async fn test_required_redact_false_excludes_key() {
+        let initial = EnvMap::from_iter([("ASC_KEY_ID".to_string(), "caller_key".to_string())]);
+        let config = Config::get().await.unwrap();
+        let options = EnvDirectiveOptions {
+            redact: Some(false),
+            required: RequiredValue::True,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &initial,
+            vec![(
+                EnvDirective::Required("ASC_KEY_ID".into(), options),
+                PathBuf::from("/config"),
+            )],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(results.redaction_exclusions.contains("ASC_KEY_ID"));
+        assert!(!results.redactions.contains(&"ASC_KEY_ID".to_string()));
+    }
+
+    /// A bare `required = true` with no `redact` of its own assigns nothing, so it expresses no
+    /// redaction opinion and must not clear an exclusion an earlier directive set. Contrast
+    /// `test_reassignment_and_remove_clear_redaction_exclusion`, where a later *assignment*
+    /// (`Val`) does clear it.
+    #[tokio::test]
+    async fn test_bare_required_preserves_earlier_redaction_exclusion() {
+        let config = Config::get().await.unwrap();
+        let initial = EnvMap::new();
+        let excluded = EnvDirectiveOptions {
+            redact: Some(false),
+            ..Default::default()
+        };
+        let required = EnvDirectiveOptions {
+            required: RequiredValue::True,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &initial,
+            vec![
+                (
+                    EnvDirective::Val("TOKEN".into(), "value".into(), excluded),
+                    PathBuf::from("/global"),
+                ),
+                (
+                    EnvDirective::Required("TOKEN".into(), required),
+                    PathBuf::from("/local"),
+                ),
+            ],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(results.redaction_exclusions.contains("TOKEN"));
+    }
+
+    /// `redactable_env` must prefer an assigned value over a caller-supplied one for a key
+    /// present in both `env` and `caller_env_keys`, and must skip caller keys the caller never
+    /// actually set (no `ABSENT` in the caller environment).
+    #[test]
+    fn test_redactable_env_prefers_assigned_value() {
+        let mut results = EnvResults {
+            caller_env_keys: BTreeSet::from([
+                "K".to_string(),
+                "ONLY_CALLER".to_string(),
+                "ABSENT".to_string(),
+            ]),
+            ..Default::default()
+        };
+        results.env.insert(
+            "K".to_string(),
+            ("assigned".to_string(), PathBuf::from("/config")),
+        );
+
+        let caller_env = EnvMap::from_iter([
+            ("K".to_string(), "caller".to_string()),
+            ("ONLY_CALLER".to_string(), "caller_only".to_string()),
+        ]);
+
+        let redactable = results.redactable_env(&caller_env);
+        assert_eq!(redactable.get("K"), Some(&"assigned".to_string()));
+        assert_eq!(
+            redactable.get("ONLY_CALLER"),
+            Some(&"caller_only".to_string())
+        );
+        assert!(!redactable.contains_key("ABSENT"));
+    }
+
+    /// `Default`'s caller-wins branch assigns nothing (the directive's own value is unused), so
+    /// it must record `caller_env_keys` the same way `Required` does, or the caller's value
+    /// would escape redaction.
+    #[tokio::test]
+    async fn test_default_records_caller_key_when_caller_wins() {
+        let initial = EnvMap::from_iter([("DEF_TOKEN".to_string(), "caller_default".to_string())]);
+        let config = Config::get().await.unwrap();
+        let options = EnvDirectiveOptions {
+            redact: Some(true),
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &initial,
+            vec![(
+                EnvDirective::Default("DEF_TOKEN".into(), "fallback".into(), options),
+                PathBuf::from("/config"),
+            )],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!results.env.contains_key("DEF_TOKEN"));
+        assert!(results.caller_env_keys.contains("DEF_TOKEN"));
+        assert_eq!(
+            results.redactable_env(&initial).get("DEF_TOKEN"),
+            Some(&"caller_default".to_string())
+        );
+    }
+}

@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+	"tasks.toml",
+	"mytasks",
+]
+[tasks.lint]
+run = 'echo "linting!"'
+EOF
+
+cat <<EOF >tasks.toml
+[test]
+run = 'echo "testing!"'
+[test-with-args]
+run = 'echo "{{arg()}} {{flag(name="force")}} {{option(name="user")}}"'
+depends = ["test -v", "test"]
+EOF
+
+mkdir -p .mise/tasks
+cat <<'EOF' >.mise/tasks/do-not-show
+#!/usr/bin/env bash
+EOF
+chmod +x .mise/tasks/do-not-show
+
+mkdir -p mytasks
+cat <<'EOF' >mytasks/filetask2
+#!/usr/bin/env bash
+EOF
+chmod +x mytasks/filetask2
+
+cat <<'EOF' >mytasks/filetask3.sh
+#!/usr/bin/env bash
+EOF
+chmod +x mytasks/filetask3.sh
+
+mkdir -p .config/mise/conf.d
+cat <<'EOF' >.config/mise/conf.d/confdtask-config.toml
+[tasks.confdtask]
+run = 'echo "confdtask"'
+EOF
+
+assert "mise tasks ls" "confdtask
+filetask2
+filetask3
+lint
+test
+test-with-args"
+
+assert "mise tasks -x ls" "confdtask          ./.config/mise/conf.d/confdtask-config.toml
+filetask2          ./mytasks/filetask2
+filetask3          ./mytasks/filetask3.sh
+lint               ./mise.toml
+test               ./tasks.toml
+test-with-args     ./tasks.toml"
+
+assert_json "mise tasks ls --json" "$(
+  cat <<EOF
+[
+ {
+   "name": "confdtask",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/.config/mise/conf.d/confdtask-config.toml",
+   "config_sources": ["$(pwd)/.config/mise/conf.d/confdtask-config.toml"],
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": [],
+   "dir": "$(pwd)",
+   "hide": false,
+   "global": false,
+   "raw": false,
+   "interactive": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "usage": "",
+   "timeout": null,
+   "run": [
+     "echo \"confdtask\""
+   ],
+   "args": [],
+   "file": null
+ },
+ {
+   "name": "filetask2",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/mytasks/filetask2",
+   "config_sources": ["$(pwd)/mytasks/filetask2"],
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": [],
+   "dir": "$(pwd)",
+   "hide": false,
+   "global": false,
+   "raw": false,
+   "interactive": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "usage": "",
+   "timeout": null,
+   "run": [],
+   "args": [],
+   "file": "$(pwd)/mytasks/filetask2"
+ },
+ {
+   "name": "filetask3",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/mytasks/filetask3.sh",
+   "config_sources": ["$(pwd)/mytasks/filetask3.sh"],
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": [],
+   "dir": "$(pwd)",
+   "hide": false,
+   "global": false,
+   "raw": false,
+   "interactive": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "usage": "",
+   "timeout": null,
+   "run": [],
+   "args": [],
+   "file": "$(pwd)/mytasks/filetask3.sh"
+ },
+ {
+   "name": "lint",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/mise.toml",
+   "config_sources": ["$(pwd)/mise.toml"],
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": [],
+   "dir": "$(pwd)",
+   "hide": false,
+   "global": false,
+   "raw": false,
+   "interactive": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "usage": "",
+   "timeout": null,
+   "run": [
+     "echo \"linting!\""
+   ],
+   "args": [],
+   "file": null
+ },
+ {
+   "name": "test",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/tasks.toml",
+   "config_sources": ["$(pwd)/tasks.toml"],
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": [],
+   "dir": "$(pwd)",
+   "hide": false,
+   "global": false,
+   "raw": false,
+   "interactive": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "usage": "",
+   "timeout": null,
+   "run": [
+     "echo \"testing!\""
+   ],
+   "args": [],
+   "file": null
+ },
+ {
+   "name": "test-with-args",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/tasks.toml",
+   "config_sources": ["$(pwd)/tasks.toml"],
+   "depends": [
+      ["test","-v"],
+      "test"
+   ],
+   "depends_post": [],
+   "wait_for": [],
+   "env": [],
+   "dir": "$(pwd)",
+   "hide": false,
+   "global": false,
+   "raw": false,
+   "interactive": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "usage": "",
+   "timeout": null,
+   "run": [
+     "echo \"{{arg()}} {{flag(name=\"force\")}} {{option(name=\"user\")}}\""
+   ],
+   "args": [],
+   "file": null
+ }
+]
+EOF
+)"

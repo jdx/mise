@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# Test that aqua-backed tools with linked versions don't crash
+# Regression test for StripPrefixError panic when list_bin_paths processes linked versions
+# through the aqua registry with non-version strings
+
+# Install sccache (aqua-backed tool whose registry has {{.AssetWithoutExt}} src template
+# and semver constraints that incorrectly match non-version strings)
+mise install aqua:mozilla/sccache@0.10.0
+
+# Create a fake external install directory with a bin/ subdirectory and a dummy binary
+mkdir -p "$PWD/tmp/sccache-linked/bin"
+touch "$PWD/tmp/sccache-linked/bin/sccache"
+chmod +x "$PWD/tmp/sccache-linked/bin/sccache"
+
+# Link it as a linked version
+mise link sccache@mylink "$PWD/tmp/sccache-linked"
+assert_contains "mise ls sccache" "mylink (symlink)"
+
+# Activate sccache so it's in the toolset — this ensures list_bin_paths is called
+# for the linked version during reshim/doctor
+cat >mise.toml <<EOF
+[tools]
+sccache = "mylink"
+EOF
+
+# mise reshim exercises list_bin_paths for all configured versions.
+# Previously this panicked with StripPrefixError because the aqua backend tried to
+# look up "mylink" in the registry, which matched wrong version constraints and
+# produced an absolute path that couldn't be strip_prefix'd.
+assert_succeed "mise reshim"

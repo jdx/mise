@@ -1,0 +1,4 @@
+backends = ["aqua:ajeetdsouza/zoxide", "cargo:zoxide"]
+description = "A smarter cd command. Supports all major shells"
+test = { cmd = "zoxide --version", expected = "zoxide {{version}}" }
+version_order = "semver"

@@ -1,0 +1,799 @@
+use std::fmt::{Debug, Display};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashSet},
+    sync::Arc,
+};
+
+use crate::backend::backend_type::BackendType;
+use crate::cli::args::{BackendArg, ToolArg};
+use crate::config::{Config, ConfigMap, Settings};
+use crate::env;
+use crate::env_diff::EnvMap;
+use crate::registry::{REGISTRY, tool_enabled};
+use crate::toolset::{ToolRequest, ToolSource, Toolset};
+use heck::{ToKebabCase, ToShoutySnakeCase};
+use indexmap::IndexMap;
+use itertools::Itertools;
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ToolRequestSet {
+    pub tools: IndexMap<Arc<BackendArg>, Vec<ToolRequest>>,
+    pub sources: BTreeMap<Arc<BackendArg>, ToolSource>,
+    /// Tools that were filtered out because they don't exist in the registry (BackendType::Unknown)
+    pub unknown_tools: Vec<Arc<BackendArg>>,
+}
+
+impl ToolRequestSet {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    // pub fn tools_with_sources(&self) -> Vec<(&BackendArg, &Vec<ToolRequest>, &ToolSource)> {
+    //     self.tools
+    //         .iter()
+    //         .map(|(backend, tvr)| (backend, tvr, self.sources.get(backend).unwrap()))
+    //         .collect()
+    // }
+
+    // pub fn installed_tools(&self) -> eyre::Result<Vec<&ToolRequest>> {
+    //     self.tools
+    //         .values()
+    //         .flatten()
+    //         .map(|tvr| match tvr.is_installed()? {
+    //             true => Ok(Some(tvr)),
+    //             false => Ok(None),
+    //         })
+    //         .flatten_ok()
+    //         .collect()
+    // }
+
+    /// Lists requests whose complete backend-managed install state is unsatisfied.
+    pub(crate) async fn missing_tools_for_install(
+        &self,
+        config: &Arc<Config>,
+    ) -> Vec<&ToolRequest> {
+        let mut tools = vec![];
+        for tr in self.tools.values().flatten() {
+            if tr.is_os_supported() && !tr.is_install_satisfied(config).await {
+                tools.push(tr);
+            }
+        }
+        tools
+    }
+
+    pub(crate) fn list_tools(&self) -> Vec<&Arc<BackendArg>> {
+        self.tools.keys().collect()
+    }
+
+    pub(crate) fn add_version(&mut self, tr: ToolRequest, source: &ToolSource) {
+        let fa = tr.ba();
+        if !self.tools.contains_key(fa) {
+            self.sources.insert(fa.clone(), source.clone());
+        }
+        let list = self.tools.entry(tr.ba().clone()).or_default();
+        list.push(tr);
+    }
+
+    pub(crate) fn iter(
+        &self,
+    ) -> impl Iterator<Item = (&Arc<BackendArg>, &Vec<ToolRequest>, &ToolSource)> {
+        self.tools
+            .iter()
+            .map(|(backend, tvr)| (backend, tvr, self.sources.get(backend).unwrap()))
+    }
+
+    pub(crate) fn into_iter(
+        self,
+    ) -> impl Iterator<Item = (Arc<BackendArg>, Vec<ToolRequest>, ToolSource)> {
+        self.tools.into_iter().map(move |(ba, tvr)| {
+            let source = self.sources.get(&ba).unwrap().clone();
+            (ba, tvr, source)
+        })
+    }
+
+    pub(crate) fn filter_by_tool(&self, mut tools: HashSet<String>) -> ToolRequestSet {
+        // add in the full names so something like cargo:cargo-binstall can be used in place of cargo-binstall
+        for short in tools.clone().iter() {
+            if let Some(rt) = REGISTRY.get(short.as_str()) {
+                tools.extend(rt.backends().iter().map(|s| s.to_string()));
+            }
+        }
+        self.iter()
+            .filter(|(ba, ..)| tools.contains(&ba.short) || tools.contains(&ba.full()))
+            .map(|(ba, trl, ts)| (ba.clone(), trl.clone(), ts.clone()))
+            .collect::<ToolRequestSet>()
+    }
+
+    pub(crate) fn into_toolset(self) -> Toolset {
+        self.into()
+    }
+}
+
+impl Display for ToolRequestSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let versions = self.tools.values().flatten().join(" ");
+        if versions.is_empty() {
+            write!(f, "ToolRequestSet: <empty>")?;
+        } else {
+            write!(f, "ToolRequestSet: {versions}")?;
+        }
+        Ok(())
+    }
+}
+
+impl FromIterator<(Arc<BackendArg>, Vec<ToolRequest>, ToolSource)> for ToolRequestSet {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (Arc<BackendArg>, Vec<ToolRequest>, ToolSource)>,
+    {
+        let mut trs = ToolRequestSet::new();
+        for (_ba, tvr, source) in iter {
+            for tr in tvr {
+                trs.add_version(tr.clone(), &source);
+            }
+        }
+        trs
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct ToolRequestSetBuilder {
+    /// cli tool args
+    args: Vec<ToolArg>,
+    /// default to latest version if no version is specified (for `mise x`)
+    default_to_latest: bool,
+    /// tools which will be disabled
+    disable_tools: BTreeSet<BackendArg>,
+    /// tools which will be enabled
+    enable_tools: Option<BTreeSet<BackendArg>>,
+    config_files: Option<ConfigMap>,
+    skip_runtime_args: bool,
+}
+
+impl ToolRequestSetBuilder {
+    pub(crate) fn new() -> Self {
+        let settings = Settings::get();
+        Self {
+            disable_tools: settings.disable_tools().iter().map(|s| s.into()).collect(),
+            enable_tools: settings
+                .enable_tools()
+                .map(|tools| tools.iter().map(|s| s.into()).collect()),
+            ..Default::default()
+        }
+    }
+
+    // pub fn add_arg(mut self, arg: ToolArg) -> Self {
+    //     self.args.push(arg);
+    //     self
+    // }
+    //
+    // pub fn default_to_latest(mut self) -> Self {
+    //     self.default_to_latest = true;
+    //     self
+    // }
+    //
+
+    /// Use custom config files instead of config.config_files.
+    pub(crate) fn with_config_files(mut self, config_files: ConfigMap) -> Self {
+        self.config_files = Some(config_files);
+        self
+    }
+
+    pub(crate) fn without_runtime_args(mut self) -> Self {
+        self.skip_runtime_args = true;
+        self
+    }
+
+    pub(crate) async fn build(&self, config: &Arc<Config>) -> eyre::Result<ToolRequestSet> {
+        let mut trs = ToolRequestSet::default();
+        trs = self.load_config_files(config, trs).await?;
+        trs = self.load_runtime_env(trs)?;
+        if !self.skip_runtime_args {
+            trs = self.load_runtime_args(trs)?;
+        }
+
+        for ba in trs.tools.keys().cloned().collect_vec() {
+            if self.is_disabled(&ba) {
+                if trs
+                    .tools
+                    .get(&ba)
+                    .is_some_and(|requests| self.should_report_unknown_tool(&ba, requests))
+                {
+                    trs.unknown_tools.push(ba.clone());
+                }
+                trs.tools.shift_remove(&ba);
+                trs.sources.remove(&ba);
+            }
+        }
+
+        time!("tool_request_set::build");
+        Ok(trs)
+    }
+
+    fn is_disabled(&self, ba: &BackendArg) -> bool {
+        let backend_type = ba.backend_type();
+        backend_type == BackendType::Unknown
+            || (cfg!(windows) && backend_type == BackendType::Asdf)
+            || !ba.is_os_supported()
+            || !tool_enabled(self.enable_tools.as_ref(), &self.disable_tools, ba)
+    }
+
+    fn should_report_unknown_tool(&self, ba: &BackendArg, requests: &[ToolRequest]) -> bool {
+        ba.backend_type() == BackendType::Unknown
+            && tool_enabled(self.enable_tools.as_ref(), &self.disable_tools, ba)
+            && requests.iter().any(ToolRequest::is_os_supported)
+    }
+
+    async fn load_config_files(
+        &self,
+        config: &Arc<Config>,
+        mut trs: ToolRequestSet,
+    ) -> eyre::Result<ToolRequestSet> {
+        let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
+        for cf in config_files.values().rev() {
+            trs = merge(trs, cf.to_tool_request_set()?);
+        }
+        Ok(trs)
+    }
+
+    fn load_runtime_env(&self, trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
+        let env = env::vars_safe().collect();
+        self.load_runtime_env_from(trs, env)
+    }
+
+    fn load_runtime_env_from(
+        &self,
+        mut trs: ToolRequestSet,
+        env: EnvMap,
+    ) -> eyre::Result<ToolRequestSet> {
+        let postinstall = postinstall_tool_request(&env)?
+            .map(|(request, source)| (apply_config_options_to_runtime_arg(&trs, request), source));
+        for (k, v) in env {
+            let Some(short) = tool_from_env_var_name(&k) else {
+                continue;
+            };
+            let ba: Arc<BackendArg> = Arc::new(short.as_str().into());
+            let source = ToolSource::Environment(k, v.clone());
+            let mut env_ts = ToolRequestSet::new();
+            for v in v.split_whitespace() {
+                let tvr = ToolRequest::new(ba.clone(), v, source.clone())?;
+                env_ts.add_version(tvr, &source);
+            }
+            trs = merge(trs, env_ts);
+        }
+        if let Some((request, source)) = postinstall {
+            let mut postinstall_trs = ToolRequestSet::new();
+            postinstall_trs.add_version(request, &source);
+            trs = merge(trs, postinstall_trs);
+        }
+        Ok(trs)
+    }
+
+    fn load_runtime_args(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
+        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
+            let mut arg_ts = ToolRequestSet::new();
+            for arg in args {
+                if let Some(tvr) = &arg.tvr {
+                    let tvr = apply_config_options_to_runtime_arg(&trs, tvr.clone());
+                    arg_ts.add_version(tvr, &ToolSource::Argument);
+                } else if self.default_to_latest {
+                    // this logic is required for `mise x` because with that specific command mise
+                    // should default to installing the "latest" version if no version is specified
+                    // in mise.toml
+
+                    if !trs.tools.contains_key(&arg.ba) {
+                        // no active version, so use "latest"
+                        let tr = ToolRequest::new(arg.ba.clone(), "latest", ToolSource::Argument)?;
+                        arg_ts.add_version(tr, &ToolSource::Argument);
+                    }
+                }
+            }
+            trs = merge(trs, arg_ts);
+        }
+
+        let tool_args = env::TOOL_ARGS.read().unwrap();
+        let mut arg_trs = ToolRequestSet::new();
+        for arg in tool_args.iter() {
+            if let Some(tvr) = &arg.tvr {
+                let tvr = apply_config_options_to_runtime_arg(&trs, tvr.clone());
+                arg_trs.add_version(tvr, &ToolSource::Argument);
+            } else if !trs.tools.contains_key(&arg.ba) {
+                // no active version, so use "latest"
+                let tr = ToolRequest::new(arg.ba.clone(), "latest", ToolSource::Argument)?;
+                arg_trs.add_version(tr, &ToolSource::Argument);
+            }
+        }
+        trs = merge(trs, arg_trs);
+
+        Ok(trs)
+    }
+}
+
+/// Overlay configured tool options onto an explicit runtime version request.
+///
+/// A request can already contain registry, install-manifest, or backend-alias
+/// defaults, so option emptiness cannot indicate whether config should apply.
+/// The canonical backend resolver preserves the normal precedence and reapplies
+/// explicit inline backend options last.
+fn apply_config_options_to_runtime_arg(trs: &ToolRequestSet, mut tvr: ToolRequest) -> ToolRequest {
+    if let Some(config_options) = trs
+        .tools
+        .get(tvr.ba())
+        .and_then(|requests| configured_options_for_runtime_request(requests, &tvr))
+    {
+        tvr.apply_config_options(config_options);
+    }
+    tvr
+}
+
+/// Select configured options for an explicit runtime request without assuming
+/// that version selectors are ordered or semver-compatible.
+///
+/// A unique, platform-supported exact opaque selector match wins. A sole
+/// supported configured request is also a valid fallback because its options
+/// act as the tool-level defaults when a command requests another version.
+/// Multiple supported exact matches or unmatched requests are ambiguous, so
+/// none of their options are applied arbitrarily.
+pub(super) fn configured_options_for_runtime_request(
+    configured: &[ToolRequest],
+    runtime: &ToolRequest,
+) -> Option<crate::toolset::ToolVersionOptions> {
+    let runtime_version = runtime.version();
+    let supported = || {
+        configured
+            .iter()
+            .filter(|request| request.is_os_supported())
+    };
+    supported()
+        .filter(|request| request.version() == runtime_version)
+        .exactly_one()
+        .ok()
+        .or_else(|| supported().exactly_one().ok())
+        .map(ToolRequest::options)
+}
+
+/// Keep the exact tool currently running its postinstall hook active for
+/// nested mise invocations. Unlike `MISE_<TOOL>_VERSION`, this pair keeps
+/// backend-qualified names containing `:` or `/` intact.
+pub(super) fn postinstall_tool_request(
+    env: &EnvMap,
+) -> eyre::Result<Option<(ToolRequest, ToolSource)>> {
+    if !env.contains_key("MISE_TOOL_INSTALL_PATH") {
+        return Ok(None);
+    }
+    let (Some(name), Some(version)) = (
+        env.get("MISE_TOOL_NAME"),
+        env.get(env::MISE_TOOL_VERSION_ENV_VAR),
+    ) else {
+        return Ok(None);
+    };
+    let backend = Arc::new(BackendArg::from(name));
+    let source =
+        ToolSource::Environment(env::MISE_TOOL_VERSION_ENV_VAR.into(), version.to_string());
+    let request = ToolRequest::new(backend, version, source.clone())?;
+    Ok(Some((request, source)))
+}
+
+fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
+    // move things around such that the tools are in the config order
+    a.tools.retain(|ba, _| !b.tools.contains_key(ba));
+    a.sources.retain(|ba, _| !b.sources.contains_key(ba));
+    b.tools.extend(a.tools);
+    b.sources.extend(a.sources);
+    b
+}
+
+/// Returns the environment variable used to select a tool version for a shell session.
+pub(crate) fn tool_env_var_name(tool: &str) -> String {
+    format!("MISE_{}_VERSION", tool.to_shouty_snake_case())
+}
+
+/// Returns the tool selected by a shell-session environment variable.
+///
+/// Shell environment variable names cannot preserve the distinction between `-` and `_`.
+/// Since mise tool names conventionally use kebab-case, both spellings decode to `-`.
+pub(crate) fn tool_from_env_var_name(name: &str) -> Option<String> {
+    if env::NON_TOOL_VERSION_ENV_VARS.contains(&name) {
+        return None;
+    }
+    let raw = name.strip_prefix("MISE_")?.strip_suffix("_VERSION")?;
+    if raw.is_empty() {
+        return None;
+    }
+    Some(crate::backend::unalias_backend(&raw.to_kebab_case()).to_string())
+}
+
+/// Yields `(short, key, value)` for each `MISE_<TOOL>_VERSION` env var that
+/// maps to a tool. `short` is the unaliased backend short name (so
+/// `MISE_NODEJS_VERSION` yields `"node"`). Skips `MISE_VERSION` and the
+/// `MISE_INSTALL_VERSION` / `MISE_TOOL_VERSION` vars set during hooks.
+pub(crate) fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
+    env::vars_safe().filter_map(|(k, v)| {
+        let short = tool_from_env_var_name(&k)?;
+        Some((short, k, v))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::toolset::{CoreToolOptions, ToolVersionOptions, parse_tool_options};
+
+    #[test]
+    fn test_postinstall_tool_request_preserves_backend_identity() {
+        let env = EnvMap::from_iter([
+            ("MISE_TOOL_INSTALL_PATH".into(), "/tmp/aws-cli".into()),
+            ("MISE_TOOL_NAME".into(), "aqua:aws/aws-cli".into()),
+            (env::MISE_TOOL_VERSION_ENV_VAR.into(), "2.31.0".into()),
+        ]);
+
+        let (request, _) = postinstall_tool_request(&env).unwrap().unwrap();
+
+        assert_eq!(request.ba().short, "aqua:aws/aws-cli");
+        assert_eq!(request.version(), "2.31.0");
+    }
+
+    #[tokio::test]
+    async fn test_postinstall_request_set_preserves_configured_options() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let configured = ToolRequest::new_with_options(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"selected="configured""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(configured, &ToolSource::Unknown);
+        let env = EnvMap::from_iter([
+            ("MISE_TOOL_INSTALL_PATH".into(), "/tmp/dummy".into()),
+            ("MISE_TOOL_NAME".into(), "dummy".into()),
+            (env::MISE_TOOL_VERSION_ENV_VAR.into(), "2.0.0".into()),
+        ]);
+
+        let trs = ToolRequestSetBuilder::new()
+            .load_runtime_env_from(trs, env)
+            .unwrap();
+
+        let request = &trs.tools.get(&ba).unwrap()[0];
+        assert_eq!(request.version(), "2.0.0");
+        assert_eq!(request.options().get("selected"), Some("configured"));
+    }
+
+    #[test]
+    fn test_tool_env_var_name_round_trip() {
+        assert_eq!(tool_env_var_name("ls-lint"), "MISE_LS_LINT_VERSION");
+        assert_eq!(
+            tool_from_env_var_name("MISE_LS_LINT_VERSION").as_deref(),
+            Some("ls-lint")
+        );
+        assert_eq!(tool_env_var_name("ls-lint"), tool_env_var_name("ls_lint"));
+        assert_eq!(
+            tool_from_env_var_name("MISE_NODEJS_VERSION").as_deref(),
+            Some("node")
+        );
+    }
+
+    #[test]
+    fn test_load_runtime_env_with_valid_utf8() {
+        // This test verifies that valid UTF-8 MISE_*_VERSION variables work correctly
+        unsafe {
+            std::env::set_var("MISE_NODE_VERSION", "20.0.0");
+            std::env::set_var("MISE_PYTHON_VERSION", "3.11");
+        }
+
+        let builder = ToolRequestSetBuilder::new();
+        let trs = builder.load_runtime_env(ToolRequestSet::new());
+
+        // Should not panic and should successfully load the versions
+        assert!(trs.is_ok());
+        let trs = trs.unwrap();
+        assert!(trs.tools.len() >= 2 || trs.tools.is_empty()); // May be empty if backends are disabled
+
+        unsafe {
+            std::env::remove_var("MISE_NODE_VERSION");
+            std::env::remove_var("MISE_PYTHON_VERSION");
+        }
+    }
+
+    #[test]
+    fn test_tool_env_vars_unaliases_backend() {
+        // MISE_NODEJS_VERSION should yield "node" (the unaliased backend
+        // short name), not "nodejs" — otherwise the install command's
+        // configured-tool check fails to match unaliased ToolArg shorts.
+        unsafe {
+            std::env::set_var("MISE_NODEJS_VERSION", "22.0.0");
+            std::env::set_var("MISE_GOLANG_VERSION", "1.22.0");
+        }
+
+        let entries: Vec<(String, String, String)> = tool_env_vars()
+            .filter(|(_, k, _)| k == "MISE_NODEJS_VERSION" || k == "MISE_GOLANG_VERSION")
+            .collect();
+
+        let nodejs = entries
+            .iter()
+            .find(|(_, k, _)| k == "MISE_NODEJS_VERSION")
+            .expect("MISE_NODEJS_VERSION should yield an entry");
+        assert_eq!(nodejs.0, "node");
+
+        let golang = entries
+            .iter()
+            .find(|(_, k, _)| k == "MISE_GOLANG_VERSION")
+            .expect("MISE_GOLANG_VERSION should yield an entry");
+        assert_eq!(golang.0, "go");
+
+        unsafe {
+            std::env::remove_var("MISE_NODEJS_VERSION");
+            std::env::remove_var("MISE_GOLANG_VERSION");
+        }
+    }
+
+    #[test]
+    fn test_tool_env_vars_skips_non_tool_vars() {
+        unsafe {
+            std::env::set_var("MISE_VERSION", "2026.4.28");
+            std::env::set_var(env::MISE_INSTALL_VERSION_ENV_VAR, "1.0.0");
+            std::env::set_var(env::MISE_TOOL_VERSION_ENV_VAR, "1.0.0");
+        }
+
+        let keys: HashSet<String> = tool_env_vars().map(|(_, k, _)| k).collect();
+        assert!(!keys.contains("MISE_VERSION"));
+        assert!(!keys.contains(env::MISE_INSTALL_VERSION_ENV_VAR));
+        assert!(!keys.contains(env::MISE_TOOL_VERSION_ENV_VAR));
+
+        unsafe {
+            std::env::remove_var("MISE_VERSION");
+            std::env::remove_var(env::MISE_INSTALL_VERSION_ENV_VAR);
+            std::env::remove_var(env::MISE_TOOL_VERSION_ENV_VAR);
+        }
+    }
+
+    #[test]
+    fn test_load_runtime_env_ignores_non_mise_vars() {
+        // Non-MISE variables should be ignored, even with special characters
+        unsafe {
+            std::env::set_var("HOMEBREW_INSTALL_BADGE", "✅");
+            std::env::set_var("SOME_OTHER_VAR", "value");
+        }
+
+        let builder = ToolRequestSetBuilder::new();
+        let result = builder.load_runtime_env(ToolRequestSet::new());
+
+        // Should not panic when non-MISE vars are present
+        assert!(result.is_ok());
+
+        unsafe {
+            std::env::remove_var("HOMEBREW_INSTALL_BADGE");
+            std::env::remove_var("SOME_OTHER_VAR");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_runtime_arg_options_layer_registry_config_and_inline() {
+        crate::toolset::install_state::init().await.unwrap();
+        let config_ba = Arc::new(BackendArg::from("solidity"));
+        assert_eq!(config_ba.registry_opts().get("bin"), Some("solc"));
+
+        let config_options = parse_tool_options(
+            r#"bin="config",postinstall="echo configured",config_only="config""#,
+        );
+        let config_request = ToolRequest::new_with_options(
+            config_ba.clone(),
+            "0.8.0",
+            config_options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(config_request, &ToolSource::Unknown);
+
+        let registry_arg = "solidity@0.8.1".parse::<ToolArg>().unwrap();
+        let registry_request = registry_arg.tvr.clone().unwrap();
+        assert!(!registry_request.options().is_empty());
+        let layered = apply_config_options_to_runtime_arg(&trs, registry_request);
+        assert_eq!(layered.options().get("bin"), Some("config"));
+        assert_eq!(
+            layered.options().get("postinstall"),
+            Some("echo configured")
+        );
+        assert_eq!(layered.options().get("config_only"), Some("config"));
+
+        let inline_arg = "solidity[bin=inline,inline_only=inline]@0.8.1"
+            .parse::<ToolArg>()
+            .unwrap();
+        let layered = apply_config_options_to_runtime_arg(&trs, inline_arg.tvr.clone().unwrap());
+        assert_eq!(layered.options().get("bin"), Some("inline"));
+        assert_eq!(layered.options().get("config_only"), Some("config"));
+        assert_eq!(layered.options().get("inline_only"), Some("inline"));
+
+        let request_ba = Arc::new(BackendArg::from("solidity"));
+        let request = ToolRequest::new_with_options(
+            request_ba,
+            "0.8.1",
+            parse_tool_options(
+                r#"bin="request",request_only="request",depends=["request-dependency"]"#,
+            ),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        let mut layered = apply_config_options_to_runtime_arg(&trs, request);
+        assert_eq!(layered.options().get("bin"), Some("request"));
+        assert_eq!(layered.options().get("config_only"), Some("config"));
+        assert_eq!(layered.options().get("request_only"), Some("request"));
+        assert_eq!(
+            layered.options().core.depends,
+            Some(vec!["request-dependency".to_string()])
+        );
+
+        let mut next = ToolRequestSet::new();
+        let next_config = ToolRequest::new_with_options(
+            config_ba,
+            "0.8.0",
+            parse_tool_options(r#"bin="next-config",next_only="next""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        next.add_version(next_config, &ToolSource::Unknown);
+        layered = apply_config_options_to_runtime_arg(&next, layered);
+        assert_eq!(layered.options().get("bin"), Some("request"));
+        assert_eq!(layered.options().get("config_only"), None);
+        assert_eq!(layered.options().get("next_only"), Some("next"));
+        assert_eq!(layered.options().get("request_only"), Some("request"));
+
+        let collision = ToolRequest::new_with_options(
+            Arc::new(BackendArg::from("solidity")),
+            "0.8.1",
+            parse_tool_options(r#"bin="solc""#),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        let collision = apply_config_options_to_runtime_arg(&trs, collision);
+        assert_eq!(collision.options().get("bin"), Some("solc"));
+        assert_eq!(
+            collision.option_source("bin"),
+            Some(crate::toolset::ToolOptionSource::Request)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_runtime_arg_options_match_configured_version() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let first = ToolRequest::new_with_options(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"postinstall="echo one",selected="one""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let second = ToolRequest::new_with_options(
+            ba.clone(),
+            "2.0.0",
+            parse_tool_options(r#"postinstall="echo two",selected="two""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(first.clone(), &ToolSource::Unknown);
+        trs.add_version(second, &ToolSource::Unknown);
+
+        let matching = "dummy[inline_only=inline]@2.0.0"
+            .parse::<ToolArg>()
+            .unwrap()
+            .tvr
+            .unwrap();
+        let matching = apply_config_options_to_runtime_arg(&trs, matching);
+        assert_eq!(matching.options().get("postinstall"), Some("echo two"));
+        assert_eq!(matching.options().get("selected"), Some("two"));
+        assert_eq!(matching.options().get("inline_only"), Some("inline"));
+
+        let unmatched = "dummy[inline_only=inline]@3.0.0"
+            .parse::<ToolArg>()
+            .unwrap()
+            .tvr
+            .unwrap();
+        let unmatched = apply_config_options_to_runtime_arg(&trs, unmatched);
+        assert_eq!(unmatched.options().get("postinstall"), None);
+        assert_eq!(unmatched.options().get("selected"), None);
+        assert_eq!(unmatched.options().get("inline_only"), Some("inline"));
+
+        let mut sole = ToolRequestSet::new();
+        sole.add_version(first, &ToolSource::Unknown);
+        let fallback = "dummy@3.0.0".parse::<ToolArg>().unwrap().tvr.unwrap();
+        let fallback = apply_config_options_to_runtime_arg(&sole, fallback);
+        assert_eq!(fallback.options().get("postinstall"), Some("echo one"));
+        assert_eq!(fallback.options().get("selected"), Some("one"));
+
+        let mut inactive_options =
+            parse_tool_options(r#"postinstall="echo inactive",selected="inactive""#);
+        inactive_options.core.os = Some(vec![inactive_os()]);
+        let inactive = ToolRequest::new_with_options(
+            ba.clone(),
+            "4.0.0",
+            inactive_options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let active = ToolRequest::new_with_options(
+            ba.clone(),
+            "4.0.0",
+            parse_tool_options(r#"postinstall="echo active",selected="active""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let runtime = "dummy@4.0.0".parse::<ToolArg>().unwrap().tvr.unwrap();
+        let selected =
+            configured_options_for_runtime_request(&[inactive, active.clone()], &runtime).unwrap();
+        assert_eq!(selected.get("postinstall"), Some("echo active"));
+        assert_eq!(selected.get("selected"), Some("active"));
+
+        assert!(
+            configured_options_for_runtime_request(&[active.clone(), active], &runtime).is_none()
+        );
+    }
+
+    fn unknown_tool_request(os: Option<Vec<String>>) -> (Arc<BackendArg>, Vec<ToolRequest>) {
+        let ba = Arc::new(BackendArg::from("unknown-os-filtered-tool"));
+        let options = ToolVersionOptions {
+            core: CoreToolOptions {
+                os,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let request =
+            ToolRequest::new_with_options(ba.clone(), "latest", options, ToolSource::Unknown)
+                .unwrap();
+        (ba, vec![request])
+    }
+
+    fn inactive_os() -> String {
+        match crate::cli::version::OS.as_str() {
+            "linux" => "macos",
+            _ => "linux",
+        }
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn test_should_not_report_unknown_tool_when_all_requests_are_os_inactive() {
+        crate::toolset::install_state::init().await.unwrap();
+        let builder = ToolRequestSetBuilder::default();
+        let (ba, requests) = unknown_tool_request(Some(vec![inactive_os()]));
+
+        assert!(!builder.should_report_unknown_tool(&ba, &requests));
+    }
+
+    #[tokio::test]
+    async fn test_should_report_unknown_tool_when_any_request_is_os_active() {
+        crate::toolset::install_state::init().await.unwrap();
+        let builder = ToolRequestSetBuilder::default();
+        let (ba, mut requests) = unknown_tool_request(Some(vec![inactive_os()]));
+        let options = ToolVersionOptions {
+            core: CoreToolOptions {
+                os: Some(vec![crate::cli::version::OS.to_string()]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        requests.push(
+            ToolRequest::new_with_options(ba.clone(), "latest", options, ToolSource::Unknown)
+                .unwrap(),
+        );
+
+        assert!(builder.should_report_unknown_tool(&ba, &requests));
+    }
+
+    #[tokio::test]
+    async fn test_should_not_report_unknown_tool_when_tool_is_disabled() {
+        crate::toolset::install_state::init().await.unwrap();
+        let (ba, requests) = unknown_tool_request(None);
+        let builder = ToolRequestSetBuilder {
+            disable_tools: BTreeSet::from([BackendArg::from("unknown-os-filtered-tool")]),
+            ..Default::default()
+        };
+
+        assert!(!builder.should_report_unknown_tool(&ba, &requests));
+    }
+}

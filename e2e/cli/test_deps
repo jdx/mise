@@ -1,0 +1,993 @@
+#!/usr/bin/env bash
+
+# Test mise deps (mise deps) command
+
+# Test --list with no providers configured
+assert_contains "mise deps --list" "No deps providers found"
+
+# Create a package-lock.json (npm provider needs to be configured to detect it)
+cat >package-lock.json <<'EOF'
+{
+  "name": "test-project",
+  "lockfileVersion": 3,
+  "packages": {}
+}
+EOF
+
+# Still no providers without explicit config
+assert_contains "mise deps --list" "No deps providers found"
+
+# Configure npm provider explicitly
+cat >mise.toml <<'EOF'
+[deps.npm]
+EOF
+
+# Now npm provider should be detected
+assert_contains "mise deps --list" "npm"
+assert_contains "mise deps --list" "status: active"
+assert_contains "mise deps --list" "package-lock.json"
+assert_contains "mise deps --list" "node_modules"
+
+# Explicitly configured providers remain visible when their applicability file
+# is missing, but explain why they cannot run.
+rm package-lock.json
+assert_contains "mise deps --list" "status: inactive (missing package-lock.json)"
+assert_fail "mise deps npm --explain" "is inactive: missing package-lock.json"
+assert_fail "mise deps npm" "is inactive: missing package-lock.json"
+assert_fail "mise deps --only npm" "is inactive: missing package-lock.json"
+assert_not_contains "mise deps --force 2>&1" "npm install"
+
+# Inactive-only automatic providers do not trigger the experimental feature
+# gate for otherwise unrelated commands.
+assert "env -u MISE_EXPERIMENTAL mise exec -- echo INACTIVE_DEPS_OK" "INACTIVE_DEPS_OK"
+
+# Explicit inactive selection fails before unrelated project tools are installed.
+mkdir inactive-before-tools
+cat >inactive-before-tools/mise.toml <<'EOF'
+[tools]
+tiny = "1"
+
+[deps.npm]
+EOF
+assert_fail "cd inactive-before-tools && MISE_DATA_DIR='$PWD/inactive-data' mise deps npm" "is inactive: missing package-lock.json"
+assert_fail "test -d inactive-data/installs/tiny"
+
+# A directory with the expected name is not a valid applicability file.
+mkdir package-lock.json
+assert_contains "mise deps --list" "status: inactive (missing package-lock.json)"
+rmdir package-lock.json
+
+# Creating the applicability file transitions the same provider to active.
+touch package-lock.json
+assert_contains "mise deps --list" "status: active"
+
+# Test --dry-run shows what would run
+assert_contains "mise deps --dry-run 2>&1" "npm"
+
+# Test visible and backwards-compatible hidden aliases work
+assert_contains "mise dep --list" "npm"
+assert_contains "mise prepare --list" "npm"
+
+# Test with custom prepare provider (no .rules. prefix)
+cat >mise.toml <<'EOF'
+[deps.npm]
+
+[deps.codegen]
+depends = ["missing_run"]
+sources = ["schema.graphql"]
+outputs = ["generated/"]
+run = "touch blocked-output; echo codegen"
+
+[deps.downstream]
+depends = ["codegen"]
+run = "touch downstream-output"
+
+[deps.unrelated]
+run = "touch unrelated-output"
+EOF
+
+# Create source file
+touch schema.graphql
+
+assert_contains "mise deps --list" "codegen"
+assert_contains "mise deps --list" "schema.graphql"
+
+# Custom providers without a run command are retained for diagnostics and
+# cannot be executed.
+cat >>mise.toml <<'EOF'
+
+[deps.missing_run]
+sources = ["schema.graphql"]
+outputs = ["generated-missing/"]
+EOF
+assert_contains "mise deps --list" "missing_run"
+assert_contains "mise deps --list" "status: inactive (missing run command)"
+assert_fail "mise deps missing_run --explain" "is inactive: missing run command"
+
+# Broad runs block the inactive provider's dependent chain but continue
+# unrelated providers.
+assert_contains "mise deps --force --skip npm 2>&1" "dependency 'missing_run' is inactive: missing run command"
+assert_fail "test -f blocked-output"
+assert_fail "test -f downstream-output"
+assert "test -f unrelated-output"
+
+# Dry-run uses the same blocked-dependency plan as execution.
+assert_not_contains "mise deps --dry-run --skip npm 2>&1" "Would install: codegen"
+assert_not_contains "mise deps --dry-run --skip npm 2>&1" "Would install: downstream"
+assert_contains "mise deps --dry-run --skip npm 2>&1" "Would install: unrelated"
+
+# Test --only flag
+assert_contains "mise deps --dry-run --only codegen 2>&1" "codegen"
+assert_not_contains "mise deps --dry-run --only codegen 2>&1" "npm"
+assert_contains "mise deps --force --only codegen 2>&1" "[deps.codegen] codegen"
+assert_not_contains "mise deps --force --only codegen 2>&1" "depends on 'missing_run' which is not configured"
+
+# Test -q/--quiet suppresses provider stream output and status messages.
+# Without -q the previous assertion proved "[deps.codegen] codegen" appears;
+# with -q neither the prefix-tagged echo nor the "Installed:" status should leak.
+assert_not_contains "mise deps --force --only codegen -q 2>&1" "[deps.codegen]"
+assert_not_contains "mise deps --force --only codegen -q 2>&1" "Installed:"
+
+# Test --skip flag
+assert_not_contains "mise deps --dry-run --skip npm 2>&1" "npm install"
+
+# Test disable in config
+cat >mise.toml <<'EOF'
+[deps]
+disable = ["npm"]
+
+[deps.npm]
+
+[deps.codegen]
+sources = ["schema.graphql"]
+outputs = ["generated/"]
+run = "echo codegen"
+EOF
+
+assert_not_contains "mise deps --list" "npm"
+assert_contains "mise deps --list" "codegen"
+
+# Test per-provider auto flag
+cat >mise.toml <<'EOF'
+[deps.npm]
+auto = true
+
+[deps.codegen]
+auto = false
+sources = ["schema.graphql"]
+outputs = ["generated/"]
+run = "echo codegen"
+EOF
+
+# Both should show in list
+assert_contains "mise deps --list" "npm"
+assert_contains "mise deps --list" "codegen"
+
+# Test yarn provider
+rm -f package-lock.json
+cat >yarn.lock <<'EOF'
+# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.yarn]
+EOF
+
+assert_contains "mise deps --list" "yarn"
+assert_contains "mise deps --list" "yarn.lock"
+assert_contains "mise deps --dry-run 2>&1" "yarn"
+
+# Test pnpm provider
+rm -f yarn.lock
+cat >pnpm-lock.yaml <<'EOF'
+lockfileVersion: '9.0'
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.pnpm]
+EOF
+
+assert_contains "mise deps --list" "pnpm"
+assert_contains "mise deps --list" "pnpm-lock.yaml"
+assert_contains "mise deps --dry-run 2>&1" "pnpm"
+
+# Test bun provider (binary lockfile)
+rm -f pnpm-lock.yaml
+touch bun.lockb
+
+cat >mise.toml <<'EOF'
+[deps.bun]
+EOF
+
+assert_contains "mise deps --list" "bun"
+assert_contains "mise deps --list" "bun.lockb"
+assert_contains "mise deps --dry-run 2>&1" "bun"
+
+# Test bun provider (text lockfile)
+rm -f bun.lockb
+cat >bun.lock <<'EOF'
+# bun lockfile
+EOF
+
+assert_contains "mise deps --list" "bun"
+assert_contains "mise deps --list" "bun.lock"
+
+rm bun.lock
+assert_contains "mise deps --list" "inactive (missing bun.lockb or bun.lock)"
+
+# A directory named bun.lockb must not take precedence over a valid bun.lock.
+mkdir bun.lockb
+touch bun.lock
+assert_contains "mise deps --list" "status: active"
+assert_not_contains "mise deps --list" "bun.lockb"
+rmdir bun.lockb
+rm bun.lock
+
+# Test aube provider
+cat >aube-lock.yaml <<'EOF'
+lockfileVersion: 1
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.aube]
+EOF
+
+assert_contains "mise deps --list" "aube"
+assert_contains "mise deps --list" "aube-lock.yaml"
+assert_contains "mise deps --dry-run 2>&1" "aube"
+
+# Test deno provider
+rm -f aube-lock.yaml
+cat >deno.lock <<'EOF'
+{
+  "version": "4",
+  "specifiers": {}
+}
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.deno]
+EOF
+
+assert_contains "mise deps --list" "deno"
+assert_contains "mise deps --list" "deno.lock"
+assert_contains "mise deps --dry-run 2>&1" "deno"
+
+# Test go provider
+rm -f deno.lock
+cat >go.mod <<'EOF'
+module test
+go 1.21
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.go]
+EOF
+
+assert_contains "mise deps --list" "go"
+assert_contains "mise deps --list" "go.mod"
+assert_contains "mise deps --dry-run 2>&1" "go"
+
+rm go.mod
+assert_contains "mise deps --list" "inactive (missing go.mod)"
+
+# Test pip provider
+rm -f go.sum go.mod
+cat >requirements.txt <<'EOF'
+requests==2.31.0
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.pip]
+EOF
+
+assert_contains "mise deps --list" "pip"
+assert_contains "mise deps --list" "requirements.txt"
+assert_contains "mise deps --dry-run 2>&1" "pip"
+
+# Test poetry provider
+rm -f requirements.txt
+cat >poetry.lock <<'EOF'
+[[package]]
+name = "requests"
+version = "2.31.0"
+EOF
+cat >pyproject.toml <<'EOF'
+[tool.poetry]
+name = "test"
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.poetry]
+EOF
+
+assert_contains "mise deps --list" "poetry"
+assert_contains "mise deps --list" "poetry.lock"
+assert_contains "mise deps --dry-run 2>&1" "poetry"
+
+# Test uv provider
+rm -f poetry.lock
+cat >uv.lock <<'EOF'
+version = 1
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.uv]
+EOF
+
+assert_contains "mise deps --list" "uv"
+assert_contains "mise deps --list" "uv.lock"
+assert_contains "mise deps --dry-run 2>&1" "uv"
+
+# Test bundler provider
+rm -f uv.lock pyproject.toml
+cat >Gemfile.lock <<'EOF'
+GEM
+  specs:
+EOF
+cat >Gemfile <<'EOF'
+source 'https://rubygems.org'
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.bundler]
+EOF
+
+assert_contains "mise deps --list" "bundler"
+assert_contains "mise deps --list" "Gemfile.lock"
+assert_contains "mise deps --dry-run 2>&1" "bundler"
+
+# Test composer provider
+rm -f Gemfile.lock Gemfile
+cat >composer.lock <<'EOF'
+{
+    "_readme": ["This file locks the dependencies"]
+}
+EOF
+cat >composer.json <<'EOF'
+{}
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.composer]
+EOF
+
+assert_contains "mise deps --list" "composer"
+assert_contains "mise deps --list" "composer.lock"
+assert_contains "mise deps --dry-run 2>&1" "composer"
+
+# Test freshness detection with content hashing
+rm -f composer.lock composer.json
+
+# Test dart provider
+cat >pubspec.yaml <<'EOF'
+name: demo
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+dependencies:
+  path: ^1.9.0
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.dart]
+EOF
+
+assert_contains "mise deps --list" "dart"
+assert_contains "mise deps --list" "pubspec.yaml"
+assert_contains "mise deps --dry-run 2>&1" "dart"
+
+# Test flutter provider - same pubspec as dart
+cat >mise.toml <<'EOF'
+[deps.flutter]
+EOF
+
+assert_contains "mise deps --list" "flutter"
+assert_contains "mise deps --list" "pubspec.yaml"
+assert_contains "mise deps --dry-run 2>&1" "flutter"
+
+# Clean up
+rm -f pubspec.yaml
+
+cat >mise.toml <<'EOF'
+[deps.custom_venv]
+sources = ["requirements.txt"]
+outputs = [".venv"]
+run = "echo PREPARE_RAN"
+EOF
+
+cat >requirements.txt <<'EOF'
+requests==2.31.0
+EOF
+
+# Test 1: No output directory exists → should be stale (outputs missing)
+rm -rf .venv .mise
+assert_contains "mise deps --dry-run 2>&1" "custom_venv"
+assert_contains "mise deps --dry-run 2>&1" "outputs missing"
+
+# Test 2: Run prepare to establish state, then check freshness
+mkdir -p .venv
+assert_contains "mise deps --only custom_venv 2>&1" "Installed: custom_venv"
+
+# Second run: sources unchanged, should be fresh (content hashes match)
+assert_not_contains "mise deps --dry-run 2>&1" "custom_venv"
+
+# Test 3: Change source content → should be stale
+echo "flask==3.0.0" >>requirements.txt
+assert_contains "mise deps --dry-run 2>&1" "custom_venv"
+assert_contains "mise deps --dry-run 2>&1" "requirements.txt changed"
+
+# Clean up
+rm -rf .venv requirements.txt .mise
+rm -f composer.lock composer.json package.json mise.toml schema.graphql
+
+# Test that providers with no declared outputs fall through to hash-based
+# freshness instead of being perpetually stale (regression for #9585: bundler,
+# pip, go, poetry, uv all return empty outputs() when their install command
+# writes outside the project tree).
+cat >mise.toml <<'EOF'
+[deps.no_outputs]
+sources = ["sentinel.txt"]
+run = "echo NO_OUTPUTS_RAN"
+EOF
+
+echo "first" >sentinel.txt
+
+# First run: no stored state → stale, runs.
+assert_contains "mise deps --only no_outputs 2>&1" "Installed: no_outputs"
+
+# Second run: state stored, source unchanged → fresh (no perpetual re-run).
+assert_contains "mise deps --only no_outputs 2>&1" "up to date"
+assert_not_contains "mise deps --dry-run 2>&1" "no_outputs"
+
+# Source changes → stale again.
+echo "second" >sentinel.txt
+assert_contains "mise deps --dry-run 2>&1" "sentinel.txt changed"
+assert_contains "mise deps --only no_outputs 2>&1" "Installed: no_outputs"
+
+rm -rf sentinel.txt mise.toml .mise
+
+# A provider with neither sources nor outputs declared (a custom hook) should
+# always run — there's no freshness signal to skip on.
+cat >mise.toml <<'EOF'
+[deps.always_run]
+run = "echo ALWAYS_RAN"
+EOF
+
+assert_contains "mise deps --only always_run 2>&1" "Installed: always_run"
+assert_contains "mise deps --only always_run 2>&1" "Installed: always_run"
+assert_contains "mise deps --dry-run 2>&1" "no sources or outputs defined"
+
+rm -rf mise.toml .mise
+
+# Built-in providers track their canonical optional output (e.g. .venv for
+# pip/uv/poetry, vendor/bundle for bundler, vendor/ for go) once it has been
+# observed on a successful run. Deleting the directory afterwards triggers a
+# re-run — but a project that never produces that output is not perpetually
+# stale.
+cat >requirements.txt <<'EOF'
+requests==2.31.0
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.pip]
+run = "echo PIP_RAN"
+EOF
+
+# First run: no state → runs. .venv doesn't exist, so seen_outputs stays empty.
+assert_contains "mise deps --only pip 2>&1" "Installed: pip"
+
+# Second run: state stored, .venv was never observed, source unchanged → fresh.
+# This is the regression fix for #9585: previously perpetually stale.
+assert_contains "mise deps --only pip 2>&1" "up to date"
+
+# Now simulate the project gaining a local virtualenv. After the next
+# successful run, .venv is recorded in seen_outputs.
+echo "flask==3.0.0" >>requirements.txt
+mkdir -p .venv
+assert_contains "mise deps --only pip 2>&1" "Installed: pip"
+assert_contains "mise deps --only pip 2>&1" "up to date"
+
+# Deleting .venv after it has been observed should mark the provider stale,
+# even though the source hashes still match.
+rm -rf .venv
+assert_contains "mise deps --dry-run 2>&1" "outputs missing"
+assert_contains "mise deps --only pip 2>&1" "Installed: pip"
+
+rm -rf .venv requirements.txt mise.toml .mise
+
+# Test --explain flag
+cat >mise.toml <<'EOF'
+[deps.explain_test]
+auto = true
+sources = ["src_input.txt"]
+outputs = ["out_dir"]
+run = "echo explain_ran"
+EOF
+
+touch src_input.txt
+
+# Test --explain with missing output (stale)
+rm -rf out_dir
+mise deps explain_test --explain >.explain_out 2>&1 || true
+assert_contains "cat .explain_out" "Provider: explain_test"
+assert_contains "cat .explain_out" "Auto: yes"
+assert_contains "cat .explain_out" "Sources:"
+assert_contains "cat .explain_out" "Outputs:"
+assert_contains "cat .explain_out" "Command: echo explain_ran"
+assert_contains "cat .explain_out" "stale"
+
+# Test --explain with fresh output (run prepare first to establish state)
+mkdir -p out_dir
+mise deps --only explain_test >/dev/null 2>&1 || true
+mise deps explain_test --explain >.explain_out 2>&1
+assert_contains "cat .explain_out" "Provider: explain_test"
+assert_contains "cat .explain_out" "fresh"
+
+# Test --explain with unknown provider
+mise deps nonexistent --explain >.explain_out 2>&1 || true
+assert_contains "cat .explain_out" "not found"
+
+rm -rf src_input.txt out_dir mise.toml .explain_out
+
+# Test content-hash freshness: after a successful run, state is saved and provider is fresh
+cat >mise.toml <<'EOF'
+[deps.hash_test]
+sources = ["src_file.txt"]
+outputs = ["out_dir"]
+run = "echo HASH_RAN"
+EOF
+
+echo "original content" >src_file.txt
+mkdir -p out_dir
+
+# First run: should execute (no previous state)
+assert_contains "mise deps --only hash_test 2>&1" "Installed: hash_test"
+
+# Second run: sources unchanged, should be fresh (hashes saved in state)
+assert_contains "mise deps --only hash_test 2>&1" "up to date"
+
+# Modify source content → should be stale again
+echo "modified content" >src_file.txt
+assert_contains "mise deps --only hash_test 2>&1" "Installed: hash_test"
+
+# Third run after re-prepare: fresh again
+assert_contains "mise deps --only hash_test 2>&1" "up to date"
+
+rm -rf src_file.txt out_dir .mise
+
+# Test timeout: a command that exceeds its timeout should fail
+cat >mise.toml <<'EOF'
+[deps.timeout_test]
+sources = ["src_file.txt"]
+outputs = ["out_dir"]
+run = "sleep 30"
+timeout = "2s"
+EOF
+
+touch src_file.txt
+mkdir -p out_dir
+# Make source newer than output so provider is stale
+touch -t 202501010000 out_dir
+touch -t 202601010000 src_file.txt
+
+# Should fail because sleep 30 exceeds the 2-second timeout
+assert_fail "mise deps --only timeout_test"
+
+rm -rf src_file.txt out_dir mise.toml
+
+# Test that prepare providers are NOT inherited from parent config files
+# (monorepo scenario: root defines [deps.pnpm], subdirectory should not inherit it)
+mkdir -p subproject
+
+cat >mise.toml <<'EOF'
+[deps.custom_root]
+sources = ["root_input.txt"]
+outputs = ["root_output.txt"]
+run = "echo root_ran"
+EOF
+touch root_input.txt
+
+cat >subproject/mise.toml <<'EOF'
+[deps.custom_sub]
+sources = ["sub_input.txt"]
+outputs = ["sub_output.txt"]
+run = "echo sub_ran"
+EOF
+touch subproject/sub_input.txt
+
+# From root: only root provider should be visible
+assert_contains "mise deps --list" "custom_root"
+assert_not_contains "mise deps --list" "custom_sub"
+
+# From subdirectory: only subdirectory provider should be visible, not inherited root
+(
+  cd subproject
+  assert_contains "mise deps --list" "custom_sub"
+  assert_not_contains "mise deps --list" "custom_root"
+)
+
+# Clean up previous test
+rm -rf subproject root_input.txt root_output.txt mise.toml .mise
+
+# Test that task-discovered providers are scoped to their monorepo config root
+export MISE_EXPERIMENTAL=1
+mkdir -p apps/subapp-a apps/subapp-b apps/subapp-c
+
+cat >mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["apps/subapp-*"]
+
+[tasks.check]
+depends = "//...:check"
+EOF
+
+# Loading a selected root's config hierarchy must not activate providers from
+# an intermediate ancestor that is not itself a selected task root.
+cat >apps/mise.toml <<'EOF'
+[deps.intermediate]
+auto = true
+sources = ["intermediate-input.txt"]
+outputs = ["intermediate-output.txt"]
+run = "cp intermediate-input.txt intermediate-output.txt"
+EOF
+echo intermediate >apps/intermediate-input.txt
+
+for subapp in subapp-a subapp-b; do
+  cat >"apps/$subapp/mise.toml" <<'EOF'
+[deps.setup]
+auto = true
+sources = ["input.txt"]
+outputs = ["prepared.txt"]
+run = "sleep 1; cp input.txt prepared.txt"
+
+[deps.build]
+auto = true
+depends = ["setup", "//:root_setup", "global_setup", "root_fallback"]
+sources = ["prepared.txt"]
+outputs = ["built.txt"]
+run = "test -f prepared.txt && test -f ../../root-output.txt && test -f ../../global-output.txt && test -f ../../root-fallback-output.txt && cp prepared.txt built.txt"
+
+[deps.disabled]
+auto = true
+sources = ["input.txt"]
+outputs = ["disabled.txt"]
+run = "cp input.txt disabled.txt"
+
+[deps.root_fallback]
+auto = true
+
+[tasks.check]
+run = "test -f built.txt && echo TASK_DEPS_OK"
+EOF
+  echo "$subapp" >"apps/$subapp/input.txt"
+done
+
+# Local tool configuration must override the base config while providing an
+# automatic provider from the same layered file.
+cat >>apps/subapp-a/mise.toml <<'EOF'
+
+[tools]
+tiny = "2"
+EOF
+
+# This configured root has no task in the resolved graph, so its provider must
+# not run when another root is selected or through //...:check.
+cat >apps/subapp-c/mise.toml <<'EOF'
+[deps.outside]
+auto = true
+sources = ["input.txt"]
+outputs = ["outside.txt"]
+run = "cp input.txt outside.txt"
+
+[deps.from_a]
+auto = true
+depends = ["//apps/subapp-a:setup"]
+outputs = ["from-a.txt"]
+run = "test -f ../subapp-a/prepared.txt && touch from-a.txt"
+
+[tasks.unrelated]
+run = "test -f from-a.txt && echo NESTED_DEPS_OK"
+EOF
+echo subapp-c >apps/subapp-c/input.txt
+
+# Disabling a provider in one root must not disable the same ID in another root.
+cat >apps/subapp-a/mise.local.toml <<'EOF'
+[tools]
+tiny = "1"
+
+[deps]
+disable = ["disabled"]
+
+[deps.layered_tool]
+auto = true
+outputs = ["layered-tool.txt"]
+run = "rtx-tiny > layered-tool.txt"
+EOF
+
+# Task-discovered providers must not bypass the deps experimental gate
+unset MISE_EXPERIMENTAL
+assert_fail "mise run //:check" "deps is experimental"
+export MISE_EXPERIMENTAL=1
+
+# Root and global providers retain their existing automatic-task behavior.
+cat >>mise.toml <<'EOF'
+
+[deps.root_setup]
+auto = true
+sources = ["root-input.txt"]
+outputs = ["root-output.txt"]
+run = "cp root-input.txt root-output.txt"
+
+[deps.root_fallback]
+auto = true
+outputs = ["root-fallback-output.txt"]
+run = "sleep 2; touch root-fallback-output.txt"
+EOF
+echo root >root-input.txt
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[deps.global_setup]
+auto = true
+dir = "$PWD"
+sources = ["global-input.txt"]
+outputs = ["global-output.txt"]
+run = "cp global-input.txt global-output.txt"
+EOF
+echo global >global-input.txt
+
+# A direct task invocation runs only its root (plus root/global providers).
+assert_contains "mise run //apps/subapp-a:check" "TASK_DEPS_OK"
+assert "test -f apps/subapp-a/built.txt"
+assert_fail "test -f apps/subapp-b/built.txt"
+assert_fail "test -f apps/subapp-c/outside.txt"
+assert_fail "test -f apps/intermediate-output.txt"
+assert "test -f root-output.txt"
+assert "test -f global-output.txt"
+assert_contains "cat apps/subapp-a/layered-tool.txt" "v1.1.0"
+
+rm -f apps/subapp-a/prepared.txt apps/subapp-a/built.txt \
+  apps/subapp-a/layered-tool.txt root-output.txt global-output.txt
+
+# Providers with duplicate IDs run in both roots. Unqualified dependencies
+# prefer the same root and can fall back to retained root/global providers.
+assert_contains "mise run //:check" "TASK_DEPS_OK"
+assert "test -f apps/subapp-a/built.txt"
+assert "test -f apps/subapp-b/built.txt"
+assert_fail "test -f apps/subapp-a/disabled.txt"
+assert "test -f apps/subapp-b/disabled.txt"
+assert_fail "test -f apps/subapp-c/outside.txt"
+assert_fail "test -f apps/intermediate-output.txt"
+assert "test -f root-output.txt"
+assert "test -f global-output.txt"
+assert_contains "cat apps/subapp-a/layered-tool.txt" "v1.1.0"
+
+# From a nested invocation root, absolute provider dependencies resolve only to
+# that root's qualified ID rather than treating it as the monorepo root.
+cat >apps/subapp-a/mise.local.toml <<'EOF'
+[tools]
+tiny = "1"
+
+[deps]
+disable = ["build", "disabled"]
+
+[deps.layered_tool]
+auto = true
+outputs = ["layered-tool.txt"]
+run = "rtx-tiny > layered-tool.txt"
+EOF
+rm -f apps/subapp-a/prepared.txt apps/subapp-c/from-a.txt
+assert_contains "cd apps/subapp-a && mise run //apps/subapp-c:unrelated" "NESTED_DEPS_OK"
+assert "test -f apps/subapp-a/prepared.txt"
+assert "test -f apps/subapp-c/from-a.txt"
+
+# Clean up
+rm -rf apps mise.toml .mise root-input.txt root-output.txt \
+  global-input.txt global-output.txt "$MISE_CONFIG_DIR/config.toml"
+
+# Test git-submodule provider
+cat >.gitmodules <<'EOF'
+[submodule "libs/foo"]
+	path = libs/foo
+	url = https://example.com/foo.git
+[submodule "libs/bar"]
+	path = libs/bar
+	url = https://example.com/bar.git
+EOF
+
+cat >mise.toml <<'EOF'
+[deps.git-submodule]
+EOF
+
+assert_contains "mise deps --list" "git-submodule"
+assert_contains "mise deps --list" ".gitmodules"
+assert_contains "mise deps --list" "libs/foo"
+assert_contains "mise deps --list" "libs/bar"
+
+# Empty .gitmodules remains visible with its inapplicability reason.
+echo -n "" >.gitmodules
+cat >mise.toml <<'EOF'
+[deps.git-submodule]
+EOF
+assert_contains "mise deps --list" "git-submodule"
+assert_contains "mise deps --list" "status: inactive (empty .gitmodules)"
+
+# Clean up
+rm -f .gitmodules mise.toml .mise
+
+# Test tera template rendering in prepare.env
+cat >mise.toml <<'EOF'
+[env]
+MY_TEMPLATE_VAR = "hello_from_env"
+
+[deps.env_tera]
+sources = ["tera_input.txt"]
+outputs = ["tera_output.txt"]
+run = "bash -c 'echo $RENDERED_VAR > tera_output.txt'"
+
+[deps.env_tera.env]
+RENDERED_VAR = "{{env.MY_TEMPLATE_VAR}}"
+PLAIN_VAR = "no_template"
+EOF
+
+touch tera_input.txt
+
+# Prepare should run successfully
+assert_contains "mise deps --only env_tera 2>&1" "env_tera"
+
+# The output file should contain the rendered value, not the raw template
+assert_contains "cat tera_output.txt" "hello_from_env"
+assert_not_contains "cat tera_output.txt" "{{env.MY_TEMPLATE_VAR}}"
+
+# Clean up
+rm -f tera_input.txt tera_output.txt mise.toml
+rm -rf .mise
+
+# Test dir option affects source/output resolution for custom providers
+mkdir -p subdir
+echo '{"name": "test"}' >subdir/package.json
+echo '{"lockfileVersion": 3}' >subdir/package-lock.json
+
+cat >mise.toml <<'EOF'
+[deps.subdir_custom]
+dir = "subdir"
+sources = ["package.json", "package-lock.json"]
+outputs = ["build_output"]
+run = "echo SUBDIR_RAN"
+EOF
+
+# Sources should resolve against subdir, not project root
+assert_contains "mise deps --list" "subdir_custom"
+assert_contains "mise deps --list" "subdir/package.json"
+assert_contains "mise deps --list" "subdir/package-lock.json"
+
+# Run prepare and verify source hashes are tracked (provider becomes fresh)
+mkdir -p subdir/build_output
+assert_contains "mise deps --only subdir_custom 2>&1" "Installed: subdir_custom"
+
+# Second run should be fresh (sources hashed correctly via subdir)
+assert_contains "mise deps --only subdir_custom 2>&1" "up to date"
+
+# Modify source in subdir → should be stale
+echo '{"name": "modified"}' >subdir/package.json
+assert_contains "mise deps --only subdir_custom 2>&1" "Installed: subdir_custom"
+
+# Clean up
+rm -rf subdir mise.toml .mise
+
+# Test explicit monorepo dependency discovery and scoped provider IDs
+mkdir -p deps-monorepo/packages/a deps-monorepo/packages/b
+
+cat >deps-monorepo/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[deps.root]
+sources = ["root-input.txt"]
+outputs = ["root-output.txt"]
+run = "cp root-input.txt root-output.txt"
+EOF
+echo root >deps-monorepo/root-input.txt
+
+for package in a b; do
+  cat >"deps-monorepo/packages/$package/mise.toml" <<'EOF'
+[deps.setup]
+sources = ["input.txt"]
+outputs = ["output.txt"]
+run = "cp input.txt output.txt"
+
+[deps.build]
+depends = ["setup"]
+sources = ["output.txt"]
+outputs = ["built.txt"]
+run = "cp output.txt built.txt"
+
+[deps.disabled]
+sources = ["input.txt"]
+outputs = ["disabled.txt"]
+run = "cp input.txt disabled.txt"
+
+[deps.layered_active]
+sources = ["input.txt"]
+outputs = ["layered-active.txt"]
+run = "cp input.txt layered-active.txt"
+EOF
+  echo "$package" >"deps-monorepo/packages/$package/input.txt"
+done
+
+# Keep an inapplicable provider in one root to verify scoped diagnostics.
+cat >>deps-monorepo/packages/a/mise.toml <<'EOF'
+
+[deps.npm]
+EOF
+
+# A layered disable applies to providers from the same config root.
+cat >deps-monorepo/packages/a/mise.local.toml <<'EOF'
+[deps]
+disable = ["disabled"]
+
+# An inactive higher-precedence definition must not suppress the applicable
+# lower-precedence provider that discovery selected before inactive providers
+# were retained for diagnostics.
+[deps.layered_active]
+EOF
+
+# Plain deps remains scoped to the root config, while monorepo mode qualifies it.
+assert_contains "cd deps-monorepo && mise deps --list" "root"
+assert_not_contains "cd deps-monorepo && mise deps --list" "packages/a"
+assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//:root"
+
+# --monorepo loads every explicit config root and qualifies duplicate IDs.
+assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/a:setup"
+assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/b:setup"
+assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/a:npm"
+assert_contains "cd deps-monorepo && mise deps --monorepo --list" "inactive (missing package-lock.json)"
+assert_fail "cd deps-monorepo && mise deps --monorepo //packages/a:npm --explain" "is inactive: missing package-lock.json"
+assert_fail "cd deps-monorepo && mise deps --monorepo //packages/a:npm" "is inactive: missing package-lock.json"
+assert_not_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/a:disabled"
+assert_contains "cd deps-monorepo && mise deps --monorepo --list" "//packages/b:disabled"
+assert "cd deps-monorepo && mise deps --monorepo --force"
+assert "test -f deps-monorepo/root-output.txt"
+assert "test -f deps-monorepo/packages/a/built.txt"
+assert "test -f deps-monorepo/packages/b/built.txt"
+assert "test -f deps-monorepo/packages/a/layered-active.txt"
+assert "test -f deps-monorepo/packages/b/layered-active.txt"
+
+# Scoped and plain invocation share freshness state for the same provider root.
+# First verify state written by monorepo mode is visible to plain mode.
+assert_contains "cd deps-monorepo/packages/a && mise deps --only setup 2>&1" "up to date"
+
+# Then verify state written by plain mode is visible to monorepo mode.
+cat >>deps-monorepo/packages/a/mise.toml <<'EOF'
+
+[deps.state]
+sources = ["state-input.txt"]
+outputs = ["state-output.txt"]
+run = "echo run >> state-runs.txt && cp state-input.txt state-output.txt"
+EOF
+echo a >deps-monorepo/packages/a/state-input.txt
+assert "cd deps-monorepo/packages/a && mise deps --only state"
+assert_contains "cd deps-monorepo && mise deps --monorepo --only //packages/a:state 2>&1" "up to date"
+assert "test \"$(wc -l <deps-monorepo/packages/a/state-runs.txt)\" -eq 1"
+
+# Qualified names can target one provider when names repeat across config roots.
+rm -f deps-monorepo/root-output.txt \
+  deps-monorepo/packages/a/output.txt \
+  deps-monorepo/packages/a/built.txt \
+  deps-monorepo/packages/a/disabled.txt \
+  deps-monorepo/packages/b/output.txt \
+  deps-monorepo/packages/b/built.txt \
+  deps-monorepo/packages/b/disabled.txt
+assert "cd deps-monorepo && mise deps --monorepo --force --only //packages/b:setup"
+assert_fail "test -f deps-monorepo/root-output.txt"
+assert_fail "test -f deps-monorepo/packages/a/output.txt"
+assert_fail "test -f deps-monorepo/packages/a/built.txt"
+assert_fail "test -f deps-monorepo/packages/a/disabled.txt"
+assert "test -f deps-monorepo/packages/b/output.txt"
+assert_fail "test -f deps-monorepo/packages/b/built.txt"
+assert_fail "test -f deps-monorepo/packages/b/disabled.txt"
+
+rm -rf deps-monorepo

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+# Config-root-scoped locked policy applies only to tools declared at that root.
+export MISE_LOCKFILE=1
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+mise plugin install tiny
+
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tools]
+dummy = "latest"
+EOF
+
+cat <<'EOF' >mise.toml
+[tools]
+tiny = "1"
+EOF
+
+# Policy in a sibling config applies to tools from the same config root.
+cat <<'EOF' >mise.local.toml
+[tool_config]
+locked = true
+EOF
+
+# The project tool must be locked, but the unrelated global tool must not be
+# required in the global lockfile.
+cat <<EOF >mise.lock
+[[tools.tiny]]
+version = "1.0.0"
+backend = "vfox:tiny"
+"platforms.$PLATFORM" = { url = "https://example.com/tiny-1.0.0.tar.gz" }
+EOF
+
+assert_contains "mise install --dry-run 2>&1" "tiny@1.0.0"
+assert_contains "mise install --dry-run 2>&1" "dummy@2.0.0"
+
+rm mise.lock
+assert_fail_contains "mise install --dry-run 2>&1" "tiny@1 is not in the lockfile"
+assert_fail_contains "mise install --dry-run 2>&1" "tool_config.locked"
+
+# Invocation-wide locked mode retains its existing behavior for global tools.
+rm mise.toml
+rm mise.local.toml
+assert_fail_contains "MISE_LOCKED=1 mise install --dry-run 2>&1" "dummy@latest is not in the lockfile"
+
+# A local config directly in $HOME has the same path-valued config_root as the
+# global config by default, but they remain distinct policy scopes.
+cat <<'EOF' >"$HOME/mise.toml"
+[tool_config]
+locked = true
+
+[tools]
+tiny = "1"
+EOF
+
+cat <<EOF >"$HOME/mise.lock"
+[[tools.tiny]]
+version = "1.0.0"
+backend = "vfox:tiny"
+"platforms.$PLATFORM" = { url = "https://example.com/tiny-1.0.0.tar.gz" }
+EOF
+
+assert_contains "mise -C \"$HOME\" install --dry-run 2>&1" "tiny@1.0.0"
+assert_contains "mise -C \"$HOME\" install --dry-run 2>&1" "dummy@2.0.0"

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/10308
+#
+# `mise hook-env` runs on every shell prompt, so it must NEVER fetch remote
+# version lists when an installed version satisfies the request. Release-age
+# cutoffs (the `minimum_release_age` setting and its built-in default) force
+# date-aware remote resolution on regular commands, but prefer-offline paths
+# like hook-env must keep resolving from installed versions — otherwise every
+# shell prompt becomes a network round-trip per tool.
+
+# Copy the dummy plugin into one whose remote version-listing scripts leave a
+# marker file behind when they run, making any remote fetch directly
+# observable. (cat > preserves the executable bit from the copied scripts.)
+marker="$HOME/remote-versions-fetched"
+cp -RL "$MISE_DATA_DIR/plugins/dummy" "$MISE_DATA_DIR/plugins/spy"
+cat >"$MISE_DATA_DIR/plugins/spy/bin/list-all" <<EOF
+#!/usr/bin/env bash
+touch "$marker"
+echo "1.0.0 1.1.0 2.0.0"
+EOF
+cat >"$MISE_DATA_DIR/plugins/spy/bin/latest-stable" <<EOF
+#!/usr/bin/env bash
+touch "$marker"
+echo "2.0.0"
+EOF
+
+mise install spy@1.0.0
+
+# Drop the marker and the remote-versions cache written during install. The
+# cache must go too: a regressed hook-env with a warm cache would resolve
+# remotely without re-running list-all, hiding the fetch from the marker.
+rm -f "$marker"
+rm -rf "$MISE_CACHE_DIR/spy"
+
+# Fuzzy requests ("latest", a prefix) are the dangerous ones: those are what
+# date cutoffs push onto the remote date-aware resolution path. Newer remote
+# versions (1.1.0, 2.0.0) exist, so remote resolution would also put a
+# non-installed version on PATH and break the `dummy` execution check below.
+for mra in unset 24h; do
+  if [[ $mra == unset ]]; then
+    unset MISE_MINIMUM_RELEASE_AGE
+  else
+    export MISE_MINIMUM_RELEASE_AGE="$mra"
+  fi
+
+  for version in latest 1 1.0.0; do
+    cat >mise.toml <<EOF
+[tools]
+spy = "$version"
+EOF
+
+    # Activate in a subshell and run the installed tool to prove the request
+    # resolved to the installed version.
+    actual="$(eval "$(mise hook-env -s bash)" && dummy)" || true
+
+    if [[ -e $marker ]]; then
+      fail "mise hook-env fetched remote versions resolving spy@$version (minimum_release_age=$mra)"
+    fi
+    assert_contains_text "$actual" "This is Dummy 1.0.0!"
+  done
+done

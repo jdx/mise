@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+cat >.mise.toml <<EOF
+[env]
+FOO = "bar"
+EOF
+
+assert "mise env --dotenv | grep FOO" "FOO=bar"

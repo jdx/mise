@@ -1,0 +1,106 @@
+---
+source: src/shell/zsh.rs
+expression: zsh.activate(opts)
+---
+export MISE_SHELL=zsh
+if [ -z "${__MISE_ORIG_PATH:-}" ]; then
+  export __MISE_ORIG_PATH="$PATH"
+fi
+export __MISE_ZSH_PRECMD_RUN=0
+export __MISE_ZSH_CHPWD_RAN=0
+
+mise() {
+  local command
+  command="${1:-}"
+  if [ "$#" = 0 ]; then
+    command /some/dir/mise
+    return
+  fi
+  shift
+
+  case "$command" in
+  deactivate|shell|sh)
+    # if argv doesn't contains -h,--help
+    if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
+      eval "$(command /some/dir/mise "$command" "$@")"
+      return $?
+    fi
+    ;;
+  esac
+  command /some/dir/mise "$command" "$@"
+}
+
+autoload -Uz add-zsh-hook
+_mise_hook() {
+  eval "$(/some/dir/mise hook-env --status -s zsh "$@")";
+}
+_mise_hook_env_state() {
+  # enumerate MISE_* vars with the typeset builtin rather than
+  # ${parameters}: referencing that special array autoloads the
+  # zsh/parameter module via dlopen, which can deadlock under
+  # Rosetta in login shells (https://github.com/jdx/mise/discussions/11187)
+  local -a keys=(${(o)${(f)"$(typeset +m 'MISE_*' 2>/dev/null)"}##* })
+  if (( ${#keys} > 0 )); then
+    typeset -p "${keys[@]}" 2>/dev/null
+  fi
+}
+_mise_hook_precmd() {
+  if [[ "${__MISE_ZSH_CHPWD_RAN:-0}" == "1" ]]; then
+    export __MISE_ZSH_CHPWD_RAN=0
+    unset __MISE_ZSH_ACTIVATE_PATH
+    unset __MISE_ZSH_ACTIVATE_ENV
+    return
+  fi
+  if [[ "${__MISE_ZSH_PRECMD_RUN:-0}" == "0" &&
+        "$PATH" == "${__MISE_ZSH_ACTIVATE_PATH:-}" &&
+        "$(_mise_hook_env_state)" == "${__MISE_ZSH_ACTIVATE_ENV:-}" ]]; then
+    export __MISE_ZSH_PRECMD_RUN=1
+    unset __MISE_ZSH_ACTIVATE_PATH
+    unset __MISE_ZSH_ACTIVATE_ENV
+    return
+  fi
+  unset __MISE_ZSH_ACTIVATE_PATH
+  unset __MISE_ZSH_ACTIVATE_ENV
+  _mise_hook --reason precmd
+}
+_mise_hook_chpwd() {
+  export __MISE_ZSH_CHPWD_RAN=1
+  _mise_hook --reason chpwd
+}
+add-zsh-hook precmd _mise_hook_precmd
+add-zsh-hook chpwd _mise_hook_chpwd
+
+_mise_hook
+export __MISE_ZSH_ACTIVATE_PATH="$PATH"
+export __MISE_ZSH_ACTIVATE_ENV="$(_mise_hook_env_state)"
+if [ -z "${_mise_cmd_not_found:-}" ]; then
+    _mise_cmd_not_found=1
+    [ -n "$(declare -f command_not_found_handler)" ] && eval "${$(declare -f command_not_found_handler)/command_not_found_handler/_command_not_found_handler}"
+
+    function command_not_found_handler() {
+        if [[ "$1" != "mise" && "$1" != "mise-"* ]] && /some/dir/mise hook-not-found -s zsh -- "$1"; then
+          # Refresh inline rather than through `_mise_hook`: `--no-hook-env` omits
+          # that definition while still emitting this handler, and without a refresh
+          # "$@" runs before the tool just installed is on PATH. Called with no
+          # arguments `_mise_hook` is this same eval, so one inline call -- fish's
+          # shape -- covers both modes and leaves nothing to keep in sync.
+          #
+          # MISE_SHELL is the gate `deactivate` turns off: it unsets the variable but
+          # leaves this handler registered, and a shell the user deactivated must not
+          # have mise's environment applied back to it.
+          #
+          # `--force` because an install just happened: with `hook_env.cache_ttl` set
+          # and an inherited `__MISE_SESSION`, the TTL fast path returns before the
+          # check that would notice it, and "$@" would fail exactly as before.
+          if [ -n "${MISE_SHELL:-}" ]; then
+            eval "$(/some/dir/mise hook-env --status --force -s zsh)"
+          fi
+          "$@"
+        elif [ -n "$(declare -f _command_not_found_handler)" ]; then
+            _command_not_found_handler "$@"
+        else
+            echo "zsh: command not found: $1" >&2
+            return 127
+        fi
+    }
+fi

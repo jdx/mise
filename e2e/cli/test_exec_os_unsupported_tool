@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# A tool the registry marks for other platforms is dropped from the tool request set before any
+# version resolves. The drop is silent by design -- such a tool is neither unknown nor disabled by
+# the user -- so nothing is installed, the bin is simply absent, and `mise exec` used to report
+# only that it could not find it. `mise install` and `mise use` reach the backend and say why, so
+# the reason was known and only this command withheld it.
+#
+# `gsudo` carries `os = ["windows"]` in the registry, which excludes it from every platform this
+# suite runs on.
+
+assert_fail_contains "mise exec gsudo -- gsudo" "not available on"
+assert_fail_contains "mise exec gsudo -- gsudo" "gsudo"
+# The remedy is knowing where it does run, so the platforms have to be named.
+assert_fail_contains "mise exec gsudo -- gsudo" "windows"
+
+# The control: a bin no excluded tool provides keeps its original error untouched. Without this a
+# hint appended to every failure would satisfy the assertions above. It has to have failed for the
+# same reason as the subject, or "the text is absent" says nothing about the hint -- so the failure
+# is asserted before the absences are read from the output the `|| true` above lets through.
+assert_fail "mise exec -- not-a-tool-9f3a"
+unknown_out="$(mise exec -- not-a-tool-9f3a 2>&1 || true)"
+assert_not_contains_text "$unknown_out" "registry lists it for"
+assert_not_contains_text "$unknown_out" "not available on"

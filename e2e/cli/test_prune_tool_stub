@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+# Tool stubs are tracked when they are executed and `mise prune` must not
+# delete tool versions that are still referenced by a tracked stub.
+
+mkdir -p bin
+
+# stub pinning a concrete version
+cat >bin/dummy <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "dummy"
+version = "1.0.0"
+EOF
+chmod +x bin/dummy
+
+# executing the stub installs the tool and tracks the stub
+assert_contains "bin/dummy" "This is Dummy 1.0.0!"
+
+# install another version that nothing references
+assert "mise install dummy@2.0.0"
+
+# only the unreferenced version is prunable
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@1.0.0"
+assert_contains "mise prune --dry-run 2>&1" "dummy@2.0.0"
+
+# a tracked stub that fails during backend resolution should not abort prune
+cat >bin/missing-backend <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "missing-backend"
+version = "1.0.0"
+EOF
+chmod +x bin/missing-backend
+assert_fail "bin/missing-backend"
+assert_contains "mise prune --dry-run 2>&1" "dummy@2.0.0"
+
+MISE_YES=1 assert "mise prune"
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_fail "ls $MISE_DATA_DIR/installs/dummy/2.0.0"
+
+# a fuzzy version protects whichever installed version satisfies it,
+# consistent with config-based retention
+cat >bin/dummy <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "dummy"
+version = "1"
+EOF
+# the stub bin cache key is based on mtime with second resolution, so make
+# sure the rewritten stub is not mistaken for the old one
+touch -d '2001-01-01' bin/dummy
+assert_contains "bin/dummy" "This is Dummy 1.0.0!"
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@1.0.0"
+
+# http backend stub whose tool name is derived from the stub filename
+cat >bin/hello-world <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+version = "1.0.0"
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+bin = "bin/hello-world"
+EOF
+chmod +x bin/hello-world
+assert_succeed "bin/hello-world"
+assert "ls $MISE_DATA_DIR/installs/http-hello-world/1.0.0"
+assert_not_contains "mise prune --dry-run 2>&1" "hello-world@1.0.0"
+
+# deleting the stubs makes their versions prunable again
+rm bin/dummy bin/hello-world
+assert_contains "mise prune --dry-run 2>&1" "dummy@1.0.0"
+assert_contains "mise prune --dry-run 2>&1" "hello-world@1.0.0"
