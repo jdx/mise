@@ -693,10 +693,10 @@ struct State {
     tracked: TrackedSet,
     /// The declared set plus derived entries, what is watched.
     watched: TrackedSet,
-    /// Links inside tracked directories and where they pointed when last
-    /// walked (a target that is missing now is not derived any more, but
-    /// the link still declares it).
-    derived_links: Vec<(PathBuf, PathBuf)>,
+    /// Links inside tracked directories seen by a walk (a link whose target
+    /// is missing now derives nothing, but still declares where it points,
+    /// wherever that is by now).
+    derived_links: Vec<PathBuf>,
     plan: WatchPlan,
     exclude: ExcludeSet,
     hard: Vec<PathBuf>,
@@ -717,7 +717,7 @@ impl State {
             .entries
             .iter()
             .filter(|entry| entry.kind == tracked::EntryKind::Derived)
-            .filter_map(|entry| Some((entry.source.clone()?, entry.path.clone())))
+            .filter_map(|entry| entry.source.clone())
             .collect();
         Ok(Self {
             tracked,
@@ -739,10 +739,11 @@ impl State {
         let tracked = TrackedSet::effective().await?;
         let mut fresh = Self::from_tracked(tracked)?;
         // a link whose target is between two versions derives nothing
-        // right now; what it pointed at is remembered while it is a link
-        for (link, target) in self.derived_links.drain(..) {
-            if link.is_symlink() && !fresh.derived_links.iter().any(|(l, _)| *l == link) {
-                fresh.derived_links.push((link, target));
+        // right now; the link is remembered while it is one, and consulted
+        // for where it points now (it may have been retargeted meanwhile)
+        for link in self.derived_links.drain(..) {
+            if link.is_symlink() && !fresh.derived_links.contains(&link) {
+                fresh.derived_links.push(link);
             }
         }
         *self = fresh;
@@ -808,11 +809,10 @@ impl State {
         }) {
             return true;
         }
-        // a link inside a tracked directory, whose target was derived when
-        // it existed and still is where the link points
-        self.derived_links.iter().any(|(link, target)| {
-            path.starts_with(target)
-                && link.is_symlink()
+        // a link inside a tracked directory that points there now (a
+        // retargeted link declares its new target, not the old one)
+        self.derived_links.iter().any(|link| {
+            link.is_symlink()
                 && self.relevant(link)
                 && tracked::link_target(link).is_some_and(|now| path.starts_with(now))
         })
@@ -1361,10 +1361,16 @@ mod tests {
         let inner = hypr.join("inner-link");
         std::os::unix::fs::symlink(root.join("elsewhere/inner"), &inner).unwrap();
         let mut remembered = state_of(tracked.clone(), root.join("mise"));
-        remembered.derived_links = vec![(inner.clone(), root.join("elsewhere/inner"))];
+        remembered.derived_links = vec![inner.clone()];
         assert!(remembered.may_cover_missing(&root.join("elsewhere/inner")));
+        // retargeted while its new target is missing: the new target is
+        // what it declares now, the old one no longer
         std::fs::remove_file(&inner).unwrap();
+        std::os::unix::fs::symlink(root.join("elsewhere/moved"), &inner).unwrap();
+        assert!(remembered.may_cover_missing(&root.join("elsewhere/moved")));
         assert!(!remembered.may_cover_missing(&root.join("elsewhere/inner")));
+        std::fs::remove_file(&inner).unwrap();
+        assert!(!remembered.may_cover_missing(&root.join("elsewhere/moved")));
 
         // untracked, or switched to manual saving: nothing keeps it
         tracked.entries[0].policy.autosave = false;
