@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TS0PYZM99QNBY2WBA5A62Y",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-plugin-guides",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/asdf-legacy-plugins.md",
+    "docs/plugin-usage.md",
+    "docs/plugins.md",
+    "docs/public/llms.txt",
+    "docs/registry.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 51103,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1696768,
+    "output_tokens": 9903,
+    "api_call_count": 17
+  }
+}
