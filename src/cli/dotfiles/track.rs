@@ -49,7 +49,7 @@ pub(crate) struct DotfilesTrack {
     #[usage(long)]
     no_backup: bool,
 
-    /// Keep file contents entirely local: disable both sharing and remote backups
+    /// Disable future sharing and remote backups; existing uploads are not erased
     #[usage(long)]
     private: bool,
 

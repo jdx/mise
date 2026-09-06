@@ -1027,7 +1027,7 @@ Linux box can share the same live path with different contents.
             flag --no-autosave help="Save only on `mise bootstrap dotfiles save <path>`, never automatically"
             flag --no-share help="Keep the file out of the shared setup (still backed up)"
             flag --no-backup help="Keep the file out of remote backups (still protected locally)"
-            flag --private help="Keep file contents entirely local: disable both sharing and remote backups"
+            flag --private help="Disable future sharing and remote backups; existing uploads are not erased"
             flag --local help="Write to config.local.toml (this machine only) instead of config.toml"
             flag "-y --yes" help="Accept without prompting"
             flag "-h --help" help="Print help" action=help builtin=#true

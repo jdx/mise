@@ -29,10 +29,17 @@ assert_contains 'cat connect.log' 'A file can be both shared and backed up'
 assert_not_contains "git --git-dir=$origin ls-tree -r --name-only main" '.private-config'
 assert_not_contains "git --git-dir=$origin ls-tree -r --name-only main" '.backup-config'
 assert_contains "git --git-dir=$origin ls-tree -r --name-only main" '.shared-config'
-for ref in $(git --git-dir="$origin" for-each-ref --format='%(refname)' refs/mise-history); do
+refs=$(git --git-dir="$origin" for-each-ref --format='%(refname)' refs/mise-history)
+assert_succeed "test -n '$refs'"
+found_backup=false
+for ref in $refs; do
+  if git --git-dir="$origin" ls-tree -r --name-only "$ref" | grep -q '.backup-config'; then
+    found_backup=true
+  fi
   assert_not_contains "git --git-dir=$origin ls-tree -r --name-only $ref" '.private-config'
   assert_not_contains "git --git-dir=$origin ls-tree -r --name-only $ref" '.shared-config'
 done
+assert "echo $found_backup" 'true'
 assert_contains "mise bootstrap dotfiles status" 'mode manual'
 # Local autosave does not publish in manual mode.
 head=$(git --git-dir="$origin" rev-parse main)
