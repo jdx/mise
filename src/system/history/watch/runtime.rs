@@ -229,7 +229,10 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         "the filesystem watch stopped delivering events; stopping so the service restarts it",
                         json!({ "message": "watch channel closed" }),
                     );
-                    finish(&mut capture, &state.tracked, Restart::Final).await;
+                    // the service restarts the watcher: throttled files
+                    // stay held, so a failure that persists does not save
+                    // them on every restart
+                    finish(&mut capture, &state.tracked, Restart::Held).await;
                     // recorded after the final capture, which would clear it
                     capture.health.watcher.last_error = Some("the filesystem watch stopped".into());
                     capture.health.watcher.last_error_at = Some(store::now_rfc3339());
