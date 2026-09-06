@@ -464,6 +464,14 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
         }
 
         for leaf in &request_leaves {
+            // An observing parent may contain managed children, but a
+            // managed leaf must not replace an explicitly tracked target
+            // (or one of its ancestors).
+            if let Some(tracked) = requests.iter().find(|candidate| {
+                candidate.mode == FileMode::Track && candidate.target.starts_with(leaf)
+            }) {
+                return Err(composed_file_footprint_conflict(leaf, tracked, request));
+            }
             if let Some(existing) = leaves.get(leaf).or_else(|| directories.get(leaf)) {
                 return Err(composed_file_footprint_conflict(leaf, existing, request));
             }
@@ -3495,6 +3503,25 @@ mod tests {
             ],
         ] {
             validate_composed_file_footprints(&requests)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn managed_directory_does_not_overwrite_explicitly_tracked_children() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source)?;
+        file::write(source.join("native"), "managed")?;
+        for mode in [FileMode::Copy, FileMode::SymlinkEach] {
+            let requests = vec![
+                link_req(&source, &target, mode),
+                link_req(&source, &target.join("native"), FileMode::Track),
+            ];
+            assert!(validate_composed_file_footprints(&requests).is_err());
+            let reversed = requests.into_iter().rev().collect::<Vec<_>>();
+            assert!(validate_composed_file_footprints(&reversed).is_err());
         }
         Ok(())
     }
