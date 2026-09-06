@@ -2,11 +2,11 @@
 
 > Dev tools, env vars, and tasks in one CLI
 
-## Guides
+## Start Here
 
+- [Getting Started](https://mise.jdx.dev/getting-started.html): By the end of this guide, you'll have a project with a managed tool, an environment variable, and a task you can run.
 - [Demo](https://mise.jdx.dev/demo.html): The following demo shows.
-- [Getting Started](https://mise.jdx.dev/getting-started.html): Get up and running with mise in minutes.
-- [Walkthrough](https://mise.jdx.dev/walkthrough.html): Once you've completed the Getting Started guide, you're ready to start using mise. This document offers a quick overview of some things you may want to try first.
+- [Walkthrough](https://mise.jdx.dev/walkthrough.html): Use this guide to add mise to an existing project and maintain its configuration: select tools, share defaults, upgrade versions, and run everyday commands.
 - [Installing mise](https://mise.jdx.dev/installing-mise.html): If you are new to mise, follow the Getting Started guide first.
 - [IDE Integration](https://mise.jdx.dev/ide-integration.html): Code editors and IDEs work differently from interactive shells.
 - [Continuous Integration](https://mise.jdx.dev/continuous-integration.html): You can use mise in continuous integration (CI) environments to provision the tools your project needs. We recommend pinning tools to specific versions so the environment is reproducible.
@@ -20,7 +20,7 @@
 
 ## Dev Tools
 
-- [Dev Tools Overview](https://mise.jdx.dev/dev-tools/): Install and switch between dev tools like node, python, cmake, terraform, and hundreds more, all from the same project config.
+- [Dev Tools Overview](https://mise.jdx.dev/dev-tools/): mise installs development tools and selects their versions for each project. Keep multiple versions of Node.js, Python, Ruby, Go, and other tools on the same machine, then declare which ones a project…
 - [Comparison to asdf](https://mise.jdx.dev/dev-tools/comparison-to-asdf.html): mise can be used as a drop-in replacement for asdf. It supports the same .tool-versions files that you may have used with asdf and can use asdf plugins through the asdf backend.
 - [Shims](https://mise.jdx.dev/dev-tools/shims.html): There are several ways to load the mise context (dev tools, environment variables) into your shell.
 - [Tool Aliases](https://mise.jdx.dev/dev-tools/aliases.html): [alias] has been renamed to [tool_alias] to distinguish it from [shell_alias]. The old [alias] key still works but is deprecated.

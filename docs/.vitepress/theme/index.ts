@@ -4,6 +4,7 @@ import { enhanceAppWithTabs } from "vitepress-plugin-tabs/client";
 import { initBanner } from "./banner";
 import "virtual:group-icons.css";
 import "./custom.css";
+import "./landing.css";
 import Layout from "./Layout.vue";
 import { onMounted } from "vue";
 import { data as starsData } from "../stars.data";

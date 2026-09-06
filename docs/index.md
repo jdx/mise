@@ -2,125 +2,15 @@
 layout: home
 title: Home
 
-# Not rendered: Layout.vue overrides the theme's `home-hero-info` slot with the
-# custom hero, so these values never reach the page (no duplicate H1). They stay
-# here because docs/.vitepress/llms.ts reads them for the llms.txt header.
+# The custom HomeHero renders the hero. These values supply the llms.txt header.
 hero:
   name: mise-en-place
   tagline: Dev tools, env vars, and tasks in one CLI
 ---
 
 <section class="landing-page" aria-label="mise overview">
-  <div class="hero-card" aria-label="One mise.toml drives tools, env vars, and tasks">
-    <div class="card-file">
-      <div class="card-bar"><strong>mise.toml</strong><span>illustrative project configuration</span></div>
-      <div class="card-toml" aria-label="Example mise.toml">
-        <div class="row row-tools"><span class="tk-section">[tools]</span></div>
-        <div class="row row-tools"><span class="tk-key">node</span><span class="tk-op"> = </span><span class="tk-str">"24"</span></div>
-        <div class="row row-tools"><span class="tk-key">python</span><span class="tk-op"> = </span><span class="tk-str">"3.13"</span></div>
-        <div class="row row-tools"><span class="tk-key">terraform</span><span class="tk-op"> = </span><span class="tk-str">"1.13"</span></div>
-        <div class="row row-blank"></div>
-        <div class="row row-env"><span class="tk-section">[env]</span></div>
-        <div class="row row-env"><span class="tk-key">DATABASE_URL</span><span class="tk-op"> = </span><span class="tk-str">"postgres://localhost/orders"</span></div>
-        <div class="row row-env"><span class="tk-key">_.file</span><span class="tk-op"> = </span><span class="tk-str">".env.local"</span></div>
-        <div class="row row-blank"></div>
-        <div class="row row-tasks"><span class="tk-section">[tasks.build]</span></div>
-        <div class="row row-tasks"><span class="tk-key">run</span><span class="tk-op"> = </span><span class="tk-str">"node --check app.js"</span></div>
-        <div class="row row-tasks"><span class="tk-section">[tasks.test]</span></div>
-        <div class="row row-tasks"><span class="tk-key">depends</span><span class="tk-op"> = [</span><span class="tk-str">"build"</span><span class="tk-op">]</span></div>
-        <div class="row row-tasks"><span class="tk-key">run</span><span class="tk-op"> = </span><span class="tk-str">"node --test"</span></div>
-        <div class="row row-blank"></div>
-        <div class="row row-boot"><span class="tk-section">[bootstrap.packages]</span></div>
-        <div class="row row-boot"><span class="tk-key">"brew:postgresql@17"</span><span class="tk-op"> = </span><span class="tk-str">"latest"</span></div>
-        <div class="row row-boot"><span class="tk-key">"apt:build-essential"</span><span class="tk-op"> = </span><span class="tk-str">"latest"</span></div>
-        <div class="row row-blank"></div>
-        <div class="row row-boot"><span class="tk-section">[dotfiles]</span></div>
-        <div class="row row-boot"><span class="tk-key">"~/.config/mise/config.toml"</span><span class="tk-op"> = { </span><span class="tk-key">source</span><span class="tk-op"> = </span><span class="tk-str">"config.toml"</span><span class="tk-op">, </span><span class="tk-key">mode</span><span class="tk-op"> = </span><span class="tk-str">"symlink"</span><span class="tk-op"> }</span></div>
-      </div>
-    </div>
-    <div class="card-outputs">
-      <div class="card-output pillar-tools">
-        <div class="card-output-head"><span class="pillar-dot"></span><span>Dev tools</span><code>$ mise install</code></div>
-        <div class="terminal-lines">
-          <div><span class="dim">mise</span> node@24.18.0 <span class="ok">✓ installed</span></div>
-          <div><span class="dim">mise</span> python@3.13.14 <span class="ok">✓ installed</span></div>
-          <div><span class="dim">mise</span> terraform@1.13.2 <span class="ok">✓ installed</span></div>
-        </div>
-      </div>
-      <div class="card-output pillar-env">
-        <div class="card-output-head"><span class="pillar-dot"></span><span>Environments</span><code>$ mise env</code></div>
-        <div class="terminal-lines">
-          <div>export DATABASE_URL=postgres://localhost/orders</div>
-          <div>export STRIPE_KEY=sk_test_51H… <span class="dim"># from .env.local</span></div>
-        </div>
-      </div>
-      <div class="card-output pillar-tasks">
-        <div class="card-output-head"><span class="pillar-dot"></span><span>Tasks</span><code>$ mise run test</code></div>
-        <div class="terminal-lines">
-          <div><span class="key">[build]</span> $ node --check app.js</div>
-          <div><span class="key">[test]</span> $ node --test</div>
-          <div><span class="ok">tests passed</span></div>
-        </div>
-      </div>
-      <div class="card-output pillar-boot">
-        <div class="card-output-head"><span class="pillar-dot"></span><span>Bootstrap</span><code>$ mise bootstrap</code></div>
-        <div class="terminal-lines">
-          <div><span class="dim">mise bootstrap:</span> system packages</div>
-          <div>brew:postgresql@17 <span class="ok">✓ installed</span></div>
-          <div><span class="dim">mise bootstrap:</span> dotfiles</div>
-          <div>~/.config/mise/config.toml <span class="ok">✓ symlinked</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="landing-section landing-why">
-    <p class="landing-kicker"><span>01</span> Why mise</p>
-    <div class="landing-why-grid">
-      <div>
-        <h2>Keep project setup with the project.</h2>
-        <p class="landing-lede">
-          A project needs more than a list of tools: it needs their versions,
-          environment variables, and commands for everyday work. Keep those
-          choices in <code>mise.toml</code> so teammates can install the declared
-          tools and run the project's tasks from a fresh checkout.
-        </p>
-        <p class="landing-note">
-          Coming from asdf? mise reads <code>.tool-versions</code> as-is. Files
-          like <code>.nvmrc</code> work too, once you
-          <a href="/configuration.html#idiomatic-version-files">enable them</a>.
-        </p>
-      </div>
-      <div class="landing-ledger" aria-label="Project setup in mise.toml">
-        <div class="ledger-col ledger-before">
-          <p class="ledger-head">What you declare</p>
-          <ul>
-            <li>Tool versions <span>Node.js, Python, Go</span></li>
-            <li>Environment <span>variables, .env files</span></li>
-            <li>Tasks <span>build, test, lint</span></li>
-            <li>System packages <span>via OS package managers</span></li>
-            <li>Dotfiles <span>links and templates</span></li>
-            <li>Services <span>machine setup</span></li>
-          </ul>
-        </div>
-        <div class="ledger-col ledger-after">
-          <p class="ledger-head">Where it lives</p>
-          <ul>
-            <li><strong>mise</strong> <span>mise.toml</span></li>
-          </ul>
-          <div class="ledger-pillars">
-            <span class="pillar-tools">tools</span>
-            <span class="pillar-env">env</span>
-            <span class="pillar-tasks">tasks</span>
-            <span class="pillar-boot">bootstrap</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <div class="landing-section landing-stations">
-    <p class="landing-kicker"><span>02</span> What it does</p>
+    <p class="landing-kicker"><span>01</span> The essentials</p>
     <h2>Start with tools. Add what you need.</h2>
     <div class="stations-grid">
       <a class="station pillar-tools" href="/dev-tools/">
@@ -160,10 +50,11 @@ hero:
         <span class="card-link">Bootstrap</span>
       </a>
     </div>
+    <p class="landing-note migration-note">Coming from asdf? Your <code>.tool-versions</code> already works. <a href="/configuration.html#idiomatic-version-files">Enable files like .nvmrc, too</a>.</p>
   </div>
 
   <div class="landing-section landing-switch">
-    <p class="landing-kicker"><span>03</span> Day to day</p>
+    <p class="landing-kicker"><span>02</span> Day to day</p>
     <div class="landing-switch-grid">
       <div>
         <h2>Change directory. <em>Everything follows.</em></h2>
@@ -201,7 +92,7 @@ hero:
   </div>
 
   <div class="landing-section landing-machine">
-    <p class="landing-kicker"><span>04</span> New machine</p>
+    <p class="landing-kicker"><span>03</span> New machine</p>
     <div class="landing-machine-grid">
       <div class="landing-config-card" aria-label="Example bootstrap config">
         <div class="card-bar"><strong>mise.toml</strong><span>~/.config/mise</span></div>
@@ -303,7 +194,7 @@ hero:
   </a>
 
   <div class="landing-section landing-recipe">
-    <p class="landing-kicker"><span>05</span> Quickstart</p>
+    <p class="landing-kicker"><span>04</span> Quickstart</p>
     <h2>Run your first project task.</h2>
     <ol class="recipe">
       <li class="recipe-row">
