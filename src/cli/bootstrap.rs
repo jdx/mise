@@ -649,6 +649,9 @@ struct BootstrapComposeStatus {
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapRemote {
+    /// Enable experimental features on the target; retain opt-in after tracking setup
+    #[usage(long)]
+    experimental: bool,
     /// Install a Git repository as persistent global configuration on each target
     #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = ["source", "copy_link", "copy_links", "exclude"])]
     from_git: Option<String>,
@@ -1654,6 +1657,13 @@ impl Bootstrap {
             }
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PostDotfiles)
                 .await?;
+            if !self.dry_run
+                && files
+                    .iter()
+                    .any(|file| file.mode == system::files::FileMode::Track)
+            {
+                system::remote::persist_experimental_opt_in()?;
+            }
         }
 
         if skip.contains(&BootstrapPart::Shell) {
@@ -3083,6 +3093,7 @@ impl BootstrapRemote {
             bootstrap_command: self.bootstrap_command,
         };
         let options = system::remote::RemoteRunOptions {
+            experimental: self.experimental,
             relay,
             dry_run: self.dry_run,
             yes: self.yes,
@@ -3127,6 +3138,21 @@ impl BootstrapRemote {
             None
         };
         let mut artifacts = system::remote::RemoteArtifactResolver::default();
+        if !options.experimental {
+            let tracking = if let Some(repository) = &repository {
+                system::remote_repository::history_branch(&repository.bundle, &repository.revision)?
+                    .is_some()
+            } else {
+                system::files::files_from_config(&config)?
+                    .iter()
+                    .any(|file| file.mode == system::files::FileMode::Track)
+            };
+            if tracking {
+                bail!(
+                    "remote dotfile tracking requires explicit opt-in: pass `mise bootstrap remote --experimental`"
+                );
+            }
+        }
         for host in selected.values() {
             if let Err(error) =
                 system::remote::run(host, &options, &mut artifacts, repository.as_ref()).await

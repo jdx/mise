@@ -1494,6 +1494,7 @@ Select inventory hosts by name, tag, or `--all`, or supply ad-hoc `--host` targe
 The source is staged on each target and bootstrap runs there. `--from-git` instead
 installs persistent global configuration; preview that choice with `--dry-run`.
 """#
+        flag --experimental help="Enable experimental features on the target; retain opt-in after tracking setup"
         flag --from-git help="Install a Git repository as persistent global configuration on each target" {
             conflicts "--source" "--copy-link" "--copy-links" "--exclude"
             arg "<GIT_URL|OWNER/REPO>"

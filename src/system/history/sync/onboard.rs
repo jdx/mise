@@ -263,6 +263,9 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         }
     );
     let durable_access = durable_access(&onboarding.origin, &onboarding.branch);
+    if applied.held == 0 && synced.conflicts == 0 && !configuration_held {
+        crate::system::remote::persist_experimental_opt_in()?;
+    }
     if !durable_access {
         warn!(
             "setup complete, but ongoing synchronization needs credentials on this host: the borrowed GitHub access ends with this session. Run `mise x gh -- gh auth login` and `mise x gh -- gh auth setup-git` here, or connect an SSH url with `mise bootstrap dotfiles origin set <url>`"

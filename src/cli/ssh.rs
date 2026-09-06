@@ -92,7 +92,7 @@ impl Ssh {
                 }
                 let fetch_from = bundle.to_string_lossy().into_owned();
                 onboard::probe(&store, &fetch_from, &branch)?;
-                onboard::run(
+                let outcome = onboard::run(
                     &store,
                     &onboard::Onboarding {
                         fetch_from,
@@ -103,6 +103,16 @@ impl Ssh {
                     },
                 )
                 .await?;
+                if !self.repository_dry_run
+                    && (outcome.configuration_held
+                        || !crate::system::history::sync::run::read_status(store.state_dir())?
+                            .conflicts
+                            .is_empty())
+                {
+                    bail!(
+                        "setup has conflicts; nothing was bootstrapped; use `mise bootstrap dotfiles status` to resolve them"
+                    );
+                }
                 return Ok(());
             }
             crate::system::remote_repository::install(

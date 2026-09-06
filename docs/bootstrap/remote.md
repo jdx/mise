@@ -305,7 +305,7 @@ mise configuration directory:
 
 ```sh
 # Authenticate on this machine first (for example, using gh auth login).
-mise bootstrap remote --host devbox --from-git jdx/dotfiles \
+mise bootstrap remote --experimental --host devbox --from-git jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles
 ```
 
@@ -351,13 +351,15 @@ installs the history watcher like any other user service. With `--dry-run` the
 target shows that plan (the files it would write, and any held for a decision),
 records no connection, and keeps no fetched branch:
 
-Tracking-enabled setup repositories are experimental. Before using one,
-install mise on the target if necessary and run `mise settings experimental=true`
-there. Enabling experimental locally does not enable it on the remote host.
-Ordinary repository-based bootstrap does not require this opt-in.
+Tracking-enabled setup repositories require `--experimental`. This explicitly
+enables experimental features for the remote invocation and, after successful
+tracking setup, saves the opt-in in the target's machine-local mise configuration
+so its watcher can keep running. Dry runs do not persist it. Enabling experimental
+locally alone does not opt in the remote host. Ordinary repository-based bootstrap
+does not require the flag.
 
 ```sh
-mise bootstrap remote --host devbox --install-mise --from-git jdx/dotfiles \
+mise bootstrap remote --experimental --host devbox --install-mise --from-git jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles
 ```
 
@@ -429,7 +431,7 @@ mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
   --github-relay-log-requests --github-relay-max-duration 1h
 
 # Structured relay events for troubleshooting or auditing:
-mise bootstrap remote --host devbox --from-git jdx/dotfiles \
+mise bootstrap remote --experimental --host devbox --from-git jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles \
   --github-relay-log-requests --github-relay-log-format jsonl
 ```

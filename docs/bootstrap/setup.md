@@ -193,7 +193,7 @@ the configuration itself, the command stops there and names the `pull
 --take-remote|--keep-local` that decides it. Over SSH:
 
 ```sh
-mise bootstrap remote --host devbox --install-mise --from-git you/setup \
+mise bootstrap remote --experimental --host devbox --install-mise --from-git you/setup \
   --github-relay-read-only --github-relay-repo you/setup
 ```
 

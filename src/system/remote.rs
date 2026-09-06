@@ -115,6 +115,7 @@ pub(crate) struct RemoteOverrides {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RemoteRunOptions {
+    pub experimental: bool,
     pub relay: Option<crate::github_relay::Scope>,
     pub dry_run: bool,
     pub yes: bool,
@@ -133,6 +134,28 @@ pub(crate) struct RemoteArtifactResolver {
     manifest: Option<ReleaseManifest>,
     artifacts: IndexMap<String, PathBuf>,
     official_local_verified: bool,
+}
+
+/// Retain an explicitly forwarded opt-in only after tracked setup succeeds.
+/// The machine-local file is not part of the shared setup configuration.
+pub(crate) fn persist_experimental_opt_in() -> Result<()> {
+    if std::env::var("MISE_BOOTSTRAP_REMOTE_EXPERIMENTAL").as_deref() != Ok("1") {
+        return Ok(());
+    }
+    let path = crate::cli::dotfiles::track::declaration_file(true)?;
+    let mut document = crate::cli::dotfiles::track::read_document(&path)?;
+    let settings = document
+        .entry("settings")
+        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    let settings = settings
+        .as_table_mut()
+        .ok_or_else(|| eyre::eyre!("[settings] must be a table in {}", path.display()))?;
+    settings.insert("experimental", toml_edit::value(true));
+    if let Some(parent) = path.parent() {
+        crate::file::create_dir_all(parent)?;
+    }
+    crate::file::write(&path, document.to_string())?;
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -577,6 +600,7 @@ async fn run_staged(
             )
             .await?;
         let mut install = vec![
+            "env",
             mise.as_str(),
             "ssh",
             "--repository-bundle",
@@ -586,6 +610,15 @@ async fn run_staged(
             "--repository-revision",
             &repository.revision,
         ];
+        if options.experimental {
+            install.splice(
+                1..1,
+                [
+                    "MISE_EXPERIMENTAL=1",
+                    "MISE_BOOTSTRAP_REMOTE_EXPERIMENTAL=1",
+                ],
+            );
+        }
         if options.update {
             install.push("--repository-update");
         }
@@ -631,6 +664,12 @@ async fn run_staged(
         format!("MISE_TRUSTED_CONFIG_PATHS={project}"),
     ];
     argv.push(format!("MISE_ENV={}", session.host.mise_env.join(",")));
+    if options.experimental {
+        argv.extend([
+            "MISE_EXPERIMENTAL=1".into(),
+            "MISE_BOOTSTRAP_REMOTE_EXPERIMENTAL=1".into(),
+        ]);
+    }
     #[cfg(unix)]
     if relay.is_some() {
         argv.extend([
