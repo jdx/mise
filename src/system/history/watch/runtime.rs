@@ -303,8 +303,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         ),
                     }
                 } else if rescan {
-                    let held = capture.schedule.held_paths(now);
-                    capture.attempt(&state.tracked, "rescan", &held);
+                    capture.reconcile(&state.tracked, "rescan");
                 } else if pending_appeared
                     && let Ok(true) = state.reload().await
                 {
@@ -314,6 +313,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         &format!("a tracked path appeared; watching {} anchor(s)", installed.len()),
                         json!({ "anchors": installed.len(), "pending": state.plan.pending.len() }),
                     );
+                    capture.write_health();
                 }
             }
             _ = flush => {
@@ -368,9 +368,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 {
                     installed = install(&mut debouncer, &installed, &state.plan.anchors, &mut capture)?;
                 }
-                let now = Instant::now();
-                let held = capture.schedule.held_paths(now);
-                capture.attempt(&state.tracked, "reconcile", &held);
+                capture.reconcile(&state.tracked, "reconcile");
                 capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
                 capture.write_health();
             }
@@ -698,6 +696,24 @@ impl Capture {
     /// When a deferred or failed capture is retried, if one is pending.
     fn retry_due(&self) -> Option<Instant> {
         self.retry_kind.and(self.retry_at)
+    }
+
+    /// A whole-set capture (a reconcile or rescan) that respects the
+    /// schedule: held paths are carried forward, and the paths that were due
+    /// count as saved so they are not saved again at their own deadline.
+    fn reconcile(&mut self, tracked: &TrackedSet, reason: &str) -> Attempt {
+        let now = Instant::now();
+        let held = self.schedule.held_paths(now);
+        let due = self.schedule.due_paths(now);
+        let outcome = self.attempt(tracked, reason, &held);
+        if outcome == Attempt::Done {
+            for path in &due {
+                self.schedule.saved(path, now);
+            }
+            self.schedule.prune(now);
+            self.persist_schedule();
+        }
+        outcome
     }
 
     /// A flush deadline no earlier than the current backoff allows.
