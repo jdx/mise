@@ -7,6 +7,15 @@ echo current >~/.config/review/file
 assert_succeed "mise bootstrap dotfiles save"
 chmod 600 ~/.config/review/file
 assert_succeed "mise bootstrap dotfiles save"
+# Directory selection must see child permission-only history too.
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review --yes"
+assert "cat ~/.config/review/file" "current"
+if [[ "$(uname -s)" == Darwin ]]; then
+  assert "stat -f %Lp ~/.config/review/file" "644"
+else
+  assert "stat -c %a ~/.config/review/file" "644"
+fi
+assert_succeed "mise bootstrap dotfiles undo --yes"
 # The directory's differing tree predates the file's permission-only
 # checkpoint. The explicit child selection wins, in either argument order.
 assert_succeed "mise bootstrap dotfiles rollback ~/.config/review ~/.config/review/file --yes"

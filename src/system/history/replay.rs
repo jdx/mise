@@ -1287,6 +1287,23 @@ fn newest_differing(
         }
         let saved = repo.object_at(snapshot, &tree_path)?;
         if saved == current {
+            // Git tree IDs do not encode non-executable permission changes
+            // on descendants. Compare captured file modes for a directory
+            // selection before treating an identical subtree as unchanged.
+            if saved.as_ref().is_some_and(|(mode, _)| mode == "040000") {
+                let prefix = format!("{tree_path}/");
+                let changed = repo.ls_tree(snapshot)?.iter().any(|file| {
+                    let child = normalize_target(Path::new(&tree_path_to_display(&file.path)));
+                    file.path.starts_with(&prefix)
+                        && default_bits(&file.mode).is_some_and(|default| {
+                            live_bits(&child, default)
+                                != recorded_bits(&entry.checkpoint, &file.path, &child)
+                        })
+                });
+                if changed {
+                    return Ok(Some(entry.clone()));
+                }
+            }
             if saved.is_none()
                 && normalize_target(path).is_dir()
                 && matches!(
