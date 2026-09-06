@@ -863,15 +863,27 @@ pub(crate) fn normalize_target(path: &Path) -> PathBuf {
     dunce::canonicalize(&expanded).unwrap_or_else(|_| lexical(&expanded))
 }
 
-/// Where a symlink points, lexically: the target need not exist.
+/// Where a chain of symlinks ends, lexically: the last link's target,
+/// which need not exist (a target between two versions, say).
 pub(crate) fn link_target(link: &Path) -> Option<PathBuf> {
-    let dest = std::fs::read_link(link).ok()?;
-    let joined = if dest.is_absolute() {
-        dest
-    } else {
-        link.parent()?.join(dest)
-    };
-    Some(lexical(&joined))
+    let mut current = link.to_path_buf();
+    let mut seen = BTreeSet::new();
+    for _ in 0..MAX_LINK_DEPTH {
+        if !seen.insert(current.clone()) {
+            return None;
+        }
+        let dest = std::fs::read_link(&current).ok()?;
+        let joined = if dest.is_absolute() {
+            dest
+        } else {
+            current.parent()?.join(dest)
+        };
+        current = lexical(&joined);
+        if !current.is_symlink() {
+            return Some(current);
+        }
+    }
+    None
 }
 
 fn lexical(path: &Path) -> PathBuf {

@@ -637,9 +637,9 @@ impl State {
 
     /// Whether a path that does not exist right now may still be one the
     /// watcher saves once it is back: under a declared autosave entry, or
-    /// where a tracked symlink points (its target between two versions,
-    /// say). A path nothing declares for automatic saving any more is not
-    /// kept for being missing.
+    /// where a tracked symlink (through any links on the way) points, its
+    /// target between two versions, say. A path nothing declares for
+    /// automatic saving any more is not kept for being missing.
     fn may_cover_missing(&self, path: &Path) -> bool {
         if self.hard.iter().any(|dir| path.starts_with(dir)) || self.exclude.is_match(path) {
             return false;
@@ -1079,7 +1079,7 @@ impl Shutdown {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::system::files::{FileMode, FilePolicy};
@@ -1103,9 +1103,11 @@ mod tests {
         let root = normalize(dir.path());
         let hypr = root.join("hypr");
         std::fs::create_dir_all(&hypr).unwrap();
-        // a tracked link whose target is between two versions
+        // a tracked link whose target, through another link, is between
+        // two versions
         let link = root.join("link");
-        std::os::unix::fs::symlink(root.join("elsewhere/target"), &link).unwrap();
+        std::os::unix::fs::symlink(root.join("hop"), &link).unwrap();
+        std::os::unix::fs::symlink(root.join("elsewhere/target"), root.join("hop")).unwrap();
         let policy = FilePolicy::for_mode(FileMode::Track);
         let mut tracked = TrackedSet {
             entries: vec![
