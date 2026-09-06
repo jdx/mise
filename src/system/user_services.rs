@@ -200,6 +200,7 @@ impl UserServiceRequest {
             environment: self.environment.clone(),
             working_directory: self.working_directory.clone(),
             kickstart: self.start(),
+            nice: self.nice,
             ..Default::default()
         };
         LaunchdRequest::from_toml(self.name.clone(), config)
@@ -214,6 +215,7 @@ impl UserServiceRequest {
         request.working_directory = self.working_directory.clone();
         request.start = self.start();
         request.at_logon = self.enabled;
+        request.nice = self.nice;
         request
     }
 }
@@ -293,7 +295,7 @@ pub(crate) fn durable_mise_executable() -> Option<PathBuf> {
     crate::env::PATH
         .iter()
         .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
-        .filter(|candidate| candidate.is_file())
+        .filter(|candidate| candidate.is_file() && crate::file::is_executable(candidate))
         .filter_map(|candidate| std::fs::canonicalize(candidate).ok())
         .find(|path| is_durable(path))
 }

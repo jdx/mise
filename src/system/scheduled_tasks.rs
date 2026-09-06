@@ -25,6 +25,8 @@ pub(crate) struct ScheduledTaskRequest {
     pub working_directory: Option<String>,
     /// Whether the task should be running now.
     pub start: bool,
+    /// A niceness above zero lowers the task's priority.
+    pub nice: Option<i8>,
     /// Whether the logon trigger is enabled.
     pub at_logon: bool,
 }
@@ -69,6 +71,7 @@ impl ScheduledTaskRequest {
             working_directory: None,
             start: true,
             at_logon: true,
+            nice: None,
         }
     }
 }
@@ -162,7 +165,13 @@ pub(crate) fn render_xml(request: &ScheduledTaskRequest, user_id: &str) -> Resul
     if request.restart_on_failure {
         out.push_str("    <RestartOnFailure>\n      <Interval>PT1M</Interval>\n      <Count>3</Count>\n    </RestartOnFailure>\n");
     }
-    out.push_str("    <Priority>7</Priority>\n");
+    // 7 is the default; a nice service runs at the lowest normal priority
+    let priority = if request.nice.is_some_and(|nice| nice > 0) {
+        9
+    } else {
+        7
+    };
+    out.push_str(&format!("    <Priority>{priority}</Priority>\n"));
     out.push_str("  </Settings>\n");
     out.push_str("  <Actions Context=\"Author\">\n    <Exec>\n");
     out.push_str(&format!("      <Command>{}</Command>\n", escape(&command)));

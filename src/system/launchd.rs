@@ -29,6 +29,9 @@ pub(crate) struct LaunchdTomlConfig {
     pub start_interval: Option<u64>,
     #[serde(default)]
     pub throttle_interval: Option<u64>,
+    /// Niceness of the process (`Nice` in the plist).
+    #[serde(default)]
+    pub nice: Option<i8>,
     #[serde(default)]
     pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
     #[serde(default)]
@@ -77,6 +80,7 @@ pub(crate) struct LaunchdRequest {
     pub keep_alive_on_failure: bool,
     pub start_interval: Option<u64>,
     pub throttle_interval: Option<u64>,
+    pub nice: Option<i8>,
     pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
     pub queue_directories: Vec<String>,
     pub environment: IndexMap<String, String>,
@@ -144,6 +148,7 @@ impl LaunchdRequest {
             keep_alive_on_failure: config.keep_alive_on_failure,
             start_interval: config.start_interval,
             throttle_interval: config.throttle_interval,
+            nice: config.nice,
             start_calendar_interval: config.start_calendar_interval,
             queue_directories: config.queue_directories,
             environment: config.environment,
@@ -423,6 +428,9 @@ fn plist_value(request: &LaunchdRequest) -> Value {
     if let Some(interval) = request.throttle_interval {
         dict.insert("ThrottleInterval".into(), Value::Integer(interval.into()));
     }
+    if let Some(nice) = request.nice {
+        dict.insert("Nice".into(), Value::Integer(nice.into()));
+    }
     if let Some(interval) = &request.start_calendar_interval {
         dict.insert(
             "StartCalendarInterval".into(),
@@ -700,6 +708,7 @@ mod tests {
             keep_alive_on_failure: false,
             start_interval: Some(60),
             throttle_interval: Some(300),
+            nice: None,
             start_calendar_interval: Some(LaunchdCalendarIntervals::Single(
                 LaunchdCalendarInterval {
                     hour: Some(2),
@@ -811,6 +820,7 @@ mod tests {
             keep_alive_on_failure: false,
             start_interval: None,
             throttle_interval: None,
+            nice: None,
             start_calendar_interval: Some(LaunchdCalendarIntervals::Multiple(vec![
                 LaunchdCalendarInterval {
                     hour: Some(3),
@@ -866,6 +876,7 @@ mod tests {
             LaunchdTomlConfig {
                 program: Some("/bin/echo".to_string()),
                 throttle_interval: Some(10),
+                nice: None,
                 queue_directories: vec![
                     "~/Library/Queues/sync".to_string(),
                     "/var/spool/sync".to_string(),
