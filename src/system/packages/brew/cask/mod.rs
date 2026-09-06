@@ -25,7 +25,8 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::result::Result;
 use crate::system::ManagerPackageOptions;
 use crate::system::packages::{
-    InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager,
+    InstallOpts, PackageRequest, PackageState, PackageStatus, PackageUpgradeOutcome,
+    PackageUpgradeResult, SystemPackageManager,
 };
 use crate::system::sudo;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -82,6 +83,7 @@ struct InstallAttempt<'a> {
     mode: InstallMode,
     ancestors: BTreeSet<String>,
     decision: Option<UpgradeDecision>,
+    outcome: Option<PackageUpgradeOutcome>,
     manager_options: &'a ManagerPackageOptions,
     #[cfg(test)]
     hook: Option<&'a mut dyn FnMut(InstallTestEvent) -> Result<()>>,
@@ -93,6 +95,7 @@ impl<'a> InstallAttempt<'a> {
             mode,
             ancestors: BTreeSet::new(),
             decision: None,
+            outcome: None,
             manager_options,
             #[cfg(test)]
             hook: None,
@@ -103,6 +106,37 @@ impl<'a> InstallAttempt<'a> {
         let skip = !matches!(decision, UpgradeDecision::Older { .. });
         self.decision = Some(decision);
         skip
+    }
+
+    fn take_outcome(&mut self, dry_run: bool) -> Result<PackageUpgradeOutcome> {
+        match self.decision.take() {
+            Some(UpgradeDecision::Older { live, available }) => Ok(if dry_run {
+                PackageUpgradeOutcome::WouldUpgrade {
+                    from: live,
+                    to: available,
+                }
+            } else {
+                PackageUpgradeOutcome::Upgraded {
+                    from: live,
+                    to: available,
+                }
+            }),
+            Some(UpgradeDecision::Equal { live, .. }) => {
+                Ok(PackageUpgradeOutcome::UpToDate { version: live })
+            }
+            Some(UpgradeDecision::Newer { live, available }) => {
+                Ok(PackageUpgradeOutcome::Skipped {
+                    reason: format!("live version {live} is newer than cask {available}"),
+                })
+            }
+            Some(UpgradeDecision::Unknown { reason }) => {
+                Ok(PackageUpgradeOutcome::Skipped { reason })
+            }
+            None => self
+                .outcome
+                .take()
+                .ok_or_else(|| eyre!("brew-cask: completed upgrade must have an outcome")),
+        }
     }
 
     #[cfg(test)]
@@ -477,6 +511,79 @@ impl BrewCaskManager {
         Self {}
     }
 
+    async fn upgrade_packages(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+    ) -> Result<Vec<PackageUpgradeResult>> {
+        if let Some(pkg) = pkgs.iter().find(|pkg| pkg.version.is_some()) {
+            bail!("brew casks are installed at their current version ('{pkg}')");
+        }
+        let mpr = MultiProgressReport::get();
+        if !opts.dry_run {
+            mpr.init_footer(false, "upgrade", pkgs.len());
+        }
+        let mut results: Vec<PackageUpgradeResult> = Vec::with_capacity(pkgs.len());
+        for request in pkgs {
+            let pr = (!opts.dry_run)
+                .then(|| mpr.add_pre_backend(&format!("brew-cask:{}", request.name)));
+            let mut attempt =
+                InstallAttempt::new(InstallMode::Upgrade, &ManagerPackageOptions::None);
+            let result = self
+                .upgrade_one(request, opts, pr.as_deref(), &mut attempt)
+                .await;
+            match result {
+                Ok(outcome) => {
+                    if let Some(pr) = pr {
+                        pr.finish_with_message("processed".into());
+                        mpr.footer_inc(1);
+                    }
+                    results.push(PackageUpgradeResult {
+                        request: request.clone(),
+                        outcome,
+                    });
+                }
+                Err(error) => {
+                    if let Some(pr) = pr {
+                        pr.finish_with_icon("failed".into(), ProgressIcon::Error);
+                        mpr.footer_finish();
+                    }
+                    for result in &results {
+                        result.log(self.name());
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        if !opts.dry_run {
+            mpr.footer_finish();
+        }
+        Ok(results)
+    }
+
+    async fn upgrade_one(
+        &self,
+        request: &PackageRequest,
+        opts: &InstallOpts,
+        pr: Option<&dyn SingleReport>,
+        attempt: &mut InstallAttempt<'_>,
+    ) -> Result<PackageUpgradeOutcome> {
+        self.install_one_attempt(request, opts, pr, attempt).await?;
+        attempt.take_outcome(opts.dry_run)
+    }
+
+    #[cfg(test)]
+    async fn upgrade_one_with_test_hook(
+        &self,
+        request: &PackageRequest,
+        opts: &InstallOpts,
+        mut hook: impl FnMut(InstallTestEvent) -> Result<()>,
+    ) -> Result<PackageUpgradeOutcome> {
+        let mut attempt = InstallAttempt::new(InstallMode::Upgrade, &ManagerPackageOptions::None);
+        attempt.hook = Some(&mut hook);
+        self.upgrade_one(request, opts, None, &mut attempt).await
+    }
+
     async fn install_with_manager_options(
         &self,
         pkgs: &[PackageRequest],
@@ -569,16 +676,44 @@ impl BrewCaskManager {
         let mut ancestors = attempt.ancestors.clone();
         ancestors.insert(cask.token.clone());
         if let Some(version) = homebrew_installed_version(&cask.token)? {
-            info!(
-                "brew-cask:{}: installed and managed by Homebrew; leaving unchanged",
-                cask.token
-            );
+            if attempt.mode == InstallMode::Install {
+                info!(
+                    "brew-cask:{}: installed and managed by Homebrew; leaving unchanged",
+                    cask.token
+                );
+            }
+            attempt.outcome = Some(PackageUpgradeOutcome::Skipped {
+                reason: "managed by Homebrew".into(),
+            });
             return Ok(version);
         }
         let artifacts = cask_artifacts(&cask)?;
         validate_platform_support(&cask, &artifacts)?;
         let installed_version = mise_installed_cask_version(&cask)?;
         let auto_upgrade = attempt.mode == InstallMode::Upgrade && cask.auto_updates;
+        if attempt.mode == InstallMode::Upgrade && !auto_upgrade {
+            let Some(from) = installed_version.as_ref() else {
+                attempt.outcome = Some(PackageUpgradeOutcome::Skipped {
+                    reason: "package is no longer installed".into(),
+                });
+                return Ok(cask.version.clone());
+            };
+            attempt.outcome = Some(if from == &cask.version {
+                PackageUpgradeOutcome::UpToDate {
+                    version: from.clone(),
+                }
+            } else if opts.dry_run {
+                PackageUpgradeOutcome::WouldUpgrade {
+                    from: from.clone(),
+                    to: cask.version.clone(),
+                }
+            } else {
+                PackageUpgradeOutcome::Upgraded {
+                    from: from.clone(),
+                    to: cask.version.clone(),
+                }
+            });
+        }
         let initial_receipt = if auto_upgrade {
             previous_receipt(&cask)?
         } else {
@@ -601,7 +736,9 @@ impl BrewCaskManager {
         } else if let Some(version) = installed_version.as_ref()
             && (cask.auto_updates || version == &cask.version)
         {
-            info!("brew-cask:{}: already installed", cask.token);
+            if attempt.mode == InstallMode::Install {
+                info!("brew-cask:{}: already installed", cask.token);
+            }
             return Ok(version.clone());
         }
         for conflict in &cask.conflicts_with.cask {
@@ -685,6 +822,9 @@ impl BrewCaskManager {
                 && (cask.auto_updates || version == cask.version)
             {
                 file::remove_all(&stage)?;
+                attempt.outcome = Some(PackageUpgradeOutcome::UpToDate {
+                    version: version.clone(),
+                });
                 return Ok(version);
             }
             let previous_binaries = previous_binary_targets(&cask)?;
@@ -1085,16 +1225,16 @@ impl SystemPackageManager for BrewCaskManager {
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        for pkg in pkgs {
-            if pkg.version.is_some() {
-                bail!("brew casks are installed at their current version ('{pkg}')");
-            }
-            let mut attempt =
-                InstallAttempt::new(InstallMode::Upgrade, &ManagerPackageOptions::None);
-            self.install_one_attempt(pkg, opts, None, &mut attempt)
-                .await?;
-        }
+        self.upgrade_packages(pkgs, opts).await?;
         Ok(())
+    }
+
+    async fn upgrade_with_report(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+    ) -> Result<Option<Vec<PackageUpgradeResult>>> {
+        self.upgrade_packages(pkgs, opts).await.map(Some)
     }
 }
 
