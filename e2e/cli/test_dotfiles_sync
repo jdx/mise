@@ -157,6 +157,39 @@ assert_contains "$b bootstrap dotfiles sync 2>&1" "published"
 assert_succeed "mise bootstrap dotfiles sync && mise bootstrap dotfiles pull --yes"
 assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
 
+# ---- a manual-save file: an unsaved local edit holds the incoming version
+# until it is saved or discarded; a platform variant stream reaches the
+# machine that selects it
+case "$(uname -s)" in
+  Darwin) this_os=macos ;;
+  *) this_os=linux ;;
+esac
+mkdir -p ~/.config/app
+echo '{"n":1}' >~/.config/app/state.json
+echo 'export A=1' >~/.zshrc
+assert_succeed "mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave"
+assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $this_os"
+assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
+assert "git --git-dir=$origin ls-tree -r --name-only main | grep -c 'tracked/home@$this_os/.zshrc'" "1"
+# the declarations arrive with the configuration; what they select follows
+assert_succeed "$b bootstrap dotfiles sync && $b bootstrap dotfiles pull --yes && $b bootstrap dotfiles sync && $b bootstrap dotfiles pull --yes"
+assert "cat $B/.zshrc" "export A=1"
+assert "cat $B/.config/app/state.json" '{"n":1}'
+echo '{"n":2}' >"$B/.config/app/state.json" # edited on B, not saved
+echo '{"n":3}' >~/.config/app/state.json
+assert_succeed "mise bootstrap dotfiles save ~/.config/app/state.json"
+assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "conflict(s) need a decision"
+assert_contains "$b bootstrap dotfiles status" "unsaved edits: save or discard them first"
+assert "cat $B/.config/app/state.json" '{"n":2}'
+# saved on B, it is an ordinary conflict, decided like any other
+assert_succeed "$b bootstrap dotfiles save $B/.config/app/state.json"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "conflict(s) need a decision"
+assert_contains "$b bootstrap dotfiles status" "both sides changed the same lines"
+assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/app/state.json --yes"
+assert "cat $B/.config/app/state.json" '{"n":3}'
+assert_contains "$b bootstrap dotfiles sync 2>&1" "nothing new to publish"
+
 # ---- another platform's stream is never applied here; a branch that
 # vanished is an error, not an upstream that deleted everything
 git clone -q -b main "file://$origin" "$PWD/clone2"
