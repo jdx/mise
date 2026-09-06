@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1TNYD67QTA1GTR7FW4B7XBD",
   "strategy": "manual-commit",
   "branch": "codex/docs-onboarding-depth",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "README.md",
     "docs/README.md",
@@ -19,13 +19,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 55178,
+    "input_tokens": 65606,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 2892160,
-    "output_tokens": 13698,
-    "api_call_count": 14
+    "cache_read_tokens": 4057472,
+    "output_tokens": 15151,
+    "api_call_count": 22
   }
 }
