@@ -228,7 +228,6 @@ export default withMermaid(
       // rules; Layout.vue removes the preboot classes right after hydration):
       // - `preboot` disables navbar transitions so hydration state
       //   corrections snap instead of visibly fading
-      // - home: hide the navbar brand before the scroll handler takes over
       // - other pages: pre-apply the has-sidebar navbar layout so the
       //   search/menu don't jump right when hydration adds the class
       // - reserve the announcement banner's space from the cached height so
@@ -241,18 +240,7 @@ export default withMermaid(
     var d = document.documentElement;
     var p = location.pathname;
     d.classList.add("preboot");
-    if (p === "/" || p === "/index.html") {
-      d.classList.add("hide-nav-brand");
-      // Scroll restoration on a mid-page reload fires before hydration —
-      // unhide the brand right away instead of waiting for Layout.vue.
-      addEventListener(
-        "scroll",
-        function () {
-          if (scrollY > 300) d.classList.remove("hide-nav-brand");
-        },
-        { once: true },
-      );
-    } else {
+    if (p !== "/" && p !== "/index.html") {
       d.classList.add("preboot-sidebar");
     }
     var c = JSON.parse(localStorage.getItem("jdx-banner-cache") || "null");

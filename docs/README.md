@@ -28,7 +28,7 @@ Use `mise run docs:preview` to serve the production build locally.
 | Content                                           | Location                                                                        |
 | ------------------------------------------------- | ------------------------------------------------------------------------------- |
 | Project introduction and a short runnable example | Root `README.md`                                                                |
-| Website overview and entry points                 | `docs/index.md` and the hero in `docs/.vitepress/theme/Layout.vue`              |
+| Website overview and entry points                 | `docs/index.md` and the hero in `docs/.vitepress/theme/HomeHero.vue`            |
 | First successful tool, environment, and task      | `docs/getting-started.md`                                                       |
 | Daily use, configuration choices, and upgrades    | `docs/walkthrough.md`                                                           |
 | Concepts and feature guides                       | `docs/dev-tools/`, `docs/environments/`, `docs/tasks/`, and `docs/bootstrap.md` |
