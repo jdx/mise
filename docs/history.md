@@ -521,6 +521,29 @@ mise bootstrap dotfiles origin set https://github.com/you/setup.git
 Existing working credentials skip the two `gh` steps. SSH remotes work when
 the service environment can reach an agent or an unencrypted key.
 
+## Test recovery before you need it
+
+Keep an independent recovery identity outside the machine being backed up and
+include its public recipient when enabling encrypted backups. A private Git
+repository's authentication and an age decryption identity serve different
+purposes: a replacement machine needs both repository access and a matching
+identity to restore encrypted content.
+
+After bootstrapping a spare machine from your setup repository, fetch the latest
+recovery refs and inspect a machine-specific file that was backed up but not shared:
+
+```sh
+mise bootstrap dotfiles sync
+mise bootstrap dotfiles machines
+mise bootstrap dotfiles rollback ~/.config/hypr/monitors.lua --to laptop/latest --dry-run
+mise bootstrap dotfiles rollback ~/.config/hypr/monitors.lua --to laptop/latest
+```
+
+Configure the recovery identity locally before restoring. Verify the recovered
+file and its permissions; `mise bootstrap dotfiles undo` reverses the restore.
+Try this while the original machine is still available. Successful publication
+alone does not demonstrate that a replacement machine can decrypt a backup.
+
 ## What is tracked
 
 `mise bootstrap dotfiles paths` lists every entry with its mode, policies, the file that
