@@ -516,22 +516,45 @@ impl Writer {
 /// interleaves with a bootstrap, rollback, or undo.
 pub(crate) fn take_operation_lock(store: &Store, tracked: &TrackedSet) -> Result<fslock::LockFile> {
     let state_dir = store.state_dir();
-    let lock = LockFile::new(&store::operation_lock_in(state_dir)).try_lock()?;
-    let Some(lock) = lock else {
-        let marker = store::read_marker_in(state_dir)?;
-        match marker {
-            Some(marker) => bail!(
-                "another history operation is running: {} since {} ({})",
-                marker.kind.as_str(),
-                marker.started_at,
-                marker.command
-            ),
-            None => bail!("another history operation is running"),
+    let path = store::operation_lock_in(state_dir);
+    // a running operation (the watcher applying incoming changes, say) is
+    // usually over in moments: wait for it a bounded while before failing
+    let deadline = std::time::Instant::now() + OPERATION_LOCK_WAIT;
+    let mut announced = false;
+    let lock = loop {
+        if let Some(lock) = LockFile::new(&path).try_lock()? {
+            break lock;
         }
+        let marker = store::read_marker_in(state_dir)?;
+        if std::time::Instant::now() >= deadline {
+            match marker {
+                Some(marker) => bail!(
+                    "another history operation is running: {} since {} ({})",
+                    marker.kind.as_str(),
+                    marker.started_at,
+                    marker.command
+                ),
+                None => bail!("another history operation is running"),
+            }
+        }
+        if !announced {
+            announced = true;
+            info!(
+                "history: waiting for another history operation to finish{}",
+                marker
+                    .map(|marker| format!(": {} ({})", marker.kind.as_str(), marker.command))
+                    .unwrap_or_default()
+            );
+        }
+        std::thread::sleep(OPERATION_LOCK_POLL);
     };
     recover_stale(store, tracked)?;
     Ok(lock)
 }
+
+/// How long an operation waits for a running one, and how often it looks.
+const OPERATION_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+const OPERATION_LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// Closes the pending records of operations that died. Only the holder of
 /// the operation lock may call this: a pending record whose operation is
