@@ -3,20 +3,20 @@
 `mise oci build` turns a `mise.toml` into a container image, with one
 [OCI](https://github.com/opencontainers/image-spec) layer per installed tool.
 
-The payoff is that **bumping any single tool version only invalidates one
-content-addressable blob**. With a Dockerfile, each `RUN install_tool` is
-stacked on the one before it — changing an early `RUN` invalidates every
-later layer. mise's on-disk layout (every tool installed in an isolated
-`$MISE_DATA_DIR/installs/<plugin>/<version>/` directory) makes layer ordering
-semantically irrelevant, so swapping a tool's version swaps a single layer
-and everything else (the base image, other tools, mise itself, image config)
-is reused unchanged.
+Tool layers can be reused independently when a version changes. Image config,
+manifests, and layers whose inputs changed still need updating; a Python change
+can also invalidate dependent pipx layers.
+
+Build on a **Linux host with the target architecture**. mise packages the installed
+host binaries; it does not cross-compile or download another OS's tools for the
+image. `mise oci run` also requires Docker or Podman. Building and pushing an OCI
+layout use mise's own image and registry support.
 
 ::: warning Experimental
 `mise oci build` is experimental. Enable it with:
 
 ```sh
-mise settings experimental=true
+mise settings set experimental=true
 # or, per-invocation:
 MISE_EXPERIMENTAL=1 mise oci build …
 ```
@@ -34,21 +34,38 @@ Flags, output layout, and defaults may change in future releases.
 
 ## Quick start
 
-```sh
-# Build an image from the current mise.toml using the default base
-# (debian:bookworm-slim). Output goes to ./mise-oci/.
-mise oci build
+On Linux, start with a project configuration such as:
 
-# Run an interactive shell in the image (uses podman if present, else
-# docker).
-mise oci run -it -- bash
+```toml [mise.toml]
+[settings]
+experimental = true
 
-# Push to a registry with the built-in client (no skopeo/crane needed).
-mise oci push ghcr.io/me/devenv:latest
-
-# The output is a standard OCI image layout, so external tools work too:
-skopeo inspect oci:./mise-oci
+[tools]
+node = "24"
 ```
+
+Build a local image layout, then verify its executable through a container engine:
+
+```sh
+mise oci build -o ./mise-oci
+mise oci run --image-dir ./mise-oci -- node --version
+```
+
+The default base is `debian:bookworm-slim`. Add the generated `mise-oci/` directory
+to `.gitignore`. This creates a tool environment; it does not automatically copy
+your application or install its package dependencies. Use a volume for development
+or [`oci.copy`](/dev-tools/mise-oci.html#oci-section-in-mise-toml) for files that belong in the image.
+
+To inspect the layout with an external tool, install `skopeo` and run
+`skopeo inspect oci:./mise-oci`. To publish it, follow [push authentication](#push-authentication)
+and choose a registry/repository you can write to:
+
+```sh
+mise oci push --image-dir ./mise-oci ghcr.io/OWNER/IMAGE:TAG
+```
+
+Replace the uppercase placeholders. This command publishes the image to that
+registry; it is separate from the local build and run checks.
 
 ## How layering works
 
@@ -75,9 +92,9 @@ jq = "1.8.1"
 6. **Synthesized `/etc/mise/config.toml`** referencing `/mise` as the data
    directory.
 
-Bumping `node` from `20.10` to `20.11` only invalidates the node layer.
-Python, jq, mise, the base, and the synthesized config are reused from
-the previous build (or from the registry, on pull).
+Changing Node.js leaves unrelated tool archives reusable. The generated
+configuration and image manifest still reflect the new version. Reuse also
+depends on the in-image path, file ownership, and any relocation inputs.
 
 ## `mise oci build`
 
@@ -246,9 +263,9 @@ For ghcr.io, the token needs the `write:packages` scope.
 from        = "debian:bookworm-slim"  # base image ref
 tag         = "ghcr.io/me/devenv:v1"  # default tag for the built image
 workdir     = "/workspace"             # WORKDIR
-entrypoint  = ["bash", "-l"]           # ENTRYPOINT
+entrypoint  = []           # ENTRYPOINT
 cmd         = []                        # CMD
-user        = "nonroot"                # USER
+user        = "1000:1000"                # USER
 user_id     = 1000                      # tar layer entry UID (file ownership)
 group_id    = 1000                      # tar layer entry GID (defaults to user_id)
 mount_point = "/mise"                  # where tools install in the image
@@ -270,7 +287,10 @@ NODE_ENV = "production"
 "org.opencontainers.image.source" = "https://github.com/me/my-app"
 ```
 
-`[oci].user` sets the image `USER` directive. `[oci].user_id` and
+The copy examples require `dist/my-app` and `assets` to exist.
+`[oci].user` sets the image `USER` directive; it does not create an account, home
+directory, or writable workspace. Use a numeric UID/GID or a user already
+provided by the base image. `[oci].user_id` and
 `[oci].group_id` set layer file ownership; if no `group_id` is configured,
 it defaults to the resolved `user_id`.
 
@@ -339,10 +359,10 @@ container-specific startup work belongs in the image entrypoint or command.
 | `oci.default_from`        | `debian:bookworm-slim` | Default base image when none is specified. |
 | `oci.default_mount_point` | `/mise`                | Where tools install inside the image.      |
 
-The default base is **glibc-based on purpose**. Alpine / musl would break
-most mise-installed prebuilt binaries (Node, Python wheels, Ruby gems).
-If you know your tools are statically linked you can opt in with
-`--from alpine:…` — expect trouble otherwise.
+Choose a base compatible with the packaged binaries and their shared libraries.
+The default uses glibc. An Alpine/musl base requires musl-compatible or suitable
+static binaries; changing `--from` does not rebuild the installed tools for a
+different libc. System libraries required at runtime must be present in the image.
 
 ## Environment variables in the image
 
@@ -372,16 +392,16 @@ mise emits a warning with the number of `[env]` vars it baked in.
 
 ## Supported backends
 
-All of mise's first-party backends install entirely under their
-per-version install directory, so they work as per-tool layers:
+The builder accepts built-in backends and packages each selected tool's install
+directory. It also relocates supported executable paths and shebangs. Acceptance
+by the builder does not guarantee that a tool is self-contained: system libraries,
+external runtimes, or paths outside its installation may still be needed.
+Declare required runtimes alongside their tools and verify the resulting image
+with the commands your project actually runs.
 
-`core`, `aqua`, `cargo`, `npm`, `go`, `pipx`, `github`, `gitlab`,
-`forgejo`, `ubi`, `spm`, `http`, `s3`, `gem`, `conda`, `dotnet`.
-
-**Not supported in v1:** `asdf` and `vfox` plugins (including third-party
-vfox plugins). Their install scripts can write outside the per-version
-directory, breaking the one-layer-per-tool invariant. Using them fails
-with a clear error message.
+asdf and vfox plugins, including custom vfox backend plugins, are rejected. Their
+installation hooks can write outside the per-version directory, which the
+per-tool layer model cannot capture reliably.
 
 ## Registry base-image support
 
@@ -394,8 +414,12 @@ private base images work too.
 Digest references are supported:
 
 ```sh
-mise oci build --from ubuntu@sha256:e3b0c44298fc...
+mise oci build --from "REGISTRY/IMAGE@sha256:FULL_DIGEST"
 ```
+
+Replace the placeholders with an actual image reference and its complete
+SHA256 digest. A digest pins the base image; a mutable tag can resolve to a new
+base on a later build.
 
 ## Reproducibility
 
@@ -418,9 +442,11 @@ image whose `os` field is `linux`, but any embedded binaries (mise and
 every tool layer) are still host-native — they will fail with
 `Exec format error` when executed inside the container.
 
-For a working image, run `mise oci build` on a Linux host (or inside a
-Linux container — `docker run -v $PWD:/src -w /src debian mise oci build`
-works). mise prints a warning when this mismatch is detected.
+Build on a Linux host or in a Linux development container that already has mise
+and the required tool-installation dependencies. A stock `debian` image does
+not contain mise. Do not mount macOS or Windows tool installations into that
+container as substitutes for Linux installations. mise warns when host and image
+platforms do not match.
 
 ### Multi-arch images
 
@@ -430,15 +456,42 @@ tag: each push uploads its platform manifest by digest and points the
 tag at an OCI **image index** that preserves the entries other
 platforms pushed.
 
+For example, the following GitHub Actions job builds one architecture at a time.
+It assumes the project has `mise.toml`, publishes to GHCR, and grants the workflow
+access to that package:
+
 ```yaml
-# CI sketch: one job per arch, same tag
+name: Publish development image
+on: workflow_dispatch
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: mise-development-image
+  cancel-in-progress: false
 jobs:
-  push-amd64: # runs-on: ubuntu-24.04
-    run: mise oci push --update-index ghcr.io/me/dev:latest
-  push-arm64: # runs-on: ubuntu-24.04-arm
-    needs: push-amd64 # sequence to avoid a read-modify-write race
-    run: mise oci push --update-index ghcr.io/me/dev:latest
+  publish:
+    strategy:
+      max-parallel: 1
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    env:
+      MISE_EXPERIMENTAL: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+      - name: Authenticate to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Publish this architecture
+        run: mise oci push --update-index "ghcr.io/${GITHUB_REPOSITORY,,}/dev:latest"
 ```
+
+Choose runner labels available to your repository. Matrix serialization prevents
+the two platform pushes from racing, and workflow concurrency prevents overlapping
+runs of this workflow from updating the same tag simultaneously.
 
 Re-pushing the same platform replaces its entry (no duplicates), and a
 previously single-arch tag is upgraded to an index without losing the
@@ -454,7 +507,7 @@ different runners can race — sequence them as above.
 - `asdf` / `vfox` backends are rejected (see above).
 - Cross-platform builds produce broken images (binaries are host-native);
   run the build on a Linux host.
-- Alpine / musl base images will break most tools.
+- The base image must supply a compatible libc and other runtime libraries.
 - `mise oci run` needs a container engine (podman or docker) — mise has
   no built-in container runtime. Pushing needs no external tools.
 

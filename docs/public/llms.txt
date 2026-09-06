@@ -24,7 +24,7 @@
 - [Comparison to asdf](https://mise.jdx.dev/dev-tools/comparison-to-asdf.html): mise reads .tool-versions and supports legacy asdf plugins. You can start with an existing project's version declarations, then adopt mise.toml for environment variables and tasks.
 - [Shims](https://mise.jdx.dev/dev-tools/shims.html): There are several ways to load the mise context (dev tools, environment variables) into your shell.
 - [Tool Aliases](https://mise.jdx.dev/dev-tools/aliases.html): Use [tool_alias] to give a tool a different backend or name a version request. Put shared aliases in the project's mise.toml; use ~/.config/mise/config.toml for personal defaults.
-- [Tool Stubs](https://mise.jdx.dev/dev-tools/tool-stubs.html): Tool stubs let you create executable files with embedded TOML configuration for tool execution. They provide a convenient way to define tool versions, backends, and execution parameters directly…
+- [Tool Stubs](https://mise.jdx.dev/dev-tools/tool-stubs.html): A tool stub is an executable file that records how to obtain and run one tool. Commit it to a repository so a command such as ./bin/py selects the intended runtime and forwards its arguments.
 - [Registry](https://mise.jdx.dev/registry.html): List of all tools aliased by default in mise.
 - [GitHub Tokens](https://mise.jdx.dev/dev-tools/github-tokens.html): Many tools in mise are hosted on GitHub. For public releases, mise uses mise-versions by default as a shared cache for version lists, release metadata, and GitHub artifact attestations.
 - [mise.lock Lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html): mise.toml records the versions a project accepts; mise.lock records the concrete versions those requests resolved to.
