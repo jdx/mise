@@ -18,3 +18,11 @@ Run `mise cache` with no args to view the current cache directory.
 - [`mise cache path`](/cli/cache/path.html)
 - [`mise cache prune [-v --verbose] [--dry-run] [TOOL]…`](/cli/cache/prune.html)
 - [`mise cache task [-J --json] <TASK>`](/cli/cache/task.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Cache behavior](/cache-behavior.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

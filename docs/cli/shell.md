@@ -33,3 +33,11 @@ mise shell node@20
 node -v
 v20.0.0
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Shell activation](/getting-started.html#activate-mise).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

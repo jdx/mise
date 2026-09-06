@@ -7,11 +7,11 @@
 
 Show the individuals supporting mise as Patron-tier members
 
-Lists the individuals on the Patron tier from &lt;<https://jdx.dev/patrons.json>>.
+Lists the individuals on the Patron tier from <https://jdx.dev/patrons.json>.
 The list refreshes daily; supporting terminals will render each patron's
 name as a clickable link via OSC 8 hyperlinks.
 
-To appear here, become a patron at &lt;<https://jdx.dev/sponsors.html>>.
+To appear here, become a patron at <https://jdx.dev/sponsors.html>.
 
 ## Flags
 - **`-J --json`** — Output in JSON format
@@ -25,3 +25,11 @@ mise patrons
 mise patrons -J
 mise patrons --refresh
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Supporting mise](/about.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

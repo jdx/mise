@@ -23,3 +23,11 @@ This modifies ~/.config/mise/config.toml by default, or the local config with `-
 ```
 mise settings add disable_hints python_multi
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Settings reference](/configuration/settings.html).
+- [`mise settings [FLAGS] [SETTING] [VALUE] [SUBCOMMAND]`](/cli/settings.html).
+- [Global flags and argument syntax](/cli/#global-flags).

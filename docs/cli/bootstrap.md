@@ -6,55 +6,27 @@
 - **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
-Set up a machine for the current config in one command
+Set up a machine from the current configuration
 
-Runs the bootstrap steps for the current config in order:
+Runs these phases in order, when configured and selected:
 
-0. `mise bootstrap accounts apply` — converge `[bootstrap.users]` and
-   `[bootstrap.groups]` (Linux)
-1. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
-   1.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
-2. Install built-in-manager entries from `[bootstrap.packages]`
-3. `mise bootstrap files apply` — converge `[bootstrap.files]` and
-   `[bootstrap.directories]`
-4. `mise bootstrap services apply` — converge `[bootstrap.services]`
-   systemd system services (Linux)
-5. `mise bootstrap firewall apply` — converge `[bootstrap.linux.firewall]`
-   host firewall policy and rules (Linux)
-6. `mise bootstrap compose apply` — converge `[bootstrap.compose]`
-   Docker Compose projects
-7. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
-   surrounded by `pre-repos`/`post-repos` hooks
-8. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
-   surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-9. `mise bootstrap mise-shell-activate apply` — configure shell activation
-   from `[bootstrap.mise_shell_activate]`
-10. `mise bootstrap macos defaults apply` — write
-    `[bootstrap.macos.defaults]` entries (macOS)
-    surrounded by `pre-defaults`/`post-defaults` hooks
-11. `mise bootstrap macos launchd-agents apply` — install/load
-    `[bootstrap.macos.launchd.agents]`
-12. `mise bootstrap linux systemd-units apply` — install/start
-    `[bootstrap.linux.systemd.units]`
-13. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
-    (Unix)
-    surrounded by `pre-user`/`post-user` hooks
-14. `mise install` — install missing tools from `[tools]`
-    surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
-    from `[bootstrap.packages]` install afterward, followed by
-    `[bootstrap.hooks.post-packages]`
-15. `mise run bootstrap` — if a task named `bootstrap` is defined
-16. `[bootstrap.hooks.final]` — optional final hook
+1. Linux accounts, then package-manager plugins.
+2. The pre-packages hook, then packages handled by built-in managers.
+3. Privileged files/directories, system services, firewall, and Compose projects.
+4. Git repositories, then dotfiles, each with its pre/post hooks.
+5. Shell activation, macOS defaults and LaunchAgents, Linux user units, and user settings.
+6. The pre-tools hook, versioned tools, and post-tools hook.
+7. Package-plugin packages, then the post-packages hook.
+8. The `bootstrap` task, when defined, then the final hook.
 
-The declarative steps converge — anything already in its desired state
-is skipped, so re-running is safe. The `bootstrap` task runs on every
-invocation; keep it idempotent. Use it for any project-specific setup
-that doesn't fit the declarative sections (seeding databases, auth flows,
-etc.) — it runs with the installed tools on PATH.
+Defaults and user settings also have pre/post hooks. See
+<https://mise.jdx.dev/bootstrap.html> for the complete phase order and configuration.
+Unchanged resource state is skipped, but hooks and the bootstrap task can run again;
+make those commands safe to repeat. Dotfile templates may execute while checking state.
 
-Use `--skip <part>` to skip named parts, or `--only <part>` to run just
-named parts. Both flags can be repeated or comma-separated, but they
-cannot be used together.
+Use `--dry-run` to preview the selected workflow, `bootstrap status` to inspect state,
+or `bootstrap plan` for the declarative-resource plan. `--only` and `--skip` accept
+repeated or comma-separated parts and cannot be combined.
 
 ## Flags
 - **`--from <GIT_URL>`** — Clone a git repository and bootstrap from its configuration
@@ -119,3 +91,11 @@ mise bootstrap user apply --dry-run
 - [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.html)
 - [`mise bootstrap status [FLAGS]`](/cli/bootstrap/status.html)
 - [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Bootstrap workflow](/bootstrap.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

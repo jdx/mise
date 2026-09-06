@@ -71,3 +71,11 @@ Include references from every tracked configuration file
 ```
 mise ls --all-sources
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Development tools](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

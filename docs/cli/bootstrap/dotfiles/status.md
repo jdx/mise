@@ -8,6 +8,9 @@
 
 Show the status of dotfiles from `[dotfiles]`
 
+Template entries are rendered to compare their output; trusted template
+functions may execute. `--missing` changes the exit status, not the listing.
+
 ## Arguments
 - **`[TARGET]…`** — Only show these targets
 
@@ -25,3 +28,11 @@ mise bootstrap dotfiles status ~/.zshrc
 mise bootstrap dotfiles status --json
 mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

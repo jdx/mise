@@ -8,6 +8,9 @@
 
 Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
 
+Installs plist files and reconciles agents in the current GUI login domain. Run
+from the intended user session; an SSH-only session may not have that domain.
+
 ## Flags
 - **`-h --help`** — Print help
 
@@ -15,3 +18,11 @@ Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
 
 - [`mise bootstrap macos launchd-agents apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/macos/launchd-agents/apply.html)
 - [`mise bootstrap macos launchd-agents status [-J --json] [--missing]`](/cli/bootstrap/macos/launchd-agents/status.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [LaunchAgents](/bootstrap/launchd.html).
+- [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.html).
+- [Global flags and argument syntax](/cli/#global-flags).

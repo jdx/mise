@@ -13,3 +13,11 @@ Manage Linux bootstrap config from `[bootstrap.linux]`
 ## Subcommands
 
 - [`mise bootstrap linux systemd-units <SUBCOMMAND>`](/cli/bootstrap/linux/systemd-units.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [systemd user units](/bootstrap/systemd.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

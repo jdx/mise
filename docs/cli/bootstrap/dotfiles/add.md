@@ -9,7 +9,9 @@ Add or update dotfiles in `[dotfiles]`
 
 If the target is already managed, this updates its source from the live
 target. Otherwise it creates a `[dotfiles]` entry and seeds the source
-under `dotfiles.root` unless `--source` is provided.
+under `dotfiles.root` unless `--source` is provided. Captured entries are
+applied unless `--no-apply` is passed. Use `--dry-run` to preview both the
+source capture and config write without making those changes.
 
 ## Arguments
 - **`[TARGET]…`** — Targets to add or update
@@ -35,3 +37,11 @@ mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
 mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
 mise bootstrap dotfiles add --changed
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -14,7 +14,7 @@ In user config, aliases are defined like the following in `~/.config/mise/config
 
 ```
 [tool_alias.node.versions]
-lts = "22.0.0"
+project = "20"
 ```
 
 ## Arguments
@@ -30,3 +30,11 @@ lts = "22.0.0"
 mise tool-alias ls
 node  lts-jod      22
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Tool version aliases](/dev-tools/aliases.html).
+- [`mise tool-alias [-p --tool <TOOL>] [--no-header] [SUBCOMMAND]`](/cli/tool-alias.html).
+- [Global flags and argument syntax](/cli/#global-flags).

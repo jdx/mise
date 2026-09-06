@@ -23,5 +23,5 @@ Dotfile status can render trusted templates, including their `exec()` calls.
 ## Related documentation
 
 - [Bootstrap workflow](/bootstrap.html).
-- [`mise bootstrap`](/cli/bootstrap.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

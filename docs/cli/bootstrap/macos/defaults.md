@@ -7,6 +7,9 @@
 
 Manage macOS defaults from `[bootstrap.macos.defaults]`
 
+Declares typed preferences written with macOS defaults. Application preferences
+may require restarting the affected application before the change becomes visible.
+
 ## Flags
 - **`-h --help`** — Print help
 
@@ -14,3 +17,11 @@ Manage macOS defaults from `[bootstrap.macos.defaults]`
 
 - [`mise bootstrap macos defaults apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/macos/defaults/apply.html)
 - [`mise bootstrap macos defaults status [-J --json] [--missing]`](/cli/bootstrap/macos/defaults/status.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [macOS defaults](/bootstrap/macos-defaults.html).
+- [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.html).
+- [Global flags and argument syntax](/cli/#global-flags).

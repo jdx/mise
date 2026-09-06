@@ -17,5 +17,5 @@ Show whether declared bootstrap secret inputs are available
 ## Related documentation
 
 - [Bootstrap secrets](/bootstrap/secrets.html).
-- [`mise bootstrap secrets`](/cli/bootstrap/secrets.html).
+- [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.html).
 - [Global flags and argument syntax](/cli/#global-flags).

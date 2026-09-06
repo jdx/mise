@@ -9,7 +9,7 @@ Add a Homebrew tap URL to [bootstrap.brew.taps]
 
 ## Arguments
 - **`<TAP>`** — Tap name, e.g. `owner/repo`
-- **`[URL]`** — GitHub URL for the tap. Defaults to <https://github.com/&lt;owner>/homebrew-&lt;repo>.git>
+- **`[URL]`** — Repository URL for the tap; defaults to GitHub's owner/homebrew-repo.git naming
 
 ## Flags
 - **`-l --local`** — Write to the local config instead of the global config
@@ -25,3 +25,11 @@ Add a Homebrew tap URL to [bootstrap.brew.taps]
 mise bootstrap packages brew tap railwaycat/emacsmacport
 mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Homebrew packages and taps](/bootstrap/packages/brew.html).
+- [`mise bootstrap packages brew <SUBCOMMAND>`](/cli/bootstrap/packages/brew.html).
+- [Global flags and argument syntax](/cli/#global-flags).

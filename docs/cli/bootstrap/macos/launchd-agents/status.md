@@ -17,5 +17,5 @@ Show the state of LaunchAgents from `[bootstrap.macos.launchd.agents]`
 ## Related documentation
 
 - [LaunchAgents](/bootstrap/launchd.html).
-- [`mise bootstrap macos launchd-agents`](/cli/bootstrap/macos/launchd-agents.html).
+- [`mise bootstrap macos launchd-agents <SUBCOMMAND>`](/cli/bootstrap/macos/launchd-agents.html).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -6,15 +6,17 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/plugins/link.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/link.rs)
 
-Symlink a plugin into mise
+Link a local plugin directory into mise for development
 
-This is used for developing a plugin.
+Edits in the source directory take effect without reinstalling the plugin. Pass
+both a name and directory, or only a directory to infer the name after stripping
+a known prefix such as `mise-` or `vfox-`. This does not install a tool version.
 
 ## Arguments
 - **`<NAME>`** — The name of the plugin
-  e.g.: cmake, poetry
+  With one argument, this is the plugin directory and the name is inferred
 - **`[DIR]`** — The local path to the plugin
-  e.g.: ./vfox-cmake
+  e.g.: ./mise-my-tool
 
 ## Flags
 - **`-f --force`** — Overwrite existing plugin
@@ -37,3 +39,11 @@ List versions through the linked plugin
 ```
 mise ls-remote my-tool
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Developing tool plugins](/tool-plugin-development.html).
+- [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
+- [Global flags and argument syntax](/cli/#global-flags).

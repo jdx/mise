@@ -7,6 +7,9 @@
 
 Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
 
+These are system accounts on the target Linux host. Inspect `status` or an apply
+preview before changing user IDs, memberships, or account state.
+
 ## Flags
 - **`-h --help`** — Print help
 
@@ -14,3 +17,11 @@ Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
 
 - [`mise bootstrap accounts apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/accounts/apply.html)
 - [`mise bootstrap accounts status [-J --json] [--missing]`](/cli/bootstrap/accounts/status.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Users and groups](/bootstrap/accounts.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

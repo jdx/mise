@@ -27,3 +27,11 @@ Get the full structured task definition
 ```
 mise tasks info test --json
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Task configuration](/tasks/task-configuration.html).
+- [`mise tasks [FLAGS] [TASK] [SUBCOMMAND]`](/cli/tasks.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -43,3 +43,11 @@ github.mycompany.com: (none)
 mise token github --oauth --refresh
 github.com: gho_…xxxx (source: GitHub OAuth)
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Git provider authentication](/dev-tools/github-tokens.html).
+- [`mise token <SUBCOMMAND>`](/cli/token.html).
+- [Global flags and argument syntax](/cli/#global-flags).

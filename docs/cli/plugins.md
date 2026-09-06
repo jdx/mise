@@ -27,3 +27,11 @@ Manage plugins
 - [`mise plugins ls-remote [-u --urls] [--only-names]`](/cli/plugins/ls-remote.html)
 - [`mise plugins uninstall [-a --all] [-p --purge] [PLUGIN]…`](/cli/plugins/uninstall.html)
 - [`mise plugins update [-j --jobs <JOBS>] [PLUGIN]…`](/cli/plugins/update.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Plugin selection and maintenance](/plugin-usage.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -17,5 +17,5 @@ Show configured Linux host firewall state
 ## Related documentation
 
 - [Host firewall](/bootstrap/firewall.html).
-- [`mise bootstrap firewall`](/cli/bootstrap/firewall.html).
+- [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.html).
 - [Global flags and argument syntax](/cli/#global-flags).

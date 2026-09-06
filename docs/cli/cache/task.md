@@ -19,5 +19,5 @@ Inspect output cache entries for a task
 ## Related documentation
 
 - [Task output caching](/tasks/caching.html).
-- [`mise cache`](/cli/cache.html).
+- [`mise cache [SUBCOMMAND]`](/cli/cache.html).
 - [Global flags and argument syntax](/cli/#global-flags).

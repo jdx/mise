@@ -46,3 +46,11 @@ config lives in a subdirectory, so the hook has to change into it first
 ```
 mise generate git-pre-commit --write -- -C subdir
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Tasks and automation](/tasks/).
+- [`mise generate <SUBCOMMAND>`](/cli/generate.html).
+- [Global flags and argument syntax](/cli/#global-flags).

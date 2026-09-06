@@ -29,3 +29,11 @@ for this command.
 ```
 mise test-tool ripgrep
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Contributing and registry tests](/contributing.html#tool-testing).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

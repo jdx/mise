@@ -3,7 +3,12 @@
 
 **Author:** Jeff Dickey <@jdx>
 
-- **Usage:** `mise [FLAGS] [TASK] [SUBCOMMAND]`
+**Usage:** `mise [FLAGS] [COMMAND | TASK] [ARGS]…`
+
+Use `mise COMMAND --help` for the help shipped with your installed version. Put mise
+flags before a task name; arguments after the name are passed to that task.
+Square brackets mark optional input, angle brackets mark required input, and `…`
+means the argument can repeat. Do not type those notation characters.
 
 ## Arguments
 - **`[TASK]`** — Task to run.
@@ -11,6 +16,12 @@
   Shorthand for `mise tasks run <TASK>`.
 
 ## Global Flags
+
+These flags provide shared context. A command can define its own flag with the same
+name, so consult that command's page for placement and meaning. Effect labels describe
+the command's intended operation; configuration evaluation, caches, and required tool
+installation can still have side effects. They are not sandbox guarantees.
+
 - **`-C --cd <DIR>`** — Change directory before running command
 - **`-E --env <ENV>`** — Set the environment for loading `mise.<ENV>.toml`
 - **`-j --jobs <JOBS>`** — How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
@@ -43,193 +54,86 @@
 
 ## Subcommands
 
-- [`mise activate [FLAGS] [SHELL_TYPE]`](/cli/activate.html)
-- [`mise tool-alias [-p --tool <TOOL>] [--no-header] [SUBCOMMAND]`](/cli/tool-alias.html)
-- [`mise tool-alias get <TOOL> <ALIAS>`](/cli/tool-alias/get.html)
-- [`mise tool-alias ls [--no-header] [TOOL]`](/cli/tool-alias/ls.html)
-- [`mise tool-alias set <ARGS>…`](/cli/tool-alias/set.html)
-- [`mise tool-alias unset <TOOL> [ALIAS]`](/cli/tool-alias/unset.html)
-- [`mise backends [SUBCOMMAND]`](/cli/backends.html)
-- [`mise backends ls`](/cli/backends/ls.html)
-- [`mise bin-paths [--bin-names] [-J --json] [TOOL@VERSION]…`](/cli/bin-paths.html)
-- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html)
-- [`mise bootstrap accounts <SUBCOMMAND>`](/cli/bootstrap/accounts.html)
-- [`mise bootstrap accounts apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/accounts/apply.html)
-- [`mise bootstrap accounts status [-J --json] [--missing]`](/cli/bootstrap/accounts/status.html)
-- [`mise bootstrap config-roots [-J --json]`](/cli/bootstrap/config-roots.html)
-- [`mise bootstrap compose <SUBCOMMAND>`](/cli/bootstrap/compose.html)
-- [`mise bootstrap compose apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/compose/apply.html)
-- [`mise bootstrap compose status [-J --json] [--missing]`](/cli/bootstrap/compose/status.html)
-- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html)
-- [`mise bootstrap dotfiles add [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/add.html)
-- [`mise bootstrap dotfiles apply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/apply.html)
-- [`mise bootstrap dotfiles diff [TARGET]…`](/cli/bootstrap/dotfiles/diff.html)
-- [`mise bootstrap dotfiles edit [FLAGS] <TARGET>`](/cli/bootstrap/dotfiles/edit.html)
-- [`mise bootstrap dotfiles status [-J --json] [--missing] [TARGET]…`](/cli/bootstrap/dotfiles/status.html)
-- [`mise bootstrap dotfiles unapply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/unapply.html)
-- [`mise bootstrap files <SUBCOMMAND>`](/cli/bootstrap/files.html)
-- [`mise bootstrap files apply [FLAGS]`](/cli/bootstrap/files/apply.html)
-- [`mise bootstrap files status [FLAGS]`](/cli/bootstrap/files/status.html)
-- [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.html)
-- [`mise bootstrap firewall apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/firewall/apply.html)
-- [`mise bootstrap firewall status [-J --json] [--missing]`](/cli/bootstrap/firewall/status.html)
-- [`mise bootstrap launchd apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/launchd/apply.html)
-- [`mise bootstrap launchd status [-J --json] [--missing]`](/cli/bootstrap/launchd/status.html)
-- [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.html)
-- [`mise bootstrap linux systemd-units <SUBCOMMAND>`](/cli/bootstrap/linux/systemd-units.html)
-- [`mise bootstrap linux systemd-units apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/linux/systemd-units/apply.html)
-- [`mise bootstrap linux systemd-units status [-J --json] [--missing]`](/cli/bootstrap/linux/systemd-units/status.html)
-- [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.html)
-- [`mise bootstrap macos defaults <SUBCOMMAND>`](/cli/bootstrap/macos/defaults.html)
-- [`mise bootstrap macos defaults apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/macos/defaults/apply.html)
-- [`mise bootstrap macos defaults status [-J --json] [--missing]`](/cli/bootstrap/macos/defaults/status.html)
-- [`mise bootstrap macos launchd-agents <SUBCOMMAND>`](/cli/bootstrap/macos/launchd-agents.html)
-- [`mise bootstrap macos launchd-agents apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/macos/launchd-agents/apply.html)
-- [`mise bootstrap macos launchd-agents status [-J --json] [--missing]`](/cli/bootstrap/macos/launchd-agents/status.html)
-- [`mise bootstrap macos-defaults apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/macos-defaults/apply.html)
-- [`mise bootstrap macos-defaults status [-J --json] [--missing]`](/cli/bootstrap/macos-defaults/status.html)
-- [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.html)
-- [`mise bootstrap mise-shell-activate apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/mise-shell-activate/apply.html)
-- [`mise bootstrap mise-shell-activate status [-J --json] [--missing]`](/cli/bootstrap/mise-shell-activate/status.html)
-- [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.html)
-- [`mise bootstrap packages apply [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/apply.html)
-- [`mise bootstrap packages brew <SUBCOMMAND>`](/cli/bootstrap/packages/brew.html)
-- [`mise bootstrap packages brew tap [FLAGS] <TAP> [URL]`](/cli/bootstrap/packages/brew/tap.html)
-- [`mise bootstrap packages brew untap [FLAGS] <TAPS>…`](/cli/bootstrap/packages/brew/untap.html)
-- [`mise bootstrap packages import [FLAGS]`](/cli/bootstrap/packages/import.html)
-- [`mise bootstrap packages prune [FLAGS]`](/cli/bootstrap/packages/prune.html)
-- [`mise bootstrap packages status [-J --json] [--missing]`](/cli/bootstrap/packages/status.html)
-- [`mise bootstrap packages upgrade [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/upgrade.html)
-- [`mise bootstrap packages use [FLAGS] <PACKAGE>…`](/cli/bootstrap/packages/use.html)
-- [`mise bootstrap plan [FLAGS]`](/cli/bootstrap/plan.html)
-- [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.html)
-- [`mise bootstrap plugins apply [-n --dry-run]`](/cli/bootstrap/plugins/apply.html)
-- [`mise bootstrap plugins status [--missing]`](/cli/bootstrap/plugins/status.html)
-- [`mise bootstrap remote [FLAGS] [TARGET]…`](/cli/bootstrap/remote.html)
-- [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.html)
-- [`mise bootstrap repos apply [FLAGS]`](/cli/bootstrap/repos/apply.html)
-- [`mise bootstrap repos exec [-c --continue-on-error] [-n --dry-run] [PATH]… <-- COMMAND>…`](/cli/bootstrap/repos/exec.html)
-- [`mise bootstrap repos status [-J --json] [--missing]`](/cli/bootstrap/repos/status.html)
-- [`mise bootstrap repos update [FLAGS] [PATH]…`](/cli/bootstrap/repos/update.html)
-- [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.html)
-- [`mise bootstrap secrets status [-J --json] [--missing]`](/cli/bootstrap/secrets/status.html)
-- [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.html)
-- [`mise bootstrap services apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/services/apply.html)
-- [`mise bootstrap services status [-J --json] [--missing]`](/cli/bootstrap/services/status.html)
-- [`mise bootstrap status [FLAGS]`](/cli/bootstrap/status.html)
-- [`mise bootstrap systemd apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/systemd/apply.html)
-- [`mise bootstrap systemd status [-J --json] [--missing]`](/cli/bootstrap/systemd/status.html)
-- [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.html)
-- [`mise bootstrap user apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/user/apply.html)
-- [`mise bootstrap user status [-J --json] [--missing]`](/cli/bootstrap/user/status.html)
-- [`mise cache [SUBCOMMAND]`](/cli/cache.html)
-- [`mise cache clear [--task <TASK>] [TOOL]…`](/cli/cache/clear.html)
-- [`mise cache path`](/cli/cache/path.html)
-- [`mise cache prune [-v --verbose] [--dry-run] [TOOL]…`](/cli/cache/prune.html)
-- [`mise cache task [-J --json] <TASK>`](/cli/cache/task.html)
-- [`mise completion [FLAGS] [SHELL]`](/cli/completion.html)
-- [`mise config [FLAGS] [SUBCOMMAND]`](/cli/config.html)
-- [`mise config get [FLAGS] [KEY]`](/cli/config/get.html)
-- [`mise config ls [FLAGS]`](/cli/config/ls.html)
-- [`mise config set [FLAGS] <KEY> [VALUE]`](/cli/config/set.html)
-- [`mise deactivate`](/cli/deactivate.html)
-- [`mise doctor [-J --json] [SUBCOMMAND]`](/cli/doctor.html)
-- [`mise doctor path [-f --full]`](/cli/doctor/path.html)
-- [`mise en [-s --shell <SHELL>] [DIR]`](/cli/en.html)
-- [`mise env [FLAGS] [TOOL@VERSION]…`](/cli/env.html)
-- [`mise exec [FLAGS] [TOOL@VERSION]… [-- COMMAND]…`](/cli/exec.html)
-- [`mise fmt [FLAGS]`](/cli/fmt.html)
-- [`mise generate <SUBCOMMAND>`](/cli/generate.html)
-- [`mise generate config [FLAGS] [PATH]`](/cli/generate/config.html)
-- [`mise generate devcontainer [FLAGS]`](/cli/generate/devcontainer.html)
-- [`mise generate git-pre-commit [FLAGS] [-- MISE_ARG]…`](/cli/generate/git-pre-commit.html)
-- [`mise generate github-action [FLAGS]`](/cli/generate/github-action.html)
-- [`mise generate install-script [FLAGS]`](/cli/generate/install-script.html)
-- [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.html)
-- [`mise generate task-stubs [FLAGS]`](/cli/generate/task-stubs.html)
-- [`mise generate tool-stub [FLAGS] <OUTPUT>`](/cli/generate/tool-stub.html)
-- [`mise implode [-n --dry-run] [--config]`](/cli/implode.html)
-- [`mise edit [FLAGS] [PATH]`](/cli/edit.html)
-- [`mise install [FLAGS] [TOOL@VERSION]…`](/cli/install.html)
-- [`mise install-into <TOOL@VERSION> <PATH>`](/cli/install-into.html)
-- [`mise latest [-i --installed] [--minimum-release-age <MINIMUM_RELEASE_AGE>] <TOOL@VERSION>`](/cli/latest.html)
-- [`mise link [-f --force] <TOOL@VERSION> <PATH>`](/cli/link.html)
-- [`mise lock [FLAGS] [TOOL]…`](/cli/lock.html)
-- [`mise ls [FLAGS] [INSTALLED_TOOL]…`](/cli/ls.html)
-- [`mise ls-remote [FLAGS] [TOOL@VERSION] [PREFIX]`](/cli/ls-remote.html)
-- [`mise mcp`](/cli/mcp.html)
-- [`mise oci <SUBCOMMAND>`](/cli/oci.html)
-- [`mise oci build [FLAGS]`](/cli/oci/build.html)
-- [`mise oci push [FLAGS] <REF>`](/cli/oci/push.html)
-- [`mise oci run [FLAGS] [-- CMD]…`](/cli/oci/run.html)
-- [`mise packslip [SUBCOMMAND]`](/cli/packslip.html)
-- [`mise packslip forget <PROJECT>`](/cli/packslip/forget.html)
-- [`mise packslip pins [-J --json]`](/cli/packslip/pins.html)
-- [`mise outdated [FLAGS] [TOOL@VERSION]…`](/cli/outdated.html)
-- [`mise patrons [-J --json] [--refresh]`](/cli/patrons.html)
-- [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html)
-- [`mise plugins install [FLAGS] [NEW_PLUGIN] [GIT_URL]`](/cli/plugins/install.html)
-- [`mise plugins link [-f --force] <NAME> [DIR]`](/cli/plugins/link.html)
-- [`mise plugins ls [FLAGS]`](/cli/plugins/ls.html)
-- [`mise plugins ls-remote [-u --urls] [--only-names]`](/cli/plugins/ls-remote.html)
-- [`mise plugins uninstall [-a --all] [-p --purge] [PLUGIN]…`](/cli/plugins/uninstall.html)
-- [`mise plugins update [-j --jobs <JOBS>] [PLUGIN]…`](/cli/plugins/update.html)
-- [`mise deps [FLAGS] [PROVIDER] [SUBCOMMAND]`](/cli/deps.html)
-- [`mise deps add [-D --dev] <PACKAGES>…`](/cli/deps/add.html)
-- [`mise deps install [FLAGS] [PROVIDER]`](/cli/deps/install.html)
-- [`mise deps remove <PACKAGES>…`](/cli/deps/remove.html)
-- [`mise prune [FLAGS] [INSTALLED_TOOL]…`](/cli/prune.html)
-- [`mise registry [FLAGS] [NAME]`](/cli/registry.html)
-- [`mise reshim [-f --force] [--system]`](/cli/reshim.html)
-- [`mise run [FLAGS] [TASK] [ARGS]…`](/cli/run.html)
-- [`mise search [FLAGS] [NAME]`](/cli/search.html)
-- [`mise self-update [FLAGS] [VERSION]`](/cli/self-update.html)
-- [`mise set [FLAGS] [ENV_VAR]…`](/cli/set.html)
-- [`mise settings [FLAGS] [SETTING] [VALUE] [SUBCOMMAND]`](/cli/settings.html)
-- [`mise settings add [-l --local] <SETTING> [VALUE]`](/cli/settings/add.html)
-- [`mise settings get [-l --local] <SETTING>`](/cli/settings/get.html)
-- [`mise settings ls [FLAGS] [SETTING]`](/cli/settings/ls.html)
-- [`mise settings set [-l --local] <SETTING> [VALUE]`](/cli/settings/set.html)
-- [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.html)
-- [`mise shell [FLAGS] <TOOL@VERSION>…`](/cli/shell.html)
-- [`mise ssh [FLAGS] [DESTINATION] [COMMAND]…`](/cli/ssh.html)
-- [`mise shell-alias [--no-header] [SUBCOMMAND]`](/cli/shell-alias.html)
-- [`mise shell-alias get <shell_alias>`](/cli/shell-alias/get.html)
-- [`mise shell-alias ls [--no-header]`](/cli/shell-alias/ls.html)
-- [`mise shell-alias set <shell_alias> [COMMAND]`](/cli/shell-alias/set.html)
-- [`mise shell-alias unset <shell_alias>`](/cli/shell-alias/unset.html)
-- [`mise skills [SUBCOMMAND]`](/cli/skills.html)
-- [`mise skills ls [-J --json]`](/cli/skills/ls.html)
-- [`mise skills sync [FLAGS]`](/cli/skills/sync.html)
-- [`mise sponsors`](/cli/sponsors.html)
-- [`mise sync <SUBCOMMAND>`](/cli/sync.html)
-- [`mise sync node [FLAGS]`](/cli/sync/node.html)
-- [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.html)
-- [`mise sync ruby <--brew>`](/cli/sync/ruby.html)
-- [`mise tasks [FLAGS] [TASK] [SUBCOMMAND]`](/cli/tasks.html)
-- [`mise tasks add [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/add.html)
-- [`mise tasks deps [FLAGS] [TASKS]…`](/cli/tasks/deps.html)
-- [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.html)
-- [`mise tasks graph [FLAGS]`](/cli/tasks/graph.html)
-- [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.html)
-- [`mise tasks ls [FLAGS]`](/cli/tasks/ls.html)
-- [`mise tasks run [FLAGS] [TASK] [ARGS]…`](/cli/tasks/run.html)
-- [`mise tasks validate [--errors-only] [--json] [TASKS]…`](/cli/tasks/validate.html)
-- [`mise test-tool [FLAGS] [TOOLS]…`](/cli/test-tool.html)
-- [`mise token <SUBCOMMAND>`](/cli/token.html)
-- [`mise token forgejo [--unmask] [HOST]`](/cli/token/forgejo.html)
-- [`mise token github [FLAGS] [HOST]`](/cli/token/github.html)
-- [`mise token gitlab [--unmask] [HOST]`](/cli/token/gitlab.html)
-- [`mise tool [FLAGS] <TOOL>`](/cli/tool.html)
-- [`mise tool-stub <FILE> [ARGS]…`](/cli/tool-stub.html)
-- [`mise trust [FLAGS] [CONFIG_FILE]`](/cli/trust.html)
-- [`mise uninstall [FLAGS] [INSTALLED_TOOL@VERSION]…`](/cli/uninstall.html)
-- [`mise unset [-f --file <FILE>] [-g --global] [ENV_KEY]…`](/cli/unset.html)
-- [`mise untrust [CONFIG_FILE]`](/cli/untrust.html)
-- [`mise unuse [FLAGS] <INSTALLED_TOOL@VERSION>…`](/cli/unuse.html)
-- [`mise upgrade [FLAGS] [INSTALLED_TOOL@VERSION]…`](/cli/upgrade.html)
-- [`mise use [FLAGS] [TOOL@VERSION]…`](/cli/use.html)
-- [`mise version [-J --json]`](/cli/version.html)
-- [`mise watch [FLAGS] [TASK] [ARGS]…`](/cli/watch.html)
-- [`mise where <TOOL@VERSION>`](/cli/where.html)
-- [`mise which [FLAGS] [BIN_NAME]`](/cli/which.html)
+Choose a command family below. Its page lists the available subcommands.
+
+### Install and inspect tools
+
+- [`mise use`](/cli/use.html) — Install a tool and add it to configuration
+- [`mise install`](/cli/install.html) — Install a tool version
+- [`mise install-into`](/cli/install-into.html) — Install a tool version to a specific path
+- [`mise uninstall`](/cli/uninstall.html) — Remove installed tool versions
+- [`mise unuse`](/cli/unuse.html) — Remove tool requests from configuration and prune unused installations
+- [`mise upgrade`](/cli/upgrade.html) — Upgrade outdated tools
+- [`mise outdated`](/cli/outdated.html) — Show outdated tool versions
+- [`mise lock`](/cli/lock.html) — Create or refresh lockfile versions, checksums, and download URLs
+- [`mise latest`](/cli/latest.html) — Resolve the latest matching version request for a tool
+- [`mise ls`](/cli/ls.html) — List installed and active tool versions
+- [`mise ls-remote`](/cli/ls-remote.html) — List tool versions available to install
+- [`mise tool`](/cli/tool.html) — Show information about a tool
+- [`mise where`](/cli/where.html) — Display the installation path for a tool
+- [`mise which`](/cli/which.html) — Show the path a tool's executable resolves to
+- [`mise bin-paths`](/cli/bin-paths.html) — List all the active runtime bin paths
+- [`mise registry`](/cli/registry.html) — List registry shorthand names and their backends
+- [`mise search`](/cli/search.html) — Search for tools in the registry
+- [`mise backends`](/cli/backends.html) — Manage backends
+- [`mise link`](/cli/link.html) — Symlink a tool version into mise
+- [`mise sync`](/cli/sync.html) — Synchronize tools from other version managers with mise
+- [`mise prune`](/cli/prune.html) — Delete unused versions of tools
+- [`mise reshim`](/cli/reshim.html) — Create shims for executables provided by installed tools
+- [`mise tool-stub`](/cli/tool-stub.html) — Execute a tool stub
+- [`mise packslip`](/cli/packslip.html) — The signers mise accepts packslips from
+
+### Shell and environment
+
+- [`mise activate`](/cli/activate.html) — Print the script to activate mise in an interactive shell
+- [`mise deactivate`](/cli/deactivate.html) — Print the script to disable mise in the current shell session
+- [`mise completion`](/cli/completion.html) — Generate shell completions
+- [`mise en`](/cli/en.html) — Start a new shell with the mise environment built from the current configuration
+- [`mise env`](/cli/env.html) — Print the environment for the current configuration
+- [`mise exec`](/cli/exec.html) — Execute a command with tool(s) set
+- [`mise shell`](/cli/shell.html) — Set a tool version for the current shell session
+- [`mise set`](/cli/set.html) — Set environment variables in mise.toml
+- [`mise unset`](/cli/unset.html) — Remove environment variable(s) from the config file
+- [`mise shell-alias`](/cli/shell-alias.html) — Manage shell aliases
+- [`mise tool-alias`](/cli/tool-alias.html) — Manage tool version aliases
+- [`mise ssh`](/cli/ssh.html) — Open an SSH session, optionally borrowing read-only GitHub access
+
+### Tasks and project automation
+
+- [`mise run`](/cli/run.html) — Run tasks and their dependencies
+- [`mise tasks`](/cli/tasks.html) — Manage tasks
+- [`mise watch`](/cli/watch.html) — Run task(s) and rerun them when files change
+- [`mise deps`](/cli/deps.html) — [experimental] Manage project dependencies
+- [`mise generate`](/cli/generate.html) — Generate files for various tools/services
+
+### Machine setup and images
+
+- [`mise bootstrap`](/cli/bootstrap.html) — Set up a machine from the current configuration
+- [`mise oci`](/cli/oci.html) — [experimental] Build OCI container images from a mise.toml
+
+### Configuration and diagnostics
+
+- [`mise config`](/cli/config.html) — Manage config files
+- [`mise edit`](/cli/edit.html) — Edit mise.toml interactively
+- [`mise fmt`](/cli/fmt.html) — Format mise TOML configuration
+- [`mise settings`](/cli/settings.html) — Manage settings
+- [`mise trust`](/cli/trust.html) — Mark a config file as trusted
+- [`mise untrust`](/cli/untrust.html) — Remove explicit trust for a config
+- [`mise doctor`](/cli/doctor.html) — Check mise installation for possible problems
+- [`mise cache`](/cli/cache.html) — Manage the mise cache
+- [`mise version`](/cli/version.html) — Display the version of mise
+- [`mise self-update`](/cli/self-update.html) — Update mise itself
+- [`mise implode`](/cli/implode.html) — Remove the mise CLI and all related data
+
+### Integrations and community
+
+- [`mise mcp`](/cli/mcp.html) — Run the Model Context Protocol server over stdin/stdout
+- [`mise skills`](/cli/skills.html) — Agent skills the active tools ship, from their packslips
+- [`mise patrons`](/cli/patrons.html) — Show the individuals supporting mise as Patron-tier members
+- [`mise sponsors`](/cli/sponsors.html) — Show the companies sponsoring mise and the jdx.dev open source tools
+
+### Other commands
+
+- [`mise plugins`](/cli/plugins.html) — Manage plugins
+- [`mise test-tool`](/cli/test-tool.html) — Test that a tool installs and runs
+- [`mise token`](/cli/token.html) — Display git provider tokens mise will use

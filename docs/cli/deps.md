@@ -8,13 +8,13 @@
 
 [experimental] Manage project dependencies
 
-Runs all applicable dependency install steps for the current project.
-This checks if dependency lockfiles are newer than installed outputs
-(e.g., package-lock.json vs node_modules/) and runs install commands
-if needed.
+With no subcommand, runs dependency installation for the current project, the same
+as `mise deps install`. Providers detect their inputs and installed outputs to
+decide whether work is needed; use `--explain PROVIDER` to inspect that decision.
 
-Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
-unless skipped with the --no-deps flag.
+Providers with `auto = true` run before `mise exec` and `mise run` unless `--no-deps`
+is passed. These install project dependencies, such as node_modules, separately
+from versioned tools managed by `mise install`.
 
 ## Arguments
 - **`[PROVIDER]`** — Provider to operate on (runs only this provider, or use with --explain)
@@ -69,3 +69,11 @@ run = "npm run codegen"
 
 # To disable npm instead, add `disable = ["npm"]` under [deps].
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Project dependencies](/dev-tools/deps.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

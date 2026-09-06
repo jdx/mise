@@ -64,5 +64,5 @@ installs persistent global configuration; preview that choice with `--dry-run`.
 ## Related documentation
 
 - [Remote bootstrap](/bootstrap/remote.html).
-- [`mise bootstrap`](/cli/bootstrap.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

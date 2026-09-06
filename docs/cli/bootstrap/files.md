@@ -7,6 +7,9 @@
 
 Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
 
+Use these resources for ownership, permissions, and desired presence on a host.
+For personal symlinks, copies, or edits, use `[dotfiles]` and `bootstrap dotfiles`.
+
 ## Flags
 - **`-h --help`** — Print help
 
@@ -14,3 +17,11 @@ Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap
 
 - [`mise bootstrap files apply [FLAGS]`](/cli/bootstrap/files/apply.html)
 - [`mise bootstrap files status [FLAGS]`](/cli/bootstrap/files/status.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Privileged files and directories](/bootstrap/files.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

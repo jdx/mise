@@ -7,7 +7,11 @@
 
 Run task(s) and rerun them when files change
 
-Uses `watchexec` to watch for file changes and rerun the given task(s).
+Uses `watchexec` to watch task sources and rerun the selected tasks.
+Sources from dependencies are included unless `--skip-deps` is set. With no
+sources, watchexec watches the current directory. Use `--watch` and `--exts`
+for explicit watched paths and filters, and `--print-events` to diagnose them.
+The default task is `default`; define it or pass a task name.
 watchexec must be installed; `mise use -g watchexec@latest` installs it.
 
 For more advanced process management (daemon management, auto-restart, readiness checks,
@@ -43,7 +47,7 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
   Signals are not supported on Windows at the moment, and will always be overridden to 'kill'. See '--stop-signal' for more on Windows "signals".
 - **`--stop-signal <SIGNAL>`** — Signal to send to stop the command
 
-  This is used by 'restart' and 'signal' modes of '--on-busy-update' (unless '--signal' is provided). The restart behaviour is to send the signal, wait for the command to exit, and if it hasn't exited after some time (see '--timeout-stop'), forcefully terminate it.
+  This is used by 'restart' and 'signal' modes of '--on-busy-update' (unless '--signal' is provided). The restart behaviour is to send the signal, wait for the command to exit, and if it hasn't exited after some time (see '--stop-timeout'), forcefully terminate it.
 
   The default on unix is "SIGTERM".
 
@@ -134,7 +138,7 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 
   For more complex uses (like watching non-recursively), use the argfile capability: build a file containing command-line options and pass it to watchexec with `@path/to/argfile`.
 
-  The special value '-' will read from STDIN; this in incompatible with '--stdin-quit'.
+  The special value '-' will read from STDIN; this is incompatible with '--stdin-quit'.
 - **`--no-vcs-ignore`** — Don't load gitignores
 
   Among other VCS exclude files, like for Mercurial, Subversion, Bazaar, DARCS, Fossil. Note that Watchexec will detect which of these is in use, if any, and only load the relevant files. Both global (like '~/.gitignore') and local (like '.gitignore') files are considered.
@@ -204,7 +208,9 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 
   /!\ This option is EXPERIMENTAL and may change and/or vanish without notice.
 
-  Provide your own custom filter programs in jaq (similar to jq) syntax. Programs are given an event in the same format as described in '--emit-events-to' and must return a boolean. Invalid programs will make watchexec fail to start; use '-v' to see program runtime errors.
+  Provide your own custom filter programs in jaq (similar to jq) syntax. Programs are given
+  an event in the same format as described in '--emit-events-to' and must return a boolean.
+  Invalid programs will make watchexec fail to start; use '-v' to see program runtime errors.
 
   In addition to the jaq stdlib, watchexec adds some custom filter definitions:
 
@@ -226,13 +232,20 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
       value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and
       pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
 
-  All filtering done with such programs, and especially those using kv or filesystem access, is much slower than the other filtering methods. If filtering is too slow, events will back up and stall watchexec. Take care when designing your filters.
+  All filtering done with such programs, and especially those using kv or filesystem access,
+  is much slower than the other filtering methods. If filtering is too slow, events will back
+  up and stall watchexec. Take care when designing your filters.
 
-  If the argument to this option starts with an '@', the rest of the argument is taken to be the path to a file containing a jaq program.
+  If the argument to this option starts with an '@', the rest of the argument is taken to be
+  the path to a file containing a jaq program.
 
-  Jaq programs are run in order, after all other filters, and short-circuit: if a filter (jaq or not) rejects an event, execution stops there, and no other filters are run. Additionally, they stop after outputting the first value, so you'll want to use 'any' or 'all' when iterating, otherwise only the first item will be processed, which can be quite confusing!
+  Jaq programs are run in order, after all other filters, and short-circuit: if a filter (jaq
+  or not) rejects an event, execution stops there, and no other filters are run. Additionally,
+  they stop after outputting the first value, so you'll want to use 'any' or 'all' when
+  iterating, otherwise only the first item will be processed, which can be quite confusing!
 
-  Find user-contributed programs or submit your own useful ones at &lt;https://github.com/watchexec/watchexec/discussions/592>.
+  Find user-contributed programs or submit your own useful ones at
+  &lt;https://github.com/watchexec/watchexec/discussions/592>.
 
   ## Examples:
 
@@ -246,11 +259,11 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 
   Pass events that touch executable files:
 
-    'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | metadata | .executable)'
+    'any(.tags[] | select(.kind == "path" and .filetype == "file"); .absolute | file_meta | .executable)'
 
   Ignore files that start with shebangs:
 
-    'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
+    'any(.tags[] | select(.kind == "path" and .filetype == "file"); .absolute | file_read(2) == "#!") | not'
 - **`-i --ignore <PATTERN>`** — Filename patterns to filter out
 
   Provide a glob-like filter pattern, and events for files matching the pattern will be excluded. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
@@ -381,7 +394,7 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
         },
         {
           "kind": "source",
-          "source": "filesystem",
+          "source": "filesystem"
         }
       ],
       "metadata": {
@@ -494,3 +507,11 @@ Start an API server and restart it when Rust files in ./src change.
 ```
 mise watch serve --watch src --exts rs --restart
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Watching tasks](/tasks/running-tasks.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

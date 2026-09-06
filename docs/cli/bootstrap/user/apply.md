@@ -17,5 +17,5 @@ Apply current-user settings from `[bootstrap.user]`
 ## Related documentation
 
 - [Current-user settings](/bootstrap/user.html).
-- [`mise bootstrap user`](/cli/bootstrap/user.html).
+- [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.html).
 - [Global flags and argument syntax](/cli/#global-flags).

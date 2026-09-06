@@ -165,7 +165,10 @@ export function synopsis(cmd: Command): string {
     usage = usage.replace("<SUBCOMMAND>", "[SUBCOMMAND]");
   }
   // The completion spec replaces run's arguments with a dynamic project-task mount.
-  if (cmd.mounts.some((mount) => mount.run === "mise tasks --usage")) {
+  if (
+    cmd.mounts.some((mount) => mount.run === "mise tasks --usage") &&
+    !usage.includes("[TASK]")
+  ) {
     usage += " [TASK] [ARGS]…";
   }
   return `mise ${usage}`.trim();
@@ -303,7 +306,7 @@ function main() {
       page += `\n\n${navigationMarker}\n${compatibility}\n## Related documentation\n\n- [${guide[0]}](${guide[1]}).\n- ${parentLink}.\n- [Global flags and argument syntax](/cli/#global-flags).\n`;
     } else {
       page = page.replace(
-        /\*\*Usage:\*\* `[^\n]+`/,
+        /^(?:- )?\*\*Usage:\*\* `[^\n]+`/m,
         "**Usage:** `mise [FLAGS] [COMMAND | TASK] [ARGS]…`",
       );
       page = page.replace(/^- \*\*Usage:\*\*[^\n]+\n/m, "");
@@ -321,13 +324,14 @@ function main() {
       );
     }
     // Keep every linked synopsis consistent with the command's own page.
-    page = page.replace(
-      /\[`mise [^\n]+?`\]\(\/cli\/([^)]*)\.md\)/g,
-      (match, path: string) => {
-        const child = commands.get(path.replaceAll("/", " "));
-        return child ? `[\`${synopsis(child)}\`](/cli/${path}.html)` : match;
-      },
-    );
+    if (name)
+      page = page.replace(
+        /\[`mise [^\n]+?`\]\(\/cli\/([^)]*)\.(?:md|html)\)/g,
+        (match, path: string) => {
+          const child = commands.get(path.replaceAll("/", " "));
+          return child ? `[\`${synopsis(child)}\`](/cli/${path}.html)` : match;
+        },
+      );
     page = page.replace(/^Examples:\s*$/gm, "## Examples");
     page = fenceCodeBlocks(page);
     writeFileSync(file, page.trimEnd() + "\n");

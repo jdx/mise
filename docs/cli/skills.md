@@ -20,3 +20,11 @@ an agent the skill for exactly that version.
 
 - [`mise skills ls [-J --json]`](/cli/skills/ls.html)
 - [`mise skills sync [FLAGS]`](/cli/skills/sync.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Skills and other Packslip resources](/dev-tools/packslip-resources.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -19,3 +19,11 @@ Show the command for a shell alias
 mise shell-alias get ll
 ls -la
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Shell aliases](/shell-aliases.html).
+- [`mise shell-alias [--no-header] [SUBCOMMAND]`](/cli/shell-alias.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -9,7 +9,8 @@ Remove dotfiles applied from `[dotfiles]`
 
 Removes configured whole-file entries and edits while preserving files
 mise cannot identify as managed. Modified copies, templates, and plain-line
-edits require `--force`.
+edits require `--force`. Source files and configuration entries are retained.
+Run this before deleting a declaration so mise can still identify its targets.
 
 ## Arguments
 - **`[TARGET]…`** — Only unapply these targets
@@ -28,3 +29,11 @@ mise bootstrap dotfiles unapply ~/.zshrc
 mise bootstrap dotfiles unapply --dry-run
 mise bootstrap dotfiles unapply --force --yes
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -56,3 +56,11 @@ The validate command performs the following checks:
   • Shell Commands: Checks shell executables exist
   • Glob Patterns: Validates source and output patterns
   • Run Entries: Ensures tasks reference valid dependencies
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Task configuration](/tasks/task-configuration.html).
+- [`mise tasks [FLAGS] [TASK] [SUBCOMMAND]`](/cli/tasks.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -5,9 +5,12 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/fmt.rs`](https://github.com/jdx/mise/blob/main/src/cli/fmt.rs)
 
-Format mise.toml
+Format mise TOML configuration
 
-Sorts keys and cleans up whitespace in mise.toml
+Sorts keys and normalizes whitespace using TOML 1.1 syntax, including multiline
+inline tables. By default, formats config files in the current directory;
+`--all` includes every loaded config. Use `--check` in CI or `--stdin` to format
+a supplied document without rewriting a file.
 
 ## Flags
 - **`-a --all`** — Format every config file mise currently loads, not just those in the current directory
@@ -22,3 +25,11 @@ mise fmt
 mise fmt --check
 cat mise.toml | mise fmt --stdin
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Configuration](/configuration.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

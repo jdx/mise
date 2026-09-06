@@ -31,3 +31,11 @@ mise sync python --uv
 mise x python@3.11.0 -- python -V # uses uv-provided python
 uv run -p 3.10.0 -- python -V # uses mise-provided python
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Python](/lang/python.html).
+- [`mise sync <SUBCOMMAND>`](/cli/sync.html).
+- [Global flags and argument syntax](/cli/#global-flags).

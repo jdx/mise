@@ -19,3 +19,11 @@ Manage config files
 - [`mise config get [FLAGS] [KEY]`](/cli/config/get.html)
 - [`mise config ls [FLAGS]`](/cli/config/ls.html)
 - [`mise config set [FLAGS] <KEY> [VALUE]`](/cli/config/set.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Configuration](/configuration.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

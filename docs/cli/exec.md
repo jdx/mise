@@ -12,16 +12,16 @@ session, or to run ad-hoc commands with tools that are not in the config.
 
 Tools are loaded from mise.toml and can be overridden with &lt;TOOL@VERSION> args. Only the
 tools you name are overridden: if `mise.toml` includes `node = "20"` and you run
-`mise exec python@3.11`, node@20 is still loaded.
+`mise exec python@3.11 -- python -V`, node@20 is still loaded.
 
 The "--" separates tools from the command to pass along to the subprocess.
 
 ## Arguments
 - **`[TOOL@VERSION]…`** — Tool(s) to load e.g.: node@20 python@3.10
-- **`[-- COMMAND]…`** — Command string to execute (same as --command)
+- **`[-- COMMAND]…`** — Executable and arguments to run directly, after `--`
 
 ## Flags
-- **`-c --command <COMMAND>`** — Command string to execute
+- **`-c --command <COMMAND>`** — Command string to execute through a shell (supports pipes and redirection)
 - **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
   Values below 1 are treated as 1
   Defaults to the `jobs` setting
@@ -30,11 +30,13 @@ The "--" separates tools from the command to pass along to the subprocess.
 - **`--allow-env <VAR>`** — Allow specific env var through (implies --deny-env for everything else)
   Supports wildcards, e.g. --allow-env='MYAPP_*'
 - **`--allow-net <HOST>`** — Allow network to specific host (implies --deny-net for everything else)
-  macOS only in v1; on Linux falls back to allowing all network
+  Per-host filtering is unsupported on Linux and returns an error.
+  See the sandboxing guide for current macOS host-filter limitations.
+  On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 - **`--allow-read <PATH>`** — Allow reads from specific path (implies --deny-read for everything else)
 - **`--allow-write <PATH>`** — Allow writes to specific path (implies --deny-write for everything else)
 - **`--deny-all`** — Block reads, writes, network, and env vars
-- **`--deny-env`** — Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+- **`--deny-env`** — Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
 - **`--deny-net`** — Block all network access
 - **`--deny-read`** — Block filesystem reads (system libs and tool dirs still accessible)
 - **`--deny-write`** — Block all filesystem writes
@@ -63,3 +65,11 @@ Run a command in a different directory:
 ```
 mise x -C /path/to/project node@20 -- node ./app.js
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Running tools](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -24,5 +24,5 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 ## Related documentation
 
 - [Cache behavior](/cache-behavior.html).
-- [`mise cache`](/cli/cache.html).
+- [`mise cache [SUBCOMMAND]`](/cli/cache.html).
 - [Global flags and argument syntax](/cli/#global-flags).

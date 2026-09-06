@@ -60,3 +60,11 @@ For a tool installed through Packslip with completion resources
 mise completion zsh --tool rg
 mise completion zsh --tool rg --install
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Shell completions](/dev-tools/packslip-resources.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

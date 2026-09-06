@@ -23,3 +23,11 @@ mise skills ls
 Skill  Tool                        Version  Path
 mise   packslip:github.com/jdx/mise  2026.9.1  ~/.local/share/mise/installs/.../skills/mise
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Skills and other Packslip resources](/dev-tools/packslip-resources.html).
+- [`mise skills [SUBCOMMAND]`](/cli/skills.html).
+- [Global flags and argument syntax](/cli/#global-flags).

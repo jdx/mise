@@ -5,7 +5,10 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/generate/task_docs.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/task_docs.rs)
 
-Generate documentation for tasks in a project
+Generate Markdown documentation for project tasks
+
+Prints to stdout by default. Use `--output` to write a file, `--inject`
+to replace a marked section, or `--multi` for one file per task.
 
 ## Flags
 - **`-i --inject`** — Insert the documentation into an existing file
@@ -37,3 +40,11 @@ README.md must already contain both mise-tasks marker comments
 ```
 mise generate task-docs --inject --output README.md
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Tasks and automation](/tasks/).
+- [`mise generate <SUBCOMMAND>`](/cli/generate.html).
+- [Global flags and argument syntax](/cli/#global-flags).

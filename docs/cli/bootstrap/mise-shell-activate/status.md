@@ -17,5 +17,5 @@ Show whether shell activation matches `[bootstrap.mise_shell_activate]`
 ## Related documentation
 
 - [Shell setup](/bootstrap/shell.html).
-- [`mise bootstrap mise-shell-activate`](/cli/bootstrap/mise-shell-activate.html).
+- [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.html).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -17,5 +17,5 @@ Write macOS defaults from `[bootstrap.macos.defaults]`
 ## Related documentation
 
 - [macOS defaults](/bootstrap/macos-defaults.html).
-- [`mise bootstrap macos defaults`](/cli/bootstrap/macos/defaults.html).
+- [`mise bootstrap macos defaults <SUBCOMMAND>`](/cli/bootstrap/macos/defaults.html).
 - [Global flags and argument syntax](/cli/#global-flags).

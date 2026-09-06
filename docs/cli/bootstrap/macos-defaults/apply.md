@@ -14,10 +14,10 @@ Write macOS defaults from `[bootstrap.macos.defaults]`
 
 <!-- generated reference navigation -->
 
-This is a compatibility spelling. Use [`mise bootstrap macos defaults apply`](/cli/bootstrap/macos/defaults/apply.html) in new scripts.
+This is a compatibility spelling. Use [`mise bootstrap macos defaults apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/macos/defaults/apply.html) in new scripts.
 
 ## Related documentation
 
 - [macOS defaults](/bootstrap/macos-defaults.html).
-- [`mise bootstrap`](/cli/bootstrap.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

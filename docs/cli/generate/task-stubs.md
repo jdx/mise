@@ -48,3 +48,11 @@ mise generate task-stubs
 ./bin/test
 running tests
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Tasks and automation](/tasks/).
+- [`mise generate <SUBCOMMAND>`](/cli/generate.html).
+- [Global flags and argument syntax](/cli/#global-flags).

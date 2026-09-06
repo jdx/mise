@@ -17,3 +17,11 @@ Manage shell aliases
 - [`mise shell-alias ls [--no-header]`](/cli/shell-alias/ls.html)
 - [`mise shell-alias set <shell_alias> [COMMAND]`](/cli/shell-alias/set.html)
 - [`mise shell-alias unset <shell_alias>`](/cli/shell-alias/unset.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Shell aliases](/shell-aliases.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -23,5 +23,5 @@ project is named as the packslip backend names it: `github.com/owner/repo`,
 ## Related documentation
 
 - [Signer verification](/dev-tools/packslip-verification.html).
-- [`mise packslip`](/cli/packslip.html).
+- [`mise packslip [SUBCOMMAND]`](/cli/packslip.html).
 - [Global flags and argument syntax](/cli/#global-flags).

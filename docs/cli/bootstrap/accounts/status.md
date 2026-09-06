@@ -17,5 +17,5 @@ Show configured Linux user and group state
 ## Related documentation
 
 - [Users and groups](/bootstrap/accounts.html).
-- [`mise bootstrap accounts`](/cli/bootstrap/accounts.html).
+- [`mise bootstrap accounts <SUBCOMMAND>`](/cli/bootstrap/accounts.html).
 - [Global flags and argument syntax](/cli/#global-flags).

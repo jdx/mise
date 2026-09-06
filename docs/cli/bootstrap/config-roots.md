@@ -19,5 +19,5 @@ combined desired state and its changes, use `bootstrap plan`.
 ## Related documentation
 
 - [Bootstrap workflow](/bootstrap.html).
-- [`mise bootstrap`](/cli/bootstrap.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

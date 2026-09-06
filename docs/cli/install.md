@@ -13,7 +13,7 @@ Installs a tool version under the mise data directory, by default
 Installing alone does not add the tool to your config, so a tool that is not
 already configured will not be on PATH.
 To install and activate in one command, use `mise use`, which also writes the version to
-`mise.toml` in the current directory so the tool is active inside it.
+the selected project config so the tool is active in that configuration scope.
 To run a tool once without touching any config, use `mise exec <TOOL>@<VERSION> -- <COMMAND>`.
 
 Tools are installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`.
@@ -73,3 +73,11 @@ mise install              # install everything specified in mise.toml
 mise install --include-lazy # also install tools configured for lazy installation
 mise install --include-task-tools # also install tools required by tasks
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Installing and selecting tools](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

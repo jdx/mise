@@ -37,3 +37,11 @@ See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
 ```
 mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [TOML tasks](/tasks/toml-tasks.html).
+- [`mise tasks [FLAGS] [TASK] [SUBCOMMAND]`](/cli/tasks.html).
+- [Global flags and argument syntax](/cli/#global-flags).

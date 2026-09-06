@@ -34,6 +34,14 @@ test("synopses distinguish optional subcommands and dynamic task arguments", () 
     ),
     "mise run [FLAGS] [TASK] [ARGS]…",
   );
+  assert.equal(
+    synopsis(
+      command("run [FLAGS] [TASK] [ARGS]…", {
+        mounts: [{ run: "mise tasks --usage" }],
+      }),
+    ),
+    "mise run [FLAGS] [TASK] [ARGS]…",
+  );
   assert.equal(synopsis(command("use <TOOL>…")), "mise use <TOOL>…");
 });
 

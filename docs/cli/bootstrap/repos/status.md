@@ -17,5 +17,5 @@ Show the state of git repos from `[bootstrap.repos]`
 ## Related documentation
 
 - [Repository checkouts](/bootstrap/repos.html).
-- [`mise bootstrap repos`](/cli/bootstrap/repos.html).
+- [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.html).
 - [Global flags and argument syntax](/cli/#global-flags).

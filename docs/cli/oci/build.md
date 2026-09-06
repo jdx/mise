@@ -10,8 +10,12 @@
 Each tool version becomes its own content-addressable OCI layer. Bumping a
 tool version only invalidates that tool's layer — other tools, the base
 image, and config are reused unchanged. The output directory conforms to
-the OCI image-layout spec and can be consumed by `skopeo`, `crane`, or
-`podman load`.
+the OCI image-layout spec. Use `skopeo inspect oci:./mise-oci` to inspect it
+or `mise oci run --image-dir ./mise-oci -- command` to load and run it.
+
+Build on Linux with the target architecture: this packages host tool installs
+and, by default, the running mise binary. `--no-mise` omits that binary but does
+not cross-compile tools installed for another OS. asdf/vfox tools are unsupported.
 
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
@@ -55,3 +59,11 @@ Notes:
 - The host mise binary is embedded at /usr/local/bin/mise by default;
   build on the same OS/arch as your target image (or pass --no-mise).
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Building and running OCI images](/dev-tools/mise-oci.html).
+- [`mise oci <SUBCOMMAND>`](/cli/oci.html).
+- [Global flags and argument syntax](/cli/#global-flags).

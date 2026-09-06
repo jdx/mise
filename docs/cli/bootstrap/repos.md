@@ -7,6 +7,10 @@
 
 Manage git repo checkouts from `[bootstrap.repos]`
 
+Use `apply` to clone or reconcile the configured checkout, `update` to refresh it,
+and `exec` to run a command in selected repositories. Existing local changes can
+block convergence; `--skip-dirty` skips those repositories without discarding edits.
+
 ## Flags
 - **`-h --help`** — Print help
 
@@ -16,3 +20,11 @@ Manage git repo checkouts from `[bootstrap.repos]`
 - [`mise bootstrap repos exec [-c --continue-on-error] [-n --dry-run] [PATH]… <-- COMMAND>…`](/cli/bootstrap/repos/exec.html)
 - [`mise bootstrap repos status [-J --json] [--missing]`](/cli/bootstrap/repos/status.html)
 - [`mise bootstrap repos update [FLAGS] [PATH]…`](/cli/bootstrap/repos/update.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Repository checkouts](/bootstrap/repos.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

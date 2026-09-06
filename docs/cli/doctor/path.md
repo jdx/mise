@@ -19,3 +19,11 @@ Get the PATH entries mise provides, such as `/home/user/.local/share/mise/instal
 ```
 mise doctor path
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Troubleshooting](/troubleshooting.html).
+- [`mise doctor [-J --json] [SUBCOMMAND]`](/cli/doctor.html).
+- [Global flags and argument syntax](/cli/#global-flags).

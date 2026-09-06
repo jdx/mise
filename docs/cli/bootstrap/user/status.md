@@ -17,5 +17,5 @@ Show whether current-user settings match `[bootstrap.user]`
 ## Related documentation
 
 - [Current-user settings](/bootstrap/user.html).
-- [`mise bootstrap user`](/cli/bootstrap/user.html).
+- [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.html).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -32,3 +32,11 @@ Requested Version:  20
 Config Source:      ~/.config/mise/mise.toml
 Tool Options:       [none]
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Development tools](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -7,6 +7,9 @@
 
 Manage Docker Compose projects from `[bootstrap.compose]`
 
+Requires a working Docker engine and Compose command on the target host. `apply`
+reconciles declared project state; `status` inspects the existing projects.
+
 ## Flags
 - **`-h --help`** — Print help
 
@@ -14,3 +17,11 @@ Manage Docker Compose projects from `[bootstrap.compose]`
 
 - [`mise bootstrap compose apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/compose/apply.html)
 - [`mise bootstrap compose status [-J --json] [--missing]`](/cli/bootstrap/compose/status.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Compose projects](/bootstrap/compose.html).
+- [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

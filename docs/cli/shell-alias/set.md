@@ -23,3 +23,11 @@ This modifies the contents of ~/.config/mise/config.toml
 mise shell-alias set ll "ls -la"
 mise shell-alias set gs "git status"
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Shell aliases](/shell-aliases.html).
+- [`mise shell-alias [--no-header] [SUBCOMMAND]`](/cli/shell-alias.html).
+- [Global flags and argument syntax](/cli/#global-flags).

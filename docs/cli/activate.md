@@ -5,26 +5,21 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/activate.rs`](https://github.com/jdx/mise/blob/main/src/cli/activate.rs)
 
-Initialize mise in the current shell session
+Print the script to activate mise in an interactive shell
 
-Add this to your shell's rc or profile file so it runs in every new shell.
-Otherwise, it only takes effect in the current session.
-(e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish, or $PROFILE for powershell)
+Evaluate this command's output with the syntax for your shell; running it alone
+only prints the script. Activation updates tools and environment variables as
+this shell changes directories.
 
-Typically, this can be added with something like the following:
+Add the appropriate example below once to your interactive startup file:
+~/.bashrc for Bash, ~/.zshrc for Zsh, ~/.config/fish/config.fish for Fish,
+or $PROFILE for PowerShell. See the getting-started guide for other shells.
 
-```
-echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
-```
+The mise executable must be on PATH before that line runs. Otherwise use its
+absolute path, for example `eval "$(~/.local/bin/mise activate zsh)"`.
 
-However, this requires that "mise" is in your PATH. If it is not, you need to
-specify the full path like this:
-
-```
-echo 'eval "$(/path/to/mise activate zsh)"' >> ~/.zshrc
-```
-
-Customize status output with `status` settings.
+Use `mise exec -- command` for scripts and CI that do not need interactive hooks.
+Customize status output with the `status` settings.
 
 ## Arguments
 - **`[SHELL_TYPE]`** — Shell type to generate the script for
@@ -79,3 +74,11 @@ Activate mise in PowerShell.
 ```
 (&mise activate pwsh) | Out-String | Invoke-Expression
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Shell activation](/getting-started.html#activate-mise).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

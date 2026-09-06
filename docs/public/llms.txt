@@ -164,12 +164,12 @@
 
 ## CLI Reference
 
-- [CLI Overview](https://mise.jdx.dev/cli/)
-- [mise activate](https://mise.jdx.dev/cli/activate.html): Initialize mise in the current shell session
+- [CLI Overview](https://mise.jdx.dev/cli/): Usage: mise [FLAGS] [COMMAND | TASK] [ARGS]…
+- [mise activate](https://mise.jdx.dev/cli/activate.html): Print the script to activate mise in an interactive shell
 - [mise backends](https://mise.jdx.dev/cli/backends.html): Manage backends
 - [mise backends ls](https://mise.jdx.dev/cli/backends/ls.html): List built-in backends
 - [mise bin-paths](https://mise.jdx.dev/cli/bin-paths.html): List all the active runtime bin paths
-- [mise bootstrap](https://mise.jdx.dev/cli/bootstrap.html): Set up a machine for the current config in one command
+- [mise bootstrap](https://mise.jdx.dev/cli/bootstrap.html): Set up a machine from the current configuration
 - [mise bootstrap accounts](https://mise.jdx.dev/cli/bootstrap/accounts.html): Manage Linux users and groups from [bootstrap.users] and [bootstrap.groups]
 - [mise bootstrap compose](https://mise.jdx.dev/cli/bootstrap/compose.html): Manage Docker Compose projects from [bootstrap.compose]
 - [mise bootstrap config-roots](https://mise.jdx.dev/cli/bootstrap/config-roots.html): Show non-composed bootstrap declarations in each selected configuration root
@@ -195,10 +195,10 @@
 - [mise cache task](https://mise.jdx.dev/cli/cache/task.html): Inspect output cache entries for a task
 - [mise completion](https://mise.jdx.dev/cli/completion.html): Generate shell completions
 - [mise config](https://mise.jdx.dev/cli/config.html): Manage config files
-- [mise config get](https://mise.jdx.dev/cli/config/get.html): Display a value from a mise.toml file
+- [mise config get](https://mise.jdx.dev/cli/config/get.html): Display a value from one mise TOML file
 - [mise config ls](https://mise.jdx.dev/cli/config/ls.html): List config files currently in use
-- [mise config set](https://mise.jdx.dev/cli/config/set.html): Set a value in a mise.toml file
-- [mise deactivate](https://mise.jdx.dev/cli/deactivate.html): Disable mise for current shell session
+- [mise config set](https://mise.jdx.dev/cli/config/set.html): Set a value in one mise TOML file
+- [mise deactivate](https://mise.jdx.dev/cli/deactivate.html): Print the script to disable mise in the current shell session
 - [mise deps](https://mise.jdx.dev/cli/deps.html): [experimental] Manage project dependencies
 - [mise deps add](https://mise.jdx.dev/cli/deps/add.html): Add a dependency
 - [mise deps install](https://mise.jdx.dev/cli/deps/install.html): Install all project dependencies
@@ -207,27 +207,27 @@
 - [mise doctor path](https://mise.jdx.dev/cli/doctor/path.html): Print the current PATH entries mise is providing
 - [mise edit](https://mise.jdx.dev/cli/edit.html): Edit mise.toml interactively
 - [mise en](https://mise.jdx.dev/cli/en.html): Start a new shell with the mise environment built from the current configuration
-- [mise env](https://mise.jdx.dev/cli/env.html): Export env vars to activate mise a single time
+- [mise env](https://mise.jdx.dev/cli/env.html): Print the environment for the current configuration
 - [mise exec](https://mise.jdx.dev/cli/exec.html): Execute a command with tool(s) set
-- [mise fmt](https://mise.jdx.dev/cli/fmt.html): Format mise.toml
+- [mise fmt](https://mise.jdx.dev/cli/fmt.html): Format mise TOML configuration
 - [mise generate](https://mise.jdx.dev/cli/generate.html): Generate files for various tools/services
 - [mise generate config](https://mise.jdx.dev/cli/generate/config.html): Generate a mise.toml file
-- [mise generate devcontainer](https://mise.jdx.dev/cli/generate/devcontainer.html): Generate a devcontainer to execute mise
+- [mise generate devcontainer](https://mise.jdx.dev/cli/generate/devcontainer.html): Generate devcontainer configuration for mise
 - [mise generate git-pre-commit](https://mise.jdx.dev/cli/generate/git-pre-commit.html): Generate a git pre-commit hook
 - [mise generate github-action](https://mise.jdx.dev/cli/generate/github-action.html): Generate a GitHub Action workflow file
 - [mise generate install-script](https://mise.jdx.dev/cli/generate/install-script.html): Generate a script to download+execute mise
-- [mise generate task-docs](https://mise.jdx.dev/cli/generate/task-docs.html): Generate documentation for tasks in a project
+- [mise generate task-docs](https://mise.jdx.dev/cli/generate/task-docs.html): Generate Markdown documentation for project tasks
 - [mise generate task-stubs](https://mise.jdx.dev/cli/generate/task-stubs.html): Generate shims to run mise tasks
 - [mise generate tool-stub](https://mise.jdx.dev/cli/generate/tool-stub.html): Generate a tool stub for HTTP-based tools
 - [mise implode](https://mise.jdx.dev/cli/implode.html): Remove the mise CLI and all related data
 - [mise install](https://mise.jdx.dev/cli/install.html): Install a tool version
 - [mise install-into](https://mise.jdx.dev/cli/install-into.html): Install a tool version to a specific path
-- [mise latest](https://mise.jdx.dev/cli/latest.html): Get the latest available version of a tool
+- [mise latest](https://mise.jdx.dev/cli/latest.html): Resolve the latest matching version request for a tool
 - [mise link](https://mise.jdx.dev/cli/link.html): Symlink a tool version into mise
-- [mise lock](https://mise.jdx.dev/cli/lock.html): Update lockfile checksums and URLs for all specified platforms
+- [mise lock](https://mise.jdx.dev/cli/lock.html): Create or refresh lockfile versions, checksums, and download URLs
 - [mise ls](https://mise.jdx.dev/cli/ls.html): List installed and active tool versions
 - [mise ls-remote](https://mise.jdx.dev/cli/ls-remote.html): List tool versions available to install
-- [mise mcp](https://mise.jdx.dev/cli/mcp.html): Run Model Context Protocol (MCP) server
+- [mise mcp](https://mise.jdx.dev/cli/mcp.html): Run the Model Context Protocol server over stdin/stdout
 - [mise oci](https://mise.jdx.dev/cli/oci.html): [experimental] Build OCI container images from a mise.toml
 - [mise oci build](https://mise.jdx.dev/cli/oci/build.html): [experimental] Build an OCI image from the current mise.toml
 - [mise oci push](https://mise.jdx.dev/cli/oci/push.html): [experimental] Build an OCI image and push it to a registry
@@ -238,23 +238,23 @@
 - [mise packslip pins](https://mise.jdx.dev/cli/packslip/pins.html): List the signers mise has accepted packslips from
 - [mise patrons](https://mise.jdx.dev/cli/patrons.html): Show the individuals supporting mise as Patron-tier members
 - [mise plugins](https://mise.jdx.dev/cli/plugins.html): Manage plugins
-- [mise plugins install](https://mise.jdx.dev/cli/plugins/install.html): Install a plugin
-- [mise plugins link](https://mise.jdx.dev/cli/plugins/link.html): Symlink a plugin into mise
-- [mise plugins ls](https://mise.jdx.dev/cli/plugins/ls.html): List installed plugins
+- [mise plugins install](https://mise.jdx.dev/cli/plugins/install.html): Install a plugin from a configured source, Git URL, or supported archive
+- [mise plugins link](https://mise.jdx.dev/cli/plugins/link.html): Link a local plugin directory into mise for development
+- [mise plugins ls](https://mise.jdx.dev/cli/plugins/ls.html): List installed external plugins
 - [mise plugins ls-remote](https://mise.jdx.dev/cli/plugins/ls-remote.html): List all available remote plugins
-- [mise plugins uninstall](https://mise.jdx.dev/cli/plugins/uninstall.html): Remove a plugin
+- [mise plugins uninstall](https://mise.jdx.dev/cli/plugins/uninstall.html): Remove an installed plugin
 - [mise plugins update](https://mise.jdx.dev/cli/plugins/update.html): Update a plugin to the latest version
 - [mise prune](https://mise.jdx.dev/cli/prune.html): Delete unused versions of tools
-- [mise registry](https://mise.jdx.dev/cli/registry.html): List available tools to install
-- [mise reshim](https://mise.jdx.dev/cli/reshim.html): Create shims for the executables of currently installed tools
-- [mise run](https://mise.jdx.dev/cli/run.html): Run task(s)
+- [mise registry](https://mise.jdx.dev/cli/registry.html): List registry shorthand names and their backends
+- [mise reshim](https://mise.jdx.dev/cli/reshim.html): Create shims for executables provided by installed tools
+- [mise run](https://mise.jdx.dev/cli/run.html): Run tasks and their dependencies
 - [mise search](https://mise.jdx.dev/cli/search.html): Search for tools in the registry
 - [mise self-update](https://mise.jdx.dev/cli/self-update.html): Update mise itself
 - [mise set](https://mise.jdx.dev/cli/set.html): Set environment variables in mise.toml
 - [mise settings](https://mise.jdx.dev/cli/settings.html): Manage settings
 - [mise settings add](https://mise.jdx.dev/cli/settings/add.html): Append a value to an array setting
-- [mise settings get](https://mise.jdx.dev/cli/settings/get.html): Show a current setting
-- [mise settings ls](https://mise.jdx.dev/cli/settings/ls.html): Show current settings
+- [mise settings get](https://mise.jdx.dev/cli/settings/get.html): Show the effective value of a setting
+- [mise settings ls](https://mise.jdx.dev/cli/settings/ls.html): List configured settings and their sources
 - [mise settings set](https://mise.jdx.dev/cli/settings/set.html): Add/update a setting
 - [mise settings unset](https://mise.jdx.dev/cli/settings/unset.html): Clear a setting
 - [mise shell](https://mise.jdx.dev/cli/shell.html): Set a tool version for the current shell session
@@ -279,7 +279,7 @@
 - [mise tasks graph](https://mise.jdx.dev/cli/tasks/graph.html): [experimental] Inspect the workspace project graph
 - [mise tasks info](https://mise.jdx.dev/cli/tasks/info.html): Get information about a task
 - [mise tasks ls](https://mise.jdx.dev/cli/tasks/ls.html): List available tasks
-- [mise tasks run](https://mise.jdx.dev/cli/tasks/run.html): Run task(s)
+- [mise tasks run](https://mise.jdx.dev/cli/tasks/run.html): Run tasks and their dependencies
 - [mise tasks validate](https://mise.jdx.dev/cli/tasks/validate.html): Validate tasks for common errors and issues
 - [mise test-tool](https://mise.jdx.dev/cli/test-tool.html): Test that a tool installs and runs
 - [mise token](https://mise.jdx.dev/cli/token.html): Display git provider tokens mise will use
@@ -288,7 +288,7 @@
 - [mise token gitlab](https://mise.jdx.dev/cli/token/gitlab.html): Display the GitLab token mise will use for a given host
 - [mise tool](https://mise.jdx.dev/cli/tool.html): Show information about a tool
 - [mise tool-alias](https://mise.jdx.dev/cli/tool-alias.html): Manage tool version aliases
-- [mise tool-alias get](https://mise.jdx.dev/cli/tool-alias/get.html): Show an alias for a tool
+- [mise tool-alias get](https://mise.jdx.dev/cli/tool-alias/get.html): Show a configured version alias for a tool
 - [mise tool-alias ls](https://mise.jdx.dev/cli/tool-alias/ls.html): List tool version aliases
 - [mise tool-alias set](https://mise.jdx.dev/cli/tool-alias/set.html): Add/update an alias for a tool/backend
 - [mise tool-alias unset](https://mise.jdx.dev/cli/tool-alias/unset.html): Clear an alias for a tool/backend
@@ -297,9 +297,9 @@
 - [mise uninstall](https://mise.jdx.dev/cli/uninstall.html): Remove installed tool versions
 - [mise unset](https://mise.jdx.dev/cli/unset.html): Remove environment variable(s) from the config file
 - [mise untrust](https://mise.jdx.dev/cli/untrust.html): Remove explicit trust for a config
-- [mise unuse](https://mise.jdx.dev/cli/unuse.html): Remove tool versions from mise.toml and uninstall them
+- [mise unuse](https://mise.jdx.dev/cli/unuse.html): Remove tool requests from configuration and prune unused installations
 - [mise upgrade](https://mise.jdx.dev/cli/upgrade.html): Upgrade outdated tools
-- [mise use](https://mise.jdx.dev/cli/use.html): Install a tool and add it to mise.toml
+- [mise use](https://mise.jdx.dev/cli/use.html): Install a tool and add it to configuration
 - [mise version](https://mise.jdx.dev/cli/version.html): Display the version of mise
 - [mise watch](https://mise.jdx.dev/cli/watch.html): Run task(s) and rerun them when files change
 - [mise where](https://mise.jdx.dev/cli/where.html): Display the installation path for a tool

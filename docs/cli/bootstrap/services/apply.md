@@ -17,5 +17,5 @@ Apply configured Linux system service state
 ## Related documentation
 
 - [System services](/bootstrap/services.html).
-- [`mise bootstrap services`](/cli/bootstrap/services.html).
+- [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.html).
 - [Global flags and argument syntax](/cli/#global-flags).

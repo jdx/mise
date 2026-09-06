@@ -17,5 +17,5 @@ Install and start systemd user services from `[bootstrap.linux.systemd.units]`
 ## Related documentation
 
 - [systemd user units](/bootstrap/systemd.html).
-- [`mise bootstrap linux systemd-units`](/cli/bootstrap/linux/systemd-units.html).
+- [`mise bootstrap linux systemd-units <SUBCOMMAND>`](/cli/bootstrap/linux/systemd-units.html).
 - [Global flags and argument syntax](/cli/#global-flags).

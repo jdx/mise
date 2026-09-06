@@ -15,3 +15,11 @@ Synchronize tools from other version managers with mise
 - [`mise sync node [FLAGS]`](/cli/sync/node.html)
 - [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.html)
 - [`mise sync ruby <--brew>`](/cli/sync/ruby.html)
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Development tools](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

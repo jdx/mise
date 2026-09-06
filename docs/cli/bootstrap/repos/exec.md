@@ -22,5 +22,5 @@ Place the executable and its arguments after `--`, for example `mise bootstrap r
 ## Related documentation
 
 - [Repository checkouts](/bootstrap/repos.html).
-- [`mise bootstrap repos`](/cli/bootstrap/repos.html).
+- [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.html).
 - [Global flags and argument syntax](/cli/#global-flags).

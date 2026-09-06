@@ -35,3 +35,11 @@ node
 mise which node --version
 20.0.0
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Shims and executable lookup](/dev-tools/shims.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -35,3 +35,11 @@ brew install node
 mise link node@brew "$(brew --prefix node)"
 mise use node@brew
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Development tools](/dev-tools/).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).
