@@ -44,8 +44,6 @@ source_code_link_template #"""
 {%- set path = "dotfiles/watch.rs" -%}
 {%- elif path == "bootstrap/dotfiles/exclude" or path == "bootstrap/dotfiles/include" -%}
 {%- set path = "dotfiles/exclude.rs" -%}
-{%- elif path is starting_with(pat="bootstrap/generations") -%}
-{%- set path = "bootstrap/generations.rs" -%}
 {%- elif path is starting_with(pat="bootstrap") -%}
 {%- set path = "bootstrap.rs" -%}
 {%- elif path == "tasks/run" -%}
