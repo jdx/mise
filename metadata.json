@@ -14,6 +14,7 @@
     "docs/public/llms.txt",
     "e2e/cli/test_dotfiles_bootstrap_from_git",
     "e2e/cli/test_dotfiles_experimental_stack",
+    "e2e/cli/test_dotfiles_sync_experimental",
     "man/man1/mise.1",
     "mise.usage.kdl",
     "src/cli/dotfiles/history_status.rs"
