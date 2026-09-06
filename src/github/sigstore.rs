@@ -66,7 +66,7 @@ fn routed_api_url(api_url: &str, has_credentials: bool) -> AttestationResult<Str
     let original = url.clone();
     crate::http::apply_url_replacements(&mut url);
     crate::http::ensure_secure_url_replacement(&original, &url, has_credentials)
-        .map_err(|err| AttestationError::Api(err.to_string()))?;
+        .map_err(|err| AttestationError::Verification(err.to_string()))?;
     if url == original {
         Ok(api_url.to_string())
     } else {
@@ -80,17 +80,19 @@ fn routed_api_url(api_url: &str, has_credentials: bool) -> AttestationResult<Str
 /// otherwise `None` (meaning: keep the sigstore crate's default behavior). The
 /// result is pushed into `mise-sigstore` via [`mise_sigstore::set_tuf_url`] so
 /// the TUF root fetch follows the same mirror as the rest of mise's traffic.
-fn routed_tuf_url() -> Option<String> {
+fn routed_tuf_url() -> AttestationResult<Option<String>> {
     let Ok(mut url) = url::Url::parse(mise_sigstore::DEFAULT_TUF_URL) else {
         debug!(
             "invalid Sigstore TUF URL, skipping url_replacements: {}",
             mise_sigstore::DEFAULT_TUF_URL
         );
-        return None;
+        return Ok(None);
     };
     let original = url.clone();
     crate::http::apply_url_replacements(&mut url);
-    (url != original).then(|| url.to_string())
+    crate::http::ensure_secure_url_replacement(&original, &url, false)
+        .map_err(|err| AttestationError::Verification(err.to_string()))?;
+    Ok((url != original).then(|| url.to_string()))
 }
 
 /// Build a [`RetryConfig`] from mise's HTTP settings so attestation requests
@@ -129,7 +131,7 @@ pub(crate) async fn verify_attestation(
     api_url: Option<&str>,
     use_versions_host: bool,
 ) -> AttestationResult<bool> {
-    mise_sigstore::set_tuf_url(routed_tuf_url());
+    mise_sigstore::set_tuf_url(routed_tuf_url()?);
     let mut digest = None;
     if use_versions_host_for_attestations(api_url, use_versions_host) {
         let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
@@ -221,7 +223,7 @@ pub(crate) async fn verify_attestation_with_predicate_type(
     api_url: Option<&str>,
     use_versions_host: bool,
 ) -> AttestationResult<bool> {
-    mise_sigstore::set_tuf_url(routed_tuf_url());
+    mise_sigstore::set_tuf_url(routed_tuf_url()?);
     let Some(predicate_type) = predicate_type else {
         return verify_attestation(
             artifact_path,
@@ -376,7 +378,7 @@ pub(crate) async fn verify_slsa_provenance(
     provenance_path: &Path,
     min_level: u8,
 ) -> AttestationResult<bool> {
-    mise_sigstore::set_tuf_url(routed_tuf_url());
+    mise_sigstore::set_tuf_url(routed_tuf_url()?);
     mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level).await
 }
 
@@ -385,7 +387,7 @@ pub(crate) async fn verify_slsa_provenance_artifacts(
     artifacts: &[SlsaArtifact],
     min_level: u8,
 ) -> AttestationResult<bool> {
-    mise_sigstore::set_tuf_url(routed_tuf_url());
+    mise_sigstore::set_tuf_url(routed_tuf_url()?);
     mise_sigstore::verify_slsa_provenance_artifacts(provenance_path, artifacts, min_level).await
 }
 
@@ -402,7 +404,7 @@ pub(crate) async fn verify_cosign_signature(
     artifact_path: &Path,
     sig_or_bundle_path: &Path,
 ) -> AttestationResult<bool> {
-    mise_sigstore::set_tuf_url(routed_tuf_url());
+    mise_sigstore::set_tuf_url(routed_tuf_url()?);
     mise_sigstore::verify_cosign_signature(artifact_path, sig_or_bundle_path).await
 }
 
@@ -412,7 +414,7 @@ pub(crate) async fn verify_cosign_signature_with_key(
     sig_or_bundle_path: &Path,
     public_key_path: &Path,
 ) -> AttestationResult<bool> {
-    mise_sigstore::set_tuf_url(routed_tuf_url());
+    mise_sigstore::set_tuf_url(routed_tuf_url()?);
     mise_sigstore::verify_cosign_signature_with_key(
         artifact_path,
         sig_or_bundle_path,
@@ -658,6 +660,21 @@ mod tests {
         let err = routed_api_url(crate::github::API_URL, true).unwrap_err();
 
         assert!(err.to_string().contains("refusing to send credentials"));
+        assert!(!is_api_failure(&err));
+    }
+
+    #[test]
+    fn test_routed_api_url_rejects_userinfo_downgrade_without_token() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string()
+                => "http://user:password@github-proxy.example.com".to_string(),
+        }));
+
+        let err = routed_api_url(crate::github::API_URL, false).unwrap_err();
+
+        assert!(err.to_string().contains("refusing to send credentials"));
+        assert!(!err.to_string().contains("password"));
+        assert!(!is_api_failure(&err));
     }
 
     #[test]
@@ -667,7 +684,7 @@ mod tests {
                 => "https://tuf-mirror.example.com".to_string(),
         }));
 
-        let routed = routed_tuf_url();
+        let routed = routed_tuf_url().unwrap();
 
         assert_eq!(routed.as_deref(), Some("https://tuf-mirror.example.com/"));
     }
@@ -676,7 +693,21 @@ mod tests {
     fn test_routed_tuf_url_none_without_replacement() {
         let _settings = SettingsGuard::new(None);
 
-        assert_eq!(routed_tuf_url(), None);
+        assert_eq!(routed_tuf_url().unwrap(), None);
+    }
+
+    #[test]
+    fn test_routed_tuf_url_rejects_userinfo_downgrade() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://tuf-repo-cdn.sigstore.dev".to_string()
+                => "http://user:password@tuf-mirror.example.com".to_string(),
+        }));
+
+        let err = routed_tuf_url().unwrap_err();
+
+        assert!(err.to_string().contains("refusing to send credentials"));
+        assert!(!err.to_string().contains("password"));
+        assert!(!is_api_failure(&err));
     }
 
     #[test]

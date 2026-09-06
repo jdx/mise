@@ -128,11 +128,11 @@ when traffic must never reach an upstream host.
 
 Authentication headers prepared for the original URL can be sent to the replacement server.
 Only route requests to servers trusted to receive both the artifacts and those credentials.
-When an HTTPS-to-HTTP rewrite would send an authorization header or URL credentials, mise refuses
-the request rather than exposing them without transport encryption. An unauthenticated downgrade
-is still allowed.
-A host-changing rewrite can replace those headers with mirror credentials from netrc, as
-described below; a rewrite alone does not remove them.
+When an HTTPS-to-HTTP rewrite would send an authorization header, cookie, API key, other recognized
+credential header, or URL credentials, mise refuses the request rather than exposing them without
+transport encryption. An unauthenticated downgrade is still allowed.
+A host-changing rewrite removes credentials scoped to the original host, then can add mirror
+credentials from netrc as described below. Same-host rewrites retain the existing credentials.
 
 Use both a start anchor and a hostname boundary for an exact host:
 
