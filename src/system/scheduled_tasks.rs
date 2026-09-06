@@ -210,6 +210,17 @@ fn exec_action(request: &ScheduledTaskRequest) -> Result<(String, String)> {
         }
         sets.push(format!("set \"{key}={value}\""));
     }
+    // the command line goes through cmd.exe too: what it would split or
+    // chain is rejected the same way, rather than run differently
+    if let Some(c) = format!("{program} {args}")
+        .chars()
+        .find(|c| matches!(c, '%' | '&' | '|' | '<' | '>' | '^' | '\n' | '\r'))
+    {
+        bail!(
+            "user service '{}': the command contains {c:?}, which cmd.exe would reinterpret when `environment` is set; move it into a script",
+            request.name
+        );
+    }
     let program = if program.contains(char::is_whitespace) {
         format!("\"{program}\"")
     } else {
