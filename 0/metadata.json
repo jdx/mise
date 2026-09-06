@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1W74VNRAXWH8WC72ZAVXAE9",
+  "session_id": "01a0780b-0269-70a2-a636-03c00821be10",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T20:39:21.29503Z",
+  "branch": "bootstrap/11-encrypted-backups",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "src/git.rs",
+    "src/system/history/sync/files.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "fb16d881a402",
+  "checkpoint_transcript_start": 1712,
+  "transcript_lines_at_start": 1712,
+  "compact_transcript_start": 228,
+  "token_usage": {
+    "input_tokens": 23850,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4988544,
+    "output_tokens": 11384,
+    "api_call_count": 29
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T20:39:21.143837Z",
+    "agent_lines": 7,
+    "agent_removed": 3,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 7,
+    "total_lines_changed": 10,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
