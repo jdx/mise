@@ -2,26 +2,34 @@
 
 `mise` can be used to install and manage multiple versions of [erlang](https://www.erlang.org/) on the same system.
 
-> The following are instructions for using the erlang mise core plugin. It is used when no
-> git plugin named "erlang" is installed.
-
-The code for this is inside the mise repository at
-[`./src/plugins/core/erlang.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/erlang.rs).
-
 ## Usage
 
-The following installs erlang and makes it the global default:
+Install Erlang for the project, then check the OTP release without starting an
+interactive Erlang shell:
 
 ```sh
-mise use -g erlang@26
+mise use erlang@latest
+mise exec -- erl -noshell -eval 'io:format("~s~n", [erlang:system_info(otp_release)]), halt().'
 ```
+
+Use `mise use -g erlang@latest` for a personal default, or replace `latest` with
+the release series required by your application.
 
 See available versions with `mise ls-remote erlang`.
 
+These instructions use mise's built-in erlang support. An installed external
+plugin with the same name can change the behavior; use `mise plugins ls` to
+check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/erlang.rs)
+for backend details.
+
 ## kerl
 
-The plugin uses [kerl](https://github.com/kerl/kerl) under the hood to build erlang.
-See kerl's docs for information on configuring it.
+mise tries a compatible precompiled build by default and falls back to a source
+build when needed. Source builds use [kerl](https://github.com/kerl/kerl) and
+require its platform build dependencies. Set `erlang.compile = true` to request
+a source build, or `false` to fail when a precompiled build is unavailable.
+
+See kerl's documentation for build dependencies and configuration.
 
 On GitHub Actions Linux runners, `ImageOS=ubuntu24`, `ImageOS=ubuntu22`, and
 `ImageOS=ubuntu20` map to their corresponding precompiled Erlang build targets. In the

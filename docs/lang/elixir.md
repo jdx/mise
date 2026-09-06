@@ -2,21 +2,28 @@
 
 `mise` can be used to manage multiple [`elixir`](https://elixir-lang.org/) versions on the same system.
 
-> The following are instructions for using the elixir mise core plugin. It is used when no
-> git plugin named "elixir" is installed.
-
-The code for this is inside the mise repository at
-[`./src/plugins/core/elixir.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/elixir.rs).
-
 ## Usage
 
-Use the latest stable version of elixir:
+Declare both Erlang and Elixir for the project:
 
 ```sh
-mise use -g erlang elixir
+mise use erlang elixir
+mise exec -- elixir --version
 ```
 
-[`erlang`](/lang/erlang.html) is required to install `elixir`.
+[Erlang/OTP](/lang/erlang.html) is required by Elixir. The version command reports
+both runtimes, which helps diagnose an incompatible pair. Use `mise ls-remote
+elixir` and `mise ls-remote erlang` to choose versions supported by your project,
+and pass both requests to `mise use`.
+
+Add `-g` to set personal defaults. In an existing Mix project, run
+`mise exec -- mix deps.get` to install application dependencies; selecting Elixir
+does not install them.
+
+These instructions use mise's built-in elixir support. An installed external
+plugin with the same name can change the behavior; use `mise plugins ls` to
+check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/elixir.rs)
+for backend details.
 
 ## Tool Options
 

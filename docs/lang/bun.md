@@ -2,25 +2,28 @@
 
 `mise` can be used to install and manage multiple versions of [bun](https://bun.sh/) on the same system.
 
-> The following are instructions for using the bun mise core plugin. It is used when no
-> git plugin named "bun" is installed.
-
-The code for this is inside the mise repository at
-[`./src/plugins/core/bun.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/bun.rs).
-
 ## Usage
 
-The following installs bun and makes it the global default:
+Install Bun for the current project and check the selected executable:
 
 ```sh
-mise use -g bun@0.7     # install bun 0.7.x
-mise use -g bun@latest  # install latest bun
+mise use bun@latest
+mise exec -- bun --version
 ```
+
+Use `mise use -g bun@latest` for a personal default outside projects. Commit the
+project's `mise.toml` so teammates select the same version request.
 
 See available versions with `mise ls-remote bun`.
 
 > [!NOTE]
-> Avoid upgrading bun with `bun upgrade`, since `mise` will not be aware of the change.
+> Update with `mise upgrade bun`. Running `bun upgrade` changes the installed
+> binary without updating mise's recorded version.
+
+These instructions use mise's built-in bun support. An installed external
+plugin with the same name can change the behavior; use `mise plugins ls` to
+check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/bun.rs)
+for backend details.
 
 ## Tool Options
 

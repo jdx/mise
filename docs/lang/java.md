@@ -2,44 +2,49 @@
 
 Like `sdkman`, `mise` can manage multiple versions of Java on the same system.
 
-> The following are instructions for using the java mise core plugin. It is used when no
-> git plugin named "java" is installed. If you want to use [asdf-java](https://github.com/halcyon/asdf-java) instead,
-> run `mise plugins install java GIT_URL`.
-
-The code for this is inside the mise repository at
-[`./src/plugins/core/java.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/java.rs).
-
 ## Usage
 
-The following installs the latest version of openjdk-21.x (if some version of openjdk-21.x is
-not already installed) and makes it the global default:
+Select a JDK vendor and release for the current project:
 
 ```sh
-mise use -g java@openjdk-21
-mise use -g java@21         # alternate shorthands for openjdk
+mise use java@temurin-21
+mise exec -- java -version
+mise exec -- javac -version
 ```
+
+Use `mise use -g java@temurin-21` for a personal default. The vendor prefix makes
+the project's distribution choice explicit.
 
 You can also install a JDK from a different vendor. To get the latest version from a vendor, use the
 vendor prefix.
 
 ```sh
-mise use -g java@temurin        # latest version from Temurin
-mise use -g java@temurin-21
-mise use -g java@zulu-21
-mise use -g java@corretto-21
+mise use java@temurin        # latest version from Temurin
+mise use java@temurin-21
+mise use java@zulu-21
+mise use java@corretto-21
 ```
 
 See available versions with `mise ls-remote java`.
 
-::: warning
-Shorthand versions (like `21` in the example) use [`OpenJDK`](https://openjdk.org/) as the default vendor. The default vendor can be changed with the setting [`java.shorthand_vendor`](../configuration/settings.md#java.shorthand_vendor). OpenJDK versions are only updated for a 6-month period; updates and security patches are not available after that. This also applies to LTS versions.
-
-For more information on which JDK to choose, see <https://whichjdk.com>.
+::: info Vendor selection
+Unqualified versions such as `java@21` use
+[`java.shorthand_vendor`](/configuration/settings.html#java.shorthand_vendor),
+which defaults to `openjdk`. Vendor distributions have different update and
+support policies. Use a vendor-qualified request when the project depends on a
+particular distribution.
 :::
+
+These instructions use mise's built-in java support. An installed external
+plugin with the same name can change the behavior; use `mise plugins ls` to
+check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/java.rs)
+for backend details.
 
 ## JAVA_HOME
 
-mise automatically sets `JAVA_HOME` to the active Java installation. This requires [`mise activate`](/cli/activate) — shims alone do not set environment variables like `JAVA_HOME`.
+mise sets `JAVA_HOME` for commands run with `mise exec`, tasks, and activated
+shells. [Shell activation](/cli/activate.html) updates the parent shell itself;
+running a shim does not export `JAVA_HOME` back into that parent shell.
 
 If `JAVA_HOME` appears stuck on an old version after changing your `mise.toml`, try:
 
@@ -54,19 +59,38 @@ If you use an IDE that reads `JAVA_HOME` at startup, you may need to restart it 
 
 Some applications on macOS rely on `/usr/libexec/java_home` to find installed Java runtimes.
 
-To integrate an installed Java runtime with macOS, run the following commands for the appropriate
-version (e.g. openjdk-21).
+If the selected distribution includes a macOS `Contents` bundle, register it with
+macOS. First inspect the installation selected for this directory:
 
 ```sh
-sudo mkdir /Library/Java/JavaVirtualMachines/openjdk-21.jdk
-sudo ln -s ~/.local/share/mise/installs/java/openjdk-21/Contents /Library/Java/JavaVirtualMachines/openjdk-21.jdk/Contents
+mise where java
 ```
 
-> Note: Not all distributions of the Java SDK support this integration (e.g. liberica).
+Then, in a POSIX shell:
+
+```sh
+mise_java_home="$(mise where java)"
+if test -d "$mise_java_home/Contents"; then
+  sudo mkdir -p /Library/Java/JavaVirtualMachines/mise-java.jdk
+  sudo ln -s "$mise_java_home/Contents" /Library/Java/JavaVirtualMachines/mise-java.jdk/Contents
+fi
+/usr/libexec/java_home -V
+```
+
+Run the link command only when `Contents` exists and the destination is not
+already registered. Not all distributions include this bundle. The link points
+to the selected installation; it does not automatically follow future upgrades.
 
 ## `.java-version` and `.sdkmanrc` files support
 
-The Java core plugin supports the idiomatic version files `.java-version` and `.sdkmanrc`. See [idiomatic version files](/configuration.html#idiomatic-version-files).
+Enable discovery of `.java-version` and `.sdkmanrc` explicitly:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools java
+```
+
+A conflicting Java declaration in `mise.toml` takes precedence. See
+[idiomatic version files](/configuration.html#idiomatic-version-files).
 
 For `.sdkmanrc` files, mise tries to map the vendor and version to the appropriate version
 string. For example, the version `20.0.2-tem` is mapped to `temurin-20.0.2`. Due to Azul's Zulu
@@ -77,33 +101,28 @@ The following vendors are NOT supported: `bsg` (Bisheng), `graal` (GraalVM), `ni
 
 ### Using unsupported versions
 
-If you need an unsupported version of Java, some manual work is required:
+For a JDK already installed by SDKMAN or another source, point mise at its home
+directory instead of creating internal cache entries or modifying the JDK:
 
-1. Download the unsupported version to a directory (e.g. `~/.sdkman/candidates/java/21.0.1-open`)
-2. Symlink the new version:
-
-```sh
-ln -s ~/.sdkman/candidates/java/21.0.1-open ~/.local/share/mise/installs/java/21.0.1-open
+```toml [mise.toml]
+[tools]
+java = { path = "/path/to/jdk-home" }
 ```
 
-3. If on Mac:
+The directory must contain `bin/java` and, for a full JDK, `bin/javac`. For a
+macOS `.jdk` bundle, this is usually its `Contents/Home` directory. Check with
+`mise exec -- java -version`.
+
+Alternatively, register a local installation under a name with
+[`mise link`](/cli/link.html), then select it with `mise use`:
 
 ```sh
-mkdir ~/.local/share/mise/installs/java/21.0.1-open/Contents
-mkdir ~/.local/share/mise/installs/java/21.0.1-open/Contents/MacOS
-
-ln -s ~/.sdkman/candidates/java/21.0.1-open ~/.local/share/mise/installs/java/21.0.1-open/Contents/Home
-cp ~/.local/share/mise/installs/java/21.0.1-open/lib/libjli.dylib ~/.local/share/mise/installs/java/21.0.1-open/Contents/MacOS/libjli.dylib
+mise link java@local /path/to/jdk-home
+mise use java@local
 ```
 
-4. Make sure the cache is blocked and valid by ensuring an **empty** directory **exists** for your version in the [mise cache](https://mise.jdx.dev/directories.html#cache-mise), for example:
-
-```sh
-$ ls -R $MISE_CACHE_DIR/java
-21.0.1-open
-
-mise/java/21.0.1-open:
-```
+mise uses this installation in place; updates remain the responsibility of the
+source that installed it.
 
 ## Tool Options
 
@@ -134,15 +153,29 @@ are supported:
 
 ## Gradle toolchains detection
 
-Gradle can automatically detect toolchains installed by some tools (see [toolchain | auto-detection](https://docs.gradle.org/current/userguide/toolchains.html#sec:auto_detection)).
+Run Gradle through mise so it inherits the selected `JAVA_HOME`:
 
-At the moment, `Gradle` does not support auto-detecting Java installations by `mise` (see [gradle/issues/29508](https://github.com/gradle/gradle/issues/29508) and [gradle/issues/29355](https://github.com/gradle/gradle/issues/29355)). A workaround is to leverage the fact that the `mise` install layout is [similar to the one used by `asdf`](/ide-integration.html#sdk-selection-using-asdf-layout).
-
-```shell
-mkdir -p ~/.asdf/installs/ && ln -s ~/.local/share/mise/installs/java ~/.asdf/installs/
+```sh
+mise exec -- ./gradlew -q javaToolchains
 ```
 
-Otherwise, you can always use the [foojay-resolver-convention](https://plugins.gradle.org/plugin/org.gradle.toolchains.foojay-resolver-convention) plugin to let Gradle automatically install JDKs required by your project.
+This assumes the project has a Gradle wrapper and JVM build configuration. The
+report shows which JDKs Gradle detects and how it found them.
+
+To expose the selected JDK as an explicit toolchain candidate, add:
+
+```properties [gradle.properties]
+org.gradle.java.installations.fromEnv=JAVA_HOME
+```
+
+For multiple JDKs, Gradle also accepts a comma-separated list of installation
+homes in `org.gradle.java.installations.paths`. It does not recursively search
+those directories. Use actual JDK homes, not mise's entire `installs/java`
+directory; see [Gradle's custom toolchain locations](https://docs.gradle.org/current/userguide/toolchains.html#sec:custom_loc).
+
+The build's toolchain requirements still determine which candidate Gradle uses.
+After changing toolchain configuration, stop the existing daemon with
+`mise exec -- ./gradlew --stop` before checking again.
 
 ## Settings
 

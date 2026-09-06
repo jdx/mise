@@ -2,22 +2,26 @@
 
 `mise` can be used to install and manage multiple versions of [zig](https://ziglang.org/) on the same system.
 
-> The following are instructions for using the zig mise core plugin.
-
-The code for this is inside the mise repository at
-[`./src/plugins/core/zig.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/zig.rs).
-
 ## Usage
 
-The following installs zig and makes it the global default:
+Install the latest stable Zig for the current project:
 
 ```sh
-mise use -g zig@0.14           # install zig 0.14.x
-mise use -g zig@latest         # install latest zig release
-mise use -g zig@master         # install latest nightly from master
-mise use -g zig@2024.11.0-mach # install Mach nominated zig
-mise use -g zig@mach-latest    # install latest Mach nominated zig
+mise use zig@latest
+mise exec -- zig version
 ```
+
+Choose one request for the release stream your project needs:
+
+| Request           | Selects                           |
+| ----------------- | --------------------------------- |
+| `zig@0.14`        | A release in the 0.14 series      |
+| `zig@latest`      | The latest stable release         |
+| `zig@master`      | The moving nightly channel        |
+| `zig@mach-latest` | The latest Mach-nominated version |
+
+Use `mise use -g <request>` for a personal default. A later `mise use zig@...`
+replaces the project's previous Zig request.
 
 See available stable versions with `mise ls-remote zig`.
 
@@ -26,10 +30,10 @@ don't appear in `mise ls-remote zig` because of a workaround for a
 [version ordering bug](https://github.com/jdx/mise/discussions/5232).
 You can still install the Mach versions listed in the
 [Mach version index](https://machengine.org/zig/index.json). The following
-command lists available Mach versions:
+command lists available Mach versions and requires `curl` and `jq`:
 
 ```sh
-curl https://machengine.org/zig/index.json | yq 'keys'
+curl --fail --show-error --silent --location https://machengine.org/zig/index.json | jq 'keys'
 ```
 
 ### `master` (nightly channel)
@@ -41,18 +45,25 @@ newer nightlies — instead of the channel staying pinned to the build it was fi
 installed from. Run `mise upgrade zig` (or `mise install -f zig@master`) to move to
 the current nightly.
 
+These instructions use mise's built-in zig support. An installed external
+plugin with the same name can change the behavior; use `mise plugins ls` to
+check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/zig.rs)
+for backend details.
+
 ## zig Language Server
 
 The `zig` language server ([zls](https://github.com/zigtools/zls)) needs to be installed separately.
 You can install it with `mise`:
 
 ```sh
-mise use -g zls@0.14   # install zls 0.14.x
-mise use -g zls@latest # install latest zls release
+mise use zig@0.14 zls@0.14
+mise exec -- zls --version
 ```
 
-A tagged release of `zig` should be used with
-the same tagged release of `zls`. There is currently no Mach version of `zls`.
+Choose a ZLS version compatible with your Zig version; see the
+[ZLS installation guide](https://zigtools.org/zls/install/). Installing both at
+`latest` independently is not a compatibility check. There is currently no
+Mach-specific ZLS release.
 
 ## Tool Options
 
