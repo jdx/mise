@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TRNCQDPPGHHFF04VJG7EYD",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-security-guides",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/paranoid.md",
+    "docs/public/llms.txt",
+    "docs/sandboxing.md",
+    "docs/security.md",
+    "docs/url-replacements.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 65692,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1559424,
+    "output_tokens": 11990,
+    "api_call_count": 16
+  }
+}
