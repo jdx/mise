@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TM9JX5P54B8CMZ3EWAS904",
+  "session_id": "01a0751c-803c-71c3-8477-fa566f432cfe",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T05:50:38.699378Z",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/backends/packslip.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "dbae59535efe",
+  "checkpoint_transcript_start": 912,
+  "transcript_lines_at_start": 912,
+  "compact_transcript_start": 134,
+  "token_usage": {
+    "input_tokens": 21916,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 618368,
+    "output_tokens": 1812,
+    "api_call_count": 9
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T05:50:38.591939Z",
+    "agent_lines": 28,
+    "agent_removed": 3,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 28,
+    "total_lines_changed": 31,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
