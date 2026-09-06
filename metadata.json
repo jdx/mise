@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TNRK07VMKKYJ7W419NMCG3",
+  "strategy": "manual-commit",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/bootstrap/macos-defaults.md",
+    "docs/bootstrap/remote.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 19384,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2025216,
+    "output_tokens": 2560,
+    "api_call_count": 16
+  }
+}

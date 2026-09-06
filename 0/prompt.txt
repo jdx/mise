@@ -1,0 +1,1 @@
+fix [https://github.com/jdx/mise/pull/12872](https://github.com/jdx/mise/pull/12872)
