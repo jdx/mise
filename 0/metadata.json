@@ -1,0 +1,60 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TES0JS1E2PFM6QT9D4X684",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T04:14:12.945441Z",
+  "branch": "codex/docs-task-guides",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/.vitepress/sidebar.ts",
+    "docs/tasks/architecture.md",
+    "docs/tasks/caching.md",
+    "docs/tasks/file-tasks.md",
+    "docs/tasks/index.md",
+    "docs/tasks/monorepo.md",
+    "docs/tasks/remote-cache-protocol.md",
+    "docs/tasks/running-tasks.md",
+    "docs/tasks/task-arguments.md",
+    "docs/tasks/task-configuration.md",
+    "docs/tasks/templates.md",
+    "docs/tasks/toml-tasks.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "57e90f547f29",
+  "checkpoint_transcript_start": 317,
+  "transcript_lines_at_start": 317,
+  "compact_transcript_start": 43,
+  "token_usage": {
+    "input_tokens": 324367,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 5216128,
+    "output_tokens": 15134,
+    "api_call_count": 33
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T04:14:12.788298Z",
+    "agent_lines": 713,
+    "agent_removed": 641,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 713,
+    "total_lines_changed": 1354,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
