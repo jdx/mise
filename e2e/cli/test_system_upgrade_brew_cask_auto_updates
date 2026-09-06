@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import plistlib
 import subprocess
 import sys
 import threading
@@ -46,6 +47,7 @@ for token in ("auto-parent", "auto-child"):
     app = prefix / "Applications" / f"{token}.app"
     (app / "Contents").mkdir(parents=True)
     (app / "Contents/payload").write_text("original")
+    (app / "Contents/Info.plist").write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1"}))
     caskroom = prefix / "Caskroom" / token / "1"
     caskroom.mkdir(parents=True)
     (caskroom / app.name).symlink_to(app)
@@ -55,6 +57,7 @@ for token in ("auto-parent", "auto-child"):
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, "w") as bundle:
         bundle.writestr(f"{app.name}/Contents/payload", "upgraded")
+        bundle.writestr(f"{app.name}/Contents/Info.plist", plistlib.dumps({"CFBundleShortVersionString": "2"}))
     responses[f"/{token}.zip"] = archive.getvalue()
     metadata = {"token": token, "version": "2", "auto_updates": True,
                 "url": f"{base}/{token}.zip", "sha256": "no_check", "artifacts": [{"app": [app.name]}]}
@@ -85,10 +88,35 @@ try:
         assert receipt.read_bytes() == original
     assert not (prefix / "Caskroom/.mise.lock").exists()
 
+    parent_app = prefix / "Applications/auto-parent.app"
+    parent = parent_app / "Contents/payload"
+    live_plist = parent_app / "Contents/Info.plist"
+    parent_receipt, original_receipt = receipts["auto-parent"]
+    for live in ("2", "3", "2.0", "nightly", None, 1):
+        live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": live} if live is not None else {}))
+        original_plist = live_plist.read_bytes()
+        run("upgrade", "--yes")
+        assert downloads == [], (live, downloads)
+        assert parent.read_text() == "original", live
+        assert live_plist.read_bytes() == original_plist, live
+        assert parent_receipt.read_bytes() == original_receipt, live
+    live_plist.unlink()
+    run("upgrade", "--yes")
+    assert downloads == []
+    assert not live_plist.exists()
+    assert parent_receipt.read_bytes() == original_receipt
+    missing_app = parent_app.with_suffix(".missing")
+    parent_app.rename(missing_app)
+    run("upgrade", "--yes")
+    assert not parent_app.exists()
+    assert downloads == []
+    assert parent_receipt.read_bytes() == original_receipt
+    missing_app.rename(parent_app)
+    live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1"}))
+
     output = run("upgrade", "--yes")
     assert "upgraded auto-parent 1 -> 2" in output, output
     assert downloads == ["/auto-parent.zip"], downloads
-    parent = prefix / "Applications/auto-parent.app/Contents/payload"
     assert parent.read_text() == "upgraded"
     child_receipt, original = receipts["auto-child"]
     assert child_receipt.read_bytes() == original
@@ -96,12 +124,27 @@ try:
     receipt = prefix / "Caskroom/auto-parent/2/.mise-cask.toml"
     assert 'version = "2"' in receipt.read_text()
     original = receipt.read_bytes()
+    live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1"}, fmt=plistlib.FMT_BINARY))
+    parent.write_text("older despite equal receipt")
+    output = run("upgrade", "--dry-run", "--yes")
+    assert downloads == ["/auto-parent.zip"]
+    assert parent.read_text() == "older despite equal receipt"
+    assert receipt.read_bytes() == original
+    output = run("upgrade", "--yes")
+    assert "already up to date" not in output, output
+    assert parent.read_text() == "upgraded"
+    assert plistlib.loads(live_plist.read_bytes())["CFBundleShortVersionString"] == "2"
+    assert set(downloads) == {"/auto-parent.zip"}, downloads
+    completed_downloads = downloads.copy()
+    assert child_receipt.read_bytes() == receipts["auto-child"][1]
+    assert (prefix / "Applications/auto-child.app/Contents/payload").read_text() == "original"
+    original = receipt.read_bytes()
     parent.write_text("self-updated")
     output = run("upgrade", "--yes")
     assert "already up to date" in output, output
     assert parent.read_text() == "self-updated"
     assert receipt.read_bytes() == original
-    assert downloads == ["/auto-parent.zip"]
+    assert downloads == completed_downloads
 finally:
     server.shutdown()
     thread.join()

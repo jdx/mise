@@ -7421,3 +7421,116 @@ fn installed_cask_skip_depends_on_mode_and_receipt_equality() {
         );
     }
 }
+
+#[test]
+fn auto_updates_compares_only_matching_numeric_version_components() {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+
+    for (live, current, expected) in [
+        ("1", "2", Some(Less)),
+        ("1.9", "1.10", Some(Less)),
+        ("2.0", "1.99", Some(Greater)),
+        ("1.02", "01.2", Some(Equal)),
+        ("0.000", "00.0", Some(Equal)),
+        (
+            "999999999999999999999999999999",
+            "1000000000000000000000000000000",
+            Some(Less),
+        ),
+        ("1", "1.0", None),
+        ("", "1", None),
+        ("1.", "1.0", None),
+        ("1..0", "1.0.0", None),
+        ("1.0-beta", "1.0", None),
+        ("1,2", "1.2", None),
+        ("latest", "2", None),
+        (" 1", "2", None),
+        ("+1", "2", None),
+        ("１", "2", None),
+    ] {
+        assert_eq!(
+            compare_app_versions(live, current),
+            expected,
+            "{live:?}, {current:?}"
+        );
+        assert_eq!(
+            compare_app_versions(current, live),
+            expected.map(std::cmp::Ordering::reverse)
+        );
+    }
+}
+
+#[test]
+fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let app = tmp.path().join("Example.app");
+    file::create_dir_all(app.join("Contents"))?;
+    let path = app.join("Contents/Info.plist");
+    for binary in [false, true] {
+        for value in [
+            Some(plist::Value::String("1.02".into())),
+            Some(plist::Value::Integer(1.into())),
+            None,
+        ] {
+            let mut dict = plist::Dictionary::new();
+            if let Some(value) = value.clone() {
+                dict.insert("CFBundleShortVersionString".into(), value);
+            }
+            let plist = plist::Value::Dictionary(dict);
+            if binary {
+                plist.to_file_binary(&path)?;
+            } else {
+                plist.to_file_xml(&path)?;
+            }
+            let version = read_app_version(&app);
+            if matches!(value, Some(plist::Value::String(_))) {
+                assert_eq!(version?, "1.02");
+            } else {
+                assert!(version.is_err(), "binary={binary}, value={value:?}");
+            }
+        }
+    }
+    file::write(&path, "invalid plist")?;
+    assert!(read_app_version(&app).is_err());
+    std::fs::remove_file(&path)?;
+    assert!(read_app_version(&app).is_err());
+    file::create_dir_all(&path)?;
+    assert!(read_app_version(&app).is_err());
+    assert!(read_app_version(&tmp.path().join("Missing.app")).is_err());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn auto_updates_refuses_symlinked_and_nonregular_plist_paths() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let original = tmp.path().join("Original.app");
+    file::create_dir_all(original.join("Contents"))?;
+    let mut dict = plist::Dictionary::new();
+    dict.insert(
+        "CFBundleShortVersionString".into(),
+        plist::Value::String("1".into()),
+    );
+    plist::Value::Dictionary(dict).to_file_xml(original.join("Contents/Info.plist"))?;
+    for component in ["", "Contents", "Contents/Info.plist"] {
+        let app = tmp.path().join(format!("Linked-{}.app", component.len()));
+        let destination = if component.is_empty() {
+            app.clone()
+        } else {
+            app.join(component)
+        };
+        file::create_dir_all(destination.parent().unwrap())?;
+        std::os::unix::fs::symlink(original.join(component), destination)?;
+        assert!(read_app_version(&app).is_err(), "component={component}");
+    }
+    let fifo_app = tmp.path().join("Fifo.app");
+    file::create_dir_all(fifo_app.join("Contents"))?;
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(fifo_app.join("Contents/Info.plist"))
+            .status()?
+            .success()
+    );
+    assert!(read_app_version(&fifo_app).is_err());
+    Ok(())
+}
