@@ -498,6 +498,14 @@ fn reset_sync_state(
 /// Disconnects: the declaration is removed; local refs, state, and
 /// checkpoints stay.
 pub(crate) fn remove() -> Result<()> {
+    let state_dir: &std::path::Path = &crate::dirs::STATE;
+    let _sync_lock = run::lock_in(state_dir)?;
+    let mut status = run::read_status(state_dir)?;
+    remove_locked(state_dir, &mut status)
+}
+
+/// The caller holds the sync lock across both configuration and state writes.
+fn remove_locked(state_dir: &std::path::Path, status: &mut run::SyncStatus) -> Result<()> {
     let mut removed = vec![];
     // the machine-local file, and the shared one for a declaration written
     // there by hand or by an earlier mise
@@ -516,14 +524,12 @@ pub(crate) fn remove() -> Result<()> {
         }
     }
     // the recorded connection no longer stands in for a declaration
-    let state_dir: &std::path::Path = &crate::dirs::STATE;
     let mut disconnected = false;
-    run::update_status(state_dir, run::STATUS_LOCK_WAIT, |status| {
-        if status.origin_url.is_some() && !status.disconnected {
-            status.disconnected = true;
-            disconnected = true;
-        }
-    })?;
+    if status.origin_url.is_some() && !status.disconnected {
+        status.disconnected = true;
+        disconnected = true;
+    }
+    run::write_status(state_dir, status)?;
     if disconnected && removed.is_empty() {
         removed.push("the recorded connection".to_string());
     }
@@ -564,5 +570,5 @@ pub(crate) fn purge(store: &Store, yes: bool) -> Result<()> {
     status.uploaded.clear();
     run::write_status(state_dir, &status)?;
     info!("history: deleted {} ref(s) from {}", refs.len(), origin.url);
-    remove()
+    remove_locked(state_dir, &mut status)
 }

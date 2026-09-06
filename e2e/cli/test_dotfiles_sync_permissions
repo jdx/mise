@@ -50,3 +50,11 @@ assert "cat $B/.script" $'local\nmiddle\nremote'
 assert_fail "test -x ~/.script"
 assert_fail "test -x $B/.script"
 assert_contains "git --git-dir=$origin ls-tree main tracked/home/.script" "100644"
+
+# Purge holds the sync lock through deletion and disconnection; it must not
+# try to reacquire its own lock or leave the connection active afterwards.
+machine="$(jq -r '.id' "$MISE_STATE_DIR/history/machine.json")"
+assert_succeed "mise bootstrap dotfiles origin --purge --yes"
+assert_contains "mise bootstrap dotfiles status" "Setup repository: none"
+assert "git --git-dir=$origin for-each-ref --format='%(refname)' refs/mise-history/$machine/" ""
+assert_succeed "git --git-dir=$origin rev-parse refs/heads/main"
