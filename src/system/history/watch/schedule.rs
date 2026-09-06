@@ -81,9 +81,10 @@ impl PathSchedule {
 
     /// Quiet needed before a pending change is saved.
     fn settle(&self, limits: &Limits) -> Duration {
+        // never below the configured quiet period, even one above the cap
         (self.interval / SETTLE_DIVISOR)
             .max(limits.base)
-            .min(SETTLE_MAX)
+            .min(SETTLE_MAX.max(limits.base))
     }
 
     /// When this path's pending change is due: quiet for its settle time,
@@ -242,6 +243,19 @@ impl Schedule {
         schedule.pending_since.get_or_insert(now);
         schedule.last_change = Some(now);
         schedule.changes += 1;
+    }
+
+    /// A change to `path` may have happened (a same-second ambiguity after
+    /// a restart): the path is pending, without a change counted toward
+    /// churn detection.
+    pub(crate) fn mark_pending(&mut self, path: PathBuf, now: Instant) {
+        let base = self.limits.base;
+        let schedule = self
+            .paths
+            .entry(path)
+            .or_insert_with(|| PathSchedule::new(base));
+        schedule.pending_since.get_or_insert(now);
+        schedule.last_change = Some(now);
     }
 
     /// The next moment any pending path is due.

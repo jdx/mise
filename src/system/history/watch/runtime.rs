@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use eyre::{Result, bail};
-use globset::GlobSet;
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, NoCache, new_debouncer_opt};
 use serde_json::json;
@@ -27,7 +26,7 @@ use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::health::{self, Health, ThrottledPath};
 use crate::system::history::store::{self, Trigger};
 use crate::system::history::tracked::{
-    self, TrackedSet, hard_exclusions, normalize, normalize_target,
+    self, ExcludeSet, TrackedSet, hard_exclusions, normalize, normalize_target,
 };
 
 /// How long the debouncer coalesces raw filesystem events before they reach
@@ -480,7 +479,7 @@ struct State {
     /// The declared set plus derived entries, what is watched.
     watched: TrackedSet,
     plan: WatchPlan,
-    exclude: GlobSet,
+    exclude: ExcludeSet,
     hard: Vec<PathBuf>,
     config_dir: PathBuf,
 }
@@ -681,7 +680,7 @@ impl Capture {
                 // false positive only holds the file until its save is due)
                 .is_some_and(|modified| modified.as_secs() >= saved);
             if changed_since && schedule.get(&path).is_some_and(|s| !s.pending()) {
-                schedule.note(path, now);
+                schedule.mark_pending(path, now);
             }
         }
         let health = health::read(store.state_dir()).unwrap_or_default();
