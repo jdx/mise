@@ -404,8 +404,19 @@ async fn execute(
         .filter(|step| matches!(step.action, Action::Conflict(_)))
         .collect();
     if !conflicts.is_empty() {
+        // `--force` answers a type change only (and undo already forces);
+        // an occupant history never captured stays a conflict whatever is
+        // passed, so it is not offered where it would not help
+        let type_changes = conflicts.iter().any(
+            |step| matches!(&step.action, Action::Conflict(reason) if reason.contains(" became ")),
+        );
+        let hint = if !exec.force && type_changes {
+            "; pass --force to replace a path whose type changed"
+        } else {
+            ""
+        };
         bail!(
-            "{} path(s) conflict; resolve them or pass --force to replace them",
+            "{} path(s) conflict (see the plan above); resolve them first{hint}",
             conflicts.len()
         );
     }
