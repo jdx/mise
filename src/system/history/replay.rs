@@ -864,6 +864,18 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                 );
                 // the link itself, never its destination
                 let abs = normalize_target(&abs);
+                // An explicit child selection owns its subtree, even when
+                // its differing checkpoint is older than its parent's.
+                if exec
+                    .targets
+                    .iter()
+                    .flat_map(|target| &target.paths)
+                    .any(|selected| {
+                        selected != path && selected.starts_with(path) && abs.starts_with(selected)
+                    })
+                {
+                    continue;
+                }
                 let saved = repo.object_at(snapshot, &file)?;
                 let mut current = repo.object_at(live, &file)?;
                 // an empty directory is invisible to the tree; a directory
@@ -933,6 +945,16 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                     .is_some_and(|rest| rest.starts_with('/'))
             };
             let mut emptied: BTreeSet<String> = BTreeSet::new();
+            if path.is_dir()
+                && !path.is_symlink()
+                && std::fs::read_dir(path)?.next().is_none()
+                && matches!(
+                    classify(checkpoint, &tree_path_to_display(&tree_path)),
+                    PathState::Absent
+                )
+            {
+                emptied.insert(tree_path.clone());
+            }
             for file in &deleted {
                 let mut dir = file.as_str();
                 while let Some((parent, _)) = dir.rsplit_once('/') {
@@ -1265,6 +1287,15 @@ fn newest_differing(
         }
         let saved = repo.object_at(snapshot, &tree_path)?;
         if saved == current {
+            if saved.is_none()
+                && normalize_target(path).is_dir()
+                && matches!(
+                    classify(&entry.checkpoint, &tree_path_to_display(&tree_path)),
+                    PathState::Absent
+                )
+            {
+                return Ok(Some(entry.clone()));
+            }
             // the same bytes under other permissions differ too
             let recorded = recorded_bits(&entry.checkpoint, &tree_path, &normalize_target(path));
             let differs = saved

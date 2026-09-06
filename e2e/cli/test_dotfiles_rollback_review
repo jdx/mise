@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+require_cmd git
+mkdir -p ~/.config/review
+echo original >~/.config/review/file
+assert_succeed "mise bootstrap dotfiles track ~/.config/review"
+echo current >~/.config/review/file
+assert_succeed "mise bootstrap dotfiles save"
+chmod 600 ~/.config/review/file
+assert_succeed "mise bootstrap dotfiles save"
+# The directory's differing tree predates the file's permission-only
+# checkpoint. The explicit child selection wins, in either argument order.
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review ~/.config/review/file --yes"
+assert "cat ~/.config/review/file" "current"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review/file ~/.config/review --yes"
+assert "cat ~/.config/review/file" "current"
+
+mkdir ~/.config/review/empty
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review/empty --yes"
+assert_fail "test -d ~/.config/review/empty"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert_succeed "test -d ~/.config/review/empty"
+
+# A canonical target outside HOME retains restrictive parent permissions.
+external="$(dirname "$HOME")/external-private"
+mkdir -m 700 "$external"
+echo secret >"$external/key"
+chmod 600 "$external/key"
+ln -s "$external" ~/.config/review/external
+assert_succeed "mise bootstrap dotfiles track $external"
+before="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+mv "$external" "$external.removed"
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles rollback $external/key --to $before --yes"
+assert "cat $external/key" "secret"
+if [[ "$(uname -s)" == Darwin ]]; then
+  assert "stat -f %Lp $external" "700"
+  assert "stat -f %Lp $external/key" "600"
+else
+  assert "stat -c %a $external" "700"
+  assert "stat -c %a $external/key" "600"
+fi

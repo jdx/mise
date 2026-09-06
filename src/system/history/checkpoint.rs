@@ -841,11 +841,12 @@ fn file_modes(walk: &super::tracked::Walk) -> BTreeMap<String, u32> {
                 modes.insert(display_path(path), mode);
             }
         }
-        // the directories above it, up to (not including) the home
-        // directory: a 0700 directory comes back 0700
+        // Include ancestors outside home too (custom config directories and
+        // canonical symlink targets). Existing directories are not chmodded
+        // by recovery; this describes only ancestors it must recreate.
         for ancestor in path.ancestors().skip(1) {
             if ancestor == home
-                || !ancestor.starts_with(&home)
+                || ancestor.parent().is_none()
                 || !dirs.insert(ancestor.to_path_buf())
             {
                 break;
