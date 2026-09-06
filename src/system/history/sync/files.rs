@@ -41,6 +41,10 @@ fn control_file(path: &str) -> bool {
 }
 
 fn envelope(repo: &HistoryRepo, object: &Object, limit: u64) -> Result<Option<Envelope>> {
+    // A gitlink names a commit in another repository, not a readable blob.
+    if object.0 == "160000" {
+        return Ok(None);
+    }
     if !repo.blob_starts_with(&object.1, MAGIC)? {
         return Ok(None);
     }
@@ -261,6 +265,9 @@ mod tests {
         }
         let object = ("100644".into(), repo.hash_blob(MAGIC).unwrap());
         assert!(envelope(&repo, &object, 4).is_err());
+        // The referenced submodule commit need not exist in the setup repo.
+        let gitlink = ("160000".into(), "a".repeat(40));
+        assert!(envelope(&repo, &gitlink, 4).unwrap().is_none());
     }
 
     #[test]
