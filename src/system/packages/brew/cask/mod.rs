@@ -31,6 +31,7 @@ use crate::system::sudo;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::{ProgressIcon, SingleReport};
 
+mod app_version;
 mod artifacts;
 mod fetch;
 mod flight;
@@ -38,6 +39,7 @@ mod model;
 mod paths;
 mod state;
 
+use app_version::*;
 use artifacts::*;
 use fetch::*;
 use flight::*;
@@ -67,6 +69,47 @@ enum InstallMode {
 
 fn should_skip_installed(cask: &Cask, version: &str, mode: InstallMode) -> bool {
     version == cask.version || (mode == InstallMode::Install && cask.auto_updates)
+}
+
+fn installed_skip_reason(
+    cask: &Cask,
+    artifacts: &CaskArtifacts,
+    version: Option<&str>,
+    mode: InstallMode,
+) -> Result<Option<&'static str>> {
+    if mode == InstallMode::Upgrade && cask.version == "latest" {
+        return Ok(Some("skipped: cask version is latest"));
+    }
+    if version.is_some_and(|version| should_skip_installed(cask, version, mode)) {
+        return Ok(Some(if mode == InstallMode::Install {
+            "already installed"
+        } else {
+            "already up to date"
+        }));
+    }
+    if mode != InstallMode::Upgrade || !cask.auto_updates {
+        return Ok(None);
+    }
+    let Some(receipt) = previous_receipt(cask)? else {
+        return Ok(Some("skipped: no installed app ownership record"));
+    };
+    if receipt.version == cask.version {
+        return Ok(Some("already up to date"));
+    }
+    let [app] = artifacts.apps.as_slice() else {
+        return Ok(Some("skipped: requires a single owned app"));
+    };
+    let app_path = app_target_path(app.target_name())?;
+    if receipt.apps.as_slice() != [app_path.clone()] {
+        return Ok(Some("skipped: app target differs from ownership record"));
+    }
+    let Ok(live) = read_app_version(&app_path) else {
+        return Ok(Some("skipped: installed app version is unreadable"));
+    };
+    Ok(
+        (!app_version_outdated(&cask.version, live.short.as_deref(), live.build.as_deref()))
+            .then_some("skipped: installed app is current, newer, or incomparable"),
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -510,11 +553,11 @@ impl BrewCaskManager {
         let artifacts = cask_artifacts(&cask)?;
         validate_platform_support(&cask, &artifacts)?;
         let installed_version = mise_installed_cask_version(&cask)?;
-        if let Some(version) = installed_version.as_ref()
-            && should_skip_installed(&cask, version, mode)
+        if let Some(reason) =
+            installed_skip_reason(&cask, &artifacts, installed_version.as_deref(), mode)?
         {
-            info!("brew-cask:{}: already installed", cask.token);
-            return Ok(version.clone());
+            info!("brew-cask:{}: {reason}", cask.token);
+            return Ok(reason.to_string());
         }
         for conflict in &cask.conflicts_with.cask {
             if !installed_versions(conflict).is_empty() {
@@ -571,11 +614,15 @@ impl BrewCaskManager {
         let _caskroom_lock = lock_caskroom()?;
         recover_flight_backups()?;
         ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
-        if let Some(version) = mise_installed_cask_version(&cask)?
-            && should_skip_installed(&cask, &version, mode)
-        {
+        if let Some(reason) = installed_skip_reason(
+            &cask,
+            &artifacts,
+            mise_installed_cask_version(&cask)?.as_deref(),
+            mode,
+        )? {
             file::remove_all(stage)?;
-            return Ok(version);
+            info!("brew-cask:{}: {reason}", cask.token);
+            return Ok(reason.to_string());
         }
         let previous_binaries = previous_binary_targets(&cask)?;
         let previous_fonts = previous_font_targets(&cask)?;
