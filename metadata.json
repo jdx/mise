@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1TJG3GFP0K4E71VT9MDY87M",
   "strategy": "manual-commit",
   "branch": "codex/docs-tool-distribution",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "docs/dev-tools/mise-oci.md",
     "docs/dev-tools/tool-stubs.md"
@@ -15,13 +15,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 41454,
+    "input_tokens": 45366,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 3264512,
-    "output_tokens": 10955,
-    "api_call_count": 17
+    "cache_read_tokens": 3803264,
+    "output_tokens": 11526,
+    "api_call_count": 21
   }
 }
