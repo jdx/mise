@@ -42,7 +42,7 @@ assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
 cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
 
 [settings]
-history.watch.debounce = "1s"
+history.watch.debounce = "2s"
 history.watch.max_interval = "8s"
 history.watch.reconcile = "0"
 
