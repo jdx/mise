@@ -40,6 +40,10 @@ pub(super) struct AppVersion {
     pub(super) build: Option<String>,
 }
 
+/// Reads optional short and build strings from an absolute app bundle path.
+///
+/// Accepts XML and binary plists. Returns an error for unsafe paths, nonregular
+/// files, malformed dictionaries, or version fields whose values are not strings.
 pub(super) fn read_app_version(app: &Path) -> Result<AppVersion> {
     use nix::fcntl::{OFlag, openat};
     use nix::sys::stat::{Mode, SFlag, fstat};
@@ -75,6 +79,12 @@ pub(super) fn read_app_version(app: &Path) -> Result<AppVersion> {
     })
 }
 
+/// Assesses live bundle metadata against the cask's current version using
+/// Homebrew's short, build, combined, and comma-separated version rules.
+///
+/// Returns true when usable metadata establishes that an upgrade is available.
+/// Returns false when the available metadata cannot establish that an upgrade is
+/// available, or when the cask version is `latest`.
 pub(super) fn app_version_outdated(
     current: &str,
     short: Option<&str>,
@@ -154,6 +164,7 @@ struct Token<'a> {
 }
 
 impl Token<'_> {
+    /// Identifies qualifiers that sort before a release with no qualifier.
     fn prerelease(self) -> bool {
         matches!(
             self.kind,
@@ -161,12 +172,16 @@ impl Token<'_> {
         )
     }
 
+    /// Extracts a qualifier's numeric revision, with zero represented by an
+    /// empty string so omitted revisions and explicit zero revisions compare equally.
     fn revision(&self) -> &str {
         self.text
             .trim_start_matches(|c: char| !c.is_ascii_digit())
             .trim_start_matches('0')
     }
 
+    /// Orders tokens using Homebrew's qualifier precedence and missing-token rules.
+    /// A missing token equals numeric zero and sorts after prerelease qualifiers.
     fn compare(self, other: Self) -> Ordering {
         use TokenKind::*;
         match (self.kind, other.kind) {
@@ -200,12 +215,16 @@ impl Token<'_> {
     }
 }
 
+/// Compares ASCII digit strings without integer overflow, ignoring leading zeros.
+/// Empty strings represent zero.
 fn compare_digits(a: &str, b: &str) -> Ordering {
     let a = a.trim_start_matches('0');
     let b = b.trim_start_matches('0');
     a.len().cmp(&b.len()).then_with(|| a.cmp(b))
 }
 
+/// Extracts numeric, qualifier, and text tokens using Homebrew's version pattern.
+/// Qualifier recognition is case-insensitive; token text retains its original case.
 fn tokens(version: &str) -> Vec<Token<'_>> {
     static PATTERN: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(concat!(
@@ -241,6 +260,11 @@ fn tokens(version: &str) -> Vec<Token<'_>> {
         .collect()
 }
 
+/// Compares bundle versions using Homebrew token ordering rather than semver.
+///
+/// Returns `None` for blank inputs or unequal dot-separated component counts,
+/// ignoring trailing dots. Homebrew treats those forms as incomparable rather
+/// than padding their components. Comparable `HEAD` versions sort above releases.
 pub(super) fn compare_app_versions(first: &str, second: &str) -> Option<Ordering> {
     let dot_count = |value: &str| {
         let value = value.trim_end_matches('.');

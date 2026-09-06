@@ -7399,6 +7399,7 @@ fn git_only_path_rejects_symlink_escape() -> Result<()> {
     Ok(())
 }
 
+/// Verifies receipt equality and install mode independently govern skip decisions.
 #[test]
 fn installed_cask_skip_depends_on_mode_and_receipt_equality() {
     let mut cask = test_cask("example", "release,build");
@@ -7422,6 +7423,8 @@ fn installed_cask_skip_depends_on_mode_and_receipt_equality() {
     }
 }
 
+/// Checks Homebrew token precedence, comparability, and symmetric ordering,
+/// including trailing tokens reached after the two token indexes diverge.
 #[test]
 fn auto_updates_compares_homebrew_version_tokens_with_matching_component_counts() {
     use std::cmp::Ordering::{Equal, Greater, Less};
@@ -7478,6 +7481,8 @@ fn auto_updates_compares_homebrew_version_tokens_with_matching_component_counts(
     }
 }
 
+/// Covers upgrade eligibility across short, build, combined, and unavailable
+/// bundle versions, including casks with multiple version candidates.
 #[test]
 fn auto_updates_matches_homebrew_short_build_decisions() {
     for (current, short, build, expected) in [
@@ -7520,6 +7525,8 @@ fn auto_updates_matches_homebrew_short_build_decisions() {
     }
 }
 
+/// Verifies both plist encodings preserve optional version strings and that
+/// malformed, missing, or directory-backed plist inputs return errors.
 #[test]
 fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()> {
     let tmp = trusted_tempdir()?;
@@ -7563,6 +7570,8 @@ fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()>
     Ok(())
 }
 
+/// Checks that symlinked bundle components and FIFO plists are rejected before
+/// live version data can be trusted or a FIFO read can block the caller.
 #[cfg(unix)]
 #[test]
 fn auto_updates_refuses_symlinked_and_nonregular_plist_paths() -> Result<()> {

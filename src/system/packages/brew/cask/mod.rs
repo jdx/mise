@@ -67,10 +67,15 @@ enum InstallMode {
     Upgrade,
 }
 
+/// Preserves matching recorded versions in both modes and self-updating casks
+/// during installation; explicit upgrades may assess their live bundle versions.
 fn should_skip_installed(cask: &Cask, version: &str, mode: InstallMode) -> bool {
     version == cask.version || (mode == InstallMode::Install && cask.auto_updates)
 }
 
+/// Returns a user-facing reason to preserve an installed cask, or `None` to proceed.
+/// Self-updating upgrades require a single owned app with readable, outdated live
+/// metadata. Receipt lookup failures propagate as errors.
 fn installed_skip_reason(
     cask: &Cask,
     artifacts: &CaskArtifacts,
@@ -475,6 +480,9 @@ impl BrewCaskManager {
         Self {}
     }
 
+    /// Processes current-version cask requests in the selected install mode.
+    /// Dry runs report decisions without staging; real runs report per-cask progress
+    /// and stop at the first failure. Explicit version requests return an error.
     async fn install_with_manager_options(
         &self,
         pkgs: &[PackageRequest],
@@ -516,6 +524,8 @@ impl BrewCaskManager {
         Ok(())
     }
 
+    /// Starts a top-level cask operation with an empty dependency ancestry.
+    /// Returns the installed version or a message explaining why it was skipped.
     async fn install_one(
         &self,
         req: &PackageRequest,
@@ -528,6 +538,9 @@ impl BrewCaskManager {
             .await
     }
 
+    /// Installs a cask while detecting dependency cycles and preserving ownership.
+    /// Dependencies use install mode. The requested cask's eligibility is checked
+    /// before staging and again under the installation lock before replacement.
     async fn install_one_with_ancestors(
         &self,
         req: &PackageRequest,
@@ -938,6 +951,7 @@ impl SystemPackageManager for BrewCaskManager {
         Ok(statuses)
     }
 
+    /// Installs casks with default manager options, preserving installed self-updaters.
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         self.install_with_manager_options(
             pkgs,
@@ -948,6 +962,7 @@ impl SystemPackageManager for BrewCaskManager {
         .await
     }
 
+    /// Installs casks with caller-supplied manager options and install-mode skip rules.
     async fn install_with_options(
         &self,
         pkgs: &[PackageRequest],
@@ -958,6 +973,7 @@ impl SystemPackageManager for BrewCaskManager {
             .await
     }
 
+    /// Explicitly upgrades casks, assessing live versions for owned self-updating apps.
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         self.install_with_manager_options(
             pkgs,
