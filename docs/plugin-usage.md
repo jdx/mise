@@ -168,7 +168,7 @@ mise exec -- prettier --check .
 
 ## Backend Plugins (Advanced)
 
-Backend plugins implement `BackendListVersions`, `BackendInstall`, and optionally
+Backend plugins implement `BackendListVersions`, `BackendInstall`, and
 `BackendExecEnv`. See [Backend Plugin Development](/backend-plugin-development.html) for
 context fields and typed tool options.
 

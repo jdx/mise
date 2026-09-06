@@ -29,7 +29,7 @@ and are disabled by default on Windows.
 
 ## Backend Plugins
 
-A backend plugin implements `BackendListVersions`, `BackendInstall`, and optionally
+A backend plugin implements `BackendListVersions`, `BackendInstall`, and
 `BackendExecEnv`. The prefix is the name under which you install the plugin:
 
 ```sh
