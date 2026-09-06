@@ -61,7 +61,10 @@ pub(crate) fn sync_report(
     entries: &[crate::system::history::store::Entry],
 ) -> Result<Option<SyncReport>> {
     use crate::system::history::sync::{SyncMode, apply, backup, run};
-    let Some((_, origin)) = crate::system::history::config::origin()? else {
+    let Some(origin) = crate::system::history::config::origin()?
+        .map(|(_, origin)| origin)
+        .or_else(|| run::origin().ok())
+    else {
         return Ok(None);
     };
     let status = run::read_status(store.state_dir())?;

@@ -4135,6 +4135,11 @@
             "type": "object",
             "description": "whole-file dotfile entry or file edit entry",
             "properties": {
+              "encrypt": {
+                "type": "boolean",
+                "default": false,
+                "description": "encrypt this file or external source when sharing; local files and history stay plaintext"
+              },
               "source": {
                 "type": "string",
                 "description": "source file or directory"
@@ -5215,6 +5220,19 @@
       "type": "object",
       "description": "dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/history.html)",
       "properties": {
+        "encryption": {
+          "type": "object",
+          "properties": {
+            "recipients": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "shared age, SSH, or age-plugin public recipients for all encrypted dotfiles"
+            }
+          },
+          "additionalProperties": false
+        },
         "exclude": {
           "type": "array",
           "description": "globs never captured by dotfiles history; a `!glob` entry re-includes a path an earlier glob excluded",

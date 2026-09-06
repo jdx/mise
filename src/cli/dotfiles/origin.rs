@@ -69,7 +69,7 @@ pub(crate) struct DotfilesOriginSet {
     ///
     /// Every backed-up checkpoint becomes one age payload: file names,
     /// descriptions, and content are readable only with a recipient's
-    /// identity. The setup branch itself is always plaintext.
+    /// identity. Setup configuration stays plaintext; dotfiles can use `encrypt = true`.
     #[usage(long)]
     encrypt_backups: bool,
 

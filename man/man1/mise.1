@@ -1791,7 +1791,7 @@ Continue although the repository's history holds private content
 \fB\-\-encrypt\-backups\fR
 Encrypt this machine's recovery refs with age for its recipients (see \-\-recipient)
 
-Every backed\-up checkpoint becomes one age payload: file names, descriptions, and content are readable only with a recipient's identity. The setup branch itself is always plaintext.
+Every backed\-up checkpoint becomes one age payload: file names, descriptions, and content are readable only with a recipient's identity. Setup configuration stays plaintext; dotfiles can use `encrypt = true`.
 .TP
 \fB\-\-recipient\fR \fI<RECIPIENT>\fR
 A backup recipient (repeatable): an age public key (`age1…`), an SSH public key (`ssh\-ed25519 …`), or a path to a `.pub` file or an age identity file

@@ -212,10 +212,17 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     let mode = SyncMode::current()?;
     let config_dir = global_config_dir();
     refuse_other_connection(store, &onboarding.origin, &onboarding.branch)?;
+    let repository_format = match store.repo() {
+        Some(repo) => match format::detect(repo, repo.ref_oid(UPSTREAM_REF)?.as_deref())? {
+            RepoState::Marked(version) => version,
+            _ => format::FORMAT,
+        },
+        None => format::FORMAT,
+    };
     miseprintln!(
         "{} is a mise setup repository (format {}); branch {}.",
         onboarding.origin,
-        format::FORMAT,
+        repository_format,
         onboarding.branch
     );
     miseprintln!("Sync mode {}", mode.disclosure());

@@ -44,10 +44,10 @@ impl RepoState {
     /// Fails for a format this mise does not understand.
     pub(crate) fn check(&self) -> Result<()> {
         if let Self::Marked(format) = self
-            && *format != FORMAT
+            && !matches!(*format, 1 | 2)
         {
             bail!(
-                "this setup repository uses format {format}; upgrade mise (this version supports {FORMAT})"
+                "this setup repository uses format {format}; upgrade mise (this version supports formats 1 and 2)"
             );
         }
         Ok(())

@@ -297,11 +297,13 @@ async fn set_inner(
     let backed_up = walk
         .files
         .iter()
-        .filter(|(_, (_, policy))| policy.backup)
+        .filter(|(_, (_, policy))| {
+            policy.backup && (!policy.encrypt || !matches!(backups, BackupPlan::Plain))
+        })
         .count();
     match &backups {
         BackupPlan::Plain => miseprintln!(
-            "Machine backups: {backed_up} of {} captured file(s) are backed up in plain form under refs/mise-history/{}/ — anyone who can read this repository can read every file in these snapshots. The setup branch is always plaintext; use a private repository.",
+            "Machine backups: {backed_up} of {} captured file(s) are backed up in plain form under refs/mise-history/{}/ — anyone who can read this repository can read every file in these snapshots. Setup configuration stays plaintext; selected dotfiles can be encrypted. Use a private repository.",
             walk.files.len(),
             machine.id
         ),
@@ -329,15 +331,24 @@ async fn set_inner(
                 ),
             }
             miseprintln!(
-                "File names, descriptions, and content are readable only with one of these identities; the machine name, checkpoint time, and count stay visible. The setup branch is always plaintext; use a private repository."
+                "File names, descriptions, and content are readable only with one of these identities; the machine name, checkpoint time, and count stay visible. Setup configuration stays plaintext; selected dotfiles can be encrypted. Use a private repository."
             );
             if generate.is_none() {
-                let loaded = crate::agecrypt::load_all_identities().await;
-                let only_age = recipients.iter().all(|r| r.starts_with("age1"));
-                let among = recipients
+                let restorable = crate::agecrypt::restorability(recipients).await;
+                if restorable.is_none() {
+                    miseprintln!(
+                        "Hardware identity configured but unverified; restore interactively to unlock it."
+                    );
+                }
+                if recipients
                     .iter()
-                    .any(|r| loaded.x25519_public.iter().any(|mine| mine == r));
-                if loaded.identities.is_empty() || (only_age && !among) {
+                    .all(|r| r.parse::<age::plugin::Recipient>().is_ok())
+                {
+                    miseprintln!(
+                        "Hardware-only recipients: losing these devices can make backups unrecoverable. Add an independent recovery recipient."
+                    );
+                }
+                if restorable == Some(false) {
                     miseprintln!(
                         "Note: none of this machine's identities is among the recipients, so this machine could not restore its own backups."
                     );
@@ -470,6 +481,8 @@ async fn set_inner(
     // is included, not only what changes later
     status.upload_since = if opts.include_existing {
         None
+    } else if same_origin {
+        status.upload_since.clone()
     } else {
         let newest = store
             .list()?

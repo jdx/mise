@@ -408,6 +408,8 @@ pub(crate) struct CoverageEntry {
     pub autosave: bool,
     pub share: bool,
     pub backup: bool,
+    #[serde(default)]
+    pub encrypt: bool,
     /// `live`, `saved`, or `protective`.
     pub state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -99,9 +99,8 @@ pub(crate) async fn resolve_with_store(
         let repo = store
             .repo()
             .ok_or_else(|| eyre::eyre!("other machines' checkpoints require git"))?;
-        let (_, machine_entries) =
-            crate::system::history::sync::machines::entries(repo, machine).await?;
-        return resolve(reference, &machine_entries, path);
+        return crate::system::history::sync::machines::resolve(repo, machine, reference, path)
+            .await;
     }
     resolve(spec, entries, path)
 }

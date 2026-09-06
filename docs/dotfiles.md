@@ -73,8 +73,9 @@ wrote is not active.
 | Field      | Default | Meaning                                                                                                                                                     |
 | ---------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `autosave` | `true`  | Save edits automatically. `false` makes a manual-save file: `mise bootstrap dotfiles save <path>`, or an operation that names it, promotes what is on disk. |
-| `share`    | `true`  | Publish the saved version to the shared setup branch of the connected repository.                                                                            |
-| `backup`   | `true`  | Include the file in this machine's remote backups (plaintext, or encrypted when the connection was made with `--encrypt-backups`).                            |
+| `share`    | `true`  | Publish the saved version to the shared setup branch of the connected repository.                                                                           |
+| `encrypt`  | `false` | Encrypt shared contents for `[history.encryption].recipients`; local files remain plaintext.                                                                |
+| `backup`   | `true`  | Include the file in this machine's remote backups (plaintext, or encrypted when the connection was made with `--encrypt-backups`).                          |
 
 `mise bootstrap dotfiles track --no-autosave|--no-share|--no-backup` sets them;
 `--local` writes the entry to `config.local.toml` (this machine only). A local

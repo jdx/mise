@@ -85,6 +85,7 @@ pub(crate) struct Payload {
     /// The masked record; `tree.snapshot` is meaningless off the machine
     /// and left empty.
     pub checkpoint: Checkpoint,
+    #[serde(deserialize_with = "bounded_files")]
     pub files: Vec<PayloadFile>,
 }
 
@@ -123,19 +124,102 @@ impl<'de> Deserialize<'de> for Bytes {
             fn visit_byte_buf<E: serde::de::Error>(self, v: Vec<u8>) -> Result<Bytes, E> {
                 Ok(Bytes(v))
             }
-            fn visit_seq<A: serde::de::SeqAccess<'de>>(
-                self,
-                mut seq: A,
-            ) -> Result<Bytes, A::Error> {
-                let mut out = Vec::with_capacity(seq.size_hint().unwrap_or(0));
-                while let Some(byte) = seq.next_element::<u8>()? {
-                    out.push(byte);
-                }
-                Ok(Bytes(out))
-            }
         }
         deserializer.deserialize_byte_buf(Visitor)
     }
+}
+
+const MAX_FILES: usize = 100_000;
+
+fn bounded_files<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<PayloadFile>, D::Error> {
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = Vec<PayloadFile>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a bounded file list")
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Self::Value, A::Error> {
+            if seq.size_hint().is_some_and(|n| n > MAX_FILES) {
+                return Err(serde::de::Error::custom("too many backup files"));
+            }
+            let mut files = Vec::new();
+            while let Some(file) = seq.next_element()? {
+                if files.len() == MAX_FILES {
+                    return Err(serde::de::Error::custom("too many backup files"));
+                }
+                files.push(file);
+            }
+            Ok(files)
+        }
+    }
+    deserializer.deserialize_seq(Visitor)
+}
+
+fn validate_files(payload: &Payload) -> Result<()> {
+    if payload.files.len() > MAX_FILES {
+        bail!("too many backup files");
+    }
+    let mut paths = std::collections::BTreeSet::new();
+    for file in &payload.files {
+        if !super::layout::is_safe_branch_path(&file.path)
+            || !matches!(
+                file.mode.as_str(),
+                "100644" | "100755" | "120000" | "160000"
+            )
+            || !paths.insert(file.path.as_str())
+        {
+            bail!("invalid or duplicate backup file path/mode");
+        }
+        if file.mode == "160000"
+            && !(file.content.0.len() == 40 && file.content.0.iter().all(u8::is_ascii_hexdigit))
+        {
+            bail!("invalid gitlink object id");
+        }
+    }
+    for path in &paths {
+        for (index, _) in path.match_indices('/') {
+            if paths.contains(&path[..index]) {
+                bail!("overlapping backup file paths");
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_identity(
+    repo: &HistoryRepo,
+    commit: &str,
+    machine: &str,
+    uuid: &str,
+    checkpoint: &Checkpoint,
+) -> Result<()> {
+    let header =
+        header_of(repo, commit)?.ok_or_else(|| eyre::eyre!("missing encrypted backup header"))?;
+    if header.machine.id != machine
+        || header.checkpoint != uuid
+        || header.machine != checkpoint.machine
+        || header.checkpoint != checkpoint.uuid
+        || header.created_at != checkpoint.created_at
+    {
+        bail!("encrypted backup identity does not match its header and ref");
+    }
+    Ok(())
+}
+
+pub(crate) async fn materialize_checked(
+    repo: &HistoryRepo,
+    commit: &str,
+    machine: &str,
+    uuid: &str,
+) -> Result<String, ReadError> {
+    let payload = read_payload(repo, commit).await?;
+    validate_identity(repo, commit, machine, uuid, &payload.checkpoint)?;
+    Ok(materialize_payload(repo, &payload)?)
 }
 
 /// Why an encrypted backup could not be read.
@@ -176,13 +260,20 @@ pub(crate) fn build(
     recipients: &[Box<dyn age::Recipient + Send>],
 ) -> Result<Vec<u8>> {
     let mut files = vec![];
+    let mut remaining = agecrypt::MAX_PLAINTEXT_BYTES;
     if let Some(snapshot) = snapshot {
         for entry in repo.ls_tree(snapshot)? {
+            if files.len() == MAX_FILES {
+                bail!("too many backup files");
+            }
             let content = if entry.mode == "160000" {
                 entry.oid.clone().into_bytes()
             } else {
-                repo.cat_object(&entry.oid)?
+                repo.cat_object_bounded(&entry.oid, remaining)?
             };
+            remaining = remaining
+                .checked_sub(content.len() as u64)
+                .ok_or_else(|| eyre::eyre!("backup exceeds size limit"))?;
             files.push(PayloadFile {
                 path: entry.path,
                 mode: entry.mode,
@@ -197,6 +288,7 @@ pub(crate) fn build(
         checkpoint,
         files,
     };
+    validate_files(&payload)?;
     let serialized = rmp_serde::to_vec_named(&payload)?;
     agecrypt::encrypt_bytes(&serialized, recipients)
 }
@@ -228,7 +320,7 @@ pub(crate) fn header_of(repo: &HistoryRepo, commit: &str) -> Result<Option<Backu
     let Some((_, oid)) = repo.object_at(commit, HEADER_PATH)? else {
         return Ok(None);
     };
-    let bytes = repo.cat_object(&oid)?;
+    let bytes = repo.cat_object_bounded(&oid, 64 * 1024)?;
     Ok(Some(BackupHeader::parse(&bytes)?))
 }
 
@@ -237,7 +329,7 @@ pub(crate) async fn read_payload(repo: &HistoryRepo, commit: &str) -> Result<Pay
     let Some((_, oid)) = repo.object_at(commit, PAYLOAD_PATH)? else {
         return Err(ReadError::NotEncrypted);
     };
-    let ciphertext = repo.cat_object(&oid)?;
+    let ciphertext = repo.cat_object_bounded(&oid, agecrypt::MAX_ENCRYPTED_BYTES)?;
     let serialized = agecrypt::decrypt_bytes(&ciphertext)
         .await
         .map_err(|err| match err {
@@ -252,12 +344,14 @@ pub(crate) async fn read_payload(repo: &HistoryRepo, commit: &str) -> Result<Pay
             payload.format
         )));
     }
+    validate_files(&payload)?;
     Ok(payload)
 }
 
 /// Writes a decrypted payload as a local plaintext wrapper commit
 /// (`meta.json` + `snapshot/`), indistinguishable from a plaintext backup.
 pub(crate) fn materialize_payload(repo: &HistoryRepo, payload: &Payload) -> Result<String> {
+    validate_files(payload)?;
     let mut entries = vec![];
     for file in &payload.files {
         let oid = if file.mode == "160000" {
@@ -274,6 +368,7 @@ pub(crate) fn materialize_payload(repo: &HistoryRepo, payload: &Payload) -> Resu
 }
 
 /// Decrypts `commit` and materializes it; the local plaintext wrapper.
+#[cfg(test)]
 pub(crate) async fn materialize(repo: &HistoryRepo, commit: &str) -> Result<String, ReadError> {
     let payload = read_payload(repo, commit).await?;
     Ok(materialize_payload(repo, &payload)?)
@@ -421,4 +516,58 @@ mod tests {
     }
 
     use crate::env;
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+    use crate::system::history::checkpoint::test_checkpoint;
+
+    #[test]
+    fn refuses_mismatched_header_and_ref_before_materializing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let checkpoint = test_checkpoint("uuid", None);
+        let header = BackupHeader::new(&checkpoint, 1);
+        let commit = write_commit(&repo, &header, b"irrelevant").unwrap();
+        assert!(
+            validate_identity(&repo, &commit, &checkpoint.machine.id, "uuid", &checkpoint).is_ok()
+        );
+        assert!(validate_identity(&repo, &commit, "other", "uuid", &checkpoint).is_err());
+        assert!(
+            validate_identity(&repo, &commit, &checkpoint.machine.id, "other", &checkpoint)
+                .is_err()
+        );
+        let mut changed = checkpoint.clone();
+        changed.created_at = "2020-01-01T00:00:00Z".into();
+        assert!(
+            validate_identity(&repo, &commit, &checkpoint.machine.id, "uuid", &changed).is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_unsafe_and_overlapping_paths_before_git_writes() {
+        let mut payload = Payload {
+            format: BACKUP_FORMAT,
+            checkpoint: test_checkpoint("uuid", None),
+            files: vec![],
+        };
+        for path in ["../outside", "home/.git/config", "home//file"] {
+            payload.files = vec![PayloadFile {
+                path: path.into(),
+                mode: "100644".into(),
+                content: Bytes(vec![]),
+            }];
+            assert!(validate_files(&payload).is_err());
+        }
+        payload.files = ["home/file", "home/file/child"]
+            .into_iter()
+            .map(|path| PayloadFile {
+                path: path.into(),
+                mode: "100644".into(),
+                content: Bytes(vec![]),
+            })
+            .collect();
+        assert!(validate_files(&payload).is_err());
+    }
 }

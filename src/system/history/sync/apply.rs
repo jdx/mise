@@ -102,7 +102,12 @@ pub(crate) async fn apply(
             ..Default::default()
         });
     }
-    run::refresh(store, tracked, &mut status)?;
+    run::refresh_with_interaction(
+        store,
+        tracked,
+        &mut status,
+        !req.automatic && console::user_attended_stderr(),
+    )?;
     let roots = Roots::current();
     let filter: BTreeSet<PathBuf> = req
         .paths
@@ -141,7 +146,17 @@ pub(crate) async fn apply(
                 bail!("save {} before choosing --keep-local", display_path(&local));
             }
             let remote = match status.upstream_commit.as_deref() {
-                Some(head) => repo.object_at(head, &conflict.branch_path)?,
+                Some(head) => repo
+                    .object_at(head, &conflict.branch_path)?
+                    .map(|object| {
+                        super::files::decrypt(
+                            repo,
+                            &conflict.branch_path,
+                            &object,
+                            !req.automatic && console::user_attended_stderr(),
+                        )
+                    })
+                    .transpose()?,
                 None => None,
             };
             status.resolutions.insert(

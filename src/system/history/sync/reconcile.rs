@@ -35,11 +35,26 @@ pub(crate) struct Upstream {
 }
 
 pub(crate) fn upstream(repo: &HistoryRepo, commit: Option<&str>) -> Result<Upstream> {
+    upstream_with_interaction(repo, commit, false)
+}
+
+pub(crate) fn upstream_with_interaction(
+    repo: &HistoryRepo,
+    commit: Option<&str>,
+    interactive: bool,
+) -> Result<Upstream> {
     let mut files = BTreeMap::new();
     if let Some(commit) = commit {
         for entry in repo.ls_tree(commit)? {
             if let Some((mode, oid)) = repo.object_at(commit, &entry.path)? {
-                files.insert(entry.path, (mode, oid));
+                let object = if !entry.path.starts_with(".mise-history/")
+                    && !super::layout::is_repository_metadata(&entry.path)
+                {
+                    super::files::decrypt(repo, &entry.path, &(mode, oid), interactive)?
+                } else {
+                    (mode, oid)
+                };
+                files.insert(entry.path, object);
             }
         }
     }

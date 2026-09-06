@@ -3,8 +3,7 @@
 # refs are age-encrypted for its recipients. Another machine lists them
 # without a key and restores them with one; changing the scheme replaces the
 # refs on the origin; a machine with no key anywhere gets an identity
-# generated. All of it with experimental off: encrypted backups are not an
-# experimental feature (the `[env]` age directives still are).
+# generated. Runs with experimental settings disabled.
 # shellcheck disable=SC2016
 
 require_cmd git
@@ -105,16 +104,34 @@ assert "$b bootstrap dotfiles machines --json | jq -r '.[] | select(.name == \"l
 assert "$b bootstrap dotfiles machines --json | jq -r '.[] | select(.name == \"desktop\") | .encrypted'" "0"
 assert_fail "$b bootstrap dotfiles rollback --to laptop/latest --all --dry-run 2>&1" "no age identity"
 assert_fail "MISE_AGE_KEY=$KEY2 $b bootstrap dotfiles rollback --to laptop/latest --all --dry-run 2>&1" "none of this machine's identities can decrypt it"
+# A damaged older sibling must not prevent selecting a healthy latest ref.
+bstore="$B/.local/state/mise/history/repo.git"
+older=$(git --git-dir="$bstore" for-each-ref --format='%(refname)' "refs/machines/$aid" | head -1)
+old_commit=$(git --git-dir="$bstore" rev-parse "$older")
+header=$(git --git-dir="$bstore" rev-parse "$older:backup.toml")
+broken=$(printf 'broken payload' | git --git-dir="$bstore" hash-object -w --stdin)
+broken_tree=$(printf '100644 blob %s\tbackup.toml\n100644 blob %s\tpayload.age\n' "$header" "$broken" | git --git-dir="$bstore" mktree)
+broken_commit=$(printf 'damaged sibling\n' | git --git-dir="$bstore" commit-tree "$broken_tree")
+git --git-dir="$bstore" update-ref "$older" "$broken_commit"
 assert_contains "MISE_AGE_KEY=$KEY $b bootstrap dotfiles rollback --to laptop/latest --all --dry-run" "monitors.lua"
+assert_fail "MISE_AGE_KEY=$KEY $b bootstrap dotfiles rollback --to laptop/${older##*/} --all --dry-run 2>&1" "damaged"
+git --git-dir="$bstore" update-ref "$older" "$old_commit"
 bstore="$B/.local/state/mise/history/repo.git"
 assert_succeed "git --git-dir=$bstore for-each-ref refs/machines-plain | grep -q ."
 assert_fail "git --git-dir=$origin for-each-ref | grep -q machines-plain"
 # B's own backups are plaintext: nothing about restoring them in doctor
 assert_not_contains "$b doctor 2>&1 || true" "could not restore"
 
+# An unsupported atomic transaction leaves all existing recovery refs intact.
+refs_before=$(git --git-dir="$origin" for-each-ref --format='%(refname) %(objectname)' "refs/mise-history/$aid")
+git --git-dir="$origin" config receive.advertiseAtomic false
+assert_fail "mise bootstrap dotfiles origin set file://$origin --name laptop --encrypt-backups --recipient $PUB2 --yes 2>&1" "atomic backup replacement failed"
+assert "git --git-dir=$origin for-each-ref --format='%(refname) %(objectname)' refs/mise-history/$aid" "$refs_before"
+git --git-dir="$origin" config receive.advertiseAtomic true
+
 # ---- an explicit recipient that is not this machine: the refs are replaced
 # again, A is told it could not restore its own backups, B needs that key
-mise bootstrap dotfiles origin set "file://$origin" --name laptop --include-existing --encrypt-backups --recipient "$PUB2" --yes >"$PWD/connect3.log" 2>&1
+mise bootstrap dotfiles origin set "file://$origin" --name laptop --encrypt-backups --recipient "$PUB2" --yes >"$PWD/connect3.log" 2>&1
 assert_contains "cat $PWD/connect3.log" "$PUB2"
 assert_contains "cat $PWD/connect3.log" "none of this machine's identities is among the recipients"
 assert_contains "cat $PWD/connect3.log" "the previously encrypted ones are deleted"
@@ -154,3 +171,8 @@ for ref in $(refs "refs/mise-history/$cid"); do
 done
 assert_contains "$c bootstrap dotfiles machines" "fresh (this machine)"
 assert "$c bootstrap dotfiles machines --json | jq -r '.[] | select(.this) | .encrypted == .checkpoints'" "true"
+# Losing the local declaration must preserve encrypted status and fail closed.
+mv "$C/.config/mise/config.local.toml" "$PWD/c-origin.saved"
+assert_succeed "$c bootstrap dotfiles sync"
+assert_contains "$c bootstrap dotfiles status" 'encrypted'
+assert_contains "$c doctor 2>&1 || true" 'machine backups are not being uploaded'

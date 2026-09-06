@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Shared encrypted files use one recipient list; local files stay plaintext.
+# shellcheck disable=SC2016
+require_cmd git
+export MISE_EXPERIMENTAL=0
+KEY="AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8"
+PUB="age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"
+KEY2="AGE-SECRET-KEY-12LCM5FM5DQ7HZDGYUZWMJ6QHM66J07NZ75VVP2VVGCZX53HYD5PQUXUN8K"
+PUB2="age15myzzpkenzud22ag88x5ksqd80g4tkwtruu976uev57l4r240qcqcuqnt9"
+export MISE_AGE_KEY="$KEY"
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+mkdir -p "$HOME/.config/app" "$MISE_CONFIG_DIR/templates" "$MISE_CONFIG_DIR/assets"
+printf 'private-value-123\n' >"$HOME/.config/app/value"
+printf '#!/bin/sh\necho private-script-123\n' >"$HOME/.config/app/script"
+chmod +x "$HOME/.config/app/script"
+ln -s value "$HOME/.config/app/link"
+printf 'template-private-123\n' >"$MISE_CONFIG_DIR/templates/app.tera"
+printf 'copy-private-123\n' >"$MISE_CONFIG_DIR/assets/copy"
+printf 'symlink-private-123\n' >"$MISE_CONFIG_DIR/assets/link"
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[history.encryption]
+recipients = ["$PUB", "$PUB2"]
+[dotfiles]
+"~/.config/app/value" = { mode = "track", encrypt = true }
+"~/.config/app/script" = { mode = "track", encrypt = true }
+"~/.config/app/link" = { mode = "track", encrypt = true }
+"~/.config/app/copied" = { mode = "copy", source = "assets/copy", encrypt = true }
+"~/.config/app/linked" = { mode = "symlink", source = "assets/link", encrypt = true }
+"~/.config/app/rendered" = { mode = "template", source = "templates/app.tera", encrypt = true }
+TOML
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --name laptop --include-existing --yes"
+assert_contains "git --git-dir=$origin show main:.mise-history/format.toml" 'format = 2'
+assert_contains "git --git-dir=$origin show main:tracked/home/.config/app/value | head -1" 'mise-encrypted-file-v1'
+assert_not_contains "git --git-dir=$origin show main:tracked/home/.config/app/value" 'private-value-123'
+assert_not_contains "git --git-dir=$origin show main:templates/app.tera" 'template-private-123'
+head_before=$(git --git-dir="$origin" rev-parse main)
+assert_succeed "mise bootstrap dotfiles sync"
+assert "git --git-dir=$origin rev-parse main" "$head_before"
+# No remote ref, including plaintext backups, carries the protected bytes.
+for commit in $(git --git-dir="$origin" rev-list --all); do
+  assert_not_contains "git --git-dir=$origin grep -a private-value-123 $commit || true" 'private-value-123'
+  assert_not_contains "git --git-dir=$origin grep -a template-private-123 $commit || true" 'template-private-123'
+  assert_not_contains "git --git-dir=$origin grep -a copy-private-123 $commit || true" 'copy-private-123'
+  assert_not_contains "git --git-dir=$origin grep -a symlink-private-123 $commit || true" 'symlink-private-123'
+done
+B="$(dirname "$HOME")/encrypted-files-b"
+mkdir -p "$B/.config/mise"
+cat >"$PWD/b" <<WRAPPER
+#!/usr/bin/env bash
+export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
+ MISE_STATE_DIR="$B/.local/state/mise" MISE_DATA_DIR="$B/.local/share/mise" \\
+ MISE_CACHE_DIR="$B/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$B" MISE_AGE_KEY="$KEY2"
+cd "\$HOME" && exec mise "\$@"
+WRAPPER
+chmod +x "$PWD/b"
+b="$PWD/b"
+assert_succeed "$b bootstrap --from-git file://$origin --yes --only dotfiles"
+assert "cat $B/.config/app/value" 'private-value-123'
+assert "cat $B/.config/app/rendered" 'template-private-123'
+assert "cat $B/.config/app/copied" 'copy-private-123'
+assert "cat $B/.config/app/linked" 'symlink-private-123'
+assert_succeed "test -L $B/.config/app/linked"
+assert "readlink $B/.config/app/link" 'value'
+assert_succeed "test -x $B/.config/app/script"
+printf 'changed-by-b\n' >"$B/.config/app/value"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_succeed "mise bootstrap dotfiles sync --fetch-only"
+assert_succeed "mise bootstrap dotfiles pull --yes"
+assert "cat $HOME/.config/app/value" 'changed-by-b'
+# A changed ciphertext cannot be applied without an identity or cached copy.
+printf 'needs-unlock\n' >"$B/.config/app/value"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_fail "MISE_AGE_KEY= mise bootstrap dotfiles sync --fetch-only 2>&1" 'cannot unlock'
+assert_fail "MISE_AGE_KEY= mise bootstrap dotfiles pull --yes 2>&1" 'cannot unlock'
+assert "cat $HOME/.config/app/value" 'changed-by-b'
+assert_succeed "mise bootstrap dotfiles pull --yes"
+assert "cat $HOME/.config/app/value" 'needs-unlock'
+# Reconciliation and conflict decisions operate on plaintext, never ciphertext.
+printf 'local-conflict\n' >"$HOME/.config/app/value"
+printf 'remote-conflict\n' >"$B/.config/app/value"
+assert_succeed "$b bootstrap dotfiles sync"
+conflict_head=$(git --git-dir="$origin" rev-parse main)
+assert_succeed "mise bootstrap dotfiles sync"
+assert_contains "mise bootstrap dotfiles status" 'sync paused'
+assert "git --git-dir=$origin rev-parse main" "$conflict_head"
+assert_succeed "mise bootstrap dotfiles pull --take-remote $HOME/.config/app/value --yes"
+assert "cat $HOME/.config/app/value" 'remote-conflict'
+# Deleting an encrypted file removes it remotely and at the other consumer.
+rm "$B/.config/app/script"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_succeed "mise bootstrap dotfiles sync --fetch-only && mise bootstrap dotfiles pull --yes"
+assert_fail "test -e $HOME/.config/app/script"
+assert_fail "git --git-dir=$origin cat-file -e main:tracked/home/.config/app/script"
+# Explicit recipient rotation rewrites unchanged encrypted files once.
+old_payload=$(git --git-dir="$origin" rev-parse main:tracked/home/.config/app/value)
+sed -i.bak "s/\"$PUB\", \"$PUB2\"/\"$PUB\"/" "$MISE_CONFIG_DIR/config.toml"
+assert_succeed "mise bootstrap dotfiles sync"
+new_payload=$(git --git-dir="$origin" rev-parse main:tracked/home/.config/app/value)
+assert_fail "test $old_payload = $new_payload"
+head_before=$(git --git-dir="$origin" rev-parse main)
+assert_succeed "mise bootstrap dotfiles sync"
+assert "git --git-dir=$origin rev-parse main" "$head_before"
+
+# No recipients and inline encrypted secrets both fail closed.
+cp "$MISE_CONFIG_DIR/config.toml" "$PWD/valid-config.toml"
+sed -i.bak "s/recipients = .*/recipients = []/" "$MISE_CONFIG_DIR/config.toml"
+assert_fail "mise bootstrap dotfiles sync 2>&1" '[history.encryption].recipients'
+assert "git --git-dir=$origin rev-parse main" "$head_before"
+cp "$PWD/valid-config.toml" "$MISE_CONFIG_DIR/config.toml"
+printf '\n"~/.config/app/inline" = { content = "must-not-upload", encrypt = true }\n' >>"$MISE_CONFIG_DIR/config.toml"
+assert_fail "mise bootstrap dotfiles sync 2>&1" 'invalid dotfile declarations'
+assert "git --git-dir=$origin rev-parse main" "$head_before"
+# Malformed encryption flags must never silently fall back to plaintext.
+cp "$PWD/valid-config.toml" "$MISE_CONFIG_DIR/config.toml"
+printf '\n"~/.config/app/malformed" = { mode = "track", encrypt = "true" }\n' >>"$MISE_CONFIG_DIR/config.toml"
+assert_fail "mise bootstrap dotfiles sync 2>&1" 'invalid dotfile declarations'
+assert "git --git-dir=$origin rev-parse main" "$head_before"

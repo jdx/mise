@@ -24,6 +24,31 @@ pub(crate) struct HistoryTomlConfig {
     /// The setup repository this machine publishes to and fetches from.
     #[serde(default)]
     pub origin: Option<OriginTomlConfig>,
+    #[serde(default)]
+    pub encryption: Option<FileEncryptionConfig>,
+}
+
+/// Public recipients shared by every encrypted dotfile.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct FileEncryptionConfig {
+    #[serde(default)]
+    pub recipients: Vec<String>,
+}
+
+pub(crate) fn file_recipients() -> Result<Vec<String>> {
+    let mut recipients = Vec::new();
+    for (path, layer) in layers()? {
+        if let Some(encryption) = layer.encryption {
+            if !crate::config::config_file::is_trusted(&path) {
+                eyre::bail!(
+                    "trust the configuration before using its encryption recipients: {}",
+                    display_path(&path)
+                );
+            }
+            recipients = encryption.recipients;
+        }
+    }
+    Ok(recipients)
 }
 
 /// `[history.origin]`.

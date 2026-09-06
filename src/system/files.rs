@@ -104,6 +104,7 @@ pub(crate) struct FilePolicy {
     pub autosave: bool,
     pub share: bool,
     pub backup: bool,
+    pub encrypt: bool,
     /// `share` or `backup` was written in the declaration itself: the
     /// privacy defaults (`*.local.toml`, credential stores) yield to it.
     pub overridden: bool,
@@ -118,6 +119,7 @@ pub(crate) struct ExplicitFields {
     pub autosave: bool,
     pub share: bool,
     pub backup: bool,
+    pub encrypt: bool,
     pub variants: bool,
     pub enabled: bool,
 }
@@ -129,6 +131,7 @@ impl FilePolicy {
         Self {
             autosave: true,
             share: true,
+            encrypt: false,
             backup: !matches!(mode, FileMode::Template | FileMode::Content),
             overridden: false,
             explicit: ExplicitFields::default(),
@@ -213,6 +216,8 @@ pub(crate) enum FileTomlEntry {
         /// history: include the file in remote backups
         #[serde(default)]
         backup: Option<bool>,
+        #[serde(default)]
+        encrypt: Option<bool>,
         /// history: platform / profile streams for a tracked file
         #[serde(default)]
         variants: Option<Vec<crate::system::history::select::Variant>>,
@@ -242,6 +247,9 @@ impl FileRequest {
             self.policy.backup = later.policy.backup;
             self.policy.overridden = true;
         }
+        if explicit.encrypt {
+            self.policy.encrypt = later.policy.encrypt;
+        }
         if explicit.variants {
             self.variants = later.variants;
         }
@@ -252,6 +260,7 @@ impl FileRequest {
             autosave: mine.autosave || explicit.autosave,
             share: mine.share || explicit.share,
             backup: mine.backup || explicit.backup,
+            encrypt: mine.encrypt || explicit.encrypt,
             variants: mine.variants || explicit.variants,
             enabled: mine.enabled || explicit.enabled,
         };
@@ -547,6 +556,22 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
             continue;
         };
         for (target, value) in dotfiles.0 {
+            if value.as_table().is_some_and(|t| {
+                t.contains_key("encrypt")
+                    && t.get("encrypt").and_then(toml::Value::as_bool).is_none()
+            }) {
+                bail!("dotfile {target}: encrypt must be a boolean");
+            }
+            if value.as_table().is_some_and(|t| {
+                t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
+                    && ["content", "block", "line", "template"]
+                        .iter()
+                        .any(|key| t.contains_key(*key))
+            }) {
+                bail!(
+                    "encrypted dotfile {target} requires an external source, not inline content or edits"
+                );
+            }
             let Some(entry) = file_entry_from_toml(&target, value.clone()) else {
                 // Managed line/block edits are handled by the edit engine,
                 // not by this whole-file declaration parser.
@@ -656,7 +681,30 @@ pub(crate) fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileReque
             continue;
         };
         for (target_raw, value) in dotfiles.0 {
+            if value.as_table().is_some_and(|t| {
+                t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
+                    && ["content", "block", "line", "template"]
+                        .iter()
+                        .any(|key| t.contains_key(*key))
+            }) {
+                record_invalid(
+                    &target_raw,
+                    &origin.config,
+                    "encrypted dotfiles require an external source, not inline content or edits",
+                );
+                continue;
+            }
+            let encryption_declared = value
+                .as_table()
+                .is_some_and(|table| table.contains_key("encrypt"));
             let Some(entry) = file_entry_from_toml(&target_raw, value) else {
+                if encryption_declared {
+                    record_invalid(
+                        &target_raw,
+                        &origin.config,
+                        "invalid encryption declaration; encrypt must be a boolean on a whole-file entry",
+                    );
+                }
                 continue;
             };
             merge_file_entry(target_raw, entry, &base, &origin, &mut merged);
@@ -676,6 +724,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                 || table.contains_key("autosave")
                 || table.contains_key("share")
                 || table.contains_key("backup")
+                || table.contains_key("encrypt")
                 || table.contains_key("variants")
                 || table.contains_key("enabled")
                 || ((table.contains_key("source") || table.contains_key("content"))
@@ -705,40 +754,62 @@ fn merge_file_entry(
     origin: &ResourceOrigin,
     merged: &mut IndexMap<PathBuf, FileRequest>,
 ) {
-    let (source, content, mode, exclude, manifest, autosave, share, backup, variants, enabled) =
-        match entry {
-            FileTomlEntry::Source(source) => (
-                Some(source),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            ),
-            FileTomlEntry::Table {
-                source,
-                content,
-                mode,
-                exclude,
-                manifest,
-                autosave,
-                share,
-                backup,
-                variants,
-                enabled,
-            } => (
-                source, content, mode, exclude, manifest, autosave, share, backup, variants,
-                enabled,
-            ),
-        };
+    let (
+        source,
+        content,
+        mode,
+        exclude,
+        manifest,
+        autosave,
+        share,
+        backup,
+        encrypt,
+        variants,
+        enabled,
+    ) = match entry {
+        FileTomlEntry::Source(source) => (
+            Some(source),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ),
+        FileTomlEntry::Table {
+            source,
+            content,
+            mode,
+            exclude,
+            manifest,
+            autosave,
+            share,
+            backup,
+            encrypt,
+            variants,
+            enabled,
+        } => (
+            source, content, mode, exclude, manifest, autosave, share, backup, encrypt, variants,
+            enabled,
+        ),
+    };
+    if encrypt == Some(true) && content.is_some() {
+        record_invalid(
+            &target_raw,
+            &origin.config,
+            "encrypted dotfiles require an external source; inline content is shared in configuration",
+        );
+        return;
+    }
     let explicit = ExplicitFields {
         autosave: autosave.is_some(),
         share: share.is_some(),
         backup: backup.is_some(),
+        encrypt: encrypt.is_some(),
         variants: variants.is_some(),
         enabled: enabled.is_some(),
     };
@@ -750,6 +821,7 @@ fn merge_file_entry(
             autosave: autosave.unwrap_or(defaults.autosave),
             share: share.unwrap_or(defaults.share),
             backup: backup.unwrap_or(defaults.backup),
+            encrypt: encrypt.unwrap_or(false),
             overridden: share.is_some() || backup.is_some(),
             explicit,
         }

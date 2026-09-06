@@ -67,7 +67,7 @@ panic = "abort"
 opt-level = 3
 
 [dependencies]
-age = { version = "0.12", features = ["ssh"] }
+age = { version = "0.12", features = ["ssh", "plugin"] }
 aho-corasick = "1"
 aube-registry = { version = "2", default-features = false, features = [
   "rustls",

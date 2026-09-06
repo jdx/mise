@@ -808,7 +808,7 @@ impl Doctor {
         }
         // the setup repository, read from what the last sync persisted:
         // nothing is fetched, applied, or asked here
-        if let Ok(Some((_, origin))) = crate::system::history::config::origin() {
+        if let Ok(origin) = crate::system::history::sync::run::origin() {
             use crate::system::history::sync::{apply, run};
             let status = match run::read_status(&state_dir) {
                 Ok(status) => status,
@@ -829,15 +829,12 @@ impl Doctor {
                 }
                 // can this machine read what it uploads? decided from the
                 // identities here, without touching the network
-                let loaded = crate::agecrypt::load_all_identities().await;
-                let only_age = origin.recipients.iter().all(|r| r.starts_with("age1"));
-                let among = origin
-                    .recipients
-                    .iter()
-                    .any(|r| loaded.x25519_public.iter().any(|mine| mine == r));
-                let restorable = loaded.usable() > 0 && (!only_age || among);
-                diagnosis.backups_restorable = Some(restorable);
-                if !restorable && !origin.recipients.is_empty() {
+                let restorable = crate::agecrypt::restorability(&origin.recipients).await;
+                diagnosis.backups_restorable = restorable;
+                if restorable.is_none() {
+                    self.warnings.push("dotfiles: hardware backup identity configured but unverified; restore interactively to unlock it".into());
+                }
+                if restorable == Some(false) && !origin.recipients.is_empty() {
                     self.warnings.push(
                         "dotfiles: machine backups are encrypted, but no age identity on this machine can decrypt them: this machine could not restore its own backups.\n     Put an identity among the recipients in ~/.config/mise/age.txt, settings.age.key_file, or MISE_AGE_KEY, or add this machine's key with: mise bootstrap dotfiles origin set <url> --encrypt-backups --recipient <key>"
                             .to_string(),

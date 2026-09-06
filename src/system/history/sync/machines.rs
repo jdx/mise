@@ -57,13 +57,19 @@ fn fetched(repo: &HistoryRepo) -> Result<BTreeMap<String, Vec<Fetched>>> {
         };
         live.insert(commit.clone());
         let item = match encrypted::header_of(repo, &commit) {
-            Ok(Some(header)) => Fetched {
-                uuid: uuid.to_string(),
-                commit,
-                machine_name: header.machine.name,
-                created_at: header.created_at,
-                plain: None,
-            },
+            Ok(Some(header)) if header.machine.id == machine_id && header.checkpoint == uuid => {
+                Fetched {
+                    uuid: uuid.to_string(),
+                    commit,
+                    machine_name: header.machine.name,
+                    created_at: header.created_at,
+                    plain: None,
+                }
+            }
+            Ok(Some(_)) => {
+                debug!("history: skipping mismatched backup {name}");
+                continue;
+            }
             Ok(None) => match repo.read_meta(&commit) {
                 Ok(mut checkpoint) => {
                     // the snapshot is the wrapper commit's own `snapshot/`
@@ -168,7 +174,12 @@ pub(crate) fn any_encrypted(repo: &HistoryRepo, except_machine: &str) -> Result<
 /// A machine's fetched checkpoints, oldest first, numbered from 1. An
 /// encrypted checkpoint is decrypted here (once; the plaintext copy is
 /// kept locally), so every entry returned can be rolled back to.
-pub(crate) async fn entries(repo: &HistoryRepo, machine: &str) -> Result<(Machine, Vec<Entry>)> {
+pub(crate) async fn resolve(
+    repo: &HistoryRepo,
+    machine: &str,
+    spec: &str,
+    path: Option<&str>,
+) -> Result<Entry> {
     let fetched = fetched(repo)?;
     let matching: Vec<(&String, &Vec<Fetched>)> = fetched
         .iter()
@@ -197,30 +208,71 @@ pub(crate) async fn entries(repo: &HistoryRepo, machine: &str) -> Result<(Machin
         .last()
         .map(|entry| entry.machine_name.clone())
         .unwrap_or_else(|| id.clone());
-    let mut entries = vec![];
-    for (index, item) in items.iter().enumerate() {
-        let (commit, checkpoint) = match &item.plain {
-            Some(checkpoint) => (item.commit.clone(), checkpoint.clone()),
-            None => {
-                let plain = materialized(repo, id, item, &name).await?;
-                let mut checkpoint = repo.read_meta(&plain)?;
-                checkpoint.tree.snapshot = repo.object_at(&plain, "snapshot")?.map(|(_, oid)| oid);
-                (plain, checkpoint)
-            }
+    let candidates: Vec<usize> = if let Some(rest) = spec.strip_prefix("latest") {
+        let back: usize = if rest.is_empty() {
+            0
+        } else {
+            rest.strip_prefix('~')
+                .and_then(|s| s.parse().ok())
+                .ok_or_else(|| eyre::eyre!("invalid checkpoint reference {spec:?}"))?
         };
-        entries.push(Entry {
-            id: index as u64 + 1,
-            commit,
-            checkpoint,
-        });
+        if path.is_some() {
+            // Path-scoped latest must inspect changes, which are encrypted.
+            let mut matched = 0;
+            for index in (0..items.len()).rev() {
+                let entry = entry(repo, id, &items[index], &name, index).await?;
+                if entry.checkpoint.changes.touches(path.unwrap_or_default()) {
+                    if matched == back {
+                        return Ok(entry);
+                    }
+                    matched += 1;
+                }
+            }
+            bail!("no history checkpoint {spec} for the requested path");
+        }
+        (0..items.len()).rev().nth(back).into_iter().collect()
+    } else if let Ok(number) = spec.parse::<usize>() {
+        number
+            .checked_sub(1)
+            .filter(|index| *index < items.len())
+            .into_iter()
+            .collect()
+    } else {
+        items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.uuid.starts_with(spec))
+            .map(|(index, _)| index)
+            .collect()
+    };
+    match candidates.as_slice() {
+        [index] => entry(repo, id, &items[*index], &name, *index).await,
+        [] => bail!("no history checkpoint matches {spec:?}"),
+        _ => bail!("{spec:?} matches more than one checkpoint; use a longer prefix"),
     }
-    Ok((
-        Machine {
-            id: id.clone(),
-            name,
-        },
-        entries,
-    ))
+}
+
+async fn entry(
+    repo: &HistoryRepo,
+    id: &str,
+    item: &Fetched,
+    name: &str,
+    index: usize,
+) -> Result<Entry> {
+    let (commit, checkpoint) = match &item.plain {
+        Some(checkpoint) => (item.commit.clone(), checkpoint.clone()),
+        None => {
+            let plain = materialized(repo, id, item, name).await?;
+            let mut checkpoint = repo.read_meta(&plain)?;
+            checkpoint.tree.snapshot = repo.object_at(&plain, "snapshot")?.map(|(_, oid)| oid);
+            (plain, checkpoint)
+        }
+    };
+    Ok(Entry {
+        id: index as u64 + 1,
+        commit,
+        checkpoint,
+    })
 }
 
 /// The local plaintext wrapper of an encrypted ref: the one kept from an
@@ -233,9 +285,11 @@ async fn materialized(
 ) -> Result<String> {
     let plain_ref = format!("{PLAIN_PREFIX}{machine_id}/{}", item.commit);
     if let Some(commit) = repo.ref_oid(&plain_ref)? {
+        let checkpoint = repo.read_meta(&commit)?;
+        encrypted::validate_identity(repo, &item.commit, machine_id, &item.uuid, &checkpoint)?;
         return Ok(commit);
     }
-    match encrypted::materialize(repo, &item.commit).await {
+    match encrypted::materialize_checked(repo, &item.commit, machine_id, &item.uuid).await {
         Ok(commit) => {
             if let Err(err) = repo.update_ref(&plain_ref, &commit, None) {
                 debug!("history: keeping the decrypted backup {plain_ref}: {err}");

@@ -13,6 +13,7 @@ use eyre::{Result, bail};
 pub(crate) mod apply;
 pub(crate) mod backup;
 pub(crate) mod encrypted;
+mod files;
 pub(crate) mod format;
 pub(crate) mod layout;
 pub(crate) mod machines;

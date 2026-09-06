@@ -117,6 +117,8 @@ pub(crate) struct SyncStatus {
     /// absent means plaintext. A change replaces them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_scheme: Option<String>,
+    #[serde(default)]
+    pub backup_policy: Option<String>,
     /// Why uploads are being skipped (encryption on without usable
     /// recipients); publication and fetching continue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -310,6 +312,13 @@ pub(crate) fn sync(
             capture_now(store, tracked);
         }
         let entries = store.list()?;
+        let encrypted_paths: BTreeSet<String> = tracked
+            .walk()?
+            .entries
+            .iter()
+            .filter(|entry| entry.policy.encrypt)
+            .map(|entry| display_path(&entry.path))
+            .collect();
         let shared = share::current(repo, store, tracked)?;
         let unsaved = unsaved_paths(repo, tracked, &shared)?;
         let publish = mode.publishes() && !request.fetch_only && !request.offline;
@@ -317,7 +326,11 @@ pub(crate) fn sync(
         let mut attempts = 0;
         loop {
             attempts += 1;
-            let upstream = reconcile::upstream(repo, upstream_commit.as_deref())?;
+            let upstream = reconcile::upstream_with_interaction(
+                repo,
+                upstream_commit.as_deref(),
+                request.capture && console::user_attended_stderr(),
+            )?;
             let sync_state = state::load(repo)?;
             plans = prepare(
                 repo,
@@ -350,6 +363,10 @@ pub(crate) fn sync(
             if !publish
                 || status.application_failure.is_some()
                 || status.validation_error.is_some()
+                // Apply incoming configuration before publishing encrypted
+                // content under a potentially superseded recipient policy.
+                || (matches!(repo_state, RepoState::Marked(2))
+                    && plans.iter().any(|plan| is_configuration(&plan.branch_path) && plan.apply.is_some()))
                 || plans.iter().any(|plan| plan.conflict.is_some())
             {
                 break;
@@ -357,7 +374,13 @@ pub(crate) fn sync(
             let add_marker = matches!(repo_state, RepoState::Empty | RepoState::Unmarked);
             let publication = publish::Publication {
                 upstream_commit: upstream_commit.as_deref(),
-                changes: changes.clone(),
+                changes: super::files::publication(
+                    repo,
+                    upstream_commit.as_deref(),
+                    &shared,
+                    &changes,
+                    request.capture && console::user_attended_stderr(),
+                )?,
                 add_marker,
                 message: publish::message(&machine.name, &changes),
             };
@@ -385,7 +408,11 @@ pub(crate) fn sync(
                     }
                     state::save(repo, &next_state, "published")?;
                     // the applications and conflicts are relative to the new head
-                    let upstream = reconcile::upstream(repo, upstream_commit.as_deref())?;
+                    let upstream = reconcile::upstream_with_interaction(
+                        repo,
+                        upstream_commit.as_deref(),
+                        request.capture && console::user_attended_stderr(),
+                    )?;
                     plans = prepare(
                         repo,
                         tracked,
@@ -421,14 +448,28 @@ pub(crate) fn sync(
                 Ok(encryption) => {
                     status.backup_error = None;
                     let scheme = backup::scheme(encryption.as_ref());
-                    if backup::reconcile_scheme(&mut status, &scheme) {
-                        // durable before the deletion: a crash in between
-                        // finds an empty upload set and uploads everything
-                        // again, under the new scheme
-                        write_status(state_dir, &status)?;
-                        let refs = backup::remote_refs(&remote, &machine.id)?;
-                        remote.delete(&refs)?;
-                        outcome.replaced_remote = refs.len();
+                    let policy = crate::hash::hash_sha256_to_str(
+                        &encrypted_paths
+                            .iter()
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                    );
+                    let policy_changed = status.backup_policy.as_deref() != Some(&policy)
+                        && (!encrypted_paths.is_empty() || status.backup_policy.is_some());
+                    if backup::scheme_changes(&status, &scheme) || policy_changed {
+                        let (uploaded, replaced) = backup::replace(
+                            &remote,
+                            repo,
+                            &entries,
+                            &machine.id,
+                            &mut status,
+                            encryption.as_ref(),
+                            &encrypted_paths,
+                        )?;
+                        status.backup_policy = Some(policy);
+                        outcome.uploaded = uploaded;
+                        outcome.replaced_remote = replaced;
                     }
                     let since = status.upload_since.clone();
                     let uploadable: Vec<Entry> = entries
@@ -440,13 +481,14 @@ pub(crate) fn sync(
                         })
                         .cloned()
                         .collect();
-                    outcome.uploaded = backup::upload(
+                    outcome.uploaded += backup::upload(
                         &remote,
                         repo,
                         &uploadable,
                         &machine.id,
                         &mut status.uploaded,
                         encryption.as_ref(),
+                        &encrypted_paths,
                     )?;
                     outcome.pruned_remote =
                         backup::prune_remote(&remote, &entries, &machine.id, &mut status.uploaded)?;
@@ -465,6 +507,7 @@ pub(crate) fn sync(
         Ok(())
     })();
     if let Err(err) = &result {
+        status.pending_applications.clear();
         status.last_error = Some(format!("{err:#}"));
         status.failing_since.get_or_insert_with(hstore::now_rfc3339);
         status.consecutive_failures = status.consecutive_failures.saturating_add(1);
@@ -632,11 +675,24 @@ fn record_pending(
 /// Rebuild the incoming plan against current saved files and the latest
 /// fetched branch. Pull never trusts an old pending plan after a save.
 pub(crate) fn refresh(store: &Store, tracked: &TrackedSet, status: &mut SyncStatus) -> Result<()> {
+    refresh_with_interaction(store, tracked, status, false)
+}
+
+pub(crate) fn refresh_with_interaction(
+    store: &Store,
+    tracked: &TrackedSet,
+    status: &mut SyncStatus,
+    interactive: bool,
+) -> Result<()> {
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("planning requires git"))?;
     let shared = share::current(repo, store, tracked)?;
-    let upstream = reconcile::upstream(repo, repo.ref_oid(UPSTREAM_REF)?.as_deref())?;
+    let upstream = reconcile::upstream_with_interaction(
+        repo,
+        repo.ref_oid(UPSTREAM_REF)?.as_deref(),
+        interactive,
+    )?;
     let plans = prepare(
         repo,
         tracked,

@@ -104,6 +104,7 @@ pub(crate) fn scheme_changes(status: &SyncStatus, scheme: &str) -> bool {
 
 /// Records `scheme`; when it changed, forgets what was uploaded so every
 /// eligible checkpoint is uploaded again. Returns whether it changed.
+#[cfg(test)]
 pub(crate) fn reconcile_scheme(status: &mut SyncStatus, scheme: &str) -> bool {
     if !scheme_changes(status, scheme) {
         status
@@ -149,8 +150,22 @@ pub(crate) fn wrapper_commit(
     repo: &HistoryRepo,
     entry: &Entry,
     encryption: Option<&BackupEncryption>,
+    encrypted_paths: &BTreeSet<String>,
 ) -> Result<String> {
-    let excluded = excluded_paths(entry);
+    let mut excluded = excluded_paths(entry);
+    if encryption.is_none() {
+        excluded.extend(encrypted_paths.iter().cloned());
+        excluded.extend(
+            entry
+                .checkpoint
+                .tree
+                .coverage
+                .entries
+                .iter()
+                .filter(|c| c.encrypt)
+                .map(|c| c.path.clone()),
+        );
+    }
     let snapshot = match &entry.checkpoint.tree.snapshot {
         Some(snapshot) if excluded.is_empty() => Some(snapshot.clone()),
         Some(snapshot) => {
@@ -165,7 +180,26 @@ pub(crate) fn wrapper_commit(
         }
         None => None,
     };
-    let masked = mask_checkpoint(&entry.checkpoint, &excluded);
+    let mut masked = mask_checkpoint(&entry.checkpoint, &excluded);
+    masked.tree.snapshot = snapshot.clone();
+    if encryption.is_none()
+        && (!encrypted_paths.is_empty()
+            || entry
+                .checkpoint
+                .tree
+                .coverage
+                .entries
+                .iter()
+                .any(|coverage| coverage.encrypt))
+    {
+        // Descriptions, labels, and operation notes can contain text derived
+        // from protected files. Plaintext backups must not disclose it.
+        masked.description = "checkpoint (encrypted files omitted)".into();
+        masked.summary = masked.description.clone();
+        masked.labels.clear();
+        masked.task = None;
+        masked.operation = None;
+    }
     match encryption {
         // a commit of its own: the local checkpoint ref keeps naming the
         // full wrapper, private and unbacked files included
@@ -206,6 +240,7 @@ pub(crate) fn upload(
     machine_id: &str,
     uploaded: &mut BTreeSet<String>,
     encryption: Option<&BackupEncryption>,
+    encrypted_paths: &BTreeSet<String>,
 ) -> Result<usize> {
     let mut count = 0;
     for entry in entries {
@@ -217,7 +252,7 @@ pub(crate) fn upload(
             uploaded.insert(uuid.clone());
             continue;
         }
-        let commit = wrapper_commit(repo, entry, encryption)?;
+        let commit = wrapper_commit(repo, entry, encryption, encrypted_paths)?;
         // forced: the ref is this machine's alone, and a checkpoint
         // uploaded again after a scheme change is a parentless rewrite of
         // the same content, not a fast-forward
@@ -238,6 +273,49 @@ pub(crate) fn upload(
         }
     }
     Ok(count)
+}
+
+/// Prepare every replacement before touching the remote. Status is committed
+/// only after the atomic push, so a crash can safely repeat the transaction.
+pub(crate) fn replace(
+    remote: &Remote<'_>,
+    repo: &HistoryRepo,
+    entries: &[Entry],
+    machine_id: &str,
+    status: &mut SyncStatus,
+    encryption: Option<&BackupEncryption>,
+    encrypted_paths: &BTreeSet<String>,
+) -> Result<(usize, usize)> {
+    let old_refs = remote_refs(remote, machine_id)?;
+    let old: BTreeSet<&str> = old_refs.iter().map(String::as_str).collect();
+    let mut refs = BTreeSet::new();
+    let mut uploaded = BTreeSet::new();
+    let mut refspecs = Vec::new();
+    for entry in entries.iter().filter(|entry| eligible(entry)) {
+        let uuid = &entry.checkpoint.uuid;
+        let name = remote_ref(machine_id, uuid);
+        let newly_eligible = status
+            .upload_since
+            .as_deref()
+            .is_none_or(|since| entry.checkpoint.created_at.as_str() >= since);
+        if !newly_eligible && !status.uploaded.contains(uuid) && !old.contains(name.as_str()) {
+            continue;
+        }
+        let commit = wrapper_commit(repo, entry, encryption, encrypted_paths)?;
+        refspecs.push(format!("+{commit}:{name}"));
+        refs.insert(name);
+        uploaded.insert(uuid.clone());
+    }
+    refspecs.extend(
+        old_refs
+            .iter()
+            .filter(|name| !refs.contains(*name))
+            .map(|name| format!(":{name}")),
+    );
+    remote.push_atomic(&refspecs)?;
+    status.backup_scheme = Some(scheme(encryption));
+    status.uploaded = uploaded;
+    Ok((status.uploaded.len(), old_refs.len()))
 }
 
 /// Removes this machine's remote refs for checkpoints no longer retained

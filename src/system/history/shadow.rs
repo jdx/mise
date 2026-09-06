@@ -388,6 +388,17 @@ impl HistoryRepo {
             .wrap_err_with(|| format!("reading {oid}"))
     }
 
+    pub(crate) fn cat_object_bounded(&self, oid: &str, limit: u64) -> Result<Vec<u8>> {
+        let size: u64 = self
+            .output_str(PlumbingCall::new(["cat-file", "-s", oid]))?
+            .trim()
+            .parse()?;
+        if size > limit {
+            eyre::bail!("object exceeds the encrypted content size limit");
+        }
+        self.cat_object(oid)
+    }
+
     pub(crate) fn hash_blob(&self, bytes: &[u8]) -> Result<String> {
         self.output_str(PlumbingCall::new(["hash-object", "-w", "--stdin"]).stdin(bytes))
     }
