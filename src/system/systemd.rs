@@ -901,25 +901,26 @@ mod tests {
     fn quoted_executable_home_expands_without_changing_arguments() {
         for quote in ['\'', '"'] {
             let command = format!("{quote}~/.local/my agent{quote} --serve '$VALUE' %i");
+            // This is systemd syntax even when the test runs on Windows:
+            // escape the home prefix, but preserve the command's literal '/'.
+            let home = crate::dirs::HOME
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .replace(quote, &format!("\\{quote}"));
             assert_eq!(
                 super::expand_exec_string(&command),
-                format!(
-                    "{quote}{}{quote} --serve '$VALUE' %i",
-                    super::expand_path_string("~/.local/my agent")
-                )
+                format!("{quote}{home}/.local/my agent{quote} --serve '$VALUE' %i")
+            );
+            let rest = format!(".local/agent\\{quote}name\\x20bin{quote} --serve %i");
+            assert_eq!(
+                super::expand_exec_string(&format!("{quote}~/{rest}")),
+                format!("{quote}{home}/{rest}")
             );
         }
         assert_eq!(
             super::expand_exec_string("/bin/echo '~/literal'"),
             "/bin/echo '~/literal'"
         );
-        for quote in ['\'', '"'] {
-            let rest = format!(".local/agent\\{quote}name\\x20bin{quote} --serve %i");
-            assert_eq!(
-                super::expand_exec_string(&format!("{quote}~/{rest}")),
-                format!("{quote}{}/{rest}", crate::dirs::HOME.display())
-            );
-        }
     }
 
     use super::*;
