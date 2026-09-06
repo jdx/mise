@@ -20,10 +20,12 @@ when you push changes to your repository.
   **Default:** `ci`
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Preview before writing the workflow
 
 ```
+mise generate github-action --task=ci
 mise generate github-action --write --task=ci
-git commit -m "feat: add new feature"
-git push # runs `mise run ci` on GitHub
+git add .github/workflows/ci.yml
 ```

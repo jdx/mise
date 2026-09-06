@@ -19,15 +19,19 @@ authentication issues. The token is masked by default.
 - **`--unmask`** — Show the full unmasked token
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise token forgejo
+mise token forgejo
 codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)
+```
 
-$ mise token forgejo --unmask
+```
+mise token forgejo --unmask
 codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)
+```
 
-$ mise token forgejo forgejo.mycompany.com
+```
+mise token forgejo forgejo.mycompany.com
 forgejo.mycompany.com: (none)
 ```

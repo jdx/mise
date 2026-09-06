@@ -63,7 +63,7 @@ Tools are installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`.
   May require elevated permissions (e.g. sudo).
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise install node@20.0.0  # install a specific node version

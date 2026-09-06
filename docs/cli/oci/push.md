@@ -48,15 +48,19 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
   Pushes this build's manifest by digest and points the tag at an OCI image index containing one entry per platform, preserving entries other architectures pushed. Run `mise oci push --update-index` from one runner per platform to assemble a multi-arch tag.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Build and push to GHCR:
 
 ```
-Build and push to GHCR:
-$ mise oci push ghcr.io/me/devenv:latest
+mise oci push ghcr.io/me/devenv:latest
+```
 
 Push an image built earlier:
-$ mise oci build -o ./img
-$ mise oci push --image-dir ./img ghcr.io/me/devenv:v1
+
+```
+mise oci build -o ./img
+mise oci push --image-dir ./img ghcr.io/me/devenv:v1
 ```
 
 Auth:

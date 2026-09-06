@@ -10,7 +10,13 @@ use crate::system::packages::brew::default_tap_url;
 
 /// Add a Homebrew tap URL to [bootstrap.brew.taps]
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap packages brew tap railwaycat/emacsmacport
+mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git"###
+    )
+)]
 pub(crate) struct SystemBrewTap {
     /// Tap name, e.g. `owner/repo`
     tap: String,
@@ -72,11 +78,3 @@ impl SystemBrewTap {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages brew tap railwaycat/emacsmacport</bold>
-    $ <bold>mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git</bold>
-"#
-);

@@ -16,20 +16,30 @@ Validate tasks for common errors and issues
 - **`--json`** — Output validation results in JSON format
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Validate all tasks
 
 ```
-# Validate all tasks
-$ mise tasks validate
+mise tasks validate
+```
 
-# Validate specific tasks
-$ mise tasks validate build test
+Validate specific tasks
 
-# Output results as JSON
-$ mise tasks validate --json
+```
+mise tasks validate build test
+```
 
-# Only show errors (skip warnings)
-$ mise tasks validate --errors-only
+Output results as JSON
+
+```
+mise tasks validate --json
+```
+
+Only show errors (skip warnings)
+
+```
+mise tasks validate --errors-only
 ```
 
 Validation Checks:

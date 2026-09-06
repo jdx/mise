@@ -12,8 +12,16 @@ This can be used to temporarily disable mise in a shell session.
 ## Flags
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Bash or Zsh, calling the executable rather than the activation function
 
 ```
-mise deactivate
+eval "$(command mise deactivate)"
+```
+
+Fish
+
+```
+command mise deactivate | source
 ```

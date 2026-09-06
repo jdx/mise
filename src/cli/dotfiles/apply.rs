@@ -10,7 +10,14 @@ use crate::system;
 /// Edit entries manage a marker-delimited block or a single line in a file
 /// mise doesn't otherwise own.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap dotfiles apply
+mise bootstrap dotfiles apply --dry-run
+mise bootstrap dotfiles apply --force --yes"###
+    )
+)]
 pub(crate) struct DotfilesApply {
     /// Only apply these targets
     #[usage(value_name = "TARGET")]
@@ -78,12 +85,3 @@ impl DotfilesApply {
         Ok(true)
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles apply</bold>
-    $ <bold>mise bootstrap dotfiles apply --dry-run</bold>
-    $ <bold>mise bootstrap dotfiles apply --force --yes</bold>
-"#
-);

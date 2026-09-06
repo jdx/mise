@@ -15,8 +15,10 @@ Sorts keys and cleans up whitespace in mise.toml
 - **`-s --stdin`** — Read config from stdin and write its formatted version into stdout
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise fmt
+mise fmt --check
+cat mise.toml | mise fmt --stdin
 ```

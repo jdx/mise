@@ -24,7 +24,25 @@ use tabled::Tabled;
 ///
 /// Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(aliases = ["ev", "env-vars"], verbatim_doc_comment, example(r###"mise set NODE_ENV=production"###),
+    example(r###"mise set NODE_ENV
+production"###),
+    example(r###"mise set -E staging NODE_ENV=staging
+# creates or modifies mise.staging.toml"###),
+    example(r###"mise set
+key       value       source
+NODE_ENV  production  ~/.config/mise/config.toml"###),
+    example(r###"mise set --prompt PASSWORD
+Enter value for PASSWORD: [hidden input]
+
+Multiline Values (--stdin):"###),
+    example(r###"cat private.key | mise set --stdin MY_KEY"###),
+    example(r###"printf "line1\nline2" | mise set --stdin MY_KEY
+
+[experimental] Age Encryption:"###),
+    example(r###"mise set --age-encrypt API_KEY=secret"###),
+    example(r###"mise set --age-encrypt --prompt API_KEY
+Enter value for API_KEY: [hidden input]"###))]
 pub(crate) struct Set {
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
@@ -469,36 +487,3 @@ struct Row {
     value: String,
     source: String,
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise set NODE_ENV=production</bold>
-
-    $ <bold>mise set NODE_ENV</bold>
-    production
-
-    $ <bold>mise set -E staging NODE_ENV=staging</bold>
-    # creates or modifies mise.staging.toml
-
-    $ <bold>mise set</bold>
-    key       value       source
-    NODE_ENV  production  ~/.config/mise/config.toml
-
-    $ <bold>mise set --prompt PASSWORD</bold>
-    Enter value for PASSWORD: [hidden input]
-
-    <bold><underline>Multiline Values (--stdin):</underline></bold>
-
-    $ <bold>cat private.key | mise set --stdin MY_KEY</bold>
-
-    $ <bold>printf "line1\nline2" | mise set --stdin MY_KEY</bold>
-
-    <bold><underline>[experimental] Age Encryption:</underline></bold>
-
-    $ <bold>mise set --age-encrypt API_KEY=secret</bold>
-
-    $ <bold>mise set --age-encrypt --prompt API_KEY</bold>
-    Enter value for API_KEY: [hidden input]
-"#
-);

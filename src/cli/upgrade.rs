@@ -39,7 +39,16 @@ const MAX_OUT_OF_RANGE_UPDATES: usize = 5;
 ///
 /// This also updates mise.lock if lockfiles are enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
+    example(r###"mise upgrade node"###, help = r###"Upgrades node to the latest version matching the range in mise.toml"###),
+    example(r###"mise upgrade node --bump"###, help = r###"Upgrades node to the latest version and bumps the version in mise.toml"###),
+    example(r###"mise upgrade"###, help = r###"Upgrades all configured tools within their current requests"###),
+    example(r###"mise upgrade --bump"###, help = r###"Upgrades all tools to the latest versions and bumps the version in mise.toml"###),
+    example(r###"mise upgrade --dry-run"###, help = r###"Just print what would be done, don't actually do it"###),
+    example(r###"mise upgrade node python"###, help = r###"Upgrades node and python within their current requests"###),
+    example(r###"mise upgrade --exclude go"###, help = r###"Upgrade all tools except go"###),
+    example(r###"mise upgrade --interactive"###, help = r###"Show a multiselect menu to choose which tools to upgrade"###),
+    example(r###"mise upgrade --local"###, help = r###"Only upgrade tools defined in local mise.toml, not global ones"###))]
 pub(crate) struct Upgrade {
     /// Tool(s) to upgrade
     /// e.g.: node@20 python@3.10
@@ -1060,40 +1069,10 @@ fn release_is_eligible_at(created_at: Timestamp, now: Timestamp, age: &Span) -> 
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Deprecation:</underline></bold>
+    r###"<bold><underline>Deprecation:</underline></bold>
 
 The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
-After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
-
-<bold><underline>Examples:</underline></bold>
-
-    # Upgrades node to the latest version matching the range in mise.toml
-    $ <bold>mise upgrade node</bold>
-
-    # Upgrades node to the latest version and bumps the version in mise.toml
-    $ <bold>mise upgrade node --bump</bold>
-
-    # Upgrades all tools to the latest versions
-    $ <bold>mise upgrade</bold>
-
-    # Upgrades all tools to the latest versions and bumps the version in mise.toml
-    $ <bold>mise upgrade --bump</bold>
-
-    # Just print what would be done, don't actually do it
-    $ <bold>mise upgrade --dry-run</bold>
-
-    # Upgrades node and python to the latest versions
-    $ <bold>mise upgrade node python</bold>
-
-    # Upgrade all tools except go
-    $ <bold>mise upgrade --exclude go</bold>
-
-    # Show a multiselect menu to choose which tools to upgrade
-    $ <bold>mise upgrade --interactive</bold>
-
-    # Only upgrade tools defined in local mise.toml, not global ones
-    $ <bold>mise upgrade --local</bold>
-"#
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead."###
 );
 
 #[cfg(test)]

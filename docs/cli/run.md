@@ -122,22 +122,34 @@ $ mise run build
 - **`--timeout <TIMEOUT>`** — Timeout for the task to complete
   e.g.: 30s, 5m
 
-Examples:
+## Examples
+
+Run the "lint" task, defined either in mise.toml or as a standalone script.
 
 ```
-# Run the "lint" task, defined either in mise.toml or as a standalone script.
-$ mise run lint
+mise run lint
+```
 
-# Force the "build" task to run even if its sources are up to date.
-$ mise run --force build
+Force the "build" task to run even if its sources are up to date.
 
-# Run "test" with stdin/stdout/stderr all connected to the current terminal.
-# This forces `--jobs=1` to prevent interleaving of output.
-$ mise run --raw test
+```
+mise run --force build
+```
 
-# Run the "lint", "test", and "check" tasks in parallel.
-$ mise run lint ::: test ::: check
+Run "test" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output.
 
-# Run multiple tasks, each with its own arguments.
-$ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+```
+mise run --raw test
+```
+
+Run the "lint", "test", and "check" tasks in parallel.
+
+```
+mise run lint ::: test ::: check
+```
+
+Run multiple tasks, each with its own arguments.
+
+```
+mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 ```

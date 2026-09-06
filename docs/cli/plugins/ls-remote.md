@@ -15,7 +15,7 @@ These are the shorthand names from the registry: <https://github.com/jdx/mise/bl
 - **`--only-names`** — Only show the name of each plugin, without the "*" marking installed plugins
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise plugins ls-remote

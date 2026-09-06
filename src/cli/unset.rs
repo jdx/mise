@@ -10,7 +10,17 @@ use crate::config::{ConfigPathOptions, resolve_target_config_path};
 ///
 /// By default, this command modifies `mise.toml` in the current directory.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise unset NODE_ENV"###,
+        help = r###"Remove NODE_ENV from the selected project config"###
+    ),
+    example(
+        r###"mise unset NODE_ENV -g"###,
+        help = r###"Remove NODE_ENV from the global config"###
+    )
+)]
 pub(crate) struct Unset {
     /// Environment variable(s) to remove
     /// e.g.: NODE_ENV
@@ -30,17 +40,6 @@ pub(crate) struct Unset {
     #[usage(short, long, overrides = "file")]
     global: bool,
 }
-
-const AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # Remove NODE_ENV from the current directory's config
-    $ <bold>mise unset NODE_ENV</bold>
-
-    # Remove NODE_ENV from the global config
-    $ <bold>mise unset NODE_ENV -g</bold>
-"#
-);
 
 impl Unset {
     pub(crate) async fn run(self) -> Result<()> {

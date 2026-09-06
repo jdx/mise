@@ -15,10 +15,10 @@ These are defined in `mise.toml` under the `[shell_alias]` section.
 - **`--no-header`** — Don't show table header
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise shell-alias ls
+mise shell-alias ls
 alias    command
 ll       ls -la
 gs       git status

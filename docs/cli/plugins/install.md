@@ -28,19 +28,22 @@ needed to install a plugin ahead of time or from a custom git URL.
 - **`-v --verbose`** — Show installation output
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Install an asdf-compatible plugin from its upstream repository
 
 ```
-# install the poetry via shorthand
-$ mise plugins install poetry
+mise plugins install postgres https://github.com/smashedtoatoms/asdf-postgres.git
+```
 
-# install the poetry plugin using a specific git url
-$ mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git
+Use a local plugin repository at a tag you created
 
-# install the poetry plugin using the git url only
-# (poetry is inferred from the url)
-$ mise plugins install https://github.com/mise-plugins/mise-poetry.git
+```
+mise plugins install my-tool file:///path/to/mise-my-tool#v1.0.0
+```
 
-# install the poetry plugin using a specific ref
-$ mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git#11d0c1e
+Install missing plugins that have configured shorthands
+
+```
+mise plugins install --all
 ```

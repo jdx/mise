@@ -16,8 +16,8 @@ Remove a plugin
 - **`-p --purge`** — Also remove the plugin's installs, downloads, and cache
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-mise plugins uninstall cmake
+mise plugins uninstall my-tool
 ```

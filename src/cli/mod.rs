@@ -100,7 +100,27 @@ pub(crate) enum LevelFilter {
 }
 
 #[derive(usage_rs::Cli)]
-#[usage(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true, completion = true, unknown_flags = "error")]
+#[usage(
+    name = "mise", about, long_about = LONG_ABOUT,
+    example("mise install node@20.0.0", help = "Install a specific node version"),
+    example("mise install node@20", help = "Install a version matching a prefix"),
+    example("mise install node", help = "Install the node version defined in config"),
+    example("mise install", help = "Install all plugins/tools defined in config"),
+    example("mise install cargo:ripgrep", help = "Install something via cargo"),
+    example("mise install npm:prettier", help = "Install something via npm"),
+    example("mise use node@20", help = "Use node-20.x in current project"),
+    example("mise use -g node@20", help = "Use node-20.x as default"),
+    example("mise use node@latest", help = "Use latest node in current directory"),
+    example("mise up --interactive", help = "Show a menu to upgrade tools"),
+    example("mise x -- npm install", help = "Run npm install with config loaded into PATH"),
+    example("mise x node@20 -- node app.js", help = "Run node app.js with config and node-20.x on PATH"),
+    example("mise set NODE_ENV=production", help = "Set NODE_ENV=production in config"),
+    example("mise run build", help = "Run build tasks"),
+    example("mise watch build", help = "Run build tasks repeatedly when files change"),
+    example("mise settings", help = "Show settings in use"),
+    example("mise settings color=0", help = "Disable color by modifying global config file"),
+    author = "Jeff Dickey <@jdx>", arg_required_else_help = true, completion = true, unknown_flags = "error"
+)]
 pub(crate) struct Cli {
     #[usage(subcommand)]
     pub command: Option<Commands>,
@@ -1098,36 +1118,6 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
 const LONG_ABOUT: &str = "mise installs the dev tools your projects need, sets their environment variables, and runs their tasks.
 
 Tools, env vars, and tasks are declared in mise.toml. `mise use <TOOL>` adds a tool to the project in the current directory, `mise install` installs everything the config asks for, and `mise run <TASK>` runs a task. Docs: https://mise.jdx.dev";
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise install node@20.0.0</bold>       Install a specific node version
-    $ <bold>mise install node@20</bold>           Install a version matching a prefix
-    $ <bold>mise install node</bold>              Install the node version defined in config
-    $ <bold>mise install</bold>                   Install all plugins/tools defined in config
-
-    $ <bold>mise install cargo:ripgrep</bold>     Install something via cargo
-    $ <bold>mise install npm:prettier</bold>      Install something via npm
-
-    $ <bold>mise use node@20</bold>               Use node-20.x in current project
-    $ <bold>mise use -g node@20</bold>            Use node-20.x as default
-    $ <bold>mise use node@latest</bold>           Use latest node in current directory
-
-    $ <bold>mise up --interactive</bold>          Show a menu to upgrade tools
-
-    $ <bold>mise x -- npm install</bold>          `npm install` w/ config loaded into PATH
-    $ <bold>mise x node@20 -- node app.js</bold>  `node app.js` w/ config + node-20.x on PATH
-
-    $ <bold>mise set NODE_ENV=production</bold>   Set NODE_ENV=production in config
-
-    $ <bold>mise run build</bold>                 Run `build` tasks
-    $ <bold>mise watch build</bold>               Run `build` tasks repeatedly when files change
-
-    $ <bold>mise settings</bold>                  Show settings in use
-    $ <bold>mise settings color=0</bold>          Disable color by modifying global config file
-"#
-);
 
 /// Check if the current working directory exists and warn if not
 fn check_working_directory() {

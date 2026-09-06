@@ -11,10 +11,10 @@ Symlink ruby versions installed by Homebrew into mise
 - **`--brew`** — Get tool versions from Homebrew
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 brew install ruby
 mise sync ruby --brew
-mise use -g ruby - Use the latest version of Ruby installed by Homebrew
+mise ls ruby --installed # inspect linked versions, then select one with mise use
 ```

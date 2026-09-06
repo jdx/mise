@@ -9,7 +9,7 @@ use crate::file::display_path;
 
 /// Remove Homebrew tap URLs from [bootstrap.brew.taps]
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], example(r###"mise bootstrap packages brew untap railwaycat/emacsmacport"###))]
 pub(crate) struct SystemBrewUntap {
     /// Tap name(s), e.g. `owner/repo`
     #[usage(required = true)]
@@ -74,10 +74,3 @@ impl SystemBrewUntap {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages brew untap railwaycat/emacsmacport</bold>
-"#
-);

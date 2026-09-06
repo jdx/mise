@@ -7,7 +7,25 @@ mod set;
 mod unset;
 
 #[derive(Debug, usage_rs::Args)]
-#[usage(about = "Manage settings", after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    about = "Manage settings",
+    example(
+        r###"mise settings"###,
+        help = r###"list explicitly configured settings"###
+    ),
+    example(
+        r###"mise settings always_keep_download"###,
+        help = r###"get the value of the setting "always_keep_download""###
+    ),
+    example(
+        r###"mise settings always_keep_download=true"###,
+        help = r###"set the value of the setting "always_keep_download" to "true""###
+    ),
+    example(
+        r###"mise settings node.mirror_url https://npmmirror.com/mirrors/node/"###,
+        help = r###"set the value of the setting "node.mirror_url" to "https://npmmirror.com/mirrors/node/""###
+    )
+)]
 pub(crate) struct Settings {
     #[usage(subcommand)]
     command: Option<Commands>,
@@ -87,19 +105,3 @@ impl Settings {
         cmd.run()
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-    # list all settings
-    $ <bold>mise settings</bold>
-
-    # get the value of the setting "always_keep_download"
-    $ <bold>mise settings always_keep_download</bold>
-
-    # set the value of the setting "always_keep_download" to "true"
-    $ <bold>mise settings always_keep_download=true</bold>
-
-    # set the value of the setting "node.mirror_url" to "https://npmmirror.com/mirrors/node/"
-    $ <bold>mise settings node.mirror_url https://npmmirror.com/mirrors/node/</bold>
-"#
-);

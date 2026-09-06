@@ -17,7 +17,7 @@ Show the status of dotfiles from `[dotfiles]`
   state (missing, source missing, differs)
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise bootstrap dotfiles status

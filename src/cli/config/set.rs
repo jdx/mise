@@ -10,7 +10,21 @@ use std::path::PathBuf;
 
 /// Set a value in a mise.toml file
 #[derive(Debug, usage_rs::Args)]
-#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    example(
+        r###"mise config set tools.python 3.12
+mise config set settings.always_keep_download true
+mise config set env.TEST_ENV_VAR ABC
+mise config set settings.disable_tools node,rust
+mise config set --append env._.path ~/.local/bin
+mise config set --remove env._.path ~/.local/bin"###
+    ),
+    example(
+        r###"mise config set settings.jobs 4"###,
+        help = r###"Type for `settings` is inferred"###
+    ),
+    verbatim_doc_comment
+)]
 pub(super) struct ConfigSet {
     /// Dotted key path to set, e.g. `tools.python`
     pub key: String,
@@ -306,18 +320,3 @@ fn remove_value(
     }
     Ok(())
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise config set tools.python 3.12</bold>
-    $ <bold>mise config set settings.always_keep_download true</bold>
-    $ <bold>mise config set env.TEST_ENV_VAR ABC</bold>
-    $ <bold>mise config set settings.disable_tools node,rust</bold>
-    $ <bold>mise config set --append env._.path ~/.local/bin</bold>
-    $ <bold>mise config set --remove env._.path ~/.local/bin</bold>
-
-    # Type for `settings` is inferred
-    $ <bold>mise config set settings.jobs 4</bold>
-"#
-);

@@ -28,7 +28,7 @@ Packages can also be given explicitly in `manager:package` form.
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise bootstrap packages upgrade

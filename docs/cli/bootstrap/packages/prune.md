@@ -21,7 +21,7 @@ first applied them are never claimed or removed.
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise bootstrap packages prune --manager brew

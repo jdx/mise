@@ -16,7 +16,7 @@ If the version is out of date, it will display a warning.
 - **`-J --json`** — Print the version information in JSON format
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise version

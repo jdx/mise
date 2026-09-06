@@ -24,7 +24,9 @@ use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_t
 /// e.g.: `mise install cmake@3.30` installs the cmake plugin first. This command is only
 /// needed to install a plugin ahead of time or from a custom git URL.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP
+#[usage(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, example(r###"mise plugins install postgres https://github.com/smashedtoatoms/asdf-postgres.git"###, help = r###"Install an asdf-compatible plugin from its upstream repository"###),
+    example(r###"mise plugins install my-tool file:///path/to/mise-my-tool#v1.0.0"###, help = r###"Use a local plugin repository at a tag you created"###),
+    example(r###"mise plugins install --all"###, help = r###"Install missing plugins that have configured shorthands"###)
 )]
 pub(crate) struct PluginsInstall {
     /// The name of the plugin to install
@@ -199,24 +201,6 @@ fn get_name_from_url(url: &str) -> Result<String> {
     let name = name.strip_prefix("vfox-").unwrap_or(name);
     Ok(unalias_backend(name).to_string())
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # install the poetry via shorthand
-    $ <bold>mise plugins install poetry</bold>
-
-    # install the poetry plugin using a specific git url
-    $ <bold>mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git</bold>
-
-    # install the poetry plugin using the git url only
-    # (poetry is inferred from the url)
-    $ <bold>mise plugins install https://github.com/mise-plugins/mise-poetry.git</bold>
-
-    # install the poetry plugin using a specific ref
-    $ <bold>mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git#11d0c1e</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

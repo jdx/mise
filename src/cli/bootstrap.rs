@@ -84,7 +84,22 @@ use crate::ui::table::MiseTable;
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
-    after_long_help = AFTER_LONG_HELP
+    example(r###"mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
+mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
+mise bootstrap --from-git git@github.com:example/mise-config.git --yes
+mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
+mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
+mise bootstrap --only tools       # run just tool installation
+mise bootstrap status --missing
+mise bootstrap packages apply --yes
+mise bootstrap repos status
+mise bootstrap repos apply --dry-run
+mise bootstrap dotfiles status
+mise bootstrap mise-shell-activate apply --dry-run
+mise bootstrap macos defaults status
+mise bootstrap macos launchd-agents apply --dry-run
+mise bootstrap linux systemd-units apply --dry-run
+mise bootstrap user apply --dry-run"###)
 )]
 pub(crate) struct Bootstrap {
     #[usage(subcommand)]
@@ -814,7 +829,11 @@ enum BootstrapDotfilesCommands {
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
-    after_long_help = BOOTSTRAP_DOTFILES_APPLY_AFTER_LONG_HELP
+    example(
+        r###"mise bootstrap dotfiles apply
+mise bootstrap dotfiles apply --dry-run
+mise bootstrap dotfiles apply --force --yes"###
+    )
 )]
 struct BootstrapDotfilesApply {
     #[usage(flatten)]
@@ -826,31 +845,17 @@ struct BootstrapDotfilesApply {
 #[usage(
     visible_alias = "ls",
     verbatim_doc_comment,
-    after_long_help = BOOTSTRAP_DOTFILES_STATUS_AFTER_LONG_HELP
+    example(
+        r###"mise bootstrap dotfiles status
+mise bootstrap dotfiles status ~/.zshrc
+mise bootstrap dotfiles status --json
+mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync"###
+    )
 )]
 struct BootstrapDotfilesStatus {
     #[usage(flatten)]
     cmd: DotfilesStatus,
 }
-
-static BOOTSTRAP_DOTFILES_APPLY_AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles apply</bold>
-    $ <bold>mise bootstrap dotfiles apply --dry-run</bold>
-    $ <bold>mise bootstrap dotfiles apply --force --yes</bold>
-"#
-);
-
-static BOOTSTRAP_DOTFILES_STATUS_AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles status</bold>
-    $ <bold>mise bootstrap dotfiles status ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles status --json</bold>
-    $ <bold>mise bootstrap dotfiles status --missing</bold> # exit 1 if anything is out of sync
-"#
-);
 
 /// Manage bootstrap system packages from `[bootstrap.packages]`
 #[derive(Debug, usage_rs::Args)]
@@ -4571,28 +4576,6 @@ impl BootstrapUserStatus {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap</bold>                    # packages + repos + dotfiles + tools + bootstrap task
-    $ <bold>mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes</bold>
-    $ <bold>mise bootstrap --from-git git@github.com:example/mise-config.git --yes</bold>
-    $ <bold>mise bootstrap --force-dotfiles</bold>   # replace conflicting dotfile targets
-    $ <bold>mise bootstrap --skip tools,task</bold>  # skip tool installation and the bootstrap task
-    $ <bold>mise bootstrap --only tools</bold>       # run just tool installation
-    $ <bold>mise bootstrap status --missing</bold>
-    $ <bold>mise bootstrap packages apply --yes</bold>
-    $ <bold>mise bootstrap repos status</bold>
-    $ <bold>mise bootstrap repos apply --dry-run</bold>
-    $ <bold>mise bootstrap dotfiles status</bold>
-    $ <bold>mise bootstrap mise-shell-activate apply --dry-run</bold>
-    $ <bold>mise bootstrap macos defaults status</bold>
-    $ <bold>mise bootstrap macos launchd-agents apply --dry-run</bold>
-    $ <bold>mise bootstrap linux systemd-units apply --dry-run</bold>
-    $ <bold>mise bootstrap user apply --dry-run</bold>
-"#
-);
 
 fn file_state_display(state: &FileState) -> String {
     match state {

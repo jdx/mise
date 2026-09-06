@@ -17,7 +17,18 @@ use crate::system;
 ///
 /// Packages can also be given explicitly in `manager:package` form.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "up",
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap packages upgrade
+mise bootstrap packages upgrade brew:postgresql@17
+mise bootstrap packages upgrade --manager brew-cask
+mise bootstrap packages upgrade --manager mas
+mise bootstrap packages upgrade --manager apt --yes
+mise bootstrap packages upgrade --dry-run"###
+    )
+)]
 pub(crate) struct SystemUpgrade {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
@@ -59,15 +70,3 @@ impl SystemUpgrade {
         driver::run(mgrs, Action::Upgrade, &opts).await
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages upgrade</bold>
-    $ <bold>mise bootstrap packages upgrade brew:postgresql@17</bold>
-    $ <bold>mise bootstrap packages upgrade --manager brew-cask</bold>
-    $ <bold>mise bootstrap packages upgrade --manager mas</bold>
-    $ <bold>mise bootstrap packages upgrade --manager apt --yes</bold>
-    $ <bold>mise bootstrap packages upgrade --dry-run</bold>
-"#
-);

@@ -59,7 +59,15 @@ fn push_unique_lock_tool(tools: &mut Vec<LockTool>, tool: LockTool) {
 /// This allows you to refresh lockfile data for platforms other than the one you're currently on.
 /// Operates on the lockfile in the current config root. Use TOOL arguments to target specific tools.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, example(r###"mise lock                       # create or refresh the project lockfile
+mise lock node python           # update only node and python
+mise lock --platform linux-x64  # update only linux-x64 platform
+mise lock --dry-run             # show what would be updated
+mise lock --bump                # re-resolve selectors like "latest" or "20" to the latest matching versions
+mise lock --bump --dry-run --json   # list available updates as JSON without writing
+mise lock --minimum-release-age 2024-01-01   # lock latest/fuzzy versions released before 2024-01-01
+mise lock --local               # update mise.local.lock for local configs
+mise lock --global              # update only global config lockfiles"###))]
 pub(crate) struct Lock {
     /// Tool(s) to update in lockfile
     /// e.g.: node python
@@ -1737,21 +1745,6 @@ impl Lock {
         Ok((results, resolution_errors))
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise lock</bold>                       # update lockfile for all common platforms
-    $ <bold>mise lock node python</bold>           # update only node and python
-    $ <bold>mise lock --platform linux-x64</bold>  # update only linux-x64 platform
-    $ <bold>mise lock --dry-run</bold>             # show what would be updated
-    $ <bold>mise lock --bump</bold>                # re-resolve selectors like "latest" or "20" to the latest matching versions
-    $ <bold>mise lock --bump --dry-run --json</bold>   # list available updates as JSON without writing
-    $ <bold>mise lock --minimum-release-age 2024-01-01</bold>   # lock latest/fuzzy versions released before 2024-01-01
-    $ <bold>mise lock --local</bold>               # update mise.local.lock for local configs
-    $ <bold>mise lock --global</bold>              # update only global config lockfiles
-"#
-);
 
 #[cfg(test)]
 mod tests {

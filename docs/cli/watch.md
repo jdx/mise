@@ -481,20 +481,26 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 
   This shows the manual page for Watchexec, if the output is a terminal and the 'man' program is available. If not, the manual page is printed to stdout in ROFF format (suitable for writing to a watchexec.1 file).
 
-Examples:
+## Examples
 
 ```
-$ mise watch build
+mise watch build
 Runs the "build" task and reruns it whenever one of its sources changes.
 The task's "sources" determine which files are watched.
+```
 
-$ mise watch build --glob 'src/**/*.rs'
+```
+mise watch build --glob 'src/**/*.rs'
 Runs the "build" task, watching the files matched by the glob instead of
 the task's "sources".
+```
 
-$ mise watch build --clear
+```
+mise watch build --clear
 Extra arguments are passed to watchexec. See `watchexec --help` for details.
+```
 
-$ mise watch serve --watch src --exts rs --restart
+```
+mise watch serve --watch src --exts rs --restart
 Starts an API server, watching "*.rs" files in "./src", and restarts the server when they change.
 ```

@@ -34,7 +34,15 @@ use toml_edit::{Array, InlineTable, Value};
 /// formulae whose active keg receipt says they were installed on request.
 /// Pass `--all` to import every linked formula, including dependencies.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap packages import --manager brew
+mise bootstrap packages import --manager brew --all
+mise bootstrap packages import --manager brew --global
+mise bootstrap packages import --manager brew --dry-run"###
+    )
+)]
 pub(crate) struct SystemImport {
     /// Write to the config file for this environment (mise.<ENV>.toml)
     #[usage(long, short, value_name = "ENV", conflicts = ["global", "path"])]
@@ -283,13 +291,3 @@ mod tests {
         );
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages import --manager brew</bold>
-    $ <bold>mise bootstrap packages import --manager brew --all</bold>
-    $ <bold>mise bootstrap packages import --manager brew --global</bold>
-    $ <bold>mise bootstrap packages import --manager brew --dry-run</bold>
-"#
-);

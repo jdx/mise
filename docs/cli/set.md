@@ -46,34 +46,50 @@ Use `-E <env>` to create/modify environment-specific config files like `mise.<en
   When using --stdin, provide a single key without a value. The value will be read from stdin until EOF.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise set NODE_ENV=production
+mise set NODE_ENV=production
+```
 
-$ mise set NODE_ENV
+```
+mise set NODE_ENV
 production
+```
 
-$ mise set -E staging NODE_ENV=staging
+```
+mise set -E staging NODE_ENV=staging
 # creates or modifies mise.staging.toml
+```
 
-$ mise set
+```
+mise set
 key       value       source
 NODE_ENV  production  ~/.config/mise/config.toml
+```
 
-$ mise set --prompt PASSWORD
+```
+mise set --prompt PASSWORD
 Enter value for PASSWORD: [hidden input]
 
 Multiline Values (--stdin):
+```
 
-$ cat private.key | mise set --stdin MY_KEY
+```
+cat private.key | mise set --stdin MY_KEY
+```
 
-$ printf "line1\nline2" | mise set --stdin MY_KEY
+```
+printf "line1\nline2" | mise set --stdin MY_KEY
 
 [experimental] Age Encryption:
+```
 
-$ mise set --age-encrypt API_KEY=secret
+```
+mise set --age-encrypt API_KEY=secret
+```
 
-$ mise set --age-encrypt --prompt API_KEY
+```
+mise set --age-encrypt --prompt API_KEY
 Enter value for API_KEY: [hidden input]
 ```

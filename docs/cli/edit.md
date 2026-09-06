@@ -16,7 +16,7 @@ Edit mise.toml interactively
 - **`-t --tool-versions <TOOL_VERSIONS>`** — Path to a .tool-versions file to import tools from
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise edit             # edit mise.toml interactively

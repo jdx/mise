@@ -5,7 +5,16 @@ use crate::cli::edit::Edit;
 
 /// Generate a mise.toml file
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise generate config             # generate mise.toml interactively
+mise generate config .mise.toml  # generate a specific file
+mise generate config -g          # generate the global config file
+mise generate config -y          # skip interactive editor
+mise generate config -n          # preview without writing"###
+    )
+)]
 pub(super) struct Config {
     /// Generate the global config file (~/.config/mise/config.toml)
     // Declared here as well as on `Edit`: this command parses its own arguments before handing
@@ -30,14 +39,3 @@ impl Config {
             .await
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise generate config</bold>             <dim># generate mise.toml interactively</dim>
-    $ <bold>mise generate config .mise.toml</bold>  <dim># generate a specific file</dim>
-    $ <bold>mise generate config -g</bold>          <dim># generate the global config file</dim>
-    $ <bold>mise generate config -y</bold>          <dim># skip interactive editor</dim>
-    $ <bold>mise generate config -n</bold>          <dim># preview without writing</dim>
-"#
-);

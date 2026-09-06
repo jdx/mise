@@ -16,7 +16,7 @@ This modifies the contents of ~/.config/mise/config.toml
 ## Flags
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise shell-alias unset ll

@@ -8,7 +8,8 @@ use crate::config::config_file::ConfigFile;
 ///
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(visible_aliases = ["rm", "remove", "delete", "del"], example(r###"mise tool-alias unset ripgrep
+mise tool-alias unset node project"###), verbatim_doc_comment)]
 pub(super) struct ToolAliasUnset {
     /// The tool/backend to remove the alias from
     #[usage(value_name = "TOOL")]
@@ -31,11 +32,3 @@ impl ToolAliasUnset {
         global_config.save()
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise tool-alias unset maven</bold>
-    $ <bold>mise tool-alias unset node lts-jod</bold>
-"#
-);

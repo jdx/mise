@@ -21,15 +21,22 @@ Use `mise unuse` to remove a tool from mise.toml and uninstall it.
   This is useful for scripts to check if tools need to be uninstalled.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+uninstall a specific version
 
 ```
-# uninstall a specific version
-$ mise uninstall node@18.0.0
+mise uninstall node@18.0.0
+```
 
-# uninstall the current node version (if only one version is installed)
-$ mise uninstall node
+uninstall the current node version (if only one version is installed)
 
-# uninstall every installed version of node
-$ mise uninstall --all node
+```
+mise uninstall node
+```
+
+uninstall every installed version of node
+
+```
+mise uninstall --all node
 ```

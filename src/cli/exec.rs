@@ -30,7 +30,22 @@ use crate::toolset::{InstallOptions, ResolveOptions, Toolset, ToolsetBuilder};
 ///
 /// The "--" separates tools from the command to pass along to the subprocess.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "x",
+    verbatim_doc_comment,
+    example(
+        r###"mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
+mise x node@20 -- node ./app.js     # shorter alias"###
+    ),
+    example(
+        r###"mise exec node@20 python@3.11 --command "node -v && python -V""###,
+        help = r###"Specify command as a string:"###
+    ),
+    example(
+        r###"mise x -C /path/to/project node@20 -- node ./app.js"###,
+        help = r###"Run a command in a different directory:"###
+    )
+)]
 pub(crate) struct Exec {
     /// Tool(s) to load
     /// e.g.: node@20 python@3.10
@@ -742,17 +757,3 @@ fn parse_command(
         ),
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise exec node@20 -- node ./app.js</bold>  # launch app.js using node-20.x
-    $ <bold>mise x node@20 -- node ./app.js</bold>     # shorter alias
-
-    # Specify command as a string:
-    $ <bold>mise exec node@20 python@3.11 --command "node -v && python -V"</bold>
-
-    # Run a command in a different directory:
-    $ <bold>mise x -C /path/to/project node@20 -- node ./app.js</bold>
-"#
-);

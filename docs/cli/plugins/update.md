@@ -19,10 +19,10 @@ Note: this updates the plugin itself, not the tool versions it manages
   Defaults to the `jobs` setting
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-mise plugins update              # update all plugins
-mise plugins update cmake       # update only cmake
-mise plugins update cmake#beta  # specify a ref
+mise plugins update              # update all installed plugins
+mise plugins update my-tool      # update one Git plugin
+mise plugins update my-tool#main # select an upstream ref
 ```

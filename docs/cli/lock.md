@@ -64,10 +64,10 @@ Operates on the lockfile in the current config root. Use TOOL arguments to targe
   combined with tool arguments.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-mise lock                       # update lockfile for all common platforms
+mise lock                       # create or refresh the project lockfile
 mise lock node python           # update only node and python
 mise lock --platform linux-x64  # update only linux-x64 platform
 mise lock --dry-run             # show what would be updated

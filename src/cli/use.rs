@@ -42,7 +42,34 @@ use crate::{config, env, exit, file};
 #[usage(
     verbatim_doc_comment,
     visible_alias = "u",
-    after_long_help = AFTER_LONG_HELP,
+    example(
+        r###"mise use"###,
+        help = r###"run with no arguments to use the interactive selector"###
+    ),
+    example(
+        r###"mise use node@20"###,
+        help = r###"set the current version of node to 20.x in the selected project config will write the fuzzy version (e.g.: 20)"###
+    ),
+    example(
+        r###"mise use --postinstall "mbx setup --defaults" mr-boxington"###,
+        help = r###"run a command after installing a tool"###
+    ),
+    example(
+        r###"mise use --postinstall "setup-a" tool-a --postinstall "setup-b" tool-b"###,
+        help = r###"associate a different postinstall command with each tool"###
+    ),
+    example(
+        r###"mise use -g --pin node@20"###,
+        help = r###"set the current version of node to 20.x in ~/.config/mise/config.toml will write the precise version (e.g.: 20.0.0)"###
+    ),
+    example(
+        r###"mise use --env local node@20"###,
+        help = r###"writes mise.local.toml (preserving .mise.local.toml if it already exists)"###
+    ),
+    example(
+        r###"mise use --env staging node@20"###,
+        help = r###"writes mise.staging.toml (loaded with MISE_ENV=staging)"###
+    ),
     unknown_flags = "error"
 )]
 pub(crate) struct Use {
@@ -457,31 +484,3 @@ impl Use {
         resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # run with no arguments to use the interactive selector
-    $ <bold>mise use</bold>
-
-    # set the current version of node to 20.x in mise.toml of current directory
-    # will write the fuzzy version (e.g.: 20)
-    $ <bold>mise use node@20</bold>
-
-    # run a command after installing a tool
-    $ <bold>mise use --postinstall "mbx setup --defaults" mr-boxington</bold>
-
-    # associate a different postinstall command with each tool
-    $ <bold>mise use --postinstall "setup-a" tool-a --postinstall "setup-b" tool-b</bold>
-
-    # set the current version of node to 20.x in ~/.config/mise/config.toml
-    # will write the precise version (e.g.: 20.0.0)
-    $ <bold>mise use -g --pin node@20</bold>
-
-    # sets .mise.local.toml (which is intended not to be committed to a project)
-    $ <bold>mise use --env local node@20</bold>
-
-    # sets .mise.staging.toml (which is used if MISE_ENV=staging)
-    $ <bold>mise use --env staging node@20</bold>
-"#
-);

@@ -24,14 +24,10 @@ but managed separately with `mise tool-alias`
 - **`--json-extended`** — Output in JSON format with sources
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise settings ls
-idiomatic_version_file = false
-...
-
-$ mise settings ls python
-default_packages_file = "~/.default-python-packages"
-...
+mise settings ls
+mise settings ls --all
+mise settings ls python --json-extended
 ```

@@ -39,18 +39,28 @@ The installed version is also removed unless another config still uses it or `--
 - **`--no-prune`** — Do not also prune the installed version
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+remove node@18.0.0 from mise.toml and uninstall it
 
 ```
-# remove node@18.0.0 from mise.toml and uninstall it
-$ mise unuse node@18.0.0
+mise unuse node@18.0.0
+```
 
-# remove it from the global config instead
-$ mise unuse -g node@18.0.0
+remove it from the global config instead
 
-# remove node@20 from .mise.local.toml
-$ mise unuse --env local node@20
+```
+mise unuse -g node@18.0.0
+```
 
-# remove node@20 from .mise.staging.toml
-$ mise unuse --env staging node@20
+remove the literal node@20 request from mise.local.toml
+
+```
+mise unuse --env local node@20
+```
+
+remove the literal node@20 request from mise.staging.toml
+
+```
+mise unuse --env staging node@20
 ```

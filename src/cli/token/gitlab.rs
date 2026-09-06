@@ -6,7 +6,21 @@ use crate::tokens;
 /// Shows which token source mise would use, useful for debugging
 /// authentication issues. The token is masked by default.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise token gitlab
+gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)"###
+    ),
+    example(
+        r###"mise token gitlab --unmask
+gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)"###
+    ),
+    example(
+        r###"mise token gitlab gitlab.mycompany.com
+gitlab.mycompany.com: (none)"###
+    )
+)]
 pub(super) struct Gitlab {
     /// GitLab hostname
     #[usage(default = "gitlab.com")]
@@ -35,17 +49,3 @@ impl Gitlab {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise token gitlab</bold>
-    gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)
-
-    $ <bold>mise token gitlab --unmask</bold>
-    gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)
-
-    $ <bold>mise token gitlab gitlab.mycompany.com</bold>
-    gitlab.mycompany.com: (none)
-"#
-);

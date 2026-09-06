@@ -34,13 +34,7 @@ unless skipped with the --no-deps flag.
 - **`--skip <SKIP>`** — Skip specific deps rule(s)
 - **`-h --help`** — Print help
 
-## Subcommands
-
-- [`mise deps add [-D --dev] <PACKAGES>…`](/cli/deps/add.md)
-- [`mise deps install [FLAGS] [PROVIDER]`](/cli/deps/install.md)
-- [`mise deps remove <PACKAGES>…`](/cli/deps/remove.md)
-
-Examples:
+## Examples
 
 ```
 mise deps                    # Install all project dependencies
@@ -52,6 +46,12 @@ mise deps add npm:react      # Add a dependency
 mise deps add -D npm:vitest  # Add a dev dependency
 mise deps remove npm:lodash  # Remove a dependency
 ```
+
+## Subcommands
+
+- [`mise deps add [-D --dev] <PACKAGES>…`](/cli/deps/add.md)
+- [`mise deps install [FLAGS] [PROVIDER]`](/cli/deps/install.md)
+- [`mise deps remove <PACKAGES>…`](/cli/deps/remove.md)
 
 Configuration:
 
@@ -67,6 +67,5 @@ sources = ["schema/*.graphql"]
 outputs = ["src/generated/"]
 run = "npm run codegen"
 
-[deps]
-disable = ["npm"]        # Disable specific providers at runtime
+# To disable npm instead, add `disable = ["npm"]` under [deps].
 ```

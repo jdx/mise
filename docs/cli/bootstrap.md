@@ -87,26 +87,8 @@ cannot be used together.
   **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
 - **`--update`** — Refresh package manager metadata and update configured repos
 - **`-h --help`** — Print help
-- [`mise bootstrap accounts <SUBCOMMAND>`](/cli/bootstrap/accounts.md)
-- [`mise bootstrap compose <SUBCOMMAND>`](/cli/bootstrap/compose.md)
-- [`mise bootstrap config-roots [-J --json]`](/cli/bootstrap/config-roots.md)
-- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.md)
-- [`mise bootstrap files <SUBCOMMAND>`](/cli/bootstrap/files.md)
-- [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.md)
-- [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.md)
-- [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.md)
-- [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.md)
-- [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.md)
-- [`mise bootstrap plan [FLAGS]`](/cli/bootstrap/plan.md)
-- [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.md)
-- [`mise bootstrap remote [FLAGS] [TARGET]…`](/cli/bootstrap/remote.md)
-- [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.md)
-- [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.md)
-- [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.md)
-- [`mise bootstrap status [FLAGS]`](/cli/bootstrap/status.md)
-- [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.md)
 
-Examples:
+## Examples
 
 ```
 mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
@@ -126,3 +108,21 @@ mise bootstrap macos launchd-agents apply --dry-run
 mise bootstrap linux systemd-units apply --dry-run
 mise bootstrap user apply --dry-run
 ```
+- [`mise bootstrap accounts <SUBCOMMAND>`](/cli/bootstrap/accounts.md)
+- [`mise bootstrap compose <SUBCOMMAND>`](/cli/bootstrap/compose.md)
+- [`mise bootstrap config-roots [-J --json]`](/cli/bootstrap/config-roots.md)
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.md)
+- [`mise bootstrap files <SUBCOMMAND>`](/cli/bootstrap/files.md)
+- [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.md)
+- [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.md)
+- [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.md)
+- [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.md)
+- [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.md)
+- [`mise bootstrap plan [FLAGS]`](/cli/bootstrap/plan.md)
+- [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.md)
+- [`mise bootstrap remote [FLAGS] [TARGET]…`](/cli/bootstrap/remote.md)
+- [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.md)
+- [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.md)
+- [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.md)
+- [`mise bootstrap status [FLAGS]`](/cli/bootstrap/status.md)
+- [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.md)

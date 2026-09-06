@@ -900,6 +900,37 @@ Print help
 .TP
 \fB<SHELL_TYPE>\fR
 Shell type to generate the script for
+\fBExamples:\fR
+.PP
+Activate mise in Bash.
+.PP
+.RS 4
+eval "$(mise activate bash)"
+.RE
+.PP
+Activate mise in Zsh.
+.PP
+.RS 4
+eval "$(mise activate zsh)"
+.RE
+.PP
+Activate mise in Fish.
+.PP
+.RS 4
+mise activate fish | source
+.RE
+.PP
+Activate mise in Xonsh.
+.PP
+.RS 4
+execx($(mise activate xonsh))
+.RE
+.PP
+Activate mise in PowerShell.
+.PP
+.RS 4
+(&mise activate pwsh) | Out\-String | Invoke\-Expression
+.RE
 .SH "MISE TOOL-ALIAS"
 Manage tool version aliases
 .PP
@@ -936,6 +967,14 @@ The tool to show the alias for
 .TP
 \fB<ALIAS>\fR
 The alias to show
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise tool\-alias set node project 20
+mise tool\-alias get node project
+20
+.RE
 .SH "MISE TOOL-ALIAS LS"
 List tool version aliases
 
@@ -961,6 +1000,13 @@ Print help
 .TP
 \fB<TOOL>\fR
 Show aliases for <TOOL>
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise tool\-alias ls
+node  lts\-jod      22
+.RE
 .SH "MISE TOOL-ALIAS SET"
 Add/update an alias for a tool/backend
 
@@ -984,6 +1030,13 @@ The alias to set
 .TP
 \fB<VALUE>\fR
 The value to set the alias to
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise tool\-alias set ripgrep aqua:BurntSushi/ripgrep
+mise tool\-alias set node project 20
+.RE
 .SH "MISE TOOL-ALIAS UNSET"
 Clear an alias for a tool/backend
 
@@ -1004,6 +1057,13 @@ The tool/backend to remove the alias from
 .TP
 \fB<ALIAS>\fR
 The alias to remove
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise tool\-alias unset ripgrep
+mise tool\-alias unset node project
+.RE
 .SH "MISE BACKENDS"
 Manage backends
 .PP
@@ -1024,6 +1084,14 @@ List built\-in backends
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+Installed plugin availability and built\-in backends are separate lists
+.PP
+.RS 4
+mise backends ls
+mise plugins ls
+.RE
 .SH "MISE BIN-PATHS"
 List all the active runtime bin paths
 .PP
@@ -1141,6 +1209,27 @@ Refresh package manager metadata and update configured repos
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
+mise \-E work bootstrap \-\-from git@github.com:example/dotfiles.git \-\-yes
+mise bootstrap \-\-from\-git git@github.com:example/mise\-config.git \-\-yes
+mise bootstrap \-\-force\-dotfiles   # replace conflicting dotfile targets
+mise bootstrap \-\-skip tools,task  # skip tool installation and the bootstrap task
+mise bootstrap \-\-only tools       # run just tool installation
+mise bootstrap status \-\-missing
+mise bootstrap packages apply \-\-yes
+mise bootstrap repos status
+mise bootstrap repos apply \-\-dry\-run
+mise bootstrap dotfiles status
+mise bootstrap mise\-shell\-activate apply \-\-dry\-run
+mise bootstrap macos defaults status
+mise bootstrap macos launchd\-agents apply \-\-dry\-run
+mise bootstrap linux systemd\-units apply \-\-dry\-run
+mise bootstrap user apply \-\-dry\-run
+.RE
 .SH "MISE BOOTSTRAP ACCOUNTS"
 Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
 .PP
@@ -1297,6 +1386,15 @@ Print help
 .TP
 \fB<TARGET>\fR
 Targets to add or update
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap dotfiles add ~/.zshrc
+mise bootstrap dotfiles add \-\-mode copy ~/.config/starship.toml
+mise bootstrap dotfiles add \-\-source dotfiles/gitconfig ~/.gitconfig
+mise bootstrap dotfiles add \-\-changed
+.RE
 .SH "MISE BOOTSTRAP DOTFILES APPLY"
 Apply dotfiles from `[dotfiles]`
 
@@ -1326,6 +1424,14 @@ Print help
 .TP
 \fB<TARGET>\fR
 Only apply these targets
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap dotfiles apply
+mise bootstrap dotfiles apply \-\-dry\-run
+mise bootstrap dotfiles apply \-\-force \-\-yes
+.RE
 .SH "MISE BOOTSTRAP DOTFILES DIFF"
 Show the changes needed to apply dotfiles from `[dotfiles]`
 .PP
@@ -1341,6 +1447,13 @@ Print help
 .TP
 \fB<TARGET>\fR
 Only show these targets
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap dotfiles diff
+mise bootstrap dotfiles diff ~/.zshrc
+.RE
 .SH "MISE BOOTSTRAP DOTFILES EDIT"
 Edit a managed dotfile source
 .PP
@@ -1368,6 +1481,13 @@ Print help
 .TP
 \fB<TARGET>\fR
 Target to edit
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap dotfiles edit ~/.zshrc
+mise bootstrap dotfiles edit \-\-apply ~/.config/starship.toml
+.RE
 .SH "MISE BOOTSTRAP DOTFILES STATUS"
 Show the status of dotfiles from `[dotfiles]`
 .PP
@@ -1390,6 +1510,15 @@ Print help
 .TP
 \fB<TARGET>\fR
 Only show these targets
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap dotfiles status
+mise bootstrap dotfiles status ~/.zshrc
+mise bootstrap dotfiles status \-\-json
+mise bootstrap dotfiles status \-\-missing # exit 1 if anything is out of sync
+.RE
 .SH "MISE BOOTSTRAP DOTFILES UNAPPLY"
 Remove dotfiles applied from `[dotfiles]`
 
@@ -1418,6 +1547,15 @@ Print help
 .TP
 \fB<TARGET>\fR
 Only unapply these targets
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap dotfiles unapply
+mise bootstrap dotfiles unapply ~/.zshrc
+mise bootstrap dotfiles unapply \-\-dry\-run
+mise bootstrap dotfiles unapply \-\-force \-\-yes
+.RE
 .SH "MISE BOOTSTRAP FILES"
 Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
 .PP
@@ -1742,6 +1880,15 @@ Print help
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap packages apply
+mise bootstrap packages apply brew:jq brew\-cask:firefox
+mise bootstrap packages apply \-\-dry\-run
+mise bootstrap packages apply \-\-manager apt \-\-yes
+.RE
 .SH "MISE BOOTSTRAP PACKAGES BREW"
 Manage Homebrew taps used by bootstrap packages
 
@@ -1782,6 +1929,13 @@ Tap name, e.g. `owner/repo`
 .TP
 \fB<URL>\fR
 GitHub URL for the tap. Defaults to https://github.com/<owner>/homebrew\-<repo>.git
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap packages brew tap railwaycat/emacsmacport
+mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew\-tools.git
+.RE
 .SH "MISE BOOTSTRAP PACKAGES BREW UNTAP"
 Remove Homebrew tap URLs from [bootstrap.brew.taps]
 .PP
@@ -1806,6 +1960,12 @@ Print help
 .TP
 \fB<TAPS>\fR
 Tap name(s), e.g. `owner/repo`
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap packages brew untap railwaycat/emacsmacport
+.RE
 .SH "MISE BOOTSTRAP PACKAGES IMPORT"
 Import installed system packages into `[bootstrap.packages]`
 
@@ -1841,6 +2001,15 @@ Write to this config file or directory
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap packages import \-\-manager brew
+mise bootstrap packages import \-\-manager brew \-\-all
+mise bootstrap packages import \-\-manager brew \-\-global
+mise bootstrap packages import \-\-manager brew \-\-dry\-run
+.RE
 .SH "MISE BOOTSTRAP PACKAGES PRUNE"
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
@@ -1869,6 +2038,16 @@ Skip the confirmation prompt
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap packages prune \-\-manager brew
+mise bootstrap packages prune \-\-manager brew \-\-dry\-run
+mise bootstrap packages prune \-\-manager brew \-\-yes
+mise bootstrap packages prune \-\-manager brew\-cask \-\-dry\-run
+mise bootstrap packages prune \-\-manager vscode \-\-dry\-run
+.RE
 .SH "MISE BOOTSTRAP PACKAGES STATUS"
 Show the status of system packages from `[bootstrap.packages]`
 .PP
@@ -1885,6 +2064,14 @@ Exit with code 1 if any configured packages are not in their desired state
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap packages status
+mise bootstrap packages status \-\-json
+mise bootstrap packages status \-\-missing # exit 1 if anything is out of sync
+.RE
 .SH "MISE BOOTSTRAP PACKAGES UPGRADE"
 Upgrade installed bootstrap packages from `[bootstrap.packages]`
 
@@ -1920,6 +2107,17 @@ Print help
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap packages upgrade
+mise bootstrap packages upgrade brew:postgresql@17
+mise bootstrap packages upgrade \-\-manager brew\-cask
+mise bootstrap packages upgrade \-\-manager mas
+mise bootstrap packages upgrade \-\-manager apt \-\-yes
+mise bootstrap packages upgrade \-\-dry\-run
+.RE
 .SH "MISE BOOTSTRAP PACKAGES USE"
 Add bootstrap packages to [bootstrap.packages] and install them
 
@@ -1960,6 +2158,14 @@ Print help
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package[@version]` form
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap packages use brew:jq brew\-cask:firefox
+mise bootstrap packages use \-g brew:postgresql@17
+mise bootstrap packages use apt:curl@8.5.0\-2
+.RE
 .SH "MISE BOOTSTRAP PLAN"
 Show the changes declarative bootstrap resources would make
 .PP
@@ -2492,6 +2698,29 @@ Print help
 .TP
 \fB<SHELL>\fR
 Shell type to generate completions for
+\fBExamples:\fR
+.PP
+Install for your shell; follow any printed one\-time setup instructions
+.PP
+.RS 4
+mise completion zsh \-\-install
+mise completion bash \-\-install
+mise completion fish \-\-install
+mise completion powershell \-\-install
+.RE
+.PP
+Print a completion script to inspect or save at a custom path
+.PP
+.RS 4
+mise completion zsh
+.RE
+.PP
+For a tool installed through Packslip with completion resources
+.PP
+.RS 4
+mise completion zsh \-\-tool rg
+mise completion zsh \-\-tool rg \-\-install
+.RE
 .SH "MISE CONFIG"
 Manage config files
 .PP
@@ -2539,6 +2768,13 @@ Print help
 .TP
 \fB<KEY>\fR
 Dotted key path to display, e.g. `tools.python`; omit to print the whole file
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise config get tools.python
+3.12
+.RE
 .SH "MISE CONFIG LS"
 List config files currently in use
 .PP
@@ -2558,6 +2794,15 @@ List all tracked config files
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise config ls
+Path                        Tools
+~/.config/mise/config.toml  pitchfork
+~/src/mise/mise.toml        actionlint, bun, cargo\-binstall, cargo:cargo\-insta
+.RE
 .SH "MISE CONFIG SET"
 Set a value in a mise.toml file
 .PP
@@ -2601,6 +2846,23 @@ Dotted key path to set, e.g. `tools.python`
 .TP
 \fB<VALUE>\fR
 The value to set the key to (optional if provided as KEY=VALUE)
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise config set tools.python 3.12
+mise config set settings.always_keep_download true
+mise config set env.TEST_ENV_VAR ABC
+mise config set settings.disable_tools node,rust
+mise config set \-\-append env._.path ~/.local/bin
+mise config set \-\-remove env._.path ~/.local/bin
+.RE
+.PP
+Type for `settings` is inferred
+.PP
+.RS 4
+mise config set settings.jobs 4
+.RE
 .SH "MISE DEACTIVATE"
 Disable mise for current shell session
 
@@ -2613,6 +2875,19 @@ This can be used to temporarily disable mise in a shell session.
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+Bash or Zsh, calling the executable rather than the activation function
+.PP
+.RS 4
+eval "$(command mise deactivate)"
+.RE
+.PP
+Fish
+.PP
+.RS 4
+command mise deactivate | source
+.RE
 .SH "MISE DOCTOR"
 Check mise installation for possible problems
 .PP
@@ -2626,6 +2901,14 @@ Output in JSON format
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise doctor
+mise doctor \-\-json
+mise doctor path \-\-full
+.RE
 .SH "MISE DOCTOR PATH"
 Print the current PATH entries mise is providing
 .PP
@@ -2639,6 +2922,16 @@ Print all entries including those not provided by mise
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+Get the current PATH entries mise is providing
+mise doctor path
+/home/user/.local/share/mise/installs/node/24.0.0/bin
+/home/user/.local/share/mise/installs/rust/1.90.0/bin
+/home/user/.local/share/mise/installs/python/3.10.0/bin
+.RE
 .SH "MISE EN"
 Start a new shell with the mise environment built from the current configuration
 
@@ -2665,6 +2958,20 @@ Print help
 Directory to start the shell in
 .RS
 \fIDefault: \fR.
+.RE
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise en .
+node \-v
+v20.0.0
+
+Skip loading bashrc:
+mise en \-s "bash \-\-norc"
+
+Skip loading zshrc:
+mise en \-s "zsh \-f"
 .RE
 .SH "MISE ENV"
 Export env vars to activate mise a single time
@@ -2702,6 +3009,15 @@ Print help
 .TP
 \fB<TOOL@VERSION>\fR
 Tool(s) to include in addition to those in config, e.g. node@20
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+eval "$(mise env \-s bash)"
+eval "$(mise env \-s zsh)"
+mise env \-s fish | source
+execx($(mise env \-s xonsh))
+.RE
 .SH "MISE EXEC"
 Execute a command with tool(s) set
 
@@ -2778,6 +3094,25 @@ Tool(s) to load e.g.: node@20 python@3.10
 .TP
 \fB<COMMAND>\fR
 Command string to execute (same as \-\-command)
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise exec node@20 \-\- node ./app.js  # launch app.js using node\-20.x
+mise x node@20 \-\- node ./app.js     # shorter alias
+.RE
+.PP
+Specify command as a string:
+.PP
+.RS 4
+mise exec node@20 python@3.11 \-\-command "node \-v && python \-V"
+.RE
+.PP
+Run a command in a different directory:
+.PP
+.RS 4
+mise x \-C /path/to/project node@20 \-\- node ./app.js
+.RE
 .SH "MISE FMT"
 Format mise.toml
 
@@ -2799,6 +3134,14 @@ Read config from stdin and write its formatted version into stdout
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise fmt
+mise fmt \-\-check
+cat mise.toml | mise fmt \-\-stdin
+.RE
 .SH "MISE GENERATE"
 Generate files for various tools/services
 .PP
@@ -2833,6 +3176,16 @@ Print help
 .TP
 \fB<PATH>\fR
 Path to the config file to create
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise generate config             # generate mise.toml interactively
+mise generate config .mise.toml  # generate a specific file
+mise generate config \-g          # generate the global config file
+mise generate config \-y          # skip interactive editor
+mise generate config \-n          # preview without writing
+.RE
 .SH "MISE GENERATE DEVCONTAINER"
 Generate a devcontainer to execute mise
 .PP
@@ -2855,6 +3208,12 @@ Write to .devcontainer/devcontainer.json
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise generate devcontainer
+.RE
 .SH "MISE GENERATE GIT-PRE-COMMIT"
 Generate a git pre\-commit hook
 
@@ -2896,6 +3255,19 @@ mise flags to embed in the generated hook, given after `\-\-`
 These are inserted between `mise` and `run`, so the hook carries the same context you
 would pass on the command line. Useful when the config is not at the repository root,
 since git runs hooks from the top level: `\-\- \-C subdir` makes the hook find it.
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise generate git\-pre\-commit \-\-write \-\-task=pre\-commit
+git commit \-m "feat: add new feature" # runs `mise run pre\-commit`
+.RE
+.PP
+config lives in a subdirectory, so the hook has to change into it first
+.PP
+.RS 4
+mise generate git\-pre\-commit \-\-write \-\- \-C subdir
+.RE
 .SH "MISE GENERATE GITHUB-ACTION"
 Generate a GitHub Action workflow file
 
@@ -2924,6 +3296,15 @@ The name of the workflow to generate
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+Preview before writing the workflow
+.PP
+.RS 4
+mise generate github\-action \-\-task=ci
+mise generate github\-action \-\-write \-\-task=ci
+git add .github/workflows/ci.yml
+.RE
 .SH "MISE GENERATE INSTALL-SCRIPT"
 Generate a script to download+execute mise
 
@@ -2966,6 +3347,20 @@ carry two files.
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise generate install\-script \-\-write ./bin/mise
+\&./bin/mise install                                    # downloads mise to .mise if not already installed
+.RE
+.PP
+add a launcher for contributors who clone the project on Windows
+.PP
+.RS 4
+mise generate install\-script \-\-write ./bin/mise \-\-windows  # also writes bin/mise.cmd
+\&.\\bin\\mise.cmd install
+.RE
 .SH "MISE GENERATE TASK-DOCS"
 Generate documentation for tasks in a project
 .PP
@@ -3002,6 +3397,19 @@ Documentation style: `simple` lists tasks, `detailed` documents each task's usag
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise generate task\-docs \-\-style detailed
+mise generate task\-docs \-\-output TASKS.md
+.RE
+.PP
+README.md must already contain both mise\-tasks marker comments
+.PP
+.RS 4
+mise generate task\-docs \-\-inject \-\-output README.md
+.RE
 .SH "MISE GENERATE TASK-STUBS"
 Generate shims to run mise tasks
 
@@ -3049,6 +3457,15 @@ normally committed.
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise tasks add test \-\- echo 'running tests'
+mise generate task\-stubs
+\&./bin/test
+running tests
+.RE
 .SH "MISE GENERATE TOOL-STUB"
 Generate a tool stub for HTTP\-based tools
 
@@ -3141,6 +3558,38 @@ Print help
 .TP
 \fB<OUTPUT>\fR
 Output file path for the tool stub
+\fBExamples:\fR
+.PP
+Download and inspect a real archive to detect its binary and checksum
+.PP
+.RS 4
+mise generate tool\-stub ./bin/node \-\-platform\-url https://nodejs.org/dist/v22.17.1/node\-v22.17.1\-darwin\-arm64.tar.gz
+.RE
+.PP
+Add a Linux artifact to the same stub
+.PP
+.RS 4
+mise generate tool\-stub ./bin/node \-\-platform\-url linux\-x64:https://nodejs.org/dist/v22.17.1/node\-v22.17.1\-linux\-x64.tar.gz
+.RE
+.PP
+Create a draft for your own artifact without fetching the placeholder URL
+.PP
+.RS 4
+mise generate tool\-stub ./bin/my\-tool \-\-url https://example.com/my\-tool.tar.gz \-\-skip\-download
+# Replace the URL with a real artifact before fetching metadata or executing it
+.RE
+.PP
+Fill missing checksums and sizes in an existing stub
+.PP
+.RS 4
+mise generate tool\-stub ./bin/node \-\-fetch
+.RE
+.PP
+For an existing registry\-backed stub, resolve and embed version/platform lock data
+.PP
+.RS 4
+mise generate tool\-stub ./bin/registry\-node \-\-lock \-\-version 22
+.RE
 .SH "MISE IMPLODE"
 Remove the mise CLI and all related data
 
@@ -3183,6 +3632,16 @@ Print help
 .TP
 \fB<PATH>\fR
 Path to the config file to create
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise edit             # edit mise.toml interactively
+mise edit .mise.toml  # edit a specific file
+mise edit \-g          # edit the global config file
+mise edit \-y          # skip interactive editor
+mise edit \-n          # preview without writing
+.RE
 .SH "MISE INSTALL"
 Install a tool version
 
@@ -3273,6 +3732,17 @@ Print help
 .TP
 \fB<TOOL@VERSION>\fR
 Tool(s) to install e.g.: node@20
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise install node@20.0.0  # install a specific node version
+mise install node@20      # install the latest node 20.x
+mise install node         # install the version specified in mise.toml
+mise install              # install everything specified in mise.toml
+mise install \-\-include\-lazy # also install tools configured for lazy installation
+mise install \-\-include\-task\-tools # also install tools required by tasks
+.RE
 .SH "MISE INSTALL-INTO"
 Install a tool version to a specific path
 
@@ -3293,6 +3763,14 @@ Tool to install e.g.: node@20
 .TP
 \fB<PATH>\fR
 Path to install the tool into
+\fBExamples:\fR
+.PP
+install node@20.0.0 into ./mynode
+.PP
+.RS 4
+mise install\-into node@20.0.0 ./mynode && ./mynode/bin/node \-v
+v20.0.0
+.RE
 .SH "MISE LATEST"
 Get the latest available version of a tool
 
@@ -3322,6 +3800,26 @@ Tool to get the latest version of
 .TP
 \fB<ASDF_VERSION>\fR
 The version prefix to use when querying the latest version same as the first argument after the "@" used for asdf compatibility
+\fBExamples:\fR
+.PP
+Resolve a Node 20 release, or the backend's latest stable release
+.PP
+.RS 4
+mise latest node@20
+mise latest node
+.RE
+.PP
+Restrict resolution to installed versions
+.PP
+.RS 4
+mise latest node@20 \-\-installed
+.RE
+.PP
+Exclude releases newer than the requested age
+.PP
+.RS 4
+mise latest node \-\-minimum\-release\-age 30d
+.RE
 .SH "MISE LINK"
 Symlink a tool version into mise
 
@@ -3346,6 +3844,22 @@ Tool name and version to create a symlink for
 \fB<PATH>\fR
 The local path to the tool version
 e.g.: ~/.nvm/versions/node/v20.0.0
+\fBExamples:\fR
+.PP
+build node\-20.0.0 with node\-build and link it into mise
+.PP
+.RS 4
+node\-build 20.0.0 ~/.nodes/20.0.0
+mise link node@20.0.0 ~/.nodes/20.0.0
+.RE
+.PP
+have mise use the node version provided by Homebrew
+.PP
+.RS 4
+brew install node
+mise link node@brew "$(brew \-\-prefix node)"
+mise use node@brew
+.RE
 .SH "MISE LOCK"
 Update lockfile checksums and URLs for all specified platforms
 
@@ -3431,6 +3945,20 @@ Print help
 Tool(s) to update in lockfile
 e.g.: node python
 If not specified, all configured and task\-specific tools will be updated
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise lock                       # create or refresh the project lockfile
+mise lock node python           # update only node and python
+mise lock \-\-platform linux\-x64  # update only linux\-x64 platform
+mise lock \-\-dry\-run             # show what would be updated
+mise lock \-\-bump                # re\-resolve selectors like "latest" or "20" to the latest matching versions
+mise lock \-\-bump \-\-dry\-run \-\-json   # list available updates as JSON without writing
+mise lock \-\-minimum\-release\-age 2024\-01\-01   # lock latest/fuzzy versions released before 2024\-01\-01
+mise lock \-\-local               # update mise.local.lock for local configs
+mise lock \-\-global              # update only global config lockfiles
+.RE
 .SH "MISE LS"
 List installed and active tool versions
 
@@ -3496,6 +4024,43 @@ Print help
 .TP
 \fB<INSTALLED_TOOL>\fR
 Only show tool versions from [TOOL]
+\fBExamples:\fR
+.PP
+Show installed versions and requests from active configuration
+.PP
+.RS 4
+mise ls
+.RE
+.PP
+Show only versions requested by the current configuration
+.PP
+.RS 4
+mise ls \-\-current
+.RE
+.PP
+Find configured versions that need installation
+.PP
+.RS 4
+mise ls \-\-missing
+.RE
+.PP
+Machine\-readable output: an object keyed by tool name
+.PP
+.RS 4
+mise ls \-\-json
+.RE
+.PP
+With a tool argument, JSON output is an array of its version records
+.PP
+.RS 4
+mise ls node \-\-json
+.RE
+.PP
+Include references from every tracked configuration file
+.PP
+.RS 4
+mise ls \-\-all\-sources
+.RE
 .SH "MISE LS-REMOTE"
 List tool versions available to install
 
@@ -3545,6 +4110,16 @@ Tool to get versions for
 \fB<PREFIX>\fR
 The version prefix to use when querying the latest version
 same as the first argument after the "@"
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise ls\-remote node
+mise ls\-remote node@20
+mise ls\-remote node 20
+mise ls\-remote node \-\-minimum\-release\-age 30d
+mise ls\-remote github:cli/cli \-\-json
+.RE
 .SH "MISE MCP"
 Run Model Context Protocol (MCP) server
 
@@ -3579,6 +4154,13 @@ Cursor, or other tools that support the Model Context Protocol.
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+Start from the project directory; an MCP client handles the protocol exchange
+.PP
+.RS 4
+mise \-C /path/to/project mcp
+.RE
 .SH "MISE OCI"
 [experimental] Build OCI container images from a mise.toml
 
@@ -3646,6 +4228,16 @@ Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+Run on a Linux host with the target architecture
+.PP
+.RS 4
+mise oci build
+mise oci build \-\-from ubuntu:24.04 \-\-tag myorg/dev:latest \-o ./img
+skopeo inspect oci:./img
+mise oci run \-\-image\-dir ./img \-\- /bin/sh
+.RE
 .SH "MISE OCI PUSH"
 [experimental] Build an OCI image and push it to a registry
 
@@ -3714,6 +4306,20 @@ Print help
 .TP
 \fB<REF>\fR
 Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
+\fBExamples:\fR
+.PP
+Build and push to GHCR:
+.PP
+.RS 4
+mise oci push ghcr.io/me/devenv:latest
+.RE
+.PP
+Push an image built earlier:
+.PP
+.RS 4
+mise oci build \-o ./img
+mise oci push \-\-image\-dir ./img ghcr.io/me/devenv:v1
+.RE
 .SH "MISE OCI RUN"
 [experimental] Build an OCI image from the current mise.toml and run a command in it
 
@@ -3787,6 +4393,25 @@ Print help
 .TP
 \fB<CMD>\fR
 Command and arguments to run inside the container (after `\-\-`)
+\fBExamples:\fR
+.PP
+Build the current mise.toml and drop into bash:
+.PP
+.RS 4
+mise oci run \-it \-\- bash
+.RE
+.PP
+Run a one\-shot command with env + volume (note: `\-v` is reserved for \-\-verbose, so use `\-\-volume`):
+.PP
+.RS 4
+mise oci run \-e DEBUG=1 \-\-volume "$PWD:/work" \-w /work \-\- npm test
+.RE
+.PP
+Re\-use a previously built layout (skip the build step):
+.PP
+.RS 4
+mise oci build \-o ./img && mise oci run \-\-image\-dir ./img \-\- node \-e 'console.log(process.version)'
+.RE
 .SH "MISE PACKSLIP"
 The signers mise accepts packslips from
 
@@ -3884,6 +4509,35 @@ Print help
 Tool(s) to show outdated versions for
 e.g.: node@20 python@3.10
 If not specified, all tools in global and local configs will be shown
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise outdated
+Plugin  Requested  Current  Latest
+python  3.11       3.11.0   3.11.1
+node    20         20.0.0   20.1.0
+.RE
+.PP
+.PP
+.RS 4
+mise outdated node
+Plugin  Requested  Current  Latest
+node    20         20.0.0   20.1.0
+.RE
+.PP
+.PP
+.RS 4
+mise outdated \-\-json
+{"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
+.RE
+.PP
+.PP
+.RS 4
+mise outdated \-\-local
+Plugin  Requested  Current  Latest
+node    20         20.0.0   20.1.0
+.RE
 .SH "MISE PATRONS"
 Show the individuals supporting mise as Patron\-tier members
 
@@ -3906,6 +4560,14 @@ Bypass the local cache and re\-fetch
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise patrons
+mise patrons \-J
+mise patrons \-\-refresh
+.RE
 .SH "MISE PLUGINS"
 Manage plugins
 .PP
@@ -3978,6 +4640,25 @@ Can specify multiple plugins: `mise plugins install cmake poetry`
 .TP
 \fB<GIT_URL>\fR
 The git url of the plugin
+\fBExamples:\fR
+.PP
+Install an asdf\-compatible plugin from its upstream repository
+.PP
+.RS 4
+mise plugins install postgres https://github.com/smashedtoatoms/asdf\-postgres.git
+.RE
+.PP
+Use a local plugin repository at a tag you created
+.PP
+.RS 4
+mise plugins install my\-tool file:///path/to/mise\-my\-tool#v1.0.0
+.RE
+.PP
+Install missing plugins that have configured shorthands
+.PP
+.RS 4
+mise plugins install \-\-all
+.RE
 .SH "MISE PLUGINS LINK"
 Symlink a plugin into mise
 
@@ -4003,6 +4684,24 @@ e.g.: cmake, poetry
 \fB<DIR>\fR
 The local path to the plugin
 e.g.: ./vfox\-cmake
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise plugins link my\-tool ./mise\-my\-tool
+.RE
+.PP
+Alternative: infer the name "my\-tool"
+.PP
+.RS 4
+mise plugins link ./mise\-my\-tool
+.RE
+.PP
+List versions through the linked plugin
+.PP
+.RS 4
+mise ls\-remote my\-tool
+.RE
 .SH "MISE PLUGINS LS"
 List installed plugins
 
@@ -4041,6 +4740,15 @@ to show core and user plugins
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise plugins ls
+mise plugins ls \-\-urls
+mise plugins ls \-\-core \-\-user
+mise plugins ls \-\-outdated
+.RE
 .SH "MISE PLUGINS LS-REMOTE"
 List all available remote plugins
 
@@ -4059,6 +4767,12 @@ Only show the name of each plugin, without the "*" marking installed plugins
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise plugins ls\-remote
+.RE
 .SH "MISE PLUGINS UNINSTALL"
 Remove a plugin
 .PP
@@ -4080,6 +4794,12 @@ Print help
 .TP
 \fB<PLUGIN>\fR
 Plugin(s) to remove
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise plugins uninstall my\-tool
+.RE
 .SH "MISE PLUGINS UPDATE"
 Update a plugin to the latest version
 
@@ -4102,6 +4822,14 @@ Print help
 .TP
 \fB<PLUGIN>\fR
 Plugin(s) to update
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise plugins update              # update all installed plugins
+mise plugins update my\-tool      # update one Git plugin
+mise plugins update my\-tool#main # select an upstream ref
+.RE
 .SH "MISE DEPS"
 [experimental] Manage project dependencies
 
@@ -4152,6 +4880,19 @@ Print help
 .TP
 \fB<PROVIDER>\fR
 Provider to operate on (runs only this provider, or use with \-\-explain)
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise deps                    # Install all project dependencies
+mise deps install            # Same as bare `mise deps`
+mise deps install \-\-force    # Force reinstall even if fresh
+mise deps install \-\-dry\-run  # Show what would run
+mise deps \-\-monorepo         # Install deps from explicit monorepo config roots
+mise deps add npm:react      # Add a dependency
+mise deps add \-D npm:vitest  # Add a dev dependency
+mise deps remove npm:lodash  # Remove a dependency
+.RE
 .SH "MISE DEPS ADD"
 Add a dependency
 
@@ -4278,6 +5019,14 @@ Print help
 .TP
 \fB<INSTALLED_TOOL>\fR
 Prune only these tools
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise prune \-\-dry\-run
+rm \-rf ~/.local/share/mise/installs/node/20.0.0
+rm \-rf ~/.local/share/mise/installs/node/20.0.1
+.RE
 .SH "MISE REGISTRY"
 List available tools to install
 
@@ -4314,6 +5063,20 @@ Print help
 .TP
 \fB<NAME>\fR
 Show only the specified tool's full name
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise registry
+mise registry node
+core:node
+.RE
+.PP
+.PP
+.RS 4
+mise registry \-\-backend aqua
+mise registry \-\-json
+.RE
 .SH "MISE RESHIM"
 Create shims for the executables of currently installed tools
 
@@ -4347,6 +5110,14 @@ Rebuild the system shim farm
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise reshim
+~/.local/share/mise/shims/node \-v
+v20.0.0
+.RE
 .SH "MISE RUN"
 Run task(s)
 
@@ -4548,6 +5319,37 @@ e.g.: 30s, 5m
 Show the elapsed time after each task completes
 
 Set `MISE_TASK_TIMINGS=1` to show it by default
+\fBExamples:\fR
+.PP
+Run the "lint" task, defined either in mise.toml or as a standalone script.
+.PP
+.RS 4
+mise run lint
+.RE
+.PP
+Force the "build" task to run even if its sources are up to date.
+.PP
+.RS 4
+mise run \-\-force build
+.RE
+.PP
+Run "test" with stdin/stdout/stderr all connected to the current terminal. This forces `\-\-jobs=1` to prevent interleaving of output.
+.PP
+.RS 4
+mise run \-\-raw test
+.RE
+.PP
+Run the "lint", "test", and "check" tasks in parallel.
+.PP
+.RS 4
+mise run lint ::: test ::: check
+.RE
+.PP
+Run multiple tasks, each with its own arguments.
+.PP
+.RS 4
+mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+.RE
 .SH "MISE SEARCH"
 Search for tools in the registry
 
@@ -4580,6 +5382,30 @@ Print help
 .TP
 \fB<NAME>\fR
 The tool to search for
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise search jq
+Tool  Description
+jq    Command\-line JSON processor. https://github.com/jqlang/jq
+jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+jiq   jid on jq \- interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
+gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
+.RE
+.PP
+.PP
+.RS 4
+mise search \-\-interactive
+Tool
+Search a tool
+❯ jq    Command\-line JSON processor. https://github.com/jqlang/jq
+  jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+  jiq   jid on jq \- interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
+  gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
+/jq
+esc clear filter • enter confirm
+.RE
 .SH "MISE SELF-UPDATE"
 Update mise itself
 
@@ -4685,6 +5511,62 @@ Print help
 \fB<ENV_VAR>\fR
 Environment variable(s) to set
 e.g.: NODE_ENV=production
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise set NODE_ENV=production
+.RE
+.PP
+.PP
+.RS 4
+mise set NODE_ENV
+production
+.RE
+.PP
+.PP
+.RS 4
+mise set \-E staging NODE_ENV=staging
+# creates or modifies mise.staging.toml
+.RE
+.PP
+.PP
+.RS 4
+mise set
+key       value       source
+NODE_ENV  production  ~/.config/mise/config.toml
+.RE
+.PP
+.PP
+.RS 4
+mise set \-\-prompt PASSWORD
+Enter value for PASSWORD: [hidden input]
+
+Multiline Values (\-\-stdin):
+.RE
+.PP
+.PP
+.RS 4
+cat private.key | mise set \-\-stdin MY_KEY
+.RE
+.PP
+.PP
+.RS 4
+printf "line1\\nline2" | mise set \-\-stdin MY_KEY
+
+[experimental] Age Encryption:
+.RE
+.PP
+.PP
+.RS 4
+mise set \-\-age\-encrypt API_KEY=secret
+.RE
+.PP
+.PP
+.RS 4
+mise set \-\-age\-encrypt \-\-prompt API_KEY
+Enter value for API_KEY: [hidden input]
+.RE
 .SH "MISE SETTINGS"
 Manage settings
 .PP
@@ -4721,6 +5603,31 @@ Name of setting
 .TP
 \fB<VALUE>\fR
 Setting value to set
+\fBExamples:\fR
+.PP
+list explicitly configured settings
+.PP
+.RS 4
+mise settings
+.RE
+.PP
+get the value of the setting "always_keep_download"
+.PP
+.RS 4
+mise settings always_keep_download
+.RE
+.PP
+set the value of the setting "always_keep_download" to "true"
+.PP
+.RS 4
+mise settings always_keep_download=true
+.RE
+.PP
+set the value of the setting "node.mirror_url" to "https://npmmirror.com/mirrors/node/"
+.PP
+.RS 4
+mise settings node.mirror_url https://npmmirror.com/mirrors/node/
+.RE
 .SH "MISE SETTINGS ADD"
 Append a value to an array setting
 
@@ -4745,6 +5652,12 @@ The setting to set
 .TP
 \fB<VALUE>\fR
 The value to set (optional if provided as KEY=VALUE)
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise settings add disable_hints python_multi
+.RE
 .SH "MISE SETTINGS GET"
 Show a current setting
 
@@ -4768,6 +5681,13 @@ Print help
 .TP
 \fB<SETTING>\fR
 The setting to show
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise settings get jobs
+mise settings get python.compile
+.RE
 .SH "MISE SETTINGS LS"
 Show current settings
 
@@ -4806,6 +5726,14 @@ Print help
 .TP
 \fB<SETTING>\fR
 Name of setting
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise settings ls
+mise settings ls \-\-all
+mise settings ls python \-\-json\-extended
+.RE
 .SH "MISE SETTINGS SET"
 Add/update a setting
 
@@ -4831,6 +5759,12 @@ The setting to set
 .TP
 \fB<VALUE>\fR
 The value to set (optional if provided as KEY=VALUE)
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise settings set jobs 4
+.RE
 .SH "MISE SETTINGS UNSET"
 Clear a setting
 
@@ -4851,6 +5785,12 @@ Print help
 .TP
 \fB<KEY>\fR
 The setting to remove
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise settings unset jobs
+.RE
 .SH "MISE SHELL"
 Set a tool version for the current shell session
 
@@ -4885,6 +5825,14 @@ Print help
 .TP
 \fB<TOOL@VERSION>\fR
 Tool(s) to use
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise shell node@20
+node \-v
+v20.0.0
+.RE
 .SH "MISE SSH"
 Open an SSH session, optionally borrowing read\-only GitHub access
 .PP
@@ -4976,6 +5924,13 @@ Print help
 .TP
 \fB<shell_alias>\fR
 The alias to show
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise shell\-alias get ll
+ls \-la
+.RE
 .SH "MISE SHELL-ALIAS LS"
 List shell aliases
 
@@ -4992,6 +5947,15 @@ Don't show table header
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise shell\-alias ls
+alias    command
+ll       ls \-la
+gs       git status
+.RE
 .SH "MISE SHELL-ALIAS SET"
 Add/update a shell alias
 
@@ -5012,6 +5976,13 @@ The alias name
 .TP
 \fB<COMMAND>\fR
 The command to run (optional if provided as ALIAS=COMMAND)
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise shell\-alias set ll "ls \-la"
+mise shell\-alias set gs "git status"
+.RE
 .SH "MISE SHELL-ALIAS UNSET"
 Remove a shell alias
 
@@ -5029,6 +6000,12 @@ Print help
 .TP
 \fB<shell_alias>\fR
 The alias to remove
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise shell\-alias unset ll
+.RE
 .SH "MISE SKILLS"
 Agent skills the active tools ship, from their packslips
 
@@ -5061,6 +6038,14 @@ Output in JSON format
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise skills ls
+Skill  Tool                        Version  Path
+mise   packslip:github.com/jdx/mise  2026.9.1  ~/.local/share/mise/installs/.../skills/mise
+.RE
 .SH "MISE SKILLS SYNC"
 Link the active tools' skills where an agent looks for them
 
@@ -5091,6 +6076,19 @@ Remove links mise made for skills that are no longer active
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+into the project's .claude/skills, or wherever skills.dir says
+.PP
+.RS 4
+mise skills sync
+.RE
+.PP
+somewhere else, and drop links for skills that are no longer active
+.PP
+.RS 4
+mise skills sync \-\-dir .agents/skills \-\-prune
+.RE
 .SH "MISE SPONSORS"
 Show the companies sponsoring mise and the jdx.dev open source tools
 .PP
@@ -5134,6 +6132,14 @@ Get tool versions from nvm
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+brew install node@20
+mise sync node \-\-brew
+mise use \-g node@20 # uses Homebrew\-provided node
+.RE
 .SH "MISE SYNC PYTHON"
 Symlink python versions installed by pyenv or uv into mise
 
@@ -5154,6 +6160,23 @@ Sync tool versions with uv (2\-way sync)
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+pyenv install 3.11.0
+mise sync python \-\-pyenv
+mise use \-g python@3.11.0 # uses pyenv\-provided python
+.RE
+.PP
+.PP
+.RS 4
+uv python install 3.11.0
+mise install python@3.10.0
+mise sync python \-\-uv
+mise x python@3.11.0 \-\- python \-V # uses uv\-provided python
+uv run \-p 3.10.0 \-\- python \-V # uses mise\-provided python
+.RE
 .SH "MISE SYNC RUBY"
 Symlink ruby versions installed by Homebrew into mise
 .PP
@@ -5167,6 +6190,14 @@ Get tool versions from Homebrew
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+brew install ruby
+mise sync ruby \-\-brew
+mise ls ruby \-\-installed # inspect linked versions, then select one with mise use
+.RE
 .SH "MISE TASKS"
 Manage tasks
 .PP
@@ -5284,6 +6315,12 @@ Name of the task to add
 .TP
 \fB<RUN>\fR
 Command to run, given after `\-\-`
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise tasks add pre\-commit \-\-depends "test" \-\-depends "render" \-\- echo pre\-commit
+.RE
 .SH "MISE TASKS DEPS"
 Display a tree visualization of a dependency graph
 
@@ -5316,6 +6353,31 @@ Print help
 Tasks to show dependencies for
 Can specify multiple tasks by separating with spaces
 e.g.: mise tasks deps lint test check
+\fBExamples:\fR
+.PP
+Show dependencies for all tasks
+.PP
+.RS 4
+mise tasks deps
+.RE
+.PP
+Show dependencies for the "lint", "test" and "check" tasks
+.PP
+.RS 4
+mise tasks deps lint test check
+.RE
+.PP
+Show dependencies in DOT format
+.PP
+.RS 4
+mise tasks deps \-\-dot
+.RE
+.PP
+Collapse repeated dependencies
+.PP
+.RS 4
+mise tasks deps \-\-compact
+.RE
 .SH "MISE TASKS EDIT"
 Edit a task with $EDITOR
 
@@ -5336,6 +6398,13 @@ Print help
 .TP
 \fB<TASK>\fR
 Task to edit
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise tasks edit build
+mise tasks edit test
+.RE
 .SH "MISE TASKS GRAPH"
 [experimental] Inspect the workspace project graph
 .PP
@@ -5355,6 +6424,25 @@ Do not print table headers
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+Inspect projects and their dependency edges
+.PP
+.RS 4
+mise tasks graph
+.RE
+.PP
+Emit the project graph as JSON
+.PP
+.RS 4
+mise tasks graph \-\-json
+.RE
+.PP
+Explain where inferred projects and task fields came from
+.PP
+.RS 4
+mise tasks graph \-\-explain
+.RE
 .SH "MISE TASKS INFO"
 Get information about a task
 .PP
@@ -5373,6 +6461,19 @@ Print help
 .TP
 \fB<TASK>\fR
 Name of the task to get information about
+\fBExamples:\fR
+.PP
+Inspect the selected definition and its source file
+.PP
+.RS 4
+mise tasks info test
+.RE
+.PP
+Get the full structured task definition
+.PP
+.RS 4
+mise tasks info test \-\-json
+.RE
 .SH "MISE TASKS LS"
 List available tasks
 
@@ -5426,6 +6527,12 @@ Sort order. Default is asc.
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise tasks ls
+.RE
 .SH "MISE TASKS RUN"
 Run task(s)
 
@@ -5627,6 +6734,37 @@ e.g.: 30s, 5m
 Show the elapsed time after each task completes
 
 Set `MISE_TASK_TIMINGS=1` to show it by default
+\fBExamples:\fR
+.PP
+Run the "lint" task, defined either in mise.toml or as a standalone script.
+.PP
+.RS 4
+mise run lint
+.RE
+.PP
+Force the "build" task to run even if its sources are up to date.
+.PP
+.RS 4
+mise run \-\-force build
+.RE
+.PP
+Run "test" with stdin/stdout/stderr all connected to the current terminal. This forces `\-\-jobs=1` to prevent interleaving of output.
+.PP
+.RS 4
+mise run \-\-raw test
+.RE
+.PP
+Run the "lint", "test", and "check" tasks in parallel.
+.PP
+.RS 4
+mise run lint ::: test ::: check
+.RE
+.PP
+Run multiple tasks, each with its own arguments.
+.PP
+.RS 4
+mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+.RE
 .SH "MISE TASKS VALIDATE"
 Validate tasks for common errors and issues
 .PP
@@ -5649,6 +6787,31 @@ Print help
 \fB<TASKS>\fR
 Tasks to validate
 If not specified, validates all tasks
+\fBExamples:\fR
+.PP
+Validate all tasks
+.PP
+.RS 4
+mise tasks validate
+.RE
+.PP
+Validate specific tasks
+.PP
+.RS 4
+mise tasks validate build test
+.RE
+.PP
+Output results as JSON
+.PP
+.RS 4
+mise tasks validate \-\-json
+.RE
+.PP
+Only show errors (skip warnings)
+.PP
+.RS 4
+mise tasks validate \-\-errors\-only
+.RE
 .SH "MISE TEST-TOOL"
 Test that a tool installs and runs
 
@@ -5687,6 +6850,12 @@ Print help
 .TP
 \fB<TOOLS>\fR
 Tool(s) to test
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise test\-tool ripgrep
+.RE
 .SH "MISE TOKEN"
 Display git provider tokens mise will use
 .PP
@@ -5721,6 +6890,25 @@ Forgejo hostname
 .RS
 \fIDefault: \fRcodeberg.org
 .RE
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise token forgejo
+codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)
+.RE
+.PP
+.PP
+.RS 4
+mise token forgejo \-\-unmask
+codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)
+.RE
+.PP
+.PP
+.RS 4
+mise token forgejo forgejo.mycompany.com
+forgejo.mycompany.com: (none)
+.RE
 .SH "MISE TOKEN GITHUB"
 Display the GitHub token mise will use for a given host
 
@@ -5754,6 +6942,31 @@ GitHub hostname
 .RS
 \fIDefault: \fRgithub.com
 .RE
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise token github
+github.com: ghp_…xxxx (source: GITHUB_TOKEN)
+.RE
+.PP
+.PP
+.RS 4
+mise token github \-\-unmask
+github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)
+.RE
+.PP
+.PP
+.RS 4
+mise token github github.mycompany.com
+github.mycompany.com: (none)
+.RE
+.PP
+.PP
+.RS 4
+mise token github \-\-oauth \-\-refresh
+github.com: gho_…xxxx (source: GitHub OAuth)
+.RE
 .SH "MISE TOKEN GITLAB"
 Display the GitLab token mise will use for a given host
 
@@ -5777,6 +6990,25 @@ Print help
 GitLab hostname
 .RS
 \fIDefault: \fRgitlab.com
+.RE
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise token gitlab
+gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)
+.RE
+.PP
+.PP
+.RS 4
+mise token gitlab \-\-unmask
+gitlab.com: glpat\-xxxxxxxxxxxx (source: GITLAB_TOKEN)
+.RE
+.PP
+.PP
+.RS 4
+mise token gitlab gitlab.mycompany.com
+gitlab.mycompany.com: (none)
 .RE
 .SH "MISE TOOL"
 Show information about a tool
@@ -5817,6 +7049,18 @@ Print help
 .TP
 \fB<TOOL>\fR
 Tool name to get information about
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise tool node
+Backend:            core
+Installed Versions: 20.0.0 22.0.0
+Active Version:     20.0.0
+Requested Version:  20
+Config Source:      ~/.config/mise/mise.toml
+Tool Options:       [none]
+.RE
 .SH "MISE TOOL-STUB"
 Execute a tool stub
 
@@ -5911,6 +7155,19 @@ Print help
 .TP
 \fB<CONFIG_FILE>\fR
 The config file whose trust status to change
+\fBExamples:\fR
+.PP
+trusts ~/some_dir/mise.toml
+.PP
+.RS 4
+mise trust ~/some_dir/mise.toml
+.RE
+.PP
+trusts mise.toml in the current or parent directory
+.PP
+.RS 4
+mise trust
+.RE
 .SH "MISE UNINSTALL"
 Remove installed tool versions
 
@@ -5940,6 +7197,25 @@ Print help
 .TP
 \fB<INSTALLED_TOOL@VERSION>\fR
 Tool(s) to remove
+\fBExamples:\fR
+.PP
+uninstall a specific version
+.PP
+.RS 4
+mise uninstall node@18.0.0
+.RE
+.PP
+uninstall the current node version (if only one version is installed)
+.PP
+.RS 4
+mise uninstall node
+.RE
+.PP
+uninstall every installed version of node
+.PP
+.RS 4
+mise uninstall \-\-all node
+.RE
 .SH "MISE UNSET"
 Remove environment variable(s) from the config file
 
@@ -5968,6 +7244,19 @@ Print help
 \fB<ENV_KEY>\fR
 Environment variable(s) to remove
 e.g.: NODE_ENV
+\fBExamples:\fR
+.PP
+Remove NODE_ENV from the selected project config
+.PP
+.RS 4
+mise unset NODE_ENV
+.RE
+.PP
+Remove NODE_ENV from the global config
+.PP
+.RS 4
+mise unset NODE_ENV \-g
+.RE
 .SH "MISE UNTRUST"
 Remove explicit trust for a config
 .PP
@@ -6029,6 +7318,31 @@ Print help
 .TP
 \fB<INSTALLED_TOOL@VERSION>\fR
 Tool(s) to remove
+\fBExamples:\fR
+.PP
+remove node@18.0.0 from mise.toml and uninstall it
+.PP
+.RS 4
+mise unuse node@18.0.0
+.RE
+.PP
+remove it from the global config instead
+.PP
+.RS 4
+mise unuse \-g node@18.0.0
+.RE
+.PP
+remove the literal node@20 request from mise.local.toml
+.PP
+.RS 4
+mise unuse \-\-env local node@20
+.RE
+.PP
+remove the literal node@20 request from mise.staging.toml
+.PP
+.RS 4
+mise unuse \-\-env staging node@20
+.RE
 .SH "MISE UPGRADE"
 Upgrade outdated tools
 
@@ -6125,6 +7439,61 @@ Print help
 Tool(s) to upgrade
 e.g.: node@20 python@3.10
 If not specified, all current tools will be upgraded
+\fBExamples:\fR
+.PP
+Upgrades node to the latest version matching the range in mise.toml
+.PP
+.RS 4
+mise upgrade node
+.RE
+.PP
+Upgrades node to the latest version and bumps the version in mise.toml
+.PP
+.RS 4
+mise upgrade node \-\-bump
+.RE
+.PP
+Upgrades all configured tools within their current requests
+.PP
+.RS 4
+mise upgrade
+.RE
+.PP
+Upgrades all tools to the latest versions and bumps the version in mise.toml
+.PP
+.RS 4
+mise upgrade \-\-bump
+.RE
+.PP
+Just print what would be done, don't actually do it
+.PP
+.RS 4
+mise upgrade \-\-dry\-run
+.RE
+.PP
+Upgrades node and python within their current requests
+.PP
+.RS 4
+mise upgrade node python
+.RE
+.PP
+Upgrade all tools except go
+.PP
+.RS 4
+mise upgrade \-\-exclude go
+.RE
+.PP
+Show a multiselect menu to choose which tools to upgrade
+.PP
+.RS 4
+mise upgrade \-\-interactive
+.RE
+.PP
+Only upgrade tools defined in local mise.toml, not global ones
+.PP
+.RS 4
+mise upgrade \-\-local
+.RE
 .SH "MISE USE"
 Install a tool and add it to mise.toml
 
@@ -6224,6 +7593,49 @@ If no version is specified, it defaults to @latest
 Tool options can be set with this syntax:
 
     mise use "cargo:ripgrep[features=pcre2]"
+\fBExamples:\fR
+.PP
+run with no arguments to use the interactive selector
+.PP
+.RS 4
+mise use
+.RE
+.PP
+set the current version of node to 20.x in the selected project config will write the fuzzy version (e.g.: 20)
+.PP
+.RS 4
+mise use node@20
+.RE
+.PP
+run a command after installing a tool
+.PP
+.RS 4
+mise use \-\-postinstall "mbx setup \-\-defaults" mr\-boxington
+.RE
+.PP
+associate a different postinstall command with each tool
+.PP
+.RS 4
+mise use \-\-postinstall "setup\-a" tool\-a \-\-postinstall "setup\-b" tool\-b
+.RE
+.PP
+set the current version of node to 20.x in ~/.config/mise/config.toml will write the precise version (e.g.: 20.0.0)
+.PP
+.RS 4
+mise use \-g \-\-pin node@20
+.RE
+.PP
+writes mise.local.toml (preserving .mise.local.toml if it already exists)
+.PP
+.RS 4
+mise use \-\-env local node@20
+.RE
+.PP
+writes mise.staging.toml (loaded with MISE_ENV=staging)
+.PP
+.RS 4
+mise use \-\-env staging node@20
+.RE
 .SH "MISE VERSION"
 Display the version of mise
 
@@ -6241,6 +7653,15 @@ Print the version information in JSON format
 .TP
 \fB\-h, \-\-help\fR
 Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise version
+mise \-\-version
+mise \-v
+mise \-V
+.RE
 .SH "MISE WATCH"
 Run task(s) and rerun them when files change
 
@@ -6799,6 +8220,33 @@ Defaults to `default`
 .TP
 \fB<ARGS>\fR
 Task and arguments to run
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise watch build
+Runs the "build" task and reruns it whenever one of its sources changes.
+The task's "sources" determine which files are watched.
+.RE
+.PP
+.PP
+.RS 4
+mise watch build \-\-glob 'src/**/*.rs'
+Runs the "build" task, watching the files matched by the glob instead of
+the task's "sources".
+.RE
+.PP
+.PP
+.RS 4
+mise watch build \-\-clear
+Extra arguments are passed to watchexec. See `watchexec \-\-help` for details.
+.RE
+.PP
+.PP
+.RS 4
+mise watch serve \-\-watch src \-\-exts rs \-\-restart
+Starts an API server, watching "*.rs" files in "./src", and restarts the server when they change.
+.RE
 .SH "MISE WHERE"
 Display the installation path for a tool
 
@@ -6824,6 +8272,21 @@ Otherwise, shows the current, active installed version.
 the version prefix to use when querying the latest version
 same as the first argument after the "@"
 used for asdf compatibility
+\fBExamples:\fR
+.PP
+Show the latest installed node 20.x Errors if no matching version is installed
+.PP
+.RS 4
+mise where node@20
+/home/jdx/.local/share/mise/installs/node/20.0.0
+.RE
+.PP
+Show the install directory of the active node, or of the latest installed version if no config requests node Errors if no matching version is installed
+.PP
+.RS 4
+mise where node
+/home/jdx/.local/share/mise/installs/node/20.0.0
+.RE
 .SH "MISE WHICH"
 Show the path a tool's executable resolves to
 
@@ -6853,5 +8316,126 @@ Print help
 .TP
 \fB<BIN_NAME>\fR
 The executable to look up
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise which node
+/home/username/.local/share/mise/installs/node/20.0.0/bin/node
+.RE
+.PP
+.PP
+.RS 4
+mise which node \-\-plugin
+node
+.RE
+.PP
+.PP
+.RS 4
+mise which node \-\-version
+20.0.0
+.RE
+.SH EXAMPLES
+Install a specific node version
+.PP
+.RS 4
+mise install node@20.0.0
+.RE
+.PP
+Install a version matching a prefix
+.PP
+.RS 4
+mise install node@20
+.RE
+.PP
+Install the node version defined in config
+.PP
+.RS 4
+mise install node
+.RE
+.PP
+Install all plugins/tools defined in config
+.PP
+.RS 4
+mise install
+.RE
+.PP
+Install something via cargo
+.PP
+.RS 4
+mise install cargo:ripgrep
+.RE
+.PP
+Install something via npm
+.PP
+.RS 4
+mise install npm:prettier
+.RE
+.PP
+Use node\-20.x in current project
+.PP
+.RS 4
+mise use node@20
+.RE
+.PP
+Use node\-20.x as default
+.PP
+.RS 4
+mise use \-g node@20
+.RE
+.PP
+Use latest node in current directory
+.PP
+.RS 4
+mise use node@latest
+.RE
+.PP
+Show a menu to upgrade tools
+.PP
+.RS 4
+mise up \-\-interactive
+.RE
+.PP
+Run npm install with config loaded into PATH
+.PP
+.RS 4
+mise x \-\- npm install
+.RE
+.PP
+Run node app.js with config and node\-20.x on PATH
+.PP
+.RS 4
+mise x node@20 \-\- node app.js
+.RE
+.PP
+Set NODE_ENV=production in config
+.PP
+.RS 4
+mise set NODE_ENV=production
+.RE
+.PP
+Run build tasks
+.PP
+.RS 4
+mise run build
+.RE
+.PP
+Run build tasks repeatedly when files change
+.PP
+.RS 4
+mise watch build
+.RE
+.PP
+Show settings in use
+.PP
+.RS 4
+mise settings
+.RE
+.PP
+Disable color by modifying global config file
+.PP
+.RS 4
+mise settings color=0
+.RE
 .SH AUTHOR
 Jeff Dickey <@jdx>

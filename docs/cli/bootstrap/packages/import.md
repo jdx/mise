@@ -26,7 +26,7 @@ Pass `--all` to import every linked formula, including dependencies.
   **Aliases:** `--file`
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise bootstrap packages import --manager brew

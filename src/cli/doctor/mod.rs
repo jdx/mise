@@ -31,7 +31,15 @@ use strum::IntoEnumIterator;
 
 /// Check mise installation for possible problems
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "dr",
+    verbatim_doc_comment,
+    example(
+        r###"mise doctor
+mise doctor --json
+mise doctor path --full"###
+    )
+)]
 pub(crate) struct Doctor {
     #[usage(subcommand)]
     subcommand: Option<Commands>,
@@ -1279,14 +1287,6 @@ fn aqua_registry_count_str() -> String {
         aqua_registry_count()
     )
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise doctor</bold>
-    [WARN] plugin node is not installed
-"#
-);
 
 /// An install directory that is there but holds nothing.
 ///

@@ -9,7 +9,13 @@ use std::path::MAIN_SEPARATOR_STR;
 ///
 /// The task will be created as a standalone script if it does not already exist.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise tasks edit build
+mise tasks edit test"###
+    )
+)]
 pub(super) struct TasksEdit {
     /// Task to edit
     #[usage()]
@@ -59,11 +65,3 @@ fn default_task() -> String {
         "#
     )
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise tasks edit build</bold>
-    $ <bold>mise tasks edit test</bold>
-"#
-);

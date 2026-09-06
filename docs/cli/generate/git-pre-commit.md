@@ -32,12 +32,15 @@ For more advanced pre-commit functionality, see mise's sister project: <https://
   **Default:** `pre-commit`
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise generate git-pre-commit --write --task=pre-commit
-$ git commit -m "feat: add new feature" # runs `mise run pre-commit`
+mise generate git-pre-commit --write --task=pre-commit
+git commit -m "feat: add new feature" # runs `mise run pre-commit`
+```
 
-# config lives in a subdirectory, so the hook has to change into it first
-$ mise generate git-pre-commit --write -- -C subdir
+config lives in a subdirectory, so the hook has to change into it first
+
+```
+mise generate git-pre-commit --write -- -C subdir
 ```

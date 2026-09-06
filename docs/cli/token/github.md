@@ -22,18 +22,24 @@ authentication issues. The token is masked by default.
 - **`--unmask`** — Show the full unmasked token
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise token github
+mise token github
 github.com: ghp_…xxxx (source: GITHUB_TOKEN)
+```
 
-$ mise token github --unmask
+```
+mise token github --unmask
 github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)
+```
 
-$ mise token github github.mycompany.com
+```
+mise token github github.mycompany.com
 github.mycompany.com: (none)
+```
 
-$ mise token github --oauth --refresh
+```
+mise token github --oauth --refresh
 github.com: gho_…xxxx (source: GitHub OAuth)
 ```

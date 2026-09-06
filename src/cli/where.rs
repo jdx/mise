@@ -9,7 +9,19 @@ use crate::toolset::ToolsetBuilder;
 ///
 /// The tool must be installed for this to work.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise where node@20
+/home/jdx/.local/share/mise/installs/node/20.0.0"###,
+        help = r###"Show the latest installed node 20.x Errors if no matching version is installed"###
+    ),
+    example(
+        r###"mise where node
+/home/jdx/.local/share/mise/installs/node/20.0.0"###,
+        help = r###"Show the install directory of the active node, or of the latest installed version if no config requests node Errors if no matching version is installed"###
+    )
+)]
 pub(crate) struct Where {
     /// Tool to look up
     /// e.g.: ruby@3
@@ -59,19 +71,3 @@ impl Where {
         }
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # Show the latest installed node 20.x
-    # Errors if no matching version is installed
-    $ <bold>mise where node@20</bold>
-    /home/jdx/.local/share/mise/installs/node/20.0.0
-
-    # Show the install directory of the active node, or of the latest
-    # installed version if no config requests node
-    # Errors if no matching version is installed
-    $ <bold>mise where node</bold>
-    /home/jdx/.local/share/mise/installs/node/20.0.0
-"#
-);

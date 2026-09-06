@@ -7,7 +7,25 @@ use eyre::bail;
 /// Shows which token source mise would use, useful for debugging
 /// authentication issues. The token is masked by default.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise token github
+github.com: ghp_…xxxx (source: GITHUB_TOKEN)"###
+    ),
+    example(
+        r###"mise token github --unmask
+github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)"###
+    ),
+    example(
+        r###"mise token github github.mycompany.com
+github.mycompany.com: (none)"###
+    ),
+    example(
+        r###"mise token github --oauth --refresh
+github.com: gho_…xxxx (source: GitHub OAuth)"###
+    )
+)]
 pub(crate) struct Github {
     /// GitHub hostname
     #[usage(default = "github.com")]
@@ -72,20 +90,3 @@ impl Github {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise token github</bold>
-    github.com: ghp_…xxxx (source: GITHUB_TOKEN)
-
-    $ <bold>mise token github --unmask</bold>
-    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)
-
-    $ <bold>mise token github github.mycompany.com</bold>
-    github.mycompany.com: (none)
-
-    $ <bold>mise token github --oauth --refresh</bold>
-    github.com: gho_…xxxx (source: GitHub OAuth)
-"#
-);

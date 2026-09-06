@@ -4,7 +4,15 @@ use strum::IntoEnumIterator;
 
 /// List built-in backends
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    visible_alias = "list",
+    example(
+        r###"mise backends ls
+mise plugins ls"###,
+        help = r###"Installed plugin availability and built-in backends are separate lists"###
+    ),
+    verbatim_doc_comment
+)]
 pub(super) struct BackendsLs {}
 
 impl BackendsLs {
@@ -18,22 +26,3 @@ impl BackendsLs {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise backends ls</bold>
-    aqua
-    asdf
-    cargo
-    core
-    dotnet
-    gem
-    go
-    npm
-    pipx
-    spm
-    ubi
-    vfox
-"#
-);

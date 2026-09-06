@@ -34,7 +34,18 @@ use std::path::PathBuf;
 ///
 /// Tools are installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`.
 #[derive(Debug, Default, usage_rs::Args)]
-#[usage(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "i",
+    verbatim_doc_comment,
+    example(
+        r###"mise install node@20.0.0  # install a specific node version
+mise install node@20      # install the latest node 20.x
+mise install node         # install the version specified in mise.toml
+mise install              # install everything specified in mise.toml
+mise install --include-lazy # also install tools configured for lazy installation
+mise install --include-task-tools # also install tools required by tasks"###
+    )
+)]
 pub(crate) struct Install {
     /// Tool(s) to install
     /// e.g.: node@20
@@ -707,18 +718,6 @@ fn extend_toolset(toolset: &mut Toolset, additional: &[ToolRequest]) {
         }
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise install node@20.0.0</bold>  # install a specific node version
-    $ <bold>mise install node@20</bold>      # install the latest node 20.x
-    $ <bold>mise install node</bold>         # install the version specified in mise.toml
-    $ <bold>mise install</bold>              # install everything specified in mise.toml
-    $ <bold>mise install --include-lazy</bold> # also install tools configured for lazy installation
-    $ <bold>mise install --include-task-tools</bold> # also install tools required by tasks
-"#
-);
 
 #[cfg(test)]
 mod tests {

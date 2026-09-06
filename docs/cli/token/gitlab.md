@@ -19,15 +19,19 @@ authentication issues. The token is masked by default.
 - **`--unmask`** — Show the full unmasked token
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise token gitlab
+mise token gitlab
 gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)
+```
 
-$ mise token gitlab --unmask
+```
+mise token gitlab --unmask
 gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)
+```
 
-$ mise token gitlab gitlab.mycompany.com
+```
+mise token gitlab gitlab.mycompany.com
 gitlab.mycompany.com: (none)
 ```

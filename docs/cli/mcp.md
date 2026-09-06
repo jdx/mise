@@ -33,37 +33,10 @@ Cursor, or other tools that support the Model Context Protocol.
 ## Flags
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Start from the project directory; an MCP client handles the protocol exchange
 
 ```
-# Start the MCP server (typically used by AI assistant tools)
-$ mise mcp
-
-# Example integration with Claude Desktop (add to claude_desktop_config.json):
-{
-  "mcpServers": {
-    "mise": {
-      "command": "mise",
-      "args": ["mcp"],
-      "env": {}
-    }
-  }
-}
-
-# Interactive testing with JSON-RPC commands:
-$ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | mise mcp
-
-# Resources you can query:
-- mise://tools - List active tools
-- mise://tools?include_inactive=true - List all installed tools
-- mise://tasks - List all tasks
-- mise://env - List environment variables
-- mise://config - Show configuration info
-
-# Tools available:
-- list_commands - Every mise command and what running it does
-  Example: {"include_hidden": false}
-- install_tool - Install a tool (not yet implemented)
-- run_task - Execute a mise task with optional arguments
-  Example: {"task": "build", "args": ["--verbose"]}
+mise -C /path/to/project mcp
 ```

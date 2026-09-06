@@ -32,7 +32,7 @@ tasks will override the global ones if they have the same name.
   **Choices:** `asc`, `desc`
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise tasks ls

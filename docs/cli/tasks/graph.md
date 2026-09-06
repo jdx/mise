@@ -13,15 +13,22 @@
 - **`--no-header`** — Do not print table headers
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Inspect projects and their dependency edges
 
 ```
-# Inspect projects and their dependency edges
-$ mise tasks graph
+mise tasks graph
+```
 
-# Emit the project graph as JSON
-$ mise tasks graph --json
+Emit the project graph as JSON
 
-# Explain where inferred projects and task fields came from
-$ mise tasks graph --explain
+```
+mise tasks graph --json
+```
+
+Explain where inferred projects and task fields came from
+
+```
+mise tasks graph --explain
 ```

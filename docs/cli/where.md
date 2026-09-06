@@ -18,17 +18,18 @@ The tool must be installed for this to work.
 ## Flags
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Show the latest installed node 20.x Errors if no matching version is installed
 
 ```
-# Show the latest installed node 20.x
-# Errors if no matching version is installed
-$ mise where node@20
+mise where node@20
 /home/jdx/.local/share/mise/installs/node/20.0.0
+```
 
-# Show the install directory of the active node, or of the latest
-# installed version if no config requests node
-# Errors if no matching version is installed
-$ mise where node
+Show the install directory of the active node, or of the latest installed version if no config requests node Errors if no matching version is installed
+
+```
+mise where node
 /home/jdx/.local/share/mise/installs/node/20.0.0
 ```

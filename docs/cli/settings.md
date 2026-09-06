@@ -21,6 +21,32 @@ Manage settings
 - **`--json-extended`** — Output in JSON format with sources
 - **`-h --help`** — Print help
 
+## Examples
+
+list explicitly configured settings
+
+```
+mise settings
+```
+
+get the value of the setting "always_keep_download"
+
+```
+mise settings always_keep_download
+```
+
+set the value of the setting "always_keep_download" to "true"
+
+```
+mise settings always_keep_download=true
+```
+
+set the value of the setting "node.mirror_url" to "<https://npmmirror.com/mirrors/node/>"
+
+```
+mise settings node.mirror_url https://npmmirror.com/mirrors/node/
+```
+
 ## Subcommands
 
 - [`mise settings add [-l --local] <SETTING> [VALUE]`](/cli/settings/add.md)
@@ -28,18 +54,3 @@ Manage settings
 - [`mise settings ls [FLAGS] [SETTING]`](/cli/settings/ls.md)
 - [`mise settings set [-l --local] <SETTING> [VALUE]`](/cli/settings/set.md)
 - [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.md)
-
-Examples:
-```
-# list all settings
-$ mise settings
-
-# get the value of the setting "always_keep_download"
-$ mise settings always_keep_download
-
-# set the value of the setting "always_keep_download" to "true"
-$ mise settings always_keep_download=true
-
-# set the value of the setting "node.mirror_url" to "https://npmmirror.com/mirrors/node/"
-$ mise settings node.mirror_url https://npmmirror.com/mirrors/node/
-```

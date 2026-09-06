@@ -13,7 +13,7 @@ Show the changes needed to apply dotfiles from `[dotfiles]`
 ## Flags
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
 mise bootstrap dotfiles diff

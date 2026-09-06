@@ -24,12 +24,16 @@ By default, this command modifies `mise.toml` in the current directory.
 - **`-g --global`** — Use the global config file
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Remove NODE_ENV from the selected project config
 
 ```
-# Remove NODE_ENV from the current directory's config
-$ mise unset NODE_ENV
+mise unset NODE_ENV
+```
 
-# Remove NODE_ENV from the global config
-$ mise unset NODE_ENV -g
+Remove NODE_ENV from the global config
+
+```
+mise unset NODE_ENV -g
 ```

@@ -22,9 +22,9 @@ Display a value from a mise.toml file
 - **`--system`** — Read the system config file.
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise toml get tools.python
+mise config get tools.python
 3.12
 ```

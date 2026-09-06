@@ -9,7 +9,20 @@ use crate::env;
 /// The new shell has the tools and environment variables from the config loaded.
 /// Unlike an activated shell, changing directories does not update the environment.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise en .
+node -v
+v20.0.0
+
+Skip loading bashrc:
+mise en -s "bash --norc"
+
+Skip loading zshrc:
+mise en -s "zsh -f""###
+    )
+)]
 pub(crate) struct En {
     /// Directory to start the shell in
     #[usage(default = ".", verbatim_doc_comment, value_hint = usage_rs::ValueHint::DirPath)]
@@ -50,18 +63,3 @@ impl En {
         .await
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise en .</bold>
-    $ <bold>node -v</bold>
-    v20.0.0
-
-    Skip loading bashrc:
-    $ <bold>mise en -s "bash --norc"</bold>
-
-    Skip loading zshrc:
-    $ <bold>mise en -s "zsh -f"</bold>
-"#
-);

@@ -20,7 +20,15 @@ use crate::ui::prompt;
 /// target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 /// under `dotfiles.root` unless `--source` is provided.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap dotfiles add ~/.zshrc
+mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
+mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
+mise bootstrap dotfiles add --changed"###
+    )
+)]
 pub(crate) struct DotfilesAdd {
     /// Targets to add or update
     #[usage(value_name = "TARGET")]
@@ -714,16 +722,6 @@ fn rollback_add(
     }
     Ok(())
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles add ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles add --mode copy ~/.config/starship.toml</bold>
-    $ <bold>mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig</bold>
-    $ <bold>mise bootstrap dotfiles add --changed</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

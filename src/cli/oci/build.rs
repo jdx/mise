@@ -7,6 +7,20 @@ use crate::config::Settings;
 use crate::file::display_path;
 use crate::oci::{BuildOptions, LayerOwner, OciCopy};
 
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Notes:</underline></bold>
+
+    - The image only contains tools from the project's mise config (and
+      any configs at-or-below the project root). Tools from
+      `~/.config/mise/config.toml` are not included; pass --include-global
+      to package them too.
+    - asdf and vfox plugins are not supported in v1; use a different backend
+      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.
+    - The host mise binary is embedded at /usr/local/bin/mise by default;
+      build on the same OS/arch as your target image (or pass --no-mise).
+"#
+);
+
 /// [experimental] Build an OCI image from the current mise.toml
 ///
 /// Each tool version becomes its own content-addressable OCI layer. Bumping a
@@ -17,7 +31,17 @@ use crate::oci::{BuildOptions, LayerOwner, OciCopy};
 ///
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    after_long_help = AFTER_LONG_HELP,
+    example(
+        r###"mise oci build
+mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img
+skopeo inspect oci:./img
+mise oci run --image-dir ./img -- /bin/sh"###,
+        help = r###"Run on a Linux host with the target architecture"###
+    )
+)]
 pub(super) struct Build {
     /// Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)
     #[usage(long, value_name = "HOST_PATH:IMAGE_PATH")]
@@ -96,31 +120,3 @@ impl Build {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    Build with defaults (debian:bookworm-slim base):
-    $ <bold>mise oci build</bold>
-
-    Build with a specific base image and tag:
-    $ <bold>mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img</bold>
-
-    Inspect the result with skopeo:
-    $ <bold>skopeo inspect oci:./mise-oci</bold>
-
-    Push to a registry:
-    $ <bold>mise oci push --image-dir ./mise-oci ghcr.io/me/dev:latest</bold>
-
-<bold><underline>Notes:</underline></bold>
-
-    - The image only contains tools from the project's mise config (and
-      any configs at-or-below the project root). Tools from
-      `~/.config/mise/config.toml` are not included; pass --include-global
-      to package them too.
-    - asdf and vfox plugins are not supported in v1; use a different backend
-      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.
-    - The host mise binary is embedded at /usr/local/bin/mise by default;
-      build on the same OS/arch as your target image (or pass --no-mise).
-"#
-);

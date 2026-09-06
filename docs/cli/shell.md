@@ -26,10 +26,10 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
 - **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise shell node@20
-$ node -v
+mise shell node@20
+node -v
 v20.0.0
 ```

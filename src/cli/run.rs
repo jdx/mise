@@ -59,7 +59,26 @@ use tokio::sync::Mutex;
     visible_alias = "r",
     verbatim_doc_comment,
     disable_help_flag = true,
-    after_long_help = AFTER_LONG_HELP,
+    example(
+        r###"mise run lint"###,
+        help = r###"Run the "lint" task, defined either in mise.toml or as a standalone script."###
+    ),
+    example(
+        r###"mise run --force build"###,
+        help = r###"Force the "build" task to run even if its sources are up to date."###
+    ),
+    example(
+        r###"mise run --raw test"###,
+        help = r###"Run "test" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."###
+    ),
+    example(
+        r###"mise run lint ::: test ::: check"###,
+        help = r###"Run the "lint", "test", and "check" tasks in parallel."###
+    ),
+    example(
+        r###"mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2"###,
+        help = r###"Run multiple tasks, each with its own arguments."###
+    ),
     unknown_flags = "value"
 )]
 pub(crate) struct Run {
@@ -1490,27 +1509,6 @@ fn render_usage_help(spec: &usage::Spec, args: &[String]) -> String {
     let cmd = usage_command_for_args(spec, args);
     usage::docs::cli::render_help(spec, cmd, true)
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # Run the "lint" task, defined either in mise.toml or as a standalone script.
-    $ <bold>mise run lint</bold>
-
-    # Force the "build" task to run even if its sources are up to date.
-    $ <bold>mise run --force build</bold>
-
-    # Run "test" with stdin/stdout/stderr all connected to the current terminal.
-    # This forces `--jobs=1` to prevent interleaving of output.
-    $ <bold>mise run --raw test</bold>
-
-    # Run the "lint", "test", and "check" tasks in parallel.
-    $ <bold>mise run lint ::: test ::: check</bold>
-
-    # Run multiple tasks, each with its own arguments.
-    $ <bold>mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

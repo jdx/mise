@@ -16,7 +16,18 @@ use tokio::{sync::Semaphore, task::JoinSet};
 ///
 /// For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    example(
+        r###"mise registry
+mise registry node
+core:node"###
+    ),
+    example(
+        r###"mise registry --backend aqua
+mise registry --json"###
+    ),
+    verbatim_doc_comment
+)]
 pub(crate) struct Registry {
     /// Show only the specified tool's full name
     name: Option<String>,
@@ -227,19 +238,6 @@ async fn to_output(tool: RegistryToolOutputArgs, security: bool) -> RegistryTool
         security,
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise registry</bold>
-    node    core:node
-    poetry  asdf:mise-plugins/mise-poetry
-    ubi     cargo:ubi-cli
-
-    $ <bold>mise registry poetry</bold>
-    asdf:mise-plugins/mise-poetry
-"#
-);
 
 fn filter_enabled(short: &str) -> bool {
     let settings = Settings::get();

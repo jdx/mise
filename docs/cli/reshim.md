@@ -31,10 +31,10 @@ currently active in mise.toml.
 - **`--system`** — Rebuild the system shim farm
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-$ mise reshim
-$ ~/.local/share/mise/shims/node -v
+mise reshim
+~/.local/share/mise/shims/node -v
 v20.0.0
 ```

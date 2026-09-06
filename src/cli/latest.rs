@@ -11,7 +11,22 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 ///
 /// Supports prefixes such as `node@20` to get the latest version of node 20.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise latest node@20
+mise latest node"###,
+        help = r###"Resolve a Node 20 release, or the backend's latest stable release"###
+    ),
+    example(
+        r###"mise latest node@20 --installed"###,
+        help = r###"Restrict resolution to installed versions"###
+    ),
+    example(
+        r###"mise latest node --minimum-release-age 30d"###,
+        help = r###"Exclude releases newer than the requested age"###
+    )
+)]
 pub(crate) struct Latest {
     /// Tool to get the latest version of
     #[usage(value_name = "TOOL@VERSION")]
@@ -99,16 +114,3 @@ impl Latest {
         resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise latest node@20</bold>  # get the latest version of node 20
-    20.0.0
-
-    $ <bold>mise latest node</bold>     # get the latest stable version of node
-    20.0.0
-
-    $ <bold>mise latest node --minimum-release-age 2024-01-01</bold>  # latest stable node released before 2024-01-01
-"#
-);

@@ -28,7 +28,17 @@ use eyre::Result;
 ///
 /// Customize status output with `status` settings.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(r#"eval "$(mise activate bash)""#, help = "Activate mise in Bash."),
+    example(r#"eval "$(mise activate zsh)""#, help = "Activate mise in Zsh."),
+    example("mise activate fish | source", help = "Activate mise in Fish."),
+    example("execx($(mise activate xonsh))", help = "Activate mise in Xonsh."),
+    example(
+        "(&mise activate pwsh) | Out-String | Invoke-Expression",
+        help = "Activate mise in PowerShell."
+    )
+)]
 pub(crate) struct Activate {
     /// Shell type to generate the script for
     #[usage(value_enum)]
@@ -346,17 +356,6 @@ fn are_dirs_first_in_paths(paths: &[PathBuf], dirs: &[&Path]) -> bool {
 fn is_dir_not_in_nix(dir: &Path) -> bool {
     !canonicalize_or_self(dir).starts_with("/nix/")
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>eval "$(mise activate bash)"</bold>
-    $ <bold>eval "$(mise activate zsh)"</bold>
-    $ <bold>mise activate fish | source</bold>
-    $ <bold>execx($(mise activate xonsh))</bold>
-    $ <bold>(&mise activate pwsh) | Out-String | Invoke-Expression</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

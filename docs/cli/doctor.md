@@ -12,13 +12,14 @@ Check mise installation for possible problems
 - **`-J --json`** — Output in JSON format
 - **`-h --help`** — Print help
 
+## Examples
+
+```
+mise doctor
+mise doctor --json
+mise doctor path --full
+```
+
 ## Subcommands
 
 - [`mise doctor path [-f --full]`](/cli/doctor/path.md)
-
-Examples:
-
-```
-$ mise doctor
-[WARN] plugin node is not installed
-```

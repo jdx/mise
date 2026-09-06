@@ -8,7 +8,7 @@ use crate::{config, file};
 ///
 /// This modifies ~/.config/mise/config.toml by default, or the local config with `--local`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(visible_aliases = ["rm", "remove", "delete", "del"], example(r###"mise settings unset jobs"###), verbatim_doc_comment)]
 pub(super) struct SettingsUnset {
     /// The setting to remove
     pub key: String,
@@ -56,10 +56,3 @@ pub(super) fn unset(mut key: &str, local: bool) -> Result<()> {
     }
     Ok(())
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise settings unset idiomatic_version_file</bold>
-"#
-);

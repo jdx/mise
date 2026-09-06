@@ -34,34 +34,40 @@ by a config file (active) whether or not they are installed.
 - **`--prunable`** — List only tools that can be pruned with `mise prune`
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Show installed versions and requests from active configuration
 
 ```
-$ mise ls
-node    20.0.0 ~/src/myapp/.tool-versions latest
-python  3.11.0 ~/.tool-versions           3.10
-python  3.10.0
+mise ls
+```
 
-$ mise ls --current
-node    20.0.0 ~/src/myapp/.tool-versions 20
-python  3.11.0 ~/.tool-versions           3.11.0
+Show only versions requested by the current configuration
 
-$ mise ls --json
-{
-  "node": [
-    {
-      "version": "20.0.0",
-      "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
-      "source": {
-        "type": "mise.toml",
-        "path": "/Users/jdx/mise.toml"
-      }
-    }
-  ],
-  "python": [...]
-}
+```
+mise ls --current
+```
 
-$ mise ls --all-sources
-node    20.0.0  ~/src/myapp/mise.toml  20
-                ~/.config/mise/config.toml  latest
+Find configured versions that need installation
+
+```
+mise ls --missing
+```
+
+Machine-readable output: an object keyed by tool name
+
+```
+mise ls --json
+```
+
+With a tool argument, JSON output is an array of its version records
+
+```
+mise ls node --json
+```
+
+Include references from every tracked configuration file
+
+```
+mise ls --all-sources
 ```

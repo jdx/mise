@@ -89,3 +89,39 @@ impl Usage {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn command_examples_reach_the_spec_and_renderers() {
+        let spec = super::spec();
+        let markdown = usage::docs::markdown::MarkdownRenderer::new(spec.clone());
+        for name in ["activate", "run", "install", "env", "use"] {
+            let cmd = &spec.cmd.subcommands[name];
+            assert!(
+                !cmd.examples.is_empty(),
+                "{name} has no structured examples"
+            );
+            let help = usage::docs::cli::render_help(&spec, cmd, true);
+            assert_eq!(help.matches("Examples:").count(), 1, "{help}");
+            let page = markdown.render_cmd(cmd).unwrap();
+            assert_eq!(page.matches("## Examples").count(), 1, "{page}");
+            for example in &cmd.examples {
+                assert!(!example.code.contains("<bold>"));
+                assert!(!example.code.contains('\u{1b}'));
+                assert!(page.contains(&example.code), "{name}: {}", example.code);
+            }
+        }
+        let reparsed: usage::Spec = spec.to_string().parse().unwrap();
+        assert_eq!(
+            reparsed.cmd.subcommands["run"].examples.len(),
+            spec.cmd.subcommands["run"].examples.len()
+        );
+        assert!(
+            usage::docs::manpage::ManpageRenderer::new(spec)
+                .render()
+                .unwrap()
+                .contains("Examples")
+        );
+    }
+}

@@ -20,12 +20,20 @@ This is used for developing a plugin.
 - **`-f --force`** — Overwrite existing plugin
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
 
 ```
-# essentially just `ln -s ./vfox-cmake ~/.local/share/mise/plugins/cmake`
-$ mise plugins link cmake ./vfox-cmake
+mise plugins link my-tool ./mise-my-tool
+```
 
-# infer plugin name as "cmake"
-$ mise plugins link ./vfox-cmake
+Alternative: infer the name "my-tool"
+
+```
+mise plugins link ./mise-my-tool
+```
+
+List versions through the linked plugin
+
+```
+mise ls-remote my-tool
 ```

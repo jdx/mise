@@ -18,7 +18,18 @@ use crate::dirs;
 /// replaced or, with --prune or the `skills.prune` setting, removed. A real
 /// directory or a link of your own at a skill's name is left alone and reported.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, effect = "write")]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise skills sync"###,
+        help = r###"into the project's .claude/skills, or wherever skills.dir says"###
+    ),
+    example(
+        r###"mise skills sync --dir .agents/skills --prune"###,
+        help = r###"somewhere else, and drop links for skills that are no longer active"###
+    ),
+    effect = "write"
+)]
 pub(super) struct SkillsSync {
     /// The directory to link skills into
     #[usage(long, value_hint = usage_rs::ValueHint::DirPath)]
@@ -81,14 +92,3 @@ impl SkillsSync {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # into the project's .claude/skills, or wherever skills.dir says
-    $ <bold>mise skills sync</bold>
-
-    # somewhere else, and drop links for skills that are no longer active
-    $ <bold>mise skills sync --dir .agents/skills --prune</bold>
-"#
-);

@@ -10,7 +10,15 @@ use crate::ui::prompt;
 /// mise cannot identify as managed. Modified copies, templates, and plain-line
 /// edits require `--force`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap dotfiles unapply
+mise bootstrap dotfiles unapply ~/.zshrc
+mise bootstrap dotfiles unapply --dry-run
+mise bootstrap dotfiles unapply --force --yes"###
+    )
+)]
 pub(crate) struct DotfilesUnapply {
     /// Only unapply these targets
     #[usage(value_name = "TARGET")]
@@ -108,13 +116,3 @@ impl DotfilesUnapply {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles unapply</bold>
-    $ <bold>mise bootstrap dotfiles unapply ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles unapply --dry-run</bold>
-    $ <bold>mise bootstrap dotfiles unapply --force --yes</bold>
-"#
-);

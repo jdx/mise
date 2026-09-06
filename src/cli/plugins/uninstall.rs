@@ -8,7 +8,7 @@ use crate::{backend, plugins};
 
 /// Remove a plugin
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], example(r###"mise plugins uninstall my-tool"###))]
 pub(super) struct PluginsUninstall {
     /// Plugin(s) to remove
     #[usage(verbatim_doc_comment)]
@@ -59,10 +59,3 @@ impl PluginsUninstall {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise plugins uninstall cmake</bold>
-"#
-);

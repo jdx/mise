@@ -16,10 +16,11 @@ Used for building a tool to a directory for use outside of mise
 ## Flags
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+install node@20.0.0 into ./mynode
 
 ```
-# install node@20.0.0 into ./mynode
-$ mise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v
-20.0.0
+mise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v
+v20.0.0
 ```

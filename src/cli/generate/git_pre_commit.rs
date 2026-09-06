@@ -13,7 +13,18 @@ use crate::git::Git;
 ///
 /// For more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    visible_alias = "pre-commit",
+    example(
+        r###"mise generate git-pre-commit --write --task=pre-commit
+git commit -m "feat: add new feature" # runs `mise run pre-commit`"###
+    ),
+    example(
+        r###"mise generate git-pre-commit --write -- -C subdir"###,
+        help = r###"config lives in a subdirectory, so the hook has to change into it first"###
+    )
+)]
 pub(super) struct GitPreCommit {
     /// The task to run when the pre-commit hook is triggered
     #[usage(long, short, default = "pre-commit")]
@@ -87,17 +98,6 @@ exec mise{mise_args} run {task} "$@"
         )
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise generate git-pre-commit --write --task=pre-commit</bold>
-    $ <bold>git commit -m "feat: add new feature"</bold> <dim># runs `mise run pre-commit`</dim>
-
-    <dim># config lives in a subdirectory, so the hook has to change into it first</dim>
-    $ <bold>mise generate git-pre-commit --write -- -C subdir</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {
