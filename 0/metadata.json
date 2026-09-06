@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TX061R0ARGPV70SGT980HD",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T08:22:49.231744Z",
+  "branch": "codex/docs-dotfiles-guide",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dotfiles.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ed0ac62e3c6f",
+  "checkpoint_transcript_start": 4397,
+  "transcript_lines_at_start": 4397,
+  "compact_transcript_start": 551,
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T08:22:48.470256Z",
+    "agent_lines": 64,
+    "agent_removed": 36,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 64,
+    "total_lines_changed": 100,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

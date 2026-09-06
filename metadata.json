@@ -1,0 +1,19 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TX061R0ARGPV70SGT980HD",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-dotfiles-guide",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dotfiles.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
