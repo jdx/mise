@@ -1,4 +1,4 @@
-# apk
+# Alpine packages (apk)
 
 System packages for Alpine Linux.
 
@@ -7,6 +7,19 @@ System packages for Alpine Linux.
 "apk:build-base" = "latest"
 "apk:zlib-dev" = "1.3.1-r2" # version pin
 ```
+
+## Preview and apply
+
+```sh
+mise bootstrap packages status
+mise bootstrap packages apply --manager apk --dry-run
+mise bootstrap packages apply --manager apk
+```
+
+These commands use the active `[bootstrap.packages]` declarations. To add and
+install a package together, use `mise bootstrap packages use apk:build-base`.
+The manager must be available on the host; an explicit `--manager apk` fails
+when it is unavailable.
 
 ## Behavior
 
@@ -20,6 +33,10 @@ System packages for Alpine Linux.
   for the configured packages that are already installed.
 
 ## Version pins
+
+The pinned version above is illustrative. Check `apk policy zlib-dev` on the
+target and select a version available from its configured repositories. A pin
+does not add an old Alpine repository or retrieve archived packages.
 
 A pinned entry (`"apk:zlib-dev" = "1.3.1-r2"`) shows as `version mismatch`
 in `mise bootstrap packages status` when a different version is installed,

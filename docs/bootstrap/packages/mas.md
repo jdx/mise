@@ -1,10 +1,9 @@
-# mas
+# Mac App Store applications (mas)
 
 Mac App Store apps via the [`mas`](https://github.com/mas-cli/mas) CLI.
 
 ```toml
 [bootstrap.packages]
-"brew:mas" = "latest"
 "mas:497799835" = "latest"       # Xcode
 ```
 
@@ -12,20 +11,31 @@ Mac App Store apps via the [`mas`](https://github.com/mas-cli/mas) CLI.
 Homebrew formulae, and casks. The package name is the App Store app ID:
 a numeric ADAM ID accepted by `mas install` and `mas upgrade`.
 
-mise does not install `mas` implicitly. Install it yourself first — the
-`"brew:mas"` entry in the example above does this with the built-in
-[brew manager](/bootstrap/packages/brew.html) — or install it as a normal
-mise tool:
+mise needs the `mas` CLI before it can inspect or install these apps. Install
+it as a mise tool:
 
 ```sh
 mise use -g mas
 ```
+
+Or install it through the built-in [brew manager](/bootstrap/packages/brew.html)
+and ensure the Homebrew prefix's `bin` directory is on `PATH`:
+
+```sh
+mise bootstrap packages use brew:mas
+```
+
+Declaring `mas` in `[tools]` alone does not make a fresh full bootstrap install
+it before the built-in packages phase. Install the CLI first, then apply the App
+Store declarations. Confirm `mas` can see the current user's App Store state
+with `mise exec -- mas list`.
 
 ## Commands
 
 ```sh
 mise bootstrap packages use mas:497799835
 mise bootstrap packages status
+mise bootstrap packages apply --manager mas --dry-run
 mise bootstrap packages apply --manager mas
 mise bootstrap packages upgrade --manager mas
 ```
@@ -47,6 +57,11 @@ Mac App Store operations may require an Apple Account signed in to the App
 Store, macOS authentication, prior purchase/claiming for paid apps, and valid
 Spotlight indexing. mise surfaces errors from `mas` rather than trying to
 purchase or claim apps itself.
+
+App Store version pins are not supported by these commands. `"latest"` accepts
+an installed app; use `mise bootstrap packages upgrade --manager mas` when you
+want mise to request an update. App installation does not by itself accept
+Xcode's license or complete its first-launch setup.
 
 ## Finding IDs
 
