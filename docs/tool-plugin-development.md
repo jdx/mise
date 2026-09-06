@@ -301,8 +301,10 @@ platforms the publisher actually supports and reject others explicitly.
 -- lib/platform.lua
 local M = {}
 function M.archive_platform()
-    local os_name = RUNTIME.osType == "darwin" and "macos" or RUNTIME.osType
-    local arch = RUNTIME.archType == "amd64" and "x64" or RUNTIME.archType
+    local os_names = {darwin = "macos", linux = "linux", windows = "windows"}
+    local arches = {amd64 = "x64", arm64 = "arm64"}
+    local os_name = os_names[RUNTIME.osType] or error("Unsupported OS: " .. RUNTIME.osType)
+    local arch = arches[RUNTIME.archType] or error("Unsupported architecture: " .. RUNTIME.archType)
     return os_name .. "-" .. arch
 end
 return M

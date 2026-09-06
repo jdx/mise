@@ -116,7 +116,12 @@ function PLUGIN:MisePath(ctx)
     if not ctx.options.bin_dir then
         return {}
     end
-    return {file.join_path(ctx.config_root, ctx.options.bin_dir)}
+    local path = file.join_path(ctx.config_root, ctx.options.bin_dir)
+    local metadata = file.stat(path)
+    if not metadata or not metadata.is_dir then
+        return {}
+    end
+    return {path}
 end
 ```
 
@@ -191,6 +196,7 @@ local json = require("json")
 
 function PLUGIN:MiseEnv(ctx)
     local vault_url = ctx.options.vault_url or error("vault_url is required")
+    assert(vault_url:match("^https://"), "vault_url must use HTTPS")
     local secrets_path = ctx.options.secrets_path or error("secrets_path is required")
     local token = os.getenv("VAULT_TOKEN") or error("VAULT_TOKEN is not set")
     local response = http.get({
