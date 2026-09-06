@@ -139,6 +139,24 @@ assert_contains "$OAUTH_ENV mise env --shell bash" "export GITHUB_TOKEN=user-set
 assert_not_contains "$OAUTH_ENV mise env --shell bash" "ghu-native-oauth-token"
 rm mise.toml
 
+# Test 9f: rejected refreshes are quiet during env export, but still warn
+# when credentials are explicitly requested.
+python3 - <<'PYTHON'
+import os
+import re
+from pathlib import Path
+
+cache = Path(os.environ["MISE_STATE_DIR"]) / "github-oauth-tokens.toml"
+contents = cache.read_text()
+contents = re.sub(r'^expires_at = .*$', 'expires_at = "2000-01-01T00:00:00Z"', contents, flags=re.M)
+contents = re.sub(r'^refresh_token = .*$', 'refresh_token = "ghr-rejected"', contents, flags=re.M)
+cache.write_text(contents)
+PYTHON
+assert_not_contains "$OAUTH_ENV mise env --shell bash 2>&1" "GitHub OAuth refresh was rejected"
+assert_not_contains "$OAUTH_ENV mise env --shell bash" "ghu-native-oauth-token"
+assert_not_contains "$OAUTH_ENV mise exec -- true 2>&1" "GitHub OAuth refresh was rejected"
+assert_contains "$OAUTH_ENV mise token github 127.0.0.1 2>&1" "GitHub OAuth refresh was rejected"
+
 kill "$MOCK_PID"
 
 # Test 10: git credential fill

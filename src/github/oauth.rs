@@ -28,6 +28,8 @@ pub(crate) struct TokenRequest {
     /// permissions granted afterwards (e.g. the app was installed on a repo
     /// after authorizing) until it expires hours later.
     pub force_refresh: bool,
+    /// Report refresh failures when credentials are needed, rather than merely exported.
+    pub warn_on_refresh_failure: bool,
 }
 
 impl Default for TokenRequest {
@@ -36,6 +38,7 @@ impl Default for TokenRequest {
             host: "github.com".to_string(),
             allow_device_flow: false,
             force_refresh: false,
+            warn_on_refresh_failure: true,
         }
     }
 }
@@ -100,6 +103,7 @@ pub(crate) fn resolve_token(host: &str) -> Option<String> {
         host: host.to_string(),
         allow_device_flow: false,
         force_refresh: false,
+        ..Default::default()
     })
     .ok()
 }
@@ -140,7 +144,11 @@ pub(crate) fn inject_token_env(env: &mut EnvMap) {
     if env.contains_key(var_name) {
         return;
     }
-    if let Some(token) = resolve_token(&host) {
+    if let Ok(token) = token(TokenRequest {
+        host,
+        warn_on_refresh_failure: false,
+        ..Default::default()
+    }) {
         env.insert(var_name.to_string(), token);
     }
 }
@@ -255,7 +263,11 @@ async fn token_async(req: TokenRequest) -> Result<String> {
             Ok(Some(token)) => return Ok(token),
             Ok(None) => {}
             Err(err) => {
-                log_refresh_error(&err);
+                if req.warn_on_refresh_failure {
+                    log_refresh_error(&err);
+                } else {
+                    debug!("failed to refresh GitHub OAuth token for environment export: {err:#}");
+                }
             }
         }
         if !req.force_refresh && cached.expires_at > chrono::Utc::now() {
@@ -900,6 +912,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
             host: "github.com".to_string(),
             allow_device_flow: false,
             force_refresh: false,
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -911,6 +924,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
             host: "github.com".to_string(),
             allow_device_flow: false,
             force_refresh: true,
+            ..Default::default()
         })
         .await
         .unwrap();
