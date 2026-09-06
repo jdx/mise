@@ -132,6 +132,15 @@ pub(crate) struct Schedule {
     paths: BTreeMap<PathBuf, PathSchedule>,
 }
 
+impl Schedule {
+    /// Forgets every path `keep` rejects: one the configuration no longer
+    /// autosaves (excluded, untracked, switched to manual saving) must not
+    /// be held or carried forward by any later capture.
+    pub(crate) fn retain(&mut self, keep: impl Fn(&Path) -> bool) {
+        self.paths.retain(|path, _| keep(path));
+    }
+}
+
 /// What a save of a path reported: whether its interval changed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Adjustment {

@@ -293,18 +293,21 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                                 &format!("configuration changed; watching {} anchor(s)", installed.len()),
                                 json!({ "anchors": installed.len() }),
                             );
+                            // a path the new configuration no longer
+                            // autosaves (excluded, untracked, switched to
+                            // manual saving) leaves the schedule: no capture
+                            // from now on holds it or carries its old
+                            // version forward as if it were still eligible
+                            capture.schedule.retain(|path| state.relevant(path));
+                            capture.persist_schedule();
                             // the configuration that changed is what this
-                            // capture is for: never held back. A path the
-                            // new configuration no longer autosaves (excluded,
-                            // untracked, switched to manual saving) is not
-                            // held either: nothing carries its old version
-                            // forward as if it were still eligible
+                            // capture is for: never held back
                             let config_dir = state.config_dir.clone();
                             let held: Vec<PathBuf> = capture
                                 .schedule
                                 .held_paths(now)
                                 .into_iter()
-                                .filter(|path| !path.starts_with(&config_dir) && state.relevant(path))
+                                .filter(|path| !path.starts_with(&config_dir))
                                 .collect();
                             if capture.attempt(&state.tracked, "configuration changed", &held) == Attempt::Done {
                                 for path in capture.schedule.due_paths(now).into_iter().chain(

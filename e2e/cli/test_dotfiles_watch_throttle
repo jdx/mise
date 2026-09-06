@@ -119,6 +119,18 @@ assert "$snapshot_of latest .config/hypr/state.json" "$saved_before"
 assert "mise bootstrap dotfiles status --json | jq -r '.history.health.throttled | length'" "1"
 wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].pending_changes // 0') -ge 1 ]]"
 
+# excluding the churning file while it is throttled takes it out of the
+# schedule at once: no later capture holds it or carries its old version
+assert_succeed "mise bootstrap dotfiles exclude '~/.config/hypr/state.json'"
+wait_until "grep -q 'configuration changed' watch.log"
+wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health.throttled | length') -eq 0 ]]"
+assert_not_contains "cat $MISE_STATE_DIR/history/watch-schedule.json" "state.json"
+echo 'monitor=DP-9' >~/.config/hypr/monitors.lua
+wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
+assert_not_contains "mise bootstrap dotfiles history show latest --files" "state.json"
+assert_succeed "mise bootstrap dotfiles include '~/.config/hypr/state.json'"
+wait_until "[[ \$($throttled) -ge 2 ]]"
+
 # a timing setting changed while running takes effect: the interval is
 # clamped to the new maximum
 sed -i.bak 's/max_interval = "8s"/max_interval = "2s"/' "$MISE_CONFIG_DIR/config.toml"
