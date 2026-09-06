@@ -1,0 +1,114 @@
+i was working on this pr on another agent but hit a rate limit, continue the work, see if there are gaps to fill or bugs, also look for pr feedback and failing pr checks and wait for it to settle
+
+
+
+one weird thing i noticed is that it's saying it's "not experimental" which really doesn't need to be stated&#x20;
+
+
+
+Committing and opening the PR now with explicit paths.
+
+The `pkill` pattern matched my own command and killed it. Redoing without it.
+
+The PR is open: [jdx/mise#12895](https://github.com/jdx/mise/pull/12895), `feat(dotfiles): encrypted machine backups`, based on `bootstrap/10-auto-sync` as layer 11 of the stack.
+
+**What shipped**
+
+- `origin set --encrypt-backups [--recipient …]` age-encrypts every recovery ref as one payload per checkpoint. File names, descriptions, and content are hidden. A plaintext header keeps `machines` working without a key.
+- Recipients default to the machine's own age key and SSH public keys. With none present, mise generates an identity at `~/.config/mise/age.txt` and prints the public key.
+- Switching schemes replaces this machine's refs on the origin. Encryption without usable recipients uploads nothing and says so in `status`, `doctor`, and the watcher. Plaintext is never a fallback.
+- Rollback decrypts once into a local plaintext wrapper. Onboarding from a repository whose machines encrypt follows suit.
+- The age code is split into a stable core and the still-experimental `[env]` directive layer. It works with `experimental = false`, and the `age.*` identity settings lost their experimental label.
+
+**Verification**
+
+- 22 new and adjacent unit tests pass. The new e2e test runs with `MISE_EXPERIMENTAL=0` in 13 seconds.
+- 12 neighbouring e2e runs pass, including `test_dotfiles_sync`, `_sync_auto`, `_bootstrap_from_git`, `_rollback*`, and the age env tests.
+- Clippy with `-D warnings` and rustfmt pass.
+
+**Not finished** because you asked me to stop: the `RUSTFLAGS=-D unused` no-default-features check, the settings/doctor unit-test rerun after formatting, and `mise run lint-fix` did not complete. CI will surface anything those would have caught.
+
+**Blog**: the announcement post on [jdx/blog#99](https://github.com/jdx/blog/pull/99) now describes encrypted backups. I pushed one commit, `docs: mention encrypted machine backups`, directly onto its branch from a detached worktree at `~/src/blog-encrypted-backups`, since another session has that branch checked out. No PR comment was posted there.
+
+---
+
+could we add support for encryption with secure enclave and linux equivalents?
+
+---
+
+how does hardware encryption work with syncing? is it just that it doesn't? or could we have multiple consumers with different hardware keys?
+
+---
+
+does this pr include the ability to encrypt files instead of just backups?
+
+---
+
+i think that should be part of this pr, add that
+
+---
+
+i think 1 list is simpler
+
+---
+
+PLEASE IMPLEMENT THIS PLAN:
+# Finish #12895: encrypted sync files and hardware-backed backups
+
+## Configuration and behavior
+
+- Add `encrypt = true` to dotfile policies, defaulting to false. It protects tracked file contents and source files used by copy, symlink, and template entries during publication.
+- Use **one shared public-recipient list**, `[history.encryption].recipients`, for all encrypted synced files. No per-file overrides.
+- Keep backup recipients in machine-local `[history.origin]` configuration. Existing `origin set --recipient` continues to configure backups.
+- Files, rendered outputs, and local recovery history remain plaintext locally.
+- Missing keys or failed decryption pause applying and publishing for the whole setup. Fetching and local history continue. Report which files require unlocking without exposing their contents.
+
+Example:
+
+```toml
+[history.encryption]
+recipients = ["<mac-public-recipient>", "<linux-public-recipient>"]
+
+[dotfiles]
+"~/.config/app/credentials" = { mode = "track", encrypt = true }
+```
+
+## Encrypted file synchronization
+
+- Encrypt selected file contents before building a publication commit. Preserve logical filenames; document that paths, configuration, and recipient public keys remain visible.
+- Store versioned encrypted envelopes at their existing branch paths. Bind each envelope to its logical path and original file mode.
+- Upgrade the setup repository marker when encrypted files are first published. Read existing format-1 repositories; older clients must reject the new format rather than apply ciphertext as files.
+- Decrypt upstream files before the existing reconciliation and conflict logic. Keep plaintext comparison state local and ciphertext publication state separate. Reuse ciphertext when content, mode, and recipients are unchanged so repeated syncs produce no churn.
+- Preserve existing conflict decisions and configuration validation. Never apply ciphertext to a destination or merge ciphertext as text.
+- Encrypt template sources before publication and decrypt before rendering. Reject `encrypt = true` for inline `content`/`block` declarations, whose secrets would otherwise remain in shared configuration; direct users to external sources.
+- Preserve privacy exclusions: encryption does not implicitly enable sharing of private files. Reject overlapping declarations that would publish the same source both encrypted and plaintext.
+- Prevent backup bypasses: files marked encrypted must be excluded from plaintext remote backups, including when rebuilding older checkpoints. They may enter encrypted backups under that machine’s backup recipients.
+- Recipient changes re-encrypt all current encrypted files in one leased branch update. Missing decryption access blocks the change. Explain that changing encryption cannot erase plaintext or revoked recipients’ access from earlier Git history and clones.
+
+## Hardware-backed identities
+
+- Support user-installed age plugins for Secure Enclave and Linux TPM through the existing recipient and identity configuration.
+- Users install plugins and generate hardware identities themselves. Accept software and hardware recipients together; hardware-only lists are allowed with a device-loss warning.
+- Run plugins only from locally accepted configuration, never from arbitrary remote envelope instructions.
+- Interactive sync/pull and rollback may request hardware authorization. Watchers and routine diagnostics remain noninteractive; required authorization pauses progress with an actionable message.
+- Keep local plaintext caches, as selected. Hardware authorization protects decryption of incoming content, not subsequent access to local copies.
+- Report hardware identities as configured but unverified during routine diagnostics. Do not trigger Touch ID or PIN prompts to test restorability.
+
+## Existing backup fixes
+
+- Select a checkpoint before decrypting, so unreadable siblings cannot block restoration.
+- Build all scheme replacements before one atomic push containing updates and deletions. Unsupported servers retain existing refs and return an error.
+- Preserve previously uploaded, retained, eligible history across scheme changes. Record migration success only after successful publication and make interrupted retries safe.
+- Validate checkpoint identity across remote ref, header, and decrypted payload before materialization or cached reuse.
+- Correct software age/SSH restorability checks.
+- Bound backup input to 256 MiB encrypted/compressed, 1 GiB decoded, and 100,000 files; apply matching creation limits. Bound synced-file envelopes to the same byte limits. Validate paths, modes, duplicates, and deserialization before Git writes.
+
+## Validation and delivery
+
+- Test two consumers with different recipients, software recovery without hardware, missing plugins, cancelled authorization, and noninteractive pause/resume.
+- Test encrypted file round trips, templates, symlinks, executable modes, deletion, conflicts, recipient rotation, repeated-sync stability, onboarding, and old-client refusal.
+- Inspect published Git objects to verify protected plaintext cannot escape through sources, backups, metadata, or alternate paths.
+- Add regressions for all existing backup review findings and failure/retry scenarios.
+- Run focused unit/e2e coverage, unfinished no-default-features and settings/doctor checks, formatting, scoped lint fixes, and Clippy. Report real-hardware testing separately from plugin fixtures.
+- Update CLI help, schema, documentation, PR description, and blog #99. Remove “not experimental” wording and replace the claim that the shared branch is entirely plaintext with the selected-file encryption behavior.
+- Continue on the existing PR branch and stacked base. Dispatch build/test CI explicitly, then monitor final-head checks and review threads until settled, addressing valid findings. Refresh GitHub state when its API rate limit clears. Do not merge.

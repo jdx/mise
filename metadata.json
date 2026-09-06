@@ -1,0 +1,61 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1W4VXNW7YCC3S84SHEVA3RD",
+  "strategy": "manual-commit",
+  "branch": "bootstrap/11-encrypted-backups",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".github/workflows/test-impl.yml",
+    "Cargo.lock",
+    "Cargo.toml",
+    "docs/bootstrap/setup.md",
+    "docs/cli/bootstrap/dotfiles/origin/set.md",
+    "docs/dotfiles.md",
+    "docs/history.md",
+    "e2e/cli/test_dotfiles_sync_encrypted",
+    "e2e/cli/test_dotfiles_sync_files_encrypted",
+    "man/man1/mise.1",
+    "mise.usage.kdl",
+    "schema/mise.json",
+    "src/agecrypt.rs",
+    "src/agecrypt/fixtures/age-plugin-se.py",
+    "src/cli/doctor/mod.rs",
+    "src/cli/dotfiles/history/mod.rs",
+    "src/cli/dotfiles/history_status.rs",
+    "src/cli/dotfiles/origin.rs",
+    "src/system/files.rs",
+    "src/system/history/config.rs",
+    "src/system/history/shadow.rs",
+    "src/system/history/store.rs",
+    "src/system/history/sync/apply.rs",
+    "src/system/history/sync/backup.rs",
+    "src/system/history/sync/encrypted.rs",
+    "src/system/history/sync/files.rs",
+    "src/system/history/sync/format.rs",
+    "src/system/history/sync/machines.rs",
+    "src/system/history/sync/mod.rs",
+    "src/system/history/sync/network.rs",
+    "src/system/history/sync/onboard.rs",
+    "src/system/history/sync/origin.rs",
+    "src/system/history/sync/reconcile.rs",
+    "src/system/history/sync/run.rs",
+    "src/system/history/sync/share.rs",
+    "src/system/history/tracked.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 99542,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3557504,
+    "output_tokens": 13067,
+    "api_call_count": 45
+  }
+}
