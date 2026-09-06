@@ -13,3 +13,11 @@ The config directory is kept unless `--config` is passed.
 - **`-n --dry-run`** — List directories that would be removed without actually removing them
 - **`--config`** — Also remove config directory
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Uninstalling mise](/installing-mise.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

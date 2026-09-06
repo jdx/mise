@@ -9,3 +9,11 @@ Show the companies sponsoring mise and the jdx.dev open source tools
 
 ## Flags
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Supporting mise](/about.html).
+- [All commands](/cli/).
+- [Global flags and argument syntax](/cli/#global-flags).

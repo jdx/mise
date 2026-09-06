@@ -7,9 +7,11 @@ use crate::install_before::resolve_cli_minimum_release_age;
 use crate::toolset::{ToolRequest, resolve_sub_base};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
-/// Get the latest available version of a tool
+/// Resolve the latest matching version request for a tool
 ///
-/// Supports prefixes such as `node@20` to get the latest version of node 20.
+/// Supports prefixes such as `node@20`. The selected backend decides how channels,
+/// refs, and non-SemVer versions resolve; "latest" is not a generic sort of strings.
+/// This prints a version without installing it or changing configuration.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,

@@ -13,7 +13,7 @@ use crate::ui::table;
 /// In user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 ///
 ///     [tool_alias.node.versions]
-///     lts = "22.0.0"
+///     project = "20"
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "list",

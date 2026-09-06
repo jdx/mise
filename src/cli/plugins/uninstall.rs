@@ -6,7 +6,10 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
 use crate::{backend, plugins};
 
-/// Remove a plugin
+/// Remove an installed plugin
+///
+/// Tool installations are retained by default. Pass `--purge` to also remove
+/// installs, downloads, and cache associated with the selected plugins.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], example(r###"mise plugins uninstall my-tool"###))]
 pub(super) struct PluginsUninstall {

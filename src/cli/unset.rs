@@ -8,7 +8,8 @@ use crate::config::{ConfigPathOptions, resolve_target_config_path};
 
 /// Remove environment variable(s) from the config file
 ///
-/// By default, this command modifies `mise.toml` in the current directory.
+/// By default, this command selects the nearest configuration directory and
+/// modifies its lowest-precedence TOML file, creating `mise.toml` here if none exists.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,

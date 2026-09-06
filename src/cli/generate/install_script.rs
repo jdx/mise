@@ -27,9 +27,10 @@ use xx::regex;
     )
 )]
 pub(super) struct InstallScript {
-    /// Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)
+    /// Keep mise data and cache in a project-local directory (`.mise` by default)
     ///
-    /// This is necessary if users may use a different version of mise outside the project.
+    /// Use `--localized-dir` to choose its location. This isolates mise state;
+    /// it is not an OS sandbox for commands the generated script runs.
     #[usage(long, short, verbatim_doc_comment)]
     localize: bool,
     /// Specify mise version to fetch

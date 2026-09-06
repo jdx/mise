@@ -13,3 +13,11 @@ Inspect output cache entries for a task
 ## Flags
 - **`-J --json`** — Output in JSON format
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Task output caching](/tasks/caching.html).
+- [`mise cache`](/cli/cache.html).
+- [Global flags and argument syntax](/cli/#global-flags).

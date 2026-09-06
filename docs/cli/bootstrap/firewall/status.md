@@ -11,3 +11,11 @@ Show configured Linux host firewall state
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 when the firewall is not converged
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Host firewall](/bootstrap/firewall.html).
+- [`mise bootstrap firewall`](/cli/bootstrap/firewall.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -3,12 +3,11 @@ use crate::config::Settings;
 use crate::config::settings::SETTINGS_META;
 use eyre::bail;
 
-/// Show a current setting
+/// Show the effective value of a setting
 ///
-/// This is the contents of a single entry in ~/.config/mise/config.toml
-///
-/// Note that aliases are also stored in this file
-/// but managed separately with `mise tool-alias get`
+/// Includes defaults, configuration, and environment overrides. With `--local`,
+/// read only the selected local config's explicit settings; an unset key is an error.
+/// Use `mise config get settings.KEY --file path/to/mise.toml` to inspect one file.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(

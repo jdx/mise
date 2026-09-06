@@ -3,9 +3,12 @@ use eyre::Result;
 use crate::env;
 use crate::shell::{EXAMPLE_SHELL, build_deactivation_script, require_shell};
 
-/// Disable mise for current shell session
+/// Print the script to disable mise in the current shell session
 ///
-/// This can be used to temporarily disable mise in a shell session.
+/// The shell function installed by activation evaluates this output in supported
+/// shells. When calling the executable directly, evaluate or source its output
+/// with the appropriate shell syntax. This does not remove the startup-file line;
+/// new shells will activate mise again.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,

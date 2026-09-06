@@ -10,9 +10,11 @@ use crate::registry::full_to_url;
 use crate::toolset::install_state;
 use crate::ui::table;
 
-/// List installed plugins
+/// List installed external plugins
 ///
-/// Can also show remotely available plugins to install.
+/// Use `--core` for built-in runtimes or `--core --user` for both groups. `--outdated`
+/// queries Git remotes for plugin updates; it does not compare installed tool versions.
+/// Use `mise plugins ls-remote` for registry plugin sources and `mise ls` for tools.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "list",

@@ -165,7 +165,7 @@ Run `mise config` to see what files mise has loaded in order of precedence.
 
 ### Target File for Write Operations
 
-When commands like [`mise use`](/cli/use), [`mise set`](/cli/set), or [`mise unuse`](/cli/unuse) need to write to a config file, they use the **lowest precedence file in the highest precedence directory**. This means:
+When commands like [`mise use`](/cli/use), [`mise set`](/cli/set), or [`mise unset`](/cli/unset) need to write to a config file, they use the **lowest precedence file in the highest precedence directory**. This means:
 
 - If both `mise.toml` and `mise.local.toml` exist, writes go to `mise.toml`
 - If both `mise.toml` and `mise.production.toml` exist, writes go to `mise.toml`
@@ -183,6 +183,11 @@ $ mise set NODE_ENV=production  # writes to mise.toml
 ```
 
 :::
+
+Other commands select files differently:
+
+- [`mise config get`](/cli/config/get) and [`mise config set`](/cli/config/set) default to the **highest-precedence loaded TOML file**, which can be `mise.local.toml`. Use `--file` to choose an existing project file explicitly.
+- [`mise unuse`](/cli/unuse) defaults to the first loaded config that declares any requested tool. A version-qualified argument matches the literal configured request: `node@20` matches `node = "20"`, not `node = "20.0.0"`. Use `--path` to choose the file.
 
 ### `[tools]` - Dev tools
 
@@ -494,7 +499,7 @@ in both mise and nvm. Here are some of the supported idiomatic version files:
 
 Registry-backed tools can also describe how mise should extract versions from structured
 idiomatic files. Registry entries may use the same `version_regex`, `version_json_path`, and
-`version_expr` parsers as the [HTTP backend](/dev-tools/backends/http.html#version-listing).
+`version_expr` parsers as the [HTTP backend](/dev-tools/backends/http.html#version-list-url).
 This lets tools installed through backends such as `aqua:` and `github:` support JSON manifests
 and other tool-specific version files without requiring an asdf or vfox plugin.
 
@@ -626,7 +631,7 @@ Default: `$MISE_CONFIG_DIR/config.toml` (usually `~/.config/mise/config.toml`)
 This is the path to the global config file.
 
 Use this when you want global writes, such as `mise use` or `mise set` run from
-`$HOME`, to target a different config file. [`MISE_DEFAULT_CONFIG_FILENAME`](#mise_default_config_filename)
+`$HOME`, to target a different config file. [`MISE_DEFAULT_CONFIG_FILENAME`](#mise-default-config-filename)
 customizes the default local config filename, not the global config path.
 
 ### `MISE_DEFAULT_CONFIG_FILENAME`

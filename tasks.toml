@@ -69,6 +69,8 @@ run = [
   "mise generate task-docs > tasks.md",
   "rm -rf docs/cli && mkdir -p docs/cli",
   "usage generate markdown -m --out-dir docs/cli --url-prefix /cli --link-extension .html --html-encode --file mise.usage.kdl --replace-pre-with-code-fences",
+  "bun test ./docs/.vitepress/cli-reference.test.ts",
+  "bun docs/.vitepress/cli-reference.ts",
   "markdownlint --fix docs/cli",
 ]
 

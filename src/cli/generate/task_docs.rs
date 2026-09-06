@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 const TASK_PLACEHOLDER_START: &str = "<!-- mise-tasks -->";
 const TASK_PLACEHOLDER_END: &str = "<!-- /mise-tasks -->";
 
-/// Generate documentation for tasks in a project
+/// Generate Markdown documentation for project tasks
+///
+/// Prints to stdout by default. Use `--output` to write a file, `--inject`
+/// to replace a marked section, or `--multi` for one file per task.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,

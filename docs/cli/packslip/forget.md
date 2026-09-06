@@ -17,3 +17,11 @@ project is named as the packslip backend names it: `github.com/owner/repo`,
 
 ## Flags
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Signer verification](/dev-tools/packslip-verification.html).
+- [`mise packslip`](/cli/packslip.html).
+- [Global flags and argument syntax](/cli/#global-flags).

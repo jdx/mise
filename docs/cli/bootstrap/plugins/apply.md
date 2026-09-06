@@ -10,3 +10,11 @@ Install package manager plugins declared in `[bootstrap.plugins]`
 ## Flags
 - **`-n --dry-run`** — Print what would happen without installing plugins
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Package plugins](/bootstrap/packages/plugins.html).
+- [`mise bootstrap plugins`](/cli/bootstrap/plugins.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -11,3 +11,11 @@ Apply configured Linux system service state
 - **`-n --dry-run`** — Print what would change without changing anything
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [System services](/bootstrap/services.html).
+- [`mise bootstrap services`](/cli/bootstrap/services.html).
+- [Global flags and argument syntax](/cli/#global-flags).

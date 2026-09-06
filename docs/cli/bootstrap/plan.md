@@ -7,8 +7,20 @@
 
 Show the changes declarative bootstrap resources would make
 
+Covers declarative resources, not every hook, package installation, or task in a
+full bootstrap run. Use `bootstrap --dry-run` to preview the complete workflow.
+`--detailed-exitcode` distinguishes unchanged (0), changes (2), and errors (1).
+
 ## Flags
 - **`-J --json`** — Output a stable machine-readable plan in JSON format
 - **`--detailed-exitcode`** — Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Bootstrap workflow](/bootstrap.html).
+- [`mise bootstrap`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -11,3 +11,11 @@ Apply current-user settings from `[bootstrap.user]`
 - **`-n --dry-run`** — Print the commands that would run without running them
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Current-user settings](/bootstrap/user.html).
+- [`mise bootstrap user`](/cli/bootstrap/user.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -13,7 +13,9 @@ use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_t
 
 /// Update a plugin to the latest version
 ///
-/// Note: this updates the plugin itself, not the tool versions it manages
+/// With no names, updates every installed plugin. This updates plugin source,
+/// not the tool versions it manages. Linked local plugins are skipped; archive
+/// installations cannot be updated with Git.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, visible_aliases = ["up", "upgrade"], example(r###"mise plugins update              # update all installed plugins
 mise plugins update my-tool      # update one Git plugin

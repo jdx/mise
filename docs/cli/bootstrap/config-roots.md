@@ -7,6 +7,17 @@
 
 Show non-composed bootstrap declarations in each selected configuration root
 
+Use this to locate the origin of declarations before composition. For the
+combined desired state and its changes, use `bootstrap plan`.
+
 ## Flags
 - **`-J --json`** — Output in JSON format
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Bootstrap workflow](/bootstrap.html).
+- [`mise bootstrap`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

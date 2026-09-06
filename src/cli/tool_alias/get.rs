@@ -3,10 +3,11 @@ use color_eyre::eyre::{Result, eyre};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 
-/// Show an alias for a tool
+/// Show a configured version alias for a tool
 ///
-/// This is the contents of a tool_alias.<TOOL> entry in ~/.config/mise/config.toml
-///
+/// Reads the merged `[tool_alias.TOOL.versions]` configuration. This prints the
+/// stored request, which may itself be a prefix. Backend-provided aliases are listed
+/// by `mise tool-alias ls`; they are not entries returned by this command.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(

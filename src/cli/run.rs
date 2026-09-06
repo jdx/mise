@@ -30,30 +30,29 @@ use serde::Serialize;
 use std::panic::AssertUnwindSafe;
 use tokio::sync::Mutex;
 
-/// Run task(s)
+/// Run tasks and their dependencies
 ///
-/// Runs one task, or several tasks in parallel.
-/// Tasks may depend on other tasks and on source files.
-/// If a task has `sources` configured, it only runs when those files have changed.
+/// Use `mise run TASK [ARGS...]` for one task, or separate task invocations with `:::`
+/// to schedule several. Put mise flags before the task name; following arguments are
+/// passed to that task. With no task, mise runs `default` when defined or opens the
+/// task selector in an interactive terminal.
 ///
-/// Tasks can be defined in mise.toml or as standalone scripts.
-/// In mise.toml, tasks take this form:
+/// Tasks are defined in `mise.toml` or task directories. A task with `sources` and
+/// `outputs` can skip execution when its outputs are fresh. `--force` bypasses
+/// freshness checks; task output caching has separate `--task-cache` controls.
 ///
-///     [tasks.build]
-///     run = "npm run build"
-///     sources = ["src/**/*.ts"]
-///     outputs = ["dist/**/*.js"]
+/// For a project that already has npm build scripts and its dependencies installed:
 ///
-/// Alternatively, tasks can be defined as standalone scripts.
-/// These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
-/// `.config/mise/tasks`.
-/// The name of the script becomes the name of the task.
+/// ```toml
+/// [tasks.build]
+/// run = "npm run build"
+/// sources = ["src/**/*.ts", "package.json", "package-lock.json"]
+/// outputs = ["dist/**/*.js"]
+/// ```
 ///
-///     $ cat .mise/tasks/build<<EOF
-///     #!/usr/bin/env bash
-///     npm run build
-///     EOF
-///     $ mise run build
+/// To create a standalone script task, use `mise tasks add --file hello -- echo hello`.
+/// Then run `mise run hello`. See https://mise.jdx.dev/tasks/ for task directories,
+/// arguments, caching, and dependency configuration.
 #[derive(usage_rs::Args)]
 #[usage(
     visible_alias = "r",
@@ -203,6 +202,7 @@ pub(crate) struct Run {
     pub allow_env: Vec<String>,
 
     /// Allow network to specific host (implies --deny-net for everything else)
+    /// Unsupported on Linux; see the sandboxing guide for macOS limitations.
     #[usage(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
@@ -218,7 +218,7 @@ pub(crate) struct Run {
     #[usage(long, verbatim_doc_comment)]
     pub deny_all: bool,
 
-    /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
     #[usage(long, verbatim_doc_comment)]
     pub deny_env: bool,
 

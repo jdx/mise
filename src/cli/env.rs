@@ -9,10 +9,15 @@ use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 use crate::wildcard::wildcard_match;
 use indexmap::IndexSet;
 
-/// Export env vars to activate mise a single time
+/// Print the environment for the current configuration
 ///
-/// Use this to load the environment into one shell without adding `mise activate` to
-/// your shell rc file. It is not needed in shells where mise is already activated.
+/// Evaluate the shell output to load tools and variables once, without installing
+/// prompt hooks. Changing directories afterward does not recompute this environment.
+/// Use `mise exec -- command` to apply it to one child process instead.
+///
+/// JSON, dotenv, and shell output contain actual variable values, including secrets.
+/// `--redacted` selects variables marked for redaction; it does not mask their values.
+/// Environment construction may install missing tools according to mise's settings.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "e",
@@ -45,7 +50,7 @@ pub(crate) struct Env {
     #[usage(long, overrides = "shell")]
     json_extended: bool,
 
-    /// Only show redacted environment variables
+    /// Only include variables marked for redaction; their values are printed unmasked
     #[usage(long)]
     redacted: bool,
 

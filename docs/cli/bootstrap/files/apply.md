@@ -12,3 +12,11 @@ Apply configured privileged files and directories
 - **`-y --yes`** — Skip the confirmation prompt
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Privileged files and directories](/bootstrap/files.html).
+- [`mise bootstrap files`](/cli/bootstrap/files.html).
+- [Global flags and argument syntax](/cli/#global-flags).

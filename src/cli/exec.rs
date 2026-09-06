@@ -26,7 +26,7 @@ use crate::toolset::{InstallOptions, ResolveOptions, Toolset, ToolsetBuilder};
 ///
 /// Tools are loaded from mise.toml and can be overridden with <TOOL@VERSION> args. Only the
 /// tools you name are overridden: if `mise.toml` includes `node = "20"` and you run
-/// `mise exec python@3.11`, node@20 is still loaded.
+/// `mise exec python@3.11 -- python -V`, node@20 is still loaded.
 ///
 /// The "--" separates tools from the command to pass along to the subprocess.
 #[derive(Debug, usage_rs::Args)]
@@ -53,11 +53,11 @@ pub(crate) struct Exec {
     #[usage(value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
-    /// Command string to execute (same as --command)
+    /// Executable and arguments to run directly, after `--`
     #[usage(conflicts = "c", required_unless = "c", double_dash = "required")]
     pub command: Option<Vec<String>>,
 
-    /// Command string to execute
+    /// Command string to execute through a shell (supports pipes and redirection)
     #[usage(short, long = "command", value_hint = usage_rs::ValueHint::CommandString, conflicts = "command")]
     pub c: Option<String>,
 
@@ -73,7 +73,8 @@ pub(crate) struct Exec {
     pub allow_env: Vec<String>,
 
     /// Allow network to specific host (implies --deny-net for everything else)
-    /// macOS only in v1; on Linux falls back to allowing all network
+    /// Per-host filtering is unsupported on Linux and returns an error.
+    /// See the sandboxing guide for current macOS host-filter limitations.
     #[usage(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
@@ -89,7 +90,7 @@ pub(crate) struct Exec {
     #[usage(long, verbatim_doc_comment)]
     pub deny_all: bool,
 
-    /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
     #[usage(long, verbatim_doc_comment)]
     pub deny_env: bool,
 

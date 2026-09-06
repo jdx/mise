@@ -6,6 +6,8 @@
 
 Run a command in each configured git repo
 
+Place the executable and its arguments after `--`, for example `mise bootstrap repos exec -- git status --short`. Arguments before `--` select repository paths; use `--continue-on-error` to visit remaining repos after a failure.
+
 ## Arguments
 - **`[PATH]…`** — Run only in matching configured or expanded paths
 - **`<-- COMMAND>…`** — Command and arguments to run in each repo
@@ -14,3 +16,11 @@ Run a command in each configured git repo
 - **`-c --continue-on-error`** — Continue running in other repos after a command fails
 - **`-n --dry-run`** — Print the commands that would run without running them
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Repository checkouts](/bootstrap/repos.html).
+- [`mise bootstrap repos`](/cli/bootstrap/repos.html).
+- [Global flags and argument syntax](/cli/#global-flags).

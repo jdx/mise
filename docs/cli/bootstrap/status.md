@@ -8,8 +8,20 @@
 
 Show the aggregate bootstrap status
 
+Inspect configured resource state without applying changes. `--missing` sets a
+nonzero exit status for drift; it does not restrict the listing to missing entries.
+Dotfile status can render trusted templates, including their `exec()` calls.
+
 ## Flags
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 if any configured bootstrap state is not in its desired state
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Bootstrap workflow](/bootstrap.html).
+- [`mise bootstrap`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -4,24 +4,15 @@ use crate::config::Config;
 use crate::shims;
 use crate::toolset::ToolsetBuilder;
 
-/// Create shims for the executables of currently installed tools
+/// Create shims for executables provided by installed tools
 ///
-/// This creates shims in the user shim directory for executables that have been added since
-/// the last reshim. With `--system`, it rebuilds the system shim farm instead.
-/// mise runs this automatically after commands like `npm i -g`, but other ways of installing
-/// executables (such as yarn or pnpm for node) are not detected, so call this explicitly then.
+/// Run this when an executable was added to an existing installation outside mise,
+/// for example after a language package manager installed a CLI globally. It rebuilds
+/// the user shim directory by default; `--system` selects the shared system shim farm.
 ///
-/// If you think mise should automatically call this for a particular command, please
-/// open an issue on the mise repo. You can also set up a shell function to reshim
-/// automatically (it's really fast so you don't need to worry about overhead):
-///
-///     npm() {
-///       command npm "$@"
-///       mise reshim
-///     }
-///
-/// Note that this creates shims for _all_ installed tools, not just the ones that are
-/// currently active in mise.toml.
+/// Shims are created for all installed versions. The shim resolves which version to
+/// run from the current configuration when invoked. `--force` rebuilds mise-owned
+/// shims; it does not turn unrelated files into mise-owned shims.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,

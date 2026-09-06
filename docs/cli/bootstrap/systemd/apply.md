@@ -11,3 +11,13 @@ Install and start systemd user services from `[bootstrap.linux.systemd.units]`
 - **`-n --dry-run`** — Print the commands that would run without running them
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+This is a compatibility spelling. Use [`mise bootstrap linux systemd-units apply`](/cli/bootstrap/linux/systemd-units/apply.html) in new scripts.
+
+## Related documentation
+
+- [systemd user units](/bootstrap/systemd.html).
+- [`mise bootstrap`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

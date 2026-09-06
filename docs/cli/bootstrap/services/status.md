@@ -11,3 +11,11 @@ Show configured Linux system service state
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 when any service is not converged
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [System services](/bootstrap/services.html).
+- [`mise bootstrap services`](/cli/bootstrap/services.html).
+- [Global flags and argument syntax](/cli/#global-flags).

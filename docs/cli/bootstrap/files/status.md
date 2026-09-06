@@ -12,3 +12,11 @@ Show configured privileged file and directory state
 - **`--missing`** — Exit with code 1 when any resource is not converged
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Privileged files and directories](/bootstrap/files.html).
+- [`mise bootstrap files`](/cli/bootstrap/files.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -12,3 +12,11 @@ Clone and converge git repos from `[bootstrap.repos]`
 - **`-y --yes`** — Skip the confirmation prompt
 - **`--skip-dirty`** — Skip repos with local changes instead of failing
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Repository checkouts](/bootstrap/repos.html).
+- [`mise bootstrap repos`](/cli/bootstrap/repos.html).
+- [Global flags and argument syntax](/cli/#global-flags).

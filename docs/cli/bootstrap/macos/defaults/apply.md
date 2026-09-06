@@ -11,3 +11,11 @@ Write macOS defaults from `[bootstrap.macos.defaults]`
 - **`-n --dry-run`** — Print the commands that would run without running them
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [macOS defaults](/bootstrap/macos-defaults.html).
+- [`mise bootstrap macos defaults`](/cli/bootstrap/macos/defaults.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -15,3 +15,11 @@ Package specs use the format `ecosystem:package`, e.g., `npm:lodash`.
 
 ## Flags
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Project dependencies](/dev-tools/deps.html).
+- [`mise deps`](/cli/deps.html).
+- [Global flags and argument syntax](/cli/#global-flags).

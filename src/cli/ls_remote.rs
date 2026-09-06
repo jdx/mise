@@ -27,7 +27,8 @@ struct VersionOutputAll {
 
 /// List tool versions available to install
 ///
-/// Results may be cached; run `mise cache clear` to fetch fresh results.
+/// Results may be cached; run `mise cache clear TOOL` to refresh one tool
+/// before querying it again. Version formats and ordering are backend-specific.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, example(r###"mise ls-remote node
 mise ls-remote node@20
@@ -40,12 +41,12 @@ pub(crate) struct LsRemote {
     #[usage(value_name = "TOOL@VERSION", required_unless = "all")]
     pub plugin: Option<ToolArg>,
 
-    /// The version prefix to use when querying the latest version
-    /// same as the first argument after the "@"
+    /// Filter the available versions by this prefix
+    /// Equivalent to the version selector after `@` in the first argument
     #[usage(verbatim_doc_comment)]
     pub prefix: Option<String>,
 
-    /// Show all installed plugins and versions
+    /// List available versions for every backend/tool currently known to mise
     #[usage(long, verbatim_doc_comment, conflicts = ["plugin", "prefix"])]
     pub all: bool,
 

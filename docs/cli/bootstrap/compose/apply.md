@@ -11,3 +11,11 @@ Apply configured Docker Compose project state
 - **`-n --dry-run`** — Print what would change without changing anything
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Compose projects](/bootstrap/compose.html).
+- [`mise bootstrap compose`](/cli/bootstrap/compose.html).
+- [Global flags and argument syntax](/cli/#global-flags).

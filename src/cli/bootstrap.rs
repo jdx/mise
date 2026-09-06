@@ -32,55 +32,27 @@ use crate::system::resources::{ResourceAction, ResourceId};
 use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
 use crate::ui::table::MiseTable;
-/// Set up a machine for the current config in one command
+/// Set up a machine from the current configuration
 ///
-/// Runs the bootstrap steps for the current config in order:
+/// Runs these phases in order, when configured and selected:
 ///
-/// 0. `mise bootstrap accounts apply` — converge `[bootstrap.users]` and
-///    `[bootstrap.groups]` (Linux)
-/// 1. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
-///    1.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
-/// 2. Install built-in-manager entries from `[bootstrap.packages]`
-/// 3. `mise bootstrap files apply` — converge `[bootstrap.files]` and
-///    `[bootstrap.directories]`
-/// 4. `mise bootstrap services apply` — converge `[bootstrap.services]`
-///    systemd system services (Linux)
-/// 5. `mise bootstrap firewall apply` — converge `[bootstrap.linux.firewall]`
-///    host firewall policy and rules (Linux)
-/// 6. `mise bootstrap compose apply` — converge `[bootstrap.compose]`
-///    Docker Compose projects
-/// 7. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
-///    surrounded by `pre-repos`/`post-repos` hooks
-/// 8. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
-///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-/// 9. `mise bootstrap mise-shell-activate apply` — configure shell activation
-///    from `[bootstrap.mise_shell_activate]`
-/// 10. `mise bootstrap macos defaults apply` — write
-///     `[bootstrap.macos.defaults]` entries (macOS)
-///     surrounded by `pre-defaults`/`post-defaults` hooks
-/// 11. `mise bootstrap macos launchd-agents apply` — install/load
-///     `[bootstrap.macos.launchd.agents]`
-/// 12. `mise bootstrap linux systemd-units apply` — install/start
-///     `[bootstrap.linux.systemd.units]`
-/// 13. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
-///     (Unix)
-///     surrounded by `pre-user`/`post-user` hooks
-/// 14. `mise install` — install missing tools from `[tools]`
-///     surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
-///     from `[bootstrap.packages]` install afterward, followed by
-///     `[bootstrap.hooks.post-packages]`
-/// 15. `mise run bootstrap` — if a task named `bootstrap` is defined
-/// 16. `[bootstrap.hooks.final]` — optional final hook
+/// 1. Linux accounts, then package-manager plugins.
+/// 2. The pre-packages hook, then packages handled by built-in managers.
+/// 3. Privileged files/directories, system services, firewall, and Compose projects.
+/// 4. Git repositories, then dotfiles, each with its pre/post hooks.
+/// 5. Shell activation, macOS defaults and LaunchAgents, Linux user units, and user settings.
+/// 6. The pre-tools hook, versioned tools, and post-tools hook.
+/// 7. Package-plugin packages, then the post-packages hook.
+/// 8. The `bootstrap` task, when defined, then the final hook.
 ///
-/// The declarative steps converge — anything already in its desired state
-/// is skipped, so re-running is safe. The `bootstrap` task runs on every
-/// invocation; keep it idempotent. Use it for any project-specific setup
-/// that doesn't fit the declarative sections (seeding databases, auth flows,
-/// etc.) — it runs with the installed tools on PATH.
+/// Defaults and user settings also have pre/post hooks. See
+/// https://mise.jdx.dev/bootstrap.html for the complete phase order and configuration.
+/// Unchanged resource state is skipped, but hooks and the bootstrap task can run again;
+/// make those commands safe to repeat. Dotfile templates may execute while checking state.
 ///
-/// Use `--skip <part>` to skip named parts, or `--only <part>` to run just
-/// named parts. Both flags can be repeated or comma-separated, but they
-/// cannot be used together.
+/// Use `--dry-run` to preview the selected workflow, `bootstrap status` to inspect state,
+/// or `bootstrap plan` for the declarative-resource plan. `--only` and `--skip` accept
+/// repeated or comma-separated parts and cannot be combined.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
@@ -319,6 +291,10 @@ enum Commands {
 }
 
 /// Show the aggregate bootstrap status
+///
+/// Inspect configured resource state without applying changes. `--missing` sets a
+/// nonzero exit status for drift; it does not restrict the listing to missing entries.
+/// Dotfile status can render trusted templates, including their `exec()` calls.
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_alias = "ls", verbatim_doc_comment)]
 struct BootstrapStatus {
@@ -336,6 +312,10 @@ struct BootstrapStatus {
 }
 
 /// Show the changes declarative bootstrap resources would make
+///
+/// Covers declarative resources, not every hook, package installation, or task in a
+/// full bootstrap run. Use `bootstrap --dry-run` to preview the complete workflow.
+/// `--detailed-exitcode` distinguishes unchanged (0), changes (2), and errors (1).
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapPlan {
@@ -353,6 +333,9 @@ struct BootstrapPlan {
 }
 
 /// Show non-composed bootstrap declarations in each selected configuration root
+///
+/// Use this to locate the origin of declarations before composition. For the
+/// combined desired state and its changes, use `bootstrap plan`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapConfigRoots {
@@ -421,6 +404,9 @@ struct BootstrapInspectFirewallPlan {}
 struct BootstrapInspectSystemFiles {}
 
 /// Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
+///
+/// These are system accounts on the target Linux host. Inspect `status` or an apply
+/// preview before changing user IDs, memberships, or account state.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapAccounts {
@@ -459,6 +445,9 @@ struct BootstrapAccountsStatus {
 }
 
 /// Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
+///
+/// Use these resources for ownership, permissions, and desired presence on a host.
+/// For personal symlinks, copies, or edits, use `[dotfiles]` and `bootstrap dotfiles`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapFiles {
@@ -505,6 +494,9 @@ struct BootstrapFilesStatus {
 }
 
 /// Manage Linux system services from `[bootstrap.services]`
+///
+/// These are system-level systemd services. For units in the current user session,
+/// use `bootstrap linux systemd-units` instead.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapServices {
@@ -543,6 +535,9 @@ struct BootstrapServicesStatus {
 }
 
 /// Manage the Linux host firewall from `[bootstrap.linux.firewall]`
+///
+/// This manages host firewall policy and rules. Review `apply --dry-run` before applying
+/// a policy to a remote machine, including the rule that permits your SSH connection.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapFirewall {
@@ -581,6 +576,9 @@ struct BootstrapFirewallStatus {
 }
 
 /// Manage Docker Compose projects from `[bootstrap.compose]`
+///
+/// Requires a working Docker engine and Compose command on the target host. `apply`
+/// reconciles declared project state; `status` inspects the existing projects.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapCompose {
@@ -619,6 +617,10 @@ struct BootstrapComposeStatus {
 }
 
 /// Bootstrap one or more machines over OpenSSH
+///
+/// Select inventory hosts by name, tag, or `--all`, or supply ad-hoc `--host` targets.
+/// The source is staged on each target and bootstrap runs there. `--from-git` instead
+/// installs persistent global configuration; preview that choice with `--dry-run`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapRemote {
@@ -841,6 +843,9 @@ struct BootstrapDotfilesApply {
 }
 
 /// Show the status of dotfiles from `[dotfiles]`
+///
+/// Template entries are rendered to compare their output; trusted template
+/// functions may execute. `--missing` changes the exit status, not the listing.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "ls",
@@ -866,6 +871,9 @@ struct BootstrapPackages {
 }
 
 /// Manage package manager plugins declared in `[bootstrap.plugins]`
+///
+/// Install these plugins before applying packages they manage. Installing a plugin
+/// does not itself install the host packages in `[bootstrap.packages]`.
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapPlugins {
     #[usage(subcommand)]
@@ -908,6 +916,10 @@ enum BootstrapPackagesCommands {
 }
 
 /// Manage git repo checkouts from `[bootstrap.repos]`
+///
+/// Use `apply` to clone or reconcile the configured checkout, `update` to refresh it,
+/// and `exec` to run a command in selected repositories. Existing local changes can
+/// block convergence; `--skip-dirty` skips those repositories without discarding edits.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapRepos {
@@ -960,6 +972,10 @@ struct BootstrapReposUpdate {
 }
 
 /// Run a command in each configured git repo
+///
+/// Place the executable and its arguments after `--`, for example
+/// `mise bootstrap repos exec -- git status --short`. Arguments before `--` select
+/// repository paths; use `--continue-on-error` to visit remaining repos after a failure.
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapReposExec {
     /// Run only in matching configured or expanded paths
@@ -1021,6 +1037,9 @@ enum BootstrapLinuxCommands {
 }
 
 /// Manage macOS defaults from `[bootstrap.macos.defaults]`
+///
+/// Declares typed preferences written with macOS defaults. Application preferences
+/// may require restarting the affected application before the change becomes visible.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapMacosDefaults {
@@ -1059,6 +1078,9 @@ struct BootstrapMacosDefaultsStatus {
 }
 
 /// Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
+///
+/// Installs plist files and reconciles agents in the current GUI login domain. Run
+/// from the intended user session; an SSH-only session may not have that domain.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapLaunchd {
@@ -1097,6 +1119,9 @@ struct BootstrapLaunchdStatus {
 }
 
 /// Manage systemd user services from `[bootstrap.linux.systemd.units]`
+///
+/// Installs unit files and reconciles services in the current user manager. This is
+/// separate from system services declared in `[bootstrap.services]`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapSystemd {
@@ -1135,6 +1160,9 @@ struct BootstrapSystemdStatus {
 }
 
 /// Manage mise shell activation from `[bootstrap.mise_shell_activate]`
+///
+/// Writes managed activation blocks into the declared shell startup files. The
+/// current shell is not reactivated by this command; open a new shell afterward.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapShell {
@@ -1173,6 +1201,9 @@ struct BootstrapShellStatus {
 }
 
 /// Manage current-user bootstrap settings from `[bootstrap.user]`
+///
+/// Currently manages the login shell. Apply as the intended user; changing the login
+/// shell affects future sessions, not the shell running this command.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapUser {

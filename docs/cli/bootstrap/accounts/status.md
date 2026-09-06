@@ -11,3 +11,11 @@ Show configured Linux user and group state
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 when any account is not converged
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Users and groups](/bootstrap/accounts.html).
+- [`mise bootstrap accounts`](/cli/bootstrap/accounts.html).
+- [Global flags and argument syntax](/cli/#global-flags).

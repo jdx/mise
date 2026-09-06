@@ -11,3 +11,11 @@ Show whether current-user settings match `[bootstrap.user]`
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 if any configured user setting is not in its desired state
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Current-user settings](/bootstrap/user.html).
+- [`mise bootstrap user`](/cli/bootstrap/user.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -11,3 +11,13 @@ Show the state of systemd user services from `[bootstrap.linux.systemd.units]`
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 if any configured systemd user service is not in its desired state
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+This is a compatibility spelling. Use [`mise bootstrap linux systemd-units status`](/cli/bootstrap/linux/systemd-units/status.html) in new scripts.
+
+## Related documentation
+
+- [systemd user units](/bootstrap/systemd.html).
+- [`mise bootstrap`](/cli/bootstrap.html).
+- [Global flags and argument syntax](/cli/#global-flags).

@@ -8,6 +8,10 @@ use crate::system::files::FileState;
 use crate::ui::table::MiseTable;
 
 /// Show the status of dotfiles from `[dotfiles]`
+///
+/// Template entries are rendered to compare their output; trusted template
+/// functions may execute. JSON includes each entry's origin and uses the states
+/// `applied`, `missing`, `differs`, and `source_missing`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "ls",

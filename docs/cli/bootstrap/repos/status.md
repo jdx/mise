@@ -11,3 +11,11 @@ Show the state of git repos from `[bootstrap.repos]`
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 if any configured repo is not in its desired state
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Repository checkouts](/bootstrap/repos.html).
+- [`mise bootstrap repos`](/cli/bootstrap/repos.html).
+- [Global flags and argument syntax](/cli/#global-flags).
