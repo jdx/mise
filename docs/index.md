@@ -13,7 +13,7 @@ hero:
 <section class="landing-page" aria-label="mise overview">
   <div class="hero-card" aria-label="One mise.toml drives tools, env vars, and tasks">
     <div class="card-file">
-      <div class="card-bar"><strong>mise.toml</strong><span>checked into your repo</span></div>
+      <div class="card-bar"><strong>mise.toml</strong><span>illustrative project configuration</span></div>
       <div class="card-toml" aria-label="Example mise.toml">
         <div class="row row-tools"><span class="tk-section">[tools]</span></div>
         <div class="row row-tools"><span class="tk-key">node</span><span class="tk-op"> = </span><span class="tk-str">"24"</span></div>
@@ -24,9 +24,11 @@ hero:
         <div class="row row-env"><span class="tk-key">DATABASE_URL</span><span class="tk-op"> = </span><span class="tk-str">"postgres://localhost/orders"</span></div>
         <div class="row row-env"><span class="tk-key">_.file</span><span class="tk-op"> = </span><span class="tk-str">".env.local"</span></div>
         <div class="row row-blank"></div>
+        <div class="row row-tasks"><span class="tk-section">[tasks.build]</span></div>
+        <div class="row row-tasks"><span class="tk-key">run</span><span class="tk-op"> = </span><span class="tk-str">"node --check app.js"</span></div>
         <div class="row row-tasks"><span class="tk-section">[tasks.test]</span></div>
         <div class="row row-tasks"><span class="tk-key">depends</span><span class="tk-op"> = [</span><span class="tk-str">"build"</span><span class="tk-op">]</span></div>
-        <div class="row row-tasks"><span class="tk-key">run</span><span class="tk-op"> = </span><span class="tk-str">"pytest"</span></div>
+        <div class="row row-tasks"><span class="tk-key">run</span><span class="tk-op"> = </span><span class="tk-str">"node --test"</span></div>
         <div class="row row-blank"></div>
         <div class="row row-boot"><span class="tk-section">[bootstrap.packages]</span></div>
         <div class="row row-boot"><span class="tk-key">"brew:postgresql@17"</span><span class="tk-op"> = </span><span class="tk-str">"latest"</span></div>
@@ -55,9 +57,9 @@ hero:
       <div class="card-output pillar-tasks">
         <div class="card-output-head"><span class="pillar-dot"></span><span>Tasks</span><code>$ mise run test</code></div>
         <div class="terminal-lines">
-          <div><span class="key">[build]</span> $ npm run build</div>
-          <div><span class="key">[test]</span> $ pytest</div>
-          <div><span class="ok">42 passed</span> in 1.02s</div>
+          <div><span class="key">[build]</span> $ node --check app.js</div>
+          <div><span class="key">[test]</span> $ node --test</div>
+          <div><span class="ok">tests passed</span></div>
         </div>
       </div>
       <div class="card-output pillar-boot">
@@ -66,7 +68,7 @@ hero:
           <div><span class="dim">mise bootstrap:</span> system packages</div>
           <div>brew:postgresql@17 <span class="ok">✓ installed</span></div>
           <div><span class="dim">mise bootstrap:</span> dotfiles</div>
-          <div>~/.zshrc <span class="ok">✓ symlinked</span></div>
+          <div>~/.config/mise/config.toml <span class="ok">✓ symlinked</span></div>
         </div>
       </div>
     </div>
@@ -76,13 +78,12 @@ hero:
     <p class="landing-kicker"><span>01</span> Why mise</p>
     <div class="landing-why-grid">
       <div>
-        <h2>Clear the counter.</h2>
+        <h2>Keep project setup with the project.</h2>
         <p class="landing-lede">
-          Most projects carry a drawer of version managers, dotfiles, and a
-          README full of setup steps. Every new machine adds a Brewfile, a
-          dotfiles manager, and a playbook. mise replaces them with one file
-          that's checked in, so a fresh laptop is <code>git clone</code> and
-          <code>mise bootstrap</code>.
+          A project needs more than a list of tools: it needs their versions,
+          environment variables, and commands for everyday work. Keep those
+          choices in <code>mise.toml</code> so teammates can install the declared
+          tools and run the project's tasks from a fresh checkout.
         </p>
         <p class="landing-note">
           Coming from asdf? mise reads <code>.tool-versions</code> as-is. Files
@@ -90,21 +91,20 @@ hero:
           <a href="/configuration.html#idiomatic-version-files">enable them</a>.
         </p>
       </div>
-      <div class="landing-ledger" aria-label="Before and after mise">
+      <div class="landing-ledger" aria-label="Project setup in mise.toml">
         <div class="ledger-col ledger-before">
-          <p class="ledger-head">Before</p>
+          <p class="ledger-head">What you declare</p>
           <ul>
-            <li>nvm, pyenv, rbenv <span>.nvmrc, .python-version</span></li>
-            <li>direnv <span>.envrc</span></li>
-            <li>make, just <span>Makefile</span></li>
-            <li>Homebrew <span>Brewfile</span></li>
-            <li>chezmoi <span>dotfiles repo</span></li>
-            <li>Ansible <span>playbook.yml</span></li>
-            <li>README <span>"Setup", 14 steps</span></li>
+            <li>Tool versions <span>Node.js, Python, Go</span></li>
+            <li>Environment <span>variables, .env files</span></li>
+            <li>Tasks <span>build, test, lint</span></li>
+            <li>System packages <span>via OS package managers</span></li>
+            <li>Dotfiles <span>links and templates</span></li>
+            <li>Services <span>machine setup</span></li>
           </ul>
         </div>
         <div class="ledger-col ledger-after">
-          <p class="ledger-head">After</p>
+          <p class="ledger-head">Where it lives</p>
           <ul>
             <li><strong>mise</strong> <span>mise.toml</span></li>
           </ul>
@@ -121,13 +121,13 @@ hero:
 
   <div class="landing-section landing-stations">
     <p class="landing-kicker"><span>02</span> What it does</p>
-    <h2>Four stations, one line.</h2>
+    <h2>Start with tools. Add what you need.</h2>
     <div class="stations-grid">
       <a class="station pillar-tools" href="/dev-tools/">
         <p class="station-cmd">$ mise use node@24</p>
         <h3>Dev tools</h3>
         <p>
-          Install any of 1000+ tools, pin versions per project, and switch
+          Install hundreds of tools, select versions per project, and switch
           automatically as you move between directories.
         </p>
         <span class="card-link">Dev tools</span>
@@ -154,8 +154,8 @@ hero:
         <p class="station-cmd">$ mise bootstrap</p>
         <h3>Bootstrap</h3>
         <p>
-          Set up a whole machine from the same config: OS packages, dotfiles,
-          repos, services, macOS defaults, then your tools.
+          Apply the machine setup you declare: OS packages, dotfiles,
+          repos, services, macOS defaults, and development tools.
         </p>
         <span class="card-link">Bootstrap</span>
       </a>
@@ -169,8 +169,9 @@ hero:
         <h2>Change directory. <em>Everything follows.</em></h2>
         <p class="landing-lede">
           Activate mise in your shell once. From then on, entering a project
-          puts its tool versions on your <code>PATH</code> and its env vars in
-          your shell. Leaving takes them away again.
+          puts its installed tool versions on your <code>PATH</code> and loads
+          its environment variables. Leave the project and mise restores the
+          environment for your new directory.
         </p>
         <ul class="landing-checklist">
           <li>Shell hooks for bash, zsh, fish, nushell, PowerShell, and more</li>
@@ -227,13 +228,11 @@ hero:
       <div>
         <h2>One config for the <em>whole machine.</em></h2>
         <p class="landing-lede">
-          <code>mise bootstrap</code> sets up a new computer from the same
-          file: OS packages, git repos, dotfiles, shell activation, macOS
-          defaults, and services, then your tools. Run it again and mise skips
-          anything that's already set up. mise has its own Homebrew
-          implementation, so it installs formulae and casks without requiring
-          Homebrew. It replaces what you'd otherwise assemble from a Brewfile,
-          chezmoi, and an Ansible playbook.
+          Declare the packages, repositories, dotfiles, and services your
+          machine needs, then apply them with <code>mise bootstrap</code>.
+          Preview declarative resource changes with
+          <code>mise bootstrap plan</code>. Add shell activation and
+          platform-specific settings to keep machine setup alongside your tools.
         </p>
         <ul class="landing-checklist">
           <li>Packages through brew, apt, dnf, pacman, apk, and mas</li>
@@ -305,56 +304,53 @@ hero:
 
   <div class="landing-section landing-recipe">
     <p class="landing-kicker"><span>05</span> Quickstart</p>
-    <h2>Set up in four steps.</h2>
+    <h2>Run your first project task.</h2>
     <ol class="recipe">
       <li class="recipe-row">
         <div class="recipe-text">
           <span class="recipe-num">Step 1</span>
           <h3>Install mise</h3>
-          <p>One command, one static binary. <a href="/installing-mise">Homebrew, apt, cargo, and more</a> also work.</p>
+          <p>On macOS or Linux, use the installer below. See <a href="/installing-mise">Windows and package manager instructions</a> for other options.</p>
         </div>
         <div class="recipe-code terminal-lines">
           <div><span class="prompt">$</span> curl https://mise.run | sh</div>
-          <div><span class="prompt">$</span> mise --version</div>
-          <div>2026.9.1 linux-x64</div>
+          <div><span class="prompt">$</span> ~/.local/bin/mise --version</div>
         </div>
       </li>
       <li class="recipe-row">
         <div class="recipe-text">
           <span class="recipe-num">Step 2</span>
-          <h3>Hook into your shell</h3>
-          <p>Optional, but this is what makes tools and env vars switch as you <code>cd</code>. <a href="/installing-mise#shells">Other shells</a> are one line too.</p>
+          <h3>Activate your shell</h3>
+          <p>For zsh, add this line and restart your shell. Follow the <a href="/getting-started#activate-mise">activation guide</a> for other shells. You can also skip activation and use <code>~/.local/bin/mise exec</code> or <code>~/.local/bin/mise run</code>.</p>
         </div>
         <div class="recipe-code terminal-lines">
-          <div><span class="prompt">$</span> echo 'eval "$(mise activate zsh)"' &gt;&gt; ~/.zshrc</div>
-          <div><span class="dim"># bash: ~/.bashrc · fish: config.fish · pwsh: $PROFILE</span></div>
+          <div><span class="prompt">$</span> echo 'eval "$(~/.local/bin/mise activate zsh)"' &gt;&gt; ~/.zshrc</div>
+          <div><span class="dim"># Restart your shell before continuing.</span></div>
         </div>
       </li>
       <li class="recipe-row">
         <div class="recipe-text">
           <span class="recipe-num">Step 3</span>
           <h3>Add tools</h3>
-          <p><code>mise use</code> installs the tool and pins it in <code>mise.toml</code> in one go. Commit the file.</p>
+          <p>From your project directory, <code>mise use</code> installs a tool and saves its version request in <code>mise.toml</code>.</p>
         </div>
         <div class="recipe-code terminal-lines">
-          <div><span class="prompt">$</span> mise use node@24 python@3.13</div>
-          <div><span class="dim">mise</span> node@24.18.0 <span class="ok">✓ installed</span></div>
-          <div><span class="dim">mise</span> python@3.13.14 <span class="ok">✓ installed</span></div>
-          <div><span class="dim">mise</span> ./mise.toml tools: node@24.18.0, python@3.13.14</div>
+          <div><span class="prompt">$</span> mkdir mise-example</div>
+          <div><span class="prompt">$</span> cd mise-example</div>
+          <div><span class="prompt">$</span> mise use node@24</div>
         </div>
       </li>
       <li class="recipe-row">
         <div class="recipe-text">
           <span class="recipe-num">Step 4</span>
           <h3>Add env vars and tasks</h3>
-          <p>They live in the same file, next to the tools they depend on. Teammates run <code>mise install</code>; a new laptop runs <code>mise bootstrap</code>.</p>
+          <p>Save a task alongside its environment, then run it. Commit <code>mise.toml</code> to share the setup. See <a href="/getting-started#set-up-a-project">the complete example</a> to print both the tool version and environment.</p>
         </div>
         <div class="recipe-code terminal-lines">
-          <div><span class="prompt">$</span> mise set DATABASE_URL=postgres://localhost/orders</div>
-          <div><span class="prompt">$</span> mise tasks add test -- pytest</div>
-          <div><span class="prompt">$</span> mise run test</div>
-          <div><span class="key">[test]</span> $ pytest</div>
-          <div><span class="ok">42 passed</span> in 1.02s</div>
+          <div><span class="prompt">$</span> mise set NODE_ENV=development</div>
+          <div><span class="prompt">$</span> mise tasks add hello -- node -p process.env.NODE_ENV</div>
+          <div><span class="prompt">$</span> mise run hello</div>
+          <div>development</div>
         </div>
       </li>
     </ol>
@@ -366,7 +362,7 @@ hero:
     <div class="landing-mini-install"><code>curl https://mise.run | sh</code></div>
     <div class="landing-links">
       <a href="/getting-started">Getting started</a>
-      <a href="/demo">Run the demo</a>
+      <a href="/demo">Watch the demo</a>
       <a href="https://github.com/jdx/mise">GitHub</a>
     </div>
   </div>

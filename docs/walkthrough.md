@@ -1,19 +1,23 @@
 # Walkthrough
 
-Once you've completed the [Getting Started](/getting-started) guide, you're ready to start using mise.
-This document offers a quick overview of some things you may want to try first.
+Use this guide to add mise to an existing project and maintain its configuration:
+select tools, share defaults, upgrade versions, and run everyday commands.
+Complete [getting started](/getting-started.html) first if you haven't installed mise.
+
+The examples that run tools directly assume [shell activation](/getting-started.html#activate-mise).
+Without activation, prefix a tool command with `mise exec --`, for example
+`mise exec -- node --version`.
 
 ## Installing Dev Tools
 
 The main command for working with tools in mise is [`mise u|use`](/cli/use). It does two things:
 
 - Installs the tool (if not already installed)
-- Adds the tool to the `mise.toml` config file—in mise, I say a tool is "active" if it's in `mise.toml`
+- Saves its version request in the project configuration
 
-:::warning
-Both steps are required to use a tool. If you only install a tool with `mise install`, it won't be available in your shell.
-It must also be added to `mise.toml`—which is why I recommend `mise use`, since it does both.
-:::
+`mise install node@24` downloads a tool without selecting it for your project.
+Use `mise use` to save that selection, or `mise exec node@24 -- node --version`
+to use it for one command.
 
 Use it like so (`mise` must be [activated](/getting-started.html#activate-mise) for this example to work):
 
@@ -32,7 +36,7 @@ node = "26"
 ```
 
 - If this file is in the root of a project, `node` will be installed whenever someone runs [`mise install|i`](/cli/install).
-- `mise install` is the command to run when you first clone a project or when you want to update installed tools.
+- `mise install` installs the configured tools after you clone a project. Use `mise upgrade` to update them.
 
 ## `mise.toml` Configuration
 
@@ -58,9 +62,10 @@ For tools or settings you want to keep private, use [`mise.local.toml`](/configu
 Use [`mise config ls`](/cli/config/ls) to see the configuration files currently used by `mise`.
 :::
 
-In general, prefer loose versions like `node@26` so that other people working
-on a project don't have to worry about the exact version of a tool you're using. If you'd like to
-enforce a specific version, use `mise use --pin` or the [`lockfile`](/configuration/settings#lockfile) setting.
+Choose version precision to match the project. A request such as `node@26` allows
+releases within that series. Use `mise use --pin` to save an exact version, or a
+[lockfile](/dev-tools/mise-lock.html) to share resolved versions while keeping
+broader requests in `mise.toml`.
 
 If you leave out the version, mise defaults to `node@latest`.
 

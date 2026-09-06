@@ -8,15 +8,14 @@
           <span class="lockup-word">mise-en-place</span>
         </div>
         <h1>
-          Every tool, env var, and task your project needs,
+          Your development tools, environment, and tasks,
           <em>in one file.</em>
         </h1>
         <p class="hero-lede">
-          mise reads a <code>mise.toml</code> checked into your repo, installs
-          the right versions of your dev tools, loads the project's environment,
-          and runs its tasks. Point it at a fresh machine and
-          <code>mise bootstrap</code> sets up the rest: packages, dotfiles,
-          services.
+          Declare your tool versions, environment variables, and commands in
+          <code>mise.toml</code>. Use them in your shell, editor, and CI. Add
+          machine setup with <code>mise bootstrap</code> when you need system
+          packages, dotfiles, or services.
         </p>
         <div class="hero-actions">
           <button class="install-command" type="button" @click="copyInstall">
@@ -33,7 +32,7 @@
         <p class="hero-meta">
           <span>Open source, MIT</span>
           <span>macOS, Linux, Windows</span>
-          <span>One static binary, no dependencies</span>
+          <span>Single CLI</span>
         </p>
       </div>
     </template>
