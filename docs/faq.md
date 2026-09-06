@@ -45,7 +45,7 @@ mise use --env local node@24       # personal local environment
 `mise use --dry-run node@24` previews the operation. `mise config` shows the files loaded
 for the current directory.
 
-### Does a partial version select the newest release? {#does-node-20-mean-the-newest-available-version-of-node}
+### Does a partial version select the newest release? {#does-node20-mean-the-newest-available-version-of-node}
 
 A partial request such as `node@20` restricts the matching versions. For normal execution,
 mise can reuse an installed version that satisfies the request. Installation and upgrade
@@ -148,8 +148,8 @@ run `mise reshim`, and restart the affected extension or language server. See
 ### How do I disable/force CLI color output?
 
 Use `NO_COLOR=1` or `MISE_COLOR=0` to disable ANSI color, and `CLICOLOR_FORCE=1` to force it,
-including when piping output. `CLICOLOR_FORCE=1` takes precedence over `NO_COLOR`,
-so remove conflicting overrides when diagnosing unexpected color.
+including when piping output. `NO_COLOR=1` and `MISE_COLOR=0` take precedence over
+`CLICOLOR_FORCE=1`; unset the disabling overrides when forcing color.
 
 ```sh
 NO_COLOR=1 mise ls
@@ -189,7 +189,7 @@ use the asdf spellings.
 Trust depends on the configuration contents and the command, not file authorship. Safe config files —
 those that only contain `min_version`, `[tools]` entries whose values are plain version
 strings or arrays of strings, and `[tasks]` without templates — load without trust. Tool-option
-tables and other top-level settings require trust. In normal mode, `mise run`, naked task
+tables and other top-level settings require trust. In normal mode outside CI, `mise run`, naked task
 invocations such as `mise <TASK>`, `mise install`, `mise exec`, and `mise watch` automatically
 trust the active config because they explicitly execute project-defined behavior. Other unsafe
 config requires trust. Common issues:

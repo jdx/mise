@@ -144,7 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
       - run: mise exec -- node --version
 ```
 
