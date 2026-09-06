@@ -170,7 +170,7 @@ impl TrackedSet {
             match request.mode {
                 FileMode::Track => {
                     let mut entry = TrackedEntry::new(
-                        normalize(&request.target),
+                        normalize_target(&request.target),
                         EntryKind::Track,
                         "track",
                         request.policy,
@@ -313,7 +313,8 @@ impl TrackedSet {
         let hard = hard_exclusions();
         let home = normalize(&dirs::HOME);
         let config_dir = normalize(&global_config_dir());
-        let credentials = credential_set();
+        let credential_names = credential_names();
+        let credential_globs = credential_globs();
         let mut walk = Walk::default();
         let mut links: Vec<(PathBuf, usize)> = vec![];
         let mut done = 0;
@@ -375,7 +376,10 @@ impl TrackedSet {
         // directory, unless a per-file declaration says otherwise
         for (path, (owner, policy)) in walk.files.iter_mut() {
             let entry = &set.entries[*owner];
-            let explicit = entry.kind == EntryKind::Track && entry.path == *path;
+            // only a per-file declaration that sets `share` or `backup`
+            // itself overrides the defaults; naming a key file is not enough
+            let explicit =
+                entry.kind == EntryKind::Track && entry.path == *path && entry.policy.overridden;
             if explicit {
                 continue;
             }
@@ -390,7 +394,9 @@ impl TrackedSet {
                     reason: "machine-local configuration".into(),
                     policy: *policy,
                 });
-            } else if path.starts_with(&config_dir) && credentials.is_match(&name) {
+            } else if credential_globs.is_match(&name)
+                || (path.starts_with(&config_dir) && credential_names.is_match(&name))
+            {
                 policy.share = false;
                 policy.backup = false;
                 walk.private.push(PrivateFile {
@@ -680,14 +686,20 @@ fn resolve_link(link: &Path) -> Option<PathBuf> {
     None
 }
 
-fn credential_set() -> GlobSet {
+/// Credential stores mise itself knows by name; they mean something only
+/// under the global configuration directory.
+fn credential_names() -> GlobSet {
+    glob_set(CREDENTIAL_NAMES)
+}
+
+/// Key material by name pattern, private wherever it is captured.
+fn credential_globs() -> GlobSet {
+    glob_set(CREDENTIAL_GLOBS)
+}
+
+fn glob_set(patterns: &[&str]) -> GlobSet {
     let mut builder = GlobSetBuilder::new();
-    for name in CREDENTIAL_NAMES {
-        if let Ok(glob) = Glob::new(name) {
-            builder.add(glob);
-        }
-    }
-    for pattern in CREDENTIAL_GLOBS {
+    for pattern in patterns {
         if let Ok(glob) = Glob::new(pattern) {
             builder.add(glob);
         }
@@ -727,6 +739,26 @@ pub(crate) fn global_config_dir() -> PathBuf {
 /// Canonical when the path exists, lexically normalized otherwise.
 pub(crate) fn normalize(path: &Path) -> PathBuf {
     let expanded = file::replace_path(path);
+    dunce::canonicalize(&expanded).unwrap_or_else(|_| lexical(&expanded))
+}
+
+/// [`normalize`] for a tracked target: a symlink is tracked as the link
+/// itself (its destination becomes a derived entry), so only the parent is
+/// resolved.
+pub(crate) fn normalize_target(path: &Path) -> PathBuf {
+    let expanded = file::replace_path(path);
+    let is_link =
+        std::fs::symlink_metadata(&expanded).is_ok_and(|meta| meta.file_type().is_symlink());
+    if is_link && let (Some(parent), Some(name)) = (expanded.parent(), expanded.file_name()) {
+        let parent = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+        return dunce::canonicalize(parent)
+            .unwrap_or_else(|_| lexical(parent))
+            .join(name);
+    }
     dunce::canonicalize(&expanded).unwrap_or_else(|_| lexical(&expanded))
 }
 

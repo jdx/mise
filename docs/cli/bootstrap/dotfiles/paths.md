@@ -8,9 +8,9 @@
 Show what history tracks and under which policies
 
 Every entry is listed with the file that declared it, its policies, and
-how many files it currently covers. Declarations history could not
-honour are listed as invalid so a failed enrollment is never mistaken
-for protection.
+how many files it currently covers. Declarations that history could not
+honour are listed as invalid, omitted, or incomplete, so a failed
+enrollment is never mistaken for protection.
 
 ## Flags
 - **`-J --json`** — Output in JSON format

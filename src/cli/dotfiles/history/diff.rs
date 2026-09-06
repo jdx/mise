@@ -83,12 +83,16 @@ impl HistoryDiff {
             &to,
             &DiffOpts {
                 patch: self.patch,
+                // a patch is written as git produces it; a summary is small
+                stream: self.patch,
                 color: console::colors_enabled(),
                 paths,
             },
         )?;
         if result.changed {
-            miseprint!("{}", String::from_utf8_lossy(&result.output))?;
+            if !result.output.is_empty() {
+                miseprint!("{}", String::from_utf8_lossy(&result.output))?;
+            }
         } else {
             info!("{label}: no differences");
         }

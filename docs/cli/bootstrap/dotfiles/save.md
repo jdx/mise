@@ -7,9 +7,10 @@
 
 Save a checkpoint of the tracked files now
 
-Fails when nothing could be saved, so a script or an agent gets a
-trustworthy result; `--best-effort` turns that into a warning for
-`set -e` update scripts.
+Fails when history cannot save or a requested path is not tracked, so a
+script or an agent gets a trustworthy result; a save that finds nothing
+changed succeeds as a no-op. `--best-effort` turns save errors into a
+warning for `set -e` update scripts.
 
 ## Arguments
 - **`[PATH]…`** — Paths to save; every one must be tracked
@@ -21,5 +22,5 @@ trustworthy result; `--best-effort` turns that into a warning for
   **Default:** `save`
 - **`--task <ID>`** — The task an agent is working on
 - **`--label <LABEL>`** — A label to find the checkpoint by later
-- **`--best-effort`** — Warn instead of failing when nothing could be saved
+- **`--best-effort`** — Warn instead of failing when history cannot save
 - **`-h --help`** — Print help

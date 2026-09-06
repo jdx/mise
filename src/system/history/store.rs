@@ -71,7 +71,7 @@ pub(crate) fn ensure_store_dir_in(state_dir: &Path) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn create_private_dir(dir: &Path) -> Result<()> {
+pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     if !dir.is_dir() {
         if let Some(parent) = dir.parent() {
@@ -91,7 +91,7 @@ fn create_private_dir(dir: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn create_private_dir(dir: &Path) -> Result<()> {
+pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
     file::create_dir_all(dir)
 }
 
@@ -570,11 +570,13 @@ pub(crate) fn list_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)
             match serde_json::from_str::<Pending>(&text) {
                 Ok(record) => pending.push((path, record)),
                 Err(err) => {
+                    // recovery data for an unfinished operation: set aside,
+                    // never deleted
                     warn!(
-                        "history: removing unreadable {}: {err}",
+                        "history: setting aside unreadable {}: {err}",
                         display_path(&path)
                     );
-                    let _ = std::fs::remove_file(&path);
+                    let _ = std::fs::rename(&path, path.with_extension("json.broken"));
                 }
             }
         }

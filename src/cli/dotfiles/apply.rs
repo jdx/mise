@@ -63,7 +63,9 @@ impl DotfilesApply {
         .await
     }
 
-    async fn run_inner(self) -> Result<bool> {
+    /// The apply without an operation of its own, for a caller that already
+    /// opened one.
+    pub(crate) async fn run_inner(self) -> Result<bool> {
         let config = Config::get().await?;
         let (files, edits) = self.requests(&config)?;
         if files.is_empty() && edits.is_empty() {

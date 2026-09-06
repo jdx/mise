@@ -223,14 +223,11 @@ mise bootstrap user status
 ```
 
 Use `mise bootstrap dotfiles history` to see the checkpoints bootstrap has recorded — a pair per
-mutating run, with the tracked files before and after — and
-`mise bootstrap dotfiles history` for the operations alone. See
-[History](/history.html).
+mutating run, with the tracked files before and after. See [History](/history.html).
 
 ```sh
 mise bootstrap dotfiles history
 mise bootstrap dotfiles history show latest
-mise bootstrap dotfiles history
 mise bootstrap dotfiles history diff 11 12
 ```
 

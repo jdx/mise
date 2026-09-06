@@ -793,6 +793,21 @@ impl GitPlumbing {
         spawn_plumbing(cmd, call.stdin)
     }
 
+    /// Runs the call with stdout and stderr inherited, for output that goes
+    /// straight to the terminal (a patch can be as large as a snapshot), and
+    /// returns its status without treating a non-zero exit as an error.
+    pub(crate) fn status_inherited(
+        &self,
+        call: PlumbingCall<'_>,
+    ) -> Result<std::process::ExitStatus> {
+        let mut cmd = self.command(&call);
+        cmd.stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .stdin(std::process::Stdio::null());
+        cmd.status()
+            .wrap_err_with(|| format!("failed to run {}", describe_plumbing(&cmd)))
+    }
+
     /// Runs the call and returns its trimmed stdout.
     pub(crate) fn output_str(&self, call: PlumbingCall<'_>) -> Result<String> {
         let out = self.output(call)?;

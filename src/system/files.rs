@@ -104,6 +104,9 @@ pub(crate) struct FilePolicy {
     pub autosave: bool,
     pub share: bool,
     pub backup: bool,
+    /// `share` or `backup` was written in the declaration itself: the
+    /// privacy defaults (`*.local.toml`, credential stores) yield to it.
+    pub overridden: bool,
 }
 
 impl FilePolicy {
@@ -114,6 +117,7 @@ impl FilePolicy {
             autosave: true,
             share: true,
             backup: !matches!(mode, FileMode::Template | FileMode::Content),
+            overridden: false,
         }
     }
 }
@@ -273,10 +277,17 @@ pub(crate) fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     for config_files in config.bootstrap_config_maps() {
         for request in files_from_config_files(config_files) {
             let siblings = composed.entry(request.target.clone()).or_default();
-            if siblings
-                .iter()
-                .any(|existing| file_requests_match(config, existing, &request))
+            if let Some(existing) = siblings
+                .iter_mut()
+                .find(|existing| file_requests_match(config, existing, &request))
             {
+                // the same declaration from a later layer: what it says about
+                // `enabled`, the policies, and the variants wins, so a local
+                // `enabled = false` or `share = false` overrides what it
+                // inherited instead of being dropped as a duplicate
+                existing.enabled = request.enabled;
+                existing.policy = request.policy;
+                existing.variants = request.variants;
                 continue;
             }
             if let Some(existing) = siblings.iter().find(|existing| {
@@ -565,6 +576,7 @@ fn merge_file_entry(
             autosave: autosave.unwrap_or(defaults.autosave),
             share: share.unwrap_or(defaults.share),
             backup: backup.unwrap_or(defaults.backup),
+            overridden: share.is_some() || backup.is_some(),
         }
     };
     if mode.as_deref() == Some("track") {

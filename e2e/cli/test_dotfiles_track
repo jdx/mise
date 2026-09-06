@@ -193,3 +193,21 @@ echo 'm' >~/.multi
 assert_succeed "mise bootstrap dotfiles track ~/.multi --no-share --local"
 assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" 'os = ["macos", "linux"]'
 assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" 'profile = "work"'
+
+# a tracked symlink is the link itself; its destination is a derived entry
+echo 'real' >~/real.rc
+ln -s ~/real.rc ~/.linkrc
+assert_succeed "mise bootstrap dotfiles track ~/.linkrc"
+assert_contains "mise bootstrap dotfiles paths" "~/.linkrc"
+assert_contains "mise bootstrap dotfiles paths" "derived: ~/real.rc (target of ~/.linkrc)"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" '"~/real.rc"'
+assert "readlink ~/.linkrc" "$HOME/real.rc"
+
+# a later layer's `enabled = false` switches an inherited declaration off
+cat <<'TOML' >>"$local_config"
+
+[dotfiles."~/.linkrc"]
+mode = "track"
+enabled = false
+TOML
+assert_not_contains "mise bootstrap dotfiles paths" "~/.linkrc"

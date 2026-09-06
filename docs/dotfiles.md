@@ -66,11 +66,11 @@ wrote is not active.
 
 ### Policies
 
-| Field      | Default | Meaning                                                                                                                          |
-| ---------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `autosave` | `true`  | Save edits automatically. `false` makes a manual-save file: only `mise bootstrap dotfiles save <path>` promotes what is on disk. |
-| `share`    | `true`  | Publish the saved version to the shared setup (a later release).                                                                 |
-| `backup`   | `true`  | Include the file in remote backups (a later release).                                                                            |
+| Field      | Default | Meaning                                                                                                                                                     |
+| ---------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autosave` | `true`  | Save edits automatically. `false` makes a manual-save file: `mise bootstrap dotfiles save <path>`, or an operation that names it, promotes what is on disk. |
+| `share`    | `true`  | Publish the saved version to the shared setup (a later release).                                                                                            |
+| `backup`   | `true`  | Include the file in remote backups (a later release).                                                                                                       |
 
 `mise bootstrap dotfiles track --no-autosave|--no-share|--no-backup` sets them;
 `--local` writes the entry to `config.local.toml` (this machine only). A local

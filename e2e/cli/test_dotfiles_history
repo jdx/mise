@@ -118,11 +118,14 @@ assert "mise bootstrap dotfiles history --json | jq -r '[.[].id] | join(\",\")'"
 assert "mise bootstrap dotfiles history show 3 --json | jq -r '.description, .description_source'" $'kept\nuser'
 assert "mise bootstrap dotfiles history show 2 --json | jq -r '.operation.status'" "completed"
 
-# an operation that died is closed as failed by the next command
+# an operation that died is closed as failed by the next write (a save, a
+# bootstrap, the watcher); reading the history changes nothing
 uuid="$(mise bootstrap dotfiles history show 2 --json | jq -r .uuid)"
 jq '{id: 99, checkpoint: (.uuid = "01000000-0000-7000-8000-000000000000" | .operation.status = "pending" | .operation.before = null), blobs: {}}' \
   "$store/index/meta/$uuid.json" >"$store/index/pending/01000000-0000-7000-8000-000000000000.json"
-assert_contains "mise bootstrap dotfiles history 2>&1" "did not finish; recording it as failed"
+assert_not_contains "mise bootstrap dotfiles history 2>&1" "did not finish"
+assert "$count" "3"
+assert_contains "mise bootstrap dotfiles save 2>&1" "did not finish; recording it as failed"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.status'" "failed"
 assert "$count" "4"
 

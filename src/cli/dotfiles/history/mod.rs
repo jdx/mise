@@ -49,12 +49,12 @@ impl DotfilesHistory {
     }
 }
 
-/// Opens the store and lists its checkpoints, oldest first, closing any
-/// operation that died first.
+/// Opens the store and lists its checkpoints, oldest first. Reading never
+/// changes the store: an operation that died is closed by the next one
+/// that takes the operation lock (a save, a bootstrap, the watcher).
 pub(crate) async fn open() -> Result<(Store, TrackedSet, Vec<Entry>)> {
     let store = Store::open()?;
     let tracked = TrackedSet::effective().await?;
-    crate::system::history::scope::recover_stale(&store, &tracked)?;
     let entries = store.list()?;
     Ok((store, tracked, entries))
 }

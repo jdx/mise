@@ -99,8 +99,9 @@ Describe 'dotfiles' {
         $latest.operation.command | Should -BeLike 'bootstrap dotfiles apply*'
         $latest.trigger | Should -Be 'bootstrap'
         $status = mise bootstrap dotfiles status --json 2>&1 | Out-String | ConvertFrom-Json
-        $status.unavailable | Should -BeNullOrEmpty
-        Test-Path (Join-Path $env:MISE_STATE_DIR 'history\repo.git') | Should -BeTrue
+        $status.history.unavailable | Should -BeNullOrEmpty -Because ("the store should be usable: " + ($status.history | ConvertTo-Json -Depth 6 -Compress))
+        $latest.tree.available | Should -BeTrue -Because ("the checkpoint should hold a snapshot: " + ($latest.tree | ConvertTo-Json -Depth 4 -Compress))
+        Test-Path (Join-Path $env:MISE_STATE_DIR 'history\repo.git') | Should -BeTrue -Because ("the store lives under " + $env:MISE_STATE_DIR)
 
         $out = mise bootstrap dotfiles history show latest 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0

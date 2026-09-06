@@ -142,10 +142,16 @@ impl Blob {
             });
         }
         let dir = blobs_dir_in(state_dir);
-        file::create_dir_all(&dir)?;
+        // preimages hold whatever the files held: private, like the store
+        super::store::create_private_dir(&dir)?;
         let path = dir.join(&sha256);
         if !path.exists() {
             file::write_atomic(&path, bytes)?;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
         }
         Ok(Self {
             sha256,
@@ -381,8 +387,6 @@ pub(crate) enum PathState {
 
 impl PathState {
     pub(crate) fn observe(path: &Path) -> Self {
-        use sha2::Digest;
-
         let metadata = match std::fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Self::Missing,
@@ -402,9 +406,9 @@ impl PathState {
             };
         }
         if file_type.is_file() {
-            return match std::fs::read(path) {
-                Ok(bytes) => Self::File {
-                    sha256: hex::encode(sha2::Sha256::digest(&bytes)),
+            return match hash_file(path) {
+                Ok(sha256) => Self::File {
+                    sha256,
                     mode: mode_of(&metadata),
                 },
                 Err(err) => Self::Other {
@@ -441,6 +445,24 @@ impl PathState {
 }
 
 #[cfg(unix)]
+/// The sha256 of a file, streamed so a large managed file is never read
+/// into memory whole.
+fn hash_file(path: &Path) -> std::io::Result<String> {
+    use sha2::Digest;
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
 fn mode_of(metadata: &std::fs::Metadata) -> u32 {
     use std::os::unix::fs::PermissionsExt;
     metadata.permissions().mode() & 0o7777

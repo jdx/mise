@@ -10,7 +10,7 @@ use crate::system::files::{FileMode, FileRequest};
 use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
-use crate::system::history::tracked::{EntryKind, TrackedSet, normalize};
+use crate::system::history::tracked::{EntryKind, TrackedSet, normalize_target};
 
 /// Track a file or directory where it is
 ///
@@ -225,7 +225,7 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
     let config = Config::reset().await?;
     let tracked = TrackedSet::from_config(&config)?;
     for (key, target) in declared {
-        let path = normalize(target);
+        let path = normalize_target(target);
         let active = tracked
             .entry_for(&path)
             .is_some_and(|entry| entry.kind == EntryKind::Track && entry.path == path);
@@ -259,7 +259,10 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
         .collect::<Vec<_>>()
         .join(", ");
     let mut draft = Draft::new(Trigger::Baseline);
-    draft.explicit_paths = declared.iter().map(|(_, path)| normalize(path)).collect();
+    draft.explicit_paths = declared
+        .iter()
+        .map(|(_, path)| normalize_target(path))
+        .collect();
     draft.description = Some(format!("tracked {names}"));
     match store.attempt(tracked, draft)? {
         Outcome::Created(entry) => {

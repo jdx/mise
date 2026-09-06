@@ -1248,8 +1248,8 @@ type = "Bool"
 default = true
 description = "Record configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save."
 docs = """
-Every `mise bootstrap` run, every `mise bootstrap <part> apply`, and every `mise history save`
-records a checkpoint under `$MISE_STATE_DIR/history/` so `mise history` can list, compare, and
+Every `mise bootstrap` run, every `mise bootstrap <part> apply`, and every `mise bootstrap dotfiles save`
+records a checkpoint under `$MISE_STATE_DIR/history/` so `mise bootstrap dotfiles history` can list, compare, and
 recover file versions. Dry runs never record. Set to `false` to turn recording off; delete that
 directory to discard what was recorded.
 """

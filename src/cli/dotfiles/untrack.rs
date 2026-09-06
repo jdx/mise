@@ -6,7 +6,7 @@ use toml_edit::{Item, Value};
 use crate::config::Config;
 use crate::file::{self, display_path};
 use crate::system::files::FileMode;
-use crate::system::history::tracked::{EntryKind, TrackedSet, normalize};
+use crate::system::history::tracked::{EntryKind, TrackedSet, normalize_target};
 
 /// Stop tracking a file or directory
 ///
@@ -37,7 +37,7 @@ impl DotfilesUntrack {
                 bail!("{target_raw}: target must be absolute or start with ~/");
             }
             let key = super::track::normalized_target(&target);
-            let path = normalize(&target);
+            let path = normalize_target(&target);
             match managed.iter().find(|req| req.target == target) {
                 Some(req) if req.mode == FileMode::Track => {
                     let declared_in = &req.origin.config;
@@ -120,7 +120,7 @@ impl DotfilesUntrack {
                 .components()
                 .collect::<PathBuf>();
             let key = super::track::normalized_target(&target);
-            let path = normalize(&target);
+            let path = normalize_target(&target);
             let still = tracked
                 .entry_for(&path)
                 .filter(|entry| entry.kind == EntryKind::Track && entry.path == path)

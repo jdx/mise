@@ -423,8 +423,10 @@ impl Writer {
 
 /// Takes the operation lock, or fails naming the operation that holds it.
 /// A marker whose lock is free is stale: its pending record is closed as
-/// failed first.
-fn take_operation_lock(store: &Store, tracked: &TrackedSet) -> Result<fslock::LockFile> {
+/// failed first. Every write to the store that is not an operation of its
+/// own (an explicit save) holds this for its duration too, so it never
+/// interleaves with a bootstrap, rollback, or undo.
+pub(crate) fn take_operation_lock(store: &Store, tracked: &TrackedSet) -> Result<fslock::LockFile> {
     let state_dir = store.state_dir();
     let lock = LockFile::new(&store::operation_lock_in(state_dir)).try_lock()?;
     let Some(lock) = lock else {
@@ -443,7 +445,10 @@ fn take_operation_lock(store: &Store, tracked: &TrackedSet) -> Result<fslock::Lo
     Ok(lock)
 }
 
-/// Closes the pending records of operations whose lock is free.
+/// Closes the pending records of operations that died. Only the holder of
+/// the operation lock may call this: a pending record whose operation is
+/// still running is not stale, and closing it would leave two checkpoints
+/// with one reserved id.
 pub(crate) fn recover_stale(store: &Store, tracked: &TrackedSet) -> Result<()> {
     let state_dir = store.state_dir();
     let pending = store::list_pending_in(state_dir)?;
@@ -475,13 +480,18 @@ pub(crate) fn recover_stale(store: &Store, tracked: &TrackedSet) -> Result<()> {
         draft.uuid = Some(record.checkpoint.uuid.clone());
         draft.operation = record.checkpoint.operation.clone();
         draft.blobs = record.blobs.clone();
-        if let Err(err) = store.attempt_locked(tracked, draft, Some(record.id)) {
-            warn!(
-                "history: could not close operation {}: {err:#}",
-                record.checkpoint.uuid
-            );
+        // the record is the only trace of what the crashed run changed:
+        // keep it until the failed operation is recorded
+        match store.attempt_locked(tracked, draft, Some(record.id)) {
+            Ok(_) => {
+                let _ = std::fs::remove_file(&path);
+            }
+            Err(err) => warn!(
+                "history: could not close operation {}; keeping {} for the next run: {err:#}",
+                record.checkpoint.uuid,
+                crate::file::display_path(&path)
+            ),
         }
-        let _ = std::fs::remove_file(&path);
     }
     store::remove_marker_in(state_dir);
     Ok(())

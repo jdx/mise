@@ -9,9 +9,10 @@ use crate::system::history::tracked::normalize;
 
 /// Save a checkpoint of the tracked files now
 ///
-/// Fails when nothing could be saved, so a script or an agent gets a
-/// trustworthy result; `--best-effort` turns that into a warning for
-/// `set -e` update scripts.
+/// Fails when history cannot save or a requested path is not tracked, so a
+/// script or an agent gets a trustworthy result; a save that finds nothing
+/// changed succeeds as a no-op. `--best-effort` turns save errors into a
+/// warning for `set -e` update scripts.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct DotfilesSave {
@@ -35,7 +36,7 @@ pub(crate) struct DotfilesSave {
     #[usage(long, value_name = "LABEL")]
     label: Vec<String>,
 
-    /// Warn instead of failing when nothing could be saved
+    /// Warn instead of failing when history cannot save
     #[usage(long)]
     best_effort: bool,
 }
@@ -91,6 +92,9 @@ impl DotfilesSave {
         });
         draft.task = self.task.clone();
         draft.labels = self.label.clone();
+        // a save is a write: it waits for no running operation, refuses to
+        // interleave with one, and closes one that died
+        let _operation = crate::system::history::scope::take_operation_lock(&store, &tracked)?;
         match store.attempt(&tracked, draft)? {
             Outcome::Created(entry) => {
                 info!(

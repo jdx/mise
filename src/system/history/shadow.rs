@@ -59,6 +59,9 @@ pub(crate) struct TreeEntry {
 pub(crate) struct DiffOpts {
     /// Full patch instead of a per-file summary.
     pub patch: bool,
+    /// Write the diff to the terminal as git produces it instead of
+    /// returning it: `output` comes back empty.
+    pub stream: bool,
     pub color: bool,
     /// Restrict the comparison to a path inside each tree.
     pub paths: Option<(String, String)>,
@@ -365,7 +368,7 @@ impl HistoryRepo {
             }
             None => (a.to_string(), b.to_string()),
         };
-        let output = self.git.output_unchecked(PlumbingCall::new([
+        let call = PlumbingCall::new([
             "diff",
             "--no-ext-diff",
             "--exit-code",
@@ -377,7 +380,22 @@ impl HistoryRepo {
             },
             &from,
             &to,
-        ]))?;
+        ]);
+        if opts.stream {
+            let status = self.git.status_inherited(call)?;
+            return match status.code() {
+                Some(0) => Ok(DiffResult {
+                    output: vec![],
+                    changed: false,
+                }),
+                Some(1) => Ok(DiffResult {
+                    output: vec![],
+                    changed: true,
+                }),
+                _ => bail!("git diff failed ({status})"),
+            };
+        }
+        let output = self.git.output_unchecked(call)?;
         match output.status.code() {
             Some(0) => Ok(DiffResult {
                 output: output.stdout,

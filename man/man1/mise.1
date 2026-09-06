@@ -1634,9 +1634,9 @@ Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix
 Show what history tracks and under which policies
 
 Every entry is listed with the file that declared it, its policies, and
-how many files it currently covers. Declarations history could not
-honour are listed as invalid so a failed enrollment is never mistaken
-for protection.
+how many files it currently covers. Declarations that history could not
+honour are listed as invalid, omitted, or incomplete, so a failed
+enrollment is never mistaken for protection.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles paths [OPTIONS]
 .PP
@@ -1654,9 +1654,10 @@ Print help
 .SH "MISE BOOTSTRAP DOTFILES SAVE"
 Save a checkpoint of the tracked files now
 
-Fails when nothing could be saved, so a script or an agent gets a
-trustworthy result; `\-\-best\-effort` turns that into a warning for
-`set \-e` update scripts.
+Fails when history cannot save or a requested path is not tracked, so a
+script or an agent gets a trustworthy result; a save that finds nothing
+changed succeeds as a no\-op. `\-\-best\-effort` turns save errors into a
+warning for `set \-e` update scripts.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles save [OPTIONS] [<PATH>] ...
 .PP
@@ -1679,7 +1680,7 @@ The task an agent is working on
 A label to find the checkpoint by later
 .TP
 \fB\-\-best\-effort\fR
-Warn instead of failing when nothing could be saved
+Warn instead of failing when history cannot save
 .TP
 \fB\-h, \-\-help\fR
 Print help

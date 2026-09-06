@@ -1822,47 +1822,27 @@ impl Bootstrap {
         } else {
             None
         };
-        if reuse_checkout {
-            if self.update {
-                if self.dry_run {
-                    miseprintln!(
-                        "Would run: git -C {} pull --ff-only",
-                        checkout.display_user()
-                    );
-                } else {
-                    run_bootstrap_git(&checkout, ["pull", "--ff-only"])?;
-                    journal::note(format!(
-                        "updated the checkout of {url} in {}",
-                        checkout.display_user()
-                    ));
-                }
-            }
-        } else if self.dry_run {
-            miseprintln!("Would run: git clone {} {}", url, checkout.display_user());
-            return Ok(());
-        } else {
-            if let Some(parent) = checkout
-                .parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-            {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut command = Command::new("git");
-            command.arg("clone").arg(url).arg(&checkout);
-            crate::git::sanitize_git_command(&mut command);
-            let status = command.status()?;
-            if !status.success() {
-                bail!("git clone failed with {status}");
-            }
-            journal::note(format!("cloned {url} into {}", checkout.display_user()));
-        }
+        let checked_out = checkout_bootstrap_repository(
+            url,
+            &checkout,
+            reuse_checkout,
+            self.update,
+            self.dry_run,
+        );
+        // the record says why a pull or clone failed, not just that it did
         if let Some(generation) = generation {
-            generation.finish(
-                None,
-                Some(Summary {
-                    message: Some(format!("checkout of {url}")),
-                }),
-            );
+            match &checked_out {
+                Ok(_) => generation.finish(
+                    None,
+                    Some(Summary {
+                        message: Some(format!("checkout of {url}")),
+                    }),
+                ),
+                Err(err) => generation.finish(Some(format!("{err:#}")), None),
+            }
+        }
+        if !checked_out? {
+            return Ok(());
         }
 
         let checkout = dunce::canonicalize(&checkout)?;
@@ -3970,12 +3950,25 @@ impl BootstrapDotfiles {
 
 impl BootstrapDotfilesApply {
     async fn run(self) -> Result<()> {
+        // one operation around both hook phases and the apply itself, so a
+        // hook that edits a tracked file is inside the checkpoint pair
+        let dry_run = self.cmd.dry_run();
+        OperationScope::wrap(
+            "bootstrap dotfiles apply",
+            "dotfiles",
+            dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let mut config = Config::get().await?;
         let (files, edits) = self.cmd.requests(&config)?;
         let dry_run = self.cmd.dry_run();
         let hooks = system::hooks_from_config(&config);
         run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
-        if !self.cmd.run().await? {
+        if !self.cmd.run_inner().await? {
             return Ok(());
         }
         let hooks = if dry_run {
@@ -3988,6 +3981,53 @@ impl BootstrapDotfilesApply {
         };
         run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PostDotfiles, dry_run).await
     }
+}
+
+/// Updates or clones the bootstrap repository. `Ok(false)` is a dry run
+/// that stops here because there is no checkout to continue from.
+fn checkout_bootstrap_repository(
+    url: &str,
+    checkout: &Path,
+    reuse: bool,
+    update: bool,
+    dry_run: bool,
+) -> Result<bool> {
+    if reuse {
+        if update {
+            if dry_run {
+                miseprintln!(
+                    "Would run: git -C {} pull --ff-only",
+                    checkout.display_user()
+                );
+            } else {
+                run_bootstrap_git(checkout, ["pull", "--ff-only"])?;
+                journal::note(format!(
+                    "updated the checkout of {url} in {}",
+                    checkout.display_user()
+                ));
+            }
+        }
+        return Ok(true);
+    }
+    if dry_run {
+        miseprintln!("Would run: git clone {} {}", url, checkout.display_user());
+        return Ok(false);
+    }
+    if let Some(parent) = checkout
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut command = Command::new("git");
+    command.arg("clone").arg(url).arg(checkout);
+    crate::git::sanitize_git_command(&mut command);
+    let status = command.status()?;
+    if !status.success() {
+        bail!("git clone failed with {status}");
+    }
+    journal::note(format!("cloned {url} into {}", checkout.display_user()));
+    Ok(true)
 }
 
 fn bootstrap_hooks_enabled() -> bool {
