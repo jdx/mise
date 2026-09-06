@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TKXG80A093DYZXKXCB83JZ",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-download-backends",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dev-tools/backends/aqua.md",
+    "docs/dev-tools/backends/forgejo.md",
+    "docs/dev-tools/backends/github.md",
+    "docs/dev-tools/backends/gitlab.md",
+    "docs/dev-tools/backends/http.md",
+    "docs/dev-tools/backends/index.md",
+    "docs/dev-tools/backends/packslip.md",
+    "docs/dev-tools/backends/s3.md",
+    "docs/dev-tools/backends/ubi.md",
+    "docs/public/llms.txt"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 173924,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6481536,
+    "output_tokens": 19867,
+    "api_call_count": 46
+  }
+}

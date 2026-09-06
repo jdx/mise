@@ -1,0 +1,82 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TKXG80A093DYZXKXCB83JZ",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T05:44:03.234971Z",
+  "branch": "codex/docs-download-backends",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dev-tools/backends/aqua.md",
+    "docs/dev-tools/backends/forgejo.md",
+    "docs/dev-tools/backends/github.md",
+    "docs/dev-tools/backends/gitlab.md",
+    "docs/dev-tools/backends/http.md",
+    "docs/dev-tools/backends/index.md",
+    "docs/dev-tools/backends/packslip.md",
+    "docs/dev-tools/backends/s3.md",
+    "docs/dev-tools/backends/ubi.md",
+    "docs/public/llms.txt"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ed0ac62e3c6f",
+  "checkpoint_transcript_start": 1840,
+  "transcript_lines_at_start": 1840,
+  "compact_transcript_start": 226,
+  "token_usage": {
+    "input_tokens": 173924,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6481536,
+    "output_tokens": 19867,
+    "api_call_count": 46
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T05:44:02.854966Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 361,
+    "total_committed": 22,
+    "total_lines_changed": 361,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 405,
+      "user_lines_removed": 361,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "docs/dev-tools/backends/aqua.md": 57,
+        "docs/dev-tools/backends/forgejo.md": 41,
+        "docs/dev-tools/backends/github.md": 40,
+        "docs/dev-tools/backends/gitlab.md": 64,
+        "docs/dev-tools/backends/http.md": 55,
+        "docs/dev-tools/backends/index.md": 44,
+        "docs/dev-tools/backends/packslip.md": 18,
+        "docs/dev-tools/backends/s3.md": 60,
+        "docs/dev-tools/backends/ubi.md": 24,
+        "docs/public/llms.txt": 2
+      },
+      "user_removed_per_file": {
+        "docs/dev-tools/backends/aqua.md": 117,
+        "docs/dev-tools/backends/forgejo.md": 29,
+        "docs/dev-tools/backends/github.md": 27,
+        "docs/dev-tools/backends/gitlab.md": 39,
+        "docs/dev-tools/backends/http.md": 54,
+        "docs/dev-tools/backends/index.md": 24,
+        "docs/dev-tools/backends/packslip.md": 3,
+        "docs/dev-tools/backends/s3.md": 36,
+        "docs/dev-tools/backends/ubi.md": 30,
+        "docs/public/llms.txt": 2
+      }
+    }
+  ]
+}
