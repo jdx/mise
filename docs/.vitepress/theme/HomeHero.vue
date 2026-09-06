@@ -49,12 +49,14 @@ const selected = ref(0);
 const active = computed(() => examples[selected.value]);
 const copyState = ref("Copy");
 const installCommand = "curl https://mise.run | sh";
+const installCode = ref<HTMLElement | null>(null);
 let copyTimeout: ReturnType<typeof setTimeout> | undefined;
 
 async function copyInstall() {
+  let copied = false;
   try {
     await navigator.clipboard.writeText(installCommand);
-    copyState.value = "Copied!";
+    copied = true;
   } catch {
     // Keep copy working when the Clipboard API is unavailable or denied.
     const button = document.activeElement;
@@ -66,18 +68,32 @@ async function copyInstall() {
     document.body.appendChild(textarea);
     textarea.select();
     try {
-      copyState.value = document.execCommand("copy")
-        ? "Copied!"
-        : "Select to copy";
+      copied = document.execCommand("copy");
     } catch {
-      copyState.value = "Select to copy";
+      // Select the visible command below if neither clipboard method works.
     } finally {
       textarea.remove();
       if (button instanceof HTMLElement) button.focus({ preventScroll: true });
     }
   }
   clearTimeout(copyTimeout);
-  copyTimeout = setTimeout(() => (copyState.value = "Copy"), 2500);
+  if (!installCode.value) return;
+  if (copied) {
+    copyState.value = "Copied!";
+    copyTimeout = setTimeout(() => (copyState.value = "Copy"), 2500);
+  } else {
+    const selection = window.getSelection();
+    if (selection) {
+      installCode.value.focus({ preventScroll: true });
+      const range = document.createRange();
+      range.selectNodeContents(installCode.value);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      copyState.value = "Press Ctrl/Cmd+C";
+    } else {
+      copyState.value = "Select to copy";
+    }
+  }
 }
 onUnmounted(() => clearTimeout(copyTimeout));
 </script>
@@ -86,7 +102,9 @@ onUnmounted(() => clearTimeout(copyTimeout));
   <section class="home-hero" aria-labelledby="home-title">
     <div class="hero-copy">
       <p class="hero-eyebrow">mise-en-place / everything in its place</p>
-      <h1 id="home-title">Your dev setup.<br /><em>In good order.</em></h1>
+      <h1 id="home-title">
+        Your dev setup. <br class="hero-break" /><em>In good order.</em>
+      </h1>
       <p class="hero-lede">
         Declare your tool versions, environment variables, and commands in
         <code>mise.toml</code>. Use them in your shell, editor, and CI. Add
@@ -101,7 +119,7 @@ onUnmounted(() => clearTimeout(copyTimeout));
       </div>
       <div class="hero-install">
         <span class="install-prompt" aria-hidden="true">$</span>
-        <code>{{ installCommand }}</code>
+        <code ref="installCode" tabindex="-1">{{ installCommand }}</code>
         <button
           type="button"
           aria-label="Copy mise install command"
