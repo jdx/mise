@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# A populated tree moved into a missing tracked path is captured without a
+# periodic scan or a later edit inside the tree.
+require_cmd git
+export MISE_EXPERIMENTAL=1
+export MISE_HISTORY_WATCH_RECONCILE=0
+export MISE_HISTORY_WATCH_DEBOUNCE=100ms
+
+mkdir -p ~/parent "$PWD/staged-tree"
+printf 'already populated\n' >"$PWD/staged-tree/config"
+assert_succeed 'mise bootstrap dotfiles track ~/parent/incoming'
+mise bootstrap dotfiles watch --json >watch.log 2>&1 &
+watcher=$!
+cleanup() {
+  kill "$watcher" 2>/dev/null || true
+  wait "$watcher" || true
+}
+trap cleanup EXIT
+
+wait_until() {
+  for _ in $(seq 1 100); do
+    if eval "$1" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  cat watch.log >&2
+  return 1
+}
+
+wait_until 'grep -q '\''"event":"started"'\'' watch.log'
+mv "$PWD/staged-tree" ~/parent/incoming
+wait_until 'mise bootstrap dotfiles history show latest --files | grep -q parent/incoming/config'
+assert_contains 'mise bootstrap dotfiles history show latest --files' 'parent/incoming/config'

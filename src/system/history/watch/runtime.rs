@@ -452,12 +452,12 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                     // what the new set no longer covers (a link's old
                     // target, say) leaves the schedule
                     prune_schedule(&mut capture, &state);
-                    // an edit that landed while the watches were being
-                    // remade is saved now, not at the next reconciliation
-                    if anchor_changed {
-                        capture.reconcile(&state.tracked, "watches reinstalled");
-                        capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
-                    }
+                    // Newly appeared trees may already contain files before
+                    // their watches are installed. Capture those and any edits
+                    // during reinstallation even if periodic reconciliation is
+                    // disabled, while preserving the noisy-file schedule.
+                    capture.reconcile(&state.tracked, "watches updated");
+                    capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
                     capture.out.emit(
                         "replan",
                         &format!("a tracked path appeared; watching {} anchor(s)", installed.len()),
