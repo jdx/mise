@@ -1,0 +1,5 @@
+do [https://github.com/jdx/mise/pull/12870](https://github.com/jdx/mise/pull/12870)
+
+---
+
+fix [https://github.com/jdx/mise/pull/12871](https://github.com/jdx/mise/pull/12871)
