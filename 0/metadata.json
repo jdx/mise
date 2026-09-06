@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1THYX84Y24CPHFJCYTZF7DX",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T05:09:52.317483Z",
+  "branch": "codex/docs-tool-locking-and-trust",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dev-tools/github-tokens.md",
+    "docs/dev-tools/mise-lock.md",
+    "docs/dev-tools/packslip-resources.md",
+    "docs/dev-tools/packslip-verification.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "57e90f547f29",
+  "checkpoint_transcript_start": 1343,
+  "transcript_lines_at_start": 1343,
+  "compact_transcript_start": 169,
+  "token_usage": {
+    "input_tokens": 127257,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4288128,
+    "output_tokens": 15379,
+    "api_call_count": 23
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T05:09:51.929284Z",
+    "agent_lines": 310,
+    "agent_removed": 125,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 310,
+    "total_lines_changed": 435,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
