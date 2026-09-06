@@ -1,5 +1,7 @@
 Describe 'bootstrap user services' {
     BeforeAll {
+        $script:OriginalExperimental = [Environment]::GetEnvironmentVariable('MISE_EXPERIMENTAL', 'Process')
+        $env:MISE_EXPERIMENTAL = '1'
         $script:OriginalDir = Get-Location
         Set-Location TestDrive:
 
@@ -9,6 +11,11 @@ Describe 'bootstrap user services' {
     }
 
     AfterAll {
+        if ($null -eq $script:OriginalExperimental) {
+            Remove-Item Env:MISE_EXPERIMENTAL -ErrorAction Ignore
+        } else {
+            $env:MISE_EXPERIMENTAL = $script:OriginalExperimental
+        }
         schtasks /delete /tn $script:Task /f 2>&1 | Out-Null
         Set-Location $script:OriginalDir
         if ($null -eq $script:OriginalTrusted) {
