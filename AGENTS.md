@@ -3,7 +3,6 @@
 ## mbx build cache
 
 `mise install` installs mbx. `mise run` activates the project's transparent
-`mise install` installs mbx at the version pinned in `mise.toml`. `mise run` activates the project's transparent
 Cargo wrapper, so compilation-heavy mise tasks and hk checks use ordinary
 `cargo` commands. Standalone Cargo commands require an activated mise shell. If
 the wrapper fails or creates a development papercut, rerun the exact equivalent
