@@ -259,14 +259,16 @@ caller passed in.
 You can also provide help text to guide users on how to set the variable:
 
 ```toml
-[env.DATABASE_URL]
-required = "Set DATABASE_URL to your PostgreSQL connection string"
-
-[env.API_KEY]
-required = "Get your API key from https://example.com/api-keys"
-
-[env.AWS_REGION]
-required = "Set to your AWS region (e.g., us-east-1, eu-west-1)"
+[env]
+DATABASE_URL = {
+  required = "Set DATABASE_URL to your PostgreSQL connection string",
+}
+API_KEY = {
+  required = "Get your API key from https://example.com/api-keys",
+}
+AWS_REGION = {
+  required = "Set to your AWS region (e.g., us-east-1, eu-west-1)",
+}
 ```
 
 When a required variable is missing, mise shows the help text in the error message.
@@ -606,9 +608,11 @@ The configuration options you provide (the TOML table after `=`) are passed to t
 ### Example: Secret Management Plugin
 
 ```toml
-[env._.vault-secrets]
-vault_url = "https://vault.example.com"
-secrets_path = "secret/myapp"
+[env]
+_.vault-secrets = {
+  vault_url = "https://vault.example.com",
+  secrets_path = "secret/myapp",
+}
 ```
 
 The plugin could then fetch secrets from HashiCorp Vault and expose them as environment variables.

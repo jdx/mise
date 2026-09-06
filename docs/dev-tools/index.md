@@ -87,6 +87,9 @@ Tool options customize installation for a particular backend. Start with the
 backend's reference: a valid option for one backend may not apply to another
 source for the same tool.
 
+Examples use TOML 1.1, which allows multiline inline tables and trailing commas
+inside them. Use that form when splitting an option across lines improves readability.
+
 ### Table Format (Recommended)
 
 Use TOML tables when an option has nested fields. This illustrates the HTTP
@@ -96,11 +99,13 @@ backend's platform mapping; replace the example URLs with your own release asset
 [tools."http:my-tool"]
 version = "1.0.0"
 
-[tools."http:my-tool".platforms.macos-x64]
-url = "https://example.com/my-tool-macos-x64.tar.gz"
-
-[tools."http:my-tool".platforms.linux-x64]
-url = "https://example.com/my-tool-linux-x64.tar.gz"
+[tools."http:my-tool".platforms]
+macos-x64 = {
+  url = "https://example.com/my-tool-macos-x64.tar.gz",
+}
+linux-x64 = {
+  url = "https://example.com/my-tool-linux-x64.tar.gz",
+}
 ```
 
 See the [HTTP backend](/dev-tools/backends/http.html) for checksums, executable
@@ -184,7 +189,11 @@ ripgrep = { version = "latest", os = ["linux", "macos"] }
 "github:PowerShell/PowerShell" = { version = "latest", os = ["windows"] }
 
 # Works with other options
-"cargo:usage-cli" = { version = "latest", os = ["linux", "macos"], locked = false }
+"cargo:usage-cli" = {
+  version = "latest",
+  os = ["linux", "macos"],
+  locked = false,
+}
 ```
 
 The `os` field accepts an array of operating system identifiers:
