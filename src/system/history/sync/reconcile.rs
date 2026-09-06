@@ -67,6 +67,10 @@ pub(crate) enum ConflictKind {
     Binary,
     /// A manual-save entry has live edits that are not saved.
     UnsavedEdits,
+    /// The incoming configuration cannot be applied safely.
+    InvalidIncoming,
+    /// A user checkout has staged changes that must not be overwritten.
+    StagedEdits,
 }
 
 impl ConflictKind {
@@ -79,6 +83,8 @@ impl ConflictKind {
             Self::NeedsAdoption => "needs adoption: both sides have a version and no common base",
             Self::Binary => "both sides changed a binary file",
             Self::UnsavedEdits => "unsaved edits: save or discard them first",
+            Self::InvalidIncoming => "incoming configuration is invalid; correct it upstream",
+            Self::StagedEdits => "staged git changes: commit or unstage them first",
         }
     }
 }

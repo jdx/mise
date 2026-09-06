@@ -15,11 +15,14 @@ file written and journaled one at a time, reload hooks only afterwards,
 and `mise bootstrap dotfiles undo` to reverse it. Configuration and the sources it
 references apply together; an incoming configuration file that does not
 parse, a path with unsaved local edits, staged git changes in your own
-checkout, or a genuine local edit is held with its group. Conflicts
-are decided per path with `--take-remote` or `--keep-local`.
+checkout, or a genuine local edit pauses the complete application.
+Conflicts pause both publication and application for the whole setup;
+local history and fetching continue. Decisions are recorded per path
+with `--take-remote` or `--keep-local`; sharing resumes only after all
+conflicts are resolved and the plan has been recomputed.
 
 ## Arguments
-- **`[PATH]…`** — Only these paths (files or directories)
+- **`[PATH]…`** — Paths must cover the complete pending setup; partial pulls are rejected
 
 ## Flags
 - **`-n --dry-run`** — Show the plan without changing anything

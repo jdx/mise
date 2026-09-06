@@ -773,9 +773,14 @@ impl Doctor {
         if let Ok(Some(_)) = crate::system::history::config::origin() {
             use crate::system::history::sync::{apply, run};
             let status = run::read_status(&state_dir);
+            if let Some(error) = &status.application_failure {
+                diagnosis.sync_error = Some(error.clone());
+                self.errors.push(format!("dotfiles: {error}"));
+            }
             for (path, reason) in apply::describe_conflicts(&status.conflicts) {
                 self.warnings.push(format!(
-                    "dotfiles: {path} has a sync conflict ({reason}).\n     Your local file is unchanged; other files continue syncing.\n     Inspect with: mise bootstrap dotfiles status"
+                    "dotfiles: {path} has a sync conflict ({reason}).\n     Sharing is paused for the entire setup; local history and fetching continue.\n     Last successful application: {}.\n     Resolve with: mise bootstrap dotfiles pull --take-remote|--keep-local {path}",
+                    status.last_apply.as_deref().unwrap_or("never")
                 ));
                 diagnosis.sync_conflicts.push((path, reason));
             }

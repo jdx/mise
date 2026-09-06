@@ -36,6 +36,44 @@ pub(crate) struct SetOptions {
 
 /// Connects the setup repository.
 pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) -> Result<()> {
+    let mut preview_lock = Some(run::lock(store)?);
+    let repo = store
+        .repo()
+        .ok_or_else(|| eyre::eyre!("connecting requires git"))?;
+    let previous_upstream = repo.ref_oid(UPSTREAM_REF)?;
+    let previous_machines = repo.list_refs(MACHINES_PREFIX)?;
+    let mut accepted = false;
+    let result = set_inner(store, tracked, opts, &mut accepted, &mut preview_lock).await;
+    if !accepted {
+        // Preview fetches must not change the active connection, even when
+        // validation or privacy checks fail before the prompt.
+        for (name, _) in repo.list_refs(MACHINES_PREFIX)? {
+            if !previous_machines.iter().any(|(old, _)| old == &name) {
+                repo.delete_ref(&name)?;
+            }
+        }
+        for (name, oid) in previous_machines {
+            let current = repo.ref_oid(&name)?;
+            repo.update_ref(&name, &oid, current.as_deref())?;
+        }
+        match previous_upstream {
+            Some(oid) => {
+                let current = repo.ref_oid(UPSTREAM_REF)?;
+                repo.update_ref(UPSTREAM_REF, &oid, current.as_deref())?;
+            }
+            None => repo.delete_ref(UPSTREAM_REF)?,
+        }
+    }
+    result
+}
+
+async fn set_inner(
+    store: &Store,
+    tracked: &TrackedSet,
+    opts: &SetOptions,
+    accepted: &mut bool,
+    preview_lock: &mut Option<fslock::LockFile>,
+) -> Result<()> {
     if opts.encrypt_backups {
         bail!("encrypted backups are not supported yet; connect without --encrypt-backups");
     }
@@ -222,6 +260,7 @@ pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) 
     if !confirmed(opts.yes, "Connect this setup repository?")? {
         bail!("not connected");
     }
+    *accepted = true;
 
     // record: machine name, configuration, status
     if opts.name.is_some() {
@@ -266,6 +305,7 @@ pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) 
     );
 
     // the first synchronization
+    drop(preview_lock.take());
     crate::config::Config::reset().await?;
     let tracked = TrackedSet::effective().await?;
     let store = Store::open_in(state_dir)?;

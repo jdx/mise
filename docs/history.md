@@ -306,7 +306,7 @@ retries; nothing is ever force-pushed or reset, so your own commits and
 unrelated files survive. Repeating a sync changes nothing.
 
 **Modes** (`settings.history.sync`): `sync` (default) publishes, fetches, and
-queues nonconflicting incoming changes for application; `fetch-only` only
+queues incoming changes for application; `fetch-only` only
 downloads; `manual` publishes and fetches but never applies by itself. In
 this release `mise bootstrap dotfiles sync` publishes and fetches and
 `mise bootstrap dotfiles pull` writes what is queued; the watcher's automatic
@@ -317,15 +317,16 @@ says to run `mise bootstrap`.
 
 **Applying.** `mise bootstrap dotfiles pull` writes pending changes as one recoverable
 transaction (a protective checkpoint first, each file journaled, reload
-hooks afterwards, `mise bootstrap dotfiles undo` to reverse it). Configuration and the
-sources it references apply together; an incoming configuration file that
-does not parse, a path with unsaved edits, staged changes in your own git
-checkout of the config directory, or a genuine local edit is held with its
-group and listed by `status`. A file mise wrote itself is recognized, so a
-checkout receives consecutive remote changes without a manual commit.
-Conflicts are decided per path: `--take-remote <path>` writes the
-repository's version; `--keep-local <path>` publishes yours at the next
-sync.
+hooks afterwards, `mise bootstrap dotfiles undo` to reverse it). Any conflict
+pauses publishing and incoming application for the entire setup. Local
+history, fetching, and eligible recovery backups continue. Invalid incoming
+configuration or unsafe local files block the complete application batch.
+Status and doctor name the blocking paths and the last successful application.
+Choose per file with `--take-remote <path>` or `--keep-local <path>`; choices
+are recorded without partially applying the setup. Once every conflict is
+resolved, mise recomputes the plan before sharing resumes. A later local or
+remote edit invalidates a choice based on an older version. This is
+all-or-nothing application with recovery, not atomic filesystem writes.
 
 **Machine backups.** Eligible checkpoints (with content and at least one
 `backup = true` entry) are pushed as parentless commits to

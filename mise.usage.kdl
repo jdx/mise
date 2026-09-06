@@ -870,8 +870,11 @@ file written and journaled one at a time, reload hooks only afterwards,
 and `mise bootstrap dotfiles undo` to reverse it. Configuration and the sources it
 references apply together; an incoming configuration file that does not
 parse, a path with unsaved local edits, staged git changes in your own
-checkout, or a genuine local edit is held with its group. Conflicts
-are decided per path with `--take-remote` or `--keep-local`.
+checkout, or a genuine local edit pauses the complete application.
+Conflicts pause both publication and application for the whole setup;
+local history and fetching continue. Decisions are recorded per path
+with `--take-remote` or `--keep-local`; sharing resumes only after all
+conflicts are resolved and the plan has been recomputed.
 """#
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --keep-local ~/.zshrc\u{1b}[22m\n"
             flag "-n --dry-run" help="Show the plan without changing anything"
@@ -883,7 +886,7 @@ are decided per path with `--take-remote` or `--keep-local`.
                 arg <PATH>
             }
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg "[PATH]…" help="Only these paths (files or directories)" required=#false var=#true
+            arg "[PATH]…" help="Paths must cover the complete pending setup; partial pulls are rejected" required=#false var=#true
         }
         cmd rollback help="Return files to the version a checkpoint holds" effect=destructive {
             long_help #"""

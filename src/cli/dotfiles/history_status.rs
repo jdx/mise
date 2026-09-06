@@ -38,6 +38,7 @@ pub(crate) struct SyncReport {
     pub conflicts: Vec<(String, String)>,
     pub declarations_changed: bool,
     pub last_error: Option<String>,
+    pub application_failure: Option<String>,
 }
 
 pub(crate) fn sync_report(
@@ -87,6 +88,7 @@ pub(crate) fn sync_report(
         conflicts: apply::describe_conflicts(&status.conflicts),
         declarations_changed: status.declarations_changed,
         last_error: status.last_error.clone(),
+        application_failure: status.application_failure.clone(),
     }))
 }
 
@@ -215,7 +217,7 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             }
             for (path, reason) in &sync.conflicts {
                 miseprintln!(
-                    "  conflict: {path}: {reason}; your local file is unchanged, other files continue syncing (`mise bootstrap dotfiles pull --take-remote|--keep-local {path}`)"
+                    "  sync paused: {path}: {reason}; sharing is paused for the entire setup; local history continues (`mise bootstrap dotfiles pull --take-remote|--keep-local {path}`)"
                 );
             }
             if sync.declarations_changed {
@@ -223,6 +225,9 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             }
             if let Some(error) = &sync.last_error {
                 miseprintln!("  last error: {error}");
+            }
+            if let Some(error) = &sync.application_failure {
+                miseprintln!("  sync paused: {error}");
             }
         }
     }

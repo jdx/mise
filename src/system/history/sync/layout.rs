@@ -48,8 +48,8 @@ impl Roots {
         if kind == EntryKind::Output {
             return None;
         }
-        let rel_home = local.strip_prefix(&self.home).ok()?;
         if kind == EntryKind::Track {
+            let rel_home = local.strip_prefix(&self.home).ok()?;
             let stream = match variant {
                 Some(variant) => format!("{TRACKED_PREFIX}@{variant}"),
                 None => TRACKED_PREFIX.to_string(),
@@ -66,6 +66,7 @@ impl Roots {
         if let Ok(rel) = local.strip_prefix(&self.dotfiles_root) {
             return Some(format!("{SOURCES_DOTFILES}/{}", slash(rel)));
         }
+        let rel_home = local.strip_prefix(&self.home).ok()?;
         Some(format!("{SOURCES_HOME}/{}", slash(rel_home)))
     }
 
@@ -204,6 +205,35 @@ mod tests {
             config_dir: PathBuf::from("/home/u/.config/mise"),
             dotfiles_root: PathBuf::from("/home/u/.dotfiles"),
         }
+    }
+
+    #[test]
+    fn configuration_and_sources_can_live_outside_home() {
+        let roots = Roots {
+            config_dir: PathBuf::from("/config/mise"),
+            dotfiles_root: PathBuf::from("/config/dotfiles"),
+            ..roots()
+        };
+        assert_eq!(
+            roots.branch_path(
+                EntryKind::Implicit,
+                Path::new("/config/mise/config.toml"),
+                None
+            ),
+            Some("config.toml".into())
+        );
+        assert_eq!(
+            roots.branch_path(
+                EntryKind::Source,
+                Path::new("/config/dotfiles/gitconfig"),
+                None
+            ),
+            Some("sources/dotfiles/gitconfig".into())
+        );
+        assert_eq!(
+            roots.branch_path(EntryKind::Track, Path::new("/etc/unrelated"), None),
+            None
+        );
     }
 
     #[test]

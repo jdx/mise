@@ -1604,6 +1604,17 @@ fn restore_dir_modes(step: &Step, _created: &[(PathBuf, u32)]) {
 /// Puts an object at a path outside a rollback plan (an incoming shared
 /// change): no recorded permission bits, an existing file keeps its own.
 pub(crate) fn write_path(repo: &HistoryRepo, path: &Path, mode: &str, oid: &str) -> Result<()> {
+    write_path_with_mode(repo, path, mode, oid, None)
+}
+
+/// Restores a transaction preimage without temporarily widening its permissions.
+pub(crate) fn write_path_with_mode(
+    repo: &HistoryRepo,
+    path: &Path,
+    mode: &str,
+    oid: &str,
+    bits: Option<u32>,
+) -> Result<()> {
     let step = Step {
         path: path.to_path_buf(),
         tree_path: display_to_tree_path(&display_path(path)),
@@ -1613,7 +1624,7 @@ pub(crate) fn write_path(repo: &HistoryRepo, path: &Path, mode: &str, oid: &str)
         },
         from: String::new(),
         to: String::new(),
-        bits: None,
+        bits,
         dir_bits: vec![],
     };
     write_object(repo, &step, mode, oid)

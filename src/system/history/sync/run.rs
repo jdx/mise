@@ -38,12 +38,31 @@ pub(crate) struct PendingApplication {
     pub configuration: bool,
     /// The state to record once the write succeeds.
     pub next: state::SyncRecord,
+    /// Saved local version used to compute this application. Absence is
+    /// significant: saving a newer version never authorizes overwriting it.
+    #[serde(default)]
+    pub local: Option<Object>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct Resolution {
+    pub local: Option<Object>,
+    pub remote: Option<Object>,
+    pub live: Option<Object>,
+    pub take_remote: bool,
 }
 
 /// Derived from the repository after every sync; rebuilt when it
 /// disagrees.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct SyncStatus {
+    /// Choices are bound to all three observed versions, not just a path.
+    #[serde(default)]
+    pub resolutions: BTreeMap<String, Resolution>,
+    /// A failed application is not cleared by successful network traffic.
+    /// An explicit pull retries the complete batch after inspecting it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub application_failure: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_publish: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,6 +143,7 @@ pub(crate) fn sync(
     tracked: &TrackedSet,
     request: &SyncRequest,
 ) -> Result<SyncOutcome> {
+    let _sync_lock = lock(store)?;
     let origin = origin()?;
     if origin.encrypt_backups {
         bail!("[history.origin] encrypt_backups is not supported yet; set it to false");
@@ -184,6 +204,18 @@ pub(crate) fn sync(
             let sync_state = state::load(repo)?;
             plans =
                 reconcile::reconcile(repo, &shared.objects(), &upstream, &sync_state, &unsaved)?;
+            apply_resolutions(repo, &mut status, &shared.objects(), &upstream, &mut plans)?;
+            // Observing identical versions establishes a baseline even when
+            // there is no publication (including fetch-only connections).
+            let mut observed = sync_state.clone();
+            for plan in &plans {
+                if plan.is_noop() {
+                    observed.insert(plan.branch_path.clone(), plan.next.clone());
+                }
+            }
+            if observed != sync_state {
+                state::save(repo, &observed, "observed identical versions")?;
+            }
             let changes: BTreeMap<String, Option<Object>> = plans
                 .iter()
                 .filter_map(|plan| {
@@ -192,7 +224,10 @@ pub(crate) fn sync(
                         .map(|object| (plan.branch_path.clone(), object))
                 })
                 .collect();
-            if !publish {
+            if !publish
+                || status.application_failure.is_some()
+                || plans.iter().any(|plan| plan.conflict.is_some())
+            {
                 break;
             }
             let add_marker = matches!(repo_state, RepoState::Empty | RepoState::Unmarked);
@@ -237,6 +272,7 @@ pub(crate) fn sync(
                         &next_state,
                         &unsaved,
                     )?;
+                    apply_resolutions(repo, &mut status, &shared.objects(), &upstream, &mut plans)?;
                     break;
                 }
                 PushOutcome::Rejected(reason) if attempts < PUSH_RETRIES => {
@@ -250,7 +286,7 @@ pub(crate) fn sync(
             }
         }
         status.upstream_commit = upstream_commit.clone();
-        record_pending(&mut status, &plans, &Roots::current());
+        record_pending(&mut status, &plans, &Roots::current(), &shared.objects());
         if publish {
             let since = status.upload_since.clone();
             let uploadable: Vec<Entry> = entries
@@ -285,6 +321,12 @@ pub(crate) fn sync(
     result.map(|()| outcome)
 }
 
+pub(crate) fn lock(store: &Store) -> Result<fslock::LockFile> {
+    crate::lock_file::LockFile::new(&hstore::store_dir_in(store.state_dir()).join("sync.lock"))
+        .try_lock()?
+        .ok_or_else(|| eyre::eyre!("another setup sync or pull is running; retry shortly"))
+}
+
 /// Saves the tracked set now (deduplicated against the newest checkpoint),
 /// so the versions this sync publishes are what is on disk.
 pub(crate) fn capture_now(store: &Store, tracked: &TrackedSet) {
@@ -298,7 +340,12 @@ pub(crate) fn capture_now(store: &Store, tracked: &TrackedSet) {
 
 /// Records what is left to apply or decide, keeping the newest upstream
 /// version for a path whose application was already pending.
-fn record_pending(status: &mut SyncStatus, plans: &[PathPlan], roots: &Roots) {
+fn record_pending(
+    status: &mut SyncStatus,
+    plans: &[PathPlan],
+    roots: &Roots,
+    shared: &BTreeMap<String, Object>,
+) {
     status.conflicts = plans
         .iter()
         .filter_map(|plan| plan.conflict.clone())
@@ -314,6 +361,7 @@ fn record_pending(status: &mut SyncStatus, plans: &[PathPlan], roots: &Roots) {
                 object,
                 configuration: is_configuration(&plan.branch_path),
                 next: plan.next.clone(),
+                local: shared.get(&plan.branch_path).cloned(),
             })
         })
         .collect();
@@ -323,6 +371,136 @@ fn record_pending(status: &mut SyncStatus, plans: &[PathPlan], roots: &Roots) {
             .pending_applications
             .iter()
             .any(|pending| pending.configuration);
+}
+
+/// Rebuild the incoming plan against current saved files and the latest
+/// fetched branch. Pull never trusts an old pending plan after a save.
+pub(crate) fn refresh(store: &Store, tracked: &TrackedSet, status: &mut SyncStatus) -> Result<()> {
+    let repo = store
+        .repo()
+        .ok_or_else(|| eyre::eyre!("planning requires git"))?;
+    let shared = share::current(repo, store, tracked)?;
+    let mut upstream = reconcile::upstream(repo, repo.ref_oid(UPSTREAM_REF)?.as_deref())?;
+    upstream
+        .files
+        .retain(|path, _| eligible(&Roots::current(), tracked, path));
+    let mut plans = reconcile::reconcile(
+        repo,
+        &shared.objects(),
+        &upstream,
+        &state::load(repo)?,
+        &unsaved_paths(repo, tracked, &shared)?,
+    )?;
+    apply_resolutions(repo, status, &shared.objects(), &upstream, &mut plans)?;
+    status.upstream_commit = upstream.commit;
+    record_pending(status, &plans, &Roots::current(), &shared.objects());
+    Ok(())
+}
+
+fn apply_resolutions(
+    repo: &crate::system::history::shadow::HistoryRepo,
+    status: &mut SyncStatus,
+    shared: &BTreeMap<String, Object>,
+    upstream: &reconcile::Upstream,
+    plans: &mut [PathPlan],
+) -> Result<()> {
+    let roots = Roots::current();
+    let mut invalid = vec![];
+    for (path, choice) in &status.resolutions {
+        let live = match roots.locate(path).path() {
+            Some(local) => match super::apply::live_object(repo, local) {
+                Ok(live) => live,
+                Err(_) => {
+                    invalid.push(path.clone());
+                    continue;
+                }
+            },
+            None => {
+                invalid.push(path.clone());
+                continue;
+            }
+        };
+        if shared.get(path) != choice.local.as_ref()
+            || upstream.files.get(path) != choice.remote.as_ref()
+            || live != choice.live
+        {
+            invalid.push(path.clone());
+            continue;
+        }
+        if let Some(plan) = plans.iter_mut().find(|plan| plan.branch_path == *path) {
+            plan.conflict = None;
+            if choice.take_remote {
+                plan.publish = None;
+                plan.apply = Some(choice.remote.clone());
+                plan.next.reconciled = choice.remote.as_ref().map(|(_, oid)| oid.clone());
+            } else {
+                plan.apply = None;
+                plan.publish = Some(choice.local.clone());
+                let oid = choice.local.as_ref().map(|(_, oid)| oid.clone());
+                plan.next.acknowledged = oid.clone();
+                plan.next.reconciled = oid.clone();
+                plan.next.applied = oid;
+            }
+        }
+    }
+    for path in invalid {
+        status.resolutions.remove(&path);
+    }
+    // A clean text merge is not sufficient: inspect every incoming live
+    // path before any publication, so unsaved or staged edits pause the
+    // whole setup instead of being discovered after other files shipped.
+    for plan in plans {
+        let Some(incoming) = &plan.apply else {
+            continue;
+        };
+        let located = roots.locate(&plan.branch_path);
+        let Some(path) = located.path() else {
+            continue;
+        };
+        let mut kind = None;
+        if let Some((_, oid)) = incoming
+            && is_configuration(&plan.branch_path)
+            && path.extension().is_some_and(|ext| ext == "toml")
+            && toml::from_str::<toml::Value>(&String::from_utf8_lossy(&repo.cat_object(oid)?))
+                .is_err()
+        {
+            kind = Some(reconcile::ConflictKind::InvalidIncoming);
+        }
+        match super::apply::live_object(repo, path) {
+            Ok(live)
+                if live.as_ref() != shared.get(&plan.branch_path)
+                    && !status
+                        .resolutions
+                        .get(&plan.branch_path)
+                        .is_some_and(|r| r.take_remote) =>
+            {
+                kind = kind.or(Some(reconcile::ConflictKind::UnsavedEdits));
+            }
+            Err(_) => kind = kind.or(Some(reconcile::ConflictKind::TypeChange)),
+            _ => {}
+        }
+        if super::apply::git_status(path)?.is_some_and(|s| {
+            s.chars()
+                .next()
+                .is_some_and(|c| c != ' ' && c != '?' && c != '!')
+        }) {
+            kind = kind.or(Some(reconcile::ConflictKind::StagedEdits));
+        }
+        if let Some(kind) = kind {
+            plan.conflict = Some(Conflict {
+                branch_path: plan.branch_path.clone(),
+                kind,
+                local: shared.get(&plan.branch_path).map(|(_, oid)| oid.clone()),
+                remote: upstream
+                    .files
+                    .get(&plan.branch_path)
+                    .map(|(_, oid)| oid.clone()),
+                base: plan.next.acknowledged.clone(),
+            });
+            plan.publish = None;
+        }
+    }
+    Ok(())
 }
 
 /// Whether an upstream path belongs on this machine: configuration and
