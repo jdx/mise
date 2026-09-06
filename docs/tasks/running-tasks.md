@@ -13,7 +13,7 @@ Run a task with `mise tasks run <task>`, `mise run <task>`, `mise r <task>`, or 
 use that last form in scripts or documentation: if a future mise version adds a command with the same name,
 the task will be shadowed and must be run with one of the other forms.
 
-Most mise users have an alias for `mise run`, such as `alias mr='mise run'`.
+For interactive use, an alias such as `alias mr='mise run'` can save typing.
 
 By default, tasks execute with a maximum of 4 parallel jobs. Customize this with the `--jobs` option,
 the `jobs` setting, or the `MISE_JOBS` environment variable. Output is normally printed line by line, prefixed
@@ -28,8 +28,10 @@ They combine: e.g. `MISE_TASK_OUTPUT=prefix` with `--quiet` keeps the task-name 
 suppressing mise's own messages. `--quiet` no longer forces un-prefixed output — use
 `--output quiet` (or `-o interleave`) if you want the old un-prefixed behavior.
 
-Stdin is not read by default. To enable it, set `raw = true` on the task that needs it. This prevents
-the task from running in parallel with any other task—a RWMutex takes a write lock in this case. It also prevents redactions from being applied to the output.
+Stdin is not connected by default. Set `interactive = true` for a task that needs
+the terminal; it has exclusive terminal access for the duration of the task.
+`raw = true` takes exclusive access per command instead. Both bypass output
+redaction and artifact caching. See [terminal I/O options](./task-configuration.html#interactive).
 
 Extra arguments are passed to the task. For example, to run in release mode:
 
@@ -110,7 +112,7 @@ Available wildcard patterns:
 
 ### Examples
 
-`mise run generate:{completions,docs:*}`
+`mise run 'generate:{completions,docs:*}'`
 
 For grouped tasks, use `*` when exactly one group may vary and `**` when the
 match may cross multiple groups:
@@ -152,7 +154,9 @@ outputs = ['target/debug/mycli']
 ```
 
 Now if `target/debug/mycli` exists and is newer than `Cargo.toml` and every matching `.rs` file, the task is skipped. This uses last-modified timestamps.
-It wouldn't be hard to add checksum support.
+The task definition is also an input. Missing declared outputs cause the task to
+run again. For content-based reuse that can restore deleted outputs, see
+[task caching](./caching.html).
 
 ## Watching files
 
@@ -162,8 +166,9 @@ Run a task when its sources change with [`mise watch`](/cli/watch.html):
 mise watch build
 ```
 
-Currently, this shells out to `watchexec`, which you can install however you like, including with mise: `mise use -g watchexec@latest`.
-This may change in the future.
+`mise watch` uses `watchexec`. Add it to your project with `mise use watchexec`
+or install it separately on `PATH`. Declare the task's `sources` to limit the
+watched files. Without a task name, mise watches the `default` task.
 
 ## `mise run` shorthand
 
@@ -193,7 +198,7 @@ You can also define a mise task to run other tasks in parallel or in series:
 run = "echo 'example1'"
 
 [tasks.example2]
-run = "mise example2"
+run = "echo 'example2'"
 
 [tasks.example3]
 run = "echo 'example3'"

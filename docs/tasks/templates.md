@@ -2,6 +2,10 @@
 
 Task templates let you define reusable task definitions that multiple tasks can extend. They are particularly useful in monorepos or projects with similar task patterns across components.
 
+The Python examples below assume a uv project whose development dependencies
+include `pytest` and, for coverage, `pytest-cov`. Declaring Python as a tool does
+not install those project packages.
+
 ## Defining Templates
 
 Templates are defined in the `[task_templates.*]` section of your `mise.toml`:
@@ -15,8 +19,8 @@ env = { PYTHONPATH = "src" }
 
 [task_templates."python:test"]
 description = "Run Python tests"
-run = "pytest"
-tools = { python = "3.12" }
+run = "uv run pytest"
+tools = { python = "3.12", uv = "latest" }
 depends = ["build"]
 ```
 
@@ -30,7 +34,7 @@ extends = "python:build"
 
 [tasks.test]
 extends = "python:test"
-run = "pytest --cov"  # Override run while keeping tools, depends
+run = "uv run pytest --cov"  # Override run while keeping tools, depends
 ```
 
 ## Template Naming
@@ -59,6 +63,12 @@ When a task extends a template, fields are merged according to these rules:
 | Sandbox allow fields                              | Template and task-local values are combined                       |
 | `description`, `shell`, `timeout`, etc.           | Local overrides template (if set)                                 |
 | `quiet`, `hide`, `raw`, `interactive`, `raw_args` | Not supported on templates (set explicitly on each task)          |
+
+For `run`, `run_windows`, `depends`, `depends_post`, `wait_for`, and `sources`, an
+empty local list currently inherits the template's value. In particular,
+`depends = []` does not clear template dependencies. Use a separate template when
+a task must omit those prerequisites. `outputs = []` is an explicit no-files
+output declaration; `cache = { enabled = false }` explicitly disables inherited caching.
 
 ### Example: Deep Merge for Tools
 
@@ -121,16 +131,18 @@ Task templates are especially useful in monorepos where multiple packages share 
 
 ```toml
 # Root mise.toml
-[settings]
 monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/api", "packages/worker"]
 
 [task_templates."python:build"]
 run = "uv build"
 tools = { python = "3.12", uv = "latest" }
 
 [task_templates."python:test"]
-run = "pytest"
-tools = { python = "3.12" }
+run = "uv run pytest"
+tools = { python = "3.12", uv = "latest" }
 depends = ["build"]
 
 [task_templates."python:lint"]
@@ -145,7 +157,7 @@ extends = "python:build"
 
 [tasks.test]
 extends = "python:test"
-run = "pytest --cov"  # Add coverage
+run = "uv run pytest --cov"  # Add coverage
 
 [tasks.lint]
 extends = "python:lint"
@@ -163,11 +175,13 @@ extends = "python:test"
 extends = "python:lint"
 ```
 
-## Future Enhancements
+## Template scope
 
-The following features are planned for future releases:
+Templates come from the active configuration hierarchy, including global and
+parent configurations. A task selects one by name with `extends`; declaring a
+template does not create a runnable task. Use `mise tasks info <task>` to inspect
+the resulting task after inheritance.
 
-- **Global templates**: Define templates in `~/.config/mise/config.toml` for use across all projects
-- **Template packages**: Import templates from external sources
-- **Pattern-matching rules**: Auto-apply templates based on file detection (e.g., auto-apply `python:*` templates when `pyproject.toml` exists)
-- **File task templates**: Define templates as standalone script files, similar to [file tasks](/tasks/file-tasks)
+Prefer repository-owned templates for behavior teammates and CI need to share.
+Global templates are useful for personal tasks, but another machine will need
+the same template definition to resolve `extends`.
