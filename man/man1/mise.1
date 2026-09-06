@@ -224,7 +224,7 @@ Show one checkpoint: what triggered it, what changed, and its journal
 Show what history tracks and under which policies
 .TP
 \fBbootstrap dotfiles rollback\fR
-Return files to the version a checkpoint holds
+Return files to the version a checkpoint holds (experimental)
 .TP
 \fBbootstrap dotfiles save\fR
 Save a checkpoint of the tracked files now
@@ -1665,7 +1665,7 @@ Show what tracking this path would capture
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP DOTFILES ROLLBACK"
-Return files to the version a checkpoint holds
+Return files to the version a checkpoint holds (experimental)
 
 Without `\-\-to`, each path returns to its most recent saved version that
 differs from what is on disk; unrelated checkpoints never influence the
@@ -1846,6 +1846,15 @@ Print help
 .TP
 \fB<TARGET>\fR
 Only unapply these targets
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap dotfiles unapply
+mise bootstrap dotfiles unapply ~/.zshrc
+mise bootstrap dotfiles unapply \-\-dry\-run
+mise bootstrap dotfiles unapply \-\-force \-\-yes
+.RE
 .SH "MISE BOOTSTRAP DOTFILES UNDO"
 Reverse a rollback or undo
 

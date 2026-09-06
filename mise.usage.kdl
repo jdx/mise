@@ -780,9 +780,9 @@ enrollment is never mistaken for protection.
             }
             flag "-h --help" help="Print help" action=help builtin=#true
         }
-        cmd rollback help="Return files to the version a checkpoint holds" effect=destructive {
+        cmd rollback help="Return files to the version a checkpoint holds (experimental)" effect=destructive {
             long_help #"""
-Return files to the version a checkpoint holds
+Return files to the version a checkpoint holds (experimental)
 
 Without `--to`, each path returns to its most recent saved version that
 differs from what is on disk; unrelated checkpoints never influence the

@@ -5,7 +5,7 @@
 - **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/dotfiles/rollback.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/rollback.rs)
 
-Return files to the version a checkpoint holds
+Return files to the version a checkpoint holds (experimental)
 
 Without `--to`, each path returns to its most recent saved version that
 differs from what is on disk; unrelated checkpoints never influence the

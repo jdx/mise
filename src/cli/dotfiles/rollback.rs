@@ -4,7 +4,7 @@ use eyre::Result;
 
 use crate::system::history::replay::{self, RollbackRequest};
 
-/// Return files to the version a checkpoint holds
+/// Return files to the version a checkpoint holds (experimental)
 ///
 /// Without `--to`, each path returns to its most recent saved version that
 /// differs from what is on disk; unrelated checkpoints never influence the
