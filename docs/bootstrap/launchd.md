@@ -1,16 +1,19 @@
-# launchd
+# macOS LaunchAgents
 
 mise can declare macOS user LaunchAgents in
 `[bootstrap.macos.launchd.agents]` and apply them with
 `mise bootstrap macos launchd-agents apply` or as part of
 [`mise bootstrap`](/bootstrap.html):
 
+Run this as the user who owns the agent in a macOS session with a GUI launchd
+domain. Create the executable and any log directories before applying it.
+The example's `my-sync` is a placeholder for your own program:
+
 ```toml
 [bootstrap.macos.launchd.agents.my-sync]
 program = "~/.local/bin/my-sync"
 args = ["--watch"]
 run_at_load = true
-start_calendar_interval = { hour = 2, minute = 0 }
 environment = { PATH = "/opt/homebrew/bin:/usr/bin:/bin" }
 working_directory = "~"
 stdout_path = "~/Library/Logs/my-sync.log"
@@ -22,6 +25,11 @@ loaded with `launchctl bootstrap gui/$UID
 ~/Library/LaunchAgents/dev.mise.<name>.plist`. Agent names may contain letters,
 numbers, `.`, `_`, and `-`. mise owns only the plist files it creates with the
 `dev.mise.` label prefix.
+
+The agent receives launchd's environment, not your interactive shell's
+activation. Use explicit executable paths and declare required environment
+variables. `program` and `args` form an argument vector; shell expressions such
+as pipes and redirections need an explicitly invoked shell or a wrapper script.
 
 ## Supported keys
 
@@ -51,6 +59,8 @@ launchd calendar keys. For multiple independent calendar schedules, use an
 array of inline tables:
 
 ```toml
+[bootstrap.macos.launchd.agents.daily-sync]
+program = "~/.local/bin/my-sync"
 start_calendar_interval = [{ hour = 3 }, { hour = 12, weekday = 1 }]
 ```
 

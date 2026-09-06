@@ -1,9 +1,14 @@
-# systemd
+# Linux systemd user units
 
 mise can declare Linux systemd user services and timers in
 `[bootstrap.linux.systemd.units]` and apply them with
 `mise bootstrap linux systemd-units apply` or as part of
 [`mise bootstrap`](/bootstrap.html):
+
+Use [system services](/bootstrap/services.html) for units managed by the system
+manager. These user units need a reachable user manager and run with the user's
+permissions. Install your executable before applying the example; `my-sync`
+is a placeholder for a program you provide.
 
 ```toml
 [bootstrap.linux.systemd.units.my-sync]
@@ -11,7 +16,6 @@ description = "sync files"
 exec_start = "~/.local/bin/my-sync --watch"
 after = ["network-online.target"]
 wants = ["network-online.target"]
-requires = ["credentials.service"]
 environment = { PATH = "/usr/local/bin:/usr/bin:/bin" }
 environment_file = ["-%h/.config/my-sync.env"]
 nice = 10
@@ -19,7 +23,7 @@ umask = "0007"
 working_directory = "~"
 restart = "on-failure"
 restart_sec = "5s"
-standard_output = "append:%h/.local/state/my-sync.log"
+standard_output = "journal"
 standard_error = "journal"
 ```
 
@@ -45,15 +49,22 @@ An entry containing a timer key is rendered as a `.timer` instead of a
 description = "check daemon health"
 type = "oneshot"
 exec_start = "~/.local/bin/daemon healthcheck"
+start = false
+wanted_by = []
 
 [bootstrap.linux.systemd.units.healthcheck-timer]
 description = "periodically check daemon health"
 on_boot_sec = "2min"
 on_unit_inactive_sec = "5min"
 randomized_delay_sec = "30s"
-persistent = true
 unit = "healthcheck"
 ```
+
+The service is left disabled and stopped during apply so the timer controls its
+execution. `persistent` catches up missed calendar events when used with
+`on_calendar`; it does not add catch-up behavior to monotonic timers such as
+`on_unit_inactive_sec`. See the
+[systemd timer reference](https://www.freedesktop.org/software/systemd/man/latest/systemd.timer.html#Persistent=).
 
 A bare `unit` value (no unit-type suffix) is resolved to the mise-owned service
 `dev.mise.<unit>.service` — so `unit = "healthcheck"` targets the `healthcheck`
@@ -112,7 +123,12 @@ systemd specifiers such as `%h`; prefix a path with `-` to make it optional.
 systemd does not expand `~` or `$HOME` in these paths. Environment variables are
 not appropriate for secrets; use systemd credentials for sensitive values.
 
-`exec_start` and `working_directory` expand bare `~` and `~/` to the current
+Unit commands do not inherit your interactive shell's mise activation. Set an
+explicit executable path and the environment the service needs. `ExecStart`
+uses systemd's command syntax; shell operators need an explicitly invoked shell
+or a wrapper script.
+
+`exec_start`, `exec_stop`, and `working_directory` expand bare `~` and `~/` to the current
 user's home directory before writing the service file. `wanted_by` defaults to
 `["default.target"]` for services and `["timers.target"]` for timers; set
 `wanted_by = []` to write the unit and disable any previous enablement. `start`
@@ -130,8 +146,8 @@ unit running.
   `mise bootstrap linux systemd-units status` lists entries as skipped and
   `mise bootstrap linux systemd-units apply` ignores them.
 - **User units only** — mise writes to `~/.config/systemd/user` and uses
-  `systemctl --user`. System services in `/etc/systemd/system` are not
-  supported.
+  `systemctl --user`. To manage system services in `/etc/systemd/system`, use
+  [managed files](/bootstrap/files.html) and [system services](/bootstrap/services.html).
 - **Target user only** — run mise as the user who owns the services, with a
   reachable systemd user manager. `sudo mise` is skipped because `systemctl --user`
   would target the wrong user manager.

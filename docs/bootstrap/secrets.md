@@ -32,6 +32,13 @@ inputs are resolved and every template is rendered before any full-bootstrap
 mutation starts, so a missing input cannot leave a partially rendered file or
 allow earlier bootstrap steps to run.
 
+The `.env` example assumes values that can be written as single-line assignments.
+The `secret()` function inserts the value; it does not quote or escape it for
+shell, JSON, TOML, or another target format. Render and encode values according
+to the format consumed by the service, especially for quotes or newlines.
+
+## Supply inputs and check availability
+
 Use fnox to inject provider-backed values into the bootstrap process:
 
 ```sh
@@ -56,6 +63,10 @@ mise bootstrap plan --prompt-secrets
 names, and `available`, `missing`, `empty`, or `invalid_unicode`; it never prints
 values. Add `--json` for machine-readable output or `--missing` to exit 1 when
 an input is unavailable.
+
+For [remote bootstrap](/bootstrap/remote.html), the local environment is not
+copied to the SSH target. Supply inputs on the target or use `--prompt-secrets`
+for an attended run.
 
 mise redacts resolved values from its output. Plans, dry runs, status output,
 and privileged-helper output contain no rendered file content. There is no

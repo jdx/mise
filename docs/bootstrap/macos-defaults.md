@@ -36,6 +36,18 @@ sections. Within the same config file, raw defaults override the raw
 global-to-local precedence still applies, so a local friendly setting can
 override a global raw default for the same pair.
 
+## Preview and apply
+
+```sh
+mise bootstrap macos defaults status
+mise bootstrap macos defaults apply --dry-run
+mise bootstrap macos defaults apply
+```
+
+Apply as the user whose preferences should change. Choose either a friendly key
+or a raw entry for each preference unless you intentionally need an override.
+The example repeats `AppleShowAllFiles` to demonstrate that precedence.
+
 ## Friendly sections
 
 `[bootstrap.macos.dock]` supports:
@@ -114,7 +126,7 @@ newer mise versions still work.
   `mise bootstrap macos defaults apply` ignores them, so a shared config
   authored for both Linux and macOS works as is.
 - **Manual application only** — mise never writes defaults implicitly; only
-  `mise bootstrap macos defaults apply` does, after the usual confirmation
+  `mise bootstrap macos defaults apply` or the full `mise bootstrap` does, after the usual confirmation
   prompt.
 - **Strictly typed** — an existing value only counts as in sync when both
   the value and the plist type match: an integer `1` does not satisfy a
@@ -161,7 +173,10 @@ writes defaults, the follow-up summary reminds you to relaunch; a common
 run = "killall Dock || true"
 ```
 
-Without a relaunch, Dock/Finder preferences can look unset until the next login.
+The stored value may already match while Dock or Finder still displays its
+previous behavior. Check status, then relaunch the affected app when convenient.
+A post-defaults hook runs on every selected bootstrap, even when no preference
+changed; use the manual commands above when that is not desirable.
 
 ## Finding keys
 
