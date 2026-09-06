@@ -10,6 +10,23 @@ signature evidence, and an **artifact** is a downloadable build named by the
 manifest. A **signed release list** indexes versions and can recommend or
 withdraw them.
 
+## Inspect the tool and accepted signers
+
+Before investigating a verification error, identify the backend and version in
+use, then inspect the signer state without changing it:
+
+```sh
+mise tool hk
+mise ls --current
+mise packslip pins
+mise packslip pins --json
+```
+
+Replace `hk` with the affected tool. The pins commands list previously accepted
+identities; they do not re-verify an installed executable or grant trust to a new
+signer. Compare the relevant project with its lockfile entry and the error before
+following a signer-rotation procedure.
+
 ## Project discovery
 
 | Project form                         | Where mise looks                                                        |
@@ -87,7 +104,9 @@ installation use the same source and verification policy.
 Online version listing and `latest` resolution read policy afresh so withdrawals
 and trust changes take effect. They write the results to mise's remote-version
 cache. Offline, both use that cache, or return no versions if it is empty.
-Installation still rechecks verification policy.
+Installation still rechecks verification policy. A cached version list alone is
+not sufficient for an offline install: required bundles, artifacts, and trust
+evidence must also be available.
 
 ## Verification checks
 
@@ -120,6 +139,10 @@ For a keyless signer, continuity compares the workflow path without its tag or
 branch ref. A new release tag of the same workflow is the same signer. A new
 workflow path or key requires an explicit trust decision. A signing-scheme change,
 a vendor-to-repackager change, or lost provenance links can also be refused.
+
+Deleting `pins.toml` resets local continuity for every recorded project. It is
+not a routine remedy for an installation failure, and it does not remove signer
+commitments from a project lockfile.
 
 See [signer changes](/dev-tools/backends/packslip.html#pinned-signers) for
 inspection and reset commands, including how explicit options and lockfile
@@ -167,6 +190,20 @@ stamp's URL and checks the vendor's list for withdrawals and any recorded digest
 Deleting a GitHub release asset does not block an approved mirror of a release
 that the vendor has not withdrawn. Re-signed repackager bundles requiring a
 separate identity policy are not supported here.
+
+## Interpreting policy failures
+
+| Failure                                          | Next step                                                                                              |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Signer or signing scheme changed                 | Compare the old pin and lockfile commitment with the publisher's announced rotation                    |
+| Signed list expired, rolled back, or disappeared | Check the publisher or stamper's current list; removing local state would discard the continuity check |
+| Release withdrawn or lacks a required stamp      | Select a release allowed by the configured policy                                                      |
+| Bundle or artifact digest mismatch               | Check the release source or mirror; do not accept new bytes merely to clear the error                  |
+| No matching artifact or unresolved tie           | Check the platform and variant, or ask the publisher to distinguish its builds                         |
+| Host requirement failed                          | Install the requirement or use a supported host; bypassing the check does not supply it                |
+
+The errors identify different stages. Changing an artifact option cannot repair
+an invalid signature, and forgetting a signer pin cannot repair a digest mismatch.
 
 ## Artifact selection
 

@@ -1,33 +1,55 @@
 # mise.lock Lockfile
 
-`mise.lock` is a lockfile that pins exact versions and checksums of tools for reproducible environments. When `lockfile = true` is explicitly configured in a TOML settings file, mise creates and maintains project lockfiles as tools are installed or upgraded. When the setting is unset, mise maintains existing lockfiles but does not create new ones; run `mise lock` to generate one explicitly. `MISE_LOCKFILE=1` retains this existing-lockfile behavior for backwards compatibility. Global lockfiles are only created with `mise lock --global`.
+`mise.toml` records the versions a project accepts; `mise.lock` records the
+concrete versions those requests resolved to. Supported backends also record
+artifact URLs, checksums, and verification metadata. Commit both files so other
+machines can use the same resolutions.
 
 ## Overview
 
-The lockfile serves similar purposes to `package-lock.json` in npm or `Cargo.lock` in Rust:
+A lockfile separates routine installation from intentional updates:
 
-- **Reproducible builds**: Ensures everyone on your team uses exactly the same tool versions
-- **Security**: Verifies tool integrity with checksums when supported by the backend
-- **Version pinning**: Locks tools to specific versions while allowing flexibility in `mise.toml`
-- **Avoids API rate limits**: By storing download URLs, future installs use the lockfile and do not need to call GitHub (or other providers), avoiding rate limits and the need for `GITHUB_TOKEN` in most cases
+```sh
+mise lock            # resolve configured tools without installing them
+mise install         # install the recorded versions
+mise lock --bump node # update Node's resolution within its configured request
+```
+
+Review the lockfile diff before committing an update. Locking tool versions does
+not lock your application's packages, system libraries, or every dependency an
+external installer fetches. Keep ecosystem lockfiles such as `package-lock.json`
+and `uv.lock` as well.
+
+Stored URLs reduce release-discovery API calls. Private downloads, uncached
+artifacts, and verification or policy checks can still require network access and
+authentication. See [backend support](#backend-support) and
+[GitHub tokens](/dev-tools/github-tokens.html).
 
 ## Enabling Lockfiles
 
-Lockfiles are controlled by the `lockfile` setting:
+Run `mise lock` to create a project lockfile explicitly. To create and maintain
+one automatically as tools are installed or upgraded, configure:
 
-```sh
-# Enable lockfiles globally
-mise settings lockfile=true
-
-# Or set in mise.toml
+```toml [mise.toml]
 [settings]
 lockfile = true
 ```
 
+For a personal default across projects, use:
+
+```sh
+mise settings set lockfile=true
+```
+
+When the setting is unset, mise updates existing lockfiles but does not create
+new ones automatically. `MISE_LOCKFILE=1` retains that existing-file behavior for
+compatibility; it is not equivalent to explicitly configuring `lockfile = true`
+in TOML. Global lockfiles are created only with `mise lock --global`.
+
 ## How It Works
 
 1. **Lockfile Creation and Updates**: With `lockfile = true`, running `mise install` or `mise use` creates or updates `mise.lock` with the exact versions installed. When `lockfile` is unset, these commands update an existing lockfile without creating one
-2. **Version Resolution**: If a `mise.lock` exists, mise prefers locked versions over version ranges in `mise.toml`
+2. **Version Resolution**: mise reuses the lock entry matching the configured request, backend, and options
 3. **Checksum Verification**: For supported backends, mise stores and verifies checksums of downloaded tools
 
 `mise lock` resolves both config-level tools and tools declared in individual tasks. It reads task
@@ -38,41 +60,21 @@ the config that owns the task.
 
 ## File Format
 
-`mise.lock` is a TOML file that organizes asset information by platform:
+The lockfile is TOML. This abbreviated example shows how a request is bound to
+a version and how artifact metadata is stored for one platform. Generate the
+entries your project needs with `mise lock` rather than copying this excerpt.
 
-```toml
-# Example mise.lock
+```toml [mise.lock]
 lockfile_version = 1
 
 [[tools.node]]
-version = "20.11.0"
+version = "26.8.1"
 backend = "core:node"
-specifiers = ["20"]
+specifiers = ["26.8.1"]
 
-[tools.node.platforms.linux-x64]
-checksum = "sha256:a6c213b7a2c3b8b9c0aaf8d7f5b3a5c8d4e2f4a5b6c7d8e9f0a1b2c3d4e5f6a7"
-size = 23456789
-url = "https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.xz"
-
-[[tools.python]]
-version = "3.11.7"
-backend = "core:python"
-specifiers = ["3.11"]
-
-[tools.python.platforms.linux-x64]
-checksum = "sha256:def456..."
-size = 12345678
-
-# Tool with backend-specific options
-[[tools.ripgrep]]
-version = "14.1.1"
-backend = "aqua:BurntSushi/ripgrep"
-options = { exe = "rg" }
-
-[tools.ripgrep.platforms.linux-x64]
-checksum = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
-size = 1234567
-
+[tools.node."platforms.macos-arm64"]
+checksum = "sha256:6e577fd0d9db776db82306629e441a9dace416702622aebdd171c9dfaa41f4d2"
+url = "https://nodejs.org/dist/v26.8.1/node-v26.8.1-darwin-arm64.tar.gz"
 ```
 
 New lockfiles use the current versioned format. Unversioned lockfiles are treated as
@@ -83,11 +85,16 @@ requests such as `"1"` and `"1.0.0"` can select different locked versions reliab
 
 ### Platform Information
 
-Each platform in a tool's `[tools.name.platforms]` section uses a key format like `"os-arch"` (e.g., `"linux-x64"`, `"macos-arm64"`) and can contain:
+A platform entry is written under a quoted key such as
+`[tools.node."platforms.macos-arm64"]`. The platform identifier is usually
+`os-arch`. Its metadata can include:
 
 - **`checksum`** (optional): SHA256 or Blake3 hash for integrity verification
-- **`size`** (optional): File size in bytes for download validation
-- **`url`** (optional): Original download URL for reference or re-downloading
+- **`size`** (legacy): File size in bytes; accepted when reading older lockfiles but omitted by the current writer
+- **`url`** (optional): Artifact download URL
+- **`url_api`** (optional): API download URL, for sources that require authenticated asset requests
+- **`provenance`** and **`provenance_verified`**: Available verification method and whether verification succeeded
+- **`signer`** and **`attested_by`**: Packslip identity commitments
 
 ### Tool Entry Fields
 
@@ -206,11 +213,14 @@ See [Monorepo Tasks](/tasks/monorepo.html#lockfiles) for details.
 
 ## Strict Lockfile Mode
 
-The `locked` setting enforces that all tools have pre-resolved URLs in the lockfile before installation. This prevents API calls to GitHub, the aqua registry, and so on, ensuring fully reproducible installations.
+The `locked` setting requires a lockfile URL for the current platform before
+installing a tool through a backend that supports URL-based locking. It catches
+missing artifact resolutions instead of silently resolving them during install.
+It is not an offline mode, and some backends are exempt.
 
 ```sh
 # Enable strict mode
-mise settings locked=true
+mise settings set locked=true
 
 # Or via environment variable
 MISE_LOCKED=1 mise install
@@ -255,13 +265,14 @@ excluded from `locked_scopes`.
 When enabled, `mise install` fails if a tool has no URL for the current platform in the lockfile. To fix this, populate the lockfile with URLs first:
 
 ```sh
-mise lock                    # generate URLs for all platforms
+mise lock                    # refresh existing platforms, or the default set for a new file
 mise lock --platform linux-x64,macos-arm64  # or specific platforms
 ```
 
 The check only covers backends that can record a URL. `asdf`, `cargo`, `gem`, `go`, `npm`, `pipx`, `ubi`, `core:dotnet`, `core:rust`, and `core:swift` install through an external tool or resolve their download at install time, and vfox _backend_ plugins cannot yet report one, so strict mode skips them instead of failing — a config that mixes them with lockable tools still installs. vfox _tool_ plugins do record a URL and are checked like any other lockable backend. Tools resolved from a [tool stub](/dev-tools/tool-stubs) are skipped as well. See [Backend Support](#backend-support) for what each backend records.
 
-This is useful for CI environments where you want to guarantee reproducible builds without any external API dependencies.
+Use strict mode in CI to catch incomplete lock entries for supported backends.
+Verification and authenticated downloads may still make API requests.
 
 ## Workflow
 
@@ -380,65 +391,92 @@ The table below shows how each command interacts with `mise.toml` and `mise.lock
 
 **Key points:**
 
-- **`mise use`** is for changing which version you want in your config — it always writes to `mise.toml`
+- **`mise use`** changes the requested version in the selected config file (normally `mise.toml`)
 - **`mise install`** installs what's in your config without changing it — `mise install node` installs the config's version of node and updates the lockfile, while `mise install node@22.15.0` is a one-off that doesn't
 - **`mise upgrade`** upgrades tools within their configured ranges and updates the lockfile — passing `tool@version` lets you target a specific version
 - **`mise lock`** regenerates lockfile entries without installing — passing `tool@version` lets you pin a specific version, and `--bump` advances fuzzy selectors to the latest matching versions
 
 ## Backend Support
 
-Backend support for lockfile features varies:
+Inspect the generated entry for the actual tool and platform. Support varies
+by backend, tool options, and whether a release uses a precompiled artifact or a
+source build:
 
-- ✅ **Full support** (version + checksum + size + URL): `aqua`, `http`, `github`, `gitlab`
-  - _Provenance support_: `aqua`, `github`, `core:python` (precompiled binaries), `core:ruby` (precompiled binaries), `core:zig` (install-time)
-- ⚠️ **Partial support** (version + URL + provenance): `vfox` (tool plugins only)
-- ⚠️ **Partial support** (version + checksum + size): `ubi`
-- 📝 **Basic support** (version + checksum): `core` (some tools)
-- 📝 **Version only**: `asdf`, `npm`, `cargo`, `pipx`
-- 📝 **Planned**: More backends will add full asset tracking support over time
+| Backend family                                                      | What to expect                                                                                                                |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Download backends such as aqua, GitHub/GitLab/Forgejo, HTTP, and S3 | Platform artifact metadata where the source supplies it or mise can compute it                                                |
+| Packslip                                                            | Signed artifact information and signer commitments; policy is checked at installation                                         |
+| Built-in languages                                                  | Tool-specific support; Node, Python, and Ruby have artifact-resolution paths, while external installers have different limits |
+| Language package installers                                         | A top-level tool version does not lock all transitive packages or build inputs                                                |
+| vfox tool plugins                                                   | Download URLs from plugin hooks can participate in strict URL locking                                                         |
+| asdf and vfox backend plugins                                       | No strict URL-lock requirement; plugin execution still determines installation                                                |
+
+A `provenance` field and a cryptographically verified provenance result are
+separate states. See [provenance and security](#provenance-and-security) before
+using lockfile metadata as evidence of verification.
 
 ## Best Practices
 
 ### Version Control
 
+Commit the project configuration and lockfile together when changing requests:
+
 ```sh
-# Always commit the lockfile
-git add mise.lock
-git commit -m "Update tool versions"
+git add mise.toml mise.lock
+git commit -m "chore: update development tools"
 ```
+
+Commit environment lockfiles alongside their shared configs. Keep `.local`
+variants out of version control. Review changes to artifact URLs, backend options,
+and verification metadata as well as version numbers.
 
 ### Team Workflow
 
-1. **Team Lead**: Updates `mise.toml` with new version ranges
-2. **Team Lead**: Runs `mise install` to update `mise.lock`
-3. **Team Lead**: Commits both files
-4. **Team Members**: Pull changes and run `mise install` to get exact versions
+1. Change a request with `mise use`, or advance an existing request with
+   `mise lock --bump <tool>`.
+2. Run `mise install` and the project's relevant checks.
+3. Commit the reviewed configuration and lockfile changes.
+4. After pulling, teammates run `mise install` to install the recorded versions.
+
+Anyone updating the project can follow this workflow; lockfile changes do not
+require a separate team role.
 
 ### CI/CD
 
-```yaml
-# Example GitHub Actions
-- name: Install tools
-  run: |
-    mise install  # Uses exact versions from mise.lock
+After checking out the repository and installing mise, use:
 
-- name: Cache lockfile
-  uses: actions/cache@v5
-  with:
-    key: mise-lock-${{ hashFiles('mise.lock') }}
+```yaml
+- name: Install locked tools
+  run: mise install
+  env:
+    MISE_LOCKED: "1"
 ```
+
+Prepare entries for the runner's platform before committing the lockfile. If you
+use [`jdx/mise-action`](https://github.com/jdx/mise-action), it also provides tool
+installation and caching; keep the lockfile in the checkout used by the action.
+A cache speeds up installation but does not replace the lockfile or its checks.
 
 ## Troubleshooting
 
 ### Regenerating Checksums
 
-If checksums become invalid or you need to regenerate them:
+A checksum mismatch means the downloaded bytes differ from the recorded artifact.
+First check the tool, platform, URL, and backend options in the error and lockfile.
+A vendor may have replaced an asset, a mirror may be serving different content,
+or the entry may describe another build.
+
+After verifying an intentional upstream change, refresh only the affected tool's
+metadata and review the diff:
 
 ```sh
-# Remove all tools and reinstall
-mise uninstall --all
-mise install
+mise lock node
+git diff -- mise.lock
 ```
+
+Replace `node` with the affected tool. Do not delete checksums or uninstall every
+tool to bypass the failure. If the new artifact is unexpected, keep the existing
+lockfile and investigate the release source before accepting new bytes.
 
 ### Ruby Precompiled Build Revision Releases
 
@@ -458,9 +496,10 @@ update older lockfiles.
 
 When merging branches with different lockfiles:
 
-1. Resolve conflicts in `mise.lock`
-2. Run `mise install` to verify everything works
-3. Commit the resolved lockfile
+1. Resolve the intended version requests in configuration first.
+2. Resolve lockfile conflicts while preserving the corresponding request bindings
+   and platform entries. Run `mise lock` to refresh metadata and inspect its diff.
+3. Run `mise install` and the relevant project checks, then commit the result.
 
 ### Disabling for Specific Projects
 
@@ -474,28 +513,48 @@ lockfile = false
 
 ### From asdf
 
-```sh
-# Convert .tool-versions to mise.toml
-mise config generate
+Preview importing an existing version file, then generate the configuration:
 
-# Enable lockfiles and generate the lockfile
-mise settings lockfile=true
+```sh
+mise generate config --tool-versions .tool-versions --dry-run
+mise generate config --tool-versions .tool-versions --yes
 mise lock
 mise install
 ```
 
+Use this in a project without an existing `mise.toml`, or review and merge the
+preview into the existing file. If teammates still use asdf, keep the shared
+`.tool-versions` consistent; see [asdf migration](/dev-tools/comparison-to-asdf.html).
+
 ### From package.json engines
 
+`engines.node` commonly describes a compatibility range such as `>=22`, not an
+exact version request. Choose a supported Node.js release for the project, then
+lock it explicitly:
+
 ```sh
-# Set versions based on package.json
-mise use node@$(jq -r '.engines.node' package.json)
+mise use node@24
+mise lock node
 ```
+
+For automatic project discovery, mise reads the supported `devEngines` fields
+after [idiomatic version files](/lang/node.html#nvmrc-node-version-and-package-json-support)
+are enabled. Do not pass arbitrary npm range syntax directly to `mise use`.
 
 ## Provenance and Security
 
-When `mise lock` generates a lockfile, it records a verified provenance type (e.g., `slsa`, `cosign`, `minisign`, `github-attestations`) for each tool when one is available. For the **current platform**, mise downloads the artifact and performs full cryptographic verification at lock time — ensuring the provenance entry in the lockfile is backed by actual verification, not just registry metadata. This applies to both the aqua and github backends. For cross-platform entries, provenance is detected from registry metadata without verification (since the artifact may not be runnable on the current machine).
+For supported backends, `mise lock` records available provenance metadata such
+as SLSA, Cosign, Minisign, or GitHub attestations. Aqua and GitHub can download
+and cryptographically verify the current platform's artifact at lock time.
+A successful check is recorded separately with `provenance_verified`.
+Cross-platform metadata may describe an available verification method without
+having been verified locally.
 
-By default, when `mise install` sees a lockfile with both a checksum and a verified provenance entry, it trusts the lockfile and skips re-verification. This avoids redundant API calls (e.g., GitHub attestation queries), which can cause rate limit issues in CI. Since the current platform's provenance was already verified during `mise lock`, this is safe.
+During installation, a checksum plus a recorded verified provenance result can
+allow mise to skip repeating that provenance check. The lockfile is therefore a
+trust input: review it and obtain it from a trusted project source. Artifact
+checksum verification still applies. A provenance field alone is not proof that
+the bytes were verified.
 
 If GitHub Artifact Attestations are enabled but the GitHub API confirms none exist for a checksum-backed artifact, mise may record `github_attestations = "unavailable"`. This is a negative cache entry, not provenance: it only skips the redundant GitHub attestation probe on later installs from that lockfile. Other verification paths such as SLSA, Cosign, Minisign, and checksum verification still run as usual.
 
@@ -521,7 +580,11 @@ This is also automatically enabled in [paranoid mode](/paranoid.html):
 paranoid = true
 ```
 
-When enabled, every `mise install` cryptographically verifies provenance regardless of what the lockfile contains, ensuring the artifact was built by a trusted CI pipeline.
+When enabled, supported verification paths run again for artifacts being
+installed instead of trusting a previous lockfile verification result. This does
+not create provenance for releases that never published it, and an already
+installed tool may not be downloaded again. It is separate from Packslip signer
+and signed-list policy.
 
 ## Minimum Release Age
 

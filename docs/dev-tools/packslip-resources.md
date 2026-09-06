@@ -19,10 +19,11 @@ With [mise activated](/getting-started.html#activate-mise), completions become
 available when an installed tool is active in your project. For example:
 
 ```sh
-mise use hk
+mise use packslip:github.com/jdx/hk
 ```
 
-Type `hk` and press Tab. hk publishes native completion scripts for bash, zsh,
+Run `mise exec -- hk --version` to verify the installation, then type `hk` and
+press Tab in an activated shell. hk publishes native completion scripts for bash, zsh,
 fish, and PowerShell, so no extra setup command or `usage` installation is
 needed. mise registers a loader in the shell; it reads the publisher's script
 only when you complete a command. Switching projects or tool versions selects
@@ -52,7 +53,7 @@ To print a completion script without installing it, omit `--install`:
 mise completion zsh --tool TOOL
 ```
 
-`--install` takes the command name, not a backend identifier such as
+`--tool` takes the command name, not a backend identifier such as
 `packslip:github.com/jdx/hk`.
 If a release contains several commands, choose the one you want to complete.
 Without `--tool`, `mise completion` generates completions for mise itself.
@@ -79,8 +80,8 @@ generation **during installation**. Setting it to `false` does not disable
 
 A skill is a directory containing `SKILL.md` and any supporting files. mise
 fetches declared skills during tool installation by default, so different tool
-versions can carry different skill content. Only tools whose manifests declare
-skills appear in the following commands.
+versions can carry different skill content. Use `mise skills ls` to inspect the skills fetched for active tools; a tool
+without declared skills has none to synchronize.
 
 Inspect skills from the tools active in your project:
 
@@ -94,6 +95,10 @@ Link them where your agent reads skills:
 ```sh
 mise skills sync --dir .agents/skills
 ```
+
+These are local symlinks, not portable copies of the skill. Keep generated links
+out of version control and have each developer run sync on their own machine.
+The directory can also contain handwritten skills; mise preserves those.
 
 Each link points into the active tool version's install directory. Run sync
 after a version change to update the links. mise preserves user-created
@@ -127,6 +132,9 @@ stale links remain. To prune on one manual run:
 ```sh
 mise skills sync --dir .agents/skills --prune
 ```
+
+The configuration above belongs in the project's `mise.toml` or your global
+settings, depending on where you want it to apply.
 
 Automatic sync requires a mise project root. It does not run just because you
 change directories. Reload skills in your agent if it does not detect changes
