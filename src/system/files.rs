@@ -2034,6 +2034,9 @@ pub(crate) fn plan_apply_with_active<'a>(
     active_requests: &[FileRequest],
     opts: &ApplyOpts,
 ) -> Result<ApplyPlan<'a>> {
+    if requests.iter().any(|req| req.mode == FileMode::Track) {
+        crate::system::history::ensure_experimental()?;
+    }
     validate_composed_file_footprints(requests)?;
     // pre-rendered template output rides along so it's written as compared,
     // and exec() in templates runs once per apply

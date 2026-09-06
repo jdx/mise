@@ -1123,7 +1123,7 @@
           "properties": {
             "enabled": {
               "default": true,
-              "description": "Record configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save.",
+              "description": "Record experimental configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save. Requires experimental = true.",
               "type": "boolean"
             },
             "keep": {

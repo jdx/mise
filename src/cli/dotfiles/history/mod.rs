@@ -12,7 +12,7 @@ mod diff;
 mod ls;
 pub(crate) mod show;
 
-/// Browse the checkpoints of your dotfiles
+/// Browse the checkpoints of your dotfiles (experimental)
 ///
 /// Every save, every mutating bootstrap command, and the watcher record a
 /// checkpoint of the tracked files: the global mise config directory, the
@@ -39,6 +39,7 @@ enum HistoryCommands {
 
 impl DotfilesHistory {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::system::history::ensure_experimental()?;
         match self.command {
             Some(HistoryCommands::Describe(cmd)) => cmd.run().await,
             Some(HistoryCommands::Diff(cmd)) => cmd.run().await,

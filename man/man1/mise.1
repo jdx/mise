@@ -203,7 +203,7 @@ Show the changes needed to apply dotfiles from `[dotfiles]`
 Edit a managed dotfile source
 .TP
 \fBbootstrap dotfiles history\fR
-Browse the checkpoints of your dotfiles
+Browse the checkpoints of your dotfiles (experimental)
 .TP
 \fBbootstrap dotfiles history describe\fR
 Set the description of a checkpoint
@@ -233,7 +233,7 @@ Show the status of dotfiles from `[dotfiles]`
 .RE
 .TP
 \fBbootstrap dotfiles track\fR
-Track a file or directory where it is
+Track a file or directory where it is (experimental)
 .TP
 \fBbootstrap dotfiles unapply\fR
 Remove dotfiles applied from `[dotfiles]`
@@ -1496,7 +1496,7 @@ Print help
 \fB<TARGET>\fR
 Target to edit
 .SH "MISE BOOTSTRAP DOTFILES HISTORY"
-Browse the checkpoints of your dotfiles
+Browse the checkpoints of your dotfiles (experimental)
 
 Every save, every mutating bootstrap command, and the watcher record a
 checkpoint of the tracked files: the global mise config directory, the
@@ -1724,7 +1724,7 @@ mise bootstrap dotfiles status \-\-json
 mise bootstrap dotfiles status \-\-missing # exit 1 if anything is out of sync
 .RE
 .SH "MISE BOOTSTRAP DOTFILES TRACK"
-Track a file or directory where it is
+Track a file or directory where it is (experimental)
 
 Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 is, nothing is copied or linked, and history saves a checkpoint of it

@@ -1246,8 +1246,11 @@ type = "Bool"
 
 [history.enabled]
 default = true
-description = "Record configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save."
+description = "Record experimental configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save. Requires experimental = true."
 docs = """
+Dotfile tracking and history are experimental. Enable them with `mise settings experimental=true`.
+Interfaces and storage formats may change while experimental.
+
 Every `mise bootstrap` run, every `mise bootstrap <part> apply`, and every `mise bootstrap dotfiles save`
 records a checkpoint under `$MISE_STATE_DIR/history/` so `mise bootstrap dotfiles history` can list, compare, and
 recover file versions. Dry runs never record. Set to `false` to turn recording off; delete that

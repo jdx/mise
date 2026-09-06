@@ -43,6 +43,7 @@ pub(crate) struct DotfilesSave {
 
 impl DotfilesSave {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::system::history::ensure_experimental()?;
         match self.save().await {
             Ok(()) => Ok(()),
             Err(err) if self.best_effort => {

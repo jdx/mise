@@ -96,7 +96,7 @@ impl OperationScope {
         command: &str,
         dry_run: bool,
     ) -> Result<Self> {
-        if dry_run {
+        if dry_run || !Settings::get().experimental {
             return Ok(Self(None));
         }
         if !Settings::get().history.enabled {

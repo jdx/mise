@@ -1,5 +1,9 @@
 # Dotfiles history
 
+> [!WARNING]
+> Dotfile tracking and history are experimental. Enable them with
+> `mise settings experimental=true`. Interfaces and storage formats may change.
+
 mise keeps checkpoints of your configuration files: the global mise config
 directory, the dotfiles root, every `[dotfiles]` entry, and any file you
 [track](/dotfiles.html#tracking-files-in-place) where it is. A checkpoint is

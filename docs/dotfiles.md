@@ -5,6 +5,10 @@
 > will begin warning in mise 2027.2.0 and be removed in mise 2028.2.0. Use
 > `mise bootstrap dotfiles` instead.
 
+Tracking files in place and their recovery history are **experimental**. Run
+`mise settings experimental=true` to opt in. Existing symlink, copy,
+template, and managed-edit workflows do not require experimental mode.
+
 `[dotfiles]` declares how each of your configuration files is managed. The
 recommended way to adopt a file you already edit in place is to **track** it:
 the file stays where it is, nothing is copied or linked, and

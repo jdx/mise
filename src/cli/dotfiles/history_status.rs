@@ -28,7 +28,20 @@ pub(crate) struct LatestReport {
 }
 
 pub(crate) async fn report() -> Result<HistoryReport> {
-    let enabled = crate::config::Settings::get().history.enabled;
+    let settings = crate::config::Settings::get();
+    let enabled = settings.experimental && settings.history.enabled;
+    if !settings.experimental {
+        return Ok(HistoryReport {
+            enabled: false,
+            tracked_entries: 0,
+            tracked_files: 0,
+            checkpoints: 0,
+            latest: None,
+            pending_operations: 0,
+            watcher: super::capture_health::watcher(),
+            unavailable: Some("dotfile tracking requires experimental = true".into()),
+        });
+    }
     let (store, tracked, entries) = super::history::open().await?;
     let walk = tracked.walk()?;
     let tracked_files = walk.roots.iter().map(|root| root.files.len() as u64).sum();
@@ -55,6 +68,10 @@ pub(crate) async fn report() -> Result<HistoryReport> {
 }
 
 pub(crate) fn print(report: &HistoryReport) -> Result<()> {
+    if !crate::config::Settings::get().experimental {
+        miseprintln!("History: experimental; enable with `mise settings experimental=true`.");
+        return Ok(());
+    }
     if !report.enabled {
         miseprintln!("History: disabled (history.enabled = false).");
         return Ok(());

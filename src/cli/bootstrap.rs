@@ -1292,6 +1292,13 @@ impl Bootstrap {
     /// record; declined prompts end the run early with a note.
     async fn run_phases(&self) -> Result<Summary> {
         let mut config = Config::get().await?;
+        if !crate::config::Settings::get().experimental
+            && system::files::files_from_config(&config)?
+                .iter()
+                .any(|req| req.mode == system::files::FileMode::Track)
+        {
+            system::history::ensure_experimental()?;
+        }
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
         let summary = Summary { message: None };
