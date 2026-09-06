@@ -86,22 +86,12 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     let mut state = State::load().await?;
     let mut capture = Capture::new(store, out, intervals.limits.clone());
     capture.health.watcher.started_at = Some(store::now_rfc3339());
-    // the restored schedule applies to the startup reconcile too: a
-    // throttled file whose save is not due is held, not read live
-    let now = Instant::now();
-    let held = capture.schedule.held_paths(now);
-    let due = capture.schedule.due_paths(now);
-    let outcome = capture.attempt(&state.tracked, "startup reconcile", &held);
-    if outcome == Attempt::Done {
-        for path in &due {
-            capture.schedule.saved(path, now);
-        }
-        capture.schedule.prune(now);
-    }
-    capture.persist_schedule();
-    capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
-    capture.write_health();
     if opts.once {
+        // the restored schedule applies to this capture too: a throttled
+        // file whose save is not due is held, not read live
+        let outcome = capture.reconcile(&state.tracked, "startup reconcile");
+        capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
+        capture.write_health();
         return Ok(match outcome {
             Attempt::Done => 0,
             Attempt::Deferred => {
@@ -145,6 +135,11 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     if installed.is_empty() {
         bail!("no watch could be installed for the tracked set");
     }
+    // the first capture comes after the watches are in place, so an edit
+    // landing between the two reaches the scheduler instead of waiting for
+    // the next reconcile
+    capture.reconcile(&state.tracked, "startup reconcile");
+    capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
     capture.out.emit(
         "started",
         &format!(
@@ -189,7 +184,18 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         };
         tokio::select! {
             received = rx.recv() => {
-                let Some(result) = received else { break };
+                let Some(result) = received else {
+                    capture.out.emit(
+                        "error",
+                        "the filesystem watch stopped delivering events; stopping so the service restarts it",
+                        json!({ "message": "watch channel closed" }),
+                    );
+                    capture.health.watcher.last_error = Some("the filesystem watch stopped".into());
+                    capture.health.watcher.last_error_at = Some(store::now_rfc3339());
+                    finish(&mut capture, &state.tracked).await;
+                    debouncer.stop();
+                    return Ok(1);
+                };
                 let now = Instant::now();
                 let mut config_changed = false;
                 let mut rescan = false;
@@ -373,41 +379,50 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 capture.write_health();
             }
             _ = shutdown.wait() => {
-                // a full capture, not only the due paths: a change still
-                // inside the coalescing window has not reached the scheduler
-                // yet, and a throttled file's final state is saved now. The
-                // backoff does not apply, and a running operation is given a
-                // moment to finish
-                let now = Instant::now();
-                capture.retry_at = None;
-                let mut outcome = capture.attempt(&state.tracked, "shutdown", &[]);
-                for _ in 0..SHUTDOWN_RETRIES {
-                    if outcome != Attempt::Deferred {
-                        break;
-                    }
-                    tokio::time::sleep(SHUTDOWN_RETRY_EVERY).await;
-                    capture.retry_at = None;
-                    outcome = capture.attempt(&state.tracked, "shutdown", &[]);
-                }
-                if outcome == Attempt::Done {
-                    capture.schedule.clear_pending(now);
-                } else {
-                    let pending = capture.schedule.held_paths(now).len() + capture.schedule.due_paths(now).len();
-                    capture.out.emit(
-                        "unsaved",
-                        &format!("stopping with {pending} pending path(s) unsaved; the next start saves them"),
-                        json!({ "pending": pending }),
-                    );
-                }
-                capture.persist_schedule();
-                capture.out.emit("stopped", "stopping", json!({}));
-                capture.write_health();
+                finish(&mut capture, &state.tracked).await;
                 break;
             }
         }
     }
     debouncer.stop();
     Ok(0)
+}
+
+/// The final capture before the process ends: a full capture, not only the
+/// due paths (a change still inside the coalescing window has not reached
+/// the scheduler yet, and a throttled file's final state is saved now). The
+/// backoff does not apply, and a running operation is given a moment.
+async fn finish(capture: &mut Capture, tracked: &TrackedSet) {
+    // a full capture, not only the due paths: a change still
+    // inside the coalescing window has not reached the scheduler
+    // yet, and a throttled file's final state is saved now. The
+    // backoff does not apply, and a running operation is given a
+    // moment to finish
+    let now = Instant::now();
+    capture.retry_at = None;
+    let mut outcome = capture.attempt(tracked, "shutdown", &[]);
+    for _ in 0..SHUTDOWN_RETRIES {
+        if outcome != Attempt::Deferred {
+            break;
+        }
+        tokio::time::sleep(SHUTDOWN_RETRY_EVERY).await;
+        capture.retry_at = None;
+        outcome = capture.attempt(tracked, "shutdown", &[]);
+    }
+    if outcome == Attempt::Done {
+        capture.schedule.clear_pending(now);
+    } else {
+        let pending =
+            capture.schedule.held_paths(now).len() + capture.schedule.due_paths(now).len();
+        capture.out.emit(
+            "unsaved",
+            &format!("stopping with {pending} pending path(s) unsaved; the next start saves them"),
+            json!({ "pending": pending }),
+        );
+    }
+    capture.persist_schedule();
+    capture.out.emit("stopped", "stopping", json!({}));
+    capture.write_health();
 }
 
 fn describe(paths: &[PathBuf]) -> String {
