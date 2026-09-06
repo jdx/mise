@@ -21,7 +21,7 @@ chmod 644 ~/.script
 assert_succeed "mise bootstrap dotfiles track ~/.script"
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
 assert_succeed "$b bootstrap dotfiles origin set file://$origin --yes"
-assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/mise/config.toml --yes"
+assert_succeed "$b bootstrap dotfiles pull --yes"
 assert_fail "test -x $B/.script"
 
 # Identical bytes, different mode: publish and apply the mode-only edit.
