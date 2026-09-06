@@ -43,7 +43,7 @@ class Handler(BaseHTTPRequestHandler):
 server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 base = f"http://127.0.0.1:{server.server_port}"
 receipts = {}
-for token in ("auto-parent", "auto-child"):
+for token in ("auto-parent", "auto-child", "auto-latest"):
     app = prefix / "Applications" / f"{token}.app"
     (app / "Contents").mkdir(parents=True)
     (app / "Contents/payload").write_text("original")
@@ -63,8 +63,10 @@ for token in ("auto-parent", "auto-child"):
                 "url": f"{base}/{token}.zip", "sha256": "no_check", "artifacts": [{"app": [app.name]}]}
     if token == "auto-parent":
         metadata["depends_on"] = {"cask": ["auto-child"]}
+    if token == "auto-latest":
+        metadata["version"] = "latest"
     responses[f"/api/cask/{token}.json"] = json.dumps(metadata).encode()
-(root / "mise.toml").write_text('[bootstrap.packages]\n"brew-cask:auto-parent" = "latest"\n')
+(root / "mise.toml").write_text('[bootstrap.packages]\n"brew-cask:auto-parent" = "latest"\n"brew-cask:auto-latest" = "latest"\n')
 env = dict(os.environ, MISE_SYSTEM_BREW_PREFIX=str(prefix), MISE_BREW_CASK_OPT_APPDIR=str(prefix / "Applications"),
            MISE_URL_REPLACEMENTS=json.dumps({"https://formulae.brew.sh": base}))
 
@@ -92,7 +94,7 @@ try:
     parent = parent_app / "Contents/payload"
     live_plist = parent_app / "Contents/Info.plist"
     parent_receipt, original_receipt = receipts["auto-parent"]
-    for live in ("2", "3", "2.0", "nightly", None, 1):
+    for live in ("2", "3", "2.0", "0", "0.0", None, 1):
         live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": live} if live is not None else {}))
         original_plist = live_plist.read_bytes()
         run("upgrade", "--yes")
@@ -131,20 +133,16 @@ try:
     assert parent.read_text() == "older despite equal receipt"
     assert receipt.read_bytes() == original
     output = run("upgrade", "--yes")
-    assert "already up to date" not in output, output
-    assert parent.read_text() == "upgraded"
-    assert plistlib.loads(live_plist.read_bytes())["CFBundleShortVersionString"] == "2"
-    assert set(downloads) == {"/auto-parent.zip"}, downloads
-    completed_downloads = downloads.copy()
+    assert "already up to date" in output, output
+    assert parent.read_text() == "older despite equal receipt"
+    assert plistlib.loads(live_plist.read_bytes())["CFBundleShortVersionString"] == "1"
+    assert receipt.read_bytes() == original
+    assert downloads == ["/auto-parent.zip"], downloads
     assert child_receipt.read_bytes() == receipts["auto-child"][1]
     assert (prefix / "Applications/auto-child.app/Contents/payload").read_text() == "original"
-    original = receipt.read_bytes()
-    parent.write_text("self-updated")
-    output = run("upgrade", "--yes")
-    assert "already up to date" in output, output
-    assert parent.read_text() == "self-updated"
-    assert receipt.read_bytes() == original
-    assert downloads == completed_downloads
+    latest_receipt, original = receipts["auto-latest"]
+    assert latest_receipt.read_bytes() == original
+    assert (prefix / "Applications/auto-latest.app/Contents/payload").read_text() == "original"
 finally:
     server.shutdown()
     thread.join()

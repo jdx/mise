@@ -7423,7 +7423,7 @@ fn installed_cask_skip_depends_on_mode_and_receipt_equality() {
 }
 
 #[test]
-fn auto_updates_compares_only_matching_numeric_version_components() {
+fn auto_updates_compares_homebrew_version_tokens_with_matching_component_counts() {
     use std::cmp::Ordering::{Equal, Greater, Less};
 
     for (live, current, expected) in [
@@ -7440,13 +7440,29 @@ fn auto_updates_compares_only_matching_numeric_version_components() {
         ("1", "1.0", None),
         ("", "1", None),
         ("1.", "1.0", None),
-        ("1..0", "1.0.0", None),
-        ("1.0-beta", "1.0", None),
+        ("1..0", "1.0.0", Some(Equal)),
+        ("1.0-p1", "1.p1", Some(Equal)),
+        ("1.2.3alpha4", "1.2.3A4", Some(Equal)),
+        ("1.2.3beta2", "1.2.3B2", Some(Equal)),
+        ("1.2.3pre9", "1.2.3PRE9", Some(Equal)),
+        ("1.2.3rc3", "1.2.3RC3", Some(Equal)),
+        ("1.2.3-p34", "1.2.3-P34", Some(Equal)),
+        ("1.2.3alpha4", "1.2.3beta2", Some(Less)),
+        ("1.2.3beta2", "1.2.3pre3", Some(Less)),
+        ("1.2.3pre3", "1.2.3rc2", Some(Less)),
+        ("1.2.3rc3", "1.2.3", Some(Less)),
+        ("1.2.3", "1.2.3a", Some(Less)),
+        ("1.2.3", "1.2.3-p34", Some(Less)),
+        ("1.2.3.post34", "1.2.3.post35", Some(Less)),
+        ("1.2.3.post34", "1.2.3", None),
+        ("HEAD-abcdef", "HEAD-fedcba", Some(Equal)),
+        ("HEAD", "2", Some(Greater)),
+        ("1.", "1", Some(Equal)),
+        ("1.0-beta", "1.0", Some(Less)),
         ("1,2", "1.2", None),
-        ("latest", "2", None),
-        (" 1", "2", None),
-        ("+1", "2", None),
-        ("１", "2", None),
+        ("foo", "goo", Some(Less)),
+        (" 1", "2", Some(Less)),
+        ("+1", "2", Some(Less)),
     ] {
         assert_eq!(
             compare_app_versions(live, current),
@@ -7461,20 +7477,67 @@ fn auto_updates_compares_only_matching_numeric_version_components() {
 }
 
 #[test]
+fn auto_updates_matches_homebrew_short_build_decisions() {
+    for (current, short, build, expected) in [
+        ("2.61", Some("2.57"), Some("2057"), true),
+        ("2.61", Some("2.62"), Some("2057"), false),
+        ("2.61", Some("2.61"), Some("2057"), false),
+        ("2057", Some("2.61"), Some("2057"), false),
+        ("2.61,3000", Some("2.61"), Some("2057"), false),
+        ("2.61,3000,2057", Some("2.61"), Some("2057"), false),
+        ("2.61-2057", Some("2.61"), Some("2057"), false),
+        ("2.61-2057", Some("2.61"), Some("2058"), false),
+        ("2.61-2057", Some("2.61"), Some("2056"), true),
+        ("3.6.4-28955b81", Some("3.6.4"), Some("3.6.4"), false),
+        ("2.61,2057", Some("2057"), Some("3000"), false),
+        ("2.61,2056,2055", Some("2.61"), Some("2057"), false),
+        ("2.61,3000", None, Some("2057"), true),
+        ("2.61,3000,2057", None, Some("2057"), false),
+        ("2.61,3000", None, Some("3001"), false),
+        ("1.0", Some("1"), Some("200"), false),
+        ("2", None, None, false),
+        ("2", Some("0"), Some("0.0"), false),
+        ("2", Some("0.0"), Some("1"), true),
+        ("2", Some("1"), Some("0"), true),
+        ("2", Some(" \t"), Some("1"), true),
+        ("2", Some("1"), None, true),
+        ("2.5.2,4000", Some("2.5.2(3329)"), Some("3329"), false),
+        ("2.5.2,4.4", Some("2.5.2 (3.3)"), Some("3.3"), false),
+        ("2.5.2,4000", Some("2.5.2 \t(3329)"), Some("3329"), false),
+        ("2.5.3,4000", Some("2.5.2(3329)"), Some("3329"), true),
+        ("1.2.3", Some("1.2.3rc3"), None, true),
+        ("1.2.3", Some("1.2.3-p34"), None, false),
+        ("latest", Some("1"), Some("1"), false),
+    ] {
+        assert_eq!(
+            app_version_outdated(current, short, build),
+            expected,
+            "current={current}, short={short:?}, build={build:?}"
+        );
+    }
+}
+
+#[test]
 fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()> {
     let tmp = trusted_tempdir()?;
     let app = tmp.path().join("Example.app");
     file::create_dir_all(app.join("Contents"))?;
     let path = app.join("Contents/Info.plist");
     for binary in [false, true] {
-        for value in [
-            Some(plist::Value::String("1.02".into())),
-            Some(plist::Value::Integer(1.into())),
-            None,
+        for (short, build) in [
+            (Some("1.02"), None),
+            (None, Some("2057")),
+            (Some("2.5.2(3329)"), Some("3329")),
+            (None, None),
         ] {
             let mut dict = plist::Dictionary::new();
-            if let Some(value) = value.clone() {
-                dict.insert("CFBundleShortVersionString".into(), value);
+            for (key, value) in [
+                ("CFBundleShortVersionString", short),
+                ("CFBundleVersion", build),
+            ] {
+                if let Some(value) = value {
+                    dict.insert(key.into(), plist::Value::String(value.into()));
+                }
             }
             let plist = plist::Value::Dictionary(dict);
             if binary {
@@ -7482,12 +7545,9 @@ fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()>
             } else {
                 plist.to_file_xml(&path)?;
             }
-            let version = read_app_version(&app);
-            if matches!(value, Some(plist::Value::String(_))) {
-                assert_eq!(version?, "1.02");
-            } else {
-                assert!(version.is_err(), "binary={binary}, value={value:?}");
-            }
+            let version = read_app_version(&app)?;
+            assert_eq!(version.short.as_deref(), short);
+            assert_eq!(version.build.as_deref(), build);
         }
     }
     file::write(&path, "invalid plist")?;
