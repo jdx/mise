@@ -19,6 +19,7 @@ pub(crate) struct DotfilesMachines {
 
 impl DotfilesMachines {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         let (store, _, entries) = super::history::open().await?;
         let Some(repo) = store.repo() else {
             eyre::bail!("listing machines requires git");
