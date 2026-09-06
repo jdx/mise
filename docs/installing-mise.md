@@ -559,6 +559,11 @@ I'd be happy to help you get it integrated.
 Some installation methods automatically install autocompletion scripts.
 :::
 
+Source your shell's rc file or restart the shell before running these examples,
+so the activation added above puts `mise` on `PATH`. For a default `mise.run`
+installation before reloading the shell, invoke `~/.local/bin/mise completion`
+instead of `mise completion`.
+
 The [`mise completion`](/cli/completion.html) command can generate autocompletion scripts for your shell.
 
 The instructions below complete mise itself. For commands installed through the
@@ -607,8 +612,6 @@ mise completion fish > ~/.config/fish/completions/mise.fish
 ```
 
 :::
-
-Then source your shell's rc file or restart your shell.
 
 ## Troubleshooting
 
