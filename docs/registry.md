@@ -8,21 +8,23 @@ editLink: false
 import Registry from '/components/registry.vue';
 </script>
 
-List of all [tools](#tools) aliased by default in `mise`.
+The registry maps short tool names to one or more installation backends. Search the
+[tool list](#tools) below, or inspect the registry bundled with your installed mise:
 
-You can use these shorthands with `mise use`. This allows you to use a tool without needing to know the full name. For example, to use the `aws-cli` tool, you can do the following:
-
-```shell
+```sh
+mise registry
+mise registry aws-cli
 mise use aws-cli
 ```
 
-instead of
+A shorthand can carry backend-specific options as well as a backend name. For example,
+`aws-cli` currently selects Aqua with registry-provided executable-link options. Choosing
+`aqua:aws/aws-cli` explicitly selects that backend, but does not mean every shorthand option
+is identical.
 
-```shell
-mise use aqua:aws/aws-cli
-```
-
-If a tool is not available in the registry, you can install it by its full name. [github](./dev-tools/backends/github.html) and [aqua](./dev-tools/backends/aqua.html) give you for example access to almost all programs available on GitHub.
+If a tool has no shorthand, use its full [backend identifier](/dev-tools/backends/), such as
+`github:owner/repo`. The backend must support that project's release layout or package
+format; a repository existing on GitHub is not sufficient by itself.
 
 ## Floating registries
 
@@ -31,7 +33,7 @@ mise release. Users whose system package manager ships mise updates slowly can o
 registry data without replacing the mise executable:
 
 ```shell
-mise settings registry_floating=true
+mise settings set registry_floating true
 ```
 
 With this enabled, mise fetches the shorthand registry published with the latest mise release and
@@ -40,7 +42,7 @@ remote registries cannot be loaded. Fast and offline commands never refresh the 
 use an existing cached copy or the bundled snapshot.
 The mise registry is cached for [`registry_cache_ttl`](/configuration/settings.html#registry_cache_ttl),
 which defaults to one hour; aqua continues to use
-[`aqua.registry_cache_ttl`](/configuration/settings.html#aqua-registry_cache_ttl), which defaults to
+[`aqua.registry_cache_ttl`](/configuration/settings.html#aqua.registry_cache_ttl), which defaults to
 one week. `mise cache clear` forces both to be downloaded again on their next online use.
 
 This behavior is opt-in because a floating registry may contain changes that were made after the
@@ -50,6 +52,11 @@ available.
 ## Backends
 
 In addition to built-in [core tools](/core-tools.html), `mise` supports a variety of [backends](/dev-tools/backends/) to install tools.
+
+These tiers apply to **new registry submissions**, not to backends you may use in your
+own configuration. New entries must already be widely used, normally with thousands of
+GitHub stars, and must list installable versions. See [Contributing](/contributing.html)
+before submitting a shorthand. Backend availability alone does not qualify a tool.
 
 Backends fall into the following acceptance tiers for new registry entries:
 
@@ -69,14 +76,17 @@ Backends fall into the following acceptance tiers for new registry entries:
 
 **Tier 4 — very high bar, rarely accepted:**
 
-- [pipx](./dev-tools/backends/pipx.html) - only for python tools, requires `python` on PATH
+- [pipx](./dev-tools/backends/pipx.html) - Python applications; uses uv by default, which can provision Python
 - [npm](./dev-tools/backends/npm.html) - only for node tools, requires `node` on PATH
 - [gem](./dev-tools/backends/gem.html) - only for ruby tools, requires `ruby` on PATH
 - [go](./dev-tools/backends/go.html) - only for go tools, requires `go` to be installed to compile. Because go tools can be distributed as a single binary, packslip/aqua/github/gitlab are preferred.
 - [cargo](./dev-tools/backends/cargo.html) - only for rust tools, requires `cargo` to be installed to compile. Because rust tools can be distributed as a single binary, packslip/aqua/github/gitlab are preferred.
 - [dotnet](./dev-tools/backends/dotnet.html) - only for dotnet tools, requires `dotnet` to be installed to compile. Because dotnet tools can be distributed as a single binary, packslip/aqua/github/gitlab are preferred.
 
-These all depend on a separately-installed runtime/toolchain on PATH, which is fragile — `npm`/`pipx`/`gem` in particular silently bind tools to whichever `node`/`python`/`ruby` happened to be on PATH at install time.
+These integrations depend on a language runtime or toolchain and can require extra setup.
+For example, npm tools need Node at runtime, and Ruby gems depend on the Ruby installation
+used to install them. Prefer release binaries for registry entries when available; consult
+each backend page for its actual runtime, installer, and binary-download behavior.
 
 **Not accepted:**
 
@@ -87,13 +97,16 @@ Users can still install via any backend themselves with explicit syntax (`mise u
 
 ### Backends Priority
 
-Each tool can define its own priority if it has more than one backend it supports. If you would like to disable a backend, you can do so with the following command:
+An explicitly installed plugin can override its matching shorthand. Otherwise, a shorthand
+lists backends in preference order. Platform support, disabled backends, and
+version boundaries affect which eligible backend is selected. If you would like to disable a backend, you can do so with the following command:
 
 ```shell
-mise settings disable_backends=asdf
+mise settings set disable_backends asdf
 ```
 
-This will disable the [asdf](./dev-tools/backends/asdf.html) backend. See [Aliases](/dev-tools/aliases.html) for a way to set a default backend for a tool. Note that the `asdf` backend is disabled by default on Windows.
+This replaces the configured disabled-backend list with `asdf`; include any other backends
+you want disabled in the same comma-separated value. It disables the [asdf](./dev-tools/backends/asdf.html) backend. See [Aliases](/dev-tools/aliases.html) for a way to set a default backend for a tool. Note that the `asdf` backend is disabled by default on Windows.
 
 You can also specify the full name for a tool using `mise use aqua:1password/cli` if you want to use a specific backend.
 
