@@ -598,8 +598,9 @@ pub(crate) fn get_filename_from_url(url_str: &str) -> String {
         // Use proper URL parsing to get the path and extract filename
         url.path_segments()
             .and_then(|mut segments| segments.next_back())
+            .filter(|segment| !segment.is_empty())
             .map(|s| s.to_string())
-            .unwrap_or_else(|| url_str.to_string())
+            .unwrap_or_else(|| "download".to_string())
     } else {
         // Fallback to simple parsing for non-URL strings or malformed URLs
         url_str
@@ -1568,6 +1569,20 @@ mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
+
+    #[test]
+    fn test_get_filename_from_url() {
+        for (url, expected) in [
+            ("https://example.com/download/?file=muse", "download"),
+            ("https://example.com/?file=muse", "download"),
+            ("https://example.com", "download"),
+            ("https://example.com/muse.tar.gz?token=value", "muse.tar.gz"),
+            ("https://example.com/my%20tool.zip", "my tool.zip"),
+            ("tool.tar.gz", "tool.tar.gz"),
+        ] {
+            assert_eq!(get_filename_from_url(url), expected, "{url}");
+        }
+    }
 
     const SHA256_LOWER: &str = "7fdd1f42e6b0855421ecf27bb406e2492ade1087c85e30ebf0deab6280ea743c";
     const SHA256_UPPER: &str = "7FDD1F42E6B0855421ECF27BB406E2492ADE1087C85E30EBF0DEAB6280EA743C";
