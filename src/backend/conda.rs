@@ -58,8 +58,31 @@ struct CondaOptions<'a> {
 #[derive(Debug)]
 struct UrlReplacementMiddleware;
 
-fn rewrite_request_url(request: &mut reqwest::Request, rewriter: impl FnOnce(&mut url::Url)) {
+/// A `url_replacements` rewrite that [`UrlReplacementMiddleware`] refused to send.
+///
+/// `reqwest_middleware` wants a `std::error::Error`, which `eyre::Report` is not.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+struct UrlReplacementRefused(String);
+
+/// Apply `url_replacements` to a repodata/package request, applying the same credential
+/// rules [`crate::http::Client`] applies to a rewritten URL: refuse a transport downgrade
+/// that would expose credentials, then drop credentials scoped to the original host.
+///
+/// Rattler drives its own client, so these requests never reach `crate::http::Client` and
+/// would otherwise bypass both rules.
+fn rewrite_request_url(
+    request: &mut reqwest::Request,
+    rewriter: impl FnOnce(&mut url::Url),
+) -> Result<()> {
+    let original = request.url().clone();
     rewriter(request.url_mut());
+    // `headers_mut` and `url_mut` cannot be borrowed at once, so scope the URL through a copy.
+    let mut url = request.url().clone();
+    crate::http::clear_cross_host_credentials(request.headers_mut(), &original, &mut url);
+    crate::http::ensure_secure_replacement_credentials(&original, &url, request.headers())?;
+    *request.url_mut() = url;
+    Ok(())
 }
 
 #[async_trait]
@@ -70,7 +93,9 @@ impl Middleware for UrlReplacementMiddleware {
         extensions: &mut Extensions,
         next: Next<'_>,
     ) -> reqwest_middleware::Result<reqwest::Response> {
-        rewrite_request_url(&mut request, apply_url_replacements);
+        rewrite_request_url(&mut request, apply_url_replacements).map_err(|err| {
+            reqwest_middleware::Error::middleware(UrlReplacementRefused(format!("{err:#}")))
+        })?;
         next.run(request, extensions).await
     }
 }
@@ -1084,7 +1109,8 @@ mod tests {
 
         rewrite_request_url(&mut request, |url| {
             *url = Url::parse("https://mirror.invalid/conda/noarch/repodata.json").unwrap();
-        });
+        })
+        .unwrap();
 
         assert_eq!(
             request.url().as_str(),
@@ -1103,9 +1129,101 @@ mod tests {
         let original = Url::parse("https://upstream.invalid/channel/noarch/repodata.json").unwrap();
         let mut request = reqwest::Request::new(reqwest::Method::GET, original.clone());
 
-        rewrite_request_url(&mut request, |_| {});
+        rewrite_request_url(&mut request, |_| {}).unwrap();
 
         assert_eq!(request.url(), &original);
+    }
+
+    #[test]
+    fn request_url_rewrite_rejects_credential_downgrade() {
+        let original = Url::parse("https://upstream.invalid/channel/noarch/repodata.json").unwrap();
+        let mut request = reqwest::Request::new(reqwest::Method::GET, original);
+        request.headers_mut().insert(
+            reqwest::header::AUTHORIZATION,
+            reqwest::header::HeaderValue::from_static("Bearer channel-token"),
+        );
+
+        let err = rewrite_request_url(&mut request, |url| {
+            *url = Url::parse("http://upstream.invalid/conda/noarch/repodata.json").unwrap();
+        })
+        .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("refusing to send credentials over an HTTPS-to-HTTP URL replacement")
+        );
+    }
+
+    #[test]
+    fn request_url_rewrite_allows_unauthenticated_downgrade() {
+        let original = Url::parse("https://upstream.invalid/channel/noarch/repodata.json").unwrap();
+        let mut request = reqwest::Request::new(reqwest::Method::GET, original);
+
+        rewrite_request_url(&mut request, |url| {
+            *url = Url::parse("http://mirror.invalid/conda/noarch/repodata.json").unwrap();
+        })
+        .unwrap();
+
+        assert_eq!(
+            request.url().as_str(),
+            "http://mirror.invalid/conda/noarch/repodata.json"
+        );
+    }
+
+    #[test]
+    fn request_url_rewrite_scopes_credentials_to_the_original_host() {
+        let original =
+            Url::parse("https://user:password@upstream.invalid/channel/noarch/repodata.json")
+                .unwrap();
+        let mut request = reqwest::Request::new(reqwest::Method::GET, original);
+        request.headers_mut().insert(
+            reqwest::header::AUTHORIZATION,
+            reqwest::header::HeaderValue::from_static("Bearer channel-token"),
+        );
+        request.headers_mut().insert(
+            "x-conda-test",
+            reqwest::header::HeaderValue::from_static("preserved"),
+        );
+
+        rewrite_request_url(&mut request, |url| {
+            url.set_host(Some("mirror.invalid")).unwrap();
+            url.set_scheme("http").unwrap();
+        })
+        .unwrap();
+
+        assert!(
+            !request
+                .headers()
+                .contains_key(reqwest::header::AUTHORIZATION)
+        );
+        assert_eq!(request.headers()["x-conda-test"], "preserved");
+        assert_eq!(request.url().scheme(), "http");
+        assert_eq!(request.url().username(), "");
+        assert_eq!(request.url().password(), None);
+    }
+
+    #[test]
+    fn request_url_rewrite_keeps_credentials_on_the_same_host() {
+        let original =
+            Url::parse("https://user:password@upstream.invalid/channel/noarch/repodata.json")
+                .unwrap();
+        let mut request = reqwest::Request::new(reqwest::Method::GET, original);
+        request.headers_mut().insert(
+            reqwest::header::AUTHORIZATION,
+            reqwest::header::HeaderValue::from_static("Bearer channel-token"),
+        );
+
+        rewrite_request_url(&mut request, |url| {
+            url.set_path("/mirror/noarch/repodata.json");
+        })
+        .unwrap();
+
+        assert_eq!(
+            request.headers()[reqwest::header::AUTHORIZATION],
+            "Bearer channel-token"
+        );
+        assert_eq!(request.url().username(), "user");
+        assert_eq!(request.url().password(), Some("password"));
     }
 
     #[test]

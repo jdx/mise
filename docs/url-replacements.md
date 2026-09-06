@@ -128,11 +128,20 @@ when traffic must never reach an upstream host.
 
 Authentication headers prepared for the original URL can be sent to the replacement server.
 Only route requests to servers trusted to receive both the artifacts and those credentials.
-When an HTTPS-to-HTTP rewrite would send an authorization header, cookie, API key, other recognized
-credential header, or URL credentials, mise refuses the request rather than exposing them without
-transport encryption. An unauthenticated downgrade is still allowed.
-A host-changing rewrite removes credentials scoped to the original host, then can add mirror
-credentials from netrc as described below. Same-host rewrites retain the existing credentials.
+A host-changing rewrite removes credentials scoped to the original host — an authorization header,
+cookie, API key, other recognized credential header, or userinfo carried over from the original URL
+— and can then add mirror credentials from netrc as described below. Same-host rewrites retain the
+existing credentials.
+
+When an HTTPS-to-HTTP rewrite would still send credentials after that scoping, mise refuses the
+request rather than exposing them without transport encryption. This covers a same-host downgrade
+and credentials written into the replacement rule itself. An unauthenticated downgrade is still
+allowed, as is a downgrade whose credentials come from a netrc entry for the replacement host:
+mise sends those to a plain `http://` URL with no rewrite involved, so a rewrite is not stricter.
+
+Both rules apply to mise's HTTP client, GitHub attestation requests, and Conda channel traffic.
+For Sigstore TUF metadata, an insecure credential-bearing downgrade is ignored and the secure
+default TUF URL remains in use.
 
 Use both a start anchor and a hostname boundary for an exact host:
 

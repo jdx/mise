@@ -1300,9 +1300,6 @@ impl Client {
             return options.check_response(response);
         }
         apply_url_replacements(&mut url);
-        // Refuse a transport downgrade before cross-host credential scoping can
-        // remove credentials; silently dropping them would mask a bad rule.
-        ensure_secure_replacement_credentials(&original_url, &url, headers)?;
         let host_key = http_host_key(&url);
         if Settings::get().prefer_offline()
             && let Some(host) = &host_key
@@ -1330,11 +1327,18 @@ impl Client {
         // netrc) without clobbering forge tokens on un-redirected requests.
         let mut final_headers = headers.clone();
         clear_cross_host_credentials(&mut final_headers, &original_url, &mut url);
+        // Refuse the downgrade for credentials that survive host scoping: a same-host
+        // rewrite keeps the original Authorization, and userinfo written into the rule
+        // itself is sent as-is. This runs before netrc because netrc credentials are
+        // scoped to the *replacement* host by the user, who already gets them sent to a
+        // plain `http://` URL with no rewrite involved — a rewrite must not be stricter
+        // than the direct request, or an http mirror fronting an https origin (#7164)
+        // becomes unusable.
+        ensure_secure_replacement_credentials(&original_url, &url, &final_headers)?;
         if options.use_netrc {
             final_headers =
                 apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
         }
-        ensure_secure_replacement_credentials(&original_url, &url, &final_headers)?;
 
         let request_timeout = self.request_timeout();
         let mut req = self.reqwest()?.request(method.clone(), url.clone());
@@ -1750,7 +1754,11 @@ fn is_credential_header(name: &HeaderName, value: &HeaderValue) -> bool {
 }
 
 /// Drop credentials scoped to the original host before contacting a replacement host.
-fn clear_cross_host_credentials(headers: &mut HeaderMap, original_url: &Url, url: &mut Url) {
+pub(crate) fn clear_cross_host_credentials(
+    headers: &mut HeaderMap,
+    original_url: &Url,
+    url: &mut Url,
+) {
     if url.host() == original_url.host() {
         return;
     }
@@ -1803,7 +1811,7 @@ fn apply_netrc_credentials(
 }
 
 /// Reject credentials when a URL replacement downgrades an HTTPS request to HTTP.
-fn ensure_secure_replacement_credentials(
+pub(crate) fn ensure_secure_replacement_credentials(
     original_url: &Url,
     url: &Url,
     headers: &HeaderMap,
@@ -2252,7 +2260,46 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn test_request_rejects_custom_credentials_on_https_to_http_replacement() {
+        // Same-host downgrade: host scoping keeps the credential header, so sending it
+        // would expose it in cleartext.
         let server = mockito::Server::new_async().await;
+        let replacement = server.url();
+        let original = replacement.replacen("http://", "https://", 1);
+        let _guard = {
+            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+            let mut settings = crate::config::settings::SettingsPartial::empty();
+            settings.url_replacements = Some(indexmap::indexmap! {
+                original.clone() => replacement,
+            });
+            crate::config::Settings::reset(Some(settings));
+            SettingsGuard { _lock: lock }
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", HeaderValue::from_static("secret"));
+        let client = Client::new(Duration::from_secs(1), ClientKind::Http).unwrap();
+
+        let err = client
+            .get_text_request(format!("{original}/file"))
+            .headers(&headers)
+            .send()
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("refusing to send credentials"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_request_scopes_credentials_before_refusing_a_downgrade() {
+        // Host-changing downgrade: the credential header belongs to the original host and
+        // is removed, so the request proceeds without it rather than failing. Refusing
+        // here would break an http mirror fronting an https origin (#7164).
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/file")
+            .match_header("x-api-key", mockito::Matcher::Missing)
+            .with_body("ok")
+            .create_async()
+            .await;
         let replacement = server.url();
         let _guard = {
             let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
@@ -2267,14 +2314,15 @@ mod tests {
         headers.insert("x-api-key", HeaderValue::from_static("secret"));
         let client = Client::new(Duration::from_secs(1), ClientKind::Http).unwrap();
 
-        let err = client
+        let body = client
             .get_text_request("https://secure.example.com/file")
             .headers(&headers)
             .send()
             .await
-            .unwrap_err();
+            .unwrap();
 
-        assert!(err.to_string().contains("refusing to send credentials"));
+        assert_eq!(body, "ok");
+        mock.assert_async().await;
     }
 
     #[tokio::test]
