@@ -104,7 +104,8 @@ git -C "$seed" push -q "file://$plain" main
 E="$(dirname "$HOME")/e-home"
 wrapper "$E" "$PWD/e"
 e="$PWD/e"
-assert_succeed "$e bootstrap --from-git file://$plain --yes --only task"
+assert_succeed "MISE_EXPERIMENTAL=0 $e bootstrap --from-git file://$plain --yes --only task"
+assert_directory_not_exists "$E/.local/state/mise/history"
 assert_succeed "test -d $E/.config/mise/.git"
 assert_contains "cat $E/.config/mise/config.toml" 'PLAIN = "1"'
 assert_contains "$e bootstrap dotfiles status" "Setup repository: none"

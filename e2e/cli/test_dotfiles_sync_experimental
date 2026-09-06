@@ -19,4 +19,5 @@ scope = "user"
 builtin = "history-watch"
 EOF
 assert_fail "mise bootstrap services apply --yes" 'dotfile tracking is experimental'
-assert_contains "mise doctor 2>&1" 'tracking is experimental and disabled'
+# Doctor may also report missing tools in this isolated HOME.
+assert_contains "mise doctor 2>&1 || true" 'tracking is experimental and disabled'
