@@ -847,10 +847,13 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                     tree_path_to_display(&file)
                         .replace("~/", &format!("{}/", crate::dirs::HOME.display())),
                 );
+                // ancestors compared in the tracked set's form: with a
+                // symlinked home the raw path and the normalized named path
+                // differ in their prefix
                 if abs_now
                     .ancestors()
                     .skip(1)
-                    .take_while(|dir| dir.starts_with(path))
+                    .filter(|dir| super::tracked::normalize(dir).starts_with(path))
                     .any(|dir| dir.join(".git").exists())
                 {
                     continue;
@@ -882,11 +885,7 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                 } else {
                     decide(checkpoint, &file, saved.clone(), current, force)
                 };
-                let mut bits = checkpoint
-                    .tree
-                    .modes
-                    .get(&tree_path_to_display(&file))
-                    .copied();
+                let mut bits = recorded_bits(checkpoint, &file, &abs);
                 // the same bytes under other permissions: a change too
                 if matches!(action, Action::Unchanged)
                     && let Some((smode, soid)) = &saved
@@ -1040,6 +1039,19 @@ fn kind_of(mode: &str) -> &'static str {
         "040000" => "a directory",
         _ => "a file",
     }
+}
+
+/// The permission bits a checkpoint recorded for a path. Captures key the
+/// record by the display form of the walked (canonical) path, which with a
+/// symlinked home is not the `~/…` the tree path renders to: both forms
+/// are tried.
+fn recorded_bits(checkpoint: &Checkpoint, tree_path: &str, abs: &Path) -> Option<u32> {
+    checkpoint
+        .tree
+        .modes
+        .get(&tree_path_to_display(tree_path))
+        .or_else(|| checkpoint.tree.modes.get(&display_path(abs)))
+        .copied()
 }
 
 fn decide(
@@ -1254,12 +1266,7 @@ fn newest_differing(
         let saved = repo.object_at(snapshot, &tree_path)?;
         if saved == current {
             // the same bytes under other permissions differ too
-            let recorded = entry
-                .checkpoint
-                .tree
-                .modes
-                .get(&tree_path_to_display(&tree_path))
-                .copied();
+            let recorded = recorded_bits(&entry.checkpoint, &tree_path, &normalize_target(path));
             let differs = saved
                 .as_ref()
                 .and_then(|(mode, _)| default_bits(mode))
