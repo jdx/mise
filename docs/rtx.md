@@ -43,7 +43,7 @@ locations; updating an executable path alone does not move tool installations or
 
 ## CI and shared scripts
 
-Replace `rtx-action` with [`jdx/mise-action@v3`](/continuous-integration.html#github-actions)
+Replace `rtx-action` with [`jdx/mise-action@v4`](/continuous-integration.html#github-actions)
 and review its inputs. Replace direct `rtx` commands in scripts with `mise`.
 For repositories whose contributors may not have mise installed, commit a
 [generated install wrapper](/continuous-integration.html#bootstrapping).
