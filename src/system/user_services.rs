@@ -307,9 +307,13 @@ pub(crate) fn durable_mise_executable() -> Option<PathBuf> {
         .find(|candidate| durable_behind(candidate))
 }
 
-/// Whether the file a path leads to (through any links) is durable.
+/// Whether a path may be embedded in a service definition: absolute and
+/// durable itself (a link inside a staging directory is not, whatever it
+/// points at), and leading (through any links) to a durable file.
 fn durable_behind(path: &Path) -> bool {
-    std::fs::canonicalize(path).is_ok_and(|real| is_durable(&real))
+    path.is_absolute()
+        && is_durable(path)
+        && std::fs::canonicalize(path).is_ok_and(|real| is_durable(&real))
 }
 
 fn is_durable(path: &Path) -> bool {
