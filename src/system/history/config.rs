@@ -43,15 +43,21 @@ pub(crate) fn layers() -> Result<Vec<(PathBuf, HistoryTomlConfig)>> {
     Ok(layers)
 }
 
-/// The effective `exclude` list: a union across layers where `!glob`
-/// removes an inherited glob.
+/// The effective `exclude` list: every layer's globs in order, later
+/// layers after earlier ones. Patterns apply in order and the last match
+/// wins, so `!glob` re-includes what an earlier glob excluded (a `!glob`
+/// that exactly repeats an earlier glob simply removes it).
 pub(crate) fn exclude_globs() -> Result<Vec<String>> {
     let mut globs: Vec<String> = vec![];
     for (_, layer) in layers()? {
         for glob in &layer.exclude {
-            if let Some(re_included) = glob.strip_prefix('!') {
+            if let Some(re_included) = glob.strip_prefix('!')
+                && globs.iter().any(|existing| existing == re_included)
+            {
                 globs.retain(|existing| existing != re_included);
-            } else if !globs.contains(glob) {
+                continue;
+            }
+            if !globs.contains(glob) {
                 globs.push(glob.clone());
             }
         }

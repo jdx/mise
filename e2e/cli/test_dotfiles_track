@@ -227,3 +227,42 @@ assert_succeed "mise bootstrap dotfiles save --description excluded"
 assert_contains "mise bootstrap dotfiles history show latest" "D ~/.excluded-rc"
 assert_not_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "~/.excluded-rc"
 assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.excluded-rc\") | .files'" "0"
+
+# a later layer that repeats a declaration overrides only what it says: the
+# local `autosave = false` keeps the global `share = false`
+echo p >~/.partial
+assert_succeed "mise bootstrap dotfiles track ~/.partial --no-share"
+cat <<'TOML' >>"$local_config"
+
+[dotfiles."~/.partial"]
+mode = "track"
+autosave = false
+TOML
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.partial\") | \"\\(.autosave) \\(.share)\"'" "false false"
+
+# exclusions apply in order and the last match wins: a `!glob` re-includes
+# one file of an excluded directory
+mkdir -p ~/.config/negate
+echo keep >~/.config/negate/keep.conf
+echo drop >~/.config/negate/drop.conf
+assert_succeed "mise bootstrap dotfiles track ~/.config/negate"
+python3 - "$local_config" <<'PY'
+import sys
+p=sys.argv[1]; s=open(p).read()
+s=s.replace('exclude = ["~/.excluded-rc"]','exclude = ["~/.excluded-rc", "~/.config/negate/**", "!~/.config/negate/keep.conf"]')
+open(p,'w').write(s)
+PY
+assert_succeed "mise bootstrap dotfiles save --description negate"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.config/negate\") | .files'" "1"
+assert_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "~/.config/negate/keep.conf"
+assert_not_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "~/.config/negate/drop.conf"
+
+# a symlink to a directory inside a tracked directory is captured as a link,
+# and its target inside the home directory becomes a derived entry
+mkdir -p ~/.config/withlink ~/target-dir
+echo t >~/target-dir/file.conf
+ln -s ~/target-dir ~/.config/withlink/sub
+assert_succeed "mise bootstrap dotfiles track ~/.config/withlink"
+assert_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "120000"
+assert_contains "mise bootstrap dotfiles paths" "derived: ~/target-dir (target of ~/.config/withlink/sub)"
+assert_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "~/target-dir/file.conf"

@@ -297,13 +297,8 @@ impl TrackedSet {
             .map(|(index, _)| index)
     }
 
-    fn exclude_set(&self) -> Result<GlobSet> {
-        let mut builder = GlobSetBuilder::new();
-        for pattern in &self.exclude {
-            let expanded = file::replace_path(Path::new(pattern));
-            builder.add(Glob::new(&expanded.to_string_lossy())?);
-        }
-        Ok(builder.build()?)
+    pub(crate) fn exclude_set(&self) -> Result<ExcludeSet> {
+        ExcludeSet::new(&self.exclude)
     }
 
     /// Walks every entry and decides, file by file, what the capture holds.
@@ -496,7 +491,7 @@ fn walk_entry(
     set: &TrackedSet,
     index: usize,
     entry: &TrackedEntry,
-    exclude: &GlobSet,
+    exclude: &ExcludeSet,
     hard: &[PathBuf],
     walk: &mut Walk,
     links: &mut Vec<(PathBuf, usize)>,
@@ -710,6 +705,42 @@ fn glob_set(patterns: &[&str]) -> GlobSet {
         }
     }
     builder.build().expect("static credential globs")
+}
+
+/// The `[history] exclude` globs, applied in order with the last match
+/// deciding: a `!glob` after a broader glob re-includes what it matches.
+#[derive(Debug, Default)]
+pub(crate) struct ExcludeSet {
+    patterns: Vec<(globset::GlobMatcher, bool)>,
+}
+
+impl ExcludeSet {
+    pub(crate) fn new(globs: &[String]) -> Result<Self> {
+        let mut patterns = vec![];
+        for glob in globs {
+            let (pattern, negated) = match glob.strip_prefix('!') {
+                Some(rest) => (rest, true),
+                None => (glob.as_str(), false),
+            };
+            let expanded = file::replace_path(Path::new(pattern));
+            patterns.push((
+                Glob::new(&expanded.to_string_lossy())?.compile_matcher(),
+                negated,
+            ));
+        }
+        Ok(Self { patterns })
+    }
+
+    /// Whether `path` is excluded: the last matching pattern decides.
+    pub(crate) fn is_match(&self, path: &Path) -> bool {
+        let mut excluded = false;
+        for (matcher, negated) in &self.patterns {
+            if matcher.is_match(path) {
+                excluded = !negated;
+            }
+        }
+        excluded
+    }
 }
 
 /// Directories mise owns that are never captured.

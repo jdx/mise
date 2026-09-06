@@ -95,7 +95,9 @@ symlink targets, private files, and any declaration history could not honour.
   `content`, the destination it produces, for local recovery only).
 - A tracked symlink whose target lies inside your home directory tracks the
   target too, reported as `derived`.
-- `[history] exclude` globs are never captured; `!glob` re-includes.
+- `[history] exclude` globs are never captured; patterns apply in order and
+  the last match wins, so a later `!glob` re-includes what an earlier glob
+  excluded (`["~/.config/app/**", "!~/.config/app/keep.conf"]`).
 
 ### Policies
 

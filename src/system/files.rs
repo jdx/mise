@@ -107,6 +107,19 @@ pub(crate) struct FilePolicy {
     /// `share` or `backup` was written in the declaration itself: the
     /// privacy defaults (`*.local.toml`, credential stores) yield to it.
     pub overridden: bool,
+    /// Which fields the declaration wrote, so a later layer repeating it
+    /// overrides only what it says and inherits the rest.
+    pub explicit: ExplicitFields,
+}
+
+/// The fields a `[dotfiles]` declaration wrote explicitly.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ExplicitFields {
+    pub autosave: bool,
+    pub share: bool,
+    pub backup: bool,
+    pub variants: bool,
+    pub enabled: bool,
 }
 
 impl FilePolicy {
@@ -118,6 +131,7 @@ impl FilePolicy {
             share: true,
             backup: !matches!(mode, FileMode::Template | FileMode::Content),
             overridden: false,
+            explicit: ExplicitFields::default(),
         }
     }
 }
@@ -198,6 +212,42 @@ pub(crate) enum FileTomlEntry {
         #[serde(default)]
         enabled: Option<bool>,
     },
+}
+
+impl FileRequest {
+    /// Takes from `later`, a repeat of this declaration from a later layer
+    /// or file, only what it wrote explicitly (`enabled`, the policies, the
+    /// variants); what it left unsaid stays inherited.
+    fn override_from(&mut self, later: FileRequest) {
+        let explicit = later.policy.explicit;
+        if explicit.enabled {
+            self.enabled = later.enabled;
+        }
+        if explicit.autosave {
+            self.policy.autosave = later.policy.autosave;
+        }
+        if explicit.share {
+            self.policy.share = later.policy.share;
+            self.policy.overridden = true;
+        }
+        if explicit.backup {
+            self.policy.backup = later.policy.backup;
+            self.policy.overridden = true;
+        }
+        if explicit.variants {
+            self.variants = later.variants;
+        }
+        // the later file is the effective declaration
+        self.origin = later.origin;
+        let mine = self.policy.explicit;
+        self.policy.explicit = ExplicitFields {
+            autosave: mine.autosave || explicit.autosave,
+            share: mine.share || explicit.share,
+            backup: mine.backup || explicit.backup,
+            variants: mine.variants || explicit.variants,
+            enabled: mine.enabled || explicit.enabled,
+        };
+    }
 }
 
 /// one file entry, resolved against the config file that declared it
@@ -281,13 +331,12 @@ pub(crate) fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
                 .iter_mut()
                 .find(|existing| file_requests_match(config, existing, &request))
             {
-                // the same declaration from a later layer: what it says about
-                // `enabled`, the policies, and the variants wins, so a local
-                // `enabled = false` or `share = false` overrides what it
-                // inherited instead of being dropped as a duplicate
-                existing.enabled = request.enabled;
-                existing.policy = request.policy;
-                existing.variants = request.variants;
+                // the same declaration from a later layer: what it says
+                // about `enabled`, the policies, and the variants wins, so a
+                // local `enabled = false` or `share = false` overrides what
+                // it inherited instead of being dropped as a duplicate; what
+                // it leaves unsaid stays inherited
+                existing.override_from(request);
                 continue;
             }
             if let Some(existing) = siblings.iter().find(|existing| {
@@ -568,6 +617,13 @@ fn merge_file_entry(
                 enabled,
             ),
         };
+    let explicit = ExplicitFields {
+        autosave: autosave.is_some(),
+        share: share.is_some(),
+        backup: backup.is_some(),
+        variants: variants.is_some(),
+        enabled: enabled.is_some(),
+    };
     let enabled = enabled.unwrap_or(true);
     let variants = variants.unwrap_or_default();
     let policy_for = |mode: FileMode| {
@@ -577,6 +633,7 @@ fn merge_file_entry(
             share: share.unwrap_or(defaults.share),
             backup: backup.unwrap_or(defaults.backup),
             overridden: share.is_some() || backup.is_some(),
+            explicit,
         }
     };
     if mode.as_deref() == Some("track") {
@@ -597,23 +654,29 @@ fn merge_file_entry(
             );
             return;
         }
-        merged.insert(
-            target.clone(),
-            FileRequest {
-                target_raw,
-                target,
-                source: PathBuf::new(),
-                content: None,
-                mode: FileMode::Track,
-                exclude: vec![],
-                manifest: None,
-                base: base.to_path_buf(),
-                origin: origin.clone(),
-                policy: policy_for(FileMode::Track),
-                variants,
-                enabled,
-            },
-        );
+        let request = FileRequest {
+            target_raw,
+            target: target.clone(),
+            source: PathBuf::new(),
+            content: None,
+            mode: FileMode::Track,
+            exclude: vec![],
+            manifest: None,
+            base: base.to_path_buf(),
+            origin: origin.clone(),
+            policy: policy_for(FileMode::Track),
+            variants,
+            enabled,
+        };
+        // a later file of the same directory (`config.local.toml` after
+        // `config.toml`) repeating a track declaration overrides only what
+        // it says
+        match merged.get_mut(&target) {
+            Some(existing) if existing.mode == FileMode::Track => existing.override_from(request),
+            _ => {
+                merged.insert(target, request);
+            }
+        }
         return;
     }
     if !variants.is_empty() {

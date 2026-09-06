@@ -84,7 +84,8 @@ pub(crate) fn resolve(spec: &str, entries: &[Entry], path: Option<&str>) -> Resu
 
 /// The display form of a path argument (`~/…` under `$HOME`).
 pub(crate) fn display_arg(path: &str) -> String {
-    crate::file::display_path(crate::system::history::tracked::normalize(
+    // the link itself, never its destination
+    crate::file::display_path(crate::system::history::tracked::normalize_target(
         std::path::Path::new(path),
     ))
 }
