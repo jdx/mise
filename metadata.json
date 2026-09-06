@@ -1,0 +1,21 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1W2WFVXHW6X8GXRB59XKX7R",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-auto-fixes",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "e2e/cli/test_dotfiles_bootstrap_from_git",
+    "e2e/cli/test_dotfiles_experimental_stack",
+    "src/system/history/sync/run.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
