@@ -52,6 +52,9 @@ assert_not_contains "git --git-dir=$origin ls-tree -r --name-only main" "config.
 for ref in $(git --git-dir="$origin" for-each-ref --format='%(refname)' refs/mise-history); do
   assert_not_contains "git --git-dir=$origin ls-tree -r --name-only $ref" "github_tokens"
 done
+# the local checkpoints still hold the private file: the backup is a filtered copy
+store="$MISE_STATE_DIR/history/repo.git"
+assert_contains "for ref in \$(git --git-dir=$store for-each-ref --format='%(refname)' refs/checkpoints); do git --git-dir=$store ls-tree -r --name-only \$ref; done" "github_tokens"
 # repeating a sync changes nothing
 assert_contains "mise bootstrap dotfiles sync 2>&1" "nothing new to publish"
 assert_contains "mise bootstrap dotfiles origin 2>&1" "mode sync"

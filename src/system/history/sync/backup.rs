@@ -60,7 +60,9 @@ pub(crate) fn filtered_commit(repo: &HistoryRepo, entry: &Entry) -> Result<Strin
         None => None,
     };
     let masked = mask_checkpoint(&entry.checkpoint, &excluded);
-    repo.write_checkpoint(snapshot.as_deref(), &masked, &BTreeMap::new())
+    // a commit of its own: the local checkpoint ref keeps naming the full
+    // wrapper, private and unbacked files included
+    repo.write_checkpoint_commit(snapshot.as_deref(), &masked, &BTreeMap::new())
 }
 
 pub(crate) fn remote_ref(machine_id: &str, uuid: &str) -> String {

@@ -206,6 +206,20 @@ impl HistoryRepo {
         checkpoint: &Checkpoint,
         blobs: &BTreeMap<String, String>,
     ) -> Result<String> {
+        let commit = self.write_checkpoint_commit(snapshot_tree, checkpoint, blobs)?;
+        self.set_checkpoint_ref(&checkpoint.uuid, &commit)?;
+        Ok(commit)
+    }
+
+    /// The wrapper commit alone, without pointing the checkpoint's ref at
+    /// it: for a filtered copy that leaves the machine (a backup) while the
+    /// full local checkpoint stays what the ref names.
+    pub(crate) fn write_checkpoint_commit(
+        &self,
+        snapshot_tree: Option<&str>,
+        checkpoint: &Checkpoint,
+        blobs: &BTreeMap<String, String>,
+    ) -> Result<String> {
         let mut meta = serde_json::to_string_pretty(checkpoint)?;
         meta.push('\n');
         let meta_oid = self.hash_blob(meta.as_bytes())?;
@@ -229,9 +243,7 @@ impl HistoryRepo {
             checkpoint.trigger.as_str(),
             checkpoint.description
         );
-        let commit = self.output_str(PlumbingCall::new(["commit-tree", &tree, "-m", &message]))?;
-        self.set_checkpoint_ref(&checkpoint.uuid, &commit)?;
-        Ok(commit)
+        self.output_str(PlumbingCall::new(["commit-tree", &tree, "-m", &message]))
     }
 
     pub(crate) fn checkpoint_ref(uuid: &str) -> String {
