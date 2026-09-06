@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TQAXYA0RCAWYPET2XMNXZV",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T06:43:49.328073Z",
+  "branch": "codex/docs-project-guides",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/about.md",
+    "docs/contact.md",
+    "docs/core-tools.md",
+    "docs/external-resources.md",
+    "docs/mise-en-place.md",
+    "docs/public/llms.txt",
+    "docs/rtx.md",
+    "docs/team.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ed0ac62e3c6f",
+  "checkpoint_transcript_start": 2974,
+  "transcript_lines_at_start": 2974,
+  "compact_transcript_start": 369,
+  "token_usage": {
+    "input_tokens": 126848,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1102592,
+    "output_tokens": 6067,
+    "api_call_count": 7
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T06:43:48.822348Z",
+    "agent_lines": 152,
+    "agent_removed": 111,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 152,
+    "total_lines_changed": 263,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
