@@ -58,8 +58,7 @@ impl MisePluginToml {
                     self.list_idiomatic_filenames = self.parse_script_config(k, v)?
                 }
                 "package-manager" => self.package_manager = self.parse_package_manager(k, v)?,
-                // this is an old key used in rtx-python
-                // this file is invalid, so just stop parsing entirely if we see it
+                // These obsolete keys make the file invalid, so stop parsing if we see them.
                 "idiomatic-filenames" | "legacy-filenames" => return Ok(()),
                 _ => Err(eyre!("unknown key: {}", k))?,
             }

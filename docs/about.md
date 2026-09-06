@@ -1,38 +1,33 @@
 # About
 
-`mise` (pronounced "meez") or "mise-en-place" is a development environment setup tool.
-The name refers to a French culinary phrase that roughly translates to "setup" or "put in place".
-The idea is that before you begin cooking, you should have all your utensils and ingredients
-ready and in their place.
+mise (pronounced “meez”), short for _mise-en-place_, helps you set up and work in development
+environments. The name comes from the French culinary practice of preparing ingredients and
+utensils before cooking. In a project, `mise.toml` serves a similar purpose: it records the
+tools, environment, and commands needed to get to work.
 
-`mise` does the same for your projects. Using its `mise.toml` config file,
-you'll have a consistent way to set up and interact with your projects no matter what
-language they're written in.
+## What mise manages
 
-Its functionality is grouped into three categories, described below.
+- **[Development tools](/dev-tools/):** install runtimes and command-line tools, select versions
+  per project, and share those choices with your team and CI.
+- **[Environment variables](/environments/):** define project configuration, load dotenv files
+  or secrets, and activate environments such as Python virtualenvs.
+- **[Tasks](/tasks/):** give build, test, lint, and other commands names, dependencies, and arguments.
+- **[Machine setup](/bootstrap.html):** declare packages, files, services, and other host setup
+  separately from a project's tool installations.
 
-`mise` installs and manages dev tools/runtimes like node, python, or terraform. It
-simplifies installing these tools and lets you specify which version to use in each
-project. `mise` supports [hundreds](/plugins.md) of dev tools.
+You can adopt these features independently. Start by managing one tool or one task; you do
+not need to move all your existing scripts and configuration at once.
 
-`mise` manages environment variables, letting you specify configuration like
-`AWS_ACCESS_KEY_ID` that differs between projects. It can also
-automatically activate a [Python virtualenv](/lang/python) when you enter a project.
+## Where to start
 
-`mise` is a task runner that lets developers share common tasks within
-a project and makes things like running tasks on file changes
-easy.
+Follow [Getting Started](/getting-started.html) for the first setup, then the
+[walkthrough](/walkthrough.html) to work through a project. The [glossary](/glossary.html)
+explains terms such as backend, shim, and task. Use [Troubleshooting](/troubleshooting.html)
+when a command or shell environment does not behave as expected.
 
 ## Contact
 
-`mise` was initially created by [Jeff Dickey](https://jdx.dev). The goal is
-to make local development of software easy and consistent across languages. Jeff
-has spent many years building dev tools and thinking about the problems that `mise`
-addresses.
-
-This project is a labor of love. Jeff created it because he wanted to make
-your life as a developer easier. We hope you find it useful. Feedback is a massive
-driver for us. If you have anything positive or negative to say—even if it's just
-to say hi—please reach out on [Twitter](https://twitter.com/jdxcode),
-[Mastodon](https://fosstodon.org/@jdx), [Discord](https://discord.gg/UBa7pJUN7Z),
-or `jdx at this domain`.
+mise was created by [Jeff Dickey](https://jdx.dev/) and is developed with its
+[contributors](/team.html). The aim is to make development easier and more consistent across
+languages. Questions, bug reports, and suggestions are welcome; see [Contact](/contact.html)
+for the right place to start.

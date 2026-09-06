@@ -146,13 +146,9 @@ jobs:
       # line above, which would extend --all-features to members whose features are exclusive.
       - name: cargo test (workspace members)
         run: cargo test --workspace --exclude mise --ignore-rust-version
-      - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
-      - run: mise run test:e2e e2e/cli/test_system_upgrade_brew_cask_auto_updates
-      - run: mise run test:e2e e2e/tasks/test_task_zsh_process_substitution_tmux_macos
-      # The e2e suite is Linux-only, and this one turns on `TIOCSCTTY` and
-      # signal-driven termios restore — both places where the two platforms have
-      # differed before. Run it here so the claim covers macOS as well.
-      - run: mise run test:e2e e2e/cli/test_watch_terminal_restore_on_signal
+      # The full E2E suite runs on Linux. Tests whose filenames contain `macos`
+      # are also discovered and exercised here for platform-specific coverage.
+      - run: mise run test:e2e macos
 
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}

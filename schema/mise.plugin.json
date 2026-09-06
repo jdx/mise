@@ -46,11 +46,11 @@
       "$ref": "#/$defs/plugin-script-config"
     },
     "idiomatic-filenames": {
-      "description": "legacy key from old plugins (e.g. rtx-python) that is ignored; when present, mise stops parsing the file entirely",
+      "description": "legacy key from old plugins that is ignored; when present, mise stops parsing the file entirely",
       "deprecated": true
     },
     "legacy-filenames": {
-      "description": "legacy key from old plugins (e.g. rtx-python) that is ignored; when present, mise stops parsing the file entirely",
+      "description": "legacy key from old plugins that is ignored; when present, mise stops parsing the file entirely",
       "deprecated": true
     },
     "package-manager": {

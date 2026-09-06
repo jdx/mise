@@ -194,7 +194,6 @@ fn get_name_from_url(url: &str) -> Result<String> {
         return Err(eyre!("could not infer plugin name from url: {}", url));
     };
     let name = name.strip_prefix("asdf-").unwrap_or(&name);
-    let name = name.strip_prefix("rtx-").unwrap_or(name);
     let name = name.strip_prefix("mise-").unwrap_or(name);
     let name = name.strip_prefix("vfox-").unwrap_or(name);
     Ok(unalias_backend(name).to_string())
