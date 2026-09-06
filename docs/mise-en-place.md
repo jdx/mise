@@ -1,5 +1,9 @@
 # mise-en-place: The Song
 
+Listen to the mise theme song with the player below, or [download the MP3](/mise-en-place.mp3).
+The [lyrics](#lyrics) are also available as text. For setup instructions, start with
+[Getting Started](/getting-started.html).
+
 <audio controls preload="metadata" src="/mise-en-place.mp3">
   <a href="/mise-en-place.mp3">Download the MP3</a>
 </audio>

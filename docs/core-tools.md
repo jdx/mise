@@ -1,14 +1,20 @@
 # Core Tools
 
-`mise` comes with some plugins built into the CLI and written in Rust. These are new and will improve over
-time.
+Core tools have installation logic built into mise. They do not require a separately
+installed plugin. Their language guides explain platform support, compilation options,
+virtual environments, and other runtime-specific behavior.
 
-You can override them by installing an asdf/vfox plugin with the same name, e.g. `mise plugin install python https://github.com/asdf-community/asdf-python`.
+List the current core entries with:
 
-You can see the core plugins with `mise registry -b core`.
+```sh
+mise registry -b core
+```
+
+## Language guides
 
 - [Bun](/lang/bun)
 - [Deno](/lang/deno)
+- [.NET](/lang/dotnet)
 - [Elixir](/lang/elixir)
 - [Erlang](/lang/erlang)
 - [Go](/lang/go)
@@ -19,3 +25,13 @@ You can see the core plugins with `mise registry -b core`.
 - [Rust](/lang/rust)
 - [Swift](/lang/swift)
 - [Zig](/lang/zig)
+
+## Selecting another implementation
+
+Installing an external plugin with the same name can override a core tool. Use that only
+when you need behavior provided by the plugin; it also changes the installation and trust
+requirements. See [plugins](/plugins.html) and [backend selection](/dev-tools/backends/)
+for how mise chooses an implementation.
+
+To select the built-in implementation explicitly, use the `core:` prefix, for example
+`mise use core:python@3.14`. The [registry](/registry.html) covers tools beyond the core set.

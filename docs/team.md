@@ -1,5 +1,5 @@
 <script setup>
-import { VPTeamPage, VPTeamPageTitle, VPTeamPageSection, VPTeamMembers } from 'vitepress/theme'
+import { VPTeamMembers } from 'vitepress/theme'
 
 const members = [
   {
@@ -40,8 +40,8 @@ const board = [
 
 # Team
 
-Jeff Dickey is the primary developer behind mise. He does the bulk
-of development for the project.
+mise is maintained by Jeff Dickey with help from the community. For questions, feedback,
+and bug reports, use the channels on the [Contact](/contact.html) page.
 
 <VPTeamMembers :members="members" />
 
@@ -57,5 +57,6 @@ The advisory board helps make important decisions about the project, such as:
 
 ## Contributors
 
-mise is an open-source project that welcomes [contributions](https://github.com/jdx/mise/graphs/contributors).
-We're grateful to everyone who has volunteered their work for the project.
+mise is an open-source project. See [everyone who has contributed](https://github.com/jdx/mise/graphs/contributors),
+and read [Contributing](/contributing.html) to help with code, documentation, or testing.
+A clear bug report or a correction to an example also helps improve the project.

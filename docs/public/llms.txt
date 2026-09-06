@@ -34,7 +34,7 @@
 - [OCI Images (experimental)](https://mise.jdx.dev/dev-tools/mise-oci.html): mise oci build turns a mise.toml into a container image, with one OCI layer per installed tool.
 - [Deps](https://mise.jdx.dev/dev-tools/deps.html): mise deps runs project dependency installers when tracked inputs change or outputs go missing. It compares source hashes with the last successful run, then invokes the configured package manager.
 - [Backend Architecture](https://mise.jdx.dev/dev-tools/backend_architecture.html): A backend resolves a tool's versions, installs it, and supplies its executable paths and environment. The registry maps short names such as node and ripgrep to backends.
-- [Core tools](https://mise.jdx.dev/core-tools.html): mise comes with some plugins built into the CLI and written in Rust. These are new and will improve over time.
+- [Core tools](https://mise.jdx.dev/core-tools.html): Core tools have installation logic built into mise. They do not require a separately installed plugin.
 - [Bun](https://mise.jdx.dev/lang/bun.html): mise can be used to install and manage multiple versions of bun on the same system.
 - [Deno](https://mise.jdx.dev/lang/deno.html): mise can be used to install and manage multiple versions of deno on the same system.
 - [Elixir](https://mise.jdx.dev/lang/elixir.html): mise can be used to manage multiple elixir versions on the same system.
@@ -132,8 +132,8 @@
 
 ## About
 
-- [About mise](https://mise.jdx.dev/about.html): mise (pronounced "meez") or "mise-en-place" is a development environment setup tool. The name refers to a French culinary phrase that roughly translates to "setup" or "put in place".
-- [mise-en-place: The Song](https://mise.jdx.dev/mise-en-place.html): I keep a tidy kitchen for the working software engineer, Where every runtime's labeled so the shell can find it bright and clear; I pin the Node and Python, Rust and Go all reproducibly, Then place…
+- [About mise](https://mise.jdx.dev/about.html): mise (pronounced “meez”), short for mise-en-place, helps you set up and work in development environments.
+- [mise-en-place: The Song](https://mise.jdx.dev/mise-en-place.html): Listen to the mise theme song with the player below, or download the MP3. The lyrics are also available as text. For setup instructions, start with Getting Started.
 - [Glossary](https://mise.jdx.dev/glossary.html): Definitions for the concepts used in the guides and CLI reference. Follow a term's link for configuration syntax and examples.
 - [FAQs](https://mise.jdx.dev/faq.html): Quick answers about daily commands, shell integration, and configuration. For a failed command, start with Troubleshooting or Errors.
 - [Troubleshooting](https://mise.jdx.dev/troubleshooting.html): If you're looking for help with a specific error message, see Errors — this page is organized by symptom instead.
@@ -148,9 +148,9 @@
 - [Python](https://mise.jdx.dev/mise-cookbook/python.html): Choose a recipe for an existing requirements-based project, a uv project, or a standalone Python script. See Python configuration for runtime installation and virtualenv settings.
 - [Presets](https://mise.jdx.dev/mise-cookbook/presets.html): A preset is a task you write to create a project's starting configuration. Store it as a global file task so it is available in new repositories.
 - [Shell tricks](https://mise.jdx.dev/mise-cookbook/shell-tricks.html): A collection of shell utilities that build on mise.
-- [Team](https://mise.jdx.dev/team.html): Jeff Dickey is the primary developer behind mise. He does the bulk of development for the project.
+- [Team](https://mise.jdx.dev/team.html): mise is maintained by Jeff Dickey with help from the community. For questions, feedback, and bug reports, use the channels on the Contact page.
 - [Contributing](https://mise.jdx.dev/contributing.html): mise has a specific scope and design taste. Unless the change is obvious, start a discussion or mention what you plan to do in Discord before opening a PR.
-- [External Resources](https://mise.jdx.dev/external-resources.html): Links to articles, videos, and other resources related to mise.
+- [External Resources](https://mise.jdx.dev/external-resources.html): Articles, videos, and related tools from the mise community. Examples reflect the version available when they were published; check the current configuration and CLI reference when adapting older…
 
 ## Advanced
 

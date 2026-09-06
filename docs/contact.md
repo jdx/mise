@@ -1,16 +1,22 @@
 # Contact
 
-`mise` is mostly built and maintained by me, [Jeff Dickey](https://jdx.dev). The goal is
-to make local development of software easy and consistent across languages. I
-have spent many years building dev tools and thinking about the problems that `mise`
-addresses.
+For questions about mise, start a [GitHub Discussion](https://github.com/jdx/mise/discussions/new/choose).
+This keeps answers searchable and lets other users help. The project uses Discussions for
+bug reports and feature requests as well as general questions.
 
-I try to use the first person in these docs since it's generally me writing them,
-and I think a bit of my personality makes the text more interesting.
+- [Troubleshooting & Bug Reports](https://github.com/jdx/mise/discussions/categories/troubleshooting-and-bug-reports):
+  include the command, relevant configuration, expected and actual behavior, and reviewed
+  `mise doctor` output. See [Troubleshooting](/troubleshooting.html) for useful diagnostics.
+- [Ideas](https://github.com/jdx/mise/discussions/categories/ideas): describe the workflow you
+  want to improve and what you have tried.
+- [Discord](https://discord.gg/mABnUDvP57): chat with the community.
 
-This project is a labor of love. I am making it because I want to make
-your life as a developer easier. I hope you find it useful. Feedback is a massive
-driver for me. If you have anything positive or negative to say—even if it's just
-to say hi—please reach out to me on [Twitter](https://twitter.com/jdxcode),
-[Mastodon](https://fosstodon.org/@jdx), [Discord](https://discord.gg/UBa7pJUN7Z),
-or `jdx at this domain`.
+Report security vulnerabilities through the private process in
+[SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md).
+For patches and documentation improvements, see [Contributing](/contributing.html).
+
+## Contact Jeff
+
+I'm [Jeff Dickey](https://jdx.dev/), mise's creator. I welcome feedback about the project,
+including things that make it harder to use. For a private message, sponsorship, or another
+inquiry, use my [contact page](https://jdx.dev/contact/).
