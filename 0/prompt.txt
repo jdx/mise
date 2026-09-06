@@ -1,5 +1,1 @@
-just to be clear, we use toml 1.1 syntax in the docs
-
----
-
 if any of the other doc prs removed toml 1.1 syntax you should revert that in a new pr as well
