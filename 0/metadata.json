@@ -1,0 +1,75 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TEF81Y4FQ28W6B6TKD51W3",
+  "session_id": "01a074d8-1b95-7281-b699-129ea7728e6d",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T04:08:52.699317Z",
+  "branch": "codex/docs-theme-refresh",
+  "checkpoints_count": 2,
+  "save_step_count": 2,
+  "files_touched": [
+    "docs/.vitepress/config.ts",
+    "docs/.vitepress/theme/HomeHero.vue",
+    "docs/.vitepress/theme/Layout.vue",
+    "docs/.vitepress/theme/custom.css",
+    "docs/.vitepress/theme/index.ts",
+    "docs/.vitepress/theme/landing.css",
+    "docs/README.md",
+    "docs/index.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "1a884b84b284",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 302396,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3303680,
+    "output_tokens": 23203,
+    "api_call_count": 33
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T04:08:52.643424Z",
+    "agent_lines": 1609,
+    "agent_removed": 2214,
+    "human_added": 4,
+    "human_modified": 12,
+    "human_removed": 0,
+    "total_committed": 1619,
+    "total_lines_changed": 3839,
+    "agent_percentage": 99.58322479812452,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1532,
+      "agent_lines_removed": 2196
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 8,
+      "user_lines_removed": 6,
+      "agent_lines_added": 1527,
+      "agent_lines_removed": 2185,
+      "user_added_per_file": {
+        "docs/.vitepress/theme/HomeHero.vue": 8
+      },
+      "user_removed_per_file": {
+        "docs/.vitepress/theme/HomeHero.vue": 6
+      }
+    }
+  ]
+}
