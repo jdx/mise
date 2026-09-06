@@ -454,10 +454,6 @@ impl Index {
     pub(crate) fn by_uuid(&self, uuid: &str) -> Option<&IndexEntry> {
         self.entries.iter().find(|entry| entry.uuid == uuid)
     }
-
-    pub(crate) fn newest(&self) -> Option<&IndexEntry> {
-        self.entries.last()
-    }
 }
 
 pub(crate) fn index_exists_in(state_dir: &Path) -> bool {

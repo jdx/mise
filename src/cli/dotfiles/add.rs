@@ -85,16 +85,17 @@ pub(crate) struct DotfilesAdd {
 impl DotfilesAdd {
     /// Validate and capture the requested targets as one transactional update.
     pub(crate) async fn run(self) -> Result<()> {
+        let mode = self.validate()?;
         OperationScope::wrap(
             "bootstrap dotfiles add",
             "dotfiles",
             self.dry_run,
-            self.run_inner(),
+            self.run_inner(mode),
         )
         .await
     }
 
-    async fn run_inner(mut self) -> Result<()> {
+    fn validate(&self) -> Result<FileMode> {
         if self.changed && !self.targets.is_empty() {
             bail!("--changed does not accept target arguments");
         }
@@ -104,15 +105,18 @@ impl DotfilesAdd {
         if self.source.is_some() && self.targets.len() != 1 {
             bail!("--source can only be used with one target");
         }
-        let mode = match self.mode.as_deref() {
+        match self.mode.as_deref() {
             Some("track") => bail!(
                 "`--mode track` tracks a file where it is and takes no source; use `mise bootstrap dotfiles track <path>`"
             ),
             Some(mode) => {
-                FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))?
+                FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))
             }
-            None => system::files::default_mode(),
-        };
+            None => Ok(system::files::default_mode()),
+        }
+    }
+
+    async fn run_inner(mut self, mode: FileMode) -> Result<()> {
         let config = Config::get().await?;
         let managed = system::files::files_from_config(&config)?;
         if self.changed {

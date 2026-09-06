@@ -369,7 +369,7 @@ impl Writer {
                 operation.message = summary.message;
             }
         }
-        self.write_outcome()
+        self.write_outcome(false)
     }
 
     fn abandon(&mut self) -> Result<()> {
@@ -379,11 +379,11 @@ impl Writer {
             operation.finished_at = Some(store::now_rfc3339());
             operation.error = Some("the command exited before finishing".into());
         }
-        self.write_outcome()
+        self.write_outcome(true)
     }
 
     /// Captures the outcome checkpoint and closes the operation.
-    fn write_outcome(&mut self) -> Result<()> {
+    fn write_outcome(&mut self, retain_empty_failure: bool) -> Result<()> {
         let state_dir = self.store.state_dir().to_path_buf();
         let _store_lock = self.store.lock()?;
         let checkpoint = &self.pending.checkpoint;
@@ -401,11 +401,13 @@ impl Writer {
         let Outcome::Created(entry) = outcome else {
             return Ok(());
         };
-        // A completed run that journaled no file change and whose outcome
+        // A returned run that journaled no file change and whose outcome
         // equals its protective checkpoint left no trace worth keeping. The
         // outcome's changes are relative to the protective checkpoint, with
         // carried-forward manual-save entries already discounted.
-        let noop = operation.status == OperationStatus::Completed
+        // Keep abandoned operations for recovery diagnostics, but an ordinary
+        // rejected request with proven unchanged files is not useful history.
+        let noop = (operation.status == OperationStatus::Completed || !retain_empty_failure)
             && operation.journal.is_empty()
             && entry.checkpoint.tree.snapshot.is_some()
             && self.before.is_some()

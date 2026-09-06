@@ -198,21 +198,20 @@ impl Store {
         reserved_id: Option<u64>,
     ) -> Result<Outcome> {
         let mut index = store::load_index_in(&self.state_dir)?;
-        let previous = index.newest().cloned();
-        let previous_tree = previous
-            .as_ref()
-            .and_then(|entry| {
-                store::read_meta_cache_in(&self.state_dir, &entry.uuid)
-                    .ok()
-                    .flatten()
-            })
-            .and_then(|checkpoint| {
-                checkpoint
-                    .tree
-                    .snapshot
-                    .clone()
-                    .map(|tree| (checkpoint, tree))
-            });
+        // Metadata-only records (for example an operation while git was
+        // unavailable) must not hide the last usable content baseline.
+        let previous_tree = index.entries.iter().rev().find_map(|entry| {
+            store::read_meta_cache_in(&self.state_dir, &entry.uuid)
+                .ok()
+                .flatten()
+                .and_then(|checkpoint| {
+                    checkpoint
+                        .tree
+                        .snapshot
+                        .clone()
+                        .map(|tree| (checkpoint, tree))
+                })
+        });
         let uuid = draft.uuid.clone().unwrap_or_else(store::new_uuid);
         let mut walk = tracked.walk()?;
         for warning in &walk.warnings {

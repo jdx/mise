@@ -28,6 +28,11 @@ assert_contains "mise bootstrap dotfiles status" "no checkpoint recorded yet"
 assert_contains "mise bootstrap dotfiles paths" "~/.config/mise"
 
 # an explicit save records checkpoint 1 with the config directory in it
+# Rejected arguments do not consume checkpoint IDs or leave failure pairs.
+assert_fail "mise bootstrap dotfiles add --changed ~/.copied" "does not accept target"
+assert_fail "mise bootstrap dotfiles add ~/.copied --mode invalid" "unknown dotfile mode"
+assert_fail "mise bootstrap dotfiles add" "at least one target"
+assert_contains "mise bootstrap dotfiles history 2>&1" "no history checkpoints recorded"
 assert_succeed "mise bootstrap dotfiles save --description first"
 assert "$count" "1"
 assert "$mode_of '$store'" "700"
@@ -137,6 +142,7 @@ assert_succeed "MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles apply --yes"
 assert "$count" "4"
 
 # without a usable git nothing can be captured: save fails, bootstrap still runs
+before_unavailable="$(mise bootstrap dotfiles history show latest --json | jq -r .uuid)"
 bindir="$PWD/stub-bin"
 mkdir -p "$bindir"
 printf '#!/bin/sh\nexit 127\n' >"$bindir/git"
@@ -146,6 +152,17 @@ assert_fail "PATH='$bindir:$PATH' mise bootstrap dotfiles save" "cannot save"
 assert_succeed "PATH='$bindir:$PATH' mise bootstrap dotfiles apply --yes"
 assert "cat ~/.copied" "ten"
 assert_contains "PATH='$bindir:$PATH' mise bootstrap dotfiles status" "capture is unavailable"
+
+# The metadata-only records must not make the next capture an initial tree.
+assert_succeed "mise bootstrap dotfiles save"
+assert "mise bootstrap dotfiles history show latest --json | jq -r .changes.since" "$before_unavailable"
+assert "mise bootstrap dotfiles history show latest --json | jq '.changes.added | length'" "0"
+assert_contains "mise bootstrap dotfiles save 2>&1" "nothing changed"
+assert_succeed "PATH='$bindir:$PATH' mise bootstrap dotfiles apply --yes"
+assert_contains "mise bootstrap dotfiles save 2>&1" "nothing changed"
+before_rejected="$(eval "$count")"
+assert_fail "mise bootstrap dotfiles add relative-target --yes" "target must be absolute"
+assert "$count" "$before_rejected"
 
 # the user's own checkout of the config directory is never touched
 git -C "$MISE_CONFIG_DIR" init -q -b main
