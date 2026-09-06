@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TR07CP4RPRAH3TS8DFG2SB",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-faq-recipes",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/faq.md",
+    "docs/glossary.md",
+    "docs/public/llms.txt",
+    "docs/tips-and-tricks.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34929,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1809152,
+    "output_tokens": 17381,
+    "api_call_count": 9
+  }
+}

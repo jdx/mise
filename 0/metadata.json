@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TR07CP4RPRAH3TS8DFG2SB",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T06:55:27.285918Z",
+  "branch": "codex/docs-faq-recipes",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/faq.md",
+    "docs/glossary.md",
+    "docs/public/llms.txt",
+    "docs/tips-and-tricks.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ed0ac62e3c6f",
+  "checkpoint_transcript_start": 3029,
+  "transcript_lines_at_start": 3029,
+  "compact_transcript_start": 376,
+  "token_usage": {
+    "input_tokens": 34929,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1809152,
+    "output_tokens": 17381,
+    "api_call_count": 9
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T06:55:26.735146Z",
+    "agent_lines": 404,
+    "agent_removed": 469,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 404,
+    "total_lines_changed": 873,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
