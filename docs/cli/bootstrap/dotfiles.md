@@ -16,8 +16,10 @@ Manage dotfiles from `[dotfiles]`
 - [`mise bootstrap dotfiles apply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/apply.html)
 - [`mise bootstrap dotfiles diff [TARGET]…`](/cli/bootstrap/dotfiles/diff.html)
 - [`mise bootstrap dotfiles edit [FLAGS] <TARGET>`](/cli/bootstrap/dotfiles/edit.html)
+- [`mise bootstrap dotfiles exclude <GLOB>`](/cli/bootstrap/dotfiles/exclude.html)
 - [`mise bootstrap dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/history.html)
-- [`mise bootstrap dotfiles paths [-J --json] [--preview <PATH>]`](/cli/bootstrap/dotfiles/paths.html)
+- [`mise bootstrap dotfiles include <GLOB>`](/cli/bootstrap/dotfiles/include.html)
+- [`mise bootstrap dotfiles paths [FLAGS]`](/cli/bootstrap/dotfiles/paths.html)
 - [`mise bootstrap dotfiles rollback [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/rollback.html)
 - [`mise bootstrap dotfiles save [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/save.html)
 - [`mise bootstrap dotfiles status [-J --json] [--missing] [TARGET]…`](/cli/bootstrap/dotfiles/status.html)
@@ -25,6 +27,7 @@ Manage dotfiles from `[dotfiles]`
 - [`mise bootstrap dotfiles unapply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/unapply.html)
 - [`mise bootstrap dotfiles undo [-n --dry-run] [-y --yes] [REF]`](/cli/bootstrap/dotfiles/undo.html)
 - [`mise bootstrap dotfiles untrack <PATH>…`](/cli/bootstrap/dotfiles/untrack.html)
+- [`mise bootstrap dotfiles watch [--once] [-J --json]`](/cli/bootstrap/dotfiles/watch.html)
 
 <!-- generated reference navigation -->
 

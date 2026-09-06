@@ -40,3 +40,11 @@ mise bootstrap dotfiles watch
 mise bootstrap dotfiles watch --once      # one reconcile, for a timer
 mise bootstrap dotfiles watch --json
 ```
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).
