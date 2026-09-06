@@ -1,6 +1,33 @@
 # Configuration
 
-Learn how to configure mise for your project with `mise.toml` files, environment variables, and various configuration options to manage your development environment.
+A project's `mise.toml` declares tools, environment variables, and tasks. Global
+configuration supplies personal defaults; project and local files override them.
+
+Start with one file in the project root:
+
+```toml [mise.toml]
+[tools]
+node = "24"
+
+[env]
+NODE_ENV = "development"
+
+[tasks.hello]
+run = "node --eval 'console.log(process.env.NODE_ENV)'"
+```
+
+Run `mise run hello` to install the declared tool if needed and print
+`development`. Use `mise config` to see the active config files and
+`mise ls --current` to see the selected tool versions.
+
+| Configure                                  | Reference                                               |
+| ------------------------------------------ | ------------------------------------------------------- |
+| Tool versions and installation options     | [Dev tools](/dev-tools/)                                |
+| Variables passed to commands               | [Environments](/environments/)                          |
+| Reusable values inside templates           | [Variables](/configuration/vars.html)                   |
+| Development, test, and production overlays | [Config Environments](/configuration/environments.html) |
+| Commands and dependencies                  | [Tasks](/tasks/)                                        |
+| mise's own behavior                        | [Settings](/configuration/settings.html)                |
 
 ## `mise.toml`
 
@@ -41,10 +68,16 @@ what is defined there overrides anything set in
 
 When mise needs configuration, it follows this process:
 
-1. **Walks up the directory tree** from your current location to the root (or `MISE_CEILING_PATHS`)
-2. **Collects all config files** it finds along the way
-3. **Merges them in order** with more specific (closer to your current directory) settings overriding broader ones
-4. **Applies environment-specific configs** like `mise.dev.toml` if `MISE_ENV` is set
+1. Reads early configuration, including the selected config environments.
+2. Discovers system and global config, then searches the current directory and its
+   parents up to the root or `MISE_CEILING_PATHS`.
+3. Includes matching environment-specific files at each level of that hierarchy.
+4. Merges the files with child directories taking precedence over parents, and
+   same-directory variants following the order above.
+
+An environment-specific parent file does not override an ordinary child file
+just because it names an environment. Environment selection is part of file
+discovery, not a final override applied after the hierarchy.
 
 ### Visual Configuration Hierarchy
 
@@ -106,13 +139,17 @@ locked = true
 # Result: NODE_ENV=production, API_URL=localhost
 ```
 
-**Tasks** (`[tasks]`): Completely replaced per task
+**Tasks** (`[tasks]`): A more specific command definition replaces the earlier command
 
 ```toml
 # Global: [tasks.test] = "npm test"
 # Project: [tasks.test] = "yarn test"
-# Result: "yarn test" (completely replaces global)
+# Result: "yarn test"
 ```
+
+Metadata-only task definitions can overlay an existing task without replacing its
+command. Included task files and file tasks have additional merge rules; see
+[`task_config.includes`](/tasks/task-configuration.html#task_config.includes).
 
 **Settings** (`[settings]`): Additive with overrides
 
@@ -146,47 +183,6 @@ $ mise set NODE_ENV=production  # writes to mise.toml
 ```
 
 :::
-
-Here is what a typical `mise.toml` looks like:
-
-```toml
-[tools]
-node = '24'
-python = '3.12'
-
-[env]
-NODE_ENV = 'development'
-
-[tasks.dev]
-run = 'npm run dev'
-
-[tasks.test]
-run = 'pytest'
-```
-
-`mise.toml` files are hierarchical. The configuration in a file in the current directory
-overrides conflicting configuration in parent directories. For example, if `~/src/myproj/mise.toml`
-defines the following:
-
-```toml
-[tools]
-node = '20'
-python = '3.10'
-```
-
-And `~/src/myproj/backend/mise.toml` defines:
-
-```toml
-[tools]
-node = '18'
-ruby = '3.1'
-```
-
-Then, inside `~/src/myproj/backend`, `node` will be `18`, `python` will be `3.10`, and `ruby`
-will be `3.1`. You can check the active versions with `mise ls --current`.
-
-You can also have environment-specific config files like `.mise.production.toml`; see
-[Configuration Environments](/configuration/environments) for details.
 
 ### `[tools]` - Dev tools
 
@@ -286,11 +282,6 @@ The old `[alias]` key still works but is deprecated.
 
 The following makes `mise install node@my_custom_node` install node-20.x.
 Aliases can also be specified in a [plugin](/dev-tools/aliases.md).
-Adding an alias also adds a symlink, in this case:
-
-```sh
-~/.local/share/mise/installs/node/20 -> ./20.x.x
-```
 
 ```toml
 [tool_alias.node.versions]
@@ -318,22 +309,24 @@ Specify the minimum mise version required by the configuration file.
 You can set a hard minimum (errors if unmet) or a soft minimum (warns and continues):
 
 ```toml
-# (equivalent to hard)
+# Require this version or newer
 min_version = '2024.11.1'
+```
 
-# new object form
-min_version = { hard = '2024.11.1' }
+Or specify a hard minimum and a newer recommended version:
 
-# soft recommendation
-min_version = { soft = '2024.11.1' }
-
-# both
-min_version = { hard = '2024.11.1', soft = '2024.9.0' }
+```toml
+min_version = { hard = '2024.11.1', soft = '2026.1.0' }
 ```
 
 When a soft minimum is not met, mise prints a warning and, if available, self-update instructions. When a hard minimum is not met, mise errors and shows self-update instructions.
 
-Use `min_version` to communicate the oldest mise version your project supports. In general, users should keep mise up to date because mise integrates with external registries and backends that change over time. Projects and organizations should prefer a minimum version requirement over locking users to a specific mise executable, which is generally discouraged. Pinning users back is like preventing `apt update` or `brew update` from refreshing package metadata: it can hide deprecation warnings and let upstream integrations drift out of date.
+Use a hard minimum for syntax or behavior the project requires. A soft minimum
+recommends an upgrade while allowing older clients to continue. A soft-only
+requirement is also valid: `min_version = { soft = '2026.1.0' }`.
+
+Keep mise current so backend integrations and deprecation notices stay up to date.
+A minimum version lets teammates upgrade without changing the project's requirement.
 
 ### Monorepo root
 
@@ -341,15 +334,19 @@ Mark a configuration file as a monorepo root to enable target path syntax for ta
 
 ```toml
 monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/frontend", "projects/api"]
 ```
 
-When enabled:
+`monorepo_root` enables task addressing; `config_roots` identifies the projects to
+load. When enabled:
 
 - Tasks in subdirectories are available with namespaced paths (e.g., `//projects/frontend:build`)
 - Subdirectory tasks use tools from parent configs
 - Tasks are only loaded when needed (e.g., when running them, or with `mise tasks ls --all`)
-- All descendant config files are **implicitly trusted** when the root is trusted
-- Each subdirectory's configuration no longer needs to be trusted individually
+- Trusting a monorepo root allows descendant configs to share that trust; review
+  the repository before trusting it (see [trust behavior](/cli/trust.html))
 
 See [Monorepo Tasks](/tasks/monorepo) for detailed usage and examples.
 
@@ -567,12 +564,8 @@ There is a small performance cost to discovering and parsing these files. Regist
 in-process; plugin-provided files may invoke the plugin's parser. Results are [cached](/cache-behavior),
 so this is generally not noticeable.
 
-::: info
-asdf called these "legacy version files". I think this was a bad name since it implies
-that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
-version files since they are version files not specific to asdf/mise and can be used by other tools.
-(`.nvmrc` being a notable exception, which is tied to a specific tool.)
-:::
+asdf calls these "legacy version files". mise uses "idiomatic version files" to
+distinguish language and ecosystem conventions from mise's own configuration.
 
 ## Settings
 

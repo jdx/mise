@@ -1,74 +1,74 @@
 # direnv <Badge type="warning" text="deprecated" />
 
-[direnv](https://direnv.net) and mise both manage environment variables based on directory. Because
-they both analyze
-the current environment variables before and after their respective "hook" commands are run, they
-can sometimes conflict with each other.
+[direnv](https://direnv.net) and mise both change the environment when you enter a
+directory. Their shell hooks can disagree about which `PATH` entries to add,
+restore, or remove.
 
-::: warning
-The official stance is you should not use direnv with mise. Issues arising
-from incompatibilities are not considered bugs and PRs to improve direnv
-compatibility will not be accepted.
-While that's the official stance, the reality is mise and direnv can
-coexist for simple cases like setting unrelated environment variables.
-Anything involving PATH — which is most of what people use both tools
-for — is where problems arise.
+::: warning Unsupported integration
+Using direnv with mise is unsupported. Compatibility issues are not considered
+mise bugs, and PRs for direnv compatibility are not accepted. The `use mise`
+integration is deprecated.
 :::
 
-If you have an issue, it's likely to do with the ordering of PATH. This is really only a problem
-if you are trying to manage the same tool with both direnv and mise. For example, you may use
-`layout python` in an `.envrc` while also maintaining a `.tool-versions` file with python in it.
+## Do you need direnv? {#do-you-need-direnv}
 
-A more typical use of direnv is to set arbitrary environment variables or add unrelated
-binaries to PATH. In these cases, mise does not interfere with direnv.
+For a project that uses direnv to set variables, load dotenv files, or activate a
+Python environment, mise has corresponding configuration:
+
+| Existing `.envrc` behavior       | mise configuration                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------ |
+| `export NODE_ENV=development`    | `[env]` with `NODE_ENV = "development"`                                              |
+| Load a dotenv file               | [`env._.file`](/environments/#env-file)                                              |
+| Add `bin` to `PATH`              | [`env._.path`](/environments/#env-path)                                              |
+| Export values from a Bash script | [`env._.source`](/environments/#env-source)                                          |
+| Activate a Python virtualenv     | [Python virtualenv configuration](/lang/python.html#automatic-virtualenv-activation) |
+
+For example:
+
+```toml [mise.toml]
+[env]
+NODE_ENV = "development"
+_.file = ".env"
+_.path = "bin"
+```
+
+This example assumes the project has a `.env` file. Remove that directive if it
+does not. See [Environments](/environments/) for defaults, unsetting values, and
+sourcing scripts.
+
+After moving the required behavior into `mise.toml`, remove the project's direnv
+integration, [activate mise](/getting-started.html#activate-mise), and open a fresh
+shell to verify the environment. `mise exec -- <command>` can check project
+commands without depending on the interactive shell's current state.
 
 ## mise inside of direnv (`use mise` in `.envrc`)
 
-::: warning
-`use mise` is deprecated and no longer supported.
-:::
+The following describes the deprecated setup for people maintaining or removing
+an existing integration. It gives direnv control of the exported environment and
+does not provide mise's full activation behavior.
 
-If you encounter issues with `mise activate`, or want to use direnv in a different way,
-this is a simpler setup that's less likely to cause issues—at the cost of functionality.
-
-This may be required if you want to use direnv's `layout python` with mise. Otherwise, there are
-situations where mise overrides direnv's PATH. `use mise` ensures that direnv always has
-control.
-
-To do this, first use `mise` to build a `use_mise` function that you can use in `.envrc` files:
+The integration generates a direnv library function:
 
 ```sh
+mkdir -p ~/.config/direnv/lib
 mise direnv activate > ~/.config/direnv/lib/use_mise.sh
 ```
 
-Now add the following to your `.envrc` file:
+An `.envrc` then calls it as:
 
 ```sh
 use mise
 ```
 
-direnv now calls mise to export its environment variables. Make sure to add `use_mise`
-to all projects that use mise (or use direnv's `source_up` to load it from a subdirectory). You can
-also add `use mise` to `~/.config/direnv/direnvrc`.
+Keep the distinction between the shell function `use_mise` and direnv's
+`use mise` syntax. Existing projects may also load it from a parent `.envrc` with
+`source_up`, or from `~/.config/direnv/direnvrc`.
 
-With this method, direnv typically won't know to refresh `.tool-versions` files
-unless they're at the same level as an `.envrc` file, so you'll likely always want
-an `.envrc` file next to your `.tool-versions`. To make this easier to manage,
-I encourage _not_ using `.tool-versions` at all, and instead
-setting environment variables entirely in `.envrc`:
+If retaining this integration, avoid having both tools manage the same runtime
+or virtualenv. A common conflict is direnv's `layout python` alongside a Python
+version selected by mise. Changes to a `.tool-versions` file outside the `.envrc`
+directory may also fail to trigger a direnv refresh.
 
-```sh
-export MISE_NODE_VERSION=20.0.0
-export MISE_PYTHON_VERSION=3.11
-```
-
-Of course, if you use `mise activate`, these steps aren't necessary and you can use
-mise as if direnv were not in use.
-
-If you continue to struggle, you can also try using the [shims method](dev-tools/shims.md).
-
-### Do you need direnv?
-
-mise can replace direnv for most use cases. This is why mise includes support for
-managing env vars and [virtualenv](lang/python.md#automatic-virtualenv-activation)
-for python using `mise.toml`.
+[Shims](/dev-tools/shims.html) provide another way to run mise-managed tools, but
+they do not reproduce all the features of `mise activate` or make mixed shell
+hooks a supported setup.

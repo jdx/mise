@@ -1,15 +1,24 @@
 # Environments
 
-> Load the right _environment variables_ automatically for each project
-> directory.
+Define project environment variables in `[env]`. mise supplies them to commands
+run with `mise exec`, tasks, and activated interactive shells.
 
-Use mise to specify environment variables used for different projects.
+For separate development, test, or production config files, see
+[Config Environments](/configuration/environments.html). For reusable values that
+should stay inside mise templates, use [`[vars]`](/configuration/vars.html).
 
-To get started, create a `mise.toml` file in the root of your project directory:
+Create a `mise.toml` file in the root of your project directory:
 
 ```toml [mise.toml]
 [env]
 NODE_ENV = 'production'
+```
+
+Check the value in a child process without changing your shell:
+
+```sh
+mise exec -- sh -c 'printf "%s\n" "$NODE_ENV"'
+# production
 ```
 
 To clear an env var, set it to `false`:
@@ -114,7 +123,7 @@ run = "echo $MY_VAR"
 env = { _.file = '/path/to/file.env', "MY_VAR" = "my variable" }
 ```
 
-## Lazy eval
+## Resolve values after tools {#lazy-eval}
 
 Environment variables typically are resolved before tools—that way you can configure tool installation
 subprocesses with environment variables. This does not apply to variables that configure mise itself,
@@ -133,7 +142,9 @@ NODE_VERSION = { value = "{{ tools.node.version }}", tools = true }
 
 ## Redactions
 
-Variables can be redacted from the output by setting `redact = true`:
+Mark values as sensitive with `redact = true` so mise can mask them in captured
+task output. This does not encrypt the config file or prevent a child process
+from reading the value:
 
 ```toml
 [env]
@@ -175,7 +186,9 @@ The same applies to a `default` whose fallback the caller overrides.
 
 ### Viewing Redacted Environment Variables
 
-The `mise env` command provides flags to work with redacted variables:
+`mise env` exports actual values, including secrets. `--redacted` filters the
+output to sensitive variables; it does **not** hide their values. Use these flags
+when deliberately exporting secrets to another program:
 
 ```bash
 # Show only redacted environment variables
@@ -209,21 +222,25 @@ task.output = "prefix"
 
 :::
 
-::: danger
-Because mise may output sensitive values that could show up in CI logs, you'll need to tell your CI setup
-which values are sensitive.
+### CI masking
 
-For example, when using GitHub Actions, you should use `::add-mask::` to prevent secrets from appearing in logs:
+[mise-action](https://github.com/jdx/mise-action) registers masks for values marked
+with `redact = true` or matching the `redactions` array. When resolving secrets
+outside that action, register masks before running commands that might print them.
+
+For a custom GitHub Actions step with Bash and `jq` available, export JSON to
+preserve whitespace and escape workflow-command data before emitting masks:
 
 ```bash
-# In a GitHub Actions workflow
-for value in $(mise env --redacted --values); do
-  echo "::add-mask::$value"
-done
+set -o pipefail
+mise env --redacted --json | jq -r '
+  .[] | select(length > 0) |
+  "::add-mask::" + (gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A"))
+'
 ```
 
-If you're using [mise-action](https://github.com/jdx/mise-action), it automatically redacts values marked with `redact = true` or matching patterns in the `redactions` array.
-:::
+This uses the [workflow-command escaping applied by the Actions toolkit](https://github.com/actions/toolkit/blob/main/packages/core/src/command.ts).
+Do not use a whitespace-splitting loop such as `for value in $(...)` for secrets.
 
 ## Required Variables
 
@@ -242,16 +259,14 @@ caller passed in.
 You can also provide help text to guide users on how to set the variable:
 
 ```toml
-[env]
-DATABASE_URL = {
-  required = "Set DATABASE_URL to your PostgreSQL connection string (e.g., postgres://user:pass@localhost/dbname)",
-}
-API_KEY = {
-  required = "Get your API key from https://example.com/api-keys",
-}
-AWS_REGION = {
-  required = "Set to your AWS region (e.g., us-east-1, eu-west-1)",
-}
+[env.DATABASE_URL]
+required = "Set DATABASE_URL to your PostgreSQL connection string"
+
+[env.API_KEY]
+required = "Get your API key from https://example.com/api-keys"
+
+[env.AWS_REGION]
+required = "Set to your AWS region (e.g., us-east-1, eu-west-1)"
 ```
 
 When a required variable is missing, mise shows the help text in the error message.
@@ -318,7 +333,7 @@ ENABLE_BETA_FEATURES = { required = true }
 `config_root` is the canonical project root directory that mise uses when resolving relative paths inside config files. Generally, relative paths in mise refer to this directory.
 
 - When your config lives at nested paths like `.config/mise/config.toml` or `.mise/config.toml`, `config_root` points to the project directory that contains those files (for example, `/path/to/project`).
-- When your config lives at the project root (for example, `mise.toml`), `config_root` is the current directory.
+- When your config lives at the project root (for example, `mise.toml`), `config_root` is the directory containing that file, even when you invoke mise from a subdirectory.
 - Relative paths in environment directives are resolved against `config_root` so they behave consistently regardless of where the config file itself lives.
 
 Here are some example config files and their `config_root`:
@@ -420,11 +435,11 @@ for dotenv files, `expand = true` additionally enables references to previously 
 ```toml
 [env]
 _.file = [
-    # Load env from the json file relative to this config file
+    # Load env from the JSON file relative to the config root
     '.env.json',
     # Load env from the dotenv file at an absolute path
-    '/User/bob/.env',
-    # Load env from the yaml file relative to this config file and redact the values
+    '/Users/bob/.env',
+    # Load env from the YAML file relative to the config root and redact the values
     { path = ".secrets.yaml", redact = true }
 ]
 ```
@@ -432,7 +447,7 @@ _.file = [
 To automatically load dotenv files from the current directory and parent directories, set
 [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) or `env_file = ".env"` under `[settings]`
 in `~/.config/mise/config.toml`. This is different from `env._.file`, which resolves paths
-relative to the config file that declares it.
+relative to the config root of the file that declares it.
 
 See [secrets](/environments/secrets/) for ways to read encrypted files with `env._.file`.
 
@@ -543,7 +558,7 @@ _.source = [
     # Sources the file relative to the config root
     './scripts/base.sh',
     # Sources a file at an absolute path
-    '/User/bob/env.sh',
+    '/Users/bob/env.sh',
     # Sources the file relative to the config root and redacts the values
     { path = ".secrets.sh", redact = true }
 ]
@@ -559,6 +574,9 @@ Plugins can provide their own `env._` directives that dynamically set environmen
 - Providing team-wide environment standardization
 
 ### Basic Usage
+
+These are illustrative plugin names. Install a plugin that implements `MiseEnv`
+before using its directive; naming a directive does not create or install a plugin.
 
 Simple plugin activation:
 
@@ -588,12 +606,9 @@ The configuration options you provide (the TOML table after `=`) are passed to t
 ### Example: Secret Management Plugin
 
 ```toml
-[env]
-# Fetch secrets from a vault
-_.vault-secrets = {
-  vault_url = "https://vault.example.com",
-  secrets_path = "secret/myapp"
-}
+[env._.vault-secrets]
+vault_url = "https://vault.example.com"
+secrets_path = "secret/myapp"
 ```
 
 The plugin could then fetch secrets from HashiCorp Vault and expose them as environment variables.
@@ -630,7 +645,7 @@ Environment variable values can be templates; see [Templates](/templates) for de
 
 ```toml
 [env]
-LD_LIBRARY_PATH = "/some/path:{{env.LD_LIBRARY_PATH}}"
+PROJECT_CACHE = "{{config_root}}/.cache"
 ```
 
 ## Using env vars in other env vars
@@ -652,7 +667,7 @@ As a simpler alternative to Tera templates for referencing env vars, you can use
 ```toml
 [env]
 MY_PROJ_LIB = "{{config_root}}/lib"
-LD_LIBRARY_PATH = "$MY_PROJ_LIB:$LD_LIBRARY_PATH"
+LD_LIBRARY_PATH = "$MY_PROJ_LIB:${LD_LIBRARY_PATH:-}"
 ```
 
 Supported syntax:

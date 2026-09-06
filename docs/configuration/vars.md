@@ -13,8 +13,12 @@ test_mode = "headless"
 node = "{{ vars.node_version }}"
 
 [tasks.test]
-run = "./scripts/test-e2e.sh --{{ vars.test_mode }}"
+run = "echo {{ vars.test_mode | quote }}"
 ```
+
+Run `mise run test` to print `headless`. `test_mode` is available through the
+`vars` template map, but it is not exported as `$test_mode`. The `quote` filter in
+this example targets POSIX shells; see [template quoting](/templates.html#string-manipulation).
 
 Vars are available to Tera-rendered configuration such as tool versions and options, task
 definitions, hooks, task includes, watch configuration, and dotfile templates. See
@@ -72,7 +76,9 @@ test_mode = "headless"
 
 [tasks.test]
 vars = { test_mode = "headed" }
-run = "./scripts/test-e2e.sh --{{ vars.test_mode }}"
+run = "echo {{ vars.test_mode | quote }}"
 ```
 
-See [Task Configuration](/tasks/task-configuration.html#task-vars) for task-local vars.
+Here, `mise run test` prints `headed`; other tasks still see `headless` unless
+they define their own override. See [Task Configuration](/tasks/task-configuration.html#task-vars)
+for task-local vars.

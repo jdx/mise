@@ -4,6 +4,17 @@ mise can automatically execute scripts during a `mise activate` session. Except 
 and `postinstall` hooks, these require the `mise activate` shell hook to be installed in your shell.
 Hooks are configured in `mise.toml`.
 
+| Event                        | Runs when                                             | Requires shell activation |
+| ---------------------------- | ----------------------------------------------------- | ------------------------- |
+| `cd`                         | The working directory changes                         | Yes                       |
+| `enter` / `leave`            | The shell enters or leaves a project's directory tree | Yes                       |
+| `preinstall` / `postinstall` | mise installs the selected tools                      | No                        |
+| `watch_files`                | Activation detects a change to a matching file        | Yes                       |
+
+Use [tasks](/tasks/) for commands you want to invoke explicitly. Use
+[`mise watch`](/cli/watch.html) for a running file watcher; `watch_files` hooks
+are checked by shell activation, rather than by a background watcher.
+
 When the same hook type is defined in multiple loaded config files, mise runs every matching hook
 rather than overriding hooks from lower-precedence files. Hooks run from the highest-precedence
 config file to the lowest-precedence config file. Within a single config file, hooks defined as an
@@ -63,7 +74,7 @@ platforms, a hook with only `run_windows` is skipped.
 
 ```toml
 [hooks]
-postinstall = { run = "echo installed", run_windows = "Write-Output installed" }
+postinstall = { run = "pwd", run_windows = "cd" }
 ```
 
 For `preinstall` and `postinstall`, `script = ...` and `scripts = ...` are legacy aliases for `run = ...`. If a `shell` is also set on a `script`/`scripts` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the inline shell command. The `script` and `scripts` aliases for install hooks are deprecated.
@@ -82,12 +93,15 @@ echo "Installed: $MISE_INSTALLED_TOOLS"
 
 ## Tool-level postinstall
 
-Individual tools can define their own postinstall scripts using the `postinstall` option. These run immediately after each tool is installed (before other tools in the same session are installed):
+Use a tool's `postinstall` option for work specific to that installation. It runs
+after that tool installs; independent tool installations can still run in
+parallel. Use the project-level `postinstall` hook for work that needs the whole
+selected toolset:
 
 ```toml
 [tools]
-node = { version = "20", postinstall = "npm install -g pnpm" }
-python = { version = "3.12", postinstall = "pip install pipx" }
+node = { version = "24", postinstall = "node --version" }
+python = { version = "3.12", postinstall = "python --version" }
 ```
 
 Tool-level postinstall scripts receive the following environment variables:
@@ -107,6 +121,9 @@ via `mise run`, so it reuses the full task system including dependencies, enviro
 and file-based task definitions.
 
 ```toml
+[tasks.install-deps]
+run = "echo 'install project dependencies here'"
+
 [tasks.setup]
 run = "echo 'setting up project'"
 depends = ["install-deps"]
@@ -249,9 +266,9 @@ Use `run` when the hook should execute as an inline command in a subprocess. `pr
 if `shell` is set with `script`/`scripts` on those hooks, it is ignored.
 
 ::: warning
-Shell code runs only when entering the directory. Leaving the directory does not clean up
-its changes the way `[env]` in `mise.toml` does. Hooks execute shell code that mise does not
-track or undo.
+mise does not track or undo changes made by shell scripts. For example, an
+`enter` script that exports a variable needs a corresponding `leave` script to
+unset it. Prefer `[env]` when you want mise to manage the value's lifetime.
 
 :::
 

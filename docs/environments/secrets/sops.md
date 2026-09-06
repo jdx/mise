@@ -5,53 +5,66 @@ mise reads encrypted secret files and makes values available as environment vari
 - **Formats**: `.env.json`, `.env.yaml`, `.env.toml`
 - **Encryption**: [sops](https://getsops.io), using the built-in age support or the external `sops` CLI
 
-## Example
+<span id="example"></span>
 
-```json
-{
-  "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE",
-  "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-}
-```
+## Choose a decryption method
 
-```toml [mise.toml]
-[env]
-_.file = ".env.json"
-```
-
-mise automatically decrypts the file if it is sops-encrypted.
+The default built-in implementation handles age-encrypted files. To use AWS KMS,
+GCP KMS, Azure Key Vault, Vault, or PGP, install the SOPS CLI, authenticate to the
+provider, and set `sops.rops = false` as described below.
 
 ## Encrypt with sops
 
-:::: info
+::: info
 The default `sops.rops = true` implementation supports age-encrypted files. Set
 `sops.rops = false` to use the external `sops` CLI for other key services and
 methods supported by SOPS, such as AWS KMS, GCP KMS, Azure Key Vault, Vault,
 and PGP.
-::::
+:::
 
-:::: warning
+::: warning
 The external `sops` CLI does not currently support TOML input/output. mise can decrypt SOPS-encrypted `.env.toml` files only with the default `sops.rops = true` setting. If you set `sops.rops = false`, mise shells out to the `sops` CLI and encrypted TOML env files fail with a configuration error. Use `.env.json` or `.env.yaml` when you need the external CLI path.
-::::
+:::
 
-1. Install tools: `mise use -g sops age`
-
-2. Generate an age key and note the public key:
+1. Install tools and enable experimental features:
 
 ```sh
-age-keygen -o ~/.config/mise/age.txt
+mise use -g sops age
+mise settings set experimental=true
+```
+
+2. Reuse an existing age identity, or create one if the file does not exist:
+
+```sh
+mkdir -p ~/.config/mise
+mise exec -- age-keygen -o ~/.config/mise/age.txt
 # Public key: <public key>
 ```
 
-3. Encrypt the file:
+3. Create `.env.json` with your values. This example uses a placeholder:
 
-```sh
-sops encrypt -i --age "<public key>" .env.json
+```json [.env.json]
+{
+  "API_TOKEN": "replace-with-your-token"
+}
 ```
 
-:::: tip
-The `-i` flag overwrites the file. The encrypted file is safe to commit. Set `SOPS_AGE_KEY_FILE=~/.config/mise/age.txt` or `MISE_SOPS_AGE_KEY_FILE=~/.config/mise/age.txt` to decrypt/edit with sops.
-::::
+Encrypt it with the public key printed by `age-keygen`:
+
+```sh
+mise exec -- sops encrypt -i --age "<public key>" .env.json
+```
+
+::: tip
+The `-i` flag replaces the plaintext file with ciphertext. Commit the encrypted
+file, and keep `age.txt` outside the repository. The external SOPS CLI reads
+`SOPS_AGE_KEY_FILE`; `MISE_SOPS_AGE_KEY_FILE` configures mise only. To edit the file:
+
+```sh
+SOPS_AGE_KEY_FILE="$HOME/.config/mise/age.txt" mise exec -- sops .env.json
+```
+
+:::
 
 Age key files use the standard SOPS/age format: put one identity on each line.
 Blank lines and lines beginning with `#` are ignored, and all identities are
@@ -61,10 +74,11 @@ tried when decrypting.
 
 ```toml
 [env]
-_.file = ".env.json"
+_.file = { path = ".env.json", redact = true }
 ```
 
-Now `mise env` exposes the values.
+mise now decrypts the file for `mise exec`, tasks, and shell activation.
+`mise env` prints the plaintext values; `redact = true` does not hide that export.
 
 ## Environment Variables
 
@@ -99,27 +113,14 @@ Mark secrets from files as sensitive:
 _.file = { path = ".env.json", redact = true }
 ```
 
-Work with redacted values:
-
-```bash
-mise env --redacted
-mise env --redacted --values
-```
+Redaction applies to captured task output. `mise env --redacted` deliberately
+exports the matching secrets; it does not mask them. See [redactions](/environments/#redactions)
+for output-mode limitations.
 
 ### CI masking (GitHub Actions)
 
-```yaml
-- name: Mask secrets
-  run: |
-    for value in $(mise env --redacted --values); do
-      echo "::add-mask::$value"
-    done
-- name: Use secrets safely
-  run: |
-    mise exec -- ./deploy.sh
-```
-
-If you use [mise-action](https://github.com/jdx/mise-action), values marked `redact = true` are masked automatically.
+See [CI masking](/environments/#ci-masking) for mise-action integration and a
+manual masking example that preserves whitespace and multiline values.
 
 ## Settings
 
