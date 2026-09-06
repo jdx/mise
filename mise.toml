@@ -31,7 +31,7 @@ pkl = "latest"
 shellcheck = "latest"
 shfmt = "latest"
 taplo = "latest"
-"cargo:jdx/usage" = { version = "rev:f4e22b0f5fedbb7bb4b2946be5893490bf2fe342", crate = "usage-cli", locked = true }
+usage = "6.8.0"
 wait-for-gh-rate-limit = "latest"
 sops = "latest"
 node = "24"

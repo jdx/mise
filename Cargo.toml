@@ -96,12 +96,12 @@ chrono = { version = "0.4", default-features = false, features = [
   "clock",
 ] }
 ci_info = "0.14"
-usage_rs = { package = "usage-rs", git = "https://github.com/jdx/usage", rev = "f4e22b0f5fedbb7bb4b2946be5893490bf2fe342", features = [
+usage_rs = { package = "usage-rs", version = "6.8", features = [
   "completions",
   "diagnostics",
   "validation",
 ] }
-usage-cli = { git = "https://github.com/jdx/usage", rev = "f4e22b0f5fedbb7bb4b2946be5893490bf2fe342" }
+usage-cli = "6.8"
 color-eyre = "0.6"
 color-print = "0.3"
 comfy-table = "8"
@@ -243,9 +243,7 @@ toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.12", default-features = false }
 url = "2"
 urlencoding = "2"
-usage-lib = { git = "https://github.com/jdx/usage", rev = "f4e22b0f5fedbb7bb4b2946be5893490bf2fe342", features = [
-  "docs",
-] }
+usage-lib = { version = "6.8", features = ["docs"] }
 versions = { version = "7", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
