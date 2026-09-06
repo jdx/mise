@@ -1,0 +1,19 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1W432HRWN4NCTW71QZ6QVG4",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-restack-8",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "e2e-win/dotfiles_watch.Tests.ps1"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
