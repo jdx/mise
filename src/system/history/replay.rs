@@ -897,6 +897,14 @@ fn decide(
                 // an empty directory the checkpoint knows nothing about
                 return (Action::Unchanged, "a directory".into(), "?".into());
             }
+            if cmode == "160000" {
+                // a nested repository is never removed by a rollback
+                return (
+                    Action::Skip("nested repository".into()),
+                    "a nested repository".into(),
+                    "missing".into(),
+                );
+            }
             let from = format!("{} {}", kind_of(&cmode), &coid[..7]);
             match classify(checkpoint, &display) {
                 PathState::Absent => (Action::Delete, from, "missing".into()),
@@ -1140,16 +1148,23 @@ fn write_object(repo: &HistoryRepo, step: &Step, mode: &str, oid: &str) -> Resul
             (None, None) if mode == "100755" => 0o755,
             (None, None) => 0o644,
         };
-        // a private file restored from deletion is created private, so the
-        // atomic write (which keeps an existing file's mode) never leaves
-        // its bytes readable to others, however briefly
-        if existing.is_none() && bits & 0o077 != 0o044 {
-            use std::os::unix::fs::OpenOptionsExt;
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(bits & 0o666)
-                .open(path)?;
+        // the bytes never exist under a wider mode than the one they get:
+        // a private file restored from deletion is created private, and an
+        // existing wider file is restricted before it is rewritten (the
+        // atomic write keeps an existing file's mode)
+        match existing {
+            None if bits & 0o077 != 0o044 => {
+                use std::os::unix::fs::OpenOptionsExt;
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(bits & 0o666)
+                    .open(path)?;
+            }
+            Some(current) if current & !bits != 0 => {
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(bits))?;
+            }
+            _ => {}
         }
         bits
     };
