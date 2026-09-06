@@ -329,9 +329,12 @@ An existing matching checkout is reused unless `--update` requests a safe
 fast-forward. Dirty checkouts, mismatched origins, conflicting files, and source
 files ending in `.local.toml` require manual resolution. A nonempty non-Git
 directory can be adopted after confirmation: existing files and local overrides
-are preserved. `--dry-run` reports the required fetch/adoption work without
-fetching the source or applying the persistent checkout changes. SSH inspection
-and temporary staging can still occur.
+are preserved. With `--from-git`, `--dry-run` only reports the proposed operation;
+it does not fetch the source, open an SSH session, inspect the target, or create
+temporary staging. Dirty checkouts, mismatched origins, and adoption conflicts
+are therefore detected only during a real apply. By contrast, `--source .
+--dry-run` connects to and inspects the target without applying persistent
+changes.
 
 `--from-git` uses the repository instead of the inventory's archive source and
 copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and

@@ -26,7 +26,7 @@ press_and_hold = false
 tap_to_click = true
 
 [bootstrap.macos.defaults]
-"com.apple.finder" = { AppleShowAllFiles = true }
+"com.apple.finder" = { AppleShowAllFiles = false }
 ```
 
 The friendly sections compile to raw defaults entries. Use
@@ -46,7 +46,9 @@ mise bootstrap macos defaults apply
 
 Apply as the user whose preferences should change. Choose either a friendly key
 or a raw entry for each preference unless you intentionally need an override.
-The example repeats `AppleShowAllFiles` to demonstrate that precedence.
+The example sets friendly `show_all_files = true` and raw
+`AppleShowAllFiles = false` to demonstrate that the raw entry wins within the
+same file.
 
 ## Friendly sections
 
