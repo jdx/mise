@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1W2T1Q5MG4E7N58KA62M6WF",
+  "strategy": "manual-commit",
+  "branch": "codex/color-task-help",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/tasks/test_task_help",
+    "src/cli/run.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1708,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 127616,
+    "output_tokens": 118,
+    "api_call_count": 2
+  }
+}
