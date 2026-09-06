@@ -250,9 +250,11 @@ mod tests {
     fn plaintext_bypasses_envelope_limit_but_ciphertext_does_not() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let larger_than_pipe = vec![b'x'; 128 * 1024];
         for bytes in [
             b"".as_slice(),
             b"ordinary plaintext longer than the envelope limit".as_slice(),
+            larger_than_pipe.as_slice(),
         ] {
             let object = ("100644".into(), repo.hash_blob(bytes).unwrap());
             assert!(envelope(&repo, &object, 4).unwrap().is_none());

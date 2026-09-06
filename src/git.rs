@@ -799,12 +799,14 @@ impl GitPlumbing {
             .stderr(Stdio::inherit())
             .spawn()?;
         let mut bytes = Vec::new();
-        let read = child
+        // Keep the pipe open until Git has exited: dropping it before kill
+        // can make a large blob emit a spurious broken-pipe error on stderr.
+        let mut output = child
             .stdout
             .take()
             .expect("stdout was piped")
-            .take(prefix.len() as u64)
-            .read_to_end(&mut bytes);
+            .take(prefix.len() as u64);
+        let read = output.read_to_end(&mut bytes);
         let complete = bytes.len() == prefix.len();
         if complete || read.is_err() {
             let _ = child.kill();
