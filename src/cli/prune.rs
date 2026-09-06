@@ -34,9 +34,8 @@ use super::trust::Trust;
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise prune --dry-run
-rm -rf ~/.local/share/mise/installs/node/20.0.0
-rm -rf ~/.local/share/mise/installs/node/20.0.1"###
+        "mise prune --dry-run",
+        help = "Preview unused versions without deleting them. Example output: `rm -rf ~/.local/share/mise/installs/node/20.0.0` and `rm -rf ~/.local/share/mise/installs/node/20.0.1`."
     )
 )]
 pub(crate) struct Prune {

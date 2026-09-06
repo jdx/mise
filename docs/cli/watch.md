@@ -471,24 +471,26 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 
 ## Examples
 
+Run the build task and rerun it whenever its sources change.
+
 ```
 mise watch build
-Runs the "build" task and reruns it whenever one of its sources changes.
-The task's "sources" determine which files are watched.
 ```
+
+Watch the glob instead of the task's sources.
 
 ```
 mise watch build --glob 'src/**/*.rs'
-Runs the "build" task, watching the files matched by the glob instead of
-the task's "sources".
 ```
+
+Extra arguments go to watchexec; see `watchexec --help`.
 
 ```
 mise watch build --clear
-Extra arguments are passed to watchexec. See `watchexec --help` for details.
 ```
+
+Start an API server and restart it when Rust files in ./src change.
 
 ```
 mise watch serve --watch src --exts rs --restart
-Starts an API server, watching "*.rs" files in "./src", and restarts the server when they change.
 ```

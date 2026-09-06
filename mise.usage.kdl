@@ -1719,13 +1719,7 @@ cmd doctor help="Check mise installation for possible problems" effect=read {
         alias paths
         flag "-f --full" help="Print all entries including those not provided by mise"
         flag "-h --help" help="Print help" action=help builtin=#true
-        example #"""
-Get the current PATH entries mise is providing
-mise doctor path
-/home/user/.local/share/mise/installs/node/24.0.0/bin
-/home/user/.local/share/mise/installs/rust/1.90.0/bin
-/home/user/.local/share/mise/installs/python/3.10.0/bin
-"""#
+        example "mise doctor path" help="Get the PATH entries mise provides, such as `/home/user/.local/share/mise/installs/node/24.0.0/bin`, `/home/user/.local/share/mise/installs/rust/1.90.0/bin`, and `/home/user/.local/share/mise/installs/python/3.10.0/bin`."
     }
     example #"""
 mise doctor
@@ -1754,14 +1748,9 @@ Defaults to $SHELL
     example #"""
 mise en .
 node -v
-v20.0.0
-
-Skip loading bashrc:
-mise en -s "bash --norc"
-
-Skip loading zshrc:
-mise en -s "zsh -f"
-"""#
+"""# help="Start a shell and check node. Example output: `v20.0.0`."
+    example "mise en -s \"bash --norc\"" help="Skip loading bashrc."
+    example "mise en -s \"zsh -f\"" help="Skip loading zshrc."
     complete dir type=dir
 }
 cmd env help="Export env vars to activate mise a single time" effect=read {
@@ -1855,9 +1844,9 @@ macOS only in v1; on Linux falls back to allowing all network
     arg "[TOOL@VERSION]…" help="Tool(s) to load e.g.: node@20 python@3.10" required=#false var=#true
     arg "[-- COMMAND]…" help="Command string to execute (same as --command)" required=#false var=#true conflicts=--command required_unless=--command
     example #"""
-mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
-mise x node@20 -- node ./app.js     # shorter alias
-"""#
+mise exec node@20 -- node ./app.js
+mise x node@20 -- node ./app.js
+"""# help="Launch app.js using node-20.x, with the full command or its shorter alias."
     example "mise exec node@20 python@3.11 --command \"node -v && python -V\"" help="Specify command as a string:"
     example "mise x -C /path/to/project node@20 -- node ./app.js" help="Run a command in a different directory:"
     complete command type=command
@@ -1921,12 +1910,12 @@ carry two files.
         flag "-h --help" help="Print help" action=help builtin=#true
         example #"""
 mise generate install-script --write ./bin/mise
-./bin/mise install                                    # downloads mise to .mise if not already installed
-"""#
+./bin/mise install
+"""# help="Download mise to .mise if it is not already installed."
         example #"""
-mise generate install-script --write ./bin/mise --windows  # also writes bin/mise.cmd
+mise generate install-script --write ./bin/mise --windows
 .\bin\mise.cmd install
-"""# help="add a launcher for contributors who clone the project on Windows"
+"""# help="Write bin/mise.cmd as a launcher for contributors who clone the project on Windows."
         complete localized_dir type=dir
     }
     cmd config help="Generate a mise.toml file" effect=write {
@@ -1988,8 +1977,8 @@ since git runs hooks from the top level: `-- -C subdir` makes the hook find it.
 """# required=#false var=#true
         example #"""
 mise generate git-pre-commit --write --task=pre-commit
-git commit -m "feat: add new feature" # runs `mise run pre-commit`
-"""#
+git commit -m "feat: add new feature"
+"""# help="Install the hook; committing then runs `mise run pre-commit`."
         example "mise generate git-pre-commit --write -- -C subdir" help="config lives in a subdirectory, so the hook has to change into it first"
     }
     cmd github-action help="Generate a GitHub Action workflow file" effect=write {
@@ -2053,12 +2042,12 @@ carry two files.
         flag "-h --help" help="Print help" action=help builtin=#true
         example #"""
 mise generate install-script --write ./bin/mise
-./bin/mise install                                    # downloads mise to .mise if not already installed
-"""#
+./bin/mise install
+"""# help="Download mise to .mise if it is not already installed."
         example #"""
-mise generate install-script --write ./bin/mise --windows  # also writes bin/mise.cmd
+mise generate install-script --write ./bin/mise --windows
 .\bin\mise.cmd install
-"""# help="add a launcher for contributors who clone the project on Windows"
+"""# help="Write bin/mise.cmd as a launcher for contributors who clone the project on Windows."
         complete localized_dir type=dir
     }
     cmd task-docs help="Generate documentation for tasks in a project" effect=write {
@@ -2607,14 +2596,11 @@ e.g.: node@20
 if this is a single tool with no version,
 the current value of .tool-versions/mise.toml will be displayed
 """# required=#false var=#true
-    example "mise local node@20" help="set the current version of node to 20.x for the current directory will use a precise version (e.g.: 20.0.0) in .tool-versions file"
+    example "mise local --pin node@20" help="set the current version of node to 20.x for the current directory will use a precise version (e.g.: 20.0.0) in .tool-versions file"
     example "mise local -p node@20" help="set node to 20.x for the current project (recurses up to find .tool-versions)"
     example "mise local --fuzzy node@20" help="set the current version of node to 20.x for the current directory will use a fuzzy version (e.g.: 20) in .tool-versions file"
     example "mise local --remove=node" help="removes node from .tool-versions"
-    example #"""
-mise local node
-20.0.0
-"""# help="show the current version of node in .tool-versions"
+    example "mise local node" help="show the current version of node in .tool-versions; example output: `20.0.0`"
 }
 cmd lock help="Update lockfile checksums and URLs for all specified platforms" effect=write {
     long_help #"""
@@ -2703,17 +2689,15 @@ Tool(s) to update in lockfile
 e.g.: node python
 If not specified, all configured and task-specific tools will be updated
 """# required=#false var=#true
-    example #"""
-mise lock                       # create or refresh the project lockfile
-mise lock node python           # update only node and python
-mise lock --platform linux-x64  # update only linux-x64 platform
-mise lock --dry-run             # show what would be updated
-mise lock --bump                # re-resolve selectors like "latest" or "20" to the latest matching versions
-mise lock --bump --dry-run --json   # list available updates as JSON without writing
-mise lock --minimum-release-age 2024-01-01   # lock latest/fuzzy versions released before 2024-01-01
-mise lock --local               # update mise.local.lock for local configs
-mise lock --global              # update only global config lockfiles
-"""#
+    example "mise lock" help="create or refresh the project lockfile"
+    example "mise lock node python" help="update only node and python"
+    example "mise lock --platform linux-x64" help="update only linux-x64 platform"
+    example "mise lock --dry-run" help="show what would be updated"
+    example "mise lock --bump" help="re-resolve selectors like \"latest\" or \"20\" to the latest matching versions"
+    example "mise lock --bump --dry-run --json" help="list available updates as JSON without writing"
+    example "mise lock --minimum-release-age 2024-01-01" help="lock latest/fuzzy versions released before 2024-01-01"
+    example "mise lock --local" help="update mise.local.lock for local configs"
+    example "mise lock --global" help="update only global config lockfiles"
 }
 cmd ls help="List installed and active tool versions" effect=read {
     alias list
@@ -2841,6 +2825,7 @@ Tools available:
 
 Note: This is primarily intended for integration with AI assistants like Claude,
 Cursor, or other tools that support the Model Context Protocol.
+See https://mise.jdx.dev/mcp.html for client configuration and access controls.
 """#
     flag "-h --help" help="Print help" action=help builtin=#true
     example "mise -C /path/to/project mcp" help="Start from the project directory; an MCP client handles the protocol exchange"
@@ -3475,11 +3460,7 @@ This is useful for scripts to check if tools need to be pruned.
     flag --tools help="Prune only unused versions of tools"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
-    example #"""
-mise prune --dry-run
-rm -rf ~/.local/share/mise/installs/node/20.0.0
-rm -rf ~/.local/share/mise/installs/node/20.0.1
-"""#
+    example "mise prune --dry-run" help="Preview unused versions without deleting them. Example output: `rm -rf ~/.local/share/mise/installs/node/20.0.0` and `rm -rf ~/.local/share/mise/installs/node/20.0.1`."
 }
 cmd registry help="List available tools to install" effect=read {
     long_help #"""
@@ -3507,8 +3488,7 @@ Requires --json. Security info is de-duplicated across all of a tool's backends.
     example #"""
 mise registry
 mise registry node
-core:node
-"""#
+"""# help="List the registry, then inspect node. The second command prints `core:node`."
     example #"""
 mise registry --backend aqua
 mise registry --json
@@ -3546,8 +3526,7 @@ currently active in mise.toml.
     example #"""
 mise reshim
 ~/.local/share/mise/shims/node -v
-v20.0.0
-"""#
+"""# help="Rebuild shims, then check node. Example output: `v20.0.0`."
 }
 cmd run disable_help_flag=#true restart_token=::: help="Run task(s)" unknown_flags=value {
     alias r
@@ -3867,36 +3846,14 @@ Environment variable(s) to set
 e.g.: NODE_ENV=production
 """# required=#false var=#true
     example "mise set NODE_ENV=production"
-    example #"""
-mise set NODE_ENV
-production
-"""#
-    example #"""
-mise set -E staging NODE_ENV=staging
-# creates or modifies mise.staging.toml
-"""#
-    example #"""
-mise set
-key       value       source
-NODE_ENV  production  ~/.config/mise/config.toml
-"""#
-    example #"""
-mise set --prompt PASSWORD
-Enter value for PASSWORD: [hidden input]
-
-Multiline Values (--stdin):
-"""#
-    example "cat private.key | mise set --stdin MY_KEY"
-    example #"""
-printf "line1\nline2" | mise set --stdin MY_KEY
-
-[experimental] Age Encryption:
-"""#
-    example "mise set --age-encrypt API_KEY=secret"
-    example #"""
-mise set --age-encrypt --prompt API_KEY
-Enter value for API_KEY: [hidden input]
-"""#
+    example "mise set NODE_ENV" help="Read NODE_ENV; example output: `production`."
+    example "mise set -E staging NODE_ENV=staging" help="Create or modify mise.staging.toml."
+    example "mise set" help="List keys, values, and source files."
+    example "mise set --prompt PASSWORD" help="Prompt for PASSWORD with hidden input."
+    example "cat private.key | mise set --stdin MY_KEY" help="Read a multiline value from stdin."
+    example "printf \"line1\\nline2\" | mise set --stdin MY_KEY" help="Store a multiline value from a pipeline."
+    example "mise set --age-encrypt API_KEY=secret" help="Encrypt the value with age (experimental)."
+    example "mise set --age-encrypt --prompt API_KEY" help="Prompt with hidden input and encrypt with age (experimental)."
     complete path type=path
     complete file type=path
 }
@@ -4906,7 +4863,7 @@ Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_glo
 
 The installed version is also removed unless another config still uses it or `--no-prune` is passed.
 """#
-    flag "-e --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
+    flag "-e --env" help="Create/modify an environment-specific config file like mise.<env>.toml" {
         overrides "--global" "--path"
         arg <ENV>
     }
@@ -5851,24 +5808,10 @@ e.g.: `mise watch task1 arg1 arg2 ::: task2 arg1 arg2`
 Defaults to `default`
 """# required=#false
     arg "[ARGS]…" help="Task and arguments to run" required=#false double_dash=automatic var=#true
-    example #"""
-mise watch build
-Runs the "build" task and reruns it whenever one of its sources changes.
-The task's "sources" determine which files are watched.
-"""#
-    example #"""
-mise watch build --glob 'src/**/*.rs'
-Runs the "build" task, watching the files matched by the glob instead of
-the task's "sources".
-"""#
-    example #"""
-mise watch build --clear
-Extra arguments are passed to watchexec. See `watchexec --help` for details.
-"""#
-    example #"""
-mise watch serve --watch src --exts rs --restart
-Starts an API server, watching "*.rs" files in "./src", and restarts the server when they change.
-"""#
+    example "mise watch build" help="Run the build task and rerun it whenever its sources change."
+    example "mise watch build --glob 'src/**/*.rs'" help="Watch the glob instead of the task's sources."
+    example "mise watch build --clear" help="Extra arguments go to watchexec; see `watchexec --help`."
+    example "mise watch serve --watch src --exts rs --restart" help="Start an API server and restart it when Rust files in ./src change."
     complete path type=path
     complete directory type=dir
 }

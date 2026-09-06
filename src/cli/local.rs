@@ -28,7 +28,7 @@ use crate::{env, file};
     hide = true,
     alias = "l",
     example(
-        r###"mise local node@20"###,
+        r###"mise local --pin node@20"###,
         help = r###"set the current version of node to 20.x for the current directory will use a precise version (e.g.: 20.0.0) in .tool-versions file"###
     ),
     example(
@@ -44,9 +44,8 @@ use crate::{env, file};
         help = r###"removes node from .tool-versions"###
     ),
     example(
-        r###"mise local node
-20.0.0"###,
-        help = r###"show the current version of node in .tool-versions"###
+        r###"mise local node"###,
+        help = r###"show the current version of node in .tool-versions; example output: `20.0.0`"###
     )
 )]
 pub(crate) struct Local {

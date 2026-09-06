@@ -2924,13 +2924,10 @@ Print all entries including those not provided by mise
 Print help
 \fBExamples:\fR
 .PP
+Get the PATH entries mise provides, such as `/home/user/.local/share/mise/installs/node/24.0.0/bin`, `/home/user/.local/share/mise/installs/rust/1.90.0/bin`, and `/home/user/.local/share/mise/installs/python/3.10.0/bin`.
 .PP
 .RS 4
-Get the current PATH entries mise is providing
 mise doctor path
-/home/user/.local/share/mise/installs/node/24.0.0/bin
-/home/user/.local/share/mise/installs/rust/1.90.0/bin
-/home/user/.local/share/mise/installs/python/3.10.0/bin
 .RE
 .SH "MISE EN"
 Start a new shell with the mise environment built from the current configuration
@@ -2961,16 +2958,22 @@ Directory to start the shell in
 .RE
 \fBExamples:\fR
 .PP
+Start a shell and check node. Example output: `v20.0.0`.
 .PP
 .RS 4
 mise en .
 node \-v
-v20.0.0
-
-Skip loading bashrc:
+.RE
+.PP
+Skip loading bashrc.
+.PP
+.RS 4
 mise en \-s "bash \-\-norc"
-
-Skip loading zshrc:
+.RE
+.PP
+Skip loading zshrc.
+.PP
+.RS 4
 mise en \-s "zsh \-f"
 .RE
 .SH "MISE ENV"
@@ -3096,10 +3099,11 @@ Tool(s) to load e.g.: node@20 python@3.10
 Command string to execute (same as \-\-command)
 \fBExamples:\fR
 .PP
+Launch app.js using node\-20.x, with the full command or its shorter alias.
 .PP
 .RS 4
-mise exec node@20 \-\- node ./app.js  # launch app.js using node\-20.x
-mise x node@20 \-\- node ./app.js     # shorter alias
+mise exec node@20 \-\- node ./app.js
+mise x node@20 \-\- node ./app.js
 .RE
 .PP
 Specify command as a string:
@@ -3257,10 +3261,11 @@ would pass on the command line. Useful when the config is not at the repository 
 since git runs hooks from the top level: `\-\- \-C subdir` makes the hook find it.
 \fBExamples:\fR
 .PP
+Install the hook; committing then runs `mise run pre\-commit`.
 .PP
 .RS 4
 mise generate git\-pre\-commit \-\-write \-\-task=pre\-commit
-git commit \-m "feat: add new feature" # runs `mise run pre\-commit`
+git commit \-m "feat: add new feature"
 .RE
 .PP
 config lives in a subdirectory, so the hook has to change into it first
@@ -3349,16 +3354,17 @@ carry two files.
 Print help
 \fBExamples:\fR
 .PP
+Download mise to .mise if it is not already installed.
 .PP
 .RS 4
 mise generate install\-script \-\-write ./bin/mise
-\&./bin/mise install                                    # downloads mise to .mise if not already installed
+\&./bin/mise install
 .RE
 .PP
-add a launcher for contributors who clone the project on Windows
+Write bin/mise.cmd as a launcher for contributors who clone the project on Windows.
 .PP
 .RS 4
-mise generate install\-script \-\-write ./bin/mise \-\-windows  # also writes bin/mise.cmd
+mise generate install\-script \-\-write ./bin/mise \-\-windows
 \&.\\bin\\mise.cmd install
 .RE
 .SH "MISE GENERATE TASK-DOCS"
@@ -3947,17 +3953,58 @@ e.g.: node python
 If not specified, all configured and task\-specific tools will be updated
 \fBExamples:\fR
 .PP
+create or refresh the project lockfile
 .PP
 .RS 4
-mise lock                       # create or refresh the project lockfile
-mise lock node python           # update only node and python
-mise lock \-\-platform linux\-x64  # update only linux\-x64 platform
-mise lock \-\-dry\-run             # show what would be updated
-mise lock \-\-bump                # re\-resolve selectors like "latest" or "20" to the latest matching versions
-mise lock \-\-bump \-\-dry\-run \-\-json   # list available updates as JSON without writing
-mise lock \-\-minimum\-release\-age 2024\-01\-01   # lock latest/fuzzy versions released before 2024\-01\-01
-mise lock \-\-local               # update mise.local.lock for local configs
-mise lock \-\-global              # update only global config lockfiles
+mise lock
+.RE
+.PP
+update only node and python
+.PP
+.RS 4
+mise lock node python
+.RE
+.PP
+update only linux\-x64 platform
+.PP
+.RS 4
+mise lock \-\-platform linux\-x64
+.RE
+.PP
+show what would be updated
+.PP
+.RS 4
+mise lock \-\-dry\-run
+.RE
+.PP
+re\-resolve selectors like "latest" or "20" to the latest matching versions
+.PP
+.RS 4
+mise lock \-\-bump
+.RE
+.PP
+list available updates as JSON without writing
+.PP
+.RS 4
+mise lock \-\-bump \-\-dry\-run \-\-json
+.RE
+.PP
+lock latest/fuzzy versions released before 2024\-01\-01
+.PP
+.RS 4
+mise lock \-\-minimum\-release\-age 2024\-01\-01
+.RE
+.PP
+update mise.local.lock for local configs
+.PP
+.RS 4
+mise lock \-\-local
+.RE
+.PP
+update only global config lockfiles
+.PP
+.RS 4
+mise lock \-\-global
 .RE
 .SH "MISE LS"
 List installed and active tool versions
@@ -4146,6 +4193,7 @@ Tools available:
 
 Note: This is primarily intended for integration with AI assistants like Claude,
 Cursor, or other tools that support the Model Context Protocol.
+See https://mise.jdx.dev/mcp.html for client configuration and access controls.
 .PP
 \fBUsage:\fR mise mcp [OPTIONS]
 .PP
@@ -5021,11 +5069,10 @@ Print help
 Prune only these tools
 \fBExamples:\fR
 .PP
+Preview unused versions without deleting them. Example output: `rm \-rf ~/.local/share/mise/installs/node/20.0.0` and `rm \-rf ~/.local/share/mise/installs/node/20.0.1`.
 .PP
 .RS 4
 mise prune \-\-dry\-run
-rm \-rf ~/.local/share/mise/installs/node/20.0.0
-rm \-rf ~/.local/share/mise/installs/node/20.0.1
 .RE
 .SH "MISE REGISTRY"
 List available tools to install
@@ -5065,11 +5112,11 @@ Print help
 Show only the specified tool's full name
 \fBExamples:\fR
 .PP
+List the registry, then inspect node. The second command prints `core:node`.
 .PP
 .RS 4
 mise registry
 mise registry node
-core:node
 .RE
 .PP
 .PP
@@ -5112,11 +5159,11 @@ Rebuild the system shim farm
 Print help
 \fBExamples:\fR
 .PP
+Rebuild shims, then check node. Example output: `v20.0.0`.
 .PP
 .RS 4
 mise reshim
 ~/.local/share/mise/shims/node \-v
-v20.0.0
 .RE
 .SH "MISE RUN"
 Run task(s)
@@ -5518,54 +5565,52 @@ e.g.: NODE_ENV=production
 mise set NODE_ENV=production
 .RE
 .PP
+Read NODE_ENV; example output: `production`.
 .PP
 .RS 4
 mise set NODE_ENV
-production
 .RE
 .PP
+Create or modify mise.staging.toml.
 .PP
 .RS 4
 mise set \-E staging NODE_ENV=staging
-# creates or modifies mise.staging.toml
 .RE
 .PP
+List keys, values, and source files.
 .PP
 .RS 4
 mise set
-key       value       source
-NODE_ENV  production  ~/.config/mise/config.toml
 .RE
 .PP
+Prompt for PASSWORD with hidden input.
 .PP
 .RS 4
 mise set \-\-prompt PASSWORD
-Enter value for PASSWORD: [hidden input]
-
-Multiline Values (\-\-stdin):
 .RE
 .PP
+Read a multiline value from stdin.
 .PP
 .RS 4
 cat private.key | mise set \-\-stdin MY_KEY
 .RE
 .PP
+Store a multiline value from a pipeline.
 .PP
 .RS 4
 printf "line1\\nline2" | mise set \-\-stdin MY_KEY
-
-[experimental] Age Encryption:
 .RE
 .PP
+Encrypt the value with age (experimental).
 .PP
 .RS 4
 mise set \-\-age\-encrypt API_KEY=secret
 .RE
 .PP
+Prompt with hidden input and encrypt with age (experimental).
 .PP
 .RS 4
 mise set \-\-age\-encrypt \-\-prompt API_KEY
-Enter value for API_KEY: [hidden input]
 .RE
 .SH "MISE SETTINGS"
 Manage settings
@@ -7298,7 +7343,7 @@ The installed version is also removed unless another config still uses it or `\-
 .PP
 .TP
 \fB\-e, \-\-env\fR \fI<ENV>\fR
-Create/modify an environment\-specific config file like .mise.<env>.toml
+Create/modify an environment\-specific config file like mise.<env>.toml
 .TP
 \fB\-g, \-\-global\fR
 Use the global config file (`~/.config/mise/config.toml`) instead of the local one
@@ -8222,30 +8267,28 @@ Defaults to `default`
 Task and arguments to run
 \fBExamples:\fR
 .PP
+Run the build task and rerun it whenever its sources change.
 .PP
 .RS 4
 mise watch build
-Runs the "build" task and reruns it whenever one of its sources changes.
-The task's "sources" determine which files are watched.
 .RE
 .PP
+Watch the glob instead of the task's sources.
 .PP
 .RS 4
 mise watch build \-\-glob 'src/**/*.rs'
-Runs the "build" task, watching the files matched by the glob instead of
-the task's "sources".
 .RE
 .PP
+Extra arguments go to watchexec; see `watchexec \-\-help`.
 .PP
 .RS 4
 mise watch build \-\-clear
-Extra arguments are passed to watchexec. See `watchexec \-\-help` for details.
 .RE
 .PP
+Start an API server and restart it when Rust files in ./src change.
 .PP
 .RS 4
 mise watch serve \-\-watch src \-\-exts rs \-\-restart
-Starts an API server, watching "*.rs" files in "./src", and restarts the server when they change.
 .RE
 .SH "MISE WHERE"
 Display the installation path for a tool

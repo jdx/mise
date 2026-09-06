@@ -26,16 +26,22 @@ use std::path::{Path, PathBuf};
 #[usage(
     visible_alias = "w",
     verbatim_doc_comment,
-    example(r###"mise watch build
-Runs the "build" task and reruns it whenever one of its sources changes.
-The task's "sources" determine which files are watched."###),
-    example(r###"mise watch build --glob 'src/**/*.rs'
-Runs the "build" task, watching the files matched by the glob instead of
-the task's "sources"."###),
-    example(r###"mise watch build --clear
-Extra arguments are passed to watchexec. See `watchexec --help` for details."###),
-    example(r###"mise watch serve --watch src --exts rs --restart
-Starts an API server, watching "*.rs" files in "./src", and restarts the server when they change."###),
+    example(
+        "mise watch build",
+        help = "Run the build task and rerun it whenever its sources change."
+    ),
+    example(
+        "mise watch build --glob 'src/**/*.rs'",
+        help = "Watch the glob instead of the task's sources."
+    ),
+    example(
+        "mise watch build --clear",
+        help = "Extra arguments go to watchexec; see `watchexec --help`."
+    ),
+    example(
+        "mise watch serve --watch src --exts rs --restart",
+        help = "Start an API server and restart it when Rust files in ./src change."
+    ),
     unknown_flags = "value"
 )]
 pub(crate) struct Watch {

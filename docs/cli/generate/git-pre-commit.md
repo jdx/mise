@@ -34,9 +34,11 @@ For more advanced pre-commit functionality, see mise's sister project: <https://
 
 ## Examples
 
+Install the hook; committing then runs `mise run pre-commit`.
+
 ```
 mise generate git-pre-commit --write --task=pre-commit
-git commit -m "feat: add new feature" # runs `mise run pre-commit`
+git commit -m "feat: add new feature"
 ```
 
 config lives in a subdirectory, so the hook has to change into it first

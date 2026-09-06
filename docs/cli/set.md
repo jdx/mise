@@ -52,44 +52,50 @@ Use `-E <env>` to create/modify environment-specific config files like `mise.<en
 mise set NODE_ENV=production
 ```
 
+Read NODE_ENV; example output: `production`.
+
 ```
 mise set NODE_ENV
-production
 ```
+
+Create or modify mise.staging.toml.
 
 ```
 mise set -E staging NODE_ENV=staging
-# creates or modifies mise.staging.toml
 ```
+
+List keys, values, and source files.
 
 ```
 mise set
-key       value       source
-NODE_ENV  production  ~/.config/mise/config.toml
 ```
+
+Prompt for PASSWORD with hidden input.
 
 ```
 mise set --prompt PASSWORD
-Enter value for PASSWORD: [hidden input]
-
-Multiline Values (--stdin):
 ```
+
+Read a multiline value from stdin.
 
 ```
 cat private.key | mise set --stdin MY_KEY
 ```
 
+Store a multiline value from a pipeline.
+
 ```
 printf "line1\nline2" | mise set --stdin MY_KEY
-
-[experimental] Age Encryption:
 ```
+
+Encrypt the value with age (experimental).
 
 ```
 mise set --age-encrypt API_KEY=secret
 ```
 
+Prompt with hidden input and encrypt with age (experimental).
+
 ```
 mise set --age-encrypt --prompt API_KEY
-Enter value for API_KEY: [hidden input]
 ```

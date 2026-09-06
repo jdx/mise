@@ -96,6 +96,27 @@ impl Usage {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn example_descriptions_are_not_shell_input() {
+        let spec = super::spec();
+        for name in ["prune", "set", "watch", "en", "registry", "reshim"] {
+            for example in &spec.cmd.subcommands[name].examples {
+                for line in example.code.lines() {
+                    assert!(
+                        !line.starts_with("rm -rf ")
+                            && !line.starts_with("Runs the ")
+                            && !line.starts_with("Skip loading ")
+                            && !line.starts_with("Enter value for ")
+                            && line != "v20.0.0"
+                            && line != "core:node"
+                            && !line.ends_with("Encryption:"),
+                        "{name}: {line}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn task_mounts_describe_arguments_without_discovery() {
         let spec = super::spec();
         for cmd in [

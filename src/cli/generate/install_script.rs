@@ -13,10 +13,19 @@ use xx::regex;
 /// Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap` (machine
 /// setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, example(r###"mise generate install-script --write ./bin/mise
-./bin/mise install                                    # downloads mise to .mise if not already installed"###),
-    example(r###"mise generate install-script --write ./bin/mise --windows  # also writes bin/mise.cmd
-.\bin\mise.cmd install"###, help = r###"add a launcher for contributors who clone the project on Windows"###))]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise generate install-script --write ./bin/mise
+./bin/mise install"###,
+        help = "Download mise to .mise if it is not already installed."
+    ),
+    example(
+        r###"mise generate install-script --write ./bin/mise --windows
+.\bin\mise.cmd install"###,
+        help = r###"Write bin/mise.cmd as a launcher for contributors who clone the project on Windows."###
+    )
+)]
 pub(super) struct InstallScript {
     /// Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)
     ///

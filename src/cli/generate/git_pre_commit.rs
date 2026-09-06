@@ -18,7 +18,8 @@ use crate::git::Git;
     visible_alias = "pre-commit",
     example(
         r###"mise generate git-pre-commit --write --task=pre-commit
-git commit -m "feat: add new feature" # runs `mise run pre-commit`"###
+git commit -m "feat: add new feature""###,
+        help = "Install the hook; committing then runs `mise run pre-commit`."
     ),
     example(
         r###"mise generate git-pre-commit --write -- -C subdir"###,

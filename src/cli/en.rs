@@ -13,15 +13,11 @@ use crate::env;
     verbatim_doc_comment,
     example(
         r###"mise en .
-node -v
-v20.0.0
-
-Skip loading bashrc:
-mise en -s "bash --norc"
-
-Skip loading zshrc:
-mise en -s "zsh -f""###
-    )
+node -v"###,
+        help = "Start a shell and check node. Example output: `v20.0.0`."
+    ),
+    example(r#"mise en -s "bash --norc""#, help = "Skip loading bashrc."),
+    example(r#"mise en -s "zsh -f""#, help = "Skip loading zshrc.")
 )]
 pub(crate) struct En {
     /// Directory to start the shell in

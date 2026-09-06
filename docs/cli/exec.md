@@ -45,9 +45,11 @@ The "--" separates tools from the command to pass along to the subprocess.
 
 ## Examples
 
+Launch app.js using node-20.x, with the full command or its shorter alias.
+
 ```
-mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
-mise x node@20 -- node ./app.js     # shorter alias
+mise exec node@20 -- node ./app.js
+mise x node@20 -- node ./app.js
 ```
 
 Specify command as a string:

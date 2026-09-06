@@ -19,8 +19,8 @@ use tokio::{sync::Semaphore, task::JoinSet};
 #[usage(
     example(
         r###"mise registry
-mise registry node
-core:node"###
+mise registry node"###,
+        help = "List the registry, then inspect node. The second command prints `core:node`."
     ),
     example(
         r###"mise registry --backend aqua

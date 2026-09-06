@@ -59,15 +59,30 @@ fn push_unique_lock_tool(tools: &mut Vec<LockTool>, tool: LockTool) {
 /// This allows you to refresh lockfile data for platforms other than the one you're currently on.
 /// Operates on the lockfile in the current config root. Use TOOL arguments to target specific tools.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, example(r###"mise lock                       # create or refresh the project lockfile
-mise lock node python           # update only node and python
-mise lock --platform linux-x64  # update only linux-x64 platform
-mise lock --dry-run             # show what would be updated
-mise lock --bump                # re-resolve selectors like "latest" or "20" to the latest matching versions
-mise lock --bump --dry-run --json   # list available updates as JSON without writing
-mise lock --minimum-release-age 2024-01-01   # lock latest/fuzzy versions released before 2024-01-01
-mise lock --local               # update mise.local.lock for local configs
-mise lock --global              # update only global config lockfiles"###))]
+#[usage(
+    verbatim_doc_comment,
+    example("mise lock", help = "create or refresh the project lockfile"),
+    example("mise lock node python", help = "update only node and python"),
+    example(
+        "mise lock --platform linux-x64",
+        help = "update only linux-x64 platform"
+    ),
+    example("mise lock --dry-run", help = "show what would be updated"),
+    example(
+        "mise lock --bump",
+        help = "re-resolve selectors like \"latest\" or \"20\" to the latest matching versions"
+    ),
+    example(
+        "mise lock --bump --dry-run --json",
+        help = "list available updates as JSON without writing"
+    ),
+    example(
+        "mise lock --minimum-release-age 2024-01-01",
+        help = "lock latest/fuzzy versions released before 2024-01-01"
+    ),
+    example("mise lock --local", help = "update mise.local.lock for local configs"),
+    example("mise lock --global", help = "update only global config lockfiles")
+)]
 pub(crate) struct Lock {
     /// Tool(s) to update in lockfile
     /// e.g.: node python

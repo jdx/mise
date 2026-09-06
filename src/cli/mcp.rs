@@ -45,6 +45,7 @@ use std::sync::Arc;
 ///
 /// Note: This is primarily intended for integration with AI assistants like Claude,
 /// Cursor, or other tools that support the Model Context Protocol.
+/// See https://mise.jdx.dev/mcp.html for client configuration and access controls.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,

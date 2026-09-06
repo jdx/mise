@@ -25,10 +25,11 @@ For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
 
 ## Examples
 
+List the registry, then inspect node. The second command prints `core:node`.
+
 ```
 mise registry
 mise registry node
-core:node
 ```
 
 ```

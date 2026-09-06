@@ -83,6 +83,8 @@ function description(file: string): string | undefined {
       if (line.startsWith("# ")) seenHeading = true;
       continue;
     }
+    // Argument descriptions after a generated synopsis are not a page summary.
+    if (line === "## Usage" || line.startsWith("- **Usage:**")) break;
     if (paragraph.length === 0) {
       // Skip anything before the first prose block.
       if (
@@ -94,6 +96,7 @@ function description(file: string): string | undefined {
         line.startsWith("|") ||
         line.startsWith("- ") ||
         line.startsWith("* ") ||
+        line.startsWith("**Author:**") ||
         // `<script setup>` bodies for pages that embed a Vue component
         line.startsWith("import ") ||
         line.startsWith("export ")

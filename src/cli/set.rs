@@ -25,24 +25,14 @@ use tabled::Tabled;
 /// Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(aliases = ["ev", "env-vars"], verbatim_doc_comment, example(r###"mise set NODE_ENV=production"###),
-    example(r###"mise set NODE_ENV
-production"###),
-    example(r###"mise set -E staging NODE_ENV=staging
-# creates or modifies mise.staging.toml"###),
-    example(r###"mise set
-key       value       source
-NODE_ENV  production  ~/.config/mise/config.toml"###),
-    example(r###"mise set --prompt PASSWORD
-Enter value for PASSWORD: [hidden input]
-
-Multiline Values (--stdin):"###),
-    example(r###"cat private.key | mise set --stdin MY_KEY"###),
-    example(r###"printf "line1\nline2" | mise set --stdin MY_KEY
-
-[experimental] Age Encryption:"###),
-    example(r###"mise set --age-encrypt API_KEY=secret"###),
-    example(r###"mise set --age-encrypt --prompt API_KEY
-Enter value for API_KEY: [hidden input]"###))]
+    example("mise set NODE_ENV", help = "Read NODE_ENV; example output: `production`."),
+    example("mise set -E staging NODE_ENV=staging", help = "Create or modify mise.staging.toml."),
+    example("mise set", help = "List keys, values, and source files."),
+    example("mise set --prompt PASSWORD", help = "Prompt for PASSWORD with hidden input."),
+    example("cat private.key | mise set --stdin MY_KEY", help = "Read a multiline value from stdin."),
+    example(r#"printf "line1\nline2" | mise set --stdin MY_KEY"#, help = "Store a multiline value from a pipeline."),
+    example("mise set --age-encrypt API_KEY=secret", help = "Encrypt the value with age (experimental)."),
+    example("mise set --age-encrypt --prompt API_KEY", help = "Prompt with hidden input and encrypt with age (experimental)."))]
 pub(crate) struct Set {
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production

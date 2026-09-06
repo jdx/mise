@@ -23,14 +23,21 @@ Unlike an activated shell, changing directories does not update the environment.
 
 ## Examples
 
+Start a shell and check node. Example output: `v20.0.0`.
+
 ```
 mise en .
 node -v
-v20.0.0
+```
 
-Skip loading bashrc:
+Skip loading bashrc.
+
+```
 mise en -s "bash --norc"
+```
 
-Skip loading zshrc:
+Skip loading zshrc.
+
+```
 mise en -s "zsh -f"
 ```

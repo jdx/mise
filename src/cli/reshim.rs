@@ -27,8 +27,8 @@ use crate::toolset::ToolsetBuilder;
     verbatim_doc_comment,
     example(
         r###"mise reshim
-~/.local/share/mise/shims/node -v
-v20.0.0"###
+~/.local/share/mise/shims/node -v"###,
+        help = "Rebuild shims, then check node. Example output: `v20.0.0`."
     )
 )]
 pub(crate) struct Reshim {
