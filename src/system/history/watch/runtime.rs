@@ -34,6 +34,15 @@ use crate::system::history::tracked::{
 const COALESCE: Duration = Duration::from_millis(500);
 const BACKOFF_MIN: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(5 * 60);
+/// What a final capture does with throttled files: everything live when
+/// the watcher stops for good, the schedule respected when the service is
+/// about to restart it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Restart {
+    Final,
+    Held,
+}
+
 /// How often a start retries the watch lock a status probe may be holding
 /// for a moment.
 const WATCH_LOCK_TRIES: u32 = 5;
@@ -220,7 +229,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         "the filesystem watch stopped delivering events; stopping so the service restarts it",
                         json!({ "message": "watch channel closed" }),
                     );
-                    finish(&mut capture, &state.tracked).await;
+                    finish(&mut capture, &state.tracked, Restart::Final).await;
                     // recorded after the final capture, which would clear it
                     capture.health.watcher.last_error = Some("the filesystem watch stopped".into());
                     capture.health.watcher.last_error_at = Some(store::now_rfc3339());
@@ -519,7 +528,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 capture.write_health();
             }
             _ = shutdown.wait() => {
-                finish(&mut capture, &state.tracked).await;
+                finish(&mut capture, &state.tracked, Restart::Final).await;
                 break;
             }
         }
@@ -549,7 +558,7 @@ async fn stop_after_install_failure(
         &format!("the watches could not be {phase}; stopping so the service restarts it: {err:#}"),
         json!({ "message": format!("{err:#}") }),
     );
-    let saved = finish(capture, tracked).await;
+    let saved = finish(capture, tracked, Restart::Held).await;
     // recorded after the final capture, which would clear it
     let unsaved = match saved {
         Attempt::Done => String::new(),
@@ -567,25 +576,42 @@ async fn stop_after_install_failure(
 }
 
 /// Returns how the final capture went.
-async fn finish(capture: &mut Capture, tracked: &TrackedSet) -> Attempt {
+/// The final capture before the process ends. A stop for good (a signal,
+/// history switched off) saves everything live, a throttled file's final
+/// state included. A stop the service will undo by restarting the watcher
+/// (`Restart::Held`, the watches could not be installed) keeps holding
+/// throttled files: a failure that persists would otherwise save them on
+/// every restart.
+async fn finish(capture: &mut Capture, tracked: &TrackedSet, restart: Restart) -> Attempt {
     // a full capture, not only the due paths: a change still
     // inside the coalescing window has not reached the scheduler
-    // yet, and a throttled file's final state is saved now. The
-    // backoff does not apply, and a running operation is given a
-    // moment to finish
+    // yet. The backoff does not apply, and a running operation is
+    // given a moment to finish
     let now = Instant::now();
+    let held = match restart {
+        Restart::Held => capture.schedule.held_paths(now),
+        Restart::Final => vec![],
+    };
     capture.retry_at = None;
-    let mut outcome = capture.attempt(tracked, "shutdown", &[]);
+    let mut outcome = capture.attempt(tracked, "shutdown", &held);
     for _ in 0..SHUTDOWN_RETRIES {
         if outcome != Attempt::Deferred {
             break;
         }
         tokio::time::sleep(SHUTDOWN_RETRY_EVERY).await;
         capture.retry_at = None;
-        outcome = capture.attempt(tracked, "shutdown", &[]);
+        outcome = capture.attempt(tracked, "shutdown", &held);
     }
     if outcome == Attempt::Done {
-        capture.schedule.clear_pending(now);
+        match restart {
+            Restart::Final => capture.schedule.clear_pending(now),
+            Restart::Held => {
+                for path in capture.schedule.due_paths(now) {
+                    capture.schedule.saved(&path, now);
+                }
+                capture.schedule.prune(now);
+            }
+        }
     } else {
         let pending =
             capture.schedule.held_paths(now).len() + capture.schedule.due_paths(now).len();
@@ -765,9 +791,13 @@ impl State {
             return false;
         }
         if self
-            .tracked
+            .watched
             .entry_for(path)
-            .is_some_and(|entry| entry.policy.autosave)
+            .is_some_and(|entry| entry.policy.autosave && entry.kind != tracked::EntryKind::Derived)
+            || self.tracked.entry_for(path).is_some_and(|entry| {
+                entry.policy.autosave
+                    && !tracked::is_refused_root(&entry.path, &normalize(&crate::dirs::HOME))
+            })
         {
             return true;
         }
@@ -794,7 +824,15 @@ impl State {
 fn watched_set(tracked: &TrackedSet) -> Result<TrackedSet> {
     let walk = tracked.walk()?;
     let mut watched = tracked.clone();
-    watched.entries = walk.entries;
+    // an entry the walker refuses (the home directory or above) captures
+    // nothing, so it is not watched either: a watch there would schedule
+    // the whole tree for captures that cannot store it
+    let home = normalize(&crate::dirs::HOME);
+    watched.entries = walk
+        .entries
+        .into_iter()
+        .filter(|entry| !tracked::is_refused_root(&entry.path, &home))
+        .collect();
     Ok(watched)
 }
 
@@ -827,7 +865,7 @@ async fn stop_disabled(capture: &mut Capture, tracked: &TrackedSet) {
     capture
         .out
         .emit("disabled", "history was disabled; stopping", json!({}));
-    finish(capture, tracked).await;
+    finish(capture, tracked, Restart::Final).await;
 }
 
 /// The timing settings as they are now, after a reload of the
