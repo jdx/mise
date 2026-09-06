@@ -1189,7 +1189,12 @@ fn old_shim_path(path: &Path) -> PathBuf {
 /// --windows-launcher=exe` asks the same question, and on a host where the answer is always `None`
 /// that is the honest answer to report rather than a compile error to route around.
 pub(crate) fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
-    // Look next to the mise binary first
+    // Look next to the mise binary first. The invoked path may be a symlink —
+    // e.g. a winget portable install links `mise.exe` into
+    // `%LOCALAPPDATA%\Microsoft\WinGet\Links`, and the template ships beside the
+    // real payload, not beside the link. Resolve the symlink before searching
+    // (`mise_install_base` canonicalizes MISE_BIN for the same reason).
+    let mise_bin = file::canonicalize_or_self(mise_bin);
     if let Some(parent) = mise_bin.parent() {
         let candidate = parent.join("mise-shim.exe");
         if candidate.is_file() {
