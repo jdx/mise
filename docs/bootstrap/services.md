@@ -62,8 +62,10 @@ One declaration is rendered for the platform's user service manager:
 - `enabled`: whether the service starts at login (default `true`). On macOS
   this is `RunAtLoad`, which launchd also honours when the agent is loaded,
   so a stopped agent is written without it (it starts at login again once it
-  is set running), and `restart = "always"` (`KeepAlive`) starts the agent at
-  login regardless of `enabled`.
+  is set running). launchd reads any `KeepAlive` as run-at-load too, so an
+  agent with `enabled = false` is written without one: it is started once by
+  the apply but neither starts at login nor is restarted after a failure
+  until it is enabled again.
 - `requires_tools`: converge in a second pass after `[tools]` and plugin
   package managers, so a service that runs a tool starts after it exists. The
   built-in watcher needs only mise and converges in the services step.

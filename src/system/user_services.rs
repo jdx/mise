@@ -195,8 +195,13 @@ impl UserServiceRequest {
             program,
             args: words,
             run_at_load: self.enabled && self.start(),
-            keep_alive: self.start() && self.restart == ServiceRestart::Always,
-            keep_alive_on_failure: self.start() && self.restart == ServiceRestart::OnFailure,
+            // launchd reads any `KeepAlive` as "run at load" too, so a
+            // disabled agent is written without one: it neither starts at
+            // login nor is restarted until it is enabled again
+            keep_alive: self.enabled && self.start() && self.restart == ServiceRestart::Always,
+            keep_alive_on_failure: self.enabled
+                && self.start()
+                && self.restart == ServiceRestart::OnFailure,
             environment: self.environment.clone(),
             working_directory: self.working_directory.clone(),
             kickstart: self.start(),
@@ -803,6 +808,19 @@ mod tests {
         assert!(!agent.kickstart);
         assert!(!agent.keep_alive);
         assert!(!agent.keep_alive_on_failure);
+
+        // a disabled agent carries no KeepAlive either: launchd would read
+        // it as RunAtLoad and start the agent at login
+        let mut config = user_config("agent");
+        config.enabled = false;
+        let agent = request(config).launchd_request().unwrap();
+        assert!(!agent.run_at_load);
+        assert!(agent.kickstart);
+        assert!(!agent.keep_alive);
+        assert!(!agent.keep_alive_on_failure);
+        let plist = String::from_utf8(launchd::render_plist(&agent).unwrap()).unwrap();
+        assert!(!plist.contains("<key>KeepAlive</key>"));
+        assert!(!plist.contains("<key>RunAtLoad</key>"));
     }
 
     #[test]
