@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1W64SJ5F9XWJ4MJDK3CY0TD",
   "strategy": "manual-commit",
   "branch": "bootstrap/11-encrypted-backups",
-  "checkpoints_count": 5,
+  "checkpoints_count": 21,
   "files_touched": [
     "e2e/config/test_schema_dotfiles_encryption",
     "schema/mise.json",
@@ -22,13 +22,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 66067,
+    "input_tokens": 106352,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 7272576,
-    "output_tokens": 20413,
-    "api_call_count": 56
+    "cache_read_tokens": 9105280,
+    "output_tokens": 24556,
+    "api_call_count": 66
   }
 }
