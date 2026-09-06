@@ -162,9 +162,29 @@ impl TrackedSet {
     pub(crate) fn from_config(config: &Config) -> Result<Self> {
         let mut set = Self::implicit();
         set.exclude = super::config::exclude_globs()?;
+        let requests = crate::system::files::files_from_config(config)?
+            .into_iter()
+            .filter(|request| crate::system::files::declaration_is_global(config, request));
+        set.add_requests(requests);
+        for invalid in crate::system::files::invalid_declarations() {
+            set.invalid.push(PathReason {
+                path: invalid.target,
+                reason: format!("{} ({})", invalid.reason, display_path(&invalid.config)),
+            });
+        }
+        Ok(set)
+    }
+
+    /// Add already composed, global declarations. Shared by live discovery
+    /// and the read-only incoming-configuration preflight.
+    pub(crate) fn add_requests(
+        &mut self,
+        requests: impl IntoIterator<Item = crate::system::files::FileRequest>,
+    ) {
+        let set = self;
         let environments = select::active_environments();
-        for request in crate::system::files::files_from_config(config)? {
-            if !crate::system::files::declaration_is_global(config, &request) {
+        for request in requests {
+            if !request.enabled {
                 continue;
             }
             let declared_in = Some(request.origin.config.clone());
@@ -256,13 +276,6 @@ impl TrackedSet {
                 }
             }
         }
-        for invalid in crate::system::files::invalid_declarations() {
-            set.invalid.push(PathReason {
-                path: invalid.target,
-                reason: format!("{} ({})", invalid.reason, display_path(&invalid.config)),
-            });
-        }
-        Ok(set)
     }
 
     /// Adds an entry; for the same path an explicit declaration outranks an

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Discover new variant streams and required sources before applying any
+# incoming config or publishing otherwise clean local changes.
+require_cmd git
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+B="$(dirname "$HOME")/b-home"
+mkdir -p "$B/.config/mise"
+printf '[env]\nB_ONLY = "yes"\n' >"$B/.config/mise/config.toml"
+cat <<EOF >"$PWD/b"
+#!/usr/bin/env bash
+export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
+  MISE_STATE_DIR="$B/.local/state/mise" MISE_DATA_DIR="$B/.local/share/mise" \\
+  MISE_CACHE_DIR="$B/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$B"
+cd "\$HOME" && exec mise "\$@"
+EOF
+chmod +x "$PWD/b"
+b="$PWD/b"
+echo initial >~/.zshrc
+assert_succeed "mise bootstrap dotfiles track ~/.zshrc"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
+assert_succeed "$b bootstrap dotfiles origin set file://$origin --yes"
+assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/mise/config.toml --yes"
+assert "cat $B/.zshrc" "initial"
+
+case "$(uname -s)" in
+  Darwin) platform=macos ;;
+  *) platform=linux ;;
+esac
+echo incoming >~/.platform.conf
+echo local-untracked >"$B/.platform.conf"
+assert_succeed "mise bootstrap dotfiles track ~/.platform.conf --os $platform"
+echo incoming-zsh >~/.zshrc
+assert_succeed "mise bootstrap dotfiles sync"
+before="$(cat "$B/.config/mise/config.toml")"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" ".platform.conf"
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "sync paused"
+assert "cat $B/.platform.conf" "local-untracked"
+assert "cat $B/.zshrc" "initial"
+assert "cat $B/.config/mise/config.toml" "$before"
+assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.platform.conf --yes"
+assert "cat $B/.platform.conf" "incoming"
+assert "cat $B/.zshrc" "incoming-zsh"
+
+# A template declaration must not land before its missing source is fixed.
+cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+
+[dotfiles."~/.rendered"]
+mode = "template"
+source = "templates/required.tera"
+EOF
+assert_succeed "mise bootstrap dotfiles sync"
+before="$(cat "$B/.config/mise/config.toml")"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" "missing required source"
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "sync paused"
+assert "cat $B/.config/mise/config.toml" "$before"
+mkdir -p "$MISE_CONFIG_DIR/templates"
+echo 'name = {{ env.USER }}' >"$MISE_CONFIG_DIR/templates/required.tera"
+assert_succeed "mise bootstrap dotfiles sync"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_succeed "$b bootstrap dotfiles pull --yes"
+assert_contains "cat $B/.config/mise/config.toml" "required.tera"
+assert "cat $B/.config/mise/templates/required.tera" 'name = {{ env.USER }}'
+assert_fail "test -e $B/.rendered"
+
+# A config edited directly in Git must also pass typed declaration validation.
+git clone -q "$origin" editor
+before="$(cat "$B/.config/mise/config.toml")"
+cat <<'EOF' >>editor/config.toml
+
+[dotfiles."~/.invalid"]
+mode = "typo"
+EOF
+git -C editor add config.toml
+git -C editor -c user.name=test -c user.email=test@example.com commit -qm invalid
+git -C editor push -q origin main
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" "unknown dotfile mode"
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "sync paused"
+assert "cat $B/.config/mise/config.toml" "$before"

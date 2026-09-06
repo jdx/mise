@@ -64,6 +64,8 @@ pub(crate) struct SyncStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub application_failure: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_publish: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_fetch: Option<String>,
@@ -197,14 +199,17 @@ pub(crate) fn sync(
         let mut attempts = 0;
         loop {
             attempts += 1;
-            let mut upstream = reconcile::upstream(repo, upstream_commit.as_deref())?;
-            upstream
-                .files
-                .retain(|branch_path, _| eligible(&Roots::current(), tracked, branch_path));
+            let upstream = reconcile::upstream(repo, upstream_commit.as_deref())?;
             let sync_state = state::load(repo)?;
-            plans =
-                reconcile::reconcile(repo, &shared.objects(), &upstream, &sync_state, &unsaved)?;
-            apply_resolutions(repo, &mut status, &shared.objects(), &upstream, &mut plans)?;
+            plans = prepare(
+                repo,
+                tracked,
+                &shared.objects(),
+                &upstream,
+                &sync_state,
+                &unsaved,
+                &mut status,
+            )?;
             // Observing identical versions establishes a baseline even when
             // there is no publication (including fetch-only connections).
             let mut observed = sync_state.clone();
@@ -226,6 +231,7 @@ pub(crate) fn sync(
                 .collect();
             if !publish
                 || status.application_failure.is_some()
+                || status.validation_error.is_some()
                 || plans.iter().any(|plan| plan.conflict.is_some())
             {
                 break;
@@ -261,18 +267,16 @@ pub(crate) fn sync(
                     }
                     state::save(repo, &next_state, "published")?;
                     // the applications and conflicts are relative to the new head
-                    let mut upstream = reconcile::upstream(repo, upstream_commit.as_deref())?;
-                    upstream
-                        .files
-                        .retain(|branch_path, _| eligible(&Roots::current(), tracked, branch_path));
-                    plans = reconcile::reconcile(
+                    let upstream = reconcile::upstream(repo, upstream_commit.as_deref())?;
+                    plans = prepare(
                         repo,
+                        tracked,
                         &shared.objects(),
                         &upstream,
                         &next_state,
                         &unsaved,
+                        &mut status,
                     )?;
-                    apply_resolutions(repo, &mut status, &shared.objects(), &upstream, &mut plans)?;
                     break;
                 }
                 PushOutcome::Rejected(reason) if attempts < PUSH_RETRIES => {
@@ -380,21 +384,78 @@ pub(crate) fn refresh(store: &Store, tracked: &TrackedSet, status: &mut SyncStat
         .repo()
         .ok_or_else(|| eyre::eyre!("planning requires git"))?;
     let shared = share::current(repo, store, tracked)?;
-    let mut upstream = reconcile::upstream(repo, repo.ref_oid(UPSTREAM_REF)?.as_deref())?;
-    upstream
-        .files
-        .retain(|path, _| eligible(&Roots::current(), tracked, path));
-    let mut plans = reconcile::reconcile(
+    let upstream = reconcile::upstream(repo, repo.ref_oid(UPSTREAM_REF)?.as_deref())?;
+    let plans = prepare(
         repo,
+        tracked,
         &shared.objects(),
         &upstream,
         &state::load(repo)?,
         &unsaved_paths(repo, tracked, &shared)?,
+        status,
     )?;
-    apply_resolutions(repo, status, &shared.objects(), &upstream, &mut plans)?;
     status.upstream_commit = upstream.commit;
     record_pending(status, &plans, &Roots::current(), &shared.objects());
     Ok(())
+}
+
+/// First resolve configuration, then discover its complete incoming write
+/// set in memory. Publication never gets ahead of this second preflight.
+fn prepare(
+    repo: &crate::system::history::shadow::HistoryRepo,
+    tracked: &TrackedSet,
+    shared: &BTreeMap<String, Object>,
+    upstream: &reconcile::Upstream,
+    sync_state: &state::SyncState,
+    unsaved: &BTreeSet<String>,
+    status: &mut SyncStatus,
+) -> Result<Vec<PathPlan>> {
+    let roots = Roots::current();
+    let reconcile_set = |set: &TrackedSet| {
+        let selected = reconcile::Upstream {
+            commit: upstream.commit.clone(),
+            files: upstream
+                .files
+                .iter()
+                .filter(|(path, _)| eligible(&roots, set, path))
+                .map(|(path, object)| (path.clone(), object.clone()))
+                .collect(),
+        };
+        reconcile::reconcile(repo, shared, &selected, sync_state, unsaved)
+    };
+    let mut plans = reconcile_set(tracked)?;
+    apply_resolutions(repo, status, shared, upstream, &mut plans)?;
+    status.validation_error = None;
+    let has_incoming_config = plans
+        .iter()
+        .any(|plan| is_configuration(&plan.branch_path) && plan.apply.is_some());
+    if has_incoming_config {
+        let validation = (|| -> Result<()> {
+            let prospective = super::preflight::prospective(repo, tracked, &plans)?;
+            plans = reconcile_set(&prospective)?;
+            apply_resolutions(repo, status, shared, upstream, &mut plans)?;
+            super::preflight::sources(repo, &prospective, &plans)
+        })();
+        if let Err(error) = validation {
+            status.validation_error = Some(format!("{error:#}"));
+            for plan in &mut plans {
+                if is_configuration(&plan.branch_path) && plan.apply.is_some() {
+                    plan.conflict = Some(Conflict {
+                        branch_path: plan.branch_path.clone(),
+                        kind: reconcile::ConflictKind::InvalidIncoming,
+                        local: shared.get(&plan.branch_path).map(|(_, oid)| oid.clone()),
+                        remote: upstream
+                            .files
+                            .get(&plan.branch_path)
+                            .map(|(_, oid)| oid.clone()),
+                        base: plan.next.acknowledged.clone(),
+                    });
+                    plan.publish = None;
+                }
+            }
+        }
+    }
+    Ok(plans)
 }
 
 fn apply_resolutions(

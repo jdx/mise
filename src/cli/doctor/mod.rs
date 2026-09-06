@@ -773,6 +773,10 @@ impl Doctor {
         if let Ok(Some(_)) = crate::system::history::config::origin() {
             use crate::system::history::sync::{apply, run};
             let status = run::read_status(&state_dir);
+            if let Some(error) = &status.validation_error {
+                diagnosis.sync_error = Some(error.clone());
+                self.errors.push(format!("dotfiles: incoming setup is invalid: {error}. Correct the setup repository and sync again."));
+            }
             if let Some(error) = &status.application_failure {
                 diagnosis.sync_error = Some(error.clone());
                 self.errors.push(format!("dotfiles: {error}"));

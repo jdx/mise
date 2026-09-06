@@ -291,38 +291,7 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
             .rev()
             .filter(|step| touched.contains(&step.path))
         {
-            let restore = (|| -> Result<()> {
-                let current = live_object(repo, &step.path)?;
-                if current == step.before {
-                    return Ok(());
-                }
-                if current != step.pending.object {
-                    bail!(
-                        "{} changed during recovery; left untouched",
-                        display_path(&step.path)
-                    );
-                }
-                match &step.before {
-                    Some((mode, oid)) => {
-                        #[cfg(unix)]
-                        let bits = {
-                            use std::os::unix::fs::PermissionsExt;
-                            step.permissions.as_ref().map(|p| p.mode() & 0o777)
-                        };
-                        #[cfg(not(unix))]
-                        let bits = None;
-                        replay::write_path_with_mode(repo, &step.path, mode, oid, bits)?;
-                    }
-                    None => replay::remove(&step.path)?,
-                }
-                if !step.path.is_symlink()
-                    && let Some(permissions) = &step.permissions
-                {
-                    std::fs::set_permissions(&step.path, permissions.clone())?;
-                }
-                Ok(())
-            })();
-            if let Err(err) = restore {
+            if let Err(err) = recover_step(repo, step) {
                 recovery_errors.push(format!("{err:#}"));
             }
         }
@@ -395,6 +364,38 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
         );
     }
     info!("history: applied {} incoming change(s)", touched.len());
+    Ok(())
+}
+
+fn recover_step(repo: &crate::system::history::shadow::HistoryRepo, step: &Step) -> Result<()> {
+    let current = live_object(repo, &step.path)?;
+    if current == step.before {
+        return Ok(());
+    }
+    if current != step.pending.object {
+        bail!(
+            "{} changed during recovery; left untouched",
+            display_path(&step.path)
+        );
+    }
+    match &step.before {
+        Some((mode, oid)) => {
+            #[cfg(unix)]
+            let bits = {
+                use std::os::unix::fs::PermissionsExt;
+                step.permissions.as_ref().map(|p| p.mode() & 0o777)
+            };
+            #[cfg(not(unix))]
+            let bits = None;
+            replay::write_path_with_mode(repo, &step.path, mode, oid, bits)?;
+        }
+        None => replay::remove(&step.path)?,
+    }
+    if !step.path.is_symlink()
+        && let Some(permissions) = &step.permissions
+    {
+        std::fs::set_permissions(&step.path, permissions.clone())?;
+    }
     Ok(())
 }
 
@@ -587,4 +588,54 @@ pub(crate) fn describe_conflicts(conflicts: &[Conflict]) -> Vec<(String, String)
             (path, conflict.kind.describe().to_string())
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::system::history::shadow::HistoryRepo;
+
+    #[test]
+    fn recovery_restores_preimage_but_preserves_concurrent_edits() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let repo = HistoryRepo::open_or_init_in(dir.path())?.expect("git available");
+        let path = dir.path().join("config");
+        std::fs::write(&path, "before")?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        let step = Step {
+            before: live_object(&repo, &path)?,
+            permissions: Some(std::fs::metadata(&path)?.permissions()),
+            path: path.clone(),
+            group: "setup".into(),
+            exists: true,
+            pending: PendingApplication {
+                branch_path: "home/config".into(),
+                object: Some(("100644".into(), repo.hash_blob(b"incoming")?)),
+                configuration: false,
+                next: Default::default(),
+                local: None,
+            },
+        };
+        std::fs::write(&path, "incoming")?;
+        recover_step(&repo, &step)?;
+        assert_eq!(std::fs::read_to_string(&path)?, "before");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path)?.permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        // Recovery is idempotent after an earlier successful attempt.
+        recover_step(&repo, &step)?;
+        std::fs::write(&path, "concurrent edit")?;
+        assert!(recover_step(&repo, &step).is_err());
+        assert_eq!(std::fs::read_to_string(&path)?, "concurrent edit");
+        Ok(())
+    }
 }

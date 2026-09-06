@@ -16,6 +16,7 @@ pub(crate) mod layout;
 pub(crate) mod machines;
 pub(crate) mod network;
 pub(crate) mod origin;
+mod preflight;
 pub(crate) mod privacy;
 pub(crate) mod publish;
 pub(crate) mod reconcile;
@@ -26,7 +27,7 @@ pub(crate) mod state;
 /// `settings.history.sync`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SyncMode {
-    /// Publish, fetch, and apply nonconflicting incoming changes.
+    /// Publish and fetch; any conflict pauses publication and incoming application for the setup.
     Sync,
     /// Download only: never publish, never change live files.
     FetchOnly,
@@ -64,7 +65,7 @@ impl SyncMode {
     pub(crate) fn disclosure(self) -> &'static str {
         match self {
             Self::Sync => {
-                "sync: this machine publishes its shared files and configuration, fetches the repository, and queues nonconflicting incoming changes to tracked files and configuration; `mise bootstrap dotfiles pull` writes them (with a protective checkpoint first). Applying never runs `mise bootstrap`, installs or removes packages, or renders templates; when incoming configuration changes declarations, `mise bootstrap dotfiles status` says to run `mise bootstrap`."
+                "sync: this machine publishes its shared files and configuration and fetches the repository. Any conflict pauses publication and incoming application for the entire setup; local history, fetching, and eligible machine backups continue. Once all conflicts are resolved, `mise bootstrap dotfiles pull` applies the complete incoming batch with a protective checkpoint and recovery journal. Applying never runs `mise bootstrap`, installs or removes packages, or renders templates; when incoming configuration changes declarations, `mise bootstrap dotfiles status` says to run `mise bootstrap`."
             }
             Self::FetchOnly => {
                 "fetch-only: this machine only downloads the repository and other machines' recovery refs. Nothing is published, no live file changes."

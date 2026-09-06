@@ -570,6 +570,15 @@ impl MiseToml {
         Self::from_str(&body, path)
     }
 
+    /// Decode a proposed configuration without trusting, evaluating, or
+    /// activating it. Only static declarations may be inspected on this
+    /// value; normal loading still goes through `from_str` and its trust gate.
+    pub(crate) fn for_history_preflight(body: &str, path: &Path) -> eyre::Result<Self> {
+        let mut parsed: Self = toml::from_str(body)?;
+        parsed.path = path.to_path_buf();
+        Ok(parsed)
+    }
+
     pub(crate) fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
         if !Self::is_trust_exempt(body, path) {
             trust_check(path)?;

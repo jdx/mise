@@ -39,6 +39,7 @@ pub(crate) struct SyncReport {
     pub declarations_changed: bool,
     pub last_error: Option<String>,
     pub application_failure: Option<String>,
+    pub validation_error: Option<String>,
 }
 
 pub(crate) fn sync_report(
@@ -89,6 +90,7 @@ pub(crate) fn sync_report(
         declarations_changed: status.declarations_changed,
         last_error: status.last_error.clone(),
         application_failure: status.application_failure.clone(),
+        validation_error: status.validation_error.clone(),
     }))
 }
 
@@ -228,6 +230,9 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             }
             if let Some(error) = &sync.application_failure {
                 miseprintln!("  sync paused: {error}");
+            }
+            if let Some(error) = &sync.validation_error {
+                miseprintln!("  incoming setup is invalid: {error}");
             }
         }
     }
