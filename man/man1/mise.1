@@ -398,13 +398,16 @@ Inspect bootstrap secret inputs without revealing their values
 Show whether declared bootstrap secret inputs are available
 .TP
 \fBbootstrap services\fR
-Manage Linux system services from `[bootstrap.services]`
+Manage services from `[bootstrap.services]`
 .TP
 \fBbootstrap services apply\fR
-Apply configured Linux system service state
+Apply configured service state (system and user scope)
+.TP
+\fBbootstrap services remove\fR
+Remove an installed user\-scope service, declared or not
 .TP
 \fBbootstrap services status\fR
-Show configured Linux system service state
+Show configured service state (system and user scope)
 .TP
 \fBbootstrap status\fR
 Show the aggregate bootstrap status
@@ -1158,11 +1161,11 @@ Runs these phases in order, when configured and selected:
 
 1. Linux accounts, then package\-manager plugins.
 2. The pre\-packages hook, then packages handled by built\-in managers.
-3. Privileged files/directories, system services, firewall, and Compose projects.
+3. Privileged files/directories, system and user services, firewall, and Compose projects.
 4. Git repositories, then dotfiles, each with its pre/post hooks.
 5. Shell activation, macOS defaults and LaunchAgents, Linux user units, and user settings.
 6. The pre\-tools hook, versioned tools, and post\-tools hook.
-7. Package\-plugin packages, then the post\-packages hook.
+7. Package\-plugin packages, then the post\-packages hook and services requiring tools.
 8. The `bootstrap` task, when defined, then the final hook.
 
 Defaults and user settings also have pre/post hooks. See
@@ -2840,10 +2843,12 @@ Exit with code 1 if a declared secret input is unavailable
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP SERVICES"
-Manage Linux system services from `[bootstrap.services]`
+Manage services from `[bootstrap.services]`
 
-These are system\-level systemd services. For units in the current user session,
-use `bootstrap linux systemd\-units` instead.
+System\-scope entries (the default) converge existing Linux systemd system
+units. `scope = "user"` entries are services mise defines for the current
+user on every platform: a systemd user unit on Linux, a LaunchAgent on
+macOS, a Scheduled Task on Windows.
 .PP
 \fBUsage:\fR mise bootstrap services [OPTIONS] <COMMAND>
 .PP
@@ -2853,7 +2858,7 @@ use `bootstrap linux systemd\-units` instead.
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP SERVICES APPLY"
-Apply configured Linux system service state
+Apply configured service state (system and user scope)
 .PP
 \fBUsage:\fR mise bootstrap services apply [OPTIONS]
 .PP
@@ -2868,8 +2873,30 @@ Skip the confirmation prompt
 .TP
 \fB\-h, \-\-help\fR
 Print help
+.SH "MISE BOOTSTRAP SERVICES REMOVE"
+Remove an installed user\-scope service, declared or not
+
+Deleting a `scope = "user"` declaration leaves its installed unit, agent,
+or task in place; this removes it once. The next `mise bootstrap`
+recreates it if it is still declared.
+.PP
+\fBUsage:\fR mise bootstrap services remove [OPTIONS] <NAME>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would change without changing anything
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<NAME>\fR
+The installed user\-service name to remove (declared or not)
 .SH "MISE BOOTSTRAP SERVICES STATUS"
-Show configured Linux system service state
+Show configured service state (system and user scope)
 .PP
 \fBUsage:\fR mise bootstrap services status [OPTIONS]
 .PP

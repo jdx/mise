@@ -12,11 +12,11 @@ Runs these phases in order, when configured and selected:
 
 1. Linux accounts, then package-manager plugins.
 2. The pre-packages hook, then packages handled by built-in managers.
-3. Privileged files/directories, system services, firewall, and Compose projects.
+3. Privileged files/directories, system and user services, firewall, and Compose projects.
 4. Git repositories, then dotfiles, each with its pre/post hooks.
 5. Shell activation, macOS defaults and LaunchAgents, Linux user units, and user settings.
 6. The pre-tools hook, versioned tools, and post-tools hook.
-7. Package-plugin packages, then the post-packages hook.
+7. Package-plugin packages, then the post-packages hook and services requiring tools.
 8. The `bootstrap` task, when defined, then the final hook.
 
 Defaults and user settings also have pre/post hooks. See

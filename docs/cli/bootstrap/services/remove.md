@@ -17,3 +17,11 @@ recreates it if it is still declared.
 ## Flags
 - **`-n --dry-run`** — Print what would change without changing anything
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [System services](/bootstrap/services.html).
+- [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.html).
+- [Global flags and argument syntax](/cli/#global-flags).

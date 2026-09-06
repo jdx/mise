@@ -5,10 +5,12 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
-Manage Linux system services from `[bootstrap.services]`
+Manage services from `[bootstrap.services]`
 
-These are system-level systemd services. For units in the current user session,
-use `bootstrap linux systemd-units` instead.
+System-scope entries (the default) converge existing Linux systemd system
+units. `scope = "user"` entries are services mise defines for the current
+user on every platform: a systemd user unit on Linux, a LaunchAgent on
+macOS, a Scheduled Task on Windows.
 
 ## Flags
 - **`-h --help`** — Print help
@@ -16,6 +18,7 @@ use `bootstrap linux systemd-units` instead.
 ## Subcommands
 
 - [`mise bootstrap services apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/services/apply.html)
+- [`mise bootstrap services remove [-n --dry-run] <NAME>`](/cli/bootstrap/services/remove.html)
 - [`mise bootstrap services status [-J --json] [--missing]`](/cli/bootstrap/services/status.html)
 
 <!-- generated reference navigation -->
