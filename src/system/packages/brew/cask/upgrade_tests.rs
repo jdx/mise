@@ -196,7 +196,7 @@ fn plist_permission_denied_is_unknown() -> Result<()> {
     let app = tmp.path().join("Example.app");
     write_version(&app, "9.2.3".into(), false)?;
     let path = app.join("Contents/Info.plist");
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0))?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o0))?;
     let result = read_fixture(tmp.path());
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
     assert_unknown(result?, "read");
