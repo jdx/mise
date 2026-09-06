@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TMR39SZK2TENFHMXHZQ12X",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T05:58:34.877638Z",
+  "branch": "codex/docs-package-backends",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dev-tools/backends/asdf.md",
+    "docs/dev-tools/backends/cargo.md",
+    "docs/dev-tools/backends/conda.md",
+    "docs/dev-tools/backends/dotnet.md",
+    "docs/dev-tools/backends/gem.md",
+    "docs/dev-tools/backends/go.md",
+    "docs/dev-tools/backends/npm.md",
+    "docs/dev-tools/backends/pipx.md",
+    "docs/dev-tools/backends/pkgx.md",
+    "docs/dev-tools/backends/spm.md",
+    "docs/dev-tools/backends/vfox.md",
+    "docs/public/llms.txt",
+    "schema/mise.json",
+    "settings.toml"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ed0ac62e3c6f",
+  "checkpoint_transcript_start": 2187,
+  "transcript_lines_at_start": 2187,
+  "compact_transcript_start": 270,
+  "token_usage": {
+    "input_tokens": 109702,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2609024,
+    "output_tokens": 18146,
+    "api_call_count": 27
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T05:58:34.436611Z",
+    "agent_lines": 408,
+    "agent_removed": 370,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 408,
+    "total_lines_changed": 778,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
