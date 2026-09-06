@@ -73,6 +73,7 @@ pub(crate) struct WatchOptions {
 
 /// Runs the watcher; returns the process exit code.
 pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
+    Settings::get().ensure_experimental("dotfile tracking")?;
     let out = Output { json: opts.json };
     if !Settings::get().history.enabled {
         out.emit(

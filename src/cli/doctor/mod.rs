@@ -693,6 +693,12 @@ impl Doctor {
         if tracks == 0 && watcher == crate::cli::dotfiles::capture_health::Watcher::NotDeclared {
             return None;
         }
+        if !crate::config::Settings::get().experimental {
+            self.warnings.push(
+                "dotfiles: tracking is experimental and disabled. Enable it with: mise settings experimental=true".into(),
+            );
+            return None;
+        }
         let state_dir = crate::system::history::store::state_dir();
         let unavailable = crate::system::history::checkpoint::Store::open()
             .map(|store| store.unavailable().map(str::to_string))

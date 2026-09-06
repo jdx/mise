@@ -36,6 +36,7 @@ pub(crate) struct DotfilesWatch {
 
 impl DotfilesWatch {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         let code = runtime::run(WatchOptions {
             once: self.once,
             json: self.json,
