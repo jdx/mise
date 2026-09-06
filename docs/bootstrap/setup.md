@@ -132,8 +132,9 @@ it is published and other machines receive it; `undo` reverses it.
 ## 7. Resolve a conflict
 
 Two machines edited the same lines of `~/.zshrc` before either synced. Both
-versions are kept, the file on each machine is untouched, and every other
-file keeps syncing:
+versions are kept, the file on each machine is untouched, and sharing pauses
+for the entire setup until the conflict is decided; local history, fetching,
+and eligible machine backups continue:
 
 ```sh
 $ mise bootstrap dotfiles status
@@ -189,6 +190,7 @@ mise bootstrap remote --host devbox --install-mise --from-git you/setup \
 
 The borrowed GitHub access is read-only and ends with the session; give the
 host credentials of its own (step 1, there) for ongoing synchronization.
+`--dry-run` shows the same plan on the host without writing anything there.
 
 ## Templates next to tracked files
 
@@ -226,4 +228,5 @@ its own file.
   (`track ~/.zshrc --os macos`) that evolves apart from the Linux one.
 - **Windows**: tracking, checkpoints, rollback, sync, and the Scheduled Task
   watcher work; symlink modes need Developer Mode, copy and template modes
-  do not. Desktop notifications for conflicts are not available yet.
+  do not. Desktop notifications are Linux and macOS only for now: on Windows,
+  `mise bootstrap dotfiles status` and `mise doctor` show a paused setup.

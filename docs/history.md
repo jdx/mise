@@ -252,9 +252,11 @@ per store: a second one exits 0 immediately.
 
 ### Health
 
-The watcher never notifies you. It persists its health (`health.json` in
-the history store) and two commands read it, without starting a sync,
-applying anything, or prompting:
+The watcher speaks up only when sharing pauses for a conflict (a desktop
+notification on Linux and macOS, on by default; see
+[Sharing across machines](#sharing-across-machines) below). Otherwise it persists its
+health (`health.json` in the history store) and two commands read it, without
+starting a sync, applying anything, or prompting:
 
 - `mise doctor` prints a concise `dotfiles` section: a watcher that is
   declared but not running (with the command that starts it), repeated
