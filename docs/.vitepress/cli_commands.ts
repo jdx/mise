@@ -80,6 +80,9 @@ export const commands: { [key: string]: Command } = {
           apply: {
             hide: false,
           },
+          capture: {
+            hide: false,
+          },
           diff: {
             hide: false,
           },

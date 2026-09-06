@@ -26,6 +26,7 @@ pub(crate) struct DotfilesCapture {
 
 impl DotfilesCapture {
     pub(crate) async fn run(self) -> Result<()> {
+        crate::system::history::ensure_experimental()?;
         let (program, args) = self
             .command
             .split_first()

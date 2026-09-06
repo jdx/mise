@@ -18,3 +18,11 @@ are not reversible. Concurrent editor changes are part of the same interval.
 ## Flags
 - **`--label <LABEL>`** — Describe this operation in history
 - **`-h --help`** — Print help
+
+<!-- generated reference navigation -->
+
+## Related documentation
+
+- [Dotfile ownership and modes](/dotfiles.html).
+- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [Global flags and argument syntax](/cli/#global-flags).

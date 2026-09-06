@@ -161,9 +161,20 @@ impl OperationScope {
             Err(err) => Err(err),
         };
         match tracked {
-            Ok(tracked) => {
+            Ok(mut tracked) => {
                 if let Some(shared) = &self.0 {
-                    lock_unpoisoned(shared).tracked = tracked;
+                    let mut writer = lock_unpoisoned(shared);
+                    if writer.operation_mut().kind == OperationKind::Capture {
+                        // A command may edit a file and remove its declaration.
+                        // Keep observing those paths through the outcome while
+                        // letting the current declarations and exclusions win.
+                        for entry in &writer.tracked.entries {
+                            if tracked.entry_for(&entry.path).is_none() {
+                                tracked.push(entry.clone());
+                            }
+                        }
+                    }
+                    writer.tracked = tracked;
                 }
             }
             Err(err) => warn!("history: keeping the tracked set from before the run: {err:#}"),
