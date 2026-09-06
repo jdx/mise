@@ -1,9 +1,34 @@
 # npm Backend
 
-You can install packages directly from [npmjs.org](https://npmjs.org/) even if there
-isn't an asdf plugin for them.
+The `npm` backend installs command-line packages from npm registries into
+separate tool directories. Keep your application's dependencies in `package.json`
+and use its package manager or [mise deps](/dev-tools/deps.html) to install them.
 
 The code for this is inside the mise repository at [`./src/backend/npm.rs`](https://github.com/jdx/mise/blob/main/src/backend/npm.rs).
+
+## Usage
+
+Prettier needs Node.js at runtime, so declare both tools in the current project:
+
+```sh
+mise use node@24 npm:prettier
+mise exec -- prettier --version
+```
+
+This writes the following to `mise.toml`. Add `-g` for global configuration.
+
+```toml
+[tools]
+node = "24"
+"npm:prettier" = "latest"
+```
+
+For a scoped package, quote its full identifier, for example
+`mise use 'npm:@biomejs/biome'`. The package's executable name can differ from its
+registry name. mise installs CLI packages, not arbitrary libraries.
+
+If the project already declares Prettier in `package.json`, run that copy through
+a package script to keep its plugins and version aligned with the project.
 
 ## Dependencies
 
@@ -20,13 +45,13 @@ npm backend does not add or install `node` automatically.
 
 To shell out to the npm CLI instead — `npm view` for metadata and
 `npm install -g` for installs — set
-[`npm.shell_out`](/configuration/settings.html#npm-shell-out) (requires npm to
+[`npm.shell_out`](/configuration/settings.html#npm.shell_out) (requires npm to
 be installed). Use it if you rely on npm-only configuration the built-in
 implementation does not support, such as `cafile`, client certificates, or an
 auth token helper.
 
 You can also pick a specific installer with
-[`npm.package_manager`](/configuration/settings.html#npm-package-manager). The
+[`npm.package_manager`](/configuration/settings.html#npm.package_manager). The
 default `auto` uses the embedded aube (`aube` selects it explicitly); setting it
 to `aube_cli`, `bun`, `pnpm`, or `npm` shells out to that tool, which must then
 be installed. The standalone
@@ -46,85 +71,6 @@ supporting its release-age flag:
 If you want transitive protection when shelling out, install and use a package
 manager version that meets the corresponding requirement above. Older versions
 may fail while processing the forwarded argument.
-
-## Socket security
-
-There are two ways to use [Socket](https://socket.dev) with `npm:` tools installed
-by mise.
-
-### Bun-compatible security scanner
-
-The embedded aube installer implements
-[Bun's Security Scanner API](https://bun.sh/docs/pm/security-scanner-api) and is
-compatible with Socket's
-[`@socketsecurity/bun-security-scanner`](https://socket.dev/blog/socket-integrates-with-bun-1-3-security-scanner-api).
-Set `AUBE_SECURITY_SCANNER` to enable it:
-
-```sh
-MISE_NPM_PACKAGE_MANAGER=aube \
-AUBE_SECURITY_SCANNER=/absolute/path/to/scanner.mjs \
-  mise install npm:prettier@latest
-```
-
-Selecting `aube` explicitly ensures the scanner is used even if the user's
-mise settings otherwise select npm, Bun, or pnpm.
-
-The scanner runs after dependency resolution and before package tarballs are
-downloaded. It receives the resolved direct and transitive registry packages;
-a fatal finding blocks the install. A configured scanner also fails closed if
-it cannot start or complete. See
-[aube's security scanner documentation](https://aube.jdx.dev/package-manager/security-scanner.html)
-for the complete behavior and configuration.
-
-mise installs each `npm:` tool in a synthetic project, so a bare scanner package
-name is not normally resolvable from that project's `node_modules`. Point the
-setting at an absolute module instead. For example, install the Socket scanner
-in a separate, stable directory and place this wrapper beside that directory's
-`node_modules`:
-
-```js
-// scanner.mjs
-export { scanner } from "@socketsecurity/bun-security-scanner";
-```
-
-The scanner bridge requires Node.js 22.6 or newer. It inherits Socket-specific
-environment variables such as `SOCKET_SECURITY_API_KEY`, while aube removes
-common npm and GitHub credentials from the scanner subprocess.
-
-### Socket Firewall
-
-[Socket Firewall](https://docs.socket.dev/docs/socket-firewall-free) can instead
-wrap mise itself:
-
-```sh
-sfw mise install npm:prettier@latest
-sfw mise use -g npm:prettier
-```
-
-This works at the network layer. mise's npm metadata client and embedded aube
-installer both use aube-registry, which honors the `HTTP_PROXY`, `HTTPS_PROXY`,
-and `NO_PROXY` settings and explicitly loads the `NODE_EXTRA_CA_CERTS` bundle
-into its Rust TLS clients. Socket currently documents npm, yarn, and pnpm rather
-than mise or aube as supported JavaScript package managers, so this
-interoperability is not an upstream compatibility guarantee.
-
-## Usage
-
-The following installs the latest version of [prettier](https://www.npmjs.com/package/prettier)
-and sets it as the active version on PATH:
-
-```sh
-$ mise use -g npm:prettier
-$ prettier --version
-3.1.0
-```
-
-The version will be set in `~/.config/mise/config.toml` with the following format:
-
-```toml
-[tools]
-"npm:prettier" = "latest"
-```
 
 ## Settings
 
@@ -146,7 +92,7 @@ With the default `npm.package_manager = "auto"` setting, mise installs through i
 package manager. Setting `npm.package_manager = "aube"`, `"aube_cli"`, `"pnpm"`, `"bun"`, or
 `"npm"` chooses a package manager explicitly (`aube` also uses the embedded one; the others shell
 out).
-With the default `auto` package manager, [`npm.shell_out`](/configuration/settings.html#npm-shell-out)
+With the default `auto` package manager, [`npm.shell_out`](/configuration/settings.html#npm.shell_out)
 forces the npm CLI. An explicitly selected installer still takes precedence for installation.
 The `allow_builds`, `trust_policy_excludes`, `pnpm_args`, `bun_args`, and `npm_args` options only
 affect the package manager that is actually used; an approval option for one does not change the
@@ -412,3 +358,71 @@ These are raw user-supplied arguments. For example, to opt into npm lifecycle sc
 [tools]
 "npm:some-tool" = { version = "latest", npm_args = "--ignore-scripts=false" }
 ```
+
+## Socket security
+
+There are two ways to use [Socket](https://socket.dev) with `npm:` tools installed
+by mise.
+
+### Bun-compatible security scanner
+
+The embedded aube installer implements
+[Bun's Security Scanner API](https://bun.sh/docs/pm/security-scanner-api) and is
+compatible with Socket's
+[`@socketsecurity/bun-security-scanner`](https://socket.dev/blog/socket-integrates-with-bun-1-3-security-scanner-api).
+Set `AUBE_SECURITY_SCANNER` to enable it:
+
+```sh
+MISE_NPM_PACKAGE_MANAGER=aube \
+AUBE_SECURITY_SCANNER=/absolute/path/to/scanner.mjs \
+  mise install npm:prettier@latest
+```
+
+Selecting `aube` explicitly ensures the scanner is used even if the user's
+mise settings otherwise select npm, Bun, or pnpm.
+
+The scanner runs after dependency resolution and before package tarballs are
+downloaded. It receives the resolved direct and transitive registry packages;
+a fatal finding blocks the install. A configured scanner also fails closed if
+it cannot start or complete. See
+[aube's security scanner documentation](https://aube.jdx.dev/package-manager/security-scanner.html)
+for the complete behavior and configuration.
+
+mise installs each `npm:` tool in a synthetic project, so a bare scanner package
+name is not normally resolvable from that project's `node_modules`. Point the
+setting at an absolute module instead. For example, install the Socket scanner
+in a separate, stable directory and place this wrapper beside that directory's
+`node_modules`:
+
+```js
+// scanner.mjs
+export { scanner } from "@socketsecurity/bun-security-scanner";
+```
+
+The scanner bridge requires Node.js 22.6 or newer. It inherits Socket-specific
+environment variables such as `SOCKET_SECURITY_API_KEY`, while aube removes
+common npm and GitHub credentials from the scanner subprocess.
+
+### Socket Firewall
+
+[Socket Firewall](https://docs.socket.dev/docs/socket-firewall-free) can instead
+wrap mise itself:
+
+```sh
+sfw mise install npm:prettier@latest
+sfw mise use -g npm:prettier
+```
+
+This works at the network layer. mise's npm metadata client and embedded aube
+installer both use aube-registry, which honors the `HTTP_PROXY`, `HTTPS_PROXY`,
+and `NO_PROXY` settings and explicitly loads the `NODE_EXTRA_CA_CERTS` bundle
+into its Rust TLS clients. Socket currently documents npm, yarn, and pnpm rather
+than mise or aube as supported JavaScript package managers, so this
+interoperability is not an upstream compatibility guarantee.
+
+## Troubleshooting
+
+- **`node` is missing when the CLI starts:** configure Node.js explicitly; the embedded installer does not add a runtime to your project.
+- **A native dependency is missing:** inspect the selected installer's lifecycle-script policy and approve only the required builds using its supported option.
+- **Private package metadata works but installation fails:** check the installer you selected and whether both clients can read the registry and credentials.
+- **Aube trust or download-count policy blocks installation:** inspect the specific policy error and the relevant option above before changing installers.

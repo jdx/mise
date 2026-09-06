@@ -1,59 +1,53 @@
 # Cargo Backend
 
-You can install packages directly from [Cargo Crates](https://crates.io/) even if there
-isn't an asdf plugin for them.
+The `cargo` backend installs Rust command-line applications from [crates.io](https://crates.io/)
+or a Git repository. It can use published binaries through cargo-binstall or build
+the crate with Cargo. Application dependencies belong in your `Cargo.toml`.
 
 The code for this is inside the mise repository at [`./src/backend/cargo.rs`](https://github.com/jdx/mise/blob/main/src/backend/cargo.rs).
 
 ## Dependencies
 
-This relies on having `cargo` installed. You can either install it on your
-system via [rustup](https://rustup.rs/):
-
-```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-Or you can install it via mise:
-
-```sh
-mise use -g rust
-```
+Install Rust/Cargo for source builds. A working linker and any native libraries
+required by the crate must also be available. Prebuilt installs can avoid the
+compilation step; see [Settings](#settings) for cargo-binstall selection and fallback.
 
 ## Usage
 
-The following installs the latest version of [eza](https://crates.io/crates/eza) and
-sets it as the active version on PATH:
+Declare Rust and eza together in the current project:
 
 ```sh
-$ mise use -g cargo:eza
-$ eza --version
-eza - A modern, maintained replacement for ls
-v0.17.1 [+git]
-https://github.com/eza-community/eza
+mise use rust@stable cargo:eza
+mise exec -- eza --version
 ```
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+This records both tools in `mise.toml`:
 
 ```toml
 [tools]
+rust = "stable"
 "cargo:eza" = "latest"
 ```
+
+Add `-g` to `mise use` for global configuration. Run
+`mise ls-remote cargo:eza` to choose a release, or pin a version with
+`mise use cargo:eza@VERSION`, replacing `VERSION` with a listed release.
 
 ### Using Git
 
 You can also install a package from a Git repository. This lets you
-install a particular tag, branch, or commit revision:
+install a particular tag, branch, or commit revision. Replace the repository
+and uppercase placeholders below; quote the complete tool argument:
 
 ```sh
 # Install a specific tag
-mise use cargo:https://github.com/username/demo@tag:<release_tag>
+mise use 'cargo:https://github.com/username/demo@tag:TAG'
 
 # Install the latest from a branch
-mise use cargo:https://github.com/username/demo@branch:<branch_name>
+mise use 'cargo:https://github.com/username/demo@branch:BRANCH'
 
 # Install a specific commit revision
-mise use cargo:https://github.com/username/demo@rev:<commit_hash>
+mise use 'cargo:https://github.com/username/demo@rev:COMMIT'
 ```
 
 This runs `cargo install` with the corresponding Git options.
@@ -124,11 +118,10 @@ Set environment variables for the `cargo install` or `cargo-binstall` command:
 
 ### `features`
 
-Install additional components (passed as `cargo install --features`):
+Enable crate features (passed as `cargo install --features`):
 
 ```toml
 [tools]
-"cargo:cargo-edit" = { version = "latest", features = "add" }
 "cargo:sqlx-cli" = { version = "latest", features = ["postgres", "rustls"] }
 ```
 
@@ -176,8 +169,18 @@ pass `false` to disable it:
 
 ```toml
 [tools]
-"cargo:https://github.com/username/demo" = { version = "latest", locked = false }
+"cargo:https://github.com/username/demo" = { version = "tag:v1.0.0", locked = false }
 ```
 
 This option does not cause mise to skip `cargo-binstall`; it affects mise's `cargo install`
 fallback when cargo-binstall reports that no prebuilt artifact is available.
+
+## Troubleshooting
+
+- **Compilation or linker failure:** check the first Cargo error and the crate's native build requirements. Selecting features forces a source build.
+- **No executable found:** the package must publish a binary target; use `bin` or `crate` when selecting from a workspace.
+- **Unexpected prebuilt binary:** inspect the binstall settings. Set `cargo.binstall = false` when you need a local build with Cargo's configuration.
+
+The `locked` tool option uses the crate's `Cargo.lock` while building. It is
+separate from [mise.lock](/dev-tools/mise-lock.html), which records the version of
+the CLI installed by mise.

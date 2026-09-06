@@ -6,37 +6,43 @@ asdf plugins are considered legacy. **New asdf and vfox plugins are not accepted
 If you are writing a private/custom plugin (not for registry submission), prefer [vfox plugins](/dev-tools/backends/vfox.html) over asdf — they're written in Lua, work cross-platform (including Windows), and have access to built-in modules for HTTP, JSON, HTML parsing, and more.
 :::
 
-`asdf` is the original backend for mise.
+The `asdf` backend runs a tool's asdf-compatible plugin scripts. Use it when an
+existing plugin provides installation behavior your tool needs. These scripts
+execute with your permissions and may invoke programs outside mise, so inspect
+the plugin source and its prerequisites before using it.
 
-It relies on asdf plugins for each tool. asdf plugins are riskier to use because they're typically written by a single developer unrelated to the tool vendor. They also generally do not work on Windows because they're written
-in bash, which is often not available on Windows, and the scripts are generally not written to be cross-platform.
+asdf plugins generally need Bash and Unix utilities. Windows support depends
+on the plugin and its execution environment; prefer a supported native backend
+or a vfox plugin there.
 
-Tools in the [registry](https://github.com/jdx/mise/blob/main/registry/) avoid asdf plugins whenever possible. Sometimes more secure backends like aqua/github cannot be used because a tool has a complex install setup or needs to export env vars.
+## Usage
 
-All asdf plugins in the registry are hosted in the mise-plugins org to secure the supply chain, so you do not need to rely on plugins maintained by anyone except me.
+Use an explicit plugin source when it is not supplied by the registry. Replace
+the repository and version with the plugin you intend to use:
 
-Because of the extra complexity of asdf tools and the security concerns, we are actively moving tools in
-the registry away from asdf where possible to backends like aqua and github, which don't require plugins.
-That said, not all tools can work with github/aqua: some have a unique installation process or
-need to set env vars other than `PATH`.
+```toml
+[tools]
+"asdf:owner/plugin" = "1.0.0"
+```
+
+Run `mise install`, then `mise exec -- TOOL --version`, replacing `TOOL` with its
+executable name. Installing a plugin does not itself configure an active tool
+version. For existing registry tools, `mise registry TOOL` shows the configured
+sources.
 
 ## Feature Comparison: asdf vs vfox
 
-| Feature                         | asdf Plugins       | vfox Plugins         |
-| ------------------------------- | ------------------ | -------------------- |
-| **Language**                    | Bash scripts       | Lua                  |
-| **Windows Support**             | ❌                 | ✅                   |
-| **Built-in HTTP module**        | ❌ (requires curl) | ✅                   |
-| **Built-in JSON module**        | ❌ (requires jq)   | ✅                   |
-| **Built-in HTML parsing**       | ❌                 | ✅                   |
-| **Built-in archive extraction** | ❌                 | ✅                   |
-| **Built-in semver module**      | ❌                 | ✅                   |
-| **Built-in logging**            | ❌                 | ✅                   |
-| **Post-install hooks**          | ❌                 | ✅                   |
-| **Security attestations**       | ❌                 | ✅ (cosign, SLSA)    |
-| **Multi-tool plugins**          | ❌                 | ✅ (backend plugins) |
-| **Lock file support**           | ❌                 | ✅                   |
-| **Rolling version checksums**   | ❌                 | ✅                   |
+| Area                 | asdf plugins                                                  | vfox plugins                                                                                   |
+| -------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Implementation       | Executable scripts, usually Bash                              | Lua hooks run by mise's embedded interpreter                                                   |
+| External utilities   | Often need curl, jq, and platform utilities                   | Built-in HTTP, JSON, HTML, and archive modules are available                                   |
+| Platform portability | Depends on scripts and available commands                     | Lua hooks can select platform-specific artifacts; publishers must supply compatible builds     |
+| Installation         | Plugin scripts download and install the tool                  | Structured download metadata plus optional post-install hooks                                  |
+| Lockfiles            | Version locking; no portable artifact URL/provenance contract | Tool plugins can supply download metadata and attestations; backend-plugin capabilities differ |
+
+These are interface differences, not a sandbox boundary. Either plugin system
+can run external commands. See [plugin development](/tool-plugin-development.html)
+for the capabilities mise adds to the vfox hook interface.
 
 ## Hook Migration: asdf to vfox
 

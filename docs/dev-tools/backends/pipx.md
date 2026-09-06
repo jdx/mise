@@ -1,16 +1,12 @@
 # pipx Backend
 
-pipx is a tool for running Python CLIs in isolated virtualenvs. This isolation helps prevent dependency
-conflicts between CLIs, or between a CLI and your Python projects. In short,
-this backend lets you add Python CLIs to mise.
+The `pipx` backend installs Python command-line applications in isolated virtual
+environments. Each tool gets its own dependencies. Use a project environment
+and pip or uv for application libraries such as NumPy and requests.
 
-To be clear, pipx is not pip, and it is not used to manage Python dependencies in general.
-mise is a tool manager, not a dependency manager like pip, uv, or poetry (though you can use mise to install those package
-managers). Use the pipx backend to install a CLI like "black", not a library like "NumPy" or "requests".
-
-Somewhat confusingly, the pipx backend defaults to [`uvx`](https://docs.astral.sh/uv/guides/tools/) (uv's equivalent of pipx)
-if uv is installed. This mostly means that tools install much faster, but occasionally a tool doesn't work with uvx;
-see below for how to disable or configure this.
+When uv is available, mise uses **`uv tool install`**. Otherwise it uses
+`pipx install`. The `pipx:` prefix names the backend in both cases; the legacy
+`uvx` option names do not mean that mise runs the `uvx` command.
 
 The pipx backend supports the following sources:
 
@@ -23,59 +19,69 @@ The code for this is inside the mise repository at [`./src/backend/pipx.rs`](htt
 
 ## Dependencies
 
-This backend requires `uv` (recommended) or `pipx` to be installed.
+Install uv and a Python version suitable for the CLI. For example:
 
-If you have `uv` installed, mise uses `uv tool install` under the hood, and you don't need `pipx` installed to run commands containing "pipx:".
+```sh
+mise use python@3.14 uv pipx:black
+mise exec -- black --version
+```
+
+If you need the pipx installer instead, install `python` and `pipx` with
+`mise use python@3.14 pipx`, then set the tool's [`uvx`](#uvx) option to `false`.
+No separately installed pipx is needed for the uv path.
 
 mise forwards [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
 to transitive Python dependency resolution during install. The uv install path uses uv's
 `--exclude-newer` flag and requires `uv >= 0.2.22`. The `pipx` fallback passes pip's
 `--uploaded-prior-to` flag.
 
-If you need `pipx` for other reasons, you can install it with or without mise.
-To install it with mise:
-
-```sh
-mise use -g python
-pip install --user pipx
-```
-
-[Other installation instructions](https://pipx.pypa.io/stable/how-to/install-pipx.html)
-
 ## Usage
 
-The following installs the latest version of [black](https://github.com/psf/black)
-and sets it as the active version on PATH:
-
-```sh
-$ mise use -g pipx:psf/black
-$ black --version
-black, 24.3.0
-```
-
-The version will be set in `~/.config/mise/config.toml` with the following format:
+The command above writes a project configuration like this:
 
 ```toml
 [tools]
-"pipx:psf/black" = "latest"
+python = "3.14"
+uv = "latest"
+"pipx:black" = "latest"
 ```
+
+Add `-g` for global configuration. `pipx:black` installs the PyPI distribution;
+`pipx:psf/black` installs from its GitHub source. Choose the source intentionally,
+since its releases and installation requirements can differ.
+
+## Choosing Python
+
+The selected installer chooses the interpreter for each tool environment. If a
+CLI must use a particular Python version, pass that requirement explicitly:
+
+```toml
+[tools]
+python = "3.14"
+uv = "latest"
+"pipx:black" = {
+  version = "latest",
+  uvx_args = "--python 3.14",
+  pipx_args = "--python 3.14",
+}
+```
+
+Only the arguments for the selected installer apply. uv can also download an
+interpreter according to its own Python discovery and download settings.
 
 ## Python upgrades
 
-If the Python version used by a pipx package changes (whether managed by mise or the system), you may need to
-reinstall the package:
+If a CLI stops working after changing Python, reinstall it under the intended
+Python version. This recreates the tool environment and its dependencies:
 
 ```sh
-mise install -f pipx:psf/black
+mise install --force pipx:black
+mise exec -- black --version
 ```
 
-Or reinstall all pipx packages:
-
-```sh
-mise install -f "pipx:*"
-```
-
-mise _should_ do this automatically when you run `mise up python`.
+Check which Python version is active before reinstalling. Existing virtualenvs
+and native extensions do not necessarily remain usable after their interpreter
+is removed or changed.
 
 ### Supported Pipx Syntax
 
@@ -122,8 +128,8 @@ tool only; registry arguments for installation are still configured separately t
 "pipx:my-tool" = {
   version = "latest",
   registry_url = "https://packages.example.com/pypi/{}/json",
-  uvx_args = "--extra-index-url https://packages.example.com/pypi/simple",
-  pipx_args = "--pip-args='--extra-index-url https://packages.example.com/pypi/simple'"
+  uvx_args = "--index-url https://packages.example.com/pypi/simple",
+  pipx_args = "--pip-args='--index-url https://packages.example.com/pypi/simple'"
 }
 ```
 
@@ -131,11 +137,11 @@ tool only; registry arguments for installation are still configured separately t
 
 Set environment variables for `uv tool install` or `pipx install`. mise still
 sets the tool directory, bin directory, and configured Python package index
-variables after applying `install_env`.
+variables after applying `install_env`. For the uv installer, for example:
 
 ```toml
 [tools]
-"pipx:black" = { version = "latest", install_env = { PIP_TRUSTED_HOST = "pypi.org" } }
+"pipx:black" = { version = "latest", install_env = { UV_COMPILE_BYTECODE = "1" } }
 ```
 
 ### `extras`
@@ -171,7 +177,7 @@ Additional arguments to pass to `pipx` when installing the package.
 
 ```toml
 [tools]
-"pipx:black" = { version = "latest", pipx_args = "--preinstall" }
+"pipx:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
 ```
 
 ### `uvx`
@@ -180,12 +186,13 @@ Set to `false` to always disable uv for this tool.
 
 ```toml
 [tools]
-"pipx:ansible" = { version = "latest", uvx = "false", pipx_args = "--include-deps" }
+"pipx:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
 ```
 
 ### `uvx_args`
 
-Additional arguments to pass to `uvx` when installing the package.
+Additional arguments to pass to `uv tool install`. These apply only when uv is
+selected; `pipx_args` applies only to the pipx installer.
 
 ```toml
 [tools]

@@ -1,61 +1,46 @@
-# Dotnet backend
+# .NET Tool Backend
 
-The code for this is inside the mise repository at [`./src/backend/dotnet.rs`](https://github.com/jdx/mise/blob/main/src/backend/dotnet.rs).
+The `dotnet:` backend installs command-line tool packages from NuGet using
+`dotnet tool install`. The unprefixed `dotnet` tool installs the SDK; see the
+[.NET language guide](/lang/dotnet.html) for SDK selection and `global.json`.
 
-::: tip Important
-The dotnet backend requires the .NET SDK to be installed. You can install it with mise:
+## Dependencies
 
-```sh
-# Install the latest version
-mise use dotnet
-
-# Or install a specific version (8, 9, etc.)
-mise use dotnet@8
-mise use dotnet@9
-```
-
-This installs the .NET SDK, which dotnet tools require.
-:::
+Install a .NET SDK and the runtime required by the selected tool package.
+A newer SDK alone does not guarantee that an older tool can run: .NET's runtime
+selection rules still apply. Use `mise exec -- dotnet --list-runtimes` to inspect
+what is installed.
 
 ## Usage
 
-The following installs a specific version of [GitVersion.Tool](https://gitversion.net/) and
-sets it as the active version on PATH:
+This example pairs .NET 8 with a GitVersion release that includes a .NET 8 tool:
 
 ```sh
-$ mise use dotnet:GitVersion.Tool@5.12.0
-$ dotnet-gitversion /version
-5.12.0+Branch.support-5.x.Sha.3f75764963eb3d7956dcd5a40488c074dd9faf9e
+mise use dotnet@8 dotnet:GitVersion.Tool@6.0.5
+mise exec -- dotnet-gitversion /version
 ```
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+Both entries are written to the **project's** `mise.toml`:
 
 ```toml
 [tools]
-"dotnet:GitVersion.Tool" = "5.12.0"
+dotnet = "8"
+"dotnet:GitVersion.Tool" = "6.0.5"
 ```
 
-Omitting the version installs the latest version:
+Add `-g` to `mise use` for global configuration. To choose another release, run
+`mise ls-remote dotnet:GitVersion.Tool` and check that release's runtime
+requirements. `mise use dotnet:GitVersion.Tool` records a `latest` request.
 
-```sh
-$ mise use dotnet:GitVersion.Tool
-$ dotnet-gitversion /version
-6.1.0+Branch.main.Sha.8856e3041dbb768118a55a31ad4e465ae70c6767
-```
+mise installs each tool into its own directory with `--tool-path`; it does not
+create or update a project's `.config/dotnet-tools.json` manifest.
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+## Private feeds
 
-```toml
-[tools]
-"dotnet:GitVersion.Tool" = "latest"
-```
-
-### Supported Dotnet Syntax
-
-| Description                           | Usage                           |
-| ------------------------------------- | ------------------------------- |
-| Dotnet shorthand latest version       | `dotnet:GitVersion.Tool`        |
-| Dotnet shorthand for specific version | `dotnet:GitVersion.Tool@5.12.0` |
+`dotnet.registry_url` selects the NuGet service index used for version discovery.
+The `dotnet` CLI handles installation separately, using its NuGet configuration
+and credentials. Configure the installation source in `NuGet.Config` as well;
+changing the discovery endpoint alone does not add a source to the CLI.
 
 ## Settings
 
@@ -90,3 +75,11 @@ By default, NuGet pre-release versions are excluded from `mise ls-remote` and fr
 ```
 
 The legacy `dotnet.package_flags = ["prerelease"]` setting is deprecated. Prefer the per-tool `prerelease = true` option, or the global `prereleases` setting when every tool should include pre-release versions. Because `dotnet.package_flags` is global, remove it before relying on per-tool `prerelease = false` opt-outs.
+
+## Troubleshooting
+
+- **SDK not found:** check `mise exec -- dotnet --info` and any `global.json` that constrains SDK selection.
+- **Required framework missing:** install a compatible runtime/SDK or select a tool release that targets the runtime you have.
+- **Package not found:** verify that the package is a .NET tool and that both discovery and installation can access its feed.
+
+Implementation: [`src/backend/dotnet.rs`](https://github.com/jdx/mise/blob/main/src/backend/dotnet.rs).

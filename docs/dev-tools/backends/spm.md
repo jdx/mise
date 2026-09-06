@@ -8,26 +8,24 @@ When a release publishes a SwiftPM artifact bundle (`*.artifactbundle.zip`), mis
 
 ## Dependencies
 
-This backend relies on `swift` being installed. You can install it [manually](https://www.swift.org/install) or [with mise](/lang/swift).
+This backend needs Swift even for artifact bundles, because mise asks Swift for
+the target triple. Source builds also need Git and the package's build dependencies. You can install it [manually](https://www.swift.org/install) or [with mise](/lang/swift).
 
 > [!NOTE]
 > If you have Xcode installed and selected in your system via `xcode-select`, Swift is already available through the toolchain embedded in the Xcode installation.
 
 ## Usage
 
-The following installs the latest version of `tuist`
-and sets it as the active version on PATH:
+With the required Swift toolchain available, install Tuist in the current
+project on macOS:
 
 ```sh
-$ mise use -g spm:tuist/tuist
-$ tuist --help
-OVERVIEW: Generate, build and test your Xcode projects.
-
-USAGE: tuist <subcommand>
-...
+mise use spm:tuist/tuist
+mise exec -- tuist --help
 ```
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+This writes the following to `mise.toml`. Add `-g` for global configuration.
+Check the package's required Swift/Xcode version before building from source.
 
 ```toml
 [tools]
@@ -37,11 +35,11 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 If the release provides only a SwiftPM artifact bundle, mise can install the bundle directly:
 
 ```sh
-mise use -g spm:giginet/swift-testing-revolutionary@0.4.0
-swift-testing-revolutionary --help
+mise use spm:giginet/swift-testing-revolutionary@0.4.0
+mise exec -- swift-testing-revolutionary --help
 ```
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+The project configuration is:
 
 ```toml
 [tools]
@@ -75,11 +73,12 @@ go in `[tools]` in `mise.toml`.
 Set environment variables for Swift Package Manager commands such as
 `swift package dump-package`, `swift -print-target-info`, and `swift build`.
 For artifact bundle installs, this only applies to `swift -print-target-info`;
-the download, extract, and symlink steps are handled by mise directly.
+the download, extract, and symlink steps are handled by mise directly. On macOS,
+for a system Swift toolchain, select the Xcode developer directory with:
 
 ```toml
 [tools]
-"spm:tuist/tuist" = { version = "latest", install_env = { SWIFTPM_ENABLE_PLUGINS = "1" } }
+"spm:tuist/tuist" = { version = "latest", install_env = { DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer" } }
 ```
 
 ### `provider`
@@ -145,15 +144,15 @@ product in the package, installation fails with a clear error.
 ```toml
 [tools]
 "spm:swiftlang/swiftly" = { version = "latest", filter_bins = ["swiftly"] }
-# or
-"spm:swiftlang/swiftly" = { version = "latest", filter_bins = "swiftly" }
+# Equivalent string form:
+# "spm:swiftlang/swiftly" = { version = "latest", filter_bins = "swiftly" }
 ```
 
 ### `install_command`
 
 Run an explicit command from the checked-out package directory instead of discovering executable
 products and running `swift build --product`. The command uses mise's default inline shell and
-inherits [`install_env`](#install_env) plus the `PATH` for the Swift dependency. `PREFIX` and
+inherits [`install_env`](/dev-tools/backends/spm.html#install-env) plus the `PATH` for the Swift dependency. `PREFIX` and
 `MISE_TOOL_INSTALL_PATH` are both set to the tool's installation directory.
 
 This option only applies to source installs and cannot be combined with `filter_bins`. mise never
@@ -187,3 +186,9 @@ spm.artifactbundle_only = true
 ```
 
 This can also be set with `MISE_SPM_ARTIFACTBUNDLE_ONLY=1`.
+
+## Troubleshooting
+
+- **No matching artifact bundle:** check the Swift target triple. Allow a source build only if the package supports your host and its build prerequisites are installed.
+- **Unexpected compilation:** set `artifactbundle = true` when a missing prebuilt bundle should fail instead of triggering a source build.
+- **No executable products:** confirm the package publishes a CLI, check `filter_bins`, or use an explicit `install_command` when the project has a custom installation process.

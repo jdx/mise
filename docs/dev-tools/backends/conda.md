@@ -1,10 +1,9 @@
 # Conda Backend
 
-You may install packages directly from [conda-forge](https://conda-forge.org/) and other
-Anaconda channels without needing conda or mamba installed.
-
-This backend fetches pre-built packages from the anaconda.org API and extracts them directly,
-making it a lightweight way to install conda packages as standalone CLI tools.
+The `conda` backend installs command-line packages and their transitive
+dependencies from [conda-forge](https://conda-forge.org/) or another Anaconda
+channel. It solves dependencies and downloads packages directly, so conda,
+mamba, and micromamba do not need to be installed.
 
 Commands from the selected package run inside that package's isolated conda prefix. mise sets
 `CONDA_PREFIX`, makes the prefix's executable directories available to the command process, and applies
@@ -15,21 +14,19 @@ The code for this is inside the mise repository at [`./src/backend/conda.rs`](ht
 
 ## Dependencies
 
-None. Unlike other conda tools, this backend does not require conda, mamba, or micromamba
-to be installed. It downloads and extracts packages directly from anaconda.org.
+No separate conda package manager is required. The selected packages must still
+support your operating system, architecture, and native runtime environment.
 
 ## Usage
 
-The following installs the latest version of [ruff](https://anaconda.org/conda-forge/ruff)
-and sets it as the active version on PATH:
+Install ruff in the current project and verify its executable:
 
 ```sh
-$ mise use -g conda:ruff
-$ ruff --version
-ruff 0.8.0
+mise use conda:ruff
+mise exec -- ruff --version
 ```
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+This writes the following to `mise.toml`. Add `-g` for global configuration.
 
 ```toml
 [tools]
@@ -38,24 +35,22 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ### Specifying a Version
 
-```sh
-mise use -g conda:ruff@0.7.0
-```
+List versions with `mise ls-remote conda:ruff`, then select one with
+`mise use conda:ruff@VERSION`. Replace `VERSION` with a listed release.
 
 ### Using a Different Channel
 
-By default, packages are installed from `conda-forge`. You can specify a different channel:
-
-```sh
-mise use -g "conda:ruff[channel=bioconda]"
-```
-
-Or in `mise.toml`:
+The default channel is `conda-forge`. For a package published in your team's
+channel, replace these placeholders with its package and channel names:
 
 ```toml
 [tools]
-"conda:ruff" = { version = "latest", channel = "bioconda" }
+"conda:my-tool" = { version = "latest", channel = "my-team" }
 ```
+
+The solver uses the selected channel for the package and its dependencies. The
+complete dependency set must be available there; this is not a multi-channel
+conda environment specification.
 
 ## Platform Support
 
@@ -69,7 +64,9 @@ The conda backend automatically selects the appropriate package for your platfor
 | macOS ARM64 | osx-arm64     |
 | Windows x64 | win-64        |
 
-If a platform-specific package is not available, the backend falls back to `noarch` packages.
+The solver considers both the platform subdirectory and `noarch`. A `noarch`
+package may still depend on platform-specific packages, so it does not guarantee
+that an installation works on every host.
 
 ## Settings
 
@@ -91,7 +88,7 @@ Override the conda channel for a specific package:
 
 ```toml
 [tools]
-"conda:bioconductor-deseq2" = { version = "latest", channel = "bioconda" }
+"conda:my-tool" = { version = "latest", channel = "my-team" }
 ```
 
 ## Common Channels
@@ -102,6 +99,11 @@ Override the conda channel for a specific package:
 
 ## Limitations
 
-- Only installs single packages, not full conda environments with dependencies
-- Best suited for standalone CLI tools that don't require complex dependency trees
-- Does not manage Python environments or package dependencies like full conda/mamba
+- mise solves and installs transitive dependencies in an isolated prefix for each tool. It does not import or maintain a general-purpose `environment.yml`.
+- Only commands belonging to the requested package are exposed to your shell. Dependency executables remain available inside that tool's launcher environment.
+- The solver uses one channel per tool. Packages from channels such as bioconda may require dependencies from another channel that this configuration cannot supply.
+- Native requirements such as a compatible libc or GPU driver still belong to the host.
+
+If a command cannot be found, check whether the requested package actually
+provides a CLI. If solving fails, check package availability, the selected
+channel, and the platform reported in the error before changing versions.
