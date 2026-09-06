@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles machines [-J --json]`
 - **Effect:** read-only
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Source code:** [`src/cli/dotfiles/machines.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/machines.rs)
 
 List the machines with recovery refs in the setup repository
 

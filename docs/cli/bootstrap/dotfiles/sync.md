@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles sync [--fetch-only] [--best-effort]`
 - **Effect:** modifies state
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Source code:** [`src/cli/dotfiles/sync.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/sync.rs)
 
 Publish, fetch, and record what is pending now
 

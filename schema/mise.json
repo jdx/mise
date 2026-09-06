@@ -1150,7 +1150,7 @@
             },
             "sync": {
               "default": "sync",
-              "description": "How a connected setup repository is used: `sync` publishes, fetches, and applies nonconflicting incoming changes automatically; `fetch-only` only downloads; `manual` publishes and fetches but pulls only on `mise bootstrap dotfiles pull`.",
+              "description": "How a connected setup repository is used: `sync` publishes, fetches, and queues nonconflicting incoming changes for application; `fetch-only` only downloads; `manual` publishes and fetches but never applies by itself. `mise bootstrap dotfiles pull` writes queued changes.",
               "type": "string",
               "enum": ["sync", "fetch-only", "manual"]
             },

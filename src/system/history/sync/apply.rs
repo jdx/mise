@@ -49,6 +49,9 @@ struct Step {
     path: PathBuf,
     group: String,
     exists: bool,
+    /// The live object when the plan was made, verified again right
+    /// before the write.
+    live: Option<String>,
 }
 
 pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyRequest) -> Result<()> {
@@ -155,6 +158,7 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
         steps.push(Step {
             pending: pending.clone(),
             exists: path.exists() || path.is_symlink(),
+            live: live_oid(repo, &path)?,
             path,
             group,
         });
@@ -227,6 +231,15 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
     let mut touched = vec![];
     let result = (|| -> Result<()> {
         for step in &ready {
+            // the file may have changed since the plan was made: an edit
+            // that landed meanwhile is never overwritten (undo would bring
+            // back the planned version, not it)
+            if live_oid(repo, &step.path)? != step.live {
+                bail!(
+                    "{} changed while the changes were being applied; nothing more was written. Run `mise bootstrap dotfiles pull` again",
+                    display_path(&step.path)
+                );
+            }
             let pending =
                 journal::begin_changes("history", &display_path(&step.path), [step.path.clone()])?;
             match &step.pending.object {
@@ -318,7 +331,11 @@ fn hold_reason(
     let applied = sync_state
         .get(&step.pending.branch_path)
         .and_then(|record| record.applied.clone());
-    if let Some(status) = git_status(&step.path)? {
+    // an untracked file is not the checkout's: the ordinary check applies
+    if let Some(status) = git_status(&step.path)?
+        && status != "??"
+        && status != "!!"
+    {
         let staged = status.chars().next().is_some_and(|c| c != ' ' && c != '?');
         if staged {
             return Ok(Some("needs decision: staged git changes".into()));

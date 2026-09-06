@@ -44,6 +44,14 @@ source_code_link_template #"""
 {%- set path = "dotfiles/watch.rs" -%}
 {%- elif path == "bootstrap/dotfiles/exclude" or path == "bootstrap/dotfiles/include" -%}
 {%- set path = "dotfiles/exclude.rs" -%}
+{%- elif path == "bootstrap/dotfiles/origin" or path == "bootstrap/dotfiles/origin/set" -%}
+{%- set path = "dotfiles/origin.rs" -%}
+{%- elif path == "bootstrap/dotfiles/sync" -%}
+{%- set path = "dotfiles/sync.rs" -%}
+{%- elif path == "bootstrap/dotfiles/pull" -%}
+{%- set path = "dotfiles/pull.rs" -%}
+{%- elif path == "bootstrap/dotfiles/machines" -%}
+{%- set path = "dotfiles/machines.rs" -%}
 {%- elif path is starting_with(pat="bootstrap") -%}
 {%- set path = "bootstrap.rs" -%}
 {%- elif path == "tasks/run" -%}

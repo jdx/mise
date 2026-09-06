@@ -72,6 +72,11 @@ pub(crate) struct SyncStatus {
     /// uploaded unless `--include-existing` was given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upload_since: Option<String>,
+    /// The repository this state belongs to; another one starts afresh.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_branch: Option<String>,
 }
 
 pub(crate) fn status_path(state_dir: &Path) -> PathBuf {

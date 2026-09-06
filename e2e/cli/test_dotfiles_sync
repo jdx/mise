@@ -59,6 +59,8 @@ assert_contains "mise bootstrap dotfiles origin 2>&1" "mode sync"
 # ---- machine B: connect, adopt the differing config, apply the rest
 printf '[env]\nKEPT = "b"\n' >"$B/.config/mise/config.local.toml"
 assert_succeed "$b bootstrap dotfiles origin set file://$origin --name desktop --yes"
+# the checkpoint holding B's state at connection is backed up, not only later ones
+assert "git --git-dir=$origin for-each-ref --format='%(refname)' refs/mise-history | grep -c ." "4"
 assert_contains "$b bootstrap dotfiles status" "needs adoption"
 assert_contains "$b bootstrap dotfiles status" "incoming change(s) pending"
 assert_contains "$b bootstrap dotfiles pull --dry-run 2>&1" "bindings.lua  create"
@@ -121,3 +123,13 @@ assert "git --git-dir=$origin show main:tracked/home/.config/hypr/monitors.lua" 
 assert_succeed "mise bootstrap dotfiles origin --remove"
 assert_contains "mise bootstrap dotfiles status" "Setup repository: none"
 assert "mise bootstrap dotfiles history --json -n 0 | jq length | awk '{print (\$1 > 3)}'" "1"
+
+# ---- another repository starts from a clean slate: nothing the previous one
+# knew is read as a deletion; the local files are published to it
+origin2="$PWD/origin2.git"
+git init -q --bare -b main "$origin2"
+assert_succeed "mise settings set history.sync sync"
+assert_contains "mise bootstrap dotfiles origin set file://$origin2 --name laptop --yes 2>&1" "previous one's sync state is discarded"
+assert "git --git-dir=$origin2 show main:tracked/home/.config/hypr/monitors.lua" "monitor=DP-2"
+assert_not_contains "mise bootstrap dotfiles status" "incoming change(s) pending"
+assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-2"

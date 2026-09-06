@@ -303,11 +303,14 @@ retries; nothing is ever force-pushed or reset, so your own commits and
 unrelated files survive. Repeating a sync changes nothing.
 
 **Modes** (`settings.history.sync`): `sync` (default) publishes, fetches, and
-applies nonconflicting incoming changes; `fetch-only` only downloads;
-`manual` publishes and fetches but applies only on `mise bootstrap dotfiles pull`.
-Automatic application never runs `mise bootstrap`, installs or removes
-packages, or renders templates: when incoming configuration changes
-declarations, `mise bootstrap dotfiles status` says to run `mise bootstrap`.
+queues nonconflicting incoming changes for application; `fetch-only` only
+downloads; `manual` publishes and fetches but never applies by itself. In
+this release `mise bootstrap dotfiles sync` publishes and fetches and
+`mise bootstrap dotfiles pull` writes what is queued; the watcher's automatic
+publication and application follow in the next release. Applying never runs
+`mise bootstrap`, installs or removes packages, or renders templates: when
+incoming configuration changes declarations, `mise bootstrap dotfiles status`
+says to run `mise bootstrap`.
 
 **Applying.** `mise bootstrap dotfiles pull` writes pending changes as one recoverable
 transaction (a protective checkpoint first, each file journaled, reload

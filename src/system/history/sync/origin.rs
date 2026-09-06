@@ -14,7 +14,7 @@ use toml_edit::{Item, Value};
 use super::SyncMode;
 use super::format::{self, RepoState};
 use super::layout::{Roots, is_configuration};
-use super::network::{Remote, UPSTREAM_REF};
+use super::network::{MACHINES_PREFIX, PUBLISH_REF, Remote, UPSTREAM_REF};
 use super::run::{self, SyncRequest};
 use super::{backup, privacy, share};
 use crate::file::display_path;
@@ -53,6 +53,8 @@ pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) 
             name: name.clone(),
         };
     }
+    // what a previous repository left behind, before the fetch adds to it
+    let previous_machine_refs = repo.list_refs(MACHINES_PREFIX)?;
     let remote = Remote::new(repo, &opts.url);
     remote.fetch(&opts.branch)?;
     let upstream = repo.ref_oid(UPSTREAM_REF)?;
@@ -222,11 +224,33 @@ pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) 
     }
     write_config(&opts.url, &opts.branch, opts.mode)?;
     let mut status = run::read_status(state_dir);
+    // another repository or branch starts from a clean slate: the previous
+    // one's per-path state, pending changes, and conflicts would read its
+    // absence of a file as a deletion
+    let connected_before = status.origin_url.is_some();
+    let same_origin = status.origin_url.as_deref() == Some(opts.url.as_str())
+        && status.origin_branch.as_deref() == Some(opts.branch.as_str());
+    if connected_before && !same_origin {
+        reset_sync_state(repo, &previous_machine_refs)?;
+        status = run::SyncStatus::default();
+        info!(
+            "history: a different setup repository; the previous one's sync state is discarded (local checkpoints are kept)"
+        );
+    }
+    status.origin_url = Some(opts.url.clone());
+    status.origin_branch = Some(opts.branch.clone());
     status.adopted = repo_state == RepoState::Unmarked || status.adopted;
+    // from now on: the checkpoint holding the current state (taken above)
+    // is included, not only what changes later
     status.upload_since = if opts.include_existing {
         None
     } else {
-        Some(hstore::now_rfc3339())
+        let newest = store
+            .list()?
+            .into_iter()
+            .last()
+            .map(|entry| entry.checkpoint.created_at);
+        Some(newest.unwrap_or_else(hstore::now_rfc3339))
     };
     run::write_status(state_dir, &status)?;
     info!(
@@ -352,6 +376,25 @@ fn write_config(url: &str, branch: &str, mode: SyncMode) -> Result<()> {
     history_settings.set_implicit(false);
     history_settings.insert("sync", Item::Value(Value::from(mode.as_str())));
     crate::file::write(&global, doc.to_string())?;
+    Ok(())
+}
+
+/// Forgets the previous repository: its per-path state, its publication
+/// ref, and the machine refs fetched from it.
+fn reset_sync_state(
+    repo: &crate::system::history::shadow::HistoryRepo,
+    machine_refs: &[(String, String)],
+) -> Result<()> {
+    for name in [super::state::STATE_REF, PUBLISH_REF] {
+        if repo.ref_oid(name)?.is_some() {
+            repo.delete_ref(name)?;
+        }
+    }
+    for (name, _) in machine_refs {
+        if repo.ref_oid(name)?.is_some() {
+            repo.delete_ref(name)?;
+        }
+    }
     Ok(())
 }
 

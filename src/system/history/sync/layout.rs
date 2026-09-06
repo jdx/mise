@@ -67,6 +67,9 @@ impl Roots {
 
     /// Where a setup-branch path lands on this machine.
     pub(crate) fn locate(&self, branch_path: &str) -> Located {
+        if !is_safe_branch_path(branch_path) {
+            return Located::Unmapped;
+        }
         if branch_path == MARKER_PATH || branch_path.starts_with(".mise-history/") {
             return Located::Marker;
         }
@@ -125,6 +128,23 @@ impl Located {
     }
 }
 
+/// Whether a setup-branch path is one this machine may materialize: a plain
+/// relative path with no empty, `.`, or `..` components, no separators or
+/// drive letters inside a component, no control characters, and no `.git`
+/// directory (a hook committed upstream must never land in a checkout).
+/// Anything else is never written or removed here.
+pub(crate) fn is_safe_branch_path(branch_path: &str) -> bool {
+    !branch_path.is_empty()
+        && branch_path.split('/').all(|component| {
+            !component.is_empty()
+                && component != "."
+                && component != ".."
+                && !component.eq_ignore_ascii_case(".git")
+                && !component.contains(['\\', ':'])
+                && !component.chars().any(char::is_control)
+        })
+}
+
 fn slash(path: &Path) -> String {
     path.components()
         .map(|component| component.as_os_str().to_string_lossy().into_owned())
@@ -150,6 +170,32 @@ mod tests {
             config_dir: PathBuf::from("/home/u/.config/mise"),
             dotfiles_root: PathBuf::from("/home/u/.dotfiles"),
         }
+    }
+
+    #[test]
+    fn a_remote_path_never_escapes_its_root() {
+        let roots = roots();
+        for path in [
+            "../.bashrc",
+            "tracked/home/../../etc/passwd",
+            "sources/home/./x",
+            "/etc/passwd",
+            "tracked/home//x",
+            "tracked/home/.git/hooks/pre-commit",
+            "tracked/home/.GIT/config",
+            "tracked/home/a\\b",
+            "sources/dotfiles/C:/x",
+            "tracked@macos/",
+            "config\u{0}.toml",
+            "",
+        ] {
+            assert_eq!(roots.locate(path), Located::Unmapped, "{path:?}");
+        }
+        assert!(matches!(
+            roots.locate("tracked/home/.gitconfig"),
+            Located::Tracked { .. }
+        ));
+        assert!(matches!(roots.locate("conf.d/a.toml"), Located::Config(_)));
     }
 
     #[test]

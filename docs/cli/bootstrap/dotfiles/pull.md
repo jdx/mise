@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles pull [FLAGS] [PATH]…`
 - **Effect:** destructive — may delete or irreversibly overwrite
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Source code:** [`src/cli/dotfiles/pull.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/pull.rs)
 
 Pull incoming shared changes into the live files
 
