@@ -1,11 +1,11 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eyre::{Result, bail};
 
 use crate::file::display_path;
-use crate::system::history::checkpoint::{Draft, Outcome};
-use crate::system::history::store::{DescriptionSource, Trigger};
-use crate::system::history::tracked::normalize_target;
+use crate::system::history::checkpoint::{Draft, Outcome, Store};
+use crate::system::history::store::{DescriptionSource, Entry, Trigger};
+use crate::system::history::tracked::{display_to_tree_path, normalize_target};
 
 /// Save a checkpoint of the tracked files now
 ///
@@ -63,7 +63,7 @@ impl DotfilesSave {
         if !crate::config::Settings::get().history.enabled {
             bail!("history is disabled (history.enabled = false)");
         }
-        let (store, tracked, _entries) = super::history::open().await?;
+        let (store, tracked, entries) = super::history::open().await?;
         if let Some(reason) = store.unavailable() {
             bail!("cannot save: {reason}");
         }
@@ -73,11 +73,15 @@ impl DotfilesSave {
                 let path = normalize_target(path);
                 let captured = walk.files.keys().any(|file| file.starts_with(&path));
                 if !captured {
-                    // saving a deleted manual-save path saves the deletion
+                    // saving a deleted manual-save path saves the deletion,
+                    // provided the path was captured before (a path that
+                    // never existed is not a deletion)
                     let deletion = tracked
                         .entry_for(&path)
                         .is_some_and(|entry| !entry.policy.autosave)
-                        && std::fs::symlink_metadata(&path).is_err();
+                        && std::fs::symlink_metadata(&path)
+                            .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound)
+                        && previously_captured(&store, &entries, &path)?;
                     if deletion {
                         continue;
                     }
@@ -122,4 +126,16 @@ impl DotfilesSave {
             Outcome::Unavailable(reason) => bail!("cannot save: {reason}"),
         }
     }
+}
+
+/// Whether the newest checkpoint holds `path`.
+fn previously_captured(store: &Store, entries: &[Entry], path: &Path) -> Result<bool> {
+    let (Some(repo), Some(newest)) = (store.repo(), entries.last()) else {
+        return Ok(false);
+    };
+    let Some(snapshot) = &newest.checkpoint.tree.snapshot else {
+        return Ok(false);
+    };
+    let tree_path = display_to_tree_path(&display_path(path));
+    Ok(repo.object_at(snapshot, &tree_path)?.is_some())
 }

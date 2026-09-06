@@ -795,7 +795,9 @@ pub(crate) fn tree_path_to_display(tree_path: &str) -> String {
 
 /// Turns a display or absolute path into its snapshot-tree path.
 pub(crate) fn display_to_tree_path(path: &str) -> String {
-    let expanded = normalize(Path::new(path));
+    // the link itself, never its destination: a tracked symlink is captured
+    // as a link and addressed as one
+    let expanded = normalize_target(Path::new(path));
     let home = normalize(&dirs::HOME);
     match expanded.strip_prefix(&home) {
         Ok(rel) if !rel.as_os_str().is_empty() => {

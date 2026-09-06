@@ -660,7 +660,9 @@ fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
 /// (Homebrew, MacPorts) is taken as-is.
 pub(crate) fn plumbing_binary() -> Option<&'static Path> {
     static BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-        let git = crate::file::which("git")?;
+        // spawnable as-is: on Windows that is `git.exe`, which a plain
+        // lookup of `git` does not find
+        let git = crate::file::which_spawnable("git")?;
         if cfg!(target_os = "macos") && git == Path::new("/usr/bin/git") {
             let installed = std::process::Command::new("xcode-select")
                 .arg("-p")

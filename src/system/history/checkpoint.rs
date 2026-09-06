@@ -235,6 +235,27 @@ impl Store {
                     .retain(|rel| !dropped.contains(&root.path.join(rel)));
             }
         }
+        // the modes of the files read live, plus those the previous
+        // checkpoint recorded for entries carried forward unread
+        let mut modes = file_modes(&walk);
+        if let Some((previous_checkpoint, _)) = &previous_tree {
+            let carried: Vec<String> = manual
+                .carry
+                .iter()
+                .map(|index| walk.entries[*index].display())
+                .collect();
+            for (path, bits) in &previous_checkpoint.tree.modes {
+                let under = carried.iter().any(|entry| {
+                    path == entry
+                        || path
+                            .strip_prefix(entry.as_str())
+                            .is_some_and(|rest| rest.starts_with('/'))
+                });
+                if under {
+                    modes.entry(path.clone()).or_insert(*bits);
+                }
+            }
+        }
         let mut coverage = tracked.coverage(&walk);
         let promoted_head = match &self.repo {
             Some(repo) => repo.promoted_head()?,
@@ -365,7 +386,7 @@ impl Store {
                 reason,
                 roots,
                 coverage,
-                modes: file_modes(&walk),
+                modes,
             },
             changes,
             operation: draft.operation.clone(),
@@ -460,7 +481,10 @@ impl Store {
                     .iter()
                     .filter(|path| path.starts_with(&entry.path) && **path != entry.path)
                     .collect();
+                // an entry with no saved version yet is promoted whole:
+                // there is nothing to keep the unnamed children from
                 let whole = children.is_empty()
+                    || !saved.contains_key(&entry.display())
                     || draft
                         .explicit_paths
                         .iter()
