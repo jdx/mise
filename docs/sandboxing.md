@@ -1,24 +1,35 @@
 # Sandboxing
 
-mise supports lightweight process sandboxing for `mise exec` and `mise run`, inspired by [zerobox](https://github.com/afshinm/zerobox). Sandboxing restricts filesystem, network, and environment variable access with granular controls. No Docker required, minimal overhead.
+mise can restrict filesystem, network, and environment access for commands launched by
+`mise exec` and `mise run`. Restrictions use the host operating system, with different support
+on Linux and macOS. Read [platform support](#platform-support) before relying on a policy;
+Windows does not enforce filesystem or network restrictions.
+
+The sandbox applies to the child command. Configuration evaluation, tool installation, and
+other preparation by mise happen outside that command's sandbox. For untrusted configuration,
+see [safe mode](/security.html#safe-mode).
 
 ## Quick Start
 
-Any `--deny-*` or `--allow-*` flag implicitly enables sandboxing:
+Any `--deny-*` or `--allow-*` flag enables the corresponding restriction. In a project that
+has Node installed:
 
-```bash
-# Full lockdown — no writes, no network, no env vars
-mise x --deny-all -- node script.js
+```sh
+# Block network access for a local build
+mise exec --deny-net -- npm run build
 
-# Block network only
-mise x --deny-net -- npm run build
+# Restrict writes to an existing output directory, plus implicit system exceptions
+mkdir -p dist
+mise exec --allow-write=./dist -- npm run build
 
-# Block writes except to ./dist
-mise x --allow-write=./dist -- npm run build
-
-# Block everything, allow specific exceptions
-mise x --deny-all --allow-read=. --allow-write=./dist --allow-net=registry.npmjs.org -- npm install
+# Deny reads, writes, network, and nonessential environment variables,
+# then allow reading this project and writing its output
+mise exec --deny-all --allow-read=. --allow-write=./dist -- node build.js
 ```
+
+The npm commands require a `build` script; the final command requires `build.js`. Adjust
+allowed paths for the files and caches your build actually uses. `--deny-all` retains the
+[implicit access](#implicit-access) described below; it is not a container with an empty filesystem.
 
 ## CLI Flags
 
@@ -26,12 +37,12 @@ mise x --deny-all --allow-read=. --allow-write=./dist --allow-net=registry.npmjs
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `--deny-all`           | Block reads, writes, network, and env vars                                                                             |
 | `--deny-read`          | Block filesystem reads (system libs and tool dirs still accessible)                                                    |
-| `--deny-write`         | Block all filesystem writes (except `/tmp`)                                                                            |
+| `--deny-write`         | Block writes except implicit temporary/device paths                                                                    |
 | `--deny-net`           | Block all network access                                                                                               |
-| `--deny-env`           | Block env var inheritance (only `PATH`, `HOME`, `USER`, `SHELL`, `TERM`, `LANG` pass through)                          |
+| `--deny-env`           | Block env var inheritance (essential variables and explicit exceptions still pass through)                             |
 | `--allow-read=<path>`  | Allow reads from specific path (implies `--deny-read` for everything else)                                             |
 | `--allow-write=<path>` | Allow writes to specific path (implies `--deny-write` for everything else)                                             |
-| `--allow-net=<host>`   | Allow network to specific host (implies `--deny-net` for everything else)                                              |
+| `--allow-net=<host>`   | Request host exceptions on macOS (see platform limitations); rejected on Linux                                         |
 | `--allow-env=<var>`    | Allow specific env var through (implies `--deny-env` for everything else). Supports wildcards: `--allow-env='MYAPP_*'` |
 
 These flags work with both `mise exec` (`mise x`) and `mise run`.
@@ -51,7 +62,8 @@ and `deny_env`. Tasks and CLI flags can still add `allow_read`, `allow_write`, `
 
 ## Task Sandboxing
 
-Tasks defined in `mise.toml` can declare sandbox permissions:
+Tasks can declare restrictions next to the command. This example assumes Node is configured,
+`npm run build` exists, and the output directory has been created:
 
 ```toml
 [tasks.build]
@@ -60,27 +72,30 @@ deny_net = true
 allow_write = ["./dist"]
 
 [tasks.lint]
-run = "eslint ."
-deny_all = true
-allow_read = ["."]
-
-[tasks.install]
-run = "npm install"
-deny_all = true
-allow_read = ["."]
-allow_write = ["./node_modules"]
-allow_net = ["registry.npmjs.org"]
+run = "npm run lint"
+deny_write = true
 ```
 
-CLI flags on `mise run` override task-level config:
-
-```bash
-# Run with task's declared sandbox
+```sh
+mkdir -p dist
 mise run build
+```
 
-# Override: also allow network to a specific host
+Global settings, task deny rules, and CLI deny flags are combined. Task and CLI allow lists
+are combined too; CLI flags add exceptions rather than replacing the task policy. Task paths
+are relative to the task's working directory, while CLI paths are relative to the directory
+where you invoke mise.
+
+The host-exception flag is intended for macOS tasks that need network access:
+
+```sh
 mise run --allow-net=registry.npmjs.org build
 ```
+
+A package manager may contact additional hosts and write a cache or lockfile outside the
+output directory. Allow only the resources required by the actual command. Linux rejects
+`--allow-net`; macOS can also reject the generated profile as described below. Use
+`--deny-net` for a command that needs no internet sockets.
 
 ## Implicit Access
 
@@ -89,8 +104,8 @@ When filesystem restrictions are active, certain paths remain accessible so tool
 ### Always Readable
 
 - **System paths** (Linux): `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`, `/dev`, `/proc`, `/sys`, `/tmp`, `/nix`, `/snap`, `/home/linuxbrew`
-- **System paths** (macOS): `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/dev`, `/etc`, `/var/run`, `/tmp`, `/private`, `/opt/homebrew`, `/nix`
-- **Mise tool dirs**: `~/.local/share/mise/installs/...`
+- **System paths** (macOS): `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/dev`, `/etc`, `/var/run`, `/tmp`, `/private/tmp`, `/private/etc`, `/private/var/run`, `/opt/homebrew`, `/nix`
+- **Mise data directory**: the configured `MISE_DATA_DIR`, not just individual tool binaries
 
 ### Always Writable
 
@@ -102,16 +117,20 @@ When filesystem restrictions are active, certain paths remain accessible so tool
 - `--allow-write` paths are implicitly readable
 - `--allow-read` paths include system essentials above
 
+When environment filtering is active, `PATH`, `HOME`, `USER`, `SHELL`, `TERM`, `COLORTERM`,
+and `LANG` remain available, along with explicitly allowed variables and task-specific
+pass-through/cache environment inputs. Unix sockets remain available even with `--deny-net`.
+
 ## Platform Support
 
-| Feature                                 | Linux              | macOS    |
-| --------------------------------------- | ------------------ | -------- |
-| Deny/allow reads                        | Landlock           | Seatbelt |
-| Deny/allow writes                       | Landlock           | Seatbelt |
-| Deny all network                        | seccomp            | Seatbelt |
-| Per-host network (`--allow-net=<host>`) | Not supported (v1) | Seatbelt |
-| Env filtering                           | Built-in           | Built-in |
-| Docker support                          | Yes                | N/A      |
+| Feature                                 | Linux    | macOS    |
+| --------------------------------------- | -------- | -------- |
+| Deny/allow reads                        | Landlock | Seatbelt |
+| Deny/allow writes                       | Landlock | Seatbelt |
+| Deny all network                        | seccomp  | Seatbelt |
+| Per-host network (`--allow-net=<host>`) | Rejected | Seatbelt |
+| Env filtering                           | Built-in | Built-in |
+| Docker support                          | Yes      | N/A      |
 
 ### Linux
 
@@ -119,7 +138,9 @@ Filesystem sandboxing uses [Landlock](https://landlock.io/) (available since Lin
 
 If Landlock is unavailable or cannot apply filesystem restrictions, the command fails.
 
-**Limitation**: Per-host network filtering (`--allow-net=<host>`) is not supported on Linux in v1. On Linux, `--allow-net` falls back to allowing all network access. Per-host filtering works on macOS via Seatbelt.
+**Limitation**: Per-host network filtering (`--allow-net=<host>`) is not supported on Linux.
+mise returns an error before executing the command; it does not silently allow all network
+access. Use `--deny-net` to block internet sockets, or omit network restrictions when needed.
 
 **Limitation**: An allow-list entry has to exist when the sandbox is built. Landlock binds each rule to an open descriptor, so a path that has not been created yet cannot be named by one, and mise warns that the rule was dropped. The task can still reach that path if another rule covers it — an allowed ancestor directory, for instance — but nothing else grants access on the dropped rule's behalf. To let a task create something, allow a directory that already exists and contains it.
 
@@ -135,7 +156,15 @@ Landlock cannot restrict creation to a single name, so allowing the containing d
 
 ### macOS
 
-Sandboxing uses Apple's `sandbox-exec` (Seatbelt) with a generated profile and supports all features, including per-host network filtering.
+Sandboxing uses Apple's `sandbox-exec` (Seatbelt) with a generated profile. Network host
+exceptions resolve hostnames to IP addresses when the profile is built. The intended policy allows those IPs,
+not a particular HTTP hostname or URL path; services sharing an IP may also be reachable.
+
+**Limitation**: `sandbox-exec` can reject the generated host-exception profile with
+`host must be * or localhost in network address`. This prevents the child command from
+starting; it does not fall back to unrestricted network access. If you need network access
+to selected hosts, verify the policy on your macOS version and use an external network
+control when `--allow-net` cannot express it.
 
 When reads are restricted, Seatbelt requires data access to the root directory for process startup.
 Sandboxed processes can enumerate names directly under `/`, but cannot read unallowed entries or
@@ -143,14 +172,16 @@ their descendants.
 
 ### Windows
 
-Sandboxing is not currently supported on Windows. A warning is printed and the command runs unsandboxed.
+Filesystem and network sandboxing is not supported on Windows. mise warns and runs the
+command without those OS restrictions. Do not treat a successful Windows invocation with
+sandbox flags as evidence that the filesystem or network policy was enforced.
 
 ## Examples
 
-### Run untrusted script with no filesystem writes
+### Restrict script writes {#run-untrusted-script-with-no-filesystem-writes}
 
 ```bash
-mise x --deny-write -- bash untrusted-script.sh
+mise x --deny-write -- bash script.sh
 ```
 
 ### Build with network isolation
@@ -162,13 +193,14 @@ mise x --deny-net -- make build
 ### Run tool with minimal permissions
 
 ```bash
-mise x --deny-all --allow-read=./src --allow-write=./dist node@20 -- node build.js
+mkdir -p dist
+mise exec --deny-all --allow-read=. --allow-write=./dist -- node build.js
 ```
 
 ### Restrict env vars to a namespace
 
 ```bash
-# Only pass through env vars starting with MYAPP_
+# Pass MYAPP_* in addition to the essential variables
 mise x --allow-env='MYAPP_*' -- node app.js
 
 # Allow multiple patterns
@@ -176,6 +208,10 @@ mise x --allow-env='MYAPP_*' --allow-env='NODE_*' -- node app.js
 ```
 
 ### Sandboxed task definition
+
+Create `coverage/` and `node_modules/.cache/` before running this task on Linux, and adjust
+the paths for your test runner. Allowing `NODE_*` and `npm_*` also exposes any matching
+credentials or runtime options; list exact variable names if a narrower policy is needed.
 
 ```toml
 [tasks.test]

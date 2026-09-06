@@ -10,8 +10,8 @@ use eyre::{Report, Result, WrapErr, bail, ensure, eyre};
 use regex::Regex;
 use reqwest::StatusCode;
 use reqwest::header::{
-    ACCEPT_ENCODING, AUTHORIZATION, CONTENT_RANGE, CONTENT_TYPE, DATE, ETAG, HeaderMap,
-    HeaderValue, IF_RANGE, LAST_MODIFIED, RANGE,
+    ACCEPT_ENCODING, AUTHORIZATION, CONTENT_RANGE, CONTENT_TYPE, COOKIE, DATE, ETAG, HeaderMap,
+    HeaderName, HeaderValue, IF_RANGE, LAST_MODIFIED, PROXY_AUTHORIZATION, RANGE,
 };
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use serde::{Deserialize, Serialize};
@@ -1320,12 +1320,21 @@ impl Client {
         // `host_auth_headers` from GITHUB_TOKEN/gh/github_tokens.toml) wins
         // over netrc. The one exception is when a URL replacement actually
         // redirected the request to a different URL — in that case the
-        // pre-existing auth header was built for the *original* host and is
-        // likely wrong for the replacement target, so netrc (scoped to the
-        // new host) should override it. This preserves the #7164 use case
+        // pre-existing credentials were built for the *original* host and are
+        // removed before netrc credentials scoped to the new host are applied.
+        // This preserves the #7164 use case
         // (replace a public URL with a private mirror authenticated via
         // netrc) without clobbering forge tokens on un-redirected requests.
         let mut final_headers = headers.clone();
+        clear_cross_host_credentials(&mut final_headers, &original_url, &mut url);
+        // Refuse the downgrade for credentials that survive host scoping: a same-host
+        // rewrite keeps the original Authorization, and userinfo written into the rule
+        // itself is sent as-is. This runs before netrc because netrc credentials are
+        // scoped to the *replacement* host by the user, who already gets them sent to a
+        // plain `http://` URL with no rewrite involved — a rewrite must not be stricter
+        // than the direct request, or an http mirror fronting an https origin (#7164)
+        // becomes unusable.
+        ensure_secure_replacement_credentials(&original_url, &url, &final_headers)?;
         if options.use_netrc {
             final_headers =
                 apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
@@ -1727,13 +1736,59 @@ fn netrc_should_apply(host_changed: bool, has_existing_auth: bool) -> bool {
     host_changed || !has_existing_auth
 }
 
+fn is_credential_header(name: &HeaderName, value: &HeaderValue) -> bool {
+    if value.is_sensitive()
+        || name == AUTHORIZATION
+        || name == PROXY_AUTHORIZATION
+        || name == COOKIE
+    {
+        return true;
+    }
+    let name = name.as_str();
+    name == "api-key"
+        || name == "x-api-key"
+        || name.ends_with("-api-key")
+        || name.contains("token")
+        || name.contains("secret")
+        || name.contains("credential")
+}
+
+/// Drop credentials scoped to the original host before contacting a replacement host.
+pub(crate) fn clear_cross_host_credentials(
+    headers: &mut HeaderMap,
+    original_url: &Url,
+    url: &mut Url,
+) {
+    if url.host() == original_url.host() {
+        return;
+    }
+    let credential_headers = headers
+        .iter()
+        .filter(|(name, value)| is_credential_header(name, value))
+        .map(|(name, _)| name.clone())
+        .collect::<Vec<_>>();
+    for name in credential_headers {
+        headers.remove(name);
+    }
+    let inherited_userinfo = (!original_url.username().is_empty()
+        || original_url.password().is_some())
+        && url.username() == original_url.username()
+        && url.password() == original_url.password();
+    if inherited_userinfo {
+        url.set_password(None)
+            .expect("HTTP URLs support clearing passwords");
+        url.set_username("")
+            .expect("HTTP URLs support clearing usernames");
+    }
+}
+
 /// Merge `netrc` credentials into `final_headers`, honoring the fallback
 /// policy in [`netrc_should_apply`]. `original_url` is the URL before any
 /// `apply_url_replacements` rewrite and `url` is the (possibly rewritten)
 /// URL actually being requested; a change of *host* means the request was
-/// redirected to a different server, which lets netrc override an existing
-/// auth header. Netrc values are `insert`ed (not `extend`ed) so they replace
-/// a pre-existing Authorization rather than appending a duplicate one.
+/// redirected to a different server, which lets netrc supply replacement-host
+/// authentication after original-host credentials have been removed. Netrc
+/// values are `insert`ed so only one Authorization value is present.
 fn apply_netrc_credentials(
     mut final_headers: HeaderMap,
     original_url: &Url,
@@ -1753,6 +1808,32 @@ fn apply_netrc_credentials(
         }
     }
     final_headers
+}
+
+/// Reject credentials when a URL replacement downgrades an HTTPS request to HTTP.
+pub(crate) fn ensure_secure_replacement_credentials(
+    original_url: &Url,
+    url: &Url,
+    headers: &HeaderMap,
+) -> Result<()> {
+    let has_credentials = headers
+        .iter()
+        .any(|(name, value)| is_credential_header(name, value));
+    ensure_secure_url_replacement(original_url, url, has_credentials)
+}
+
+pub(crate) fn ensure_secure_url_replacement(
+    original_url: &Url,
+    url: &Url,
+    has_credentials: bool,
+) -> Result<()> {
+    let downgraded = original_url.scheme() == "https" && url.scheme() == "http";
+    let has_credentials = has_credentials || !url.username().is_empty() || url.password().is_some();
+    ensure!(
+        !downgraded || !has_credentials,
+        "refusing to send credentials over an HTTPS-to-HTTP URL replacement"
+    );
+    Ok(())
 }
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL
@@ -2175,6 +2256,73 @@ mod tests {
         assert!(client.head("").await.is_err());
         assert!(client.get_text("").await.is_err());
         assert!(client.get_text_request("").send().await.is_err());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_request_rejects_custom_credentials_on_https_to_http_replacement() {
+        // Same-host downgrade: host scoping keeps the credential header, so sending it
+        // would expose it in cleartext.
+        let server = mockito::Server::new_async().await;
+        let replacement = server.url();
+        let original = replacement.replacen("http://", "https://", 1);
+        let _guard = {
+            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+            let mut settings = crate::config::settings::SettingsPartial::empty();
+            settings.url_replacements = Some(indexmap::indexmap! {
+                original.clone() => replacement,
+            });
+            crate::config::Settings::reset(Some(settings));
+            SettingsGuard { _lock: lock }
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", HeaderValue::from_static("secret"));
+        let client = Client::new(Duration::from_secs(1), ClientKind::Http).unwrap();
+
+        let err = client
+            .get_text_request(format!("{original}/file"))
+            .headers(&headers)
+            .send()
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("refusing to send credentials"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_request_scopes_credentials_before_refusing_a_downgrade() {
+        // Host-changing downgrade: the credential header belongs to the original host and
+        // is removed, so the request proceeds without it rather than failing. Refusing
+        // here would break an http mirror fronting an https origin (#7164).
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/file")
+            .match_header("x-api-key", mockito::Matcher::Missing)
+            .with_body("ok")
+            .create_async()
+            .await;
+        let replacement = server.url();
+        let _guard = {
+            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+            let mut settings = crate::config::settings::SettingsPartial::empty();
+            settings.url_replacements = Some(indexmap::indexmap! {
+                "https://secure.example.com".to_string() => replacement,
+            });
+            crate::config::Settings::reset(Some(settings));
+            SettingsGuard { _lock: lock }
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", HeaderValue::from_static("secret"));
+        let client = Client::new(Duration::from_secs(1), ClientKind::Http).unwrap();
+
+        let body = client
+            .get_text_request("https://secure.example.com/file")
+            .headers(&headers)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(body, "ok");
+        mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -3038,6 +3186,28 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
     }
 
     #[test]
+    fn test_cross_host_replacement_clears_credentials_without_netrc() {
+        let original: Url = "https://user:password@public.example.com/file"
+            .parse()
+            .unwrap();
+        let mut redirected: Url = "https://user:password@mirror.internal/file"
+            .parse()
+            .unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer stale"));
+        headers.insert("x-api-key", HeaderValue::from_static("secret"));
+        headers.insert("x-request-id", HeaderValue::from_static("keep-me"));
+
+        clear_cross_host_credentials(&mut headers, &original, &mut redirected);
+
+        assert!(!headers.contains_key(AUTHORIZATION));
+        assert!(!headers.contains_key("x-api-key"));
+        assert_eq!(headers["x-request-id"], "keep-me");
+        assert!(redirected.username().is_empty());
+        assert!(redirected.password().is_none());
+    }
+
+    #[test]
     fn test_apply_netrc_keeps_forge_token_on_same_host_path_rewrite() {
         // A URL replacement that only rewrites the path/query on the SAME host
         // must not let netrc override the forge token: the token is still valid
@@ -3056,6 +3226,49 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
 
         let out = apply_netrc_credentials(headers, &original, &rewritten, basic_netrc_headers());
         assert_eq!(auth_value(&out), vec!["Bearer forge-token".to_string()]);
+    }
+
+    #[test]
+    fn test_rejects_credentials_on_https_to_http_replacement() {
+        let original: Url = "https://public.example.com/file".parse().unwrap();
+        let rewritten: Url = "http://mirror.internal/file".parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer secret"));
+
+        let err =
+            ensure_secure_replacement_credentials(&original, &rewritten, &headers).unwrap_err();
+        assert!(err.to_string().contains("refusing to send credentials"));
+        let mut cookie_headers = HeaderMap::new();
+        cookie_headers.insert(COOKIE, HeaderValue::from_static("session=secret"));
+        assert!(
+            ensure_secure_replacement_credentials(&original, &rewritten, &cookie_headers).is_err()
+        );
+        let mut api_key_headers = HeaderMap::new();
+        api_key_headers.insert("x-api-key", HeaderValue::from_static("secret"));
+        assert!(
+            ensure_secure_replacement_credentials(&original, &rewritten, &api_key_headers).is_err()
+        );
+        let rewritten_with_credentials: Url =
+            "http://user:password@mirror.internal/file".parse().unwrap();
+        assert!(
+            ensure_secure_replacement_credentials(
+                &original,
+                &rewritten_with_credentials,
+                &HeaderMap::new(),
+            )
+            .is_err()
+        );
+        assert!(
+            ensure_secure_replacement_credentials(&original, &rewritten, &HeaderMap::new()).is_ok()
+        );
+        assert!(
+            ensure_secure_replacement_credentials(
+                &"http://public.example.com/file".parse().unwrap(),
+                &rewritten,
+                &headers,
+            )
+            .is_ok()
+        );
     }
 
     #[test]

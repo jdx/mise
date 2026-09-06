@@ -1,98 +1,102 @@
 # Security
 
-mise includes several supply-chain controls for installing and managing tools. These controls have
-different coverage depending on the backend and the metadata available from upstream.
+mise provides controls for different parts of a development workflow. Choose the control
+that addresses the operation you are running:
+
+| Control                                | Applies to                                      | Purpose                                                          |
+| -------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------- |
+| Download verification                  | Supported tool installations                    | Check artifact integrity and available signatures or provenance. |
+| [Configuration trust](/cli/trust.html) | Loading project configuration                   | Decide which configuration mise may execute or apply.            |
+| [Safe mode](#safe-mode)                | Processing untrusted project configuration      | Disable project code execution and environment injection.        |
+| [Paranoid mode](/paranoid.html)        | Trust and supported installation verification   | Bind direct file trust to content and recheck provenance.        |
+| [Sandboxing](/sandboxing.html)         | Commands launched by `mise exec` and `mise run` | Restrict child-process access on supported platforms.            |
+
+These controls have different scopes. For example, trusting configuration does not verify
+an upstream release, and sandboxing a task does not sandbox mise's configuration evaluation.
+Report vulnerabilities through [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md).
 
 ## Software verification
 
-mise provides native software verification without requiring external dependencies.
-For aqua tools, Cosign/Minisign signatures, SLSA provenance, and GitHub artifact attestations are
-verified automatically using mise's built-in implementation. OpenPGP signature verification for
-Node.js and Swift downloads is likewise built in and requires no external `gpg` binary.
+Verification depends on the backend and the upstream metadata. A checksum detects whether
+bytes match an expected digest; a signature or provenance check also associates an artifact
+with a signer or build identity. The expected checksum, key, or identity must come from a
+source you trust.
 
-To configure aqua verification, which is enabled by default:
+For aqua tools with the corresponding registry metadata, mise has built-in support for
+Cosign and Minisign signatures, SLSA provenance, and GitHub artifact attestations.
+OpenPGP verification for Node.js and Swift is also built in; it does not need an external
+`gpg` executable. [packslip](/dev-tools/backends/packslip.html) verifies signed manifests and
+artifact digests.
 
-```sh
-# Disable specific verification methods if needed
-export MISE_AQUA_COSIGN=false
-export MISE_AQUA_SLSA=false
-export MISE_AQUA_GITHUB_ATTESTATIONS=false
-export MISE_AQUA_MINISIGN=false
-```
+Aqua's verification methods are enabled by default. See the
+[aqua settings](/dev-tools/backends/aqua.html#settings) for individual controls. If verification
+fails, check the selected artifact and the underlying error before changing those settings;
+see [checksum errors](/errors.html).
 
-For lockfile checksum and provenance behavior, see [mise.lock](/dev-tools/mise-lock.html).
+A [lockfile](/dev-tools/mise-lock.html) can record checksums and provenance. By default, a
+supported installation can reuse recorded provenance instead of repeating its verification
+when the target platform's lockfile entry contains both a checksum and verified provenance.
+Use [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance) or
+[paranoid mode](/paranoid.html#provenance-re-verification) when installation should recheck it.
+This does not audit the contents of tools that are already installed and skipped.
 
 ## Safe mode
 
-Safe mode (`MISE_SAFE=1`, or the [`safe`](/configuration/settings.html#safe) setting) is a hard
-boundary against **project configuration executing code**. It is intended for running mise against
-configuration you do not control — most notably automation that refreshes `mise.lock` on pull
-request branches, such as a scheduled `mise lock --bump` job (see
-[Bumping Locked Versions](/dev-tools/mise-lock.html#bumping-locked-versions)).
+Set `MISE_SAFE=1` when automation must process configuration it does not control, such as
+resolving tool versions from a pull request. For example:
 
 ```sh
-# resolve tool versions from untrusted config without executing any of it
 MISE_SAFE=1 mise lock --bump --dry-run --json
 ```
 
-When enabled, mise **refuses with an error** (never a silent fallback) to:
+Remove `--dry-run` when the command should update the lockfile. Safe mode does not itself
+make a command read-only.
 
-- run `exec()` or `read_file()` in config templates
-- run hooks (suppressed like `--no-hooks`, since hooks fire ambiently from `mise env`/`hook-env`)
-- run tool-level `postinstall` hooks or apply tool-level `install_env` during installation
-- run tasks
-- execute asdf plugin scripts
-- install plugins
+### Refused operations
 
-It also **ignores environment and shell configuration from project (non-global) config** — `[env]`
-values, `_.path`, `_.file`, and `[shell_alias]` entries. These would otherwise be applied to your
-shell environment (env vars and aliases are emitted through `hook-env`) and to the
-subprocesses mise spawns during version resolution (for example `go list` or a vfox plugin hook),
-which is an indirect code-execution vector (`PATH`, `LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`,
-`NODE_OPTIONS`, …) that safe mode is meant to close. Global and system config (e.g.
-`~/.config/mise/config.toml`) is operator-owned and still applies, mirroring the
-[trust](/cli/trust.html) model.
+Safe mode returns an error for operations that would execute project-selected code:
 
-`_.source` is treated as code execution rather than environment injection, so it is ignored in safe
-mode regardless of where it is defined — including operator-owned global config.
+- Template `exec()` and `read_file()` calls.
+- Task execution.
+- Tool-level `postinstall` hooks and `install_env` during installation.
+- asdf plugin scripts and plugin installation.
 
-`[settings]` from project (non-global) config are also ignored, so an untrusted repo cannot change
-mise's behavior during resolution (for example disabling verification or redirecting a backend).
-Global/system settings still apply. Specific project settings may be allowlisted in the future if
-they are both safe and necessary.
+### Ignored configuration
 
-Because a config loaded in safe mode is inert — it can neither execute code nor inject environment —
-**safe mode does not require configs to be trusted.** mise loads untrusted configs without a
-[trust](/cli/trust.html) prompt or error when `safe` is set, since there is nothing a config can do
-to compromise the host. This is what lets automation run `mise lock` against pull-request config
-without a preceding `mise trust`.
+Some behavior is suppressed so metadata queries can still run:
 
-Version resolution still works for every HTTP-based backend — `core`, `aqua`, `github`, `gitlab`,
-`http`, `cargo`, `pipx`, `gem`, `dotnet`, and `npm` — as well as `go` (which runs with
-`GOTOOLCHAIN=local` so a project `go.mod` cannot trigger a toolchain download). Refreshing
-`mise.lock` and listing installed tools work normally.
+- Shell and installation hooks are skipped, like `--no-hooks`.
+- Project `[env]`, environment directives, and `[shell_alias]` do not affect the environment.
+- Project `[settings]` are ignored, preventing a repository from disabling verification or
+  redirecting a backend through settings.
+- `_.source` is ignored everywhere, including global configuration.
 
-Already-installed and embedded vfox plugins also keep working: their code was chosen by the
-operator, not by the repository being processed, and version resolution short-circuits on
-plugins that are not installed without executing anything.
+Operator-owned global and system configuration still applies, apart from these explicit
+restrictions. Review that configuration and the environment of the process running mise.
+The [`safe`](/configuration/settings.html#safe) setting is global-only, so a project cannot
+turn it off for itself.
 
-::: tip
-Safe mode is a code-execution boundary; it does not replace the [trust](/cli/trust.html)
-system. Untrusted configs still require `mise trust` (or a
-[trusted config path](/configuration/settings.html#trusted_config_paths)). Safe mode limits what a
-config can do; trust limits which configs are loaded.
-:::
+### Trust and backend support
 
-`MISE_SAFE` is `global_only`, so it can only be set via the environment or global config — a project
-`mise.toml` cannot turn it off for itself.
+Safe mode loads otherwise untrusted configuration without a trust prompt or untrusted-config
+error, because the project execution and environment features above are disabled. This also
+applies when paranoid mode is enabled. Syntax errors and unsupported operations still fail;
+a successful load does not mean the configuration has been marked trusted for later normal use.
+
+HTTP-based version resolution continues to work for supported backends. The Go backend uses
+`GOTOOLCHAIN=local` to prevent a project `go.mod` from triggering a toolchain download during
+metadata queries. Already-installed or embedded vfox plugin code can still run; a missing
+plugin cannot be installed in safe mode.
+
+Safe mode controls how mise handles project configuration. It is not an operating-system
+sandbox for the mise process, its network requests, or operator-installed plugins. Use
+[sandboxing](/sandboxing.html) for child-process restrictions, accounting for platform limits.
 
 ## Minimum release age
 
 To limit supply-chain risk, you can restrict mise to only install versions released before a
-certain date or duration. This is similar to Renovate's
-[minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/) concept:
-newly published versions are ignored until they have been available for a configurable amount of
-time.
+certain date or duration. Newly published versions can be held back for a configurable period. This delay gives
+time for problems to be discovered; it is not evidence that an older release is trustworthy.
 
 ```toml
 # mise.toml
@@ -101,8 +105,8 @@ minimum_release_age = "7d"  # only install versions released more than 7 days ag
 ```
 
 The setting supports relative durations (`7d`, `6mo`, `1y`) and absolute dates (`2024-06-01`). For most
-backends, it only affects fuzzy version resolution, such as `node@20` or `latest`.
-Explicitly pinned versions like `node@22.5.0` bypass the filter.
+backends, it only affects fuzzy version resolution, such as `node@24` or `latest`.
+Explicitly pinned versions like `node@24.0.0` bypass the filter.
 During ordinary toolset resolution, already-installed fuzzy matches remain eligible:
 `minimum_release_age` limits remote version selection and does not make an installed version
 inactive. Lockfile generation may re-check fuzzy installed matches against release metadata.

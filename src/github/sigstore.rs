@@ -58,17 +58,19 @@ fn resolve_token_for_wrapper(api_url: Option<&str>) -> Option<String> {
     crate::github::resolve_token_for_api_url(url)
 }
 
-fn routed_api_url(api_url: &str) -> String {
+fn routed_api_url(api_url: &str, has_credentials: bool) -> AttestationResult<String> {
     let Ok(mut url) = url::Url::parse(api_url) else {
         debug!("invalid GitHub attestation API URL, skipping url_replacements: {api_url}");
-        return api_url.to_string();
+        return Ok(api_url.to_string());
     };
     let original = url.clone();
     crate::http::apply_url_replacements(&mut url);
+    crate::http::ensure_secure_url_replacement(&original, &url, has_credentials)
+        .map_err(|err| AttestationError::Verification(err.to_string()))?;
     if url == original {
-        api_url.to_string()
+        Ok(api_url.to_string())
     } else {
-        url.to_string()
+        Ok(url.to_string())
     }
 }
 
@@ -88,6 +90,10 @@ fn routed_tuf_url() -> Option<String> {
     };
     let original = url.clone();
     crate::http::apply_url_replacements(&mut url);
+    if let Err(err) = crate::http::ensure_secure_url_replacement(&original, &url, false) {
+        warn!("{err}; ignoring insecure Sigstore TUF URL replacement");
+        return None;
+    }
     (url != original).then(|| url.to_string())
 }
 
@@ -105,7 +111,7 @@ fn mise_retry_config() -> RetryConfig {
 
 fn attestation_client(api_url: &str) -> AttestationResult<AttestationClient> {
     let token = resolve_token_for_wrapper(Some(api_url));
-    let base_url = routed_api_url(api_url);
+    let base_url = routed_api_url(api_url, token.is_some())?;
     let mut builder = AttestationClient::builder()
         .base_url(&base_url)
         .retry_config(mise_retry_config());
@@ -177,7 +183,7 @@ pub(crate) async fn verify_attestation(
     }
 
     let token = resolve_token_for_wrapper(api_url);
-    let base_url = routed_api_url(api_url.unwrap_or(crate::github::API_URL));
+    let base_url = routed_api_url(api_url.unwrap_or(crate::github::API_URL), token.is_some())?;
     if let Some(digest) = digest {
         mise_sigstore::verify_github_attestation_with_base_url_and_digest(
             mise_sigstore::GithubAttestationRequest {
@@ -310,7 +316,7 @@ pub(crate) async fn detect_attestations(
     }
 
     let token = resolve_token_for_wrapper(Some(api_url));
-    let base_url = routed_api_url(api_url);
+    let base_url = routed_api_url(api_url, token.is_some()).map_err(DetectError::SourceCreation)?;
     let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), &base_url)
         .map_err(DetectError::SourceCreation)?;
     let artifact_ref = ArtifactRef::from_digest(digest);
@@ -622,7 +628,7 @@ mod tests {
             "https://api.github.com".to_string() => "https://github-proxy.example.com".to_string(),
         }));
 
-        let routed = routed_api_url(crate::github::API_URL);
+        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
 
         assert_eq!(routed, "https://github-proxy.example.com/");
     }
@@ -633,7 +639,7 @@ mod tests {
             "regex:^https://api\\.github\\.com".to_string() => "https://github-proxy.example.com/api".to_string(),
         }));
 
-        let routed = routed_api_url(crate::github::API_URL);
+        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
 
         assert_eq!(routed, "https://github-proxy.example.com/api/");
     }
@@ -642,9 +648,35 @@ mod tests {
     fn test_routed_api_url_keeps_original_url_without_replacement() {
         let _settings = SettingsGuard::new(None);
 
-        let routed = routed_api_url(crate::github::API_URL);
+        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
 
         assert_eq!(routed, crate::github::API_URL);
+    }
+
+    #[test]
+    fn test_routed_api_url_rejects_credential_downgrade() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "http://github-proxy.example.com".to_string(),
+        }));
+
+        let err = routed_api_url(crate::github::API_URL, true).unwrap_err();
+
+        assert!(err.to_string().contains("refusing to send credentials"));
+        assert!(!is_api_failure(&err));
+    }
+
+    #[test]
+    fn test_routed_api_url_rejects_userinfo_downgrade_without_token() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string()
+                => "http://user:password@github-proxy.example.com".to_string(),
+        }));
+
+        let err = routed_api_url(crate::github::API_URL, false).unwrap_err();
+
+        assert!(err.to_string().contains("refusing to send credentials"));
+        assert!(!err.to_string().contains("password"));
+        assert!(!is_api_failure(&err));
     }
 
     #[test]
@@ -662,6 +694,16 @@ mod tests {
     #[test]
     fn test_routed_tuf_url_none_without_replacement() {
         let _settings = SettingsGuard::new(None);
+
+        assert_eq!(routed_tuf_url(), None);
+    }
+
+    #[test]
+    fn test_routed_tuf_url_ignores_userinfo_downgrade() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://tuf-repo-cdn.sigstore.dev".to_string()
+                => "http://user:password@tuf-mirror.example.com".to_string(),
+        }));
 
         assert_eq!(routed_tuf_url(), None);
     }

@@ -1,54 +1,47 @@
 # Paranoid
 
-Paranoid mode is an optional behavior that locks mise down further to make it
-harder for a bad actor to compromise your system. I do not use these settings
-on my own system because I find them too restrictive for the benefits.
+Paranoid mode disables automatic and CI trust, binds direct file approvals to configuration content,
+and rechecks supported provenance during installation. Configurations accepted through
+`trusted_config_paths` or inherited monorepo-root trust remain path-based exceptions. It does not
+sandbox a command after you approve it; see [Security](/security.html) for the scope of each control.
 
-Paranoid mode can be enabled with either `MISE_PARANOID=1` or a global setting:
+Enable it for one invocation with `MISE_PARANOID=1`, or persist it globally:
 
 ```sh
-mise settings paranoid=1
+mise settings set paranoid true
 ```
 
-The setting is global-only, so a project config cannot enable or disable paranoid
-mode for itself.
+To restore normal mode, run `mise settings set paranoid false`. The setting is global-only;
+a project cannot enable or disable it for itself.
 
 ## Config files
 
-Normally, `mise` makes sure some config files are "trusted" before loading
-them. It may prompt you to confirm that you want to load the file, e.g.:
+In normal mode, simple configuration can load without trust, and execution commands such
+as `mise run`, `mise install`, and `mise exec` automatically trust their active configuration.
+Other commands may prompt, fail, or skip an untrusted file depending on how they discover it.
+See [`mise trust`](/cli/trust.html) for normal-mode rules.
+
+Paranoid mode requires explicit trust for non-global config files, including formats that normally
+do not need it. Direct file approval hashes the contents, so editing the file requires renewed trust.
+Automatic trust for execution commands and the usual CI trust exemption are disabled. Trust is not
+shared between Git worktrees in this mode.
+
+Inspect the file before accepting it:
 
 ```sh
-$ mise env
-mise ~/src/mise/mise.toml is not trusted. Trust it [y/n]?
+mise trust --show
+mise trust path/to/mise.toml
 ```
 
-In normal mode, `mise run`, naked task invocations such as `mise <TASK>`,
-`mise install`, `mise exec`, and `mise watch` automatically trust their active
-config because they explicitly execute project-defined behavior. Automatic shell
-activation through `hook-env` does not.
+Replace the path with the configuration you reviewed. Paths allowed by the global
+`trusted_config_paths` setting and descendants covered by trusted monorepo roots bypass the
+content-hash check, so changes there do not require renewed approval. Global and system
+configuration is operator-owned and remains exempt, allowing paranoid mode itself to be set globally.
 
-Other commands check trust before parsing `mise.toml` files because they can
-contain behavior that executes code or affects the environment. Some discovery
-paths that look at previously tracked configs may skip untrusted files instead
-of prompting. Commands that directly need an untrusted config can fail with an
-untrusted-config error when mise cannot prompt. When mise detects that it is
-running in CI, configs are assumed to be trusted unless paranoid mode is enabled.
-
-Under paranoid mode, all config files must be trusted first, including formats
-that normally do not require trust, and automatic trust for execution commands is
-disabled. In normal mode, a config file only needs to be trusted once. In paranoid
-mode, the file's contents are hashed to detect changes, so if you change your
-config file, you'll need to trust it again.
-
-Global and system config files (e.g., `~/.config/mise/config.toml`) are implicitly trusted and exempt from this check, so paranoid mode can be enabled in a global config without a trust prompt for that file itself.
-
-[Safe mode](/security.html#safe-mode) takes precedence when both modes are enabled.
-Safe mode disables project-defined code execution and environment injection while
-retaining non-executable configuration such as tool definitions, task metadata,
-plugin declarations, and tool aliases. It therefore loads untrusted config without
-a trust prompt or untrusted-config error. Other configuration errors are still
-reported.
+[Safe mode](/security.html#safe-mode) takes precedence if both modes are enabled. It suppresses
+project execution and environment injection, so the configuration can load without a trust
+prompt; syntax errors and refused operations still fail. Loading in safe mode does not grant
+trust for a later normal or paranoid-mode invocation.
 
 ## Community plugins
 
@@ -71,27 +64,21 @@ an untrusted community plugin by short name.
 
 ## Provenance re-verification
 
-Normally, when a lockfile contains both a checksum and a provenance entry for a tool,
-`mise install` trusts the lockfile and skips provenance re-verification to avoid
-redundant API calls (e.g., to GitHub). This is safe when you trust that the lockfile
-was generated correctly.
+A supported backend can reuse a lockfile's recorded provenance when installing an artifact
+whose checksum matches. This avoids repeating checks and API calls, and relies on the
+lockfile having been generated correctly.
 
-In paranoid mode, `mise install` always re-verifies provenance (SLSA, cosign, minisign,
-GitHub artifact attestations) at install time, even when the lockfile already has a
-provenance entry. This ensures that cryptographic verification happens on every install,
-not just when the lockfile is first generated.
+In paranoid mode, supported and enabled provenance methods (such as SLSA, Cosign, Minisign,
+and GitHub attestations) run again during installation instead of being skipped because a
+provenance entry exists. This can require network access. It does not add verification that
+the backend does not support, or rescan an already-installed tool that mise skips.
 
 This behavior can also be enabled independently via the
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance) setting.
 
 ## See also
 
-[Safe mode](/security.html#safe-mode) (`MISE_SAFE=1`) is a related but distinct
-control: paranoid tightens _trust_ (which configs are loaded and re-verified),
-while safe mode is a hard boundary on _code execution_ for running mise against
-configuration you do not control.
-
-## More?
-
-If you have suggestions for more that could be added to paranoid mode, please
-let me know.
+- [Safe mode](/security.html#safe-mode) for processing untrusted project metadata.
+- [Sandboxing](/sandboxing.html) for restrictions on executed commands.
+- [Lockfiles](/dev-tools/mise-lock.html) for checksums, provenance, and backend coverage.
+- [Contact](/contact.html) to suggest improvements or report unexpected behavior.
