@@ -937,11 +937,21 @@ fn tool_version_lock(short: &str, v: &str) -> LockFile {
 /// marker and install path. The marker path is only the lock identity; the
 /// lock itself remains a separate stable file under the lockfiles cache.
 pub(crate) fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile> {
+    lock_tool_version_with_notice(short, v, &|| {})
+}
+
+/// [`lock_tool_version`] that also tells the caller when it is actually
+/// waiting, so an install can report the pause instead of looking hung.
+pub(crate) fn lock_tool_version_with_notice(
+    short: &str,
+    v: &str,
+    on_wait: &dyn Fn(),
+) -> Result<fslock::LockFile> {
     tool_version_lock(short, v)
         .with_callback(|lock| {
             debug!("waiting for tool-version lock on {}", display_path(lock));
         })
-        .lock()
+        .lock_with_notice(on_wait)
 }
 
 pub(crate) fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
@@ -1106,6 +1116,49 @@ mod tests {
             Some(&installs_path)
         );
         assert!(!tools["babashka"].explicit_backend);
+    }
+
+    #[test]
+    fn lock_notice_fires_only_when_contended() {
+        let short = format!("lock_notice_test_{}", std::process::id());
+        let noticed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = || noticed.load(std::sync::atomic::Ordering::SeqCst);
+        // Uncontended: no notice.
+        let first = {
+            let noticed = noticed.clone();
+            super::lock_tool_version_with_notice(&short, "1.0.0", &|| {
+                noticed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            })
+            .unwrap()
+        };
+        assert_eq!(count(), 0);
+        // Contended from another thread: exactly one notice, then it acquires
+        // once the first holder lets go.
+        let (acquired_tx, acquired_rx) = mpsc::channel();
+        let waiter = {
+            let short = short.clone();
+            let noticed = noticed.clone();
+            std::thread::spawn(move || {
+                let lock = super::lock_tool_version_with_notice(&short, "1.0.0", &|| {
+                    noticed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                })
+                .unwrap();
+                acquired_tx.send(()).unwrap();
+                drop(lock);
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert_eq!(count(), 1, "the waiter should have reported the wait");
+        assert!(
+            acquired_rx.try_recv().is_err(),
+            "must not acquire while held"
+        );
+        drop(first);
+        acquired_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("waiter acquires after release");
+        waiter.join().unwrap();
+        assert_eq!(count(), 1);
     }
 
     #[test]
