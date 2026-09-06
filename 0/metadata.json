@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TFAKWNAXZAV4VS6M1S6TT4",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T04:23:49.832687Z",
+  "branch": "codex/docs-environment-guides",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/configuration.md",
+    "docs/configuration/environments.md",
+    "docs/configuration/settings.md",
+    "docs/configuration/vars.md",
+    "docs/direnv.md",
+    "docs/environments/index.md",
+    "docs/environments/secrets/age.md",
+    "docs/environments/secrets/index.md",
+    "docs/environments/secrets/sops.md",
+    "docs/hooks.md",
+    "docs/shell-aliases.md",
+    "docs/templates.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "57e90f547f29",
+  "checkpoint_transcript_start": 575,
+  "transcript_lines_at_start": 575,
+  "compact_transcript_start": 77,
+  "token_usage": {
+    "input_tokens": 99592,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2122368,
+    "output_tokens": 15539,
+    "api_call_count": 25
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T04:23:49.649Z",
+    "agent_lines": 429,
+    "agent_removed": 280,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 429,
+    "total_lines_changed": 709,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
