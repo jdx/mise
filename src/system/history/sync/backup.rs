@@ -9,8 +9,8 @@
 //! encrypted layout (`encrypted`): one age payload per checkpoint for the
 //! declared recipients. The scheme in use (plaintext, or which recipients)
 //! is recorded in `sync.json`; when it changes, this machine's refs on the
-//! origin are deleted and the eligible checkpoints uploaded again under the
-//! new one, so a repository never holds a mix by accident.
+//! origin are replaced in one transaction with eligible checkpoints under
+//! the new scheme, so a repository never holds a mix by accident.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -253,13 +253,9 @@ pub(crate) fn upload(
             continue;
         }
         let commit = wrapper_commit(repo, entry, encryption, encrypted_paths)?;
-        // forced: the ref is this machine's alone, and a checkpoint
-        // uploaded again after a scheme change is a parentless rewrite of
-        // the same content, not a fast-forward
-        let refspec = format!(
-            "+{commit}:{}",
-            remote_ref(machine_id, &entry.checkpoint.uuid)
-        );
+        // Scheme changes use `replace`'s complete transaction. Ordinary
+        // uploads must not overwrite a backup published since our fetch.
+        let refspec = format!("{commit}:{}", remote_ref(machine_id, uuid));
         match remote.push(&[refspec], None)? {
             PushOutcome::Done => {
                 uploaded.insert(uuid.clone());
@@ -412,6 +408,7 @@ mod upload_tests {
             autosave: true,
             share: true,
             backup: true,
+            encrypt: false,
             state: "live".into(),
             promotion: None,
             private: None,
@@ -441,7 +438,16 @@ mod upload_tests {
             .unwrap();
         let mut uploaded = BTreeSet::new();
         assert_eq!(
-            upload(&remote, &repo, &[entry], "m", &mut uploaded, None).unwrap(),
+            upload(
+                &remote,
+                &repo,
+                &[entry],
+                "m",
+                &mut uploaded,
+                None,
+                &BTreeSet::new()
+            )
+            .unwrap(),
             0
         );
         assert_eq!(uploaded, BTreeSet::from(["u1".to_string()]));
@@ -466,7 +472,8 @@ mod upload_tests {
                 std::slice::from_ref(&entry),
                 "m",
                 &mut uploaded,
-                None
+                None,
+                &BTreeSet::new()
             )
             .unwrap(),
             1
@@ -476,7 +483,16 @@ mod upload_tests {
         uploaded.clear();
         remote.fetch("main").unwrap();
         assert_eq!(
-            upload(&remote, &repo, &[entry], "m", &mut uploaded, None).unwrap(),
+            upload(
+                &remote,
+                &repo,
+                &[entry],
+                "m",
+                &mut uploaded,
+                None,
+                &BTreeSet::new()
+            )
+            .unwrap(),
             0
         );
         assert_eq!(uploaded, BTreeSet::from(["u1".to_string()]));
@@ -506,7 +522,8 @@ mod upload_tests {
                 std::slice::from_ref(&entry),
                 "m",
                 &mut uploaded,
-                None
+                None,
+                &BTreeSet::new()
             )
             .unwrap(),
             0

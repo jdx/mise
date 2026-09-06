@@ -596,6 +596,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "autosave"
                             | "share"
                             | "backup"
+                            | "encrypt"
                             | "variants"
                             | "enabled"
                     ) {

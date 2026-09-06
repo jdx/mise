@@ -163,7 +163,7 @@ async fn set_inner(
     let walk = tracked.walk()?;
     // the connection as it was: another repository or branch starts from a
     // clean slate, and a scheme change on the same one replaces its refs
-    let status_before = run::read_status(state_dir);
+    let status_before = run::read_status(state_dir)?;
     let connected_before = status_before.origin_url.is_some();
     let same_origin = status_before.origin_url.as_deref() == Some(opts.url.as_str())
         && status_before.origin_branch.as_deref() == Some(opts.branch.as_str());

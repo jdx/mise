@@ -3,12 +3,12 @@
 # refs are age-encrypted for its recipients. Another machine lists them
 # without a key and restores them with one; changing the scheme replaces the
 # refs on the origin; a machine with no key anywhere gets an identity
-# generated. Runs with experimental settings disabled.
+# generated. Dotfile tracking and synchronization require experimental mode.
 # shellcheck disable=SC2016
 
 require_cmd git
 
-export MISE_EXPERIMENTAL=0
+export MISE_EXPERIMENTAL=1
 
 origin="$PWD/origin.git"
 git init -q --bare -b main "$origin"
@@ -28,7 +28,7 @@ wrapper() { # name dir
 #!/usr/bin/env bash
 export HOME="$2" XDG_CONFIG_HOME="$2/.config" MISE_CONFIG_DIR="$2/.config/mise" \\
   MISE_STATE_DIR="$2/.local/state/mise" MISE_DATA_DIR="$2/.local/share/mise" \\
-  MISE_CACHE_DIR="$2/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$2" MISE_EXPERIMENTAL=0
+  MISE_CACHE_DIR="$2/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$2" MISE_EXPERIMENTAL=1
 cd "\$HOME" && exec mise "\$@"
 EOF
   chmod +x "$PWD/$1"
@@ -53,7 +53,7 @@ echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
 printf '# public key: %s\n%s\n' "$PUB" "$KEY" >"$MISE_CONFIG_DIR/age.txt"
 assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
 # the secrets feature keeps its gate
-assert_fail "mise set --age-encrypt X=1 --age-recipient $PUB 2>&1" "experimental"
+assert_fail "MISE_EXPERIMENTAL=0 mise set --age-encrypt X=1 --age-recipient $PUB 2>&1" "experimental"
 
 mise bootstrap dotfiles origin set "file://$origin" --name laptop --include-existing --yes >"$PWD/connect1.log" 2>&1
 assert_contains "cat $PWD/connect1.log" "in plain form"

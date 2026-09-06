@@ -321,7 +321,12 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
             status.upload_since = Some(newest.unwrap_or_else(hstore::now_rfc3339));
         }
     })?;
-    super::origin::write_config(&onboarding.origin, &onboarding.branch, None, backups.as_ref())?;
+    super::origin::write_config(
+        &onboarding.origin,
+        &onboarding.branch,
+        None,
+        backups.as_ref(),
+    )?;
 
     let applied = apply::apply(store, &tracked, &ApplyRequest::automatic()).await?;
     // a conflict (a file that exists here and differs) is not pending: it

@@ -302,16 +302,18 @@ committed in the repository's history, which stops the connection unless
 
 **What leaves the machine.** Two things. The setup branch (the shared
 configuration, the sources it references, and the shared version of every
-tracked entry, per its policies) keeps configuration readable; selected file
-contents can use `encrypt = true` by every machine, so anyone who can read the repository
-can read it. This machine's recovery refs (`refs/mise-history/<machine>/…`:
+tracked entry, per its policies) keeps setup configuration in plaintext;
+selected file contents can use `encrypt = true`. Anyone with repository
+access can read the configuration and unencrypted files. This machine's
+recovery refs (`refs/mise-history/<machine>/…`:
 a snapshot of every tracked file with `backup = true`, with private paths
 and paths with `backup = false` removed from the snapshot, the metadata, and
 the descriptions) are plain text by default, or encrypted with
 `--encrypt-backups` (below). `share = false` keeps a file out of the setup
 branch and out of other machines; `backup = false` keeps it out of the
-recovery refs; `*.local.toml` and credential stores default to both `share = false` and `backup = false` unless a
-per-file declaration says otherwise. Everything else stays on this machine.
+recovery refs; `*.local.toml` and credential stores default to both
+`share = false` and `backup = false` unless a per-file declaration says
+otherwise. Everything else stays on this machine.
 The declaration goes to `[history.origin]` in `config.local.toml` next to the
 global config (machine-local, never published: each machine names the
 repository the way it reaches it, and a fresh machine's own declaration
