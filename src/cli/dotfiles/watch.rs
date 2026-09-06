@@ -17,7 +17,7 @@ use crate::system::history::watch::runtime::{self, WatchOptions};
 ///     [bootstrap.services.mise-history]
 ///     builtin = "history-watch"
 ///
-/// Exit codes: 0 when history is disabled or another watcher already runs;
+/// Exit codes: 0 when history or experimental mode is disabled or another watcher already runs;
 /// 1 when git is unusable, the store cannot open, or no watch can be
 /// installed. A capture that fails is retried with backoff and never drops
 /// the pending changes; one that would overlap another history operation
@@ -36,7 +36,6 @@ pub(crate) struct DotfilesWatch {
 
 impl DotfilesWatch {
     pub(crate) async fn run(self) -> Result<()> {
-        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         let code = runtime::run(WatchOptions {
             once: self.once,
             json: self.json,

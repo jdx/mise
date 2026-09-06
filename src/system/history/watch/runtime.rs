@@ -73,8 +73,16 @@ pub(crate) struct WatchOptions {
 
 /// Runs the watcher; returns the process exit code.
 pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
-    Settings::get().ensure_experimental("dotfile tracking")?;
     let out = Output { json: opts.json };
+    if let Err(err) = Settings::get().ensure_experimental("dotfile tracking") {
+        if opts.once {
+            return Err(err);
+        }
+        // Installed services restart on failure. Withdrawing opt-in must
+        // stop them cleanly, without opening or changing history state.
+        out.emit("disabled", &err.to_string(), json!({}));
+        return Ok(0);
+    }
     if !Settings::get().history.enabled {
         out.emit(
             "disabled",
@@ -113,6 +121,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     let mut intervals = Intervals::from_settings(&settings);
     let mut state = State::load().await?;
     let mut capture = Capture::new(store, out, intervals.limits.clone());
+    prune_schedule(&mut capture, &state);
     capture.health.watcher.started_at = Some(store::now_rfc3339());
     if opts.once {
         // A one-shot capture has no installed filesystem watches. Failures

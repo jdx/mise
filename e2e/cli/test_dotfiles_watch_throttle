@@ -8,6 +8,11 @@
 
 require_cmd git
 
+# A previously installed service must stop cleanly when opt-in is withdrawn.
+assert_contains "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles watch --json" '"event":"disabled"'
+assert_directory_not_exists "$MISE_STATE_DIR/history"
+assert_fail "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles watch --once" 'dotfile tracking is experimental'
+
 count="mise bootstrap dotfiles history --json -n 0 | jq length"
 throttled="mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].interval_secs // 0'"
 repo="$MISE_STATE_DIR/history/repo.git"
@@ -110,6 +115,7 @@ wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health
 kill -TERM "$watcher"
 wait "$watcher" || true
 assert_contains "cat $MISE_STATE_DIR/history/watch-schedule.json" "state.json"
+cp "$MISE_STATE_DIR/history/watch-schedule.json" schedule.saved
 saved_before="$($snapshot_of latest .config/hypr/state.json)"
 sleep 1.2
 mise bootstrap dotfiles watch --json >watch.log 2>&1 &
@@ -207,3 +213,12 @@ assert_not_contains "mise doctor 2>&1 || true" "Changes there are saved by recon
 assert_succeed "mise bootstrap dotfiles watch --once --json"
 assert "jq '.watcher.degraded | length' $health" "0"
 assert "jq '.watcher.last_error // \"cleared\"' -r $health" "cleared"
+
+# Exclusions made while stopped prune the restored schedule before even
+# a one-shot startup capture can carry the excluded file forward.
+assert_succeed "mise bootstrap dotfiles exclude '~/.config/hypr/state.json'"
+cp schedule.saved "$MISE_STATE_DIR/history/watch-schedule.json"
+assert_succeed "mise bootstrap dotfiles watch --once --json"
+assert_not_contains "cat $MISE_STATE_DIR/history/watch-schedule.json" "state.json"
+latest_uuid="$(mise bootstrap dotfiles history show latest --json | jq -r .uuid)"
+assert_not_contains "git --git-dir=$repo ls-tree -r --name-only refs/checkpoints/$latest_uuid" "state.json"
