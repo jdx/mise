@@ -176,6 +176,8 @@ impl Tool {
                 ("reusing download", words.next())
             }
             Some("checksum") => ("verifying checksum", None),
+            Some("verify") if words.clone().next() == Some("size") => ("verifying size", None),
+            Some("verify") => ("verifying", None),
             Some("extract") => ("extracting", None),
             Some("install") => ("installing", None),
             // The postinstall hook means every declared operation is behind us.
@@ -278,14 +280,24 @@ impl Tool {
         if let Some(detail) = &self.detail {
             return detail.clone();
         }
-        let Some(transfer) = self.transfer else {
-            return String::new();
-        };
-        if transfer.done == 0 && transfer.total == 0 {
-            return String::new();
+        if let Some(bytes) = self.transfer_bytes(now) {
+            return bytes;
         }
-        if !transfer.bytes {
-            return format!("{}/{}", transfer.done, transfer.total);
+        match self.transfer {
+            Some(transfer) if !transfer.bytes && (transfer.done > 0 || transfer.total > 0) => {
+                format!("{}/{}", transfer.done, transfer.total)
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// Just the byte transfer — `42.1/78.3 MB · 12.4 MB/s` — for a renderer
+    /// that shows detail and item counts somewhere else and must not print
+    /// them twice.
+    pub(super) fn transfer_bytes(&self, now: Instant) -> Option<String> {
+        let transfer = self.transfer?;
+        if !transfer.bytes || (transfer.done == 0 && transfer.total == 0) {
+            return None;
         }
         let bytes = if transfer.total > 0 {
             format!(
@@ -296,10 +308,10 @@ impl Tool {
         } else {
             format_bytes(transfer.done)
         };
-        match transfer.rate(now) {
+        Some(match transfer.rate(now) {
             Some(rate) => format!("{bytes} · {}/s", format_bytes(rate.round() as u64)),
             None => bytes,
-        }
+        })
     }
 
     /// The permanent line for a finished tool, padded to `width`.
@@ -431,8 +443,13 @@ impl State {
         self.tools.iter().filter(|t| t.outcome.is_some()).count()
     }
 
+    /// Tools waiting only for a job slot. Ones held behind a dependency have
+    /// their own row saying which, and are not counted here as well.
     pub(super) fn queued_count(&self) -> usize {
-        self.tools.iter().filter(|t| t.is_queued()).count()
+        self.tools
+            .iter()
+            .filter(|t| t.is_queued() && t.waiting_message().is_none())
+            .count()
     }
 
     pub(super) fn all_done(&self) -> bool {
@@ -493,6 +510,11 @@ impl State {
         // Columns size to their content on every snapshot. A fixed width would
         // either truncate a status like "running postinstall hook" or reserve
         // blank space for a transfer column most rows never fill.
+        // Rows are read in CI log viewers and narrow panes, so the fixed-shape
+        // cells come first — prefix, phase, elapsed — and the one variable cell,
+        // the transfer detail, is last and unpadded. The artifact name is not
+        // repeated here: it wraps a long row every three seconds, and the
+        // completion line records it once, in full, where it can be searched.
         let rows: Vec<_> = self
             .tools
             .iter()
@@ -502,50 +524,38 @@ impl State {
                 Some((
                     tool.prefix.as_str(),
                     tool.message.clone(),
-                    tool.transfer_detail(now),
                     elapsed(started, now),
-                    tool.artifact.as_deref(),
+                    tool.transfer_detail(now),
                 ))
             })
             .collect();
         let width = self.width();
         let message_width = column_width(rows.iter().map(|r| r.1.as_str()));
-        let detail_width = column_width(rows.iter().map(|r| r.2.as_str()));
-        for (prefix, message, detail, elapsed, artifact) in rows {
+        let elapsed_width = column_width(rows.iter().map(|r| r.2.as_str()));
+        for (prefix, message, elapsed, detail) in rows {
             let mut line = format!(
-                "  {}  {}",
+                "  {}  {}  {}",
                 console::pad_str(prefix, width, console::Alignment::Left, None),
                 console::pad_str(&message, message_width, console::Alignment::Left, None),
+                console::pad_str(&elapsed, elapsed_width, console::Alignment::Right, None),
             );
-            if detail_width > 0 {
-                line.push_str("  ");
-                line.push_str(&console::pad_str(
-                    &detail,
-                    detail_width,
-                    console::Alignment::Left,
-                    None,
-                ));
-            }
-            line.push_str(&format!("  {elapsed}"));
-            if let Some(artifact) = artifact {
-                // Last, dimmed, so its length cannot disturb the columns.
-                line.push_str(&format!("  {}", style::edim(artifact)));
+            if !detail.is_empty() {
+                line.push_str(&format!("  {detail}"));
             }
             lines.push(line);
         }
         // Tools held behind a dependency say which one; the rest are just
         // waiting for a slot, and a count is all there is to say about them.
-        let mut queued = 0;
         for tool in self.tools.iter().filter(|t| t.is_queued()) {
-            match tool.waiting_message() {
-                Some(waiting) => lines.push(format!(
+            if let Some(waiting) = tool.waiting_message() {
+                lines.push(format!(
                     "  {}  {}",
                     console::pad_str(&tool.prefix, width, console::Alignment::Left, None),
                     style::edim(waiting)
-                )),
-                None => queued += 1,
+                ));
             }
         }
+        let queued = self.queued_count();
         if queued > 0 {
             lines.push(format!("  {queued} queued"));
         }
@@ -874,7 +884,34 @@ mod tests {
         assert!(row.contains("extracting"), "{row}");
         // Its own 1.0s of work, not the 3.0s since the install started.
         assert!(row.trim_end().ends_with("1.0s"), "{row}");
+        // Nothing but the four cells: no artifact, no padded empty detail.
+        assert_eq!(row.trim_end(), "  tool1@1  extracting  1.0s", "{row}");
         assert!(snapshot.ends_with("1 queued"));
+    }
+
+    #[test]
+    fn snapshot_rows_put_detail_last_and_leave_no_gaps() {
+        let start = Instant::now();
+        let mut state = state(start);
+        for tool in &mut state.tools {
+            tool.started = Some(start);
+        }
+        state.tools[0].message = "extracting".into();
+        state.tools[0].artifact = Some("node-v22.23.2-linux-x64.tar.gz".into());
+        state.tools[1].message = "verifying checksum".into();
+        state.tools[1].transfer = Some(transfer(1_100_000, 2_300_000, start));
+        state.tools[2].apply_message("verify hk-x86_64-unknown-linux-gnu.tar.gz".into());
+        let snapshot =
+            console::strip_ansi_codes(&state.snapshot(start + Duration::from_secs(3))).into_owned();
+        let rows: Vec<&str> = snapshot.lines().skip(1).map(str::trim_end).collect();
+        assert_eq!(
+            rows,
+            [
+                "  tool0@1  extracting          3.0s",
+                "  tool1@1  verifying checksum  3.0s  1.1/2.3 MB · 367 kB/s",
+                "  tool2@1  verifying           3.0s",
+            ]
+        );
     }
 
     #[test]
@@ -1011,6 +1048,35 @@ mod tests {
             tool.transfer_detail(start + Duration::from_millis(100)),
             "1.5 MB"
         );
+    }
+
+    #[test]
+    fn dependency_waiting_tools_are_not_counted_as_queued() {
+        let start = Instant::now();
+        let mut state = state(start);
+        state.set_waiting("2", vec!["0".into()]);
+        // tool0 and tool1 wait for a slot; tool2 waits for tool0.
+        assert_eq!(state.queued_count(), 2);
+        state.tools[0].started = Some(start);
+        state.finish_tool(0, Outcome::Installed, start);
+        // tool2's wait drained: it is a plain queued tool now.
+        assert!(state.tools[2].waiting_message().is_none());
+        assert_eq!(state.queued_count(), 2);
+    }
+
+    #[test]
+    fn transfer_bytes_is_only_ever_bytes() {
+        let start = Instant::now();
+        let mut state = state(start);
+        let tool = &mut state.tools[0];
+        tool.set_detail("32/48 pkgs".into());
+        assert_eq!(tool.transfer_bytes(start), None);
+        assert_eq!(tool.transfer_detail(start), "32/48 pkgs");
+        // Item counts drive the bar but are not a byte transfer either.
+        tool.detail = None;
+        tool.set_items(32, 48);
+        assert_eq!(tool.transfer_bytes(start), None);
+        assert_eq!(tool.transfer_detail(start), "32/48");
     }
 
     #[test]
