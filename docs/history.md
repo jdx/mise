@@ -44,7 +44,8 @@ Every checkpoint carries:
   that was never covered.
 - **What changed** since the previous checkpoint, and a description computed
   from it (`edited hypr/bindings.lua; added omarchy/hooks/post-theme`).
-  `mise bootstrap dotfiles history describe <ref> "…"` replaces the description.
+  `mise bootstrap dotfiles history describe <ref> "…"` replaces the description,
+  and so can a command of yours (below).
 - **The trigger**: `save`, `baseline` (a newly tracked path), or the two halves
   of an operation: `bootstrap-before` (the protective checkpoint taken before
   a bootstrap command changes anything) and `bootstrap` (the outcome, with a
@@ -52,6 +53,29 @@ Every checkpoint carries:
 
 `mise bootstrap dotfiles history show <ref>` prints all of it; `--files` lists the snapshot,
 `--json` gives the record.
+
+### Descriptions from an agent
+
+`settings.history.describe_command` names a command that describes the
+checkpoints the watcher saves. It gets one JSON object on stdin, `uuid`,
+`trigger`, the computed `description`, the changed paths that are not
+private (`added`, `modified`, `removed`), and `diff`, a unified diff of the
+changed files that are backed up (at most 64 KiB, `diff_truncated` says
+when it was cut), and prints one line of at most 200 characters, which
+becomes the description (`description_source: command`). With Claude Code:
+
+```toml
+[settings]
+history.describe_command = "claude -p --output-format text --no-session-persistence 'Describe this change to my configuration files in one line of at most 120 characters, plain text, no quotes.'"
+```
+
+The checkpoint is saved before the command runs and keeps its computed
+description when the command fails, prints nothing, or takes longer than 30
+seconds. The command runs once per checkpoint the watcher saved, one at a
+time, never per filesystem event or retry, and never with a shell
+interpolation of file contents (the JSON is its stdin). A private file
+(`*.local.toml`, a credential store) is never named, and a file tracked with
+`backup = false` never has its contents sent.
 
 ## Referring to checkpoints
 
@@ -272,6 +296,21 @@ default; `--include-existing`), names that look like secrets with the
 `track … --no-share --no-backup` line for each, and private content already
 committed in the repository's history, which stops the connection unless
 `--allow-committed-private` is passed (rewriting history is your decision).
+
+**What leaves the machine, in plain text.** Two things, both readable by
+anyone who can read the repository: the setup branch (the shared
+configuration, the sources it references, and the shared version of every
+tracked entry, per its policies) and this machine's recovery refs
+(`refs/mise-history/<machine>/…`: a snapshot of every tracked file with
+`backup = true`, with private paths and paths with `backup = false` removed
+from the snapshot, the metadata, and the descriptions). `share = false`
+keeps a file out of the setup branch and out of other machines;
+`backup = false` keeps it out of the recovery refs; `*.local.toml` and
+credential stores are both unless a per-file declaration says otherwise.
+Everything else stays on this machine. Encrypted recovery refs are not
+implemented yet: `--encrypt-backups` and `encrypt_backups = true` are refused
+rather than silently uploading in plain text, so a file you would only back
+up encrypted is a file to track with `--no-backup` for now.
 The declaration goes to `[history.origin]` in `config.local.toml` next to the
 global config (machine-local, never published: each machine names the
 repository the way it reaches it, and a fresh machine's own declaration

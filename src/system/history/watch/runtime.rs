@@ -23,6 +23,7 @@ use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::system::history::checkpoint::{Draft, Outcome, Store};
+use crate::system::history::describe_command;
 use crate::system::history::health::{self, Health, ThrottledPath};
 use crate::system::history::store::{self, Trigger};
 use crate::system::history::sync::apply::{self, ApplyRequest};
@@ -142,6 +143,23 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         let outcome = capture.reconcile(&state.tracked, "startup reconcile");
         capture.write_health();
         let synced = once_sync(&mut capture, &state).await;
+        if let Some(task) = start_describe(&mut capture)
+            && let Ok((id, result)) = task.await
+        {
+            match result {
+                Ok(Some(description)) => capture.out.emit(
+                    "described",
+                    &format!("checkpoint {id} described by history.describe_command: {description}"),
+                    json!({ "id": id, "description": description }),
+                ),
+                Ok(None) => {}
+                Err(err) => capture.out.emit(
+                    "describe-error",
+                    &format!("history.describe_command failed for checkpoint {id}: {err:#}; keeping the computed description"),
+                    json!({ "id": id, "message": format!("{err:#}") }),
+                ),
+            }
+        }
         return Ok(match outcome {
             Attempt::Done if synced => 0,
             Attempt::Done => 1,
@@ -225,7 +243,12 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     // the network runs on a blocking task of its own: a slow origin never
     // delays a capture
     let mut sync_task: Option<tokio::task::JoinHandle<Result<SyncOutcome>>> = None;
+    // the description command runs one checkpoint at a time, off the loop
+    let mut describe_task: Option<tokio::task::JoinHandle<(u64, Result<Option<String>>)>> = None;
     loop {
+        if describe_task.is_none() {
+            describe_task = start_describe(&mut capture);
+        }
         // the next save, or the retry of a deferred or failed capture,
         // whichever comes first
         let flush_at = match (
@@ -260,6 +283,12 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         };
         let sync_done = async {
             match &mut sync_task {
+                Some(task) => task.await,
+                None => std::future::pending().await,
+            }
+        };
+        let describe_done = async {
+            match &mut describe_task {
                 Some(task) => task.await,
                 None => std::future::pending().await,
             }
@@ -580,6 +609,31 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
             _ = sync_tick => {
                 sync_task = start_sync(&mut capture, &state.tracked);
             }
+            joined = describe_done => {
+                describe_task = None;
+                match joined {
+                    Ok((id, Ok(Some(description)))) => capture.out.emit(
+                        "described",
+                        &format!("checkpoint {id} described by history.describe_command: {description}"),
+                        json!({ "id": id, "description": description }),
+                    ),
+                    Ok((id, Ok(None))) => capture.out.emit(
+                        "described",
+                        &format!("history.describe_command printed nothing for checkpoint {id}; keeping the computed description"),
+                        json!({ "id": id, "description": null }),
+                    ),
+                    Ok((id, Err(err))) => capture.out.emit(
+                        "describe-error",
+                        &format!("history.describe_command failed for checkpoint {id}: {err:#}; keeping the computed description"),
+                        json!({ "id": id, "message": format!("{err:#}") }),
+                    ),
+                    Err(err) => capture.out.emit(
+                        "describe-error",
+                        &format!("history.describe_command stopped unexpectedly: {err}"),
+                        json!({ "message": err.to_string() }),
+                    ),
+                }
+            }
             joined = sync_done => {
                 sync_task = None;
                 let outcome = match joined {
@@ -633,6 +687,23 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     }
     debouncer.stop();
     Ok(0)
+}
+
+/// Starts the description command for the newest checkpoint waiting for
+/// one, on a blocking task of its own. The checkpoint is saved already;
+/// whatever the command does, history is not held up.
+fn start_describe(
+    capture: &mut Capture,
+) -> Option<tokio::task::JoinHandle<(u64, Result<Option<String>>)>> {
+    let entry = capture.describe_next.take()?;
+    let command = describe_command::configured()?;
+    let state_dir = capture.store.state_dir().to_path_buf();
+    Some(tokio::task::spawn_blocking(move || {
+        let id = entry.id;
+        let result = Store::open_in(&state_dir)
+            .and_then(|store| describe_command::run(&store, &entry, &command));
+        (id, result)
+    }))
 }
 
 /// Starts one synchronization on a blocking task, per the mode: the
@@ -1356,6 +1427,9 @@ struct Capture {
     /// Automatic synchronization, when an origin is connected and the mode
     /// allows any.
     sync: Option<SyncPlan>,
+    /// Checkpoints waiting for `history.describe_command`: at most one,
+    /// the newest (a name for an older one is not worth a queue).
+    describe_next: Option<store::Entry>,
     backoff: Duration,
     retry_at: Option<Instant>,
     /// Why the last attempt did not run, while a retry is pending.
@@ -1404,6 +1478,7 @@ impl Capture {
             retry_kind: None,
             anchor_ids: Default::default(),
             sync: SyncPlan::from_settings(&Settings::get(), Instant::now()),
+            describe_next: None,
         }
     }
 
@@ -1476,6 +1551,9 @@ impl Capture {
                 self.recovered();
                 if let Some(plan) = &mut self.sync {
                     plan.saved(Instant::now());
+                }
+                if describe_command::configured().is_some() {
+                    self.describe_next = Some((*entry).clone());
                 }
                 self.health.watcher.last_capture = Some(store::now_rfc3339());
                 self.out.emit(

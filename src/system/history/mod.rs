@@ -11,6 +11,7 @@
 
 pub(crate) mod checkpoint;
 pub(crate) mod config;
+pub(crate) mod describe_command;
 pub(crate) mod health;
 pub(crate) mod journal;
 pub(crate) mod notify;

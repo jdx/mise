@@ -1244,6 +1244,18 @@ env = "MISE_GPG_VERIFY"
 optional = true
 type = "Bool"
 
+[history.describe_command]
+default = ""
+description = "A command that names checkpoints the watcher saves (an agent, say): it gets one JSON object on stdin (uuid, trigger, the computed description, the changed paths that are not private, and a unified diff of the changed files that are backed up, at most 64 KiB) and prints one line of at most 200 characters, which becomes the description. Empty: computed descriptions only."
+docs = """
+The checkpoint is saved before the command runs and keeps its computed description when the
+command fails, prints nothing, or takes longer than 30 seconds. It runs once per checkpoint the
+watcher saved, never per filesystem event or retry, one at a time. Private files (`*.local.toml`,
+credential stores) are never named, and a file with `backup = false` never has its contents sent.
+"""
+env = "MISE_HISTORY_DESCRIBE_COMMAND"
+type = "String"
+
 [history.enabled]
 default = true
 description = "Record experimental configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save. Requires experimental = true."

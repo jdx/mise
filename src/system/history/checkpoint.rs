@@ -986,7 +986,7 @@ pub(crate) fn describe(
     truncate(describe_changes(changes))
 }
 
-fn describe_changes(changes: &Changes) -> String {
+pub(crate) fn describe_changes(changes: &Changes) -> String {
     let mut budget = DESCRIPTION_PATHS;
     let mut groups = vec![];
     let mut more = 0usize;
