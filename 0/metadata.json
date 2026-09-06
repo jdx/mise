@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TP9J8RC4QW110FCY5F0B8S",
+  "session_id": "01a0751c-803c-71c3-8477-fa566f432cfe",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T06:25:35.264378Z",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/installing-mise.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "fe7ac45b308e",
+  "checkpoint_transcript_start": 1456,
+  "transcript_lines_at_start": 1456,
+  "compact_transcript_start": 211,
+  "token_usage": {
+    "input_tokens": 8352,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 774144,
+    "output_tokens": 912,
+    "api_call_count": 5
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T06:25:35.128236Z",
+    "agent_lines": 163,
+    "agent_removed": 98,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 163,
+    "total_lines_changed": 261,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
