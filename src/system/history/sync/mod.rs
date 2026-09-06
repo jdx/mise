@@ -64,7 +64,7 @@ impl SyncMode {
     pub(crate) fn disclosure(self) -> &'static str {
         match self {
             Self::Sync => {
-                "sync: this machine publishes its shared files and configuration, fetches the repository, and applies nonconflicting incoming changes to tracked files and configuration automatically (with a protective checkpoint first). It never runs `mise bootstrap`, installs or removes packages, or renders templates by itself; when incoming configuration changes declarations, `mise bootstrap dotfiles status` says to run `mise bootstrap`."
+                "sync: this machine publishes its shared files and configuration, fetches the repository, and queues nonconflicting incoming changes to tracked files and configuration; `mise bootstrap dotfiles pull` writes them (with a protective checkpoint first). Applying never runs `mise bootstrap`, installs or removes packages, or renders templates; when incoming configuration changes declarations, `mise bootstrap dotfiles status` says to run `mise bootstrap`."
             }
             Self::FetchOnly => {
                 "fetch-only: this machine only downloads the repository and other machines' recovery refs. Nothing is published, no live file changes."
