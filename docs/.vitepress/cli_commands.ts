@@ -109,7 +109,21 @@ export const commands: { [key: string]: Command } = {
           include: {
             hide: false,
           },
+          machines: {
+            hide: false,
+          },
+          origin: {
+            hide: false,
+            subcommands: {
+              set: {
+                hide: false,
+              },
+            },
+          },
           paths: {
+            hide: false,
+          },
+          pull: {
             hide: false,
           },
           rollback: {
@@ -119,6 +133,9 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
           status: {
+            hide: false,
+          },
+          sync: {
             hide: false,
           },
           track: {

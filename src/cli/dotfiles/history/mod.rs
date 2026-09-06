@@ -83,6 +83,27 @@ pub(crate) fn resolve(spec: &str, entries: &[Entry], path: Option<&str>) -> Resu
         .ok_or_else(|| eyre::eyre!("no history checkpoint {id}"))
 }
 
+/// Resolves a reference that may name another machine's checkpoint
+/// (`<machine>/<ref>`, from the recovery refs the last sync fetched).
+pub(crate) fn resolve_with_store(
+    store: &Store,
+    spec: &str,
+    entries: &[Entry],
+    path: Option<&str>,
+) -> Result<Entry> {
+    if let Some((machine, reference)) = spec.split_once('/')
+        && !machine.is_empty()
+        && !reference.is_empty()
+    {
+        let repo = store
+            .repo()
+            .ok_or_else(|| eyre::eyre!("other machines' checkpoints require git"))?;
+        let (_, machine_entries) = crate::system::history::sync::machines::entries(repo, machine)?;
+        return resolve(reference, &machine_entries, path);
+    }
+    resolve(spec, entries, path)
+}
+
 /// The display form of a path argument (`~/…` under `$HOME`).
 pub(crate) fn display_arg(path: &str) -> String {
     // the link itself, never its destination

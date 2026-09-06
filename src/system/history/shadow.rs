@@ -618,6 +618,163 @@ impl HistoryRepo {
         Ok(true)
     }
 
+    /// The commit a ref points at, if the ref exists.
+    pub(crate) fn ref_oid(&self, name: &str) -> Result<Option<String>> {
+        let output = self.git.output_unchecked(PlumbingCall::new([
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            name,
+        ]))?;
+        if !output.status.success() {
+            return Ok(None);
+        }
+        let oid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok((!oid.is_empty()).then_some(oid))
+    }
+
+    /// Every ref under `prefix` as `(name, oid)`.
+    pub(crate) fn list_refs(&self, prefix: &str) -> Result<Vec<(String, String)>> {
+        let out = self.output_str(PlumbingCall::new([
+            "for-each-ref",
+            "--format=%(refname) %(objectname)",
+            prefix,
+        ]))?;
+        Ok(out
+            .lines()
+            .filter_map(|line| {
+                let (name, oid) = line.split_once(' ')?;
+                Some((name.to_string(), oid.to_string()))
+            })
+            .collect())
+    }
+
+    /// A commit of `tree` with the given parents.
+    pub(crate) fn commit_tree(
+        &self,
+        tree: &str,
+        parents: Vec<&str>,
+        message: &str,
+    ) -> Result<String> {
+        let mut args = vec!["commit-tree".to_string(), tree.to_string()];
+        for parent in parents {
+            args.push("-p".to_string());
+            args.push(parent.to_string());
+        }
+        args.push("-m".to_string());
+        args.push(message.to_string());
+        self.output_str(PlumbingCall::new(args))
+    }
+
+    /// Moves `name` to `commit` only if it still points at `expected`
+    /// (`None`: must not exist).
+    pub(crate) fn update_ref(
+        &self,
+        name: &str,
+        commit: &str,
+        expected: Option<&str>,
+    ) -> Result<()> {
+        let zero = "0000000000000000000000000000000000000000";
+        self.git.run(PlumbingCall::new([
+            "update-ref",
+            name,
+            commit,
+            expected.unwrap_or(zero),
+        ]))
+    }
+
+    /// Deletes a ref if it exists.
+    pub(crate) fn delete_ref(&self, name: &str) -> Result<()> {
+        if self.ref_oid(name)?.is_some() {
+            self.git
+                .run(PlumbingCall::new(["update-ref", "-d", name]))?;
+        }
+        Ok(())
+    }
+
+    /// Up to `limit` commits reachable from `head`, newest first.
+    pub(crate) fn rev_list(&self, head: &str, limit: usize) -> Result<Vec<String>> {
+        let out = self.output_str(PlumbingCall::new([
+            "rev-list",
+            &format!("--max-count={limit}"),
+            head,
+        ]))?;
+        Ok(out.lines().map(str::to_string).collect())
+    }
+
+    /// The paths a commit changed against its first parent (all of them for
+    /// a root commit).
+    pub(crate) fn changed_names(&self, commit: &str) -> Result<Vec<String>> {
+        let out = self.git.output(PlumbingCall::new([
+            "diff-tree",
+            "-r",
+            "--root",
+            "--name-only",
+            "--no-commit-id",
+            "-z",
+            commit,
+        ]))?;
+        Ok(out
+            .split(|byte| *byte == 0)
+            .filter(|record| !record.is_empty())
+            .map(|record| String::from_utf8_lossy(record).into_owned())
+            .collect())
+    }
+
+    /// Three-way merges blob contents; `None` when they conflict or are not
+    /// text.
+    pub(crate) fn merge3(
+        &self,
+        base: &[u8],
+        ours: &[u8],
+        theirs: &[u8],
+    ) -> Result<Option<Vec<u8>>> {
+        for content in [base, ours, theirs] {
+            if content.contains(&0) {
+                return Ok(None);
+            }
+        }
+        let dir = tempfile::tempdir()?;
+        let (b, o, t) = (
+            dir.path().join("base"),
+            dir.path().join("ours"),
+            dir.path().join("theirs"),
+        );
+        std::fs::write(&b, base)?;
+        std::fs::write(&o, ours)?;
+        std::fs::write(&t, theirs)?;
+        let output = self.git.output_unchecked(PlumbingCall::new([
+            "merge-file",
+            "-p",
+            "-L",
+            "local",
+            "-L",
+            "base",
+            "-L",
+            "remote",
+            &o.to_string_lossy(),
+            &b.to_string_lossy(),
+            &t.to_string_lossy(),
+        ]))?;
+        // exit status is the number of conflicts; negative on error
+        match output.status.code() {
+            Some(0) => Ok(Some(output.stdout)),
+            Some(code) if code > 0 => Ok(None),
+            _ => bail!(
+                "git merge-file failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        }
+    }
+
+    /// Runs a network command with the user's git configuration.
+    pub(crate) fn network<'a>(
+        &self,
+        args: impl IntoIterator<Item = &'a str>,
+    ) -> Result<std::process::Output> {
+        self.git.network_output(PlumbingCall::new(args))
+    }
+
     pub(crate) const NOTES_REF: &'static str = "refs/notes/mise-history";
 
     /// Attaches (or replaces) the annotation of a wrapper commit.

@@ -226,8 +226,20 @@ Show one checkpoint: what triggered it, what changed, and its journal
 \fBbootstrap dotfiles include\fR
 Capture paths matching a glob again
 .TP
+\fBbootstrap dotfiles machines\fR
+List the machines with recovery refs in the setup repository
+.TP
+\fBbootstrap dotfiles origin\fR
+Connect, disconnect, or purge the setup repository
+.TP
+\fBbootstrap dotfiles origin set\fR
+Connect a setup repository
+.TP
 \fBbootstrap dotfiles paths\fR
 Show what history tracks and under which policies
+.TP
+\fBbootstrap dotfiles pull\fR
+Pull incoming shared changes into the live files
 .TP
 \fBbootstrap dotfiles rollback\fR
 Return files to the version a checkpoint holds (experimental)
@@ -240,6 +252,9 @@ Show the status of dotfiles from `[dotfiles]`
 .RS
 \fIAliases: \fRls
 .RE
+.TP
+\fBbootstrap dotfiles sync\fR
+Publish, fetch, and record what is pending now
 .TP
 \fBbootstrap dotfiles track\fR
 Track a file or directory where it is (experimental)
@@ -1692,6 +1707,94 @@ Print help
 .TP
 \fB<GLOB>\fR
 The glob as written by `exclude`
+.SH "MISE BOOTSTRAP DOTFILES MACHINES"
+List the machines with recovery refs in the setup repository
+
+This machine first, then every machine whose refs the last
+`mise bootstrap dotfiles sync` fetched. Their checkpoints are addressed as
+`<machine>/<ref>`: `mise bootstrap dotfiles rollback \-\-to laptop/latest \-\-all`
+recovers a machine's backed\-up files; their journals are data only.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles machines [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES ORIGIN"
+Connect, disconnect, or purge the setup repository
+
+`set <url>` connects one repository that holds the shared setup branch
+and this machine's recovery refs. Before anything leaves the machine it
+prints exactly what will happen: the sync mode, what is shared per
+stream, what is not and why, what is backed up (in plain form), names
+that look like secrets, private content already committed upstream,
+and how an existing repository would be adopted. The declaration goes
+to `[history.origin]` in the global config; the mode to
+`settings.history.sync`.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles origin [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-remove\fR
+Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)
+.TP
+\fB\-\-purge\fR
+Delete this machine's recovery refs from the origin, then disconnect
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES ORIGIN SET"
+Connect a setup repository
+.PP
+\fBUsage:\fR mise bootstrap dotfiles origin set [OPTIONS] <URL>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-branch\fR \fI<BRANCH>\fR
+The setup branch
+.RS
+\fIDefault: \fRmain
+.RE
+.TP
+\fB\-\-name\fR \fI<NAME>\fR
+This machine's name in the repository (default: the hostname)
+.TP
+\fB\-\-sync\fR \fI<MODE>\fR
+How the repository is used: sync (default), fetch\-only, or manual
+.RS
+\fIDefault: \fRsync
+.RE
+.TP
+\fB\-\-include\-existing\fR
+Upload the checkpoints recorded before now too
+.TP
+\fB\-\-allow\-committed\-private\fR
+Continue although the repository's history holds private content
+.TP
+\fB\-\-encrypt\-backups\fR
+Encrypt machine recovery refs (not supported yet)
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<URL>\fR
+The repository url (any git url; a private repository is recommended)
 .SH "MISE BOOTSTRAP DOTFILES PATHS"
 Show what history tracks and under which policies
 
@@ -1716,6 +1819,44 @@ List the paths the watcher found changing constantly
 .TP
 \fB\-h, \-\-help\fR
 Print help
+.SH "MISE BOOTSTRAP DOTFILES PULL"
+Pull incoming shared changes into the live files
+
+Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
+(`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
+what other machines shared),
+as one recoverable transaction: a protective checkpoint first, every
+file written and journaled one at a time, reload hooks only afterwards,
+and `mise bootstrap dotfiles undo` to reverse it. Configuration and the sources it
+references apply together; an incoming configuration file that does not
+parse, a path with unsaved local edits, staged git changes in your own
+checkout, or a genuine local edit is held with its group. Conflicts
+are decided per path with `\-\-take\-remote` or `\-\-keep\-local`.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles pull [OPTIONS] [<PATH>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show the plan without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Pull without prompting
+.TP
+\fB\-\-take\-remote\fR \fI<PATH>\fR
+Resolve a conflict with the repository's version
+.TP
+\fB\-\-keep\-local\fR \fI<PATH>\fR
+Resolve a conflict by keeping this machine's version (published next)
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Only these paths (files or directories)
 .SH "MISE BOOTSTRAP DOTFILES ROLLBACK"
 Return files to the version a checkpoint holds (experimental)
 
@@ -1815,15 +1956,29 @@ Print help
 .TP
 \fB<TARGET>\fR
 Only show these targets
-\fBExamples:\fR
+.SH "MISE BOOTSTRAP DOTFILES SYNC"
+Publish, fetch, and record what is pending now
+
+Fetches the setup branch and other machines' recovery refs, publishes
+this machine's shared files and configuration (leased on the branch
+head; a rejection fetches again and retries), uploads eligible
+checkpoints, and records incoming changes to apply and conflicts to
+decide. Live files are never changed here: `mise bootstrap dotfiles pull` does
+that. In `fetch\-only` mode nothing is published.
 .PP
+\fBUsage:\fR mise bootstrap dotfiles sync [OPTIONS]
 .PP
-.RS 4
-mise bootstrap dotfiles status
-mise bootstrap dotfiles status ~/.zshrc
-mise bootstrap dotfiles status \-\-json
-mise bootstrap dotfiles status \-\-missing # exit 1 if anything is out of sync
-.RE
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-fetch\-only\fR
+Fetch without publishing
+.TP
+\fB\-\-best\-effort\fR
+Warn instead of failing when the origin is unreachable
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP DOTFILES TRACK"
 Track a file or directory where it is (experimental)
 

@@ -290,7 +290,7 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
 /// `config.toml`, or `config.local.toml` next to it for machine-only
 /// declarations.
 pub(crate) fn declaration_file(local: bool) -> Result<PathBuf> {
-    let global = crate::config::global_config_path();
+    let global = crate::config::global_shared_config_path();
     if !local {
         return Ok(global);
     }
@@ -346,7 +346,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 /// Returns whether the file changed.
 pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
     use toml_edit::{Item, Value};
-    let global = crate::config::global_config_path();
+    let global = crate::config::global_shared_config_path();
     let mut doc = read_document(&global)?;
     let history = doc
         .entry("history")

@@ -1259,6 +1259,12 @@ directory to discard what was recorded.
 env = "MISE_HISTORY_ENABLED"
 type = "Bool"
 
+[history.fetch_interval]
+default = "15m"
+description = "How often the history watcher fetches the setup repository and other machines' recovery refs."
+env = "MISE_HISTORY_FETCH_INTERVAL"
+type = "Duration"
+
 [history.keep.age]
 default = "90d"
 description = "Checkpoints older than this are pruned after each capture. `0` keeps them regardless of age."
@@ -1271,6 +1277,24 @@ description = "How many checkpoints to retain. The oldest are pruned after each 
 env = "MISE_HISTORY_KEEP_COUNT"
 rust_type = "usize"
 type = "Integer"
+
+[history.sync]
+default = "sync"
+description = "How a connected setup repository is used: `sync` publishes, fetches, and applies nonconflicting incoming changes automatically; `fetch-only` only downloads; `manual` publishes and fetches but pulls only on `mise bootstrap dotfiles pull`."
+docs = """
+Chosen and disclosed by `mise bootstrap dotfiles origin set`. Automatic application never
+runs `mise bootstrap`, installs packages, or renders templates: when incoming configuration
+changes declarations, `mise bootstrap dotfiles status` says to run `mise bootstrap`.
+"""
+enum = ["sync", "fetch-only", "manual"]
+env = "MISE_HISTORY_SYNC"
+type = "String"
+
+[history.sync_interval]
+default = "5m"
+description = "How soon after a save the history watcher publishes to the setup repository, at most this often."
+env = "MISE_HISTORY_SYNC_INTERVAL"
+type = "Duration"
 
 [history.watch.debounce]
 default = "2s"

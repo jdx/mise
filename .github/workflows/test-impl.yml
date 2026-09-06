@@ -161,6 +161,7 @@ jobs:
       - run: mise run test:e2e e2e/cli/test_dotfiles_watch
       - run: mise run test:e2e e2e/cli/test_dotfiles_watch_pending
       - run: mise run test:e2e e2e/cli/test_dotfiles_watch_throttle
+      - run: mise run test:e2e e2e/cli/test_dotfiles_sync
 
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}

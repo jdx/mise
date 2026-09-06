@@ -243,6 +243,114 @@ applying anything, or prompting:
   effective interval, last save, and unsaved changes (changes seen since the
   last save, kept current as they happen).
 
+## Sharing across machines
+
+One setup repository holds the shared setup and every machine's recovery
+refs. Connect it once per machine; nothing else is ever done with git by
+hand:
+
+```sh
+mise bootstrap dotfiles origin set https://github.com/you/setup.git --name laptop
+mise bootstrap dotfiles status                  # publication, fetch, pending changes, conflicts
+mise bootstrap dotfiles sync                    # publish and fetch now (the watcher does this on its own)
+mise bootstrap dotfiles pull                    # write incoming shared changes
+mise bootstrap dotfiles machines                # every machine with recovery refs
+```
+
+`pull` and `apply` are different commands on purpose: `mise bootstrap
+dotfiles apply` keeps deploying your own `[dotfiles]` declarations (symlinks,
+copies, templates, edits), while `pull` writes what other machines shared
+through the setup repository.
+
+`origin set` prints exactly what will happen before anything leaves the
+machine and asks for confirmation (`--yes` skips it): the sync mode, what is
+published per stream, what is not shared and why, what is backed up (in
+plain form: anyone who can read the repository can read every file in
+those snapshots; the setup branch is always plaintext, so use a private
+repository), whether existing checkpoints are included (only new ones by
+default; `--include-existing`), names that look like secrets with the
+`track … --no-share --no-backup` line for each, and private content already
+committed in the repository's history, which stops the connection unless
+`--allow-committed-private` is passed (rewriting history is your decision).
+The declaration goes to `[history.origin]` in the global config, the mode
+to `settings.history.sync`.
+
+**What is synchronized.** The setup branch mirrors the global configuration
+directory at its root (`config.toml`, `conf.d/`, `tasks/`, templates),
+publishes `[dotfiles]` sources under `sources/dotfiles/…` (relative to
+`dotfiles.root`, resolved through the other machine's root) and
+`sources/home/…`, and holds the shared version of every tracked entry under
+`tracked/home/…` (a variant stream under `tracked/home@<variant>/…`). A
+physical path maps to exactly one branch path, so the same content is
+published once. Never in it: `*.local.toml`, credential stores, entries with
+`share = false`, rendered or copied outputs, machine state, sources outside
+`$HOME` (reported as not portable). A history-enabled repository carries
+`.mise-history/format.toml`; a repository without it is an ordinary
+repository (its `--from`/`--from-git` behaviour is unchanged) until you
+confirm its adoption, and a newer format stops with an upgrade message.
+
+**How a sync decides.** For every path the saved version here (ours is
+always the saved version, never a live edit in progress), the fetched
+upstream version, and the recorded acknowledged/reconciled/applied versions
+run through one table: a local change publishes, an upstream change is
+applied, both changed cleanly merges (relative to the acknowledged base, so a
+stale local file is never published as a reversal), and a clash is a
+conflict to decide: the same lines, delete/modify, a type change, a binary
+file, a file that exists on both sides with no common base (needs adoption),
+or unsaved edits of a manual-save entry. Publication is a commit built in
+mise's own bare repository and pushed with a lease; a rejection fetches and
+retries; nothing is ever force-pushed or reset, so your own commits and
+unrelated files survive. Repeating a sync changes nothing.
+
+**Modes** (`settings.history.sync`): `sync` (default) publishes, fetches, and
+applies nonconflicting incoming changes; `fetch-only` only downloads;
+`manual` publishes and fetches but applies only on `mise bootstrap dotfiles pull`.
+Automatic application never runs `mise bootstrap`, installs or removes
+packages, or renders templates: when incoming configuration changes
+declarations, `mise bootstrap dotfiles status` says to run `mise bootstrap`.
+
+**Applying.** `mise bootstrap dotfiles pull` writes pending changes as one recoverable
+transaction (a protective checkpoint first, each file journaled, reload
+hooks afterwards, `mise bootstrap dotfiles undo` to reverse it). Configuration and the
+sources it references apply together; an incoming configuration file that
+does not parse, a path with unsaved edits, staged changes in your own git
+checkout of the config directory, or a genuine local edit is held with its
+group and listed by `status`. A file mise wrote itself is recognized, so a
+checkout receives consecutive remote changes without a manual commit.
+Conflicts are decided per path: `--take-remote <path>` writes the
+repository's version; `--keep-local <path>` publishes yours at the next
+sync.
+
+**Machine backups.** Eligible checkpoints (with content and at least one
+`backup = true` entry) are pushed as parentless commits to
+`refs/mise-history/<machine-id>/<uuid>`, rebuilt without every
+`backup = false` and private path and with the record masked; journal blobs
+never travel. Retention removes only this machine's remote refs for
+checkpoints it pruned. `mise bootstrap dotfiles rollback --to <machine>/<ref> --all`
+recovers another machine's backed-up files here; their journals are data
+only, never replayed. `mise bootstrap dotfiles origin --purge` deletes this machine's
+refs from the origin (objects may persist until the host runs gc; setup
+commits are never deleted; forks and host backups may keep content: not
+erasure) and disconnects; `--remove` only disconnects.
+
+**Private repositories.** Network commands run with your normal git
+configuration (credential helpers, ssh, URL rewrites). For a private GitHub
+repository the recommended path is the GitHub CLI through mise; `gh auth
+setup-git` writes the helper into `~/.gitconfig`, so pin `gh` globally to
+keep that path valid for the watcher's service environment:
+
+```sh
+curl https://mise.run | sh
+export PATH="$HOME/.local/bin:$PATH"
+mise use -g gh
+mise x gh -- gh auth login --hostname github.com --git-protocol https --web
+mise x gh -- gh auth setup-git --hostname github.com
+mise bootstrap dotfiles origin set https://github.com/you/setup.git
+```
+
+Existing working credentials skip the two `gh` steps. SSH remotes work when
+the service environment can reach an agent or an unencrypted key.
+
 ## What is tracked
 
 `mise bootstrap dotfiles paths` lists every entry with its mode, policies, the file that

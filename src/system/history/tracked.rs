@@ -751,6 +751,12 @@ fn resolve_link(link: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Whether a file name under the global configuration directory is a
+/// credential store (private by default).
+pub(crate) fn is_credential_name(name: &str) -> bool {
+    credential_names().is_match(Path::new(name)) || credential_globs().is_match(Path::new(name))
+}
+
 /// Credential stores mise itself knows by name; they mean something only
 /// under the global configuration directory.
 fn credential_names() -> GlobSet {

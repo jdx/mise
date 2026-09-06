@@ -2871,6 +2871,20 @@ pub(crate) fn global_config_path() -> PathBuf {
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
 
+/// The shared global config file (`config.toml`, or `MISE_GLOBAL_CONFIG_FILE`):
+/// where declarations meant for every machine go. Never a `.local.toml`,
+/// even when that is the only global file that exists.
+pub(crate) fn global_shared_config_path() -> PathBuf {
+    env::MISE_GLOBAL_CONFIG_FILE
+        .clone()
+        .filter(|path| {
+            !path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().ends_with(".local.toml"))
+        })
+        .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
+}
+
 /// The preferred system config file to write to, or the path where it should be created.
 pub(crate) fn system_config_path() -> PathBuf {
     let files = system_config_files();

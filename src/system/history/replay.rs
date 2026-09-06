@@ -136,7 +136,8 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
     }
     let targets = match &req.to {
         Some(reference) => {
-            let entry = crate::cli::dotfiles::history::resolve(
+            let entry = crate::cli::dotfiles::history::resolve_with_store(
+                &store,
                 reference,
                 &entries,
                 (paths.len() == 1)
@@ -1595,7 +1596,25 @@ fn restore_dir_modes(step: &Step, _created: &[(PathBuf, u32)]) {
     }
 }
 
-fn remove(path: &Path) -> Result<()> {
+/// Puts an object at a path outside a rollback plan (an incoming shared
+/// change): no recorded permission bits, an existing file keeps its own.
+pub(crate) fn write_path(repo: &HistoryRepo, path: &Path, mode: &str, oid: &str) -> Result<()> {
+    let step = Step {
+        path: path.to_path_buf(),
+        tree_path: display_to_tree_path(&display_path(path)),
+        action: Action::Write {
+            mode: mode.to_string(),
+            oid: oid.to_string(),
+        },
+        from: String::new(),
+        to: String::new(),
+        bits: None,
+        dir_bits: vec![],
+    };
+    write_object(repo, &step, mode, oid)
+}
+
+pub(crate) fn remove(path: &Path) -> Result<()> {
     if path.is_symlink() || path.is_file() {
         std::fs::remove_file(path)?;
     } else if path.is_dir() {
@@ -1606,7 +1625,7 @@ fn remove(path: &Path) -> Result<()> {
 
 /// Runs the reload commands whose glob matches a touched path, each once,
 /// best-effort.
-fn run_reload(reload: &IndexMap<String, String>, touched: &[PathBuf]) {
+pub(crate) fn run_reload(reload: &IndexMap<String, String>, touched: &[PathBuf]) {
     let mut commands: Vec<&String> = vec![];
     for (glob, command) in reload {
         // touched paths are normalized (a symlinked `$HOME` resolved), so

@@ -84,6 +84,12 @@ struct DotfilesDiagnosis {
     last_error: Option<String>,
     degraded: Vec<String>,
     throttled: Vec<crate::system::history::health::ThrottledPath>,
+    /// Paths held by a sync conflict, with the reason.
+    sync_conflicts: Vec<(String, String)>,
+    /// The last sync error, and how long syncs have been failing when that
+    /// is longer than a few fetch intervals (a transient error is not).
+    sync_error: Option<String>,
+    sync_failing_for_secs: Option<u64>,
 }
 
 enum SystemLoginShellDiagnosis {
@@ -721,6 +727,9 @@ impl Doctor {
             last_error: None,
             degraded: vec![],
             throttled: vec![],
+            sync_conflicts: vec![],
+            sync_error: None,
+            sync_failing_for_secs: None,
         };
         if let Some(reason) = unavailable {
             self.errors.push(format!(
@@ -758,6 +767,44 @@ impl Doctor {
                 ));
             }
             diagnosis.throttled = health.throttled.clone();
+        }
+        // the setup repository, read from what the last sync persisted:
+        // nothing is fetched, applied, or asked here
+        if let Ok(Some(_)) = crate::system::history::config::origin() {
+            use crate::system::history::sync::{apply, run};
+            let status = run::read_status(&state_dir);
+            for (path, reason) in apply::describe_conflicts(&status.conflicts) {
+                self.warnings.push(format!(
+                    "dotfiles: {path} has a sync conflict ({reason}).\n     Your local file is unchanged; other files continue syncing.\n     Inspect with: mise bootstrap dotfiles status"
+                ));
+                diagnosis.sync_conflicts.push((path, reason));
+            }
+            if let Some(error) = &status.last_error {
+                diagnosis.sync_error = Some(error.clone());
+                let fetch_interval = crate::duration::parse_duration(
+                    &crate::config::Settings::get().history.fetch_interval,
+                )
+                .map(|d| d.as_secs())
+                .unwrap_or(900);
+                let last_success = [&status.last_fetch, &status.last_publish]
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+                    .max();
+                let failing_for = last_success.map(|at| {
+                    (chrono::Utc::now() - at.with_timezone(&chrono::Utc))
+                        .num_seconds()
+                        .max(0) as u64
+                });
+                // a single failed attempt is transient; a repository that has
+                // not answered for a few fetch intervals is a problem
+                if failing_for.is_none_or(|secs| secs > fetch_interval.saturating_mul(3)) {
+                    diagnosis.sync_failing_for_secs = failing_for;
+                    self.warnings.push(format!(
+                        "dotfiles: syncing with the setup repository keeps failing ({error}).\n     Local checkpoints continue; nothing is published or pulled until it succeeds.\n     Inspect with: mise bootstrap dotfiles status"
+                    ));
+                }
+            }
         }
         Some(diagnosis)
     }
@@ -797,6 +844,32 @@ impl Doctor {
                 throttled.pending_changes,
                 throttled.last_saved.as_deref().unwrap_or("never")
             ));
+        }
+        if !diagnosis.sync_conflicts.is_empty() {
+            lines.push(format!(
+                "{} path(s) held by a sync conflict: {}",
+                diagnosis.sync_conflicts.len(),
+                diagnosis
+                    .sync_conflicts
+                    .iter()
+                    .map(|(path, _)| path.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if let Some(error) = &diagnosis.sync_error {
+            match diagnosis.sync_failing_for_secs {
+                Some(secs) => lines.push(format!(
+                    "sync failing for {}: {error}",
+                    crate::system::history::watch::runtime::humantime(
+                        std::time::Duration::from_secs(secs)
+                    )
+                )),
+                None if diagnosis.sync_conflicts.is_empty() => {
+                    lines.push(format!("last sync error (transient): {error}"))
+                }
+                None => {}
+            }
         }
         info::section("dotfiles", lines.join("\n"))?;
         Ok(())

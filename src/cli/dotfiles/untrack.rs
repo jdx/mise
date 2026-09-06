@@ -27,7 +27,7 @@ impl DotfilesUntrack {
         let config = Config::get().await?;
         let managed = crate::system::files::files_from_config(&config)?;
         let tracked = TrackedSet::from_config(&config)?;
-        let global = crate::config::global_config_path();
+        let global = crate::config::global_shared_config_path();
         let local = super::track::declaration_file(true)?;
         let mut touched: Vec<PathBuf> = vec![];
         for target_raw in &self.targets {

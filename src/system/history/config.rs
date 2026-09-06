@@ -21,6 +21,36 @@ pub(crate) struct HistoryTomlConfig {
     /// Commands to run after a rollback touches a matching path.
     #[serde(default)]
     pub reload: IndexMap<String, String>,
+    /// The setup repository this machine publishes to and fetches from.
+    #[serde(default)]
+    pub origin: Option<OriginTomlConfig>,
+}
+
+/// `[history.origin]`.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub(crate) struct OriginTomlConfig {
+    pub url: String,
+    #[serde(default = "default_branch")]
+    pub branch: String,
+    /// Encrypt machine recovery refs (a later milestone; parsed and refused
+    /// until then so an early declaration is never silently plaintext).
+    #[serde(default)]
+    pub encrypt_backups: bool,
+}
+
+fn default_branch() -> String {
+    "main".to_string()
+}
+
+/// The effective `[history.origin]`: the last layer that declares one.
+pub(crate) fn origin() -> Result<Option<(PathBuf, OriginTomlConfig)>> {
+    let mut found = None;
+    for (path, layer) in layers()? {
+        if let Some(origin) = layer.origin {
+            found = Some((path, origin));
+        }
+    }
+    Ok(found)
 }
 
 /// The `[history]` tables of the system and global layers, in discovery
