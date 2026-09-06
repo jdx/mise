@@ -129,10 +129,44 @@ Adopted apps are tracked by the mise receipt without keeping a duplicate app
 bundle in Caskroom.
 
 Casks declaring `auto_updates: true` in their Homebrew metadata are installed
-at the current version and then left to update themselves. mise does not expose
-an `auto_updates` override: the cask definition remains authoritative. These
-self-updating apps are also tracked by receipt without a duplicate Caskroom app
-bundle, and ordinary mise upgrades skip them.
+at the current version and can then update themselves. The cask definition
+controls this behavior. mise tracks these apps by receipt without keeping a
+duplicate Caskroom app bundle. Apply leaves installed self-updating apps alone,
+and cask dependencies use the same install behavior.
+
+On macOS, `mise bootstrap packages upgrade` reads the live app's
+`CFBundleShortVersionString` from `Contents/Info.plist` and replaces an eligible
+self-updating app only when that version is older than the current cask
+version. This works even when the receipt already records the current cask
+version. Previously adopted apps and apps tracked through metadata-only
+ownership are eligible too.
+
+Comparison requires a valid mise receipt and exactly one installed app whose
+recorded path matches the current app target. The cask may also declare binary
+and completion links. Casks with pkg, installer, generic, font, command wrapper,
+generated completion, or install lifecycle actions are skipped as unsupported
+layouts, as are receipts recording those earlier installation side effects.
+Homebrew-owned casks remain managed by Homebrew.
+
+Both versions must consist of ASCII integers separated by dots, with the same
+number of components. Components compare numerically, ignoring leading zeroes:
+`01.002.3` equals `1.2.3`. Different component counts, such as `1.2` and `1.2.0`,
+and values containing commas, suffixes, whitespace, or `latest` are incomparable.
+mise uses only `CFBundleShortVersionString`; a build number or receipt version
+cannot substitute for an unreadable live version.
+
+Upgrade reports each package separately: upgraded, already up to date, or
+skipped with a reason. Equal, newer, unreadable, and incomparable live versions
+leave the app and receipt unchanged. mise checks again after downloading and
+after preparing the replacement, so an observed self-update can cancel the
+replacement. The downloaded app must also match the cask version. An external
+updater can still change the bundle between the final check and replacement.
+
+`mise bootstrap packages upgrade --dry-run` reads metadata and the live plist
+and reports update candidates without downloading app payloads, installing
+dependencies, locking Caskroom, replacing apps, or updating receipts. Candidates
+reflect the observation at that time; execution rechecks the live app and
+validates the downloaded version before replacing it.
 
 `mise bootstrap status` marks these entries as `installed (auto-updates)`.
 For mise-owned casks, the `Current` column is the version recorded in the mise
@@ -163,9 +197,10 @@ Or adopt selectively:
 "brew-cask:firefox" = { version = "latest", adopt = true }
 ```
 
-mise prints a warning whenever it replaces an existing `.app`. Version
-upgrades still replace the bundle when upstream publishes a new cask version —
-expect to re-confirm TCC prompts after those upgrades, just as with Homebrew.
+mise prints a warning whenever it replaces an existing `.app`. Expect to
+re-confirm TCC prompts after a replacement, just as with Homebrew. An upgrade
+that leaves a self-updating app unchanged also leaves its grants intact and
+emits no replacement warning.
 
 On Linux, initial cask support is limited to font-only casks without lifecycle
 hooks or structured `preflight_steps` or `postflight_steps` — concepts from
@@ -234,9 +269,8 @@ does **not** mark the cask missing or trigger a reinstall on apply — replacing
 completion symlinks still require the recorded link destination (a cheap
 `readlink`) and a resolvable target, so dangling or retargeted links stay
 repairable. Missing or unknown receipts and pending transactions are still
-reported as unhealthy so the next apply can reconcile them. Version upgrades
-and an explicit remove + apply still replace the app when you want a fresh
-pour.
+reported as unhealthy so the next apply can reconcile them. Upgrade follows
+the version rules above; an explicit remove + apply installs a fresh app.
 
 The `brew` manager exists because shared-library packages — postgres, ffmpeg,
 imagemagick, php — fundamentally can't be served by mise's per-project backends like
