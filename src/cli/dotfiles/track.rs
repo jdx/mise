@@ -72,6 +72,7 @@ impl DotfilesTrack {
         let original = doc.to_string();
         let existed = config_path.exists();
         let mut declared: Vec<(String, PathBuf)> = vec![];
+        let mut manual = vec![];
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
                 .components()
@@ -98,6 +99,9 @@ impl DotfilesTrack {
                 );
             }
             let entry = self.entry(existing);
+            if entry.get("autosave").and_then(Value::as_bool) == Some(false) {
+                manual.push(target_key.clone());
+            }
             let dotfiles = doc
                 .entry("dotfiles")
                 .or_insert(Item::Table(toml_edit::Table::new()));
@@ -147,11 +151,13 @@ impl DotfilesTrack {
             }
             return Err(err.wrap_err(format!("{} was left unchanged", display_path(&config_path))));
         }
-        if self.no_autosave {
+        if !manual.is_empty() {
             info!(
-                "history: manual saving selected; run `mise bootstrap dotfiles save <path>` after editing"
+                "history: manual saving selected for {}; run `mise bootstrap dotfiles save <path>` after editing",
+                manual.join(", ")
             );
-        } else {
+        }
+        if manual.len() < declared.len() {
             crate::cli::dotfiles::capture_health::report().await;
         }
         Ok(())
@@ -211,7 +217,11 @@ impl DotfilesTrack {
                 default: false,
                 share: self.private.then_some(false),
             };
-            if !variants.contains(&variant) {
+            if !variants.iter().any(|existing| {
+                existing.os == variant.os
+                    && existing.profile == variant.profile
+                    && existing.default == variant.default
+            }) {
                 variants.push(variant);
             }
         }

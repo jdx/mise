@@ -5,7 +5,7 @@
 //! the repository's history, and how an existing unmarked repository would
 //! be adopted.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use eyre::{Result, bail};
@@ -301,6 +301,7 @@ async fn set_inner(
         .values()
         .map(|file| (&file.local, file))
         .collect();
+    let private_paths: BTreeSet<_> = walk.private.iter().map(|file| &file.path).collect();
     miseprintln!(
         "File destinations (current captured files; historical backups follow the policies below):"
     );
@@ -309,8 +310,9 @@ async fn set_inner(
         let mut count = 0;
         for (path, (_, policy)) in &walk.files {
             let shared_file = shared_paths.get(path);
-            let backup =
-                policy.backup && (!policy.encrypt || !matches!(backups, BackupPlan::Plain));
+            let backup = !private_paths.contains(path)
+                && policy.backup
+                && (!policy.encrypt || !matches!(backups, BackupPlan::Plain));
             let included = match group {
                 "Local only" => shared_file.is_none() && !backup,
                 "Shared setup" => shared_file.is_some(),
@@ -342,8 +344,10 @@ async fn set_inner(
     let backed_up = walk
         .files
         .iter()
-        .filter(|(_, (_, policy))| {
-            policy.backup && (!policy.encrypt || !matches!(backups, BackupPlan::Plain))
+        .filter(|(path, (_, policy))| {
+            !private_paths.contains(path)
+                && policy.backup
+                && (!policy.encrypt || !matches!(backups, BackupPlan::Plain))
         })
         .count();
     match &backups {

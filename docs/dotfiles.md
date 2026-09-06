@@ -5,10 +5,7 @@
 > Their interfaces and storage formats may change before stabilization.
 > This notice concerns the new tracking workflows, not ordinary symlink, copy,
 > template, and managed-edit workflows.
-
-Tracking files in place and their recovery history are **experimental**. Run
-`mise settings experimental=true` to opt in. Existing symlink, copy,
-template, and managed-edit workflows do not require experimental mode.
+> Enable these workflows with `mise settings experimental=true`.
 
 `[dotfiles]` declares how each of your configuration files is managed. The
 recommended way to adopt a file you already edit in place is to **track** it:
