@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1TQAXYA0RCAWYPET2XMNXZV",
   "strategy": "manual-commit",
   "branch": "codex/docs-project-guides",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "docs/about.md",
     "docs/contact.md",
@@ -21,13 +21,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 126848,
+    "input_tokens": 130255,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 1102592,
-    "output_tokens": 6067,
-    "api_call_count": 7
+    "cache_read_tokens": 2756608,
+    "output_tokens": 7319,
+    "api_call_count": 16
   }
 }
