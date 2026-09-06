@@ -3116,16 +3116,9 @@ impl BootstrapRemote {
             .transpose()?;
         if let Some(origin) = &repository {
             system::remote_repository::validate_origin(origin)?;
-            if self.dry_run {
-                for host in selected.values() {
-                    miseprintln!(
-                        "Would fetch one revision of {origin} locally, transfer it to {}, preview adoption/update of the persistent global configuration, and bootstrap there",
-                        host.name
-                    );
-                }
-                return Ok(());
-            }
         }
+        // a dry run fetches and transfers like a real one: the preview comes
+        // from the target, which inspects itself and the repository
         let repository = if let Some(origin) = repository {
             Some(
                 system::remote::interruptible(system::remote_repository::Source::fetch(origin))

@@ -49,6 +49,9 @@ pub(crate) struct Ssh {
     repository_update: bool,
     #[usage(long, hide = true)]
     repository_yes: bool,
+    /// Preview the transferred repository's installation without writing it
+    #[usage(long, hide = true)]
+    repository_dry_run: bool,
     #[usage(long, hide = true)]
     global_config_directory: bool,
     /// Command to execute after --; omit for an interactive shell
@@ -95,7 +98,7 @@ impl Ssh {
                         origin,
                         branch,
                         yes: self.repository_yes,
-                        dry_run: false,
+                        dry_run: self.repository_dry_run,
                     },
                 )
                 .await?;
@@ -107,6 +110,7 @@ impl Ssh {
                 &revision,
                 self.repository_update,
                 self.repository_yes,
+                self.repository_dry_run,
             )?;
             return Ok(());
         }

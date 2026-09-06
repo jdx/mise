@@ -518,6 +518,19 @@ async fn finish_session(
     result
 }
 
+/// Whether a directory exists on the target (a dry run wrote nothing, so the
+/// configuration directory the helper reported may not be there).
+async fn remote_directory_exists(session: &SshSession<'_>, path: &str) -> Result<bool> {
+    let output = session
+        .output_async(&[
+            "sh",
+            "-c",
+            &format!("test -d {} && echo yes || echo no", shell_quote(path)),
+        ])
+        .await?;
+    Ok(output.trim() == "yes")
+}
+
 fn staging_creation_script() -> &'static str {
     r#"set -eu
 staging=$(mktemp -d /tmp/mise-bootstrap.XXXXXXXXXX)
@@ -579,6 +592,11 @@ async fn run_staged(
         if options.yes {
             install.push("--repository-yes");
         }
+        // the whole operation previews: the helper inspects the target and the
+        // repository and says what it would write, before the bootstrap preview
+        if options.dry_run {
+            install.push("--repository-dry-run");
+        }
         // The helper uses the target's XDG/global-config environment. Only its
         // absolute result, never the staging directory, becomes trusted config.
         let path = session
@@ -590,6 +608,20 @@ async fn run_staged(
             bail!("invalid remote global configuration path");
         }
         session.status_async(&install, true).await?;
+        if options.dry_run && !remote_directory_exists(session, &path).await? {
+            // nothing was written, so there is no configuration to preview the
+            // bootstrap against yet
+            miseprintln!(
+                "Would then run `mise bootstrap --dry-run` in {path} on {} once the configuration exists there",
+                session.host.name
+            );
+            if options.relay.is_some() {
+                info!(
+                    "borrowed GitHub access has ended; future private updates require remote credentials or another relay-enabled session"
+                );
+            }
+            return Ok(());
+        }
         path
     } else {
         project

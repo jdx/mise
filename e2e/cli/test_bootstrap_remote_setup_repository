@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# `mise bootstrap remote --from-git` on a history-managed setup repository sets
+# the target up from it over the transferred bundle. A dry run connects,
+# inspects the target and the repository, and shows the plan without writing
+# configuration, recording a connection, or keeping the fetched branch; the
+# real run writes what the dry run showed.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+binary=$(command -v mise)
+mkdir -p fakebin remotes
+export FAKE_REMOTE_BASE="$PWD/remotes"
+export SSH_LOG="$PWD/ssh.log"
+# the fake ssh runs the remote command locally under a per-host HOME
+cat >fakebin/ssh <<'EOF2'
+#!/bin/sh
+printf '%s\n' "$*" >>"$SSH_LOG"
+while test "$#" -gt 0; do
+  case "$1" in
+    -o|-p|-i|-S) shift 2 ;;
+    -tt) shift ;;
+    -O) exit 0 ;;
+    *)
+      destination=$1
+      shift
+      export HOME="$FAKE_REMOTE_BASE/$destination"
+      export XDG_CONFIG_HOME="$HOME/.config" XDG_STATE_HOME="$HOME/.local/state"
+      export MISE_CONFIG_DIR="$HOME/.config/mise"
+      export MISE_GLOBAL_CONFIG_FILE="$MISE_CONFIG_DIR/config.toml"
+      export MISE_DATA_DIR="$HOME/.local/share/mise"
+      export MISE_CACHE_DIR="$HOME/.cache/mise"
+      export MISE_STATE_DIR="$HOME/.local/state/mise"
+      unset MISE_GITHUB_TOKEN MISE_GITHUB_API_TOKEN GITHUB_TOKEN GH_TOKEN
+      mkdir -p "$HOME"
+      exec sh -c "$1"
+      ;;
+  esac
+done
+EOF2
+chmod +x fakebin/ssh
+export PATH="$PWD/fakebin:$PATH"
+
+# ---- this machine publishes its setup: a tracked directory
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+mkdir -p ~/.config/hypr
+echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --name laptop --yes"
+assert_contains "git --git-dir=$origin ls-tree -r --name-only main" "tracked/home/.config/hypr/bindings.lua"
+
+# ---- a dry run on a fresh host previews and leaves no trace
+out="$(mise bootstrap remote --host fresh --from-git "file://$origin" --remote-mise "$binary" --only dotfiles --dry-run 2>&1)"
+assert_contains "echo \"$out\"" "is a mise setup repository"
+assert_contains "echo \"$out\"" "bindings.lua"
+assert_contains "echo \"$out\"" "Dry run: nothing was changed"
+assert_contains "echo \"$out\"" "once the configuration exists there"
+assert_contains "cat '$SSH_LOG'" '--repository-dry-run'
+assert_not_contains "cat '$SSH_LOG'" '/.config/mise bootstrap'
+assert_fail "test -e remotes/fresh/.config/mise/config.toml"
+assert_fail "test -e remotes/fresh/.config/hypr/bindings.lua"
+assert "find remotes/fresh -name sync.json | wc -l | tr -d ' '" "0"
+assert "find remotes/fresh -path '*/refs/setup/*' | wc -l | tr -d ' '" "0"
+assert "find remotes/fresh -name config.local.toml | wc -l | tr -d ' '" "0"
+
+# ---- the real run writes what the dry run showed
+assert_succeed "mise bootstrap remote --host fresh --from-git file://$origin --remote-mise '$binary' --only dotfiles --yes"
+assert_fail "test -e remotes/fresh/.config/mise/.git"
+assert "cat remotes/fresh/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
+assert_contains "cat remotes/fresh/.config/mise/config.toml" '"~/.config/hypr" = { mode = "track" }'
+assert_contains "cat remotes/fresh/.config/mise/config.local.toml" "file://$origin"
+assert "find remotes/fresh -name sync.json | wc -l | tr -d ' '" "1"
+assert_contains "cat '$SSH_LOG'" '/.config/mise bootstrap'
+
+# ---- a dry run on a set-up host previews the bootstrap against its configuration
+out="$(mise bootstrap remote --host fresh --from-git "file://$origin" --remote-mise "$binary" --only dotfiles --dry-run 2>&1)"
+assert_contains "echo \"$out\"" "Dry run: nothing was changed"
+assert_contains "cat '$SSH_LOG'" 'bootstrap --dry-run'
+assert "cat remotes/fresh/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"

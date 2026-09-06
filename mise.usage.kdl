@@ -4596,6 +4596,7 @@ cmd ssh help="Open an SSH session, optionally borrowing read-only GitHub access"
     }
     flag --repository-update hide=#true
     flag --repository-yes hide=#true
+    flag --repository-dry-run help="Preview the transferred repository's installation without writing it" hide=#true
     flag --global-config-directory hide=#true
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[DESTINATION]" help="OpenSSH destination or SSH-config alias" required=#false

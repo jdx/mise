@@ -329,12 +329,14 @@ An existing matching checkout is reused unless `--update` requests a safe
 fast-forward. Dirty checkouts, mismatched origins, conflicting files, and source
 files ending in `.local.toml` require manual resolution. A nonempty non-Git
 directory can be adopted after confirmation: existing files and local overrides
-are preserved. With `--from-git`, `--dry-run` only reports the proposed operation;
-it does not fetch the source, open an SSH session, inspect the target, or create
-temporary staging. Dirty checkouts, mismatched origins, and adoption conflicts
-are therefore detected only during a real apply. By contrast, `--source .
---dry-run` connects to and inspects the target without applying persistent
-changes.
+are preserved. With `--from-git`, `--dry-run` previews the whole operation the
+way `--source . --dry-run` does: the revision is fetched locally, the target is
+connected to, mise and the bundle are staged, and the target runs every check
+(dirty checkout, mismatched origin, adoption conflicts, `.local.toml` files) and
+says what it would do: clone, fast-forward, or adopt with the number of new
+files. When a global configuration already exists on the target, the bootstrap
+that follows is previewed with `--dry-run` too. Nothing persistent is written
+and the staging directory is removed.
 
 `--from-git` uses the repository instead of the inventory's archive source and
 copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and
@@ -345,7 +347,9 @@ carrying `.mise-history/format.toml`) is set up from rather than checked out:
 the remote host fetches the transferred branch into its own history store,
 writes the shared configuration and this machine's tracked files with a
 recoverable pull, records the connection, and the bootstrap that follows
-installs the history watcher like any other user service:
+installs the history watcher like any other user service. With `--dry-run` the
+target shows that plan (the files it would write, and any held for a decision),
+records no connection, and keeps no fetched branch:
 
 ```sh
 mise bootstrap remote --host devbox --install-mise --from-git jdx/dotfiles \

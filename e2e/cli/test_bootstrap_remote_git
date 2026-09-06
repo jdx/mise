@@ -59,6 +59,8 @@ while test "$#" -gt 0; do
       export MISE_GLOBAL_CONFIG_FILE="$MISE_CONFIG_DIR/config.toml"
       export MISE_DATA_DIR="$HOME/.local/share/mise"
       export MISE_CACHE_DIR="$HOME/.cache/mise"
+      export XDG_STATE_HOME="$HOME/.local/state"
+      export MISE_STATE_DIR="$HOME/.local/state/mise"
       unset MISE_GITHUB_TOKEN MISE_GITHUB_API_TOKEN GITHUB_TOKEN GH_TOKEN
       mkdir -p "$MISE_CONFIG_DIR"
       exec sh -c "$1"
@@ -71,6 +73,16 @@ export PATH="$PWD/fakebin:$PATH"
 
 mkdir -p remotes/one/.config/mise
 echo '# machine local' >remotes/one/.config/mise/config.local.toml
+# A dry run connects, inspects, and says what it would do without writing the
+# checkout (a clone on an empty host, an adoption on one with files already);
+# the bootstrap that follows is previewed too.
+assert_contains "mise bootstrap remote --host two --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --dry-run 2>&1" 'Would clone'
+assert_contains "cat '$SSH_LOG'" '--repository-dry-run'
+assert_contains "cat '$SSH_LOG'" 'bootstrap --dry-run'
+test ! -e remotes/two/.config/mise/.git
+assert_contains "mise bootstrap remote --host one --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --dry-run 2>&1" 'Would adopt'
+test ! -e remotes/one/.config/mise/.git
+assert "cat remotes/one/.config/mise/config.local.toml" '# machine local'
 mise bootstrap remote --host one --host two --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes
 assert "git -C remotes/one/.config/mise rev-parse HEAD" "$first_revision"
 assert "git -C remotes/two/.config/mise rev-parse HEAD" "$first_revision"
@@ -85,12 +97,17 @@ git -C seed -c core.hooksPath=/dev/null commit -m second
 second_revision=$(git -C seed rev-parse HEAD)
 mise bootstrap remote --host one --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes
 assert "git -C remotes/one/.config/mise rev-parse HEAD" "$first_revision"
+# an update is previewed against the existing checkout without moving it
+assert_contains "mise bootstrap remote --host one --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --update --dry-run 2>&1" 'Would fast-forward'
+assert "git -C remotes/one/.config/mise rev-parse HEAD" "$first_revision"
+assert_fail "git -C remotes/one/.config/mise cat-file -e $second_revision^{commit}"
 mise bootstrap remote --host one --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes --update
 assert "git -C remotes/one/.config/mise rev-parse HEAD" "$second_revision"
 assert "git -C remotes/one/.config/mise rev-parse '@{upstream}'" "$second_revision"
 assert "cat remotes/one/.config/mise/config.local.toml" '# machine local'
 echo '# dirty' >>remotes/one/.config/mise/config.toml
 assert_fail "mise bootstrap remote --host one --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --update" 'uncommitted changes'
+assert_fail "mise bootstrap remote --host one --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --update --dry-run" 'uncommitted changes'
 
 # A failed forwarding request must prevent bootstrap and close the owned master.
 assert_fail "MISE_GITHUB_TOKEN=fake-local-relay-token mise bootstrap remote --host two --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --github-relay-read-only --github-relay-repo owner/repo" 'forwarding failed'
