@@ -358,6 +358,10 @@ so its watcher can keep running. Dry runs do not persist it. Enabling experiment
 locally alone does not opt in the remote host. Ordinary repository-based bootstrap
 does not require the flag.
 
+The target must allow machine-local configuration discovery. If it sets
+`MISE_GLOBAL_CONFIG_FILE` to a different file, unset that override before setup;
+mise refuses to save an opt-in in a file that subsequent sessions would ignore.
+
 ```sh
 mise bootstrap remote --experimental --host devbox --install-mise --from-git jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles

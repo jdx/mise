@@ -3138,20 +3138,14 @@ impl BootstrapRemote {
             None
         };
         let mut artifacts = system::remote::RemoteArtifactResolver::default();
-        if !options.experimental {
-            let tracking = if let Some(repository) = &repository {
-                system::remote_repository::history_branch(&repository.bundle, &repository.revision)?
-                    .is_some()
-            } else {
-                system::files::files_from_config(&config)?
-                    .iter()
-                    .any(|file| file.mode == system::files::FileMode::Track)
-            };
-            if tracking {
-                bail!(
-                    "remote dotfile tracking requires explicit opt-in: pass `mise bootstrap remote --experimental`"
-                );
-            }
+        if !options.experimental
+            && let Some(repository) = &repository
+            && system::remote_repository::history_branch(&repository.bundle, &repository.revision)?
+                .is_some()
+        {
+            bail!(
+                "remote dotfile tracking requires explicit opt-in: pass `mise bootstrap remote --experimental`"
+            );
         }
         for host in selected.values() {
             if let Err(error) =

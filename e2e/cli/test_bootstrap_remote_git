@@ -56,7 +56,10 @@ while test "$#" -gt 0; do
       esac
       export HOME="$FAKE_REMOTE_BASE/$destination"
       export MISE_CONFIG_DIR="$HOME/.config/mise"
-      export MISE_GLOBAL_CONFIG_FILE="$MISE_CONFIG_DIR/config.toml"
+      unset MISE_GLOBAL_CONFIG_FILE
+      if test "$destination" = explicit-global; then
+        export MISE_GLOBAL_CONFIG_FILE="$MISE_CONFIG_DIR/config.toml"
+      fi
       export MISE_DATA_DIR="$HOME/.local/share/mise"
       export MISE_CACHE_DIR="$HOME/.cache/mise"
       export XDG_STATE_HOME="$HOME/.local/state"
@@ -64,6 +67,7 @@ while test "$#" -gt 0; do
       unset MISE_GITHUB_TOKEN MISE_GITHUB_API_TOKEN GITHUB_TOKEN GH_TOKEN
       unset MISE_EXPERIMENTAL MISE_BOOTSTRAP_REMOTE_EXPERIMENTAL
       mkdir -p "$MISE_CONFIG_DIR"
+      cd "$HOME" || exit 1
       exec sh -c "$1"
       ;;
   esac
@@ -209,6 +213,8 @@ printf 'tracked contents\n' >~/.remote-tracked
 assert_succeed 'mise bootstrap dotfiles track ~/.remote-tracked'
 assert_succeed "mise bootstrap dotfiles origin set file://$PWD/tracked-origin.git --sync manual --yes"
 assert_succeed 'mise bootstrap dotfiles sync'
+# Local tracked files must not make an unrelated source archive experimental.
+assert_succeed "mise bootstrap remote --host ordinary-source --source seed --remote-mise '$binary' --only dotfiles --yes"
 calls=$(wc -l <"$SSH_LOG" | tr -d ' ')
 assert_fail "mise bootstrap remote --host tracked --from-git file://$PWD/tracked-origin.git --remote-mise '$binary' --only dotfiles --yes" '--experimental'
 assert "wc -l <'$SSH_LOG' | tr -d ' '" "$calls"
@@ -219,6 +225,8 @@ assert_contains 'cat remotes/tracked/.config/mise/config.local.toml' 'experiment
 assert 'cat remotes/tracked/.remote-tracked' 'tracked contents'
 assert_contains 'cat remotes/tracked/.config/mise/config.local.toml' '[history.origin]'
 assert "ssh tracked '$binary settings get experimental'" 'true'
+assert_fail "mise bootstrap remote --experimental --host explicit-global --from-git file://$PWD/tracked-origin.git --remote-mise '$binary' --only dotfiles --yes" 'MISE_GLOBAL_CONFIG_FILE bypasses'
+assert_not_contains 'cat remotes/explicit-global/.config/mise/config.local.toml' 'experimental = true'
 mkdir -p remotes/conflicted
 printf 'keep my edit\n' >remotes/conflicted/.remote-tracked
 assert_fail "mise bootstrap remote --experimental --host conflicted --from-git file://$PWD/tracked-origin.git --remote-mise '$binary' --only dotfiles --yes"

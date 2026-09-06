@@ -143,6 +143,13 @@ pub(crate) fn persist_experimental_opt_in() -> Result<()> {
         return Ok(());
     }
     let path = crate::cli::dotfiles::track::declaration_file(true)?;
+    if let Some(selected) = std::env::var_os("MISE_GLOBAL_CONFIG_FILE")
+        && Path::new(&selected) != path
+    {
+        bail!(
+            "cannot retain remote experimental opt-in: MISE_GLOBAL_CONFIG_FILE bypasses config.local.toml; unset it on the target and rerun with --experimental"
+        );
+    }
     let mut document = crate::cli::dotfiles::track::read_document(&path)?;
     let settings = document
         .entry("settings")
