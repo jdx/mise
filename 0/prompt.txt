@@ -1,0 +1,7 @@
+improve the docs. plan.md, readme, and the docs website. prose, content, structure, everything is on the table
+
+---
+
+<send_user_message_question_reply>
+[{"questionItemId":"[\"request_user_input_async\",\"REDACTED\",0]","question":"There’s no root `plan.md` in this checkout. Did you mean a file elsewhere, or should I create a documentation improvement plan there?","answer":"i meant readme.md"}]
+</send_user_message_question_reply>

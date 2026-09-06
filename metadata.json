@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TDQ17PNMY6S6PBXHTP55TG",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-onboarding",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "docs/.vitepress/sidebar.ts",
+    "docs/.vitepress/theme/Layout.vue",
+    "docs/README.md",
+    "docs/dev-tools/index.md",
+    "docs/getting-started.md",
+    "docs/index.md",
+    "docs/walkthrough.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 122199,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3208704,
+    "output_tokens": 14164,
+    "api_call_count": 37
+  }
+}
