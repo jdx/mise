@@ -150,7 +150,16 @@ Casks declaring `auto_updates: true` in their Homebrew metadata are installed
 at the current version and then left to update themselves. mise does not expose
 an `auto_updates` override: the cask definition remains authoritative. These
 self-updating apps are also tracked by receipt without a duplicate Caskroom app
-bundle, and ordinary mise upgrades skip them.
+bundle. Install/apply and dependency installation leave installed self-updating
+apps unchanged. Explicit `mise bootstrap packages upgrade` follows Homebrew's
+default decision: `latest` and matching receipt versions skip. Otherwise, casks
+with a single owned app upgrade when its live `CFBundleShortVersionString` and
+`CFBundleVersion` indicate an older version using Homebrew's comparison rules,
+including CSV and combined short/build versions. Current, newer, unreadable, or
+incomparable app versions skip replacement. mise checks again after downloading
+and acquiring the install lock; an external self-updater can still change the app
+between that check and replacement. Dry-run reports the decision without replacing
+the app.
 
 `mise bootstrap status` marks these entries as `installed (auto-updates)`.
 For mise-owned casks, the `Current` column is the version recorded in the mise

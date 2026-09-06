@@ -147,6 +147,7 @@ jobs:
       - name: cargo test (workspace members)
         run: cargo test --workspace --exclude mise --ignore-rust-version
       - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
+      - run: mise run test:e2e e2e/cli/test_system_upgrade_brew_cask_auto_updates
       - run: mise run test:e2e e2e/tasks/test_task_zsh_process_substitution_tmux_macos
       # The e2e suite is Linux-only, and this one turns on `TIOCSCTTY` and
       # signal-driven termios restore — both places where the two platforms have
