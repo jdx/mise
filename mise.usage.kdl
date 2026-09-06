@@ -888,7 +888,7 @@ conflicts are resolved and the plan has been recomputed.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[PATH]…" help="Paths must cover the complete pending setup; partial pulls are rejected" required=#false var=#true
         }
-        cmd rollback help="Return files to the version a checkpoint holds" effect=destructive {
+        cmd rollback help="Return files to the version a checkpoint holds (experimental)" effect=destructive {
             long_help #"""
 Return files to the version a checkpoint holds (experimental)
 

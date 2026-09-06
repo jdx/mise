@@ -68,6 +68,7 @@ assert_fail "test -e $B/.rendered"
 
 # A config edited directly in Git must also pass typed declaration validation.
 git clone -q "$origin" editor
+cp editor/config.toml valid-config.toml
 before="$(cat "$B/.config/mise/config.toml")"
 cat <<'EOF' >>editor/config.toml
 
@@ -81,3 +82,42 @@ assert_succeed "$b bootstrap dotfiles sync"
 assert_contains "$b bootstrap dotfiles status" "unknown dotfile mode"
 assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "sync paused"
 assert "cat $B/.config/mise/config.toml" "$before"
+
+# Lossy parser warnings must be rejected before any incoming file is written.
+cp valid-config.toml editor/config.toml
+cat <<'EOF' >>editor/config.toml
+
+[dotfiles."~/.invalid"]
+content = "inline"
+mode = "copy"
+EOF
+git -C editor add config.toml
+git -C editor -c user.name=test -c user.email=test@example.com commit -qm invalid-inline
+git -C editor push -q origin main
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" "inline content does not support"
+assert "cat $B/.config/mise/config.toml" "$before"
+
+# An explicit global file must not hide invalid incoming conf.d bodies.
+cp valid-config.toml editor/config.toml
+mkdir -p editor/conf.d
+cat <<'EOF' >editor/conf.d/invalid.toml
+[dotfiles."~/.invalid"]
+mode = "typo"
+EOF
+git -C editor add config.toml conf.d/invalid.toml
+git -C editor -c user.name=test -c user.email=test@example.com commit -qm invalid-conf-d
+git -C editor push -q origin main
+explicit_config="$B/.config/mise/config.toml"
+if [[ -f "$B/.config/mise/config.local.toml" ]]; then
+  explicit_config="$B/.config/mise/config.local.toml"
+fi
+assert_succeed "MISE_GLOBAL_CONFIG_FILE=$explicit_config $b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" "unknown dotfile mode"
+assert_fail "test -e $B/.config/mise/conf.d/invalid.toml"
+
+# Explicit local global-config overrides are also the write destination.
+override="$PWD/config.local.toml"
+echo '' >"$override"
+assert_succeed "MISE_GLOBAL_CONFIG_FILE=$override mise bootstrap dotfiles exclude '~/.noise'"
+assert_contains "cat $override" "~/.noise"

@@ -2920,8 +2920,8 @@ pub(crate) fn global_config_path() -> PathBuf {
 /// The shared global config file: where declarations meant for every
 /// machine go. `MISE_GLOBAL_CONFIG_FILE`, else the global TOML file that
 /// already exists (`mise.toml` when that is what the user keeps), else
-/// `config.toml`. Never a `.local.toml`, even when that is the only global
-/// file that exists.
+/// `config.toml`. An explicitly selected global file is honored even when
+/// it is `.local.toml`; implicit selection prefers a shared file.
 pub(crate) fn global_shared_config_path() -> PathBuf {
     let local = |path: &PathBuf| {
         path.file_name()
@@ -2930,9 +2930,7 @@ pub(crate) fn global_shared_config_path() -> PathBuf {
     // an explicit global file is the one mise loads: declarations go there
     // (writing TOML into a file that is not TOML fails, rather than landing
     // in a file that is never read)
-    if let Some(path) = env::MISE_GLOBAL_CONFIG_FILE.clone()
-        && !local(&path)
-    {
+    if let Some(path) = env::MISE_GLOBAL_CONFIG_FILE.clone() {
         return path;
     }
     let files = global_config_files();

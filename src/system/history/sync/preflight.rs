@@ -34,9 +34,45 @@ pub(super) fn prospective(
         return Ok(tracked.clone());
     }
     let paths: BTreeSet<PathBuf> = incoming.keys().cloned().collect();
+    let candidates = crate::config::config_files_with_incoming(&roots.config_dir, &paths);
+    // Validate every body we will write, even a conf.d file not selected
+    // by this machine's explicit MISE_GLOBAL_CONFIG_FILE override.
+    let mut incoming_files = ConfigMap::new();
+    for (path, object) in &incoming {
+        // The config directory also carries template and other sources.
+        if !candidates.contains(path) && crate::env::MISE_GLOBAL_CONFIG_FILE.as_ref() != Some(path)
+        {
+            continue;
+        }
+        let Some((mode, oid)) = object else {
+            continue;
+        };
+        if mode != "100644" && mode != "100755" {
+            bail!(
+                "incoming configuration must be a regular file: {}",
+                path.display()
+            );
+        }
+        let body = String::from_utf8(repo.cat_object(oid)?)?;
+        let parsed = MiseToml::for_history_preflight(&body, path)?;
+        if parsed
+            .history_config()
+            .is_some_and(|history| history.origin.is_some_and(|origin| origin.encrypt_backups))
+        {
+            bail!(
+                "encrypted backups are not supported yet ({})",
+                path.display()
+            );
+        }
+        incoming_files.insert(
+            path.clone(),
+            Arc::new(parsed) as Arc<dyn crate::config::config_file::ConfigFile>,
+        );
+    }
+    crate::system::files::validate_incoming_files(&incoming_files)?;
     let global = match &*crate::env::MISE_GLOBAL_CONFIG_FILE {
         Some(path) => vec![path.clone()].into_iter().collect(),
-        None => crate::config::config_files_with_incoming(&roots.config_dir, &paths),
+        None => candidates,
     };
     let mut files = ConfigMap::new();
     let mut excludes = vec![];

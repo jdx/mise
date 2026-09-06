@@ -571,6 +571,12 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 ..
             } = entry
             {
+                if content.is_some() && (mode.is_some() || exclude.is_some() || manifest.is_some())
+                {
+                    bail!(
+                        "dotfile {target}: inline content does not support mode, exclude, or manifest"
+                    );
+                }
                 let mode = match mode.as_deref() {
                     Some(value) => FileMode::parse(value).ok_or_else(|| {
                         eyre::eyre!("unknown dotfile mode {value:?} for {target}")
@@ -589,6 +595,9 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 }
                 if source.is_some() && content.is_some() {
                     bail!("dotfile {target} cannot declare both source and content");
+                }
+                if mode != FileMode::Track && source.is_none() && content.is_none() {
+                    implied_source(&resolve_target_arg(&target))?;
                 }
                 if let Some(manifest) = manifest
                     && (FileManifest::parse(&manifest).is_none()

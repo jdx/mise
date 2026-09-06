@@ -385,8 +385,7 @@ Each entry carries three policies, set on the `[dotfiles]` entry or with
 | `share`    | Publish the saved version to the shared setup (default `true`)        |
 | `backup`   | Include the file in remote backups (default `true` for tracked files) |
 
-Sharing and backups arrive with a later release; the policies are recorded in
-every checkpoint from the start so nothing needs migrating.
+Sharing and recovery backups follow these policies when you connect an origin.
 
 `*.local.toml` files are private by default (`share = false`) wherever they
 are found, and credential stores under the config directory
