@@ -1,21 +1,24 @@
-<!-- markdownlint-disable MD034 -->
+# Getting started
 
-# Getting Started
+By the end of this guide, you'll have a project with a managed tool, an environment
+variable, and a task you can run. Shell activation is optional: the first examples
+work without changing your shell configuration.
 
-Get up and running with mise in minutes.
+Already installed mise for an existing project? Review its `mise.toml`, then run
+`mise install` from the project directory. Use `mise tasks ls` to see its tasks.
 
 ## 1. Install `mise` CLI {#installing-mise-cli}
 
-See [installing mise](/installing-mise.html) for other ways to install mise (`macport`, `apt`, `yum`, `nix`, etc.).
+See [installing mise](/installing-mise.html) for other ways to install mise (Homebrew, MacPorts, apt, Nix, and more).
 
-:::tabs key:installing-mise
+::::tabs key:installing-mise
 == Linux/macOS
 
 ```shell
 curl https://mise.run | sh
 ```
 
-By default, mise installs to `~/.local/bin`, but it can go anywhere.
+The installer places the mise executable in `~/.local/bin`.
 
 Verify the installation:
 
@@ -41,6 +44,8 @@ winget install jdx.mise
 ```shell [chocolatey]
 choco install mise
 ```
+
+:::
 
 == Debian/Ubuntu (apt)
 
@@ -68,66 +73,125 @@ sudo snap install mise --classic
 
 See the [snapcraft.io page](https://snapcraft.io/mise) for more information.
 
-:::
+::::
 
-`mise` respects [`MISE_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like
-to change these locations.
+To customize where mise stores downloaded tools and other data, see
+[directories](/directories.html).
 
-## 2. mise `exec` and `run` {#mise-exec-run}
+## 2. Run your first tool {#mise-exec-run}
 
-Once installed, you can start using mise right away to install and run [tools](/dev-tools/), launch [tasks](/tasks/), and manage [environment variables](/environments/).
-
-The quickest way to run a tool at a specific version is [`mise x|exec`](/cli/exec.html). For example, to launch a Python 3 REPL:
-
-::: tip
-If `mise` isn't on `PATH` yet, use `~/.local/bin/mise` instead.
-:::
+Use [`mise exec`](/cli/exec.html) to run a command with a specific tool version:
 
 ```sh
-mise exec python@3 -- python
-# this will download and install Python if it is not already installed
-# Python 3.15.0
-# >>> ...
+mise exec node@24 -- node --version
 ```
 
-Or run node 26:
-
-```sh
-mise exec node@26 -- node -v
-# v26.x.x
-```
-
-To install a tool permanently, use [`mise u|use`](/cli/use.html):
-
-```shell
-mise use --global node@26 # install node 26 and set it as the global default
-mise exec -- node my-script.js
-# run my-script.js with node 26...
-```
-
-[`mise r|run`](/cli/run.html) lets you run [tasks](/tasks/) or scripts with the full mise context (tools + env vars) loaded.
+By default, mise downloads the tool if needed, then runs the command after `--`.
+This does not add Node.js to your project configuration or change your current
+shell's environment. The output starts with `v24.`; the patch version may vary.
 
 ::: tip
-You can set a shell alias in your shell's rc file like `alias x="mise x --"` to save some keystrokes.
+If `mise` isn't on `PATH` yet, use `~/.local/bin/mise` instead on macOS or Linux.
+Activation in [step 4](#activate-mise) adds mise to your shell's `PATH`.
 :::
 
-## 3. Activate `mise` <Badge text="optional" /> {#activate-mise}
+## 3. Set up a project {#set-up-a-project}
+
+Create a directory for this example, or use an existing project directory:
+
+```sh
+mkdir mise-example
+cd mise-example
+mise use node@24
+```
+
+[`mise use`](/cli/use.html) installs the tool and writes its version request to
+`mise.toml`. Unlike `mise install`, it also changes your configuration.
+
+### Set an environment variable {#environment-variables}
+
+Edit the generated `mise.toml` to contain:
+
+```toml [mise.toml]
+[tools]
+node = "24"
+
+[env]
+NODE_ENV = "development"
+```
+
+Run a command with both the configured tool and environment:
+
+```sh
+mise exec -- node -p process.env.NODE_ENV
+# development
+```
+
+You can also [load variables from a `.env` file](/environments/#env-directives).
+
+### Run a task {#run-a-task}
+
+Add this section to the same `mise.toml`:
+
+```toml [mise.toml]
+[tasks.hello]
+description = "Print the project's Node.js version and environment"
+run = "node -e \"console.log(process.version, process.env.NODE_ENV)\""
+```
+
+```sh
+mise run hello
+```
+
+The output includes a Node.js version starting with `v24.` and `development`.
+Tasks get the project's tools and environment automatically. By default,
+`mise run` installs missing configured tools before running the task.
+
+Commit `mise.toml` so teammates and CI can use the same configuration. The version
+request `"24"` selects a release in the Node.js 24 series; it is not an exact pin.
+See [lockfiles](/dev-tools/mise-lock.html) to share resolved versions across machines.
+
+### Project configuration or global defaults?
+
+| Command                       | What it does                                                                                              |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `mise use node@24`            | Installs Node.js and saves the version request in the project config. Run it from your project directory. |
+| `mise use --global node@24`   | Installs Node.js and saves a personal default in the global config.                                       |
+| `mise install`                | Installs tools already declared in your configuration.                                                    |
+| `mise exec -- node --version` | Runs one command with the project's tools and environment.                                                |
+| `mise run hello`              | Runs a named task with the project's tools and environment.                                               |
+
+Project configuration can override global defaults. Use `mise config ls` to see
+which files are active and `mise ls --current` to inspect the selected tools.
+
+### Trusting config files {#trust}
+
+Review configuration from other people before running it: tasks, hooks, and some
+environment directives can execute code. Use `mise trust` to explicitly trust a
+config you've reviewed.
+
+In normal mode, commands that execute project behavior, including `mise install`,
+`mise exec`, and `mise run`, automatically trust the active config. With
+[paranoid mode](/paranoid.html), non-global configs require explicit trust.
+See [`mise trust`](/cli/trust.html) for details.
+
+## 4. Activate `mise` <Badge text="optional" /> {#activate-mise}
 
 `mise exec` works great for one-off commands, but for interactive shells you'll probably want to activate mise so tools and environment variables are loaded automatically.
 
 There are two approaches:
 
 - [`mise activate`](/cli/activate) — updates your `PATH` and environment every time your prompt runs. Recommended for interactive shells.
-- [Shims](dev-tools/shims.md) — symlinks that intercept commands and load the right environment. Better for CI/CD, IDEs, and scripts. [Shims don't support all features of `mise activate`](/dev-tools/shims.html#shims-vs-path).
+- [Shims](/dev-tools/shims.html) — command entry points that select tool versions. Useful for editors and other programs that do not load your shell config. [Shims don't support all features of `mise activate`](/dev-tools/shims.html#shims-vs-path).
 
-You can also skip both and call `mise exec` or `mise run` directly.
-See [this guide](dev-tools/shims.md) for more information.
+You can skip both and use `mise exec` or `mise run` to load the project environment
+explicitly, including in CI and scripts.
 
 Here is how to activate mise for your shell:
 
-:::tabs key:installing-mise
+::::tabs key:activating-mise
 
-== https://mise.run
+== mise.run installer
 
 ::: code-group
 
@@ -142,6 +206,8 @@ echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 ```sh [fish]
 echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 ```
+
+:::
 
 == Brew
 
@@ -159,6 +225,8 @@ echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 # do nothing! mise is automatically activated when using brew and fish
 # you can disable this behavior with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`
 ```
+
+:::
 
 == Windows
 
@@ -197,22 +265,67 @@ echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 
 :::
 
+::::
+
 Restart your shell session after modifying your rc file. Run [`mise dr|doctor`](/cli/doctor.html) to verify everything is set up correctly.
 
 With mise activated, tools are available directly on `PATH`:
 
 ```sh
-mise use --global node@26
+mise use --global node@24
 node -v
-# v26.x.x
+# v24.x.x
 ```
 
-When you ran `mise use --global node@26`, mise updated your global config:
+When you ran `mise use --global node@24`, mise updated your global config:
 
 ```toml [~/.config/mise/config.toml]
 [tools]
-node = "26"
+node = "24"
 ```
+
+## 5. Find more tools {#tool-backends}
+
+Use the [registry](/registry.html) to find tool names such as `node`, `python`,
+`jq`, and `ripgrep`. Most of the time, the name is all you need:
+
+```sh
+mise use ripgrep
+mise exec -- rg --version
+```
+
+A **backend** tells mise where to get a tool and how to install it. You can choose
+one explicitly, including for tools without a registry shorthand:
+
+```sh
+mise exec github:BurntSushi/ripgrep -- rg --version
+```
+
+Some backends require another runtime or package manager. Check the
+[backend guide](/dev-tools/backends/) before using a new ecosystem.
+
+## 6. Next steps {#next-steps}
+
+- **Keep working in a project:** follow the [walkthrough](/walkthrough.html) for configuration overrides, upgrades, and daily commands.
+- **Write build and test commands:** see [tasks](/tasks/).
+- **Use mise outside a terminal:** set up your [editor](/ide-integration.html) or [CI pipeline](/continuous-integration.html).
+- **Set up a machine:** use [bootstrap](/bootstrap.html) for declared system packages, dotfiles, and services.
+
+### Set up autocompletion {#autocompletion}
+
+Enable [shell completions](/installing-mise.html#autocompletion) to complete tools,
+versions, and task names.
+
+### If something doesn't work
+
+Run `mise doctor` to check your setup. If a tool works through `mise exec` but not
+as a plain command, check [shell activation](#activate-mise) and restart your shell.
+See [troubleshooting](/troubleshooting.html) for other common problems.
+
+#### GitHub API rate limiting {#github-api-rate-limiting}
+
+If an error reports GitHub API rate limiting, configure a
+[GitHub token](/dev-tools/github-tokens.html).
 
 ### Shell Feature Compatibility {#shell-feature-compatibility}
 
@@ -224,172 +337,3 @@ Not all shells support every mise feature:
 | `mise shell`                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
 | Shell aliases (`[shell_alias]`) | Yes  | Yes | Yes  | No      | No     | Yes   | No         |
 | `chpwd` hook                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
-
-## 4. Use tools from backends (npm, pipx, core, aqua, github) {#tool-backends}
-
-```mermaid
-flowchart LR
-  subgraph Backends
-    core
-    aqua
-    github
-    npm
-    pipx
-  end
-
-  core --> node["core:node"]
-  core --> python["core:python"]
-  aqua -->gh["aqua:cli/cli"]
-  github -->ripgrep["github:BurntSushi/ripgrep"]
-  github -->ruff["github:astral-sh/ruff"]
-  npm --> prettier["npm:prettier"]
-  npm --> claude_code["npm:@anthropic-ai/claude-code"]
-  pipx -->black["pipx:black"]
-  pipx -->pycowsay["pipx:pycowsay"]
-  aqua -->terraform["aqua:hashicorp/terraform"]
-
-  subgraph Tools
-    node
-    python
-    gh
-    ripgrep
-    ruff
-    prettier
-    claude_code
-    black
-    pycowsay
-    terraform
-  end
-```
-
-Backends are the package ecosystems that mise pulls tools from. With `mise use`, you can install from any of them.
-
-Install [claude-code](https://www.npmjs.com/package/@anthropic-ai/claude-code) from npm:
-
-```sh
-# one-off
-mise exec npm:@anthropic-ai/claude-code -- claude --version
-
-# or install globally
-mise use --global npm:@anthropic-ai/claude-code
-claude --version
-```
-
-Install [black](https://github.com/psf/black) from PyPI via pipx:
-
-```sh
-# one-off
-mise exec pipx:black -- black --version
-
-# or install globally
-mise use --global pipx:black
-black --version
-```
-
-Install [ripgrep](https://github.com/BurntSushi/ripgrep) directly from GitHub releases:
-
-```sh
-# one-off
-mise exec github:BurntSushi/ripgrep -- rg --version
-
-# or install globally
-mise use --global github:BurntSushi/ripgrep
-rg --version
-```
-
-Each `mise use` command above updates your config file. For example, after running all three globally, your `~/.config/mise/config.toml` would contain:
-
-```toml [~/.config/mise/config.toml]
-[tools]
-"npm:@anthropic-ai/claude-code" = "latest"
-"pipx:black" = "latest"
-"github:BurntSushi/ripgrep" = "latest"
-```
-
-You can also edit `mise.toml` directly instead of using `mise use` — the effect is the same. Run `mise install` after editing to install the tools.
-
-See [Backends](/dev-tools/backends/) for more ecosystems and details.
-
-## Trusting config files {#trust}
-
-When you or a teammate adds a `mise.toml` to a project, mise may prompt you to trust it before it runs env directives or hooks:
-
-```
-mise ~/my-project/mise.toml is not trusted. Trust it? [y/n]
-```
-
-This is a security measure — config files can execute arbitrary code via `[env]` directives, hooks, and tasks. To trust a file, run:
-
-```sh
-mise trust
-```
-
-In normal mode, `mise run`, naked task invocations such as `mise <TASK>`, `mise install`,
-`mise exec`, and `mise watch` automatically trust the active config because those commands
-explicitly execute project-defined behavior. Paranoid mode requires `mise trust` for all
-non-global configs, including configs that are safe in normal mode.
-
-To disable trust prompts for a path, configure:
-
-```sh
-mise settings trusted_config_paths=["/"]
-```
-
-Or set the environment variable `MISE_TRUSTED_CONFIG_PATHS=/`.
-
-::: tip
-`mise use` automatically trusts the file it creates.
-:::
-
-See [`mise trust`](/cli/trust) for more details.
-
-## 5. Setting environment variables {#environment-variables}
-
-Define environment variables in `mise.toml` — they're loaded whenever mise is activated or when you use `mise exec`:
-
-```toml [mise.toml]
-[env]
-NODE_ENV = "production"
-```
-
-```sh
-mise exec -- node --eval 'console.log(process.env.NODE_ENV)'
-
-# or if mise is activated in your shell
-echo "node env: $NODE_ENV"
-# node env: production
-```
-
-## 6. Run a task {#run-a-task}
-
-Define tasks in `mise.toml` and run them with `mise run`:
-
-```toml [mise.toml]
-[tasks]
-hello = "echo hello from mise"
-```
-
-```sh
-mise run hello
-# hello from mise
-```
-
-:::tip
-mise automatically installs all tools from `mise.toml` before running a task.
-:::
-
-See [tasks](/tasks/) for more on defining and running tasks.
-
-## 7. Next steps {#next-steps}
-
-Follow the [walkthrough](/walkthrough) for more examples of how to use mise.
-
-### Set up autocompletion {#autocompletion}
-
-See [autocompletion](/installing-mise.html#autocompletion) to learn how to set up autocompletion for your shell.
-
-### GitHub API rate limiting {#github-api-rate-limiting}
-
-::: warning
-Many tools in mise use the GitHub API. Unauthenticated requests are often rate limited — if you see 4xx errors, see [GitHub Tokens](/dev-tools/github-tokens.html) to configure authentication.
-:::

@@ -51,159 +51,120 @@
 
 </div>
 
-> [!TIP]
-> Rust builds filling every checkout's `target/`? [Mr Boxington](https://mr-boxington.jdx.dev/) gives Cargo one shared, self-pruning cache across worktrees, local builds, and CI.
+## What is mise?
 
-## What is it?
+mise manages your development tools, environment variables, and project tasks.
+Declare them in `mise.toml`, commit the file, and use the same setup in your shell,
+your editor, and CI.
 
-`mise` prepares your development environment before each command runs. It keeps
-project tools, environment variables, and tasks in one `mise.toml` file so new
-shells, checkouts, and CI jobs all start from the same setup.
+- **[Tools](https://mise.jdx.dev/dev-tools/):** install Node.js, Python, Go, and [hundreds more](https://mise.jdx.dev/registry.html), with different versions for each project.
+- **[Environments](https://mise.jdx.dev/environments/):** set project environment variables and load `.env` files.
+- **[Tasks](https://mise.jdx.dev/tasks/):** run build, test, and other commands with the tools and environment they need.
+- **[Bootstrap](https://mise.jdx.dev/bootstrap.html):** declare machine setup, including system packages, dotfiles, and services.
 
-- Install and switch between [dev tools](https://mise.jdx.dev/dev-tools/) like node, python, cmake, terraform, and [hundreds more](https://mise.jdx.dev/registry.html).
-- Load [environment variables](https://mise.jdx.dev/environments/) per project directory, including values from `.env` files and other sources.
-- Define and run [tasks](https://mise.jdx.dev/tasks/) for building, testing, linting, and deploying projects.
-
-## Demo
-
-The following demo shows how to install and use `mise` to manage multiple versions of `node` on the same system.
-Note that calling `which node` gives us a real path to node, not a shim.
-
-It also shows that you can use `mise` to install and many other tools such as `jq`, `terraform`, or `go`.
-
-[![demo](./docs/tapes/demo.gif)](https://mise.jdx.dev/demo.html)
-
-See [demo transcript](https://mise.jdx.dev/demo.html).
+Use the parts you need. Start with one tool or task and add more to the same config.
 
 ## Quickstart
 
-### Install mise
+### 1. Install mise
 
-See [Getting started](https://mise.jdx.dev/getting-started.html) for more options.
+On macOS or Linux:
 
-```sh-session
-$ curl https://mise.run | sh
-$ ~/.local/bin/mise --version
-              _                                        __
-   ____ ___  (_)_______        ___  ____        ____  / /___ _________
-  / __ `__ \/ / ___/ _ \______/ _ \/ __ \______/ __ \/ / __ `/ ___/ _ \
- / / / / / / (__  )  __/_____/  __/ / / /_____/ /_/ / / /_/ / /__/  __/
-/_/ /_/ /_/_/____/\___/      \___/_/ /_/     / .___/_/\__,_/\___/\___/
-                                            /_/                 by @jdx
-2026.9.1 macos-arm64 (2026-09-02)
+```sh
+curl https://mise.run | sh
+~/.local/bin/mise --version
 ```
 
-Hook mise into your shell (pick the right one for your shell):
+On Windows, install with `winget install jdx.mise`. See the
+[installation guide](https://mise.jdx.dev/installing-mise.html) for package managers
+and other installation methods.
 
-```sh-session
-# note this assumes mise is located at ~/.local/bin/mise
-# which is what https://mise.run does by default
-echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
-echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
-echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
-echo '~/.local/bin/mise activate pwsh | Out-String | Invoke-Expression' >> ~/.config/powershell/Microsoft.PowerShell_profile.ps1
+The examples below use `mise`. If it isn't on your `PATH` yet, use
+`~/.local/bin/mise` instead on macOS or Linux.
+
+### 2. Try a tool
+
+```sh
+mise exec node@24 -- node --version
 ```
 
-### Execute commands with specific tools
+This installs Node.js if needed and runs it for this command, without changing
+your project configuration. No shell activation is required.
 
-```sh-session
-$ mise exec node@26 -- node -v
-mise node@26.x.x ✓ installed
-v26.x.x
-```
+### 3. Give a project its own environment
 
-### Install tools
-
-```sh-session
-$ mise use --global node@26 go@1
-$ node -v
-v26.x.x
-$ go version
-go version go1.x.x macos/arm64
-```
-
-See [dev tools](https://mise.jdx.dev/dev-tools/) for more examples.
-
-### Manage environment variables
+In a project directory, create `mise.toml`:
 
 ```toml
-# mise.toml
-[env]
-SOME_VAR = "foo"
-```
-
-```sh-session
-$ mise set SOME_VAR=bar
-$ echo $SOME_VAR
-bar
-```
-
-Note that `mise` can also [load `.env` files](https://mise.jdx.dev/environments/#env-directives).
-
-### Run tasks
-
-```toml
-# mise.toml
-[tasks.build]
-description = "build the project"
-run = "echo building..."
-```
-
-```sh-session
-$ mise run build
-building...
-```
-
-See [tasks](https://mise.jdx.dev/tasks/) for more information.
-
-### Example mise project
-
-Here is a combined example to give you an idea of how you can use mise to manage your a project's tools, environment, and tasks.
-
-```toml
-# mise.toml
 [tools]
-terraform = "1"
-aws-cli = "2"
+node = "24"
 
 [env]
-TF_WORKSPACE = "development"
-AWS_REGION = "us-west-2"
-AWS_PROFILE = "dev"
+NODE_ENV = "development"
 
-[tasks.plan]
-description = "Run terraform plan with configured workspace"
-run = """
-terraform init
-terraform workspace select $TF_WORKSPACE
-terraform plan
-"""
-
-[tasks.validate]
-description = "Validate AWS credentials and terraform config"
-run = """
-aws sts get-caller-identity
-terraform validate
-"""
-
-[tasks.deploy]
-description = "Deploy infrastructure after validation"
-depends = ["validate", "plan"]
-run = "terraform apply -auto-approve"
+[tasks.hello]
+description = "Print the project's Node.js version and environment"
+run = "node -e \"console.log(process.version, process.env.NODE_ENV)\""
 ```
 
-Run it with:
+Run the task:
 
-```sh-session
-mise install # install tools specified in mise.toml
-mise run deploy
+```sh
+mise run hello
 ```
 
-Find more examples in the [mise cookbook](https://mise.jdx.dev/mise-cookbook/).
+mise installs the configured tool if needed, loads `NODE_ENV`, and runs the task.
+The output includes the Node.js version and `development`. Commit `mise.toml` so
+teammates and CI can run the same command.
 
-## Full Documentation
+To add tools later, run `mise use python@3.13` from the project directory.
+Use `mise use --global` to set personal defaults. Version requests such as `"24"`
+select a release in that series; use [exact pins or a lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html)
+when you need everyone to use the same resolved version.
 
-See [mise.jdx.dev](https://mise.jdx.dev)
+### 4. Activate your shell (optional)
+
+Activation makes project tools and environment variables available directly when
+you enter a directory. For an installation from `mise.run`, add **one** of these
+lines to the corresponding shell config:
+
+```bash
+# ~/.bashrc
+eval "$(~/.local/bin/mise activate bash)"
+```
+
+```zsh
+# ~/.zshrc
+eval "$(~/.local/bin/mise activate zsh)"
+```
+
+```fish
+# ~/.config/fish/config.fish
+~/.local/bin/mise activate fish | source
+```
+
+Restart your shell, then run `node --version` inside the project. For PowerShell
+and other installation methods, follow the
+[shell setup guide](https://mise.jdx.dev/getting-started.html#activate-mise).
+
+## Where to go next
+
+| I want to…                             | Read                                                                                                                                      |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Set up mise for the first time         | [Getting started](https://mise.jdx.dev/getting-started.html)                                                                              |
+| Add mise to an existing project        | [Walkthrough](https://mise.jdx.dev/walkthrough.html)                                                                                      |
+| Understand configuration and overrides | [Configuration](https://mise.jdx.dev/configuration.html)                                                                                  |
+| Use mise in an editor or CI            | [IDE integration](https://mise.jdx.dev/ide-integration.html) · [Continuous integration](https://mise.jdx.dev/continuous-integration.html) |
+| Find a command or solve a problem      | [CLI reference](https://mise.jdx.dev/cli/) · [Troubleshooting](https://mise.jdx.dev/troubleshooting.html)                                 |
+| Contribute to mise                     | [Contributing](CONTRIBUTING.md) · [Writing docs](docs/README.md)                                                                          |
+
+## Demo
+
+Watch mise install tools and switch Node.js versions as you change directories.
+
+[![Demo of mise managing tools](./docs/tapes/demo.gif)](https://mise.jdx.dev/demo.html)
+
+A [text transcript](https://mise.jdx.dev/demo.html) is also available.
 
 ## GitHub Issues & Discussions
 

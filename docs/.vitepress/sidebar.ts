@@ -11,10 +11,10 @@ export type SidebarItem = {
 
 export const sidebar: SidebarItem[] = [
   {
-    text: "Guides",
+    text: "Start Here",
     items: [
-      { text: "Demo", link: "/demo" },
       { text: "Getting Started", link: "/getting-started" },
+      { text: "Demo", link: "/demo" },
       { text: "Walkthrough", link: "/walkthrough" },
       { text: "Installing mise", link: "/installing-mise" },
       { text: "IDE Integration", link: "/ide-integration" },
