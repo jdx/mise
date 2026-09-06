@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+
+# An interactive terminal gets the live install region: a header with the
+# install-wide bar, one row per active tool, and the same permanent completion
+# lines the append-only reporter prints. This drives mise through a PTY with CI
+# unset so the animated display is actually chosen.
+export CI=0 MISE_DEBUG=0 MISE_TRACE=0 MISE_LOG_LEVEL=info
+export MISE_FORCE_PROGRESS=0
+
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", postinstall = "sleep 1; echo hook-finished" }
+TOML
+
+python3 - <<'PY'
+import errno
+import os
+import pty
+import re
+import subprocess
+
+def run(args, env):
+    master, slave = pty.openpty()
+    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=slave, env=env)
+    os.close(slave)
+    output = bytearray()
+    try:
+        while True:
+            try:
+                chunk = os.read(master, 8192)
+            except OSError as error:
+                if error.errno == errno.EIO:
+                    break
+                raise
+            if not chunk:
+                break
+            output.extend(chunk)
+    finally:
+        os.close(master)
+    return proc.wait(), output.decode(errors="replace")
+
+env = dict(os.environ, COLUMNS="120", LINES="40")
+env.pop("CI", None)
+env["CI"] = "0"
+code, raw = run(["mise", "install"], env)
+assert code == 0, raw
+plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
+
+# The live region was drawn: cursor controls appear, and the header carries
+# the install-wide bar with its whole-tool count.
+assert "\x1b[" in raw, raw
+assert "░" in plain or "█" in plain, plain
+assert re.search(r"[01]/1", plain), plain
+
+# The row named the phase. (A hook's stdout is a transient status line in the
+# interactive display, as it always was; the append-only reporter is what
+# prints it per line.)
+assert "running postinstall hook" in plain, plain
+
+# The bar never reads full while the tool is still working: with one tool the
+# header shows at most 23 of 24 cells until the completion line lands.
+for line in plain.splitlines():
+    if "0/1" in line and "█" * 24 in line:
+        raise AssertionError("bar was full before the install finished:\n" + plain)
+
+# The permanent record matches the append-only reporter: one completion line
+# per tool with its duration, then a summary. The old per-tool "installed"
+# row and the old "[cur/total]" header are gone.
+assert re.search(r"✓ dummy@1\.0\.0\s+\d+(\.\d+)?(ms|s)", plain), plain
+assert "installed 1 tool in" in plain, plain
+assert "[0/1]" not in plain and "[1/1]" not in plain, plain
+
+# A version that is already installed is reported as such, not as a fresh
+# install. (A bare `mise install` with nothing to do says "all tools are
+# installed" before any reporter exists, so ask for the version explicitly.)
+code, raw = run(["mise", "install", "dummy@1.0.0"], env)
+assert code == 0, raw
+plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
+assert "already installed" in plain, plain
+
+# --verbose keeps the classic per-line reporter.
+code, raw = run(["mise", "install", "--force", "--verbose"], env)
+assert code == 0, raw
+plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
+assert "installed 1 tool in" not in plain, plain
+PY

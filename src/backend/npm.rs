@@ -1563,21 +1563,33 @@ fn apply_aube_event(event: aube::embed::InstallEvent, pr: &dyn SingleReport) {
 
             // The first snapshot lands before resolution has counted anything;
             // `0/0 pkgs` is worse than no tally at all.
-            let mut message = if total == 0 {
-                label.to_string()
+            let mut detail = if total == 0 {
+                String::new()
             } else {
-                format!("{label} {cur}/{total} pkgs")
+                format!("{cur}/{total} pkgs")
             };
             // Bytes actually transferred — no denominator, so nothing here can
             // be wrong the way a percentage would be. Omitted entirely for an
             // install served from the store, which downloads nothing.
             if snap.downloaded_bytes > 0 {
-                message.push_str(&format!(
-                    " · {}",
-                    ByteSize::b(snap.downloaded_bytes).display().iec()
-                ));
+                if !detail.is_empty() {
+                    detail.push_str(" · ");
+                }
+                detail.push_str(
+                    &ByteSize::b(snap.downloaded_bytes)
+                        .display()
+                        .iec()
+                        .to_string(),
+                );
             }
-            pr.set_message(message);
+            // The phase is the message; the tally is detail, so a reporter with
+            // room for it can show the two apart and one without can fold them.
+            if detail.is_empty() {
+                pr.set_message(label.to_string());
+            } else {
+                pr.set_message(format!("{label} {detail}"));
+                pr.set_detail(detail);
+            }
         }
         // Text aube would have written to stderr itself. Warnings are the
         // user's business; a fatal error also comes back as the returned

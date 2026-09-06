@@ -174,6 +174,12 @@ impl MultiProgressReport {
         !self.quiet && !self.use_progress_ui && !settings.verbose && !settings.raw
     }
 
+    /// The live install region replaces the per-tool clx rows and the old
+    /// header whenever the animated display is on at all.
+    pub(crate) fn use_tty_install_output(&self) -> bool {
+        self.use_progress_ui
+    }
+
     pub(crate) fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
         self.add_with_options(prefix, false)
     }

@@ -3344,6 +3344,9 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // uninstall so shared and system installs cannot have their marker
         // cleared while an install is still in progress.
         let state_version = tv.tv_pathname();
+        // Another mise may be installing this exact version. Say so while we
+        // wait on it: a row that sits in "resolving" for a minute looks hung.
+        ctx.pr.set_message("waiting for install lock".into());
         let _state_lock = install_state::lock_tool_version(&tv.ba().short, &state_version)?;
 
         let mut install_satisfied = self

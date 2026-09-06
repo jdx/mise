@@ -50,6 +50,13 @@ pub(crate) trait SingleReport: Send + Sync + std::fmt::Debug {
     fn shows_process_output(&self) -> bool {
         false
     }
+
+    /// Secondary progress that is not a byte transfer — an embedded package
+    /// manager's `32/48 pkgs`. Reporters with one status line fold it into the
+    /// message; the install renderers show it beside the phase.
+    fn set_detail(&self, detail: String) {
+        let _ = detail;
+    }
     fn inc(&self, _delta: u64) {}
     fn set_position(&self, _delta: u64) {}
     fn set_length(&self, _length: u64) {}

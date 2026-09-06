@@ -123,6 +123,18 @@ where
         self.graph.node_count() == 0
     }
 
+    /// Keys this node still depends on. Completed nodes have left the graph,
+    /// so this shrinks as dependencies finish.
+    pub(crate) fn dependencies_of(&self, key: &K) -> Vec<K> {
+        let Some(&idx) = self.node_indices.get(key) else {
+            return vec![];
+        };
+        self.graph
+            .neighbors_directed(idx, Direction::Outgoing)
+            .filter_map(|dep| self.graph.node_weight(dep).map(|n| (self.key_fn)(n)))
+            .collect()
+    }
+
     /// Returns the keys of all blocked nodes (dependency failures or cycles).
     pub(crate) fn blocked_keys(&self) -> Vec<K> {
         self.graph
