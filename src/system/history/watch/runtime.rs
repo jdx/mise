@@ -652,7 +652,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                             installed = match install(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
                                 Ok(installed) => installed,
                                 Err(err) => {
-                                    stop_after_install_failure(&mut capture, &state.tracked, &err).await;
+                                    stop_after_install_failure(&mut capture, &state.tracked, &err, "re-installed").await;
                                     debouncer.stop();
                                     return Ok(1);
                                 }
