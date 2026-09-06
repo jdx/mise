@@ -1,6 +1,6 @@
 # Paranoid
 
-Paranoid mode requires explicit trust for non-global configuration and rechecks supported
+Paranoid mode requires explicit content-bound trust for non-global configuration and rechecks supported
 provenance during installation. Use it when you want configuration edits to require renewed
 approval. It does not sandbox a command after you approve it; see [Security](/security.html)
 for the scope of each control.

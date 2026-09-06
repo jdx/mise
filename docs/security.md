@@ -34,7 +34,8 @@ fails, check the selected artifact and the underlying error before changing thos
 see [checksum errors](/errors.html).
 
 A [lockfile](/dev-tools/mise-lock.html) can record checksums and provenance. By default, a
-supported installation can reuse recorded provenance instead of repeating its verification.
+supported installation can reuse recorded provenance instead of repeating its verification
+when the target platform's lockfile entry contains both a checksum and verified provenance.
 Use [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance) or
 [paranoid mode](/paranoid.html#provenance-re-verification) when installation should recheck it.
 This does not audit the contents of tools that are already installed and skipped.
