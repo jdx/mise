@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles undo [-n --dry-run] [-y --yes] [REF]`
 - **Effect:** destructive — may delete or irreversibly overwrite
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Source code:** [`src/cli/dotfiles/undo.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/undo.rs)
 
 Reverse a rollback, undo, or apply
 

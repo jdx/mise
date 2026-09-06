@@ -3,7 +3,7 @@
 
 - **Usage:** `mise bootstrap dotfiles rollback [FLAGS] [PATH]…`
 - **Effect:** destructive — may delete or irreversibly overwrite
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Source code:** [`src/cli/dotfiles/rollback.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/rollback.rs)
 
 Return files to the version a checkpoint holds
 

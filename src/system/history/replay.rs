@@ -411,7 +411,12 @@ async fn execute(
             conflicts.len()
         );
     }
-    let restores = exec.restore_dirs.iter().filter(|dir| !dir.is_dir()).count();
+    // a link to a directory is not the directory: it counts as work left
+    let restores = exec
+        .restore_dirs
+        .iter()
+        .filter(|dir| !dir.is_dir() || dir.is_symlink())
+        .count();
     if !steps.iter().any(|step| step.action.mutates()) && restores == 0 {
         info!("history: nothing to do");
         return Ok(());
@@ -787,8 +792,7 @@ fn plan(repo: &HistoryRepo, targets: &[Target], live: &str, force: bool) -> Resu
                 // over the size limit, an incomplete scan) is not missing:
                 // it is not touched
                 let present_uncaptured = current.is_none()
-                    && std::fs::symlink_metadata(&abs).is_ok()
-                    && !(abs.is_dir() && !abs.is_symlink());
+                    && std::fs::symlink_metadata(&abs).is_ok_and(|meta| !meta.is_dir());
                 let (action, from, to) = if present_uncaptured {
                     (
                         Action::Skip("present but not captured (excluded or omitted)".into()),
