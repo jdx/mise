@@ -31,7 +31,7 @@ pub(crate) struct Unuse {
     #[usage(value_name = "INSTALLED_TOOL@VERSION", required = true)]
     installed_tool: Vec<ToolArg>,
 
-    /// Create/modify an environment-specific config file like mise.<env>.toml
+    /// Modify `.mise.<env>.toml` when it exists, otherwise `mise.<env>.toml`
     #[usage(long, short, overrides = & ["global", "path"])]
     env: Option<String>,
 

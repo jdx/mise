@@ -180,8 +180,14 @@ export function fenceCodeBlocks(source: string): string {
   for (const token of blocks.reverse()) {
     const [start, end] = token.map!;
     const content = token.content.replace(/\n$/, "");
-    const first = content.split("\n")[0];
-    const indent = Math.max(0, lines[start].indexOf(first) - 4);
+    const contentLines = content.split("\n");
+    const firstContentLine = contentLines.findIndex((line) => line.trim());
+    const sourceLine = lines[start + Math.max(0, firstContentLine)] ?? "";
+    const sourceIndent = sourceLine.match(/^ */)?.[0].length ?? 0;
+    const contentIndent =
+      contentLines[Math.max(0, firstContentLine)]?.match(/^ */)?.[0].length ??
+      0;
+    const indent = Math.max(0, sourceIndent - 4 - contentIndent);
     const prefix = " ".repeat(indent);
     const longest = Math.max(
       2,
@@ -192,7 +198,7 @@ export function fenceCodeBlocks(source: string): string {
       start,
       end - start,
       prefix + fence,
-      ...content.split("\n").map((line) => prefix + line),
+      ...contentLines.map((line) => prefix + line),
       prefix + fence,
     );
   }

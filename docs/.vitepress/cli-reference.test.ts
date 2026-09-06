@@ -81,6 +81,21 @@ test("code nested in a list and literal backtick fences remain code", () => {
   assert.ok(output.includes("````"));
 });
 
+test("nested code preserves blank first lines and intentional indentation", () => {
+  const source =
+    "- Example:\n\n      \n        intentionally indented\n      plain\n\n- Next item\n";
+  const output = fenceCodeBlocks(source);
+  assert.equal(
+    new MarkdownIt().render(output),
+    new MarkdownIt().render(source),
+  );
+  assert.ok(
+    output.includes(
+      "      \n  ```\n    intentionally indented\n  plain\n  ```",
+    ),
+  );
+});
+
 test("command index hides compatibility commands and includes uncategorized additions", () => {
   const root = command("", {
     subcommands: {
