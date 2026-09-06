@@ -3,14 +3,16 @@
 //! (`layout`), network commands with the user's git configuration
 //! (`network`), what is shareable now (`share`), the per-path transition
 //! table (`reconcile`), publication from mise's bare repository
-//! (`publish`), machine recovery refs (`backup`), explicit application
-//! (`apply`), durable sync state (`state`), privacy filtering (`privacy`),
-//! and the orchestrating `sync` run.
+//! (`publish`), machine recovery refs (`backup`) and their encrypted form
+//! (`encrypted`), explicit application (`apply`), durable sync state
+//! (`state`), privacy filtering (`privacy`), and the orchestrating `sync`
+//! run.
 
 use eyre::{Result, bail};
 
 pub(crate) mod apply;
 pub(crate) mod backup;
+pub(crate) mod encrypted;
 pub(crate) mod format;
 pub(crate) mod layout;
 pub(crate) mod machines;

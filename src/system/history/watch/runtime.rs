@@ -783,8 +783,16 @@ async fn finish_sync(
             "uploaded": outcome.uploaded,
             "pending": outcome.pending,
             "conflicts": outcome.conflicts,
+            "backup_error": outcome.backup_error,
         }),
     );
+    if let Some(error) = &outcome.backup_error {
+        capture.out.emit(
+            "backups-skipped",
+            &format!("machine backups skipped: {error}"),
+            json!({ "message": error }),
+        );
+    }
     let applies = capture
         .sync
         .as_ref()

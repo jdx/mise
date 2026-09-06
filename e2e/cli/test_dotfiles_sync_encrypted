@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# `mise bootstrap dotfiles origin set --encrypt-backups`: this machine's recovery
+# refs are age-encrypted for its recipients. Another machine lists them
+# without a key and restores them with one; changing the scheme replaces the
+# refs on the origin; a machine with no key anywhere gets an identity
+# generated. All of it with experimental off: encrypted backups are not an
+# experimental feature (the `[env]` age directives still are).
+# shellcheck disable=SC2016
+
+require_cmd git
+
+export MISE_EXPERIMENTAL=0
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+
+# two age identities: A's own, and one that stands for another machine
+KEY="AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8"
+PUB="age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"
+KEY2="AGE-SECRET-KEY-12LCM5FM5DQ7HZDGYUZWMJ6QHM66J07NZ75VVP2VVGCZX53HYD5PQUXUN8K"
+PUB2="age15myzzpkenzud22ag88x5ksqd80g4tkwtruu976uev57l4r240qcqcuqnt9"
+
+# other machines are HOMEs outside A's home (so none of A's files is found as
+# a project config of theirs), reached through wrapper scripts (functions are
+# not visible inside assert subshells)
+wrapper() { # name dir
+  mkdir -p "$2/.config/mise"
+  cat <<EOF >"$PWD/$1"
+#!/usr/bin/env bash
+export HOME="$2" XDG_CONFIG_HOME="$2/.config" MISE_CONFIG_DIR="$2/.config/mise" \\
+  MISE_STATE_DIR="$2/.local/state/mise" MISE_DATA_DIR="$2/.local/share/mise" \\
+  MISE_CACHE_DIR="$2/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$2" MISE_EXPERIMENTAL=0
+cd "\$HOME" && exec mise "\$@"
+EOF
+  chmod +x "$PWD/$1"
+}
+B="$(dirname "$HOME")/b-home"
+wrapper b "$B"
+b="$PWD/b"
+C="$(dirname "$HOME")/c-home"
+wrapper c "$C"
+c="$PWD/c"
+perm_of="$PWD/perm_of"
+cat <<'EOF2' >"$perm_of"
+#!/usr/bin/env bash
+stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
+EOF2
+chmod +x "$perm_of"
+refs() { git --git-dir="$origin" for-each-ref --format='%(refname)' "${1:-refs/mise-history}"; }
+
+# ---- machine A: a tracked directory, its own age identity, a plaintext connection
+mkdir -p ~/.config/hypr
+echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
+printf '# public key: %s\n%s\n' "$PUB" "$KEY" >"$MISE_CONFIG_DIR/age.txt"
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+# the secrets feature keeps its gate
+assert_fail "mise set --age-encrypt X=1 --age-recipient $PUB 2>&1" "experimental"
+
+mise bootstrap dotfiles origin set "file://$origin" --name laptop --include-existing --yes >"$PWD/connect1.log" 2>&1
+assert_contains "cat $PWD/connect1.log" "in plain form"
+plain_refs=$(refs | wc -l | tr -d ' ')
+assert_succeed "test $plain_refs -ge 1"
+ref=$(refs | head -1)
+assert "git --git-dir=$origin ls-tree --name-only $ref | tr '\n' ' '" "meta.json snapshot "
+assert_contains "mise bootstrap dotfiles status" "machine backups: plaintext"
+
+# ---- the same connection, encrypted: the plaintext refs are replaced, the
+# payload hides names, descriptions, and content
+mise bootstrap dotfiles origin set "file://$origin" --name laptop --include-existing --encrypt-backups --yes >"$PWD/connect2.log" 2>&1
+assert_contains "cat $PWD/connect2.log" "backed up encrypted (age)"
+assert_contains "cat $PWD/connect2.log" "$PUB"
+assert_contains "cat $PWD/connect2.log" "existing recovery ref(s) on the repository are replaced: the plaintext ones are deleted"
+assert_not_contains "cat $PWD/connect2.log" "experimental"
+# every eligible checkpoint went up again (the connection's own capture may
+# have added one: config.local.toml changed when the first one was recorded)
+enc_refs=$(refs | wc -l | tr -d ' ')
+assert_succeed "test $enc_refs -ge $plain_refs"
+aid=$(jq -r .id "$MISE_STATE_DIR/history/machine.json")
+for ref in $(refs); do
+  assert "git --git-dir=$origin ls-tree --name-only $ref | tr '\n' ' '" "backup.toml payload.age "
+  assert_fail "git --git-dir=$origin show $ref:payload.age | grep -q kitty"
+  assert_fail "git --git-dir=$origin show $ref:payload.age | grep -q bindings"
+  assert_contains "git --git-dir=$origin show $ref:backup.toml" 'encryption = "age"'
+  assert_contains "git --git-dir=$origin show $ref:backup.toml" "id = \"$aid\""
+  assert_not_contains "git --git-dir=$origin log -1 --format=%B $ref" "bindings"
+done
+assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" "encrypt_backups = true"
+assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" "$PUB"
+assert_contains "mise bootstrap dotfiles status" "machine backups: encrypted (age) for 1 recipient(s)"
+assert_contains "mise bootstrap dotfiles origin 2>&1" "encrypted (age) for 1 recipient(s)"
+assert_contains "mise doctor 2>&1 || true" "machine backups encrypted (age); an identity here can restore them"
+# a later save goes up encrypted too
+echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
+assert_contains "mise bootstrap dotfiles sync 2>&1" "uploaded 1 checkpoint"
+assert "git --git-dir=$origin for-each-ref refs/mise-history | wc -l | tr -d ' '" "$((enc_refs + 1))"
+
+# ---- machine B: no key. It lists laptop's backups, cannot restore them,
+# restores them with the key; the decrypted copy stays local
+mkdir -p "$B/.config/hypr"
+echo 'bind = SUPER, Q, exec, kitty' >"$B/.config/hypr/bindings.lua"
+printf '[dotfiles]\n"~/.config/hypr" = { mode = "track" }\n' >"$B/.config/mise/config.toml"
+assert_succeed "$b bootstrap dotfiles origin set file://$origin --name desktop --yes"
+assert_contains "$b bootstrap dotfiles machines" "laptop"
+assert "$b bootstrap dotfiles machines --json | jq -r '.[] | select(.name == \"laptop\") | .encrypted == .checkpoints'" "true"
+assert "$b bootstrap dotfiles machines --json | jq -r '.[] | select(.name == \"desktop\") | .encrypted'" "0"
+assert_fail "$b bootstrap dotfiles rollback --to laptop/latest --all --dry-run 2>&1" "no age identity"
+assert_fail "MISE_AGE_KEY=$KEY2 $b bootstrap dotfiles rollback --to laptop/latest --all --dry-run 2>&1" "none of this machine's identities can decrypt it"
+assert_contains "MISE_AGE_KEY=$KEY $b bootstrap dotfiles rollback --to laptop/latest --all --dry-run" "monitors.lua"
+bstore="$B/.local/state/mise/history/repo.git"
+assert_succeed "git --git-dir=$bstore for-each-ref refs/machines-plain | grep -q ."
+assert_fail "git --git-dir=$origin for-each-ref | grep -q machines-plain"
+# B's own backups are plaintext: nothing about restoring them in doctor
+assert_not_contains "$b doctor 2>&1 || true" "could not restore"
+
+# ---- an explicit recipient that is not this machine: the refs are replaced
+# again, A is told it could not restore its own backups, B needs that key
+mise bootstrap dotfiles origin set "file://$origin" --name laptop --include-existing --encrypt-backups --recipient "$PUB2" --yes >"$PWD/connect3.log" 2>&1
+assert_contains "cat $PWD/connect3.log" "$PUB2"
+assert_contains "cat $PWD/connect3.log" "none of this machine's identities is among the recipients"
+assert_contains "cat $PWD/connect3.log" "the previously encrypted ones are deleted"
+assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" "$PUB2"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.local.toml" "$PUB"
+assert_contains "mise doctor 2>&1 || true" "could not restore its own backups"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_fail "MISE_AGE_KEY=$KEY $b bootstrap dotfiles rollback --to laptop/latest --all --dry-run 2>&1" "none of this machine's identities can decrypt it"
+assert_contains "MISE_AGE_KEY=$KEY2 $b bootstrap dotfiles rollback --to laptop/latest --all --dry-run" "monitors.lua"
+
+# ---- back to plaintext, said in capitals
+mise bootstrap dotfiles origin set "file://$origin" --name laptop --include-existing --yes >"$PWD/connect4.log" 2>&1
+assert_contains "cat $PWD/connect4.log" "uploaded again IN PLAIN FORM"
+ref=$(refs | head -1)
+assert "git --git-dir=$origin ls-tree --name-only $ref | tr '\n' ' '" "meta.json snapshot "
+assert_not_contains "cat $MISE_CONFIG_DIR/config.local.toml" "encrypt_backups"
+assert_contains "mise bootstrap dotfiles status" "machine backups: plaintext"
+
+# ---- machine C: no age key, no SSH key. An identity is generated, kept
+# private, never uploaded; its backups are encrypted from the first one
+mkdir -p "$C/.config/nvim"
+echo 'set number' >"$C/.config/nvim/init.vim"
+assert_succeed "$c bootstrap dotfiles track $C/.config/nvim"
+$c bootstrap dotfiles origin set "file://$origin" --name fresh --encrypt-backups --include-existing --yes >"$PWD/connect5.log" 2>&1
+assert_contains "cat $PWD/connect5.log" "an age identity will be generated at"
+assert_contains "cat $PWD/connect5.log" "Generated an age identity at"
+assert_contains "cat $PWD/connect5.log" "public key is age1"
+assert_succeed "test -f $C/.config/mise/age.txt"
+assert "$perm_of $C/.config/mise/age.txt" "600"
+assert_contains "cat $C/.config/mise/config.local.toml" "encrypt_backups = true"
+assert_fail "git --git-dir=$origin ls-tree -r --name-only main | grep -q age.txt"
+cid=$(jq -r .id "$C/.local/state/mise/history/machine.json")
+assert_succeed "test \$(git --git-dir=$origin for-each-ref refs/mise-history/$cid | wc -l) -ge 1"
+for ref in $(refs "refs/mise-history/$cid"); do
+  assert "git --git-dir=$origin ls-tree --name-only $ref | tr '\n' ' '" "backup.toml payload.age "
+  assert_fail "git --git-dir=$origin show $ref:payload.age | grep -q 'set number'"
+done
+assert_contains "$c bootstrap dotfiles machines" "fresh (this machine)"
+assert "$c bootstrap dotfiles machines --json | jq -r '.[] | select(.this) | .encrypted == .checkpoints'" "true"

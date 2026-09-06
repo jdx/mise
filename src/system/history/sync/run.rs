@@ -113,6 +113,14 @@ pub(crate) struct SyncStatus {
     /// in for a declaration.
     #[serde(default)]
     pub disconnected: bool,
+    /// How this machine's refs on the origin were written (`backup::scheme`);
+    /// absent means plaintext. A change replaces them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_scheme: Option<String>,
+    /// Why uploads are being skipped (encryption on without usable
+    /// recipients); publication and fetching continue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_error: Option<String>,
 }
 
 fn is_zero(value: &u32) -> bool {
@@ -176,6 +184,10 @@ pub(crate) struct SyncOutcome {
     pub published: Option<String>,
     pub uploaded: usize,
     pub pruned_remote: usize,
+    /// Refs deleted from the origin because the backup scheme changed.
+    pub replaced_remote: usize,
+    /// Uploads were skipped: encryption is on without usable recipients.
+    pub backup_error: Option<String>,
     pub pending: usize,
     pub conflicts: usize,
     pub fetched_upstream: Option<String>,
@@ -222,11 +234,14 @@ pub(crate) fn origin() -> Result<OriginTomlConfig> {
     if let (Some(url), Some(branch), false) =
         (status.origin_url, status.origin_branch, status.disconnected)
     {
-        return Ok(OriginTomlConfig {
-            url,
-            branch,
-            encrypt_backups: false,
-        });
+        let mut origin = OriginTomlConfig::plain(url, branch);
+        // refs written encrypted stay that way: with the declaration (and
+        // its recipients) gone, uploads are skipped, never made plaintext
+        origin.encrypt_backups = status
+            .backup_scheme
+            .as_deref()
+            .is_some_and(|scheme| scheme != backup::PLAIN_SCHEME);
+        return Ok(origin);
     }
     bail!(
         "no setup repository is connected; `mise bootstrap dotfiles origin set <url>` connects one"
@@ -245,9 +260,10 @@ pub(crate) fn sync(
         Some(origin) => origin.clone(),
         None => origin()?,
     };
-    if origin.encrypt_backups {
-        bail!("[history.origin] encrypt_backups is not supported yet; set it to false");
-    }
+    // resolved before anything is fetched; an unusable declaration skips
+    // uploads below rather than failing the sync (publication and fetching
+    // do not depend on it)
+    let encryption = backup::BackupEncryption::resolve(&origin);
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("synchronizing requires git"))?;
@@ -394,25 +410,48 @@ pub(crate) fn sync(
         status.upstream_commit = upstream_commit.clone();
         record_pending(&mut status, &plans, &Roots::current(), &shared.objects());
         if publish {
-            let since = status.upload_since.clone();
-            let uploadable: Vec<Entry> = entries
-                .iter()
-                .filter(|entry| {
-                    since
-                        .as_deref()
-                        .is_none_or(|s| entry.checkpoint.created_at.as_str() >= s)
-                })
-                .cloned()
-                .collect();
-            outcome.uploaded = backup::upload(
-                &remote,
-                repo,
-                &uploadable,
-                &machine.id,
-                &mut status.uploaded,
-            )?;
-            outcome.pruned_remote =
-                backup::prune_remote(&remote, &entries, &machine.id, &mut status.uploaded)?;
+            match &encryption {
+                Err(err) => {
+                    // recorded, not raised: the setup branch above is
+                    // published either way, and nothing is ever uploaded in
+                    // plaintext because the recipients are missing
+                    status.backup_error = Some(format!("{err:#}"));
+                    outcome.backup_error = status.backup_error.clone();
+                }
+                Ok(encryption) => {
+                    status.backup_error = None;
+                    let scheme = backup::scheme(encryption.as_ref());
+                    if backup::reconcile_scheme(&mut status, &scheme) {
+                        // durable before the deletion: a crash in between
+                        // finds an empty upload set and uploads everything
+                        // again, under the new scheme
+                        write_status(state_dir, &status)?;
+                        let refs = backup::remote_refs(&remote, &machine.id)?;
+                        remote.delete(&refs)?;
+                        outcome.replaced_remote = refs.len();
+                    }
+                    let since = status.upload_since.clone();
+                    let uploadable: Vec<Entry> = entries
+                        .iter()
+                        .filter(|entry| {
+                            since
+                                .as_deref()
+                                .is_none_or(|s| entry.checkpoint.created_at.as_str() >= s)
+                        })
+                        .cloned()
+                        .collect();
+                    outcome.uploaded = backup::upload(
+                        &remote,
+                        repo,
+                        &uploadable,
+                        &machine.id,
+                        &mut status.uploaded,
+                        encryption.as_ref(),
+                    )?;
+                    outcome.pruned_remote =
+                        backup::prune_remote(&remote, &entries, &machine.id, &mut status.uploaded)?;
+                }
+            }
         }
         outcome.pending = status.pending_applications.len();
         outcome.conflicts = status.conflicts.len();

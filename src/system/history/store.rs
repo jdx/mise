@@ -166,7 +166,7 @@ pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
 }
 
 /// This machine's stable identity, created on first use.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct Machine {
     pub id: String,
     pub name: String,

@@ -12,11 +12,11 @@ Experimental: enable with `mise settings experimental=true`.
 `set <url>` connects one repository that holds the shared setup branch
 and this machine's recovery refs. Before anything leaves the machine it
 prints exactly what will happen: the sync mode, what is shared per
-stream, what is not and why, what is backed up (in plain form), names
-that look like secrets, private content already committed upstream,
-and how an existing repository would be adopted. The declaration goes
-to `[history.origin]` in the global config; the mode to
-`settings.history.sync`.
+stream, what is not and why, what is backed up (in plain form, or
+encrypted with `--encrypt-backups`), names that look like secrets,
+private content already committed upstream, and how an existing
+repository would be adopted. The declaration goes to `[history.origin]`
+in the global config; the mode to `settings.history.sync`.
 
 ## Flags
 - **`--remove`** — Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)
@@ -37,6 +37,8 @@ Examples:
 ```
 mise bootstrap dotfiles origin set https://github.com/you/setup.git
 mise bootstrap dotfiles origin set git@github.com:you/setup.git --name laptop --sync manual
+mise bootstrap dotfiles origin set git@github.com:you/setup.git --encrypt-backups
+mise bootstrap dotfiles origin set git@github.com:you/setup.git --encrypt-backups --recipient age1… --recipient ~/.ssh/id_ed25519.pub
 mise bootstrap dotfiles origin              # what is connected
 mise bootstrap dotfiles origin --remove
 ```

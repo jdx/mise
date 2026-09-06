@@ -292,34 +292,61 @@ through the setup repository.
 `origin set` prints exactly what will happen before anything leaves the
 machine and asks for confirmation (`--yes` skips it): the sync mode, what is
 published per stream, what is not shared and why, what is backed up (in
-plain form: anyone who can read the repository can read every file in
-those snapshots; the setup branch is always plaintext, so use a private
-repository), whether existing checkpoints are included (only new ones by
-default; `--include-existing`), names that look like secrets with the
+plain form, or encrypted for which recipients with `--encrypt-backups`; the
+setup branch is always plaintext, so use a private repository), whether
+existing checkpoints are included (only new ones by default;
+`--include-existing`), names that look like secrets with the
 `track … --no-share --no-backup` line for each, and private content already
 committed in the repository's history, which stops the connection unless
 `--allow-committed-private` is passed (rewriting history is your decision).
 
-**What leaves the machine, in plain text.** Two things, both readable by
-anyone who can read the repository: the setup branch (the shared
+**What leaves the machine.** Two things. The setup branch (the shared
 configuration, the sources it references, and the shared version of every
-tracked entry, per its policies) and this machine's recovery refs
-(`refs/mise-history/<machine>/…`: a snapshot of every tracked file with
-`backup = true`, with private paths and paths with `backup = false` removed
-from the snapshot, the metadata, and the descriptions). `share = false`
-keeps a file out of the setup branch and out of other machines;
-`backup = false` keeps it out of the recovery refs; `*.local.toml` and
-credential stores default to both `share = false` and `backup = false`
-unless a per-file declaration says otherwise.
-Everything else stays on this machine. Encrypted recovery refs are not
-implemented yet: `--encrypt-backups` and `encrypt_backups = true` are refused
-rather than silently uploading in plain text, so a file you would only back
-up encrypted is a file to track with `--no-backup` for now.
+tracked entry, per its policies) is always plain text: it is merged and read
+as configuration by every machine, so anyone who can read the repository
+can read it. This machine's recovery refs (`refs/mise-history/<machine>/…`:
+a snapshot of every tracked file with `backup = true`, with private paths
+and paths with `backup = false` removed from the snapshot, the metadata, and
+the descriptions) are plain text by default, or encrypted with
+`--encrypt-backups` (below). `share = false` keeps a file out of the setup
+branch and out of other machines; `backup = false` keeps it out of the
+recovery refs; `*.local.toml` and credential stores default to both `share = false` and `backup = false` unless a
+per-file declaration says otherwise. Everything else stays on this machine.
 The declaration goes to `[history.origin]` in `config.local.toml` next to the
 global config (machine-local, never published: each machine names the
 repository the way it reaches it, and a fresh machine's own declaration
 never conflicts with the configuration it pulls), the mode
 to `settings.history.sync`.
+
+**Encrypted backups.** `mise bootstrap dotfiles origin set <url> --encrypt-backups`
+encrypts every recovery ref this machine uploads with
+[age](https://age-encryption.org): one payload per checkpoint holding the
+record and every backed-up file, so file names, descriptions, and content
+are readable only with a recipient's identity; the machine name, checkpoint
+id and time, and the number of checkpoints stay visible (`machines` lists
+them without a key). Recipients default to this machine's own identities:
+the age key at `settings.age.key_file` (default `~/.config/mise/age.txt`)
+and the public keys of `~/.ssh/id_ed25519` and `~/.ssh/id_rsa`. When none
+exists, mise generates an age identity at the key file path (mode 0600)
+and prints its public key. `--recipient <age1…|ssh-…|path>` (repeatable)
+names others: an age public key, an SSH public key, or a `.pub` or age
+identity file. The choice is recorded machine-locally as
+`encrypt_backups = true` and `recipients = […]` in `[history.origin]`. To
+restore another machine's encrypted backup here, its identity must be
+among the recipients and present here (`MISE_AGE_KEY`,
+`settings.age.identity_files`, `settings.age.key_file`, or the default
+`age.txt` and SSH keys); the identity file itself is a credential store,
+never captured or shared, so copy it between machines yourself.
+Connecting again with a different choice (plaintext to encrypted, other
+recipients, or back) deletes this machine's refs on the repository and
+uploads the eligible checkpoints again under the new one, so a repository
+never holds a mix by accident. Encryption on without any usable recipient
+uploads nothing and says so in `status` and `mise doctor`; plain text is
+never a fallback. A mise older than this feature skips encrypted refs
+rather than misreading them. Encrypted backups protect recovery copies;
+they are not a way to distribute secrets, and the setup branch stays
+plaintext. Encrypted backups work without `settings.experimental`; the
+`[env]` age directives remain experimental.
 
 **What is synchronized.** The setup branch mirrors the global configuration
 directory at its root (`config.toml`, `conf.d/`, `tasks/`, templates),
@@ -418,13 +445,21 @@ all-or-nothing application with recovery, not atomic filesystem writes.
 `backup = true` entry) are pushed as parentless commits to
 `refs/mise-history/<machine-id>/<uuid>`, rebuilt without every
 `backup = false` and private path and with the record masked; journal blobs
-never travel. Retention removes only this machine's remote refs for
-checkpoints it pruned. `mise bootstrap dotfiles rollback --to <machine>/<ref> --all`
-recovers another machine's backed-up files here; their journals are data
-only, never replayed. `mise bootstrap dotfiles origin --purge` deletes this machine's
-refs from the origin (objects may persist until the host runs gc; setup
-commits are never deleted; forks and host backups may keep content: not
-erasure) and disconnects; `--remove` only disconnects.
+never travel. A plaintext backup commit holds `meta.json` and `snapshot/`;
+an encrypted one holds `backup.toml` (format, machine, checkpoint id and
+time, recipient count) and `payload.age`. Retention removes only this
+machine's remote refs for checkpoints it pruned.
+`mise bootstrap dotfiles rollback --to <machine>/<ref> --all` recovers
+another machine's backed-up files here; an encrypted checkpoint is
+decrypted once with this machine's identities (the plaintext copy stays
+local, under `refs/machines-plain/`) and refused with the reason when none
+of them can read it; their journals are data only, never replayed.
+`mise bootstrap dotfiles machines` shows which machines encrypt.
+`mise bootstrap dotfiles origin --purge` deletes this machine's refs from
+the origin (objects may persist until the host runs gc; setup commits are
+never deleted; forks and host backups may keep content: not erasure) and
+disconnects; `--remove` only disconnects. Every pushed commit carries your
+git author identity, as any commit does.
 
 **Private repositories.** Network commands run with your normal git
 configuration (credential helpers, ssh, URL rewrites). For a private GitHub

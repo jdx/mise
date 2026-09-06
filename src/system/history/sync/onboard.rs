@@ -235,11 +235,10 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     let (_preview_dir, planning_store) = preview_store(store)?;
     let tracked = TrackedSet::effective().await?;
     let mut request = SyncRequest::new(true);
-    request.origin = Some(OriginTomlConfig {
-        url: onboarding.fetch_from.clone(),
-        branch: onboarding.branch.clone(),
-        encrypt_backups: false,
-    });
+    request.origin = Some(OriginTomlConfig::plain(
+        onboarding.fetch_from.clone(),
+        onboarding.branch.clone(),
+    ));
     request.capture = false;
     request.dry_run = true;
     // Pending decisions belong only to this preview store.
@@ -249,6 +248,38 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     preview.dry_run = true;
     preview.plan_only = true;
     apply::apply(&planning_store, &tracked, &preview).await?;
+    // backups follow the other machines: where they encrypt, this machine
+    // does too, for the identities found here; a declaration already in
+    // place (a re-run) keeps whatever it says
+    let declared = crate::system::history::config::origin()?
+        .is_some_and(|(_, origin)| origin.url == onboarding.origin);
+    let backups = if declared {
+        None
+    } else if let Some(repo) = planning_store.repo()
+        && super::machines::any_encrypted(repo, &store.machine().id)?
+    {
+        let recipients = crate::agecrypt::default_recipient_strings().await?;
+        if recipients.is_empty() {
+            miseprintln!(
+                "Other machines encrypt their backups, but no age identity or SSH public key was found here: nothing is backed up from this machine until `mise bootstrap dotfiles origin set {} --encrypt-backups` adds recipients (plaintext is never used as a fallback).",
+                onboarding.origin
+            );
+        } else {
+            miseprintln!(
+                "Other machines encrypt their backups; this machine's are encrypted too, for the {} recipient(s) found here.",
+                recipients.len()
+            );
+        }
+        Some(super::origin::BackupConfig {
+            encrypt: true,
+            recipients,
+        })
+    } else {
+        Some(super::origin::BackupConfig {
+            encrypt: false,
+            recipients: vec![],
+        })
+    };
     if onboarding.dry_run {
         let preview_config = Some(preview_configuration(&planning_store)?);
         miseprintln!("Dry run: nothing was changed.");
@@ -283,7 +314,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
             status.upload_since = Some(newest.unwrap_or_else(hstore::now_rfc3339));
         }
     })?;
-    super::origin::write_config(&onboarding.origin, &onboarding.branch, None)?;
+    super::origin::write_config(&onboarding.origin, &onboarding.branch, None, backups.as_ref())?;
 
     let applied = apply::apply(store, &tracked, &ApplyRequest::automatic()).await?;
     // a conflict (a file that exists here and differs) is not pending: it

@@ -526,18 +526,18 @@
           "unevaluatedProperties": false,
           "properties": {
             "identity_files": {
-              "description": "[experimental] List of age identity files to use for decryption.",
+              "description": "List of age identity files to use for decryption (encrypted machine backups, and the experimental `[env]` age directives).",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "key_file": {
-              "description": "[experimental] Path to the age private key file to use for encryption/decryption.",
+              "description": "Path to the age private key file to use for encryption/decryption: the default recipient and identity for encrypted machine backups, and the key for the experimental `[env]` age directives.",
               "type": "string"
             },
             "ssh_identity_files": {
-              "description": "[experimental] List of SSH identity files to use for age decryption.",
+              "description": "List of SSH identity files to use for age decryption (encrypted machine backups, and the experimental `[env]` age directives).",
               "type": "array",
               "items": {
                 "type": "string"
@@ -5213,7 +5213,7 @@
     },
     "history": {
       "type": "object",
-      "description": "dotfiles history: what is never captured (https://mise.jdx.dev/history.html)",
+      "description": "dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/history.html)",
       "properties": {
         "exclude": {
           "type": "array",
@@ -5221,6 +5221,42 @@
           "items": {
             "type": "string"
           }
+        },
+        "reload": {
+          "type": "object",
+          "description": "commands run once after a rollback or undo writes a path matching the glob (trusted global or system config only)",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "origin": {
+          "type": "object",
+          "description": "the setup repository this machine publishes to and fetches from; machine-local, written by `mise bootstrap dotfiles origin set`",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "the repository url"
+            },
+            "branch": {
+              "type": "string",
+              "description": "the setup branch",
+              "default": "main"
+            },
+            "encrypt_backups": {
+              "type": "boolean",
+              "description": "encrypt this machine's recovery refs with age for `recipients`; on without recipients, nothing is uploaded",
+              "default": false
+            },
+            "recipients": {
+              "type": "array",
+              "description": "age public keys (`age1…`) and SSH public keys the backups are encrypted for",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["url"],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

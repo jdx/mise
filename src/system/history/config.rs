@@ -32,10 +32,26 @@ pub(crate) struct OriginTomlConfig {
     pub url: String,
     #[serde(default = "default_branch")]
     pub branch: String,
-    /// Encrypt machine recovery refs (a later milestone; parsed and refused
-    /// until then so an early declaration is never silently plaintext).
+    /// Encrypt this machine's recovery refs with age for `recipients`. On
+    /// with no recipients, nothing is uploaded (never plaintext instead).
     #[serde(default)]
     pub encrypt_backups: bool,
+    /// age public keys (`age1…`) and SSH public keys the backups are
+    /// encrypted for; `origin set --encrypt-backups` fills it in.
+    #[serde(default)]
+    pub recipients: Vec<String>,
+}
+
+impl OriginTomlConfig {
+    /// A plaintext connection, as recorded before any declaration.
+    pub(crate) fn plain(url: String, branch: String) -> Self {
+        Self {
+            url,
+            branch,
+            encrypt_backups: false,
+            recipients: vec![],
+        }
+    }
 }
 
 fn default_branch() -> String {

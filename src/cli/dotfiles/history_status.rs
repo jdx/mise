@@ -43,6 +43,17 @@ pub(crate) struct SyncReport {
     pub consecutive_failures: u32,
     pub application_failure: Option<String>,
     pub validation_error: Option<String>,
+    pub backups: BackupsReport,
+}
+
+/// How this machine's recovery refs are written.
+#[derive(Serialize)]
+pub(crate) struct BackupsReport {
+    pub encrypted: bool,
+    pub recipients: usize,
+    /// Why uploads are skipped, when they are.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 pub(crate) fn sync_report(
@@ -71,6 +82,11 @@ pub(crate) fn sync_report(
         0
     };
     Ok(Some(SyncReport {
+        backups: BackupsReport {
+            encrypted: origin.encrypt_backups,
+            recipients: origin.recipients.len(),
+            error: status.backup_error.clone(),
+        },
         origin: origin.url,
         branch: origin.branch,
         mode: SyncMode::current()?.as_str().to_string(),
@@ -216,6 +232,17 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
                 when(&sync.last_apply),
                 sync.pending_upload
             );
+            if sync.backups.encrypted {
+                miseprintln!(
+                    "  machine backups: encrypted (age) for {} recipient(s).",
+                    sync.backups.recipients
+                );
+            } else {
+                miseprintln!("  machine backups: plaintext.");
+            }
+            if let Some(error) = &sync.backups.error {
+                miseprintln!("  backups skipped: {error}");
+            }
             if !sync.pending_applications.is_empty() {
                 miseprintln!(
                     "  {} incoming change(s) pending: `mise bootstrap dotfiles pull` ({})",

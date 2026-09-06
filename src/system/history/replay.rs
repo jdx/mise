@@ -143,7 +143,8 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
                 (paths.len() == 1)
                     .then(|| display_path(&paths[0]))
                     .as_deref(),
-            )?;
+            )
+            .await?;
             refuse_unusable(&entry)?;
             let paths = if req.all {
                 covered_paths(&entry.checkpoint)

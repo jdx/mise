@@ -15,6 +15,10 @@ pub(crate) const PUBLISH_REF: &str = "refs/setup/publish";
 pub(crate) const MACHINES_PREFIX: &str = "refs/machines/";
 /// Where machine recovery refs live on the remote.
 pub(crate) const REMOTE_MACHINES_PREFIX: &str = "refs/mise-history/";
+/// Local only, never pushed or fetched: the decrypted form of an encrypted
+/// recovery ref, `refs/machines-plain/<machine-id>/<remote commit>`, so a
+/// backup is decrypted once and its objects survive `gc`.
+pub(crate) const PLAIN_PREFIX: &str = "refs/machines-plain/";
 
 /// Authentication belongs in a credential helper or SSH agent, never in
 /// persisted connection URLs or the errors recorded in history health.
