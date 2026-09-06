@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TFXVACVFJKD90564RTFWDZ",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-cookbook-recipes",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/mise-cookbook/cpp.md",
+    "docs/mise-cookbook/docker.md",
+    "docs/mise-cookbook/index.md",
+    "docs/mise-cookbook/neovim.md",
+    "docs/mise-cookbook/nodejs.md",
+    "docs/mise-cookbook/presets.md",
+    "docs/mise-cookbook/python.md",
+    "docs/mise-cookbook/ruby.md",
+    "docs/mise-cookbook/shell-tricks.md",
+    "docs/mise-cookbook/terraform.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 53579,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3062400,
+    "output_tokens": 16558,
+    "api_call_count": 19
+  }
+}
