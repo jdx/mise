@@ -105,6 +105,10 @@ checkpoint that knew the path was absent counts as a version to return to,
 so a file created since rolls back to "missing". `--dry-run` stops after the
 plan.
 
+Rolling back a parent directory leaves unrecorded empty folders alone: Git
+snapshots do not record them. An explicitly selected empty folder can still
+be removed, and undo restores it.
+
 Then the current state of the affected paths is saved in a protective
 checkpoint (`rollback-before`); the plan is verified against the working tree
 again (an editor may have written meanwhile) and every path about to change

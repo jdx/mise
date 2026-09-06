@@ -30,6 +30,17 @@ assert_fail "test -d ~/.config/review/empty"
 assert_succeed "mise bootstrap dotfiles undo --yes"
 assert_succeed "test -d ~/.config/review/empty"
 
+# Parent rollback preserves unrecorded empty descendants even when it
+# removes neighboring files and their otherwise-new parent directory.
+before="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+mkdir -p ~/.config/review/new-dir/empty
+echo temporary >~/.config/review/new-dir/transient
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review --to $before --yes"
+assert_fail "test -e ~/.config/review/new-dir/transient"
+assert_succeed "test -d ~/.config/review/new-dir/empty"
+assert_succeed "test -d ~/.config/review/empty"
+
 # A canonical target outside HOME retains restrictive parent permissions.
 external="$(dirname "$HOME")/external-private"
 mkdir -m 700 "$external"

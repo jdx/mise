@@ -933,8 +933,8 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
             }
             // a directory the checkpoint knows nothing of (the named path
             // itself, or one below it) whose every file the plan deletes
-            // goes with them: returning to a known absence leaves no empty
-            // folder behind
+            // goes with them, unless that would remove an unrecorded empty
+            // descendant. Git snapshots cannot establish its prior state.
             let deleted: BTreeSet<String> = steps[first_step..]
                 .iter()
                 .filter(|step| matches!(step.action, Action::Delete))
@@ -984,6 +984,9 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                 if !abs.is_dir() || abs.is_symlink() {
                     continue;
                 }
+                if has_empty_descendant(&abs)? {
+                    continue;
+                }
                 steps.push(Step {
                     path: abs,
                     tree_path: dir,
@@ -1000,6 +1003,16 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
     steps.dedup_by(|a, b| a.path == b.path);
     occupied_restore_dirs(repo, exec, live, &mut steps)?;
     Ok(steps)
+}
+
+fn has_empty_descendant(dir: &Path) -> Result<bool> {
+    for entry in walkdir::WalkDir::new(dir).min_depth(1).follow_links(false) {
+        let entry = entry?;
+        if entry.file_type().is_dir() && std::fs::read_dir(entry.path())?.next().is_none() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// A recorded empty directory whose path now holds a symlink or a file is
