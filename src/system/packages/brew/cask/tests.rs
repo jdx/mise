@@ -7401,3 +7401,7 @@ fn git_only_path_rejects_symlink_escape() -> Result<()> {
 
 #[path = "upgrade_tests.rs"]
 mod upgrade_tests;
+
+#[cfg(target_os = "macos")]
+#[path = "upgrade_transaction_tests.rs"]
+mod upgrade_transaction_tests;
