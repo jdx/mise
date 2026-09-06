@@ -1,61 +1,50 @@
 # URL Replacements
 
-mise does not include a built-in registry for downloading artifacts.
-Instead, it retrieves remote registry manifests, which specify the URLs for downloading tools.
+Use `url_replacements` to route requests made by mise's HTTP client through an internal
+mirror or proxy. This can cover release metadata and artifact downloads, including Conda
+channel metadata. It does not rewrite requests made independently by a plugin script,
+Git, or an external package manager; configure those clients separately.
 
-In some environments — such as enterprises or DMZs — these URLs may not be directly accessible and must be accessed through a proxy or internal mirror.
-
-URL replacements allow you to modify or redirect any URL that mise attempts to access, making it possible to use internal proxies, mirrors, or alternative sources as needed.
-
-This includes conda channel metadata fetched while resolving packages as well as the package
-artifacts downloaded after resolution. The conda lockfile continues to record the logical
-upstream URLs, and replacements are applied when each request is sent.
+A replacement changes where a request is sent. It does not change which asset a backend
+selects, create a mirror, or generate a new checksum. For Conda, lockfiles retain the logical
+upstream URLs and the replacement is applied when the request is sent.
 
 ## Configuration Examples
 
-In mise.toml (single line):
+Put machine-specific mirror settings in global configuration, or share them in `mise.toml`
+when every user of the project has access to the mirror. For an exact URL prefix:
 
 ```toml
 [settings]
-url_replacements = { "example.com" = "mirror.example.com" }
+url_replacements = { "https://example.com/" = "https://mirror.example.com/" }
 ```
 
-In mise.toml (multiline):
+The table form is convenient for several rules:
 
 ```toml
 [settings.url_replacements]
-"example.com" = "mirror.example.com"
-"releases.hashicorp.com" = "hashicorp.example.com"
+"https://example.com/" = "https://mirror.example.com/"
+"https://releases.hashicorp.com/" = "https://hashicorp.example.com/"
 ```
 
-RegEx example:
-
-```toml
-[settings.url_replacements]
-"regex:^http://(.+)" = "https://$1"
-"regex:^https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" = "https://hub.example.com/artifactory/github/$1/$2/$3"
-```
+Replace the example mirror hosts with servers you operate or trust. They must serve the
+paths and metadata expected by the original backend. Inspect `mise settings ls` to confirm
+the settings in effect; use debug logging on the failing command to inspect its request URL.
 
 ## Simple Hostname Replacement
 
-For simple hostname-based mirroring, the key is the original hostname/domain to replace,
-and the value is the replacement string. The replacement happens by searching and replacing
-the pattern anywhere in the full URL string (including protocol, hostname, path, and query parameters).
+Despite often being used for hostnames, a plain key is a **substring match on the full URL**.
+It can match a path or query string as well as a hostname. A key such as `github.com` also
+matches `api.github.com` and `github.com.example.org`.
 
-Examples:
-
-- `github.com` -> `mirror.example.com` replaces GitHub hostnames
-- `https://github.com` -> `https://mirror.example.com` includes the protocol, so it excludes hosts like 'api.github.com'
-- `https://github.com` -> `https://proxy.example.com/github-mirror` replaces GitHub with a corporate proxy
-- `http://example.net` -> `https://example.net` changes the protocol from HTTP to HTTPS
-
-See [Security Considerations](#security-considerations) for important warnings about credential handling.
+Including the scheme and trailing `/`, such as `https://github.com/`, avoids matching those
+hostnames. For a rule that must match only at the start of a URL, use an anchored regex.
 
 ## Advanced Regex Replacement
 
-For more complex URL transformations, you can use regex patterns. When a key starts with `regex:`,
-it is treated as a regular expression pattern that can match and transform any part of the URL.
-The value can use capture groups from the regex pattern.
+Prefix a key with `regex:` to use the Rust regex engine. Capture groups in replacement
+values use `$1`, `$2`, or named captures. The examples below use TOML literal strings for
+regex keys, so backslashes do not need doubling.
 
 ### Regex Examples
 
@@ -64,115 +53,111 @@ The value can use capture groups from the regex pattern.
 ```toml
 [settings]
 url_replacements = {
-  "regex:^http://(.+)" = "https://$1"
+  'regex:^http://(.+)' = "https://$1",
 }
 ```
 
-This converts any HTTP URL to HTTPS by capturing everything after "http://" and replacing it with "https://".
+Use this only when the destination supports HTTPS. A scheme change does not make an
+untrusted server trustworthy.
 
 #### 2. GitHub Release Mirroring with Path Restructuring
 
 ```toml
 [settings]
 url_replacements = {
-  "regex:^https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" =
-    "https://hub.example.com/artifactory/github/$1/$2/$3"
+  'regex:^https://github\.com/([^/]+)/([^/]+)/releases/download/(.+)' = "https://hub.example.com/artifactory/github/$1/$2/$3",
 }
 ```
 
-This transforms `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz`
-to `https://hub.example.com/artifactory/github/owner/repo/v1.0.0/file.tar.gz`.
+This maps `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz` to
+`https://hub.example.com/artifactory/github/owner/repo/v1.0.0/file.tar.gz`.
+It does not rewrite `api.github.com` requests; add a separate rule if release metadata must
+also pass through a mirror.
 
 #### 3. Subdomain to Path Conversion
 
 ```toml
 [settings]
 url_replacements = {
-  "regex:^https://([^.]+)\\.cdn\\.example\\.com/(.+)" =
-    "https://unified-cdn.example.com/$1/$2"
+  'regex:^https://([^.]+)\.cdn\.example\.com/(.+)' = "https://unified-cdn.example.com/$1/$2",
 }
 ```
 
-This converts subdomain-based URLs to path-based URLs on a unified CDN.
+For example, `https://eu.cdn.example.com/tool.tar.gz` becomes
+`https://unified-cdn.example.com/eu/tool.tar.gz`.
 
 #### 4. Multiple Replacement Patterns (processed in order)
 
 ```toml
 [settings]
 url_replacements = {
-  "regex:^https://github\\.com/microsoft/(.+)" =
-    "https://internal.example.org/microsoft/$1",
-  "regex:^https://github\\.com/(.+)" =
-    "https://public.example.org/github/$1",
-  "releases.hashicorp.com" = "hashicorp.example.net"
+  # Put the specific rule before the general GitHub rule.
+  'regex:^https://github\.com/microsoft/(.+)' = "https://internal.example.org/microsoft/$1",
+  'regex:^https://github\.com/(.+)' = "https://public.example.org/github/$1",
+  "https://releases.hashicorp.com/" = "https://hashicorp.example.net/",
 }
 ```
 
-The first regex catches Microsoft repositories specifically, the second catches all other GitHub URLs,
-and the simple replacement handles HashiCorp.
-
-## Use Cases
-
-1. **Corporate Mirrors**: Replace public download URLs with internal corporate mirrors
-2. **Custom Registries**: Redirect package downloads to custom or private registries
-3. **Geographic Optimization**: Route downloads to geographically closer mirrors
-4. **Protocol Changes**: Convert HTTP URLs to HTTPS or vice versa
+These examples use TOML 1.1 multiline inline tables, including comments and trailing commas.
+The first rule handles Microsoft repositories, the second handles other GitHub paths, and
+the last handles HashiCorp downloads.
 
 ## Regex Syntax
 
-mise uses the Rust regex engine, which supports:
+Use `^` to anchor the beginning, `(.+)` for a capture, and `[^/]+` for a path component.
+Escape a literal dot with `\.` in a TOML literal string. In a double-quoted TOML string,
+write `\\.` instead because TOML also processes backslash escapes.
 
-- `^` and `$` for anchors (start/end of string)
-- `(.+)` for capture groups (use `$1`, `$2`, etc. in replacement)
-- `[^/]+` for character classes (matches any character except `/`)
-- `\\.` for escaping special characters (note: double backslash required in TOML)
-- `*`, `+`, `?` for quantifiers
-- `|` for alternation
-
-You can test your regex on regex101.com (see [example](https://regex101.com/r/rmcIE1/1)).
-Full regex syntax documentation: <https://docs.rs/regex/latest/regex/#syntax>
+The [Rust regex documentation](https://docs.rs/regex/latest/regex/#syntax) describes the
+supported syntax. Backreferences inside the pattern and lookaround are not supported.
+When a capture is followed by letters or digits, use braces to separate its name, such as
+`${1}suffix`.
 
 ## Precedence and Matching
 
-- URL replacements are processed in the order they appear in the configuration (IndexMap insertion order)
-- Both regex patterns (keys starting with `regex:`) and simple string replacements are processed in this same order
-- The first matching pattern is used; subsequent patterns are ignored for that URL
-- If no patterns match, the original URL is used unchanged
+Rules run in configuration insertion order. mise uses the first rule that changes the URL
+into another valid URL, then stops; replacements do not chain. Put specific rules before
+broad ones. If a matching rule leaves the URL unchanged or produces an invalid URL, mise
+continues to later rules. Invalid regex patterns produce a warning and are skipped.
+
+If no rule produces a valid changed URL, the original request is used. URL replacements are
+therefore routing rules, not an outbound-host allow list. Use network policy outside mise
+when traffic must never reach an upstream host.
 
 ## Security Considerations
 
-When using regex patterns, ensure your replacement URLs point to trusted sources,
-as this feature can redirect tool downloads to arbitrary locations.
+Authentication headers prepared for the original URL can be sent to the replacement server.
+Only route requests to servers trusted to receive both the artifacts and those credentials.
+A host-changing rewrite can replace those headers with mirror credentials from netrc, as
+described below; a rewrite alone does not remove them.
 
-> [!WARNING]
-> **Credential Leaking**: When using `url_replacements`, any authentication headers (like `Authorization: Bearer <TOKEN>`) generated for the original URL (e.g., `api.github.com`) are **preserved** and sent to the replaced URL.
->
-> This is by design to allow authentication with internal proxies that forward requests to upstream services (GitHub, GitLab, Forgejo, etc.). However, it means you must **only** replace URLs with trusted servers. Redirecting to an untrusted server will leak your credentials to that server.
->
-> **Best Practice**: Use the `^` anchor in your regex patterns to ensure you are matching the start of the URL.
->
-> **Bad**: `"regex:github\\.com"` (matches `evil-github.com`)
-> **Good**: `"regex:^https://github\\.com"` (only matches actual GitHub URLs)
+Use both a start anchor and a hostname boundary for an exact host:
+
+```toml
+[settings.url_replacements]
+'regex:^https://github\.com/' = "https://mirror.example.com/"
+```
+
+The trailing slash matters: `^https://github\.com` by itself also matches
+`https://github.com.example.org/`. Avoid placing credentials directly in replacement URLs,
+which can appear in logs.
 
 ## Authentication
 
-URL replacements can be used with `~/.netrc` (or `~/_netrc` on Windows) to authenticate with the replaced URL.
-Replacements are applied _before_ the netrc lookup, so you should use the hostname of the _replaced_ URL in your netrc file.
-
-For example, if you have this in `mise.toml`:
-
-```toml
-[settings]
-url_replacements = { "regex:^https://github\\.com" = "https://nexus.example.com" }
-```
-
-> [!NOTE]
-> Credentials from `.netrc` take precedence over and will **overwrite** any default authentication headers (such as those from `MISE_GITHUB_TOKEN` or other environment variables).
-
-You should have this in `~/.netrc`:
+mise looks up netrc credentials **after** rewriting the URL. Use the replacement hostname
+in `~/.netrc`, or `~/_netrc` on Windows (`~/.netrc` is a fallback there). The
+[`netrc_file`](/configuration/settings.html#netrc_file) setting can select another file.
 
 ```netrc
-machine nexus.example.com
+machine mirror.example.com
   login myusername
   password mypassword
 ```
+
+Use your mirror credentials and restrict the file's permissions on Unix, for example
+`chmod 600 ~/.netrc`.
+
+Netrc is normally a fallback: an existing Authorization header takes precedence. When a
+replacement changes the hostname, matching netrc credentials for the new host can override
+that header. A rewrite that only changes a path or query on the same host keeps existing
+Authorization. See [GitHub Tokens](/dev-tools/github-tokens.html) for upstream token sources.
