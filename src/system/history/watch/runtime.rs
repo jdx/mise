@@ -153,20 +153,16 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         Ok(installed) if !installed.is_empty() => installed,
         outcome => {
             // what changed while the watcher was down is saved before it
-            // gives up on watching, and why it gave up is on record for
-            // `doctor` and `status`
-            capture.reconcile(&state.tracked, "startup reconcile");
-            capture.health.watcher.last_reconcile = Some(store::now_rfc3339());
-            let reason = match &outcome {
-                Ok(_) => "no watch could be installed for the tracked set".to_string(),
-                Err(err) => format!("{err:#}"),
+            // gives up on watching (waiting a moment for a running
+            // operation), and why it gave up, and whether that final save
+            // happened, is on record for `doctor` and `status`
+            let err = match outcome {
+                Ok(_) => eyre::eyre!("no watch could be installed for the tracked set"),
+                Err(err) => err,
             };
-            capture.health.watcher.last_error = Some(reason.clone());
-            capture.health.watcher.last_error_at = Some(store::now_rfc3339());
-            capture.health.watcher.consecutive_failures += 1;
-            capture.write_health();
-            outcome?;
-            bail!("{reason}");
+            stop_after_install_failure(&mut capture, &state.tracked, &err, "installed").await;
+            debouncer.stop();
+            return Ok(1);
         }
     };
     // the first capture comes after the watches are in place, so an edit
@@ -306,7 +302,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                             installed = match install(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
                         Ok(installed) => installed,
                         Err(err) => {
-                            stop_after_install_failure(&mut capture, &state.tracked, &err).await;
+                            stop_after_install_failure(&mut capture, &state.tracked, &err, "re-installed").await;
                             debouncer.stop();
                             return Ok(1);
                         }
@@ -381,7 +377,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         installed = match reinstall(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
                             Ok(installed) => installed,
                             Err(err) => {
-                                stop_after_install_failure(&mut capture, &state.tracked, &err).await;
+                                stop_after_install_failure(&mut capture, &state.tracked, &err, "re-installed").await;
                                 debouncer.stop();
                                 return Ok(1);
                             }
@@ -403,7 +399,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                     } {
                         Ok(installed) => installed,
                         Err(err) => {
-                            stop_after_install_failure(&mut capture, &state.tracked, &err).await;
+                            stop_after_install_failure(&mut capture, &state.tracked, &err, "re-installed").await;
                             debouncer.stop();
                             return Ok(1);
                         }
@@ -480,7 +476,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                     installed = match reinstall(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
                         Ok(installed) => installed,
                         Err(err) => {
-                            stop_after_install_failure(&mut capture, &state.tracked, &err).await;
+                            stop_after_install_failure(&mut capture, &state.tracked, &err, "re-installed").await;
                             debouncer.stop();
                             return Ok(1);
                         }
@@ -508,28 +504,39 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
 /// The watches could not be re-installed after a replan: what is pending is
 /// saved and the failure recorded before the process exits, so the service
 /// restarts it and status says why.
+/// Stops after the watches could not be `installed` (at startup) or
+/// `re-installed` (a replan): a final capture first, then the reason on
+/// record, including a final capture that could not run.
 async fn stop_after_install_failure(
     capture: &mut Capture,
     tracked: &TrackedSet,
     err: &eyre::Report,
+    phase: &str,
 ) {
     capture.out.emit(
         "error",
-        &format!(
-            "the watches could not be re-installed; stopping so the service restarts it: {err:#}"
-        ),
+        &format!("the watches could not be {phase}; stopping so the service restarts it: {err:#}"),
         json!({ "message": format!("{err:#}") }),
     );
-    finish(capture, tracked).await;
+    let saved = finish(capture, tracked).await;
     // recorded after the final capture, which would clear it
-    capture.health.watcher.last_error =
-        Some(format!("the watches could not be re-installed: {err:#}"));
+    let unsaved = match saved {
+        Attempt::Done => String::new(),
+        Attempt::Deferred => {
+            "; the final capture did not run: another history operation held the lock".to_string()
+        }
+        Attempt::Failed => "; the final capture failed".to_string(),
+    };
+    capture.health.watcher.last_error = Some(format!(
+        "the watches could not be {phase}: {err:#}{unsaved}"
+    ));
     capture.health.watcher.last_error_at = Some(store::now_rfc3339());
     capture.health.watcher.consecutive_failures += 1;
     capture.write_health();
 }
 
-async fn finish(capture: &mut Capture, tracked: &TrackedSet) {
+/// Returns how the final capture went.
+async fn finish(capture: &mut Capture, tracked: &TrackedSet) -> Attempt {
     // a full capture, not only the due paths: a change still
     // inside the coalescing window has not reached the scheduler
     // yet, and a throttled file's final state is saved now. The
@@ -560,6 +567,7 @@ async fn finish(capture: &mut Capture, tracked: &TrackedSet) {
     capture.persist_schedule();
     capture.out.emit("stopped", "stopping", json!({}));
     capture.write_health();
+    outcome
 }
 
 fn describe(paths: &[PathBuf]) -> String {
