@@ -133,7 +133,13 @@ assert "git --git-dir=$origin log --format=%s main | grep -c 'add readme'" "1"
 # committed stays in git, never written into the configuration directory
 assert_succeed "$b bootstrap dotfiles sync"
 assert_contains "$b bootstrap dotfiles rollback --to laptop/latest --all --dry-run" "monitors.lua"
+# a directory where the repository has a file is never replaced
+mkdir -p "$B/.config/hypr/monitors.lua"
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "a directory stands where the repository has a file"
+assert_succeed "test -d $B/.config/hypr/monitors.lua"
+rmdir "$B/.config/hypr/monitors.lua"
 assert_succeed "$b bootstrap dotfiles pull --yes"
+assert "cat $B/.config/hypr/monitors.lua" "monitor=DP-1"
 assert_fail "test -e $B/.config/mise/README.md"
 
 # ---- fetch-only publishes nothing; disconnecting keeps local history

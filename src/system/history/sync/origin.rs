@@ -334,7 +334,13 @@ fn unshared_destinations(shared: &share::ShareReport, tracked: &TrackedSet) -> V
         }
     }
     for unshared in &shared.unshared {
-        if let Some(path) = roots.branch_path(EntryKind::Track, &unshared.local, None) {
+        // under the entry's own kind: a source or a configuration file
+        // lives elsewhere in the branch than a tracked file
+        let Some(entry) = tracked.entry_for(&unshared.local) else {
+            continue;
+        };
+        if let Some(path) = roots.branch_path(entry.kind, &unshared.local, entry.variant.as_deref())
+        {
             out.push(path);
         }
     }

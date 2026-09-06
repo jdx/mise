@@ -345,6 +345,13 @@ fn hold_reason(
     if !step.exists {
         return Ok(None);
     }
+    // a directory is never replaced by a file from the repository
+    if step.path.is_dir() && !step.path.is_symlink() {
+        return Ok(Some(
+            "needs decision: a directory stands where the repository has a file; move it away first"
+                .into(),
+        ));
+    }
     // inside a user checkout: staged changes always hold; an unstaged
     // difference holds unless it is mise's own previous application
     let applied = sync_state
