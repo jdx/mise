@@ -110,7 +110,7 @@ fn default_branch(remote: &Remote<'_>) -> Result<Option<String>> {
 
 /// A machine connected to another repository is not silently moved.
 fn refuse_other_connection(store: &Store, origin: &str, branch: &str) -> Result<()> {
-    let status = run::read_status(store.state_dir());
+    let status = run::read_status(store.state_dir())?;
     if let Some(url) = &status.origin_url
         && !status.disconnected
         && (url != origin || status.origin_branch.as_deref() != Some(branch))
@@ -187,7 +187,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         .then(|| std::fs::read(&recorded).ok())
         .flatten();
     let connected_before = {
-        let status = run::read_status(state_dir);
+        let status = run::read_status(state_dir)?;
         status.origin_url.is_some() && !status.disconnected
     };
     let synced = run::sync(store, &tracked, &request)?;
@@ -240,7 +240,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     let undecided = applied.held + synced.conflicts;
     // configuration among them: nothing to bootstrap from yet
     let configuration_held = {
-        let status = run::read_status(state_dir);
+        let status = run::read_status(state_dir)?;
         status
             .pending_applications
             .iter()

@@ -138,7 +138,7 @@ pub(crate) fn write_status(state_dir: &Path, status: &SyncStatus) -> Result<()> 
 }
 
 #[cfg(test)]
-mod status_tests {
+mod status_read_tests {
     use super::*;
 
     #[test]
@@ -218,7 +218,7 @@ pub(crate) fn origin() -> Result<OriginTomlConfig> {
     }
     // recorded when it was connected: a fresh machine's declaration may
     // still be on its way in the configuration being pulled
-    let status = read_status(&crate::dirs::STATE);
+    let status = read_status(&crate::dirs::STATE)?;
     if let (Some(url), Some(branch), false) =
         (status.origin_url, status.origin_branch, status.disconnected)
     {
@@ -481,7 +481,7 @@ pub(crate) fn update_status(
         }
         std::thread::sleep(STATUS_LOCK_POLL);
     };
-    let mut status = read_status(state_dir);
+    let mut status = read_status(state_dir)?;
     mutate(&mut status);
     write_status(state_dir, &status)
 }
@@ -937,7 +937,7 @@ mod status_tests {
             status.declarations_changed = false;
         })
         .unwrap();
-        let current = read_status(state_dir);
+        let current = read_status(state_dir).unwrap();
         assert!(!current.declarations_changed);
         assert_eq!(current.conflicts.len(), 1);
         assert_eq!(current.last_error.as_deref(), Some("unreachable"));
