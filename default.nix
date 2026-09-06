@@ -51,14 +51,25 @@ rustPlatform.buildRustPackage {
       --replace '"git"' '"${git}/bin/git"'
   '';
 
-  # Skip the test_plugin_list_urls as it uses the .git folder, which
-  # is excluded by default from Nix.
+  # Skip tests that require network, host tools unavailable in the sandbox,
+  # or .git folder excluded by Nix.
   checkPhase = ''
     RUST_BACKTRACE=full cargo test --all-features -- \
       --skip cli::plugins::ls::tests::test_plugin_list_urls \
       --skip tera::tests::test_last_modified \
       --skip system::defaults::tests::test_status_missing_keys_are_unset \
-      --skip plugins::core::ruby::tests::test_list_versions_matching
+      --skip plugins::core::ruby::tests::test_list_versions_matching \
+      --skip cmd::tests::test_macos_sandbox_preserves_piped_stdin \
+      --skip sandbox::macos::tests::test_allow_read_executes_shell_without_reading_siblings \
+      --skip sandbox::macos::tests::test_deny_process_at_runtime \
+      --skip system::packages::brew::cask::tests::ditto_into_stays_bound_after_directory_replacement \
+      --skip system::packages::brew::cask::tests::installer_mutations_are_included_in_durable_symlink_sources \
+      --skip system::packages::brew::cask::tests::staged_artifact_closure_merges_a_parent_after_its_child \
+      --skip system::packages::brew::cask::tests::staged_symlink_source_accepts_canonical_stage_spelling \
+      --skip system::packages::brew::cask::tests::staged_symlink_source_copies_reachable_internal_links \
+      --skip system::packages::brew::cask::tests::staged_symlink_sources_become_caskroom_owned \
+      --skip system::packages::brew::cask::tests::structured_copy_restores_external_target_without_status_tracking \
+      --skip system::packages::brew::cask::tests::structured_copy_rollback_removes_target_with_created_parent
   '';
 
   meta = with lib; {
