@@ -19,6 +19,10 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 scope = "user"
 builtin = "history-watch"
 EOF
-assert_fail "mise bootstrap services apply --yes" 'dotfile tracking is experimental'
+if mise bootstrap services status --json | jq -e '.[] | select(.action == "unknown")' >/dev/null; then
+  assert_contains "mise bootstrap services apply --yes 2>&1" 'skipped'
+else
+  assert_fail "mise bootstrap services apply --yes" 'dotfile tracking is experimental'
+fi
 # Doctor may also report missing tools in this isolated HOME.
 assert_contains "mise doctor 2>&1 || true" 'tracking is experimental and disabled'

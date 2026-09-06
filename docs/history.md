@@ -309,7 +309,8 @@ tracked entry, per its policies) and this machine's recovery refs
 from the snapshot, the metadata, and the descriptions). `share = false`
 keeps a file out of the setup branch and out of other machines;
 `backup = false` keeps it out of the recovery refs; `*.local.toml` and
-credential stores are both unless a per-file declaration says otherwise.
+credential stores default to both `share = false` and `backup = false`
+unless a per-file declaration says otherwise.
 Everything else stays on this machine. Encrypted recovery refs are not
 implemented yet: `--encrypt-backups` and `encrypt_backups = true` are refused
 rather than silently uploading in plain text, so a file you would only back

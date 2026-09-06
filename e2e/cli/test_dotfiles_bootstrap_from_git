@@ -43,6 +43,17 @@ EOF2
 }
 
 # ---- machine C: a fresh HOME, one command
+preview_home="$(dirname "$HOME")/conflict-preview-home"
+wrapper "$preview_home" "$PWD/conflict-preview"
+mkdir -p "$preview_home/.config/hypr"
+echo local >"$preview_home/.config/hypr/bindings.lua"
+preview="$("$PWD/conflict-preview" bootstrap --from-git "file://$origin" --dry-run 2>&1)"
+assert_contains "echo \"$preview\"" "bindings.lua"
+assert_contains "echo \"$preview\"" "held: unresolved conflict"
+assert_contains "echo \"$preview\"" "config.toml"
+assert "cat $preview_home/.config/hypr/bindings.lua" "local"
+assert_fail "test -e $preview_home/.config/mise/config.toml"
+
 C="$(dirname "$HOME")/c-home"
 wrapper "$C" "$PWD/c"
 c="$PWD/c"

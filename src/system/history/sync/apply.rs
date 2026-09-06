@@ -169,6 +169,30 @@ pub(crate) async fn apply(
         run::write_status(state_dir, &status)?;
     }
     if !status.conflicts.is_empty() {
+        if req.dry_run {
+            // Preview the whole paused setup even when reconciliation
+            // cannot yet produce an applicable write set.
+            let mut table = MiseTable::new(false, &["Path", "Action", "Group"]);
+            for conflict in &status.conflicts {
+                if let Some(path) = roots.locate(&conflict.branch_path).path() {
+                    table.add_row(vec![
+                        display_path(path),
+                        "held: unresolved conflict".to_string(),
+                        conflict.branch_path.clone(),
+                    ]);
+                }
+            }
+            for pending in &status.pending_applications {
+                if let Some(path) = roots.locate(&pending.branch_path).path() {
+                    table.add_row(vec![
+                        display_path(path),
+                        "held: sharing paused for the entire setup".to_string(),
+                        pending.branch_path.clone(),
+                    ]);
+                }
+            }
+            table.print()?;
+        }
         if take_remote.is_empty() && keep_local.is_empty() && !req.dry_run && !req.automatic {
             bail!(
                 "sync paused: resolve all {} conflict(s) before sharing resumes",

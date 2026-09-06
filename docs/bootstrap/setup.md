@@ -31,7 +31,8 @@ gh auth setup-git --hostname github.com
 `gh auth setup-git` makes git use the GitHub CLI as its credential helper,
 so background synchronization can reach a private repository without a
 terminal. An SSH remote works too when the history watcher can reach an
-agent or an unencrypted key.
+SSH agent with an encrypted key. For unattended file-based credentials,
+use a repository-scoped deploy key and restrict its file permissions.
 
 ## 2. Track a file you already have
 
