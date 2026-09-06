@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TWW3J85TQRZ7KWRESVESHB",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-audit-integration",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/cache-behavior.md",
+    "docs/configuration.md",
+    "docs/continuous-integration.md",
+    "docs/directories.md",
+    "docs/dotfiles.md",
+    "docs/env-plugin-development.md",
+    "docs/errors.md",
+    "docs/faq.md",
+    "docs/getting-started.md",
+    "docs/mise-cookbook/python.md",
+    "docs/paranoid.md",
+    "docs/plugin-usage.md",
+    "docs/plugins.md",
+    "docs/public/llms.txt",
+    "docs/rtx.md",
+    "docs/security.md",
+    "docs/tasks/caching.md",
+    "docs/tips-and-tricks.md",
+    "docs/tool-plugin-development.md",
+    "docs/troubleshooting.md",
+    "docs/url-replacements.md",
+    "settings.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 111317,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2403712,
+    "output_tokens": 11490,
+    "api_call_count": 22
+  }
+}

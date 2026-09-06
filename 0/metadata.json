@@ -1,0 +1,61 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1TWW3J85TQRZ7KWRESVESHB",
+  "session_id": "01a074d2-ba76-7cb1-9643-df3f370f625e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T08:20:35.605689Z",
+  "branch": "codex/docs-audit-integration",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/cache-behavior.md",
+    "docs/configuration.md",
+    "docs/continuous-integration.md",
+    "docs/directories.md",
+    "docs/dotfiles.md",
+    "docs/env-plugin-development.md",
+    "docs/errors.md",
+    "docs/faq.md",
+    "docs/getting-started.md",
+    "docs/mise-cookbook/python.md",
+    "docs/paranoid.md",
+    "docs/plugin-usage.md",
+    "docs/plugins.md",
+    "docs/public/llms.txt",
+    "docs/rtx.md",
+    "docs/security.md",
+    "docs/tasks/caching.md",
+    "docs/tips-and-tricks.md",
+    "docs/tool-plugin-development.md",
+    "docs/troubleshooting.md",
+    "docs/url-replacements.md",
+    "settings.toml"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ed0ac62e3c6f",
+  "checkpoint_transcript_start": 4186,
+  "transcript_lines_at_start": 4186,
+  "compact_transcript_start": 524,
+  "token_usage": {
+    "input_tokens": 111317,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2403712,
+    "output_tokens": 11490,
+    "api_call_count": 22
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T08:20:34.845325Z",
+    "agent_lines": 728,
+    "agent_removed": 1316,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 728,
+    "total_lines_changed": 2044,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
