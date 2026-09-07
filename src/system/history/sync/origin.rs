@@ -5,7 +5,7 @@
 //! the repository's history, and how an existing unmarked repository would
 //! be adopted.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use eyre::{Result, bail};
@@ -294,11 +294,60 @@ async fn set_inner(
             miseprintln!("  {}", display_path(path));
         }
     }
+    // Show actual paths in both outgoing channels: not sharing a file does
+    // not imply that its recovery history stays local.
+    let shared_paths: BTreeMap<_, _> = shared
+        .files
+        .values()
+        .map(|file| (&file.local, file))
+        .collect();
+    let private_paths: BTreeSet<_> = walk.private.iter().map(|file| &file.path).collect();
+    miseprintln!(
+        "File destinations (current captured files; historical backups follow the policies below):"
+    );
+    for group in ["Local only", "Shared setup", "Remote backup"] {
+        miseprintln!("  {group}:");
+        let mut count = 0;
+        for (path, (_, policy)) in &walk.files {
+            let shared_file = shared_paths.get(path);
+            let backup = !private_paths.contains(path)
+                && policy.backup
+                && (!policy.encrypt || !matches!(backups, BackupPlan::Plain));
+            let included = match group {
+                "Local only" => shared_file.is_none() && !backup,
+                "Shared setup" => shared_file.is_some(),
+                _ => backup,
+            };
+            if !included {
+                continue;
+            }
+            count += 1;
+            let protection = match group {
+                "Local only" => "local history only",
+                "Shared setup" if shared_file.is_some_and(|file| file.encrypt) => {
+                    "encrypted contents; path visible"
+                }
+                "Remote backup" if !matches!(backups, BackupPlan::Plain) => {
+                    "encrypted contents and paths"
+                }
+                _ => "plaintext",
+            };
+            miseprintln!("    {} ({protection})", display_path(path));
+        }
+        if count == 0 {
+            miseprintln!("    (none)");
+        }
+    }
+    miseprintln!(
+        "A file can be both shared and backed up. `track <path> --private` disables both for its contents; its declaration may still be shared. Previously published content is not erased."
+    );
     let backed_up = walk
         .files
         .iter()
-        .filter(|(_, (_, policy))| {
-            policy.backup && (!policy.encrypt || !matches!(backups, BackupPlan::Plain))
+        .filter(|(path, (_, policy))| {
+            !private_paths.contains(path)
+                && policy.backup
+                && (!policy.encrypt || !matches!(backups, BackupPlan::Plain))
         })
         .count();
     match &backups {

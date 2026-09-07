@@ -87,13 +87,13 @@
 - [Docker Compose Projects](https://mise.jdx.dev/bootstrap/compose.html): [bootstrap.compose] declaratively manages long-running Docker Compose projects after packages, privileged files, directories, and system services have converged.
 - [Secret Inputs](https://mise.jdx.dev/bootstrap/secrets.html): [bootstrap.secrets] declares the sensitive inputs a bootstrap configuration needs without storing their values in mise configuration.
 - [Repos](https://mise.jdx.dev/bootstrap/repos.html): mise can declare git repositories in [bootstrap.repos] and apply them with mise bootstrap repos apply or as part of mise bootstrap.
-- [Dotfiles](https://mise.jdx.dev/dotfiles.html): [!WARNING] The top-level mise dotfiles command is deprecated and hidden from help. It will begin warning in mise 2027.2.0 and be removed in mise 2028.2.0. Use mise bootstrap dotfiles instead.
+- [Dotfiles](https://mise.jdx.dev/dotfiles.html): [!WARNING] Tracking, checkpoints, rollback, watching, and synchronization are experimental. Their interfaces and storage formats may change before stabilization.
 - [Shell Activation](https://mise.jdx.dev/bootstrap/shell.html): mise can declaratively add shell activation snippets for bash, zsh, and fish with [bootstrap.mise_shell_activate], applied by mise bootstrap mise-shell-activate apply or as part of mise bootstrap.
 - [macOS Defaults](https://mise.jdx.dev/bootstrap/macos-defaults.html): mise can declare macOS user defaults (preferences) in the [bootstrap.macos.defaults] section of mise.toml and apply them with mise bootstrap macos defaults apply or as part of mise bootstrap.
 - [launchd](https://mise.jdx.dev/bootstrap/launchd.html): mise can declare macOS user LaunchAgents in [bootstrap.macos.launchd.agents] and apply them with mise bootstrap macos launchd-agents apply or as part of mise bootstrap.
 - [systemd](https://mise.jdx.dev/bootstrap/systemd.html): mise can declare Linux systemd user services and timers in [bootstrap.linux.systemd.units] and apply them with mise bootstrap linux systemd-units apply or as part of mise bootstrap.
 - [User Login Shell](https://mise.jdx.dev/bootstrap/user.html): mise can declare the current user's login shell in [bootstrap.user] and apply it with mise bootstrap user apply or as part of mise bootstrap.
-- [Dotfiles history](https://mise.jdx.dev/history.html): [!WARNING] Dotfile tracking and history are experimental. Enable them with mise settings experimental=true. Interfaces and storage formats may change.
+- [Dotfiles history](https://mise.jdx.dev/history.html): [!WARNING] Tracking, checkpoints, rollback, watching, and synchronization are experimental. Their interfaces and storage formats may change before stabilization.
 
 ## Environments
 

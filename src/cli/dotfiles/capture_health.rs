@@ -63,7 +63,9 @@ pub(crate) fn advice(state: Watcher) -> &'static str {
 /// Warns when enrollment succeeded but nothing saves edits automatically.
 pub(crate) async fn report() {
     match watcher().await {
-        Ok(Watcher::Running) => {}
+        Ok(Watcher::Running) => {
+            info!("history: watcher running; autosave-enabled files are saved automatically")
+        }
         Ok(state) => warn!("history: {}", advice(state)),
         Err(err) => {
             warn!("history: could not determine whether edits are saved automatically: {err:#}")

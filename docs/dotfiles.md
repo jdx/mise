@@ -1,13 +1,11 @@
 # Dotfiles
 
 > [!WARNING]
-> The top-level `mise dotfiles` command is deprecated and hidden from help. It
-> will begin warning in mise 2027.2.0 and be removed in mise 2028.2.0. Use
-> `mise bootstrap dotfiles` instead.
-
-Tracking files in place and their recovery history are **experimental**. Run
-`mise settings experimental=true` to opt in. Existing symlink, copy,
-template, and managed-edit workflows do not require experimental mode.
+> Tracking, checkpoints, rollback, watching, and synchronization are experimental.
+> Their interfaces and storage formats may change before stabilization.
+> This notice concerns the new tracking workflows, not ordinary symlink, copy,
+> template, and managed-edit workflows.
+> Enable these workflows with `mise settings experimental=true`.
 
 `[dotfiles]` declares how each of your configuration files is managed. The
 recommended way to adopt a file you already edit in place is to **track** it:
@@ -52,6 +50,13 @@ They are never applied implicitly by `mise install` or `mise bootstrap packages`
 The nested apply command runs the configured `pre-dotfiles` and
 `post-dotfiles` bootstrap hooks.
 
+## Command compatibility
+
+> [!WARNING]
+> The top-level `mise dotfiles` command is deprecated and hidden from help. It
+> will begin warning in mise 2027.2.0 and be removed in mise 2028.2.0. Use
+> `mise bootstrap dotfiles` instead.
+
 ## Tracking files in place
 
 `mise bootstrap dotfiles track <path>…` writes a `mode = "track"` entry for
@@ -77,7 +82,9 @@ wrote is not active.
 | `encrypt`  | `false` | Encrypt shared contents for `[history.encryption].recipients`; local files remain plaintext.                                                                |
 | `backup`   | `true`  | Include the file in this machine's remote backups (plaintext, or encrypted when the connection was made with `--encrypt-backups`).                          |
 
-`mise bootstrap dotfiles track --no-autosave|--no-share|--no-backup` sets them;
+`mise bootstrap dotfiles track --no-autosave|--no-share|--no-backup` sets them.
+`--private` sets both `share = false` and `backup = false` to keep contents local;
+the path and declaration can still be shared, and earlier uploads are not erased.
 `--local` writes the entry to `config.local.toml` (this machine only). A local
 override of an inherited entry restates the effective entry with only the
 changed field, so its variants and other policies are kept.

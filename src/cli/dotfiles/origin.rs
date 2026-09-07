@@ -53,9 +53,13 @@ pub(crate) struct DotfilesOriginSet {
     #[usage(long, value_name = "NAME")]
     name: Option<String>,
 
-    /// How the repository is used: sync (default), fetch-only, or manual
-    #[usage(long, value_name = "MODE", default = "sync")]
-    sync: String,
+    /// How the repository is used: sync, fetch-only, or manual
+    ///
+    /// Prompts when omitted. With --yes, accepts the configured mode (default: sync),
+    /// including automatic publication and incoming writes. Use --sync manual
+    /// to keep automatic local history without automatic network activity.
+    #[usage(long, value_name = "MODE")]
+    sync: Option<String>,
 
     /// Upload the checkpoints recorded before now too
     #[usage(long)]
@@ -132,7 +136,22 @@ impl DotfilesOriginSet {
         if !crate::config::Settings::get().history.enabled {
             bail!("history is disabled (history.enabled = false)");
         }
-        let mode = SyncMode::parse(&self.sync)?;
+        let mode = match self.sync.as_deref() {
+            Some(mode) => SyncMode::parse(mode)?,
+            None if self.yes || crate::config::Settings::get().yes => SyncMode::current()?,
+            None => match crate::ui::prompt::confirm_with_default(
+                "Automatically publish saved edits AND apply incoming changes to live files? Choose no for manual sharing; local autosave continues in either mode.",
+                false,
+            )? {
+                crate::ui::prompt::Confirmation::Yes => SyncMode::Sync,
+                crate::ui::prompt::Confirmation::No => SyncMode::Manual,
+                crate::ui::prompt::Confirmation::Unavailable => {
+                    bail!(
+                        "not connected: choose --sync manual, --sync sync, or --sync fetch-only to connect without a mode prompt"
+                    );
+                }
+            },
+        };
         let (store, tracked, _) = super::history::open().await?;
         if let Some(reason) = store.unavailable() {
             bail!("cannot connect a setup repository: {reason}");

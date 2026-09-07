@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Sharing and backups are distinct destinations; private contents stay local.
+# shellcheck disable=SC2016
+require_cmd git
+export MISE_EXPERIMENTAL=1
+
+printf 'private contents\n' >~/.private-config
+printf 'shared contents\n' >~/.shared-config
+printf 'backup contents\n' >~/.backup-config
+assert_contains "mise bootstrap dotfiles track ~/.private-config --private 2>&1" "automatic capture is inactive"
+assert_succeed "mise bootstrap dotfiles track ~/.shared-config --no-backup"
+assert_succeed "mise bootstrap dotfiles track ~/.backup-config --no-share"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.private-config\") | [.autosave,.share,.backup] | @csv'" 'true,false,false'
+assert_contains "mise bootstrap dotfiles track ~/.private-config --private --no-autosave 2>&1" "manual saving selected"
+assert_contains "mise bootstrap dotfiles track ~/.private-config 2>&1" "manual saving selected"
+printf 'machine-local contents\n' >~/.example.local.toml
+assert_succeed "mise bootstrap dotfiles track ~/.example.local.toml"
+
+origin="$PWD/origin.git"
+git init -q --bare "$origin"
+mise bootstrap dotfiles origin set "file://$origin" --sync manual --include-existing --yes >connect.log 2>&1
+assert_contains 'cat connect.log' 'Sync mode manual:'
+assert_contains 'cat connect.log' '~/.private-config (local history only)'
+assert_contains 'cat connect.log' '~/.example.local.toml (local history only)'
+assert_not_contains 'cat connect.log' '~/.example.local.toml (plaintext)'
+assert_contains 'cat connect.log' '~/.shared-config (plaintext)'
+assert_contains 'cat connect.log' '~/.backup-config (plaintext)'
+assert_contains 'cat connect.log' 'A file can be both shared and backed up'
+assert_not_contains "git --git-dir=$origin ls-tree -r --name-only main" '.private-config'
+assert_not_contains "git --git-dir=$origin ls-tree -r --name-only main" '.backup-config'
+assert_contains "git --git-dir=$origin ls-tree -r --name-only main" '.shared-config'
+refs=$(git --git-dir="$origin" for-each-ref --format='%(refname)' refs/mise-history)
+assert_succeed "test -n '$refs'"
+found_backup=false
+for ref in $refs; do
+  if git --git-dir="$origin" ls-tree -r --name-only "$ref" | grep -q '.backup-config'; then
+    found_backup=true
+  fi
+  assert_not_contains "git --git-dir=$origin ls-tree -r --name-only $ref" '.private-config'
+  assert_not_contains "git --git-dir=$origin ls-tree -r --name-only $ref" '.shared-config'
+done
+assert "echo $found_backup" 'true'
+assert_contains "mise bootstrap dotfiles status" 'mode manual'
+# Local autosave does not publish in manual mode.
+head=$(git --git-dir="$origin" rev-parse main)
+printf 'new shared contents\n' >~/.shared-config
+assert_succeed 'mise bootstrap dotfiles watch --once'
+assert "git --git-dir=$origin rev-parse main" "$head"
+assert_succeed 'mise bootstrap dotfiles sync'
+assert "git --git-dir=$origin show main:tracked/home/.shared-config" 'new shared contents'
+
+# An inherited variant must not override --private, and encryption is retained.
+cat <<'CONFIG' >>"$MISE_CONFIG_DIR/config.toml"
+"~/.variant" = { mode = "track", encrypt = true, variants = [{ default = true, share = true }] }
+CONFIG
+printf 'variant contents\n' >~/.variant
+assert_succeed 'mise bootstrap dotfiles track ~/.variant --private'
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.variant\") | [.share,.backup] | @csv'" 'false,false'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'encrypt = true'
+
+# Retracking the same selector must preserve privacy without duplicating it.
+case "$(uname -s)" in
+  Darwin) this_os=macos ;;
+  *) this_os=linux ;;
+esac
+printf 'os-specific contents\n' >~/.os-private
+assert_succeed "mise bootstrap dotfiles track ~/.os-private --os $this_os --private"
+assert_succeed "mise bootstrap dotfiles track ~/.os-private --os $this_os"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.os-private\") | [.share,.backup] | @csv'" 'false,false'

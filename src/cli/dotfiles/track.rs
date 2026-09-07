@@ -49,6 +49,10 @@ pub(crate) struct DotfilesTrack {
     #[usage(long)]
     no_backup: bool,
 
+    /// Disable future sharing and remote backups; existing uploads are not erased
+    #[usage(long)]
+    private: bool,
+
     /// Write to config.local.toml (this machine only) instead of config.toml
     #[usage(long)]
     local: bool,
@@ -68,6 +72,7 @@ impl DotfilesTrack {
         let original = doc.to_string();
         let existed = config_path.exists();
         let mut declared: Vec<(String, PathBuf)> = vec![];
+        let mut manual = vec![];
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
                 .components()
@@ -94,6 +99,9 @@ impl DotfilesTrack {
                 );
             }
             let entry = self.entry(existing);
+            if entry.get("autosave").and_then(Value::as_bool) == Some(false) {
+                manual.push(target_key.clone());
+            }
             let dotfiles = doc
                 .entry("dotfiles")
                 .or_insert(Item::Table(toml_edit::Table::new()));
@@ -143,7 +151,15 @@ impl DotfilesTrack {
             }
             return Err(err.wrap_err(format!("{} was left unchanged", display_path(&config_path))));
         }
-        crate::cli::dotfiles::capture_health::report().await;
+        if !manual.is_empty() {
+            info!(
+                "history: manual saving selected for {}; run `mise bootstrap dotfiles save <path>` after editing",
+                manual.join(", ")
+            );
+        }
+        if manual.len() < declared.len() {
+            crate::cli::dotfiles::capture_health::report().await;
+        }
         Ok(())
     }
 
@@ -159,11 +175,14 @@ impl DotfilesTrack {
         if self.no_autosave {
             policy.autosave = false;
         }
-        if self.no_share {
+        if self.no_share || self.private {
             policy.share = false;
         }
-        if self.no_backup {
+        if self.no_backup || self.private {
             policy.backup = false;
+        }
+        if policy.encrypt {
+            table.insert("encrypt", Value::Boolean(toml_edit::Formatted::new(true)));
         }
         if !policy.autosave {
             table.insert("autosave", Value::Boolean(toml_edit::Formatted::new(false)));
@@ -176,6 +195,11 @@ impl DotfilesTrack {
         }
         let mut variants: Vec<Variant> =
             existing.map(|req| req.variants.clone()).unwrap_or_default();
+        if self.private {
+            for variant in &mut variants {
+                variant.share = Some(false);
+            }
+        }
         if self.os.is_some() || self.profile.is_some() {
             // Adding a specialization must not remove the stream that
             // already serves machines without that specialization.
@@ -191,9 +215,13 @@ impl DotfilesTrack {
                 os: self.os.iter().cloned().collect(),
                 profile: self.profile.clone(),
                 default: false,
-                share: None,
+                share: self.private.then_some(false),
             };
-            if !variants.contains(&variant) {
+            if !variants.iter().any(|existing| {
+                existing.os == variant.os
+                    && existing.profile == variant.profile
+                    && existing.default == variant.default
+            }) {
                 variants.push(variant);
             }
         }

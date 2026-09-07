@@ -1,8 +1,11 @@
 # Dotfiles history
 
 > [!WARNING]
-> Dotfile tracking and history are experimental. Enable them with
-> `mise settings experimental=true`. Interfaces and storage formats may change.
+> Tracking, checkpoints, rollback, watching, and synchronization are experimental.
+> Their interfaces and storage formats may change before stabilization.
+> This notice concerns the new tracking workflows, not ordinary symlink, copy,
+> template, and managed-edit workflows.
+> Enable these workflows with `mise settings experimental=true`.
 
 mise keeps checkpoints of your configuration files: the global mise config
 directory, the dotfiles root, every `[dotfiles]` entry, and any file you
@@ -28,8 +31,9 @@ mise bootstrap dotfiles history diff                                       # wha
 mise bootstrap dotfiles save --description "before the theme change"
 ```
 
-Nothing leaves the machine: checkpoints live under `$MISE_STATE_DIR/history/`,
-readable only by you.
+Without a connected origin, nothing leaves the machine: checkpoints live under
+`$MISE_STATE_DIR/history/`, readable only by you. Connecting an origin enables
+sharing and remote backups according to the policies you review.
 
 ## What a checkpoint records
 
@@ -289,6 +293,12 @@ dotfiles apply` keeps deploying your own `[dotfiles]` declarations (symlinks,
 copies, templates, edits), while `pull` writes what other machines shared
 through the setup repository.
 
+When `--sync` is omitted, interactive `origin set` asks whether to publish saved
+edits and apply incoming changes automatically. Answering no selects `manual`;
+local autosave continues. `--sync manual|sync|fetch-only` selects a mode directly.
+`--yes` accepts the configured mode (default `sync`) without this question, so
+scripts should specify `--sync` explicitly.
+
 `origin set` prints exactly what will happen before anything leaves the
 machine and asks for confirmation (`--yes` skips it): the sync mode, what is
 published per stream, what is not shared and why, what is backed up (in
@@ -517,6 +527,19 @@ are found, and credential stores under the config directory
 (`github_tokens.toml`, `age.txt`, `*.key`, …) are neither shared nor backed
 up. A per-file `[dotfiles]` declaration is the only override, and
 `mise bootstrap dotfiles paths` lists every private file so the choice stays visible.
+
+### Keeping file contents entirely local
+
+`mise bootstrap dotfiles track ~/.config/app/credentials --private` sets both
+`share = false` and `backup = false`. The file remains in local history. Its
+path and declaration can still appear in shared configuration; keep the declaration
+machine-local too with `--local` when needed. `--no-share` alone still allows
+remote backups. These choices do not erase previously published Git objects.
+
+The origin preview lists current captured paths under **Local only**, **Shared
+setup**, and **Remote backup**, with encryption status. Shared and backed-up files
+appear in both outgoing groups. Existing history is uploaded only when selected;
+review the separate historical-backup disclosure as well.
 
 ## Retention
 
