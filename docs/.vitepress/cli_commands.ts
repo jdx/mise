@@ -80,16 +80,80 @@ export const commands: { [key: string]: Command } = {
           apply: {
             hide: false,
           },
+          capture: {
+            hide: false,
+          },
           diff: {
             hide: false,
           },
           edit: {
             hide: false,
           },
+          exclude: {
+            hide: false,
+          },
+          history: {
+            hide: false,
+            subcommands: {
+              describe: {
+                hide: false,
+              },
+              diff: {
+                hide: false,
+              },
+              ls: {
+                hide: false,
+              },
+              show: {
+                hide: false,
+              },
+            },
+          },
+          include: {
+            hide: false,
+          },
+          origin: {
+            hide: false,
+            subcommands: {
+              set: {
+                hide: false,
+              },
+            },
+          },
+          paths: {
+            hide: false,
+          },
+          pull: {
+            hide: false,
+          },
+          recover: {
+            hide: false,
+          },
+          rollback: {
+            hide: false,
+          },
+          save: {
+            hide: false,
+          },
           status: {
             hide: false,
           },
+          sync: {
+            hide: false,
+          },
+          track: {
+            hide: false,
+          },
           unapply: {
+            hide: false,
+          },
+          undo: {
+            hide: false,
+          },
+          untrack: {
+            hide: false,
+          },
+          watch: {
             hide: false,
           },
         },
@@ -272,6 +336,9 @@ export const commands: { [key: string]: Command } = {
         hide: false,
         subcommands: {
           apply: {
+            hide: false,
+          },
+          remove: {
             hide: false,
           },
           status: {

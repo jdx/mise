@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+mise use -g tombi@0.9.22
+tombi_lint='mise x tombi@0.9.22 -- tombi lint --offline --no-cache --error-on-warnings --quiet'
+cat >"$HOME/tombi.toml" <<TOML
+[schema]
+enabled = true
+strict = true
+[[schemas]]
+path = "file://$ROOT/schema/mise.json"
+include = ["services-valid.toml", "services-invalid.toml"]
+TOML
+cat >services-valid.toml <<'TOML'
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+[bootstrap.services.worker]
+scope = "user"
+command = "worker --foreground"
+description = "background worker"
+restart = "on-failure"
+state = "running"
+enabled = true
+requires_tools = true
+working_directory = "~/work"
+environment = { LOG_LEVEL = "info" }
+[bootstrap.services.web]
+scope = "system"
+state = "stopped"
+masked = false
+on_change = "reload_or_restart"
+TOML
+assert_succeed "$tombi_lint services-valid.toml"
+printf '[bootstrap.services.worker]\nscope = "invalid"\n' >services-invalid.toml
+assert_fail "$tombi_lint services-invalid.toml"
+printf '[bootstrap.services.worker]\nrestart = "invalid"\n' >services-invalid.toml
+assert_fail "$tombi_lint services-invalid.toml"
+# Tombi does not enforce JSON Schema's `not`; validate this cross-field
+# constraint with the same JSON Schema implementation used by repository lint.
+mise use -g node@24 npm:ajv-cli@5.0.0
+printf '{"bootstrap":{"services":{"worker":{"builtin":"history-watch","command":"worker"}}}}\n' >services-invalid.json
+assert_fail "mise x npm:ajv-cli@5.0.0 -- ajv validate --spec=draft2020 -s '$ROOT/schema/mise.json' -d services-invalid.json"
+printf '{"bootstrap":{"services":{"worker":{"builtin":"history-watch"}}}}\n' >services-valid.json
+assert_succeed "mise x npm:ajv-cli@5.0.0 -- ajv validate --spec=draft2020 -s '$ROOT/schema/mise.json' -d services-valid.json"

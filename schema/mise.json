@@ -531,18 +531,18 @@
           "unevaluatedProperties": false,
           "properties": {
             "identity_files": {
-              "description": "[experimental] List of age identity files to use for decryption.",
+              "description": "List of age identity files to use for decryption (encrypted shared dotfiles and the experimental `[env]` age directives).",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "key_file": {
-              "description": "[experimental] Path to the age private key file to use for encryption/decryption.",
+              "description": "Path to the age private key file to use for encryption/decryption: the default recipient and identity for encrypted shared dotfiles and the key for the experimental `[env]` age directives.",
               "type": "string"
             },
             "ssh_identity_files": {
-              "description": "[experimental] List of SSH identity files to use for age decryption.",
+              "description": "List of SSH identity files to use for age decryption (encrypted shared dotfiles and the experimental `[env]` age directives).",
               "type": "array",
               "items": {
                 "type": "string"
@@ -1122,6 +1122,64 @@
           "description": "Verify OpenPGP signatures for all tools (built-in, no external gpg required). Set to false to disable.",
           "type": "boolean"
         },
+        "history": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "describe_command": {
+              "default": "",
+              "description": "A command that names commits the watcher saves (an agent, say): it gets one JSON object on stdin (uuid, trigger, the computed description, changed tracked paths, and a unified diff of changed unencrypted files, at most 64 KiB) and prints one line of at most 200 characters, which becomes the description. Empty: computed descriptions only.",
+              "type": "string"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Record ordinary Git commits for explicitly tracked files around bootstrap operations and on explicit saves.",
+              "type": "boolean"
+            },
+            "fetch_interval": {
+              "default": "15m",
+              "description": "How often the history watcher fetches the origin branch. Values below one second use one second; use history.sync = 'manual' to disable automatic synchronization.",
+              "type": "string"
+            },
+            "notify": {
+              "default": true,
+              "description": "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync.",
+              "type": "boolean"
+            },
+            "sync": {
+              "default": "sync",
+              "description": "What the history watcher does with a connected setup repository on its own: `sync` publishes after saves, fetches periodically, and applies incoming changes. Any conflict pauses publication and incoming application for the entire setup; local commits and fetching continue. `fetch-only` only fetches; `manual` does nothing automatically. `mise bootstrap dotfiles sync` and `pull` work on request in every mode.",
+              "type": "string",
+              "enum": ["sync", "fetch-only", "manual"]
+            },
+            "sync_interval": {
+              "default": "5m",
+              "description": "How soon after a save the history watcher publishes to the setup repository, at most this often.",
+              "type": "string"
+            },
+            "watch": {
+              "type": "object",
+              "unevaluatedProperties": false,
+              "properties": {
+                "debounce": {
+                  "default": "2s",
+                  "description": "How long a changed file must stay quiet before the history watcher saves it (the base autosave interval). A file that keeps changing is stretched on its own and never delays the others.",
+                  "type": "string"
+                },
+                "max_interval": {
+                  "default": "24h",
+                  "description": "The longest autosave interval the history watcher stretches a constantly changing file to. Sustained churn doubles a file's own interval up to this; a settled file is saved promptly again, and a sustained quiet period resets it.",
+                  "type": "string"
+                },
+                "reconcile": {
+                  "default": "10m",
+                  "description": "How often the history watcher rescans the whole tracked set for changes its watches missed. `0` disables periodic reconciliation (startup and configuration changes still reconcile).",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
         "hook_env": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1215,7 +1273,8 @@
         "jobs": {
           "default": 8,
           "description": "How many jobs to run concurrently such as tool installs. Values below 1 are treated as 1.",
-          "type": "integer"
+          "type": "integer",
+          "minimum": 0
         },
         "legacy_version_file": {
           "default": true,
@@ -4064,6 +4123,11 @@
             "type": "object",
             "description": "whole-file dotfile entry or file edit entry",
             "properties": {
+              "encrypt": {
+                "type": "boolean",
+                "default": false,
+                "description": "encrypt tracked file contents before storing them in Git; the live file remains plaintext"
+              },
               "source": {
                 "type": "string",
                 "description": "source file or directory"
@@ -4133,6 +4197,23 @@
               {
                 "properties": {
                   "content": false
+                }
+              }
+            ],
+            "anyOf": [
+              {
+                "properties": {
+                  "encrypt": {
+                    "const": false
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "content": false,
+                  "block": false,
+                  "line": false,
+                  "template": false
                 }
               }
             ]
@@ -4278,6 +4359,75 @@
             }
           },
           "additionalProperties": false
+        },
+        "services": {
+          "type": "object",
+          "description": "System services and portable user services managed by mise bootstrap, keyed by service name",
+          "additionalProperties": {
+            "type": "object",
+            "not": {
+              "required": ["builtin", "command"]
+            },
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["running", "stopped", "absent"],
+                "default": "running"
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "masked": {
+                "type": "boolean",
+                "default": false,
+                "description": "System scope only"
+              },
+              "on_change": {
+                "type": "string",
+                "enum": ["reload", "restart", "reload_or_restart", "none"],
+                "default": "reload_or_restart",
+                "description": "System scope only"
+              },
+              "scope": {
+                "type": "string",
+                "enum": ["system", "user"],
+                "description": "Defaults to system; builtin implies user"
+              },
+              "builtin": {
+                "type": "string",
+                "enum": ["history-watch"],
+                "description": "A mise-provided user service"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "description": "User service command; mutually exclusive with builtin"
+              },
+              "description": {
+                "type": "string"
+              },
+              "restart": {
+                "type": "string",
+                "enum": ["always", "on-failure", "never"],
+                "default": "on-failure"
+              },
+              "environment": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "working_directory": {
+                "type": "string"
+              },
+              "requires_tools": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "additionalProperties": false
+          }
         },
         "plugins": {
           "type": "object",
@@ -5139,6 +5289,57 @@
           "additionalProperties": false
         }
       }
+    },
+    "history": {
+      "type": "object",
+      "description": "dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/history.html)",
+      "properties": {
+        "encryption": {
+          "type": "object",
+          "properties": {
+            "recipients": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "shared age, SSH, or age-plugin public recipients for all encrypted dotfiles"
+            }
+          },
+          "additionalProperties": false
+        },
+        "exclude": {
+          "type": "array",
+          "description": "globs never captured by dotfiles history; a `!glob` entry re-includes a path an earlier glob excluded",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reload": {
+          "type": "object",
+          "description": "commands run once after a rollback or undo writes a path matching the glob (trusted global or system config only)",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "origin": {
+          "type": "object",
+          "description": "the setup repository this machine publishes to and fetches from; machine-local, written by `mise bootstrap dotfiles origin set`",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "the repository url"
+            },
+            "branch": {
+              "type": "string",
+              "description": "the setup branch",
+              "default": "main"
+            }
+          },
+          "required": ["url"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "task_config": {
       "description": "configuration for task execution and management",

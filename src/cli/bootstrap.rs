@@ -10,7 +10,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::dotfiles::{
-    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesStatus, DotfilesUnapply,
+    DotfilesAdd, DotfilesApply, DotfilesCapture, DotfilesDiff, DotfilesEdit, DotfilesExclude,
+    DotfilesHistory, DotfilesInclude, DotfilesOrigin, DotfilesPaths, DotfilesPull, DotfilesRecover,
+    DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesSync, DotfilesTrack, DotfilesUnapply,
+    DotfilesUndo, DotfilesUntrack, DotfilesWatch,
 };
 use super::install::Install;
 use super::plugins::install::install_plugin;
@@ -23,6 +26,8 @@ use crate::path::PathExt;
 use crate::system;
 use crate::system::defaults::DefaultsState;
 use crate::system::files::{FileMode, FileRequest, FileState};
+use crate::system::history::store::Summary;
+use crate::system::history::{OperationScope, journal};
 use crate::system::hooks::{self, BootstrapHookPhase};
 use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
@@ -32,17 +37,18 @@ use crate::system::resources::{ResourceAction, ResourceId};
 use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
 use crate::ui::table::MiseTable;
+
 /// Set up a machine from the current configuration
 ///
 /// Runs these phases in order, when configured and selected:
 ///
 /// 1. Linux accounts, then package-manager plugins.
 /// 2. The pre-packages hook, then packages handled by built-in managers.
-/// 3. Privileged files/directories, system services, firewall, and Compose projects.
+/// 3. Privileged files/directories, system and user services, firewall, and Compose projects.
 /// 4. Git repositories, then dotfiles, each with its pre/post hooks.
 /// 5. Shell activation, macOS defaults and LaunchAgents, Linux user units, and user settings.
 /// 6. The pre-tools hook, versioned tools, and post-tools hook.
-/// 7. Package-plugin packages, then the post-packages hook.
+/// 7. Package-plugin packages, then the post-packages hook and services requiring tools.
 /// 8. The `bootstrap` task, when defined, then the final hook.
 ///
 /// Defaults and user settings also have pre/post hooks. See
@@ -493,10 +499,12 @@ struct BootstrapFilesStatus {
     prompt_secrets: bool,
 }
 
-/// Manage Linux system services from `[bootstrap.services]`
+/// Manage services from `[bootstrap.services]`
 ///
-/// These are system-level systemd services. For units in the current user session,
-/// use `bootstrap linux systemd-units` instead.
+/// System-scope entries (the default) converge existing Linux systemd system
+/// units. `scope = "user"` entries are services mise defines for the current
+/// user on every platform: a systemd user unit on Linux, a LaunchAgent on
+/// macOS, a Scheduled Task on Windows.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapServices {
@@ -507,10 +515,11 @@ struct BootstrapServices {
 #[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapServicesCommands {
     Apply(BootstrapServicesApply),
+    Remove(BootstrapServicesRemove),
     Status(BootstrapServicesStatus),
 }
 
-/// Apply configured Linux system service state
+/// Apply configured service state (system and user scope)
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapServicesApply {
     /// Print what would change without changing anything
@@ -522,7 +531,23 @@ struct BootstrapServicesApply {
     yes: bool,
 }
 
-/// Show configured Linux system service state
+/// Remove an installed user-scope service, declared or not
+///
+/// Deleting a `scope = "user"` declaration leaves its installed unit, agent,
+/// or task in place; this removes it once. The next `mise bootstrap`
+/// recreates it if it is still declared.
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapServicesRemove {
+    /// The installed user-service name to remove (declared or not)
+    name: String,
+
+    /// Print what would change without changing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+}
+
+/// Show configured service state (system and user scope)
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapServicesStatus {
     /// Output in JSON format
@@ -816,10 +841,25 @@ struct BootstrapDotfiles {
 enum BootstrapDotfilesCommands {
     Add(DotfilesAdd),
     Apply(BootstrapDotfilesApply),
+    Capture(DotfilesCapture),
     Diff(DotfilesDiff),
     Edit(DotfilesEdit),
+    Exclude(DotfilesExclude),
+    History(DotfilesHistory),
+    Include(DotfilesInclude),
+    Origin(DotfilesOrigin),
+    Paths(DotfilesPaths),
+    Pull(DotfilesPull),
+    Recover(DotfilesRecover),
+    Rollback(DotfilesRollback),
+    Save(DotfilesSave),
     Status(BootstrapDotfilesStatus),
+    Sync(DotfilesSync),
+    Track(DotfilesTrack),
     Unapply(DotfilesUnapply),
+    Undo(DotfilesUndo),
+    Untrack(DotfilesUntrack),
+    Watch(DotfilesWatch),
 }
 
 /// Apply dotfiles from `[dotfiles]`
@@ -1256,7 +1296,7 @@ impl Bootstrap {
         (self.dry_run, self.yes)
     }
 
-    pub(crate) async fn run(self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
         if self.from.is_some() || self.from_git.is_some() {
             if self.command.is_some() {
                 let flag = if self.from_git.is_some() {
@@ -1266,14 +1306,36 @@ impl Bootstrap {
                 };
                 bail!("{flag} cannot be used with a bootstrap subcommand");
             }
-            return self.run_from();
+            return self.run_from().await;
         }
-        if let Some(command) = self.command {
+        if let Some(command) = self.command.take() {
             return command.run().await;
         }
+        let generation = OperationScope::begin("bootstrap", self.dry_run).await?;
+        let result = self.run_phases().await;
+        generation.refresh_tracked().await;
+        let error = result.as_ref().err().map(|err| format!("{err:#}"));
+        generation.finish(error, result.as_ref().ok().cloned());
+        // a complete run applied the declarations that arrived through
+        // sync; a declined, partial, or dry run did not
+        if let Ok(summary) = &result
+            && !self.dry_run
+            && !is_declined(summary)
+            && self.only.is_empty()
+            && self.skip.is_empty()
+        {
+            system::history::sync::run::bootstrap_completed();
+        }
+        result.map(|_| ())
+    }
+
+    /// Every bootstrap part in order. Returns what ran for the generation
+    /// record; declined prompts end the run early with a note.
+    async fn run_phases(&self) -> Result<Summary> {
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
+        let summary = Summary { message: None };
         let accounts_enabled = !skip.contains(&BootstrapPart::Accounts);
         let files_enabled = !skip.contains(&BootstrapPart::Files);
         let configured_accounts =
@@ -1325,10 +1387,16 @@ impl Bootstrap {
             let services = configured_services
                 .as_ref()
                 .expect("configured notifications prepared services");
-            system::services::validate_notifications(files, directories, services)?;
+            let user_services = system::services_common::user_service_names(&config)?;
+            system::services::validate_notifications(files, directories, services, &user_services)?;
         }
         let mut managed_services =
             services_enabled.then_some(configured_services.unwrap_or_default());
+        let user_services = if services_enabled {
+            system::user_services::requests_from_config(&config)?
+        } else {
+            vec![]
+        };
         let mut managed_firewall = if skip.contains(&BootstrapPart::Firewall) {
             None
         } else {
@@ -1471,8 +1539,14 @@ impl Bootstrap {
                     self.yes,
                 )?;
             }
+            let early = user_services
+                .iter()
+                .filter(|request| !request.requires_tools)
+                .cloned()
+                .collect::<Vec<_>>();
+            apply_user_services(&early, self.dry_run, self.yes, Some(&mut follow_up)).await?;
         } else {
-            debug!("bootstrap: system services skipped");
+            debug!("bootstrap: services skipped");
         }
 
         if skip.contains(&BootstrapPart::Firewall) {
@@ -1544,7 +1618,7 @@ impl Bootstrap {
                     yes: self.yes,
                 };
                 if !system::files::apply(&config, &files, &opts)? {
-                    return Ok(());
+                    return Ok(declined());
                 }
             }
 
@@ -1554,12 +1628,13 @@ impl Bootstrap {
             } else {
                 info!("bootstrap: dotfile edits");
                 let opts = system::edits::ApplyOpts {
+                    part: "dotfiles",
                     dry_run: self.dry_run,
                     verbose: false,
                     yes: self.yes,
                 };
                 if !system::edits::apply(&config, &edits, &opts)? {
-                    return Ok(());
+                    return Ok(declined());
                 }
             }
             if self.dry_run {
@@ -1738,6 +1813,23 @@ impl Bootstrap {
             }
         }
 
+        // resolved again: the run may have installed a durable mise since
+        // the requests were first built (a remote-staged bootstrap)
+        let late = if services_enabled {
+            system::user_services::requests_from_config(&config)?
+                .into_iter()
+                .filter(|request| request.requires_tools)
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
+        if !late.is_empty() {
+            if skip.contains(&BootstrapPart::Tools) {
+                info!("bootstrap: tools skipped; user services with requires_tools still converge");
+            }
+            apply_user_services(&late, self.dry_run, self.yes, Some(&mut follow_up)).await?;
+        }
+
         if skip.contains(&BootstrapPart::Task) {
             debug!("bootstrap: `bootstrap` task skipped");
         } else {
@@ -1757,15 +1849,53 @@ impl Bootstrap {
                 .await?;
         }
         follow_up.print()?;
-        Ok(())
+        Ok(summary)
     }
 
-    fn run_from(&self) -> Result<()> {
+    async fn run_from(&self) -> Result<()> {
         let expanded = self
             .from_git
             .as_deref()
             .map(crate::github_relay::expand_repository)
             .transpose()?;
+        // A setup repository must not bypass the released checkout-origin
+        // guard and install its files inside another repository's checkout.
+        if let Some(url) = expanded.as_deref() {
+            let config_dir = system::history::tracked::global_config_dir();
+            if config_dir.join(".git").exists() {
+                validate_bootstrap_checkout(&config_dir, url)?;
+            }
+        }
+        // a history-managed setup repository is not cloned into the
+        // configuration directory: its branch goes into mise's own store and
+        // its files are written by the same recoverable pull as any other
+        // incoming change; the ordinary bootstrap then runs from them
+        if let Some(url) = expanded.as_deref()
+            && let Some(outcome) =
+                system::history::sync::onboard::from_git(url, self.yes, self.dry_run).await?
+        {
+            if self.dry_run {
+                if let Some(preview) = outcome.preview_config.as_ref() {
+                    self.run_child_bootstrap(preview.path().to_path_buf())
+                        .await?;
+                }
+                return Ok(());
+            }
+            // the configuration that arrived is what to bootstrap from; one
+            // held for a decision leaves the existing one, whose tasks and
+            // installations are not what was asked for
+            if outcome.setup_held {
+                bail!(
+                    "the setup from {url} is paused; nothing was bootstrapped. `mise bootstrap dotfiles status` lists the paths that need attention; resolve them with `mise bootstrap dotfiles pull`, then run `mise bootstrap`"
+                );
+            }
+            let config_dir = system::history::tracked::global_config_dir();
+            self.run_child_bootstrap(config_dir).await?;
+            if !outcome.durable_access {
+                warn!("ongoing synchronization still needs credentials on this host (see above)");
+            }
+            return Ok(());
+        }
         let (url, checkout) = if let Some(url) = expanded.as_deref() {
             let checkout = crate::env::MISE_GLOBAL_CONFIG_FILE
                 .as_deref()
@@ -1787,37 +1917,48 @@ impl Bootstrap {
         };
 
         let checkout_is_empty = checkout.is_dir() && checkout.read_dir()?.next().is_none();
-        if checkout.exists() && !checkout_is_empty {
+        let reuse_checkout = checkout.exists() && !checkout_is_empty;
+        if reuse_checkout {
             validate_bootstrap_checkout(&checkout, url)?;
-            if self.update {
-                if self.dry_run {
-                    miseprintln!(
-                        "Would run: git -C {} pull --ff-only",
-                        checkout.display_user()
-                    );
-                } else {
-                    run_bootstrap_git(&checkout, ["pull", "--ff-only"])?;
-                }
-            }
-        } else if self.dry_run {
-            miseprintln!("Would run: git clone {} {}", url, checkout.display_user());
-            return Ok(());
+        }
+        // The clone or pull changes the config checkout before the child
+        // process records the bootstrap itself, so it is a generation of its
+        // own. A checkout reused as-is changes nothing and records nothing.
+        let mutates_checkout = !reuse_checkout || self.update;
+        let generation = if mutates_checkout {
+            Some(OperationScope::begin("bootstrap --from", self.dry_run).await?)
         } else {
-            if let Some(parent) = checkout
-                .parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-            {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut command = Command::new("git");
-            command.arg("clone").arg(url).arg(&checkout);
-            crate::git::sanitize_git_command(&mut command);
-            let status = command.status()?;
-            if !status.success() {
-                bail!("git clone failed with {status}");
+            None
+        };
+        let checked_out = checkout_bootstrap_repository(
+            url,
+            &checkout,
+            reuse_checkout,
+            self.update,
+            self.dry_run,
+        );
+        // the record says why a pull or clone failed, not just that it did
+        if let Some(generation) = generation {
+            match &checked_out {
+                Ok(_) => generation.finish(
+                    None,
+                    Some(Summary {
+                        message: Some(format!("checkout of {url}")),
+                    }),
+                ),
+                Err(err) => generation.finish(Some(format!("{err:#}")), None),
             }
         }
+        if !checked_out? {
+            return Ok(());
+        }
 
+        self.run_child_bootstrap(checkout).await
+    }
+
+    /// Runs the bootstrap itself as a child process from `checkout` (the
+    /// global configuration directory for `--from-git`), trusted for it.
+    async fn run_child_bootstrap(&self, checkout: PathBuf) -> Result<()> {
         let checkout = dunce::canonicalize(&checkout)?;
         let mut command = Command::new(std::env::current_exe()?);
         command.args(bootstrap_from_child_args(
@@ -1825,19 +1966,28 @@ impl Bootstrap {
             &crate::env::ARGS.read().unwrap(),
         ));
         if self.from_git.is_some() {
-            let config_dir = crate::env::MISE_CONFIG_DIR.as_path();
-            let config_dir = if config_dir.is_absolute() {
-                config_dir.to_path_buf()
+            if self.dry_run {
+                command.env("MISE_CONFIG_DIR", &checkout);
+                let name = crate::env::MISE_GLOBAL_CONFIG_FILE
+                    .as_deref()
+                    .and_then(Path::file_name)
+                    .unwrap_or(std::ffi::OsStr::new("config.toml"));
+                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(name));
             } else {
-                std::env::current_dir()?.join(config_dir)
-            };
-            command.env("MISE_CONFIG_DIR", config_dir);
+                let config_dir = crate::env::MISE_CONFIG_DIR.as_path();
+                let config_dir = if config_dir.is_absolute() {
+                    config_dir.to_path_buf()
+                } else {
+                    std::env::current_dir()?.join(config_dir)
+                };
+                command.env("MISE_CONFIG_DIR", config_dir);
 
-            if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
-                .as_deref()
-                .and_then(Path::file_name)
-            {
-                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
+                if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
+                    .as_deref()
+                    .and_then(Path::file_name)
+                {
+                    command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
+                }
             }
         }
 
@@ -1860,6 +2010,8 @@ impl Bootstrap {
         hooks: &[hooks::BootstrapHook],
         phase: BootstrapHookPhase,
     ) -> Result<()> {
+        // Recorded before the hooks run: a hook that fails may still have
+        // changed the machine.
         run_bootstrap_hooks(config, hooks, phase, self.dry_run).await
     }
 
@@ -2199,6 +2351,18 @@ fn is_mise_config_target(path: &std::path::Path) -> bool {
                 .is_some_and(|parent| parent.ends_with(".config/mise/conf.d")))
 }
 
+const DECLINED: &str = "dotfiles apply declined";
+
+fn declined() -> Summary {
+    Summary {
+        message: Some(DECLINED.into()),
+    }
+}
+
+fn is_declined(summary: &Summary) -> bool {
+    summary.message.as_deref() == Some(DECLINED)
+}
+
 impl Commands {
     async fn run(self) -> Result<()> {
         match self {
@@ -2439,6 +2603,10 @@ impl BootstrapAccounts {
 
 impl BootstrapAccountsApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap accounts apply", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let requests = system::accounts::requests_from_config(&config)?;
         system::accounts::apply(&requests, self.dry_run, self.yes)?;
@@ -2488,6 +2656,10 @@ impl BootstrapFiles {
 
 impl BootstrapFilesApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap files apply", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, directories) = system::managed_files::requests_from_config(&config, &secrets)?;
@@ -2497,7 +2669,13 @@ impl BootstrapFilesApply {
                 .any(|directory| !directory.notify.is_empty())
         {
             let services = system::services::prepare_requests_from_config(&config)?;
-            system::services::validate_notifications(&files, &directories, &services)?;
+            let user_services = system::services_common::user_service_names(&config)?;
+            system::services::validate_notifications(
+                &files,
+                &directories,
+                &services,
+                &user_services,
+            )?;
             Some(services)
         } else {
             None
@@ -2589,26 +2767,96 @@ impl BootstrapServices {
     async fn run(self) -> Result<()> {
         match self.command {
             BootstrapServicesCommands::Apply(command) => command.run().await,
+            BootstrapServicesCommands::Remove(command) => command.run().await,
             BootstrapServicesCommands::Status(command) => command.run().await,
         }
     }
 }
 
+impl BootstrapServicesRemove {
+    async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap services remove", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
+        let config = Config::get().await?;
+        // best effort: a broken declaration must not block removal, which is
+        // the recovery path for exactly that state
+        let declared = system::user_services::requests_from_config(&config)
+            .map(|requests| requests.iter().any(|request| request.name == self.name))
+            .unwrap_or(false);
+        let removed = system::user_services::remove_named(&self.name, self.dry_run).await?;
+        let manager = system::user_services::manager_name();
+        if !removed {
+            info!("user service {}: no {manager} installed", self.name);
+        } else if self.dry_run {
+            info!("user service {}: would remove its {manager}", self.name);
+        } else {
+            info!("user service {}: removed its {manager}", self.name);
+        }
+        if declared {
+            info!(
+                "user service {} is still declared in [bootstrap.services]; the next `mise bootstrap` recreates it",
+                self.name
+            );
+        }
+        Ok(())
+    }
+}
+
 impl BootstrapServicesApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap services apply", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let requests = system::services::requests_from_config(&config)?;
-        system::services::apply(&requests, self.dry_run, self.yes)
+        let user_requests = system::user_services::requests_from_config(&config)?;
+        system::services::apply(&requests, self.dry_run, self.yes)?;
+        apply_user_services(&user_requests, self.dry_run, self.yes, None).await
     }
+}
+
+/// Converge user-scope services, reporting an unavailable service manager as
+/// a skipped follow-up instead of a failure.
+async fn apply_user_services(
+    requests: &[system::user_services::UserServiceRequest],
+    dry_run: bool,
+    yes: bool,
+    follow_up: Option<&mut BootstrapFollowUp>,
+) -> Result<()> {
+    if requests.is_empty() {
+        return Ok(());
+    }
+    info!("bootstrap: user services");
+    if let Some(reason) = system::user_services::apply(requests, dry_run, yes).await? {
+        let message = format!(
+            "user services: {} service(s) skipped ({reason})",
+            requests.len()
+        );
+        match follow_up {
+            Some(follow_up) => follow_up.add_skipped(message),
+            None => warn!("{message}"),
+        }
+    }
+    Ok(())
 }
 
 impl BootstrapServicesStatus {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let requests = system::services::requests_from_config(&config)?;
-        let resources = system::services::plans_with_notifications(
+        let mut resources = system::services::plans_with_notifications(
             &requests,
             &system::services::ServiceNotifications::default(),
+        );
+        let user_requests = system::user_services::requests_from_config(&config)?;
+        resources.extend(
+            system::user_services::status(&user_requests)
+                .await?
+                .iter()
+                .map(|status| status.plan()),
         );
         let missing = resources
             .iter()
@@ -2616,7 +2864,7 @@ impl BootstrapServicesStatus {
         if self.json {
             miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
         } else if resources.is_empty() {
-            info!("no bootstrap system services configured");
+            info!("no bootstrap services configured");
         } else {
             let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
             for resource in resources {
@@ -2647,6 +2895,10 @@ impl BootstrapFirewall {
 
 impl BootstrapFirewallApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap firewall apply", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let Some(request) = system::firewall::request_from_config(&config)? else {
             info!("no bootstrap firewall configured");
@@ -2699,6 +2951,10 @@ impl BootstrapCompose {
 
 impl BootstrapComposeApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap compose apply", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let requests = system::compose::requests_from_config(&config)?;
         system::compose::apply(&requests, self.dry_run, self.yes)
@@ -2838,16 +3094,9 @@ impl BootstrapRemote {
             .transpose()?;
         if let Some(origin) = &repository {
             system::remote_repository::validate_origin(origin)?;
-            if self.dry_run {
-                for host in selected.values() {
-                    miseprintln!(
-                        "Would fetch one revision of {origin} locally, transfer it to {}, preview adoption/update of the persistent global configuration, and bootstrap there",
-                        host.name
-                    );
-                }
-                return Ok(());
-            }
         }
+        // a dry run fetches and transfers like a real one: the preview comes
+        // from the target, which inspects itself and the repository
         let repository = if let Some(origin) = repository {
             Some(
                 system::remote::interruptible(system::remote_repository::Source::fetch(origin))
@@ -3022,7 +3271,13 @@ impl BootstrapStatus {
         )?;
         let service_requests = system::services::status_requests_from_config(config)?;
         let firewall_request = system::firewall::status_request_from_config(config)?;
-        system::services::validate_notifications(&files, &directories, &service_requests)?;
+        let user_services = system::services_common::user_service_names(config)?;
+        system::services::validate_notifications(
+            &files,
+            &directories,
+            &service_requests,
+            &user_services,
+        )?;
         let notified_services = system::managed_files::pending_notifications(&files, &directories)?;
         let compose_requests = system::compose::requests_from_config(config)?;
         self.collect_secrets(&secrets.used_statuses()?, &mut report);
@@ -3030,6 +3285,7 @@ impl BootstrapStatus {
         self.collect_accounts(&accounts, &mut report);
         self.collect_files(files, directories, unavailable_files, &mut report)?;
         self.collect_services(&service_requests, &notified_services, &mut report);
+        self.collect_user_services(config, &mut report).await?;
         self.collect_firewall(firewall_request.as_ref(), &mut report);
         self.collect_compose(&compose_requests, &mut report);
         self.collect_repos(config, &mut report).await?;
@@ -3127,6 +3383,29 @@ impl BootstrapStatus {
             );
         }
         report.json.insert("services".to_string(), json!(resources));
+    }
+
+    async fn collect_user_services(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let requests = system::user_services::requests_from_config(config)?;
+        let statuses = system::user_services::status(&requests).await?;
+        for status in &statuses {
+            let missing = status.action != system::resources::ResourceAction::Noop;
+            report.row(
+                "user-service",
+                status.name.clone(),
+                status.current.clone(),
+                status.action.to_string(),
+                missing,
+            );
+        }
+        report
+            .json
+            .insert("user_services".to_string(), json!(statuses));
+        Ok(())
     }
 
     fn collect_firewall(
@@ -3404,6 +3683,7 @@ impl BootstrapStatus {
                 system::files::FileState::Differs(reason) => {
                     (format!("differs ({reason})"), "differs", true)
                 }
+                system::files::FileState::Tracked => ("tracked".to_string(), "tracked", false),
             };
             report.row(
                 "dotfiles",
@@ -3440,6 +3720,7 @@ impl BootstrapStatus {
                 system::files::FileState::Differs(reason) => {
                     (format!("differs ({reason})"), "differs", true)
                 }
+                system::files::FileState::Tracked => ("tracked".to_string(), "tracked", false),
             };
             report.row(
                 "dotfiles",
@@ -3473,7 +3754,7 @@ impl BootstrapStatus {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };
-            let missing = state != FileState::Applied;
+            let missing = !matches!(state, FileState::Applied | FileState::Tracked);
             report.row(
                 "shell",
                 request.target.name(),
@@ -3847,23 +4128,45 @@ impl BootstrapDotfiles {
     async fn run(self) -> Result<()> {
         match self.command {
             BootstrapDotfilesCommands::Add(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Capture(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Diff(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Exclude(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::History(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Include(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Paths(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Rollback(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Save(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Track(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Unapply(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Undo(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Untrack(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Watch(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Origin(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Pull(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Recover(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Sync(cmd) => cmd.run().await,
         }
     }
 }
 
 impl BootstrapDotfilesApply {
     async fn run(self) -> Result<()> {
+        // one operation around both hook phases and the apply itself, so a
+        // hook that edits a tracked file is inside the checkpoint pair
+        let dry_run = self.cmd.dry_run();
+        OperationScope::wrap("bootstrap dotfiles apply", dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let mut config = Config::get().await?;
         let (files, edits) = self.cmd.requests(&config)?;
         let dry_run = self.cmd.dry_run();
         let hooks = system::hooks_from_config(&config);
         run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
-        if !self.cmd.run().await? {
+        if !self.cmd.run_inner().await? {
             return Ok(());
         }
         let hooks = if dry_run {
@@ -3878,16 +4181,66 @@ impl BootstrapDotfilesApply {
     }
 }
 
+/// Updates or clones the bootstrap repository. `Ok(false)` is a dry run
+/// that stops here because there is no checkout to continue from.
+fn checkout_bootstrap_repository(
+    url: &str,
+    checkout: &Path,
+    reuse: bool,
+    update: bool,
+    dry_run: bool,
+) -> Result<bool> {
+    if reuse {
+        if update {
+            if dry_run {
+                miseprintln!(
+                    "Would run: git -C {} pull --ff-only",
+                    checkout.display_user()
+                );
+            } else {
+                run_bootstrap_git(checkout, ["pull", "--ff-only"])?;
+                journal::note(format!(
+                    "updated the checkout of {url} in {}",
+                    checkout.display_user()
+                ));
+            }
+        }
+        return Ok(true);
+    }
+    if dry_run {
+        miseprintln!("Would run: git clone {} {}", url, checkout.display_user());
+        return Ok(false);
+    }
+    if let Some(parent) = checkout
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut command = Command::new("git");
+    command.arg("clone").arg(url).arg(checkout);
+    crate::git::sanitize_git_command(&mut command);
+    let status = command.status()?;
+    if !status.success() {
+        bail!("git clone failed with {status}");
+    }
+    journal::note(format!("cloned {url} into {}", checkout.display_user()));
+    Ok(true)
+}
+
+fn bootstrap_hooks_enabled() -> bool {
+    !(config::Settings::no_hooks()
+        || config::Settings::get().no_hooks.unwrap_or(false)
+        || config::Settings::get().safe)
+}
+
 async fn run_bootstrap_hooks(
     config: &Config,
     hooks: &[hooks::BootstrapHook],
     phase: BootstrapHookPhase,
     dry_run: bool,
 ) -> Result<()> {
-    if config::Settings::no_hooks()
-        || config::Settings::get().no_hooks.unwrap_or(false)
-        || config::Settings::get().safe
-    {
+    if !bootstrap_hooks_enabled() {
         debug!("bootstrap: {phase} hooks disabled");
         return Ok(());
     }
@@ -3926,6 +4279,10 @@ impl BootstrapPlugins {
 
 impl BootstrapPluginsApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap plugins apply", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         apply_bootstrap_plugins(&config, self.dry_run).await
     }
@@ -3987,6 +4344,10 @@ impl BootstrapRepos {
 
 impl BootstrapReposApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap repos apply", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_repos(
             system::repos_from_config(&config),
@@ -4000,6 +4361,10 @@ impl BootstrapReposApply {
 
 impl BootstrapReposUpdate {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap repos update", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         let repos = filter_repos(system::repos_from_config(&config), &self.paths)?;
         install::update_repos(repos, self.dry_run, self.yes, self.skip_dirty).await
@@ -4136,6 +4501,15 @@ impl BootstrapLaunchd {
 
 impl BootstrapLaunchdApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap(
+            "bootstrap macos launchd-agents apply",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_launchd(system::launchd_from_config(&config), self.dry_run, self.yes).await
     }
@@ -4239,6 +4613,15 @@ impl BootstrapSystemd {
 
 impl BootstrapSystemdApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap(
+            "bootstrap linux systemd-units apply",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_systemd(system::systemd_from_config(&config), self.dry_run, self.yes).await
     }
@@ -4336,6 +4719,15 @@ impl BootstrapSystemdStatus {
 
 impl BootstrapMacosDefaultsApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap(
+            "bootstrap macos defaults apply",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_defaults(
             system::defaults_from_config(&config),
@@ -4442,6 +4834,15 @@ impl BootstrapShell {
 
 impl BootstrapShellApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap(
+            "bootstrap mise-shell-activate apply",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_shell_activation(
             &config,
@@ -4464,7 +4865,7 @@ impl BootstrapShellStatus {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };
-            any_missing |= state != FileState::Applied;
+            any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
                 let mut entry = json!({
                     "target": request.target.name(),
@@ -4521,6 +4922,10 @@ impl BootstrapUser {
 
 impl BootstrapUserApply {
     async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap user apply", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
         install::apply_login_shell(
             system::login_shell_from_config(&config),
@@ -4614,6 +5019,7 @@ fn file_state_display(state: &FileState) -> String {
         FileState::Missing => "missing".to_string(),
         FileState::SourceMissing => "source missing".to_string(),
         FileState::Differs(reason) => format!("differs ({reason})"),
+        FileState::Tracked => "tracked".to_string(),
     }
 }
 
@@ -4623,6 +5029,7 @@ fn file_state_json(state: &FileState) -> &'static str {
         FileState::Missing => "missing",
         FileState::SourceMissing => "source_missing",
         FileState::Differs(_) => "differs",
+        FileState::Tracked => "tracked",
     }
 }
 

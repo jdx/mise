@@ -28,11 +28,14 @@ include = [
   "/README.md",
   "/build.rs",
   "/completions/*",
+  "/docs/public/apple-touch-icon.png",
+  "/docs/public/android-chrome-512x512.png",
   "/minisign.pub",
   "/registry/*.toml",
   "/settings.toml",
   "/zipsign.pub",
   "/src/**/*.rs",
+  "/src/system/history/notify/macos.m",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
   "/src/system/packages/brew/cask_shim.rb",
@@ -66,7 +69,7 @@ panic = "abort"
 opt-level = 3
 
 [dependencies]
-age = { version = "0.12", features = ["ssh"] }
+age = { version = "0.12", features = ["ssh", "plugin"] }
 aho-corasick = "1"
 aube-registry = { version = "2", default-features = false, features = [
   "rustls",
@@ -120,6 +123,7 @@ dunce = "1"
 homedir = "0.3"
 expr-lang = "2"
 eyre = "0.6"
+file-id = "0.2"
 filetime = "0.2"
 flate2 = "1"
 futures-util = "0.3"
@@ -160,6 +164,10 @@ miette = { version = "7", features = ["fancy"] }
 netrc-rs = "0.1"
 nodejs-semver = "5"
 nucleo-matcher = "0.3"
+notify = { version = "8", default-features = false, features = [
+  "macos_fsevent",
+] }
+notify-debouncer-full = { version = "0.7", default-features = false }
 num_cpus = "1"
 once_cell = "1"
 packslip = { version = "0.3", default-features = false }
@@ -251,6 +259,7 @@ toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.12", default-features = false }
 url = "2"
 urlencoding = "2"
+uuid = { version = "1", features = ["v7"] }
 usage-lib = { version = "6.8", features = ["docs"] }
 versions = { version = "7", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
@@ -304,6 +313,7 @@ windows-sys = { version = "0.61", features = [
 [build-dependencies]
 aqua-registry = { path = "crates/aqua-registry" }
 built = { version = "0.8", features = ["chrono"] }
+cc = "1"
 cfg_aliases = "0.2"
 eyre = "0.6"
 heck = "0.5"
@@ -377,6 +387,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ 
 ignored = [
   "aws-lc-rs",
   "built",
+  "cc", # Used by build.rs for the macOS notification helper.
   "cfg_aliases",
   "openssl",
   "phf_codegen",

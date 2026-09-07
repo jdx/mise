@@ -79,6 +79,29 @@ As with `--from`, an existing non-empty destination must be a git checkout
 whose `origin` exactly matches the requested URL; pass `--update` to
 fast-forward it before bootstrap.
 
+If the repository is a mise **setup repository** (one connected with
+`mise bootstrap dotfiles origin set`, recognizable by its
+`.mise-history/format.toml`), `--from-git` sets the machine up from it
+instead of cloning it: the branch is fetched into mise's own history store,
+this machine's explicitly enrolled files are written by the same recoverable pull as any other incoming
+change (a file that already exists and differs is held for a decision, never
+overwritten; `--dry-run` shows the plan), the connection is remembered for
+the history watcher, and the ordinary bootstrap then runs from the
+configuration that arrived. The repository's inventory is enough to restore
+tracked files without a global mise config. To recreate tools, services, or
+template deployments too, explicitly track their mise configuration and source
+files before publishing the setup. Merely referencing a source does not track it.
+An unresolved file conflict pauses the whole setup, including the bootstrap
+that would follow it. Nothing is cloned into `$MISE_CONFIG_DIR`, and an
+existing checkout there is not converted. See [history](/history.html) for
+what happens next.
+
+Setup repositories always fetch and reconcile their latest branch, with or
+without `--update`. That flag is still forwarded to the following bootstrap
+for package metadata and declared repository updates. If the global config
+directory is already a Git checkout, its origin must match the requested
+repository before setup can proceed.
+
 ## How it runs
 
 `mise bootstrap` runs the steps below in order.
@@ -118,6 +141,13 @@ preflight prevents a missing input from leaving a partially provisioned host.
 16. Plugin package managers apply after their host tools are available.
 17. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
 18. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
+
+Every mutating run — the full `mise bootstrap`, each `mise bootstrap <part>
+apply`, and the commands that change dotfiles or bootstrap config in place
+(`dotfiles add`, `unapply`, `edit`, `packages use`, `import`, brew `tap`) —
+records a pair of [history checkpoints](/history.html): the tracked files
+before and after the run, plus a journal of what the run changed. Dry runs
+record nothing.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
 `accounts`, `plugins`, `packages`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`,
@@ -219,6 +249,15 @@ mise bootstrap firewall status
 mise bootstrap user status
 ```
 
+Use `mise bootstrap dotfiles history` to see the checkpoints bootstrap has recorded — a pair per
+mutating run, with the tracked files before and after. See [History](/history.html).
+
+```sh
+mise bootstrap dotfiles history
+mise bootstrap dotfiles history show latest
+mise bootstrap dotfiles history diff 11 12
+```
+
 `mise bootstrap status --missing` checks the whole declarative bootstrap
 surface in one command. The narrower `mise bootstrap packages status --missing`
 and `mise bootstrap dotfiles status --missing` commands are useful when you only
@@ -289,6 +328,10 @@ The `pre-dotfiles` and `post-dotfiles` phases also wrap
 `mise bootstrap dotfiles apply`.
 
 ## Common workflows
+
+The whole path from installing mise to a second machine that shares the
+same setup, with the output each step prints, is
+[Set up a machine](/bootstrap/setup.html).
 
 ### New machine
 

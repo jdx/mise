@@ -24,11 +24,41 @@ fn main() -> Result<()> {
         vfox: { any(feature = "vfox", target_os = "windows") },
     }
     built::write_built_file()?;
+    build_notification_helper()?;
 
     let aqua_registry = load_aqua_registry()?;
     codegen_settings();
     codegen_registry(&aqua_registry.packages);
     codegen_aqua_standard_registry(&aqua_registry)?;
+    Ok(())
+}
+
+fn build_notification_helper() -> Result<()> {
+    let source = "src/system/history/notify/macos.m";
+    println!("cargo:rerun-if-changed={source}");
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
+        return Ok(());
+    }
+    let output = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("mise-notify");
+    let status = cc::Build::new()
+        .get_compiler()
+        .to_command()
+        .args(["-fobjc-arc", "-O2", "-mmacosx-version-min=10.14"])
+        .args([
+            "-framework",
+            "AppKit",
+            "-framework",
+            "UserNotifications",
+            "-framework",
+            "CoreServices",
+        ])
+        .arg(source)
+        .arg("-o")
+        .arg(output)
+        .status()?;
+    if !status.success() {
+        return Err(eyre!("failed to build the macOS notification helper"));
+    }
     Ok(())
 }
 

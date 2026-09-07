@@ -11,7 +11,12 @@ use crate::ui::table::MiseTable;
 ///
 /// Template entries are rendered to compare their output; trusted template
 /// functions may execute. JSON includes each entry's origin and uses the states
-/// `applied`, `missing`, `differs`, and `source_missing`.
+/// `applied`, `missing`, `differs`, `source_missing`, and `tracked`.
+///
+/// The management state of every declaration (applied, missing, differs,
+/// tracked) followed by the history state: what is tracked, the latest
+/// checkpoint, unfinished operations, and whether edits are saved
+/// automatically.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "ls",
@@ -64,8 +69,9 @@ impl DotfilesStatus {
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
                 FileState::Differs(reason) => format!("differs ({reason})"),
+                FileState::Tracked => "tracked".to_string(),
             };
-            any_missing |= state != FileState::Applied;
+            any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
                 json_files.push(json!({
                     "target": req.target_raw,
@@ -78,6 +84,7 @@ impl DotfilesStatus {
                         FileState::Missing => "missing",
                         FileState::SourceMissing => "source_missing",
                         FileState::Differs(_) => "differs",
+                        FileState::Tracked => "tracked",
                     },
                 }));
             } else {
@@ -123,8 +130,9 @@ impl DotfilesStatus {
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
                 FileState::Differs(reason) => format!("differs ({reason})"),
+                FileState::Tracked => "tracked".to_string(),
             };
-            any_missing |= state != FileState::Applied;
+            any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
                 json_edits.push(json!({
                     "path": req.path_raw,
@@ -135,6 +143,7 @@ impl DotfilesStatus {
                         FileState::Missing => "missing",
                         FileState::SourceMissing => "source_missing",
                         FileState::Differs(_) => "differs",
+                        FileState::Tracked => "tracked",
                     },
                 }));
             } else {
@@ -152,12 +161,14 @@ impl DotfilesStatus {
         if files.is_empty() && edits.is_empty() {
             super::warn_if_dotfiles_ignored();
         }
+        let history = super::history_status::report().await?;
         if self.json {
             miseprintln!(
                 "{}",
                 serde_json::to_string_pretty(&json!({
                     "files": json_files,
                     "edits": json_edits,
+                    "history": history,
                 }))?
             );
         } else {
@@ -179,6 +190,7 @@ impl DotfilesStatus {
                 }
                 table.print()?;
             }
+            super::history_status::print(&history)?;
         }
         if self.missing && any_missing {
             return Err(crate::request_exit(1));

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Regression coverage for review findings in explicit enrollment and raw capture.
+require_cmd git
+printf 'first\r\nsecond\r\n' >~/.native
+printf '* text eol=lf\n' >~/.gitattributes
+assert_succeed 'mise bootstrap dotfiles track ~/.native'
+repo="$MISE_STATE_DIR/history/repo.git"
+git --git-dir="$repo" show main:home/.native >captured
+assert_succeed 'cmp ~/.native captured'
+
+# Restoring one manual-save child protects its unsaved live contents without
+# committing another unsaved child from the same enrolled directory.
+mkdir -p ~/manual
+printf 'saved one\n' >~/manual/one
+printf 'saved two\n' >~/manual/two
+assert_succeed 'mise bootstrap dotfiles track ~/manual --no-autosave'
+saved=$(mise bootstrap dotfiles history --json | jq -r '.[0].id')
+printf 'unsaved one\n' >~/manual/one
+printf 'unsaved two\n' >~/manual/two
+assert_succeed "mise bootstrap dotfiles rollback ~/manual/one --to $saved --yes"
+assert 'cat ~/manual/one' 'saved one'
+assert 'cat ~/manual/two' 'unsaved two'
+assert "git --git-dir='$repo' show main:home/manual/two" 'saved two'
+assert_succeed 'mise bootstrap dotfiles undo --yes'
+assert 'cat ~/manual/one' 'unsaved one'
+assert 'cat ~/manual/two' 'unsaved two'
+assert "git --git-dir='$repo' show main:home/manual/two" 'saved two'
+
+# A project cannot override or disable a globally enrolled entry.
+mkdir project
+printf '[dotfiles]\n"~/.native" = { mode = "track", enabled = false }\n' >project/mise.toml
+printf 'third\r\n' >~/.native
+assert_succeed 'mise --cd project bootstrap dotfiles save'
+git --git-dir="$repo" show main:home/.native >captured
+assert_succeed 'cmp ~/.native captured'
+assert_contains 'mise --cd project bootstrap dotfiles paths' '.native'
+# Ignored project declarations must not poison global synchronization health.
+git init -q --bare -b main project-origin.git
+assert_succeed "mise --cd project bootstrap dotfiles origin set 'file://$PWD/project-origin.git' --yes"
+assert_succeed 'mise --cd project bootstrap dotfiles sync'
+assert_succeed 'mise bootstrap dotfiles origin --remove'
+
+# Source directories from the old unpublished layout are ordinary paths now.
+mkdir -p "$MISE_CONFIG_DIR/sources"
+printf 'template input\n' >"$MISE_CONFIG_DIR/sources/gitconfig.tera"
+assert_succeed "mise bootstrap dotfiles track '$MISE_CONFIG_DIR/sources'"
+assert "git --git-dir='$repo' show main:config/sources/gitconfig.tera" 'template input'
+
+# Description metadata remains in Git without creating a phantom checkpoint.
+latest=$(mise bootstrap dotfiles history --json | jq -r '.[0].id')
+count=$(mise bootstrap dotfiles history --json | jq length)
+commits=$(git --git-dir="$repo" rev-list --count HEAD)
+assert_succeed "mise bootstrap dotfiles history describe latest 'native shell configuration'"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].id'" "$latest"
+assert 'mise bootstrap dotfiles history --json | jq length' "$count"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" 'native shell configuration'
+assert "git --git-dir='$repo' rev-list --count HEAD" "$((commits + 1))"
+
+# A path selection must not silently broaden into a whole-checkpoint restore.
+assert_fail 'mise bootstrap dotfiles rollback ~/.native --to latest --all --yes' 'choose explicit paths or'
+assert_succeed 'cmp ~/.native captured'
+
+# A network option is not a repository URL, including on initial discovery.
+assert_fail "mise bootstrap --from-git=--upload-pack=invalid --yes 2>&1"
+
+# Recovery is an explicit bootstrap command; an idle store remains unchanged.
+head=$(git --git-dir="$repo" rev-parse HEAD)
+assert_contains 'mise bootstrap dotfiles recover --help' '--keep-current'
+assert_succeed 'mise bootstrap dotfiles recover'
+assert "git --git-dir='$repo' rev-parse HEAD" "$head"
+
+# Local history ignores shell-injected Git configuration, even invalid values.
+printf 'fourth\r\n' >~/.native
+assert_succeed 'GIT_CONFIG_COUNT=invalid GIT_CONFIG_PARAMETERS=invalid mise bootstrap dotfiles save'
+git --git-dir="$repo" show main:home/.native >captured
+assert_succeed 'cmp ~/.native captured'

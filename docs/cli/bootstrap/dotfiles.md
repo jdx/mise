@@ -18,10 +18,25 @@ Manage dotfiles from `[dotfiles]`
 
 - [`mise bootstrap dotfiles add [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/add.html)
 - [`mise bootstrap dotfiles apply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/apply.html)
+- [`mise bootstrap dotfiles capture [--label <LABEL>] <-- COMMAND>…`](/cli/bootstrap/dotfiles/capture.html)
 - [`mise bootstrap dotfiles diff [TARGET]…`](/cli/bootstrap/dotfiles/diff.html)
 - [`mise bootstrap dotfiles edit [FLAGS] <TARGET>`](/cli/bootstrap/dotfiles/edit.html)
+- [`mise bootstrap dotfiles exclude <GLOB>`](/cli/bootstrap/dotfiles/exclude.html)
+- [`mise bootstrap dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/history.html)
+- [`mise bootstrap dotfiles include <GLOB>`](/cli/bootstrap/dotfiles/include.html)
+- [`mise bootstrap dotfiles origin [--remove] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/origin.html)
+- [`mise bootstrap dotfiles paths [FLAGS]`](/cli/bootstrap/dotfiles/paths.html)
+- [`mise bootstrap dotfiles pull [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/pull.html)
+- [`mise bootstrap dotfiles recover [--keep-current] [-y --yes] [OPERATION]`](/cli/bootstrap/dotfiles/recover.html)
+- [`mise bootstrap dotfiles rollback [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/rollback.html)
+- [`mise bootstrap dotfiles save [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/save.html)
 - [`mise bootstrap dotfiles status [-J --json] [--missing] [TARGET]…`](/cli/bootstrap/dotfiles/status.html)
+- [`mise bootstrap dotfiles sync [--fetch-only] [--best-effort]`](/cli/bootstrap/dotfiles/sync.html)
+- [`mise bootstrap dotfiles track [FLAGS] <PATH>…`](/cli/bootstrap/dotfiles/track.html)
 - [`mise bootstrap dotfiles unapply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/unapply.html)
+- [`mise bootstrap dotfiles undo [-n --dry-run] [-y --yes] [REF]`](/cli/bootstrap/dotfiles/undo.html)
+- [`mise bootstrap dotfiles untrack <PATH>…`](/cli/bootstrap/dotfiles/untrack.html)
+- [`mise bootstrap dotfiles watch [--once] [-J --json]`](/cli/bootstrap/dotfiles/watch.html)
 
 <!-- generated reference navigation -->
 

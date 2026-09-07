@@ -927,7 +927,7 @@ fn build_dotfiles_layer(
     let mut entries = DotfilesLayerEntries::default();
 
     for req in requests {
-        if req.mode != FileMode::Content && !req.source.exists() {
+        if !matches!(req.mode, FileMode::Content | FileMode::Track) && !req.source.exists() {
             bail!(
                 "[dotfiles].\"{}\": source does not exist: {}",
                 req.target_raw,
@@ -936,6 +936,9 @@ fn build_dotfiles_layer(
         }
 
         match req.mode {
+            // a tracked file lives on the machine that tracks it; an image
+            // has nothing to copy
+            FileMode::Track => continue,
             FileMode::Symlink | FileMode::Copy => {
                 collect_source_as_files(&req.source, &oci_target_path(req)?, &mut entries)
                     .wrap_err_with(|| {
