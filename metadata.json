@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1WKTF452DTS0P74NDRXBCG1",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-foundation-fixes",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e-win/dotfiles.Tests.ps1",
+    "src/git.rs",
+    "src/system/history/scope.rs",
+    "src/system/history/store.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 19036,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1417216,
+    "output_tokens": 5975,
+    "api_call_count": 13
+  }
+}
