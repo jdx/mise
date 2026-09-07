@@ -67,8 +67,15 @@ assert_fail "test -e ~/.config/review/new-dir/transient"
 assert_succeed "test -d ~/.config/review/new-dir/empty"
 assert_succeed "test -d ~/.config/review/empty"
 
-# A canonical target outside HOME retains restrictive parent permissions.
-external="$(dirname "$HOME")/external-private"
+# Paths outside the portable namespace cannot be enrolled.
+outside="$(dirname "$HOME")/external-private"
+mkdir -m 700 "$outside"
+echo secret >"$outside/key"
+assert_fail "mise bootstrap dotfiles track $outside" 'tracking requires a portable path'
+assert "cat $outside/key" 'secret'
+
+# An explicitly tracked target retains restrictive parent permissions.
+external="$HOME/external-private"
 mkdir -m 700 "$external"
 echo secret >"$external/key"
 chmod 600 "$external/key"
