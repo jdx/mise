@@ -167,8 +167,9 @@ assert_succeed "mise bootstrap dotfiles track ~/outside.conf"
 echo 'outside2' >~/outside.conf
 wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"outside.conf\")'"
 
-# a capture deferred by a running history operation is retried once the
-# operation finished (nothing else could save it: reconciliation is off).
+# A capture deferred by a running history operation is retried once the
+# operation finishes. Its after boundary may already save the edit, in which
+# case the watcher correctly finds nothing more to commit.
 # The operation is an apply whose pre-dotfiles hook holds the operation lock
 # for a while
 cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
@@ -184,7 +185,8 @@ echo 'monitor=DP-3' >~/.config/hypr/monitors.lua
 wait_until "grep -q '\"event\":\"deferred\"' watch.log"
 wait "$applying" || true
 
-wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
+wait_until "mise bootstrap dotfiles history diff --path ~/.config/hypr/monitors.lua --exit-code"
+assert "$snapshot_of latest .config/hypr/monitors.lua" "monitor=DP-3"
 
 # Replacing an anchor together with a config edit must reinstall the
 # retained path's watch, not keep a watch attached to its old inode.
