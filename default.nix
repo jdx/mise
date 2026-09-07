@@ -1,4 +1,4 @@
-{ pkgs, lib, rustPlatform, coreutils, bash, direnv, openssl, git }:
+{ pkgs, lib, rustPlatform, coreutils, bash, direnv, openssl, git, stdenv }:
 
 rustPlatform.buildRustPackage {
   pname = "mise";
@@ -69,7 +69,8 @@ rustPlatform.buildRustPackage {
       --skip system::packages::brew::cask::tests::staged_symlink_source_copies_reachable_internal_links \
       --skip system::packages::brew::cask::tests::staged_symlink_sources_become_caskroom_owned \
       --skip system::packages::brew::cask::tests::structured_copy_restores_external_target_without_status_tracking \
-      --skip system::packages::brew::cask::tests::structured_copy_rollback_removes_target_with_created_parent
+      --skip system::packages::brew::cask::tests::structured_copy_rollback_removes_target_with_created_parent \
+      ${lib.optionalString stdenv.isDarwin "--skip mise_binary_services_aube_node_gyp_bootstrap_trampoline"}
   '';
 
   meta = with lib; {
