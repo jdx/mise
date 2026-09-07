@@ -323,13 +323,14 @@ pub(crate) async fn apply(
         return Ok(ApplyOutcome::default());
     }
 
-    // validation and holds, per group
+    let staged = staged_paths(steps.iter().map(|step| step.path.as_path()))?;
+    // Validate the complete batch before writing any member.
     for step in &steps {
         let take_remote = status
             .resolutions
             .get(&step.pending.branch_path)
             .is_some_and(|choice| choice.take_remote);
-        if let Some(reason) = hold_reason(repo, tracked, step, take_remote)? {
+        if let Some(reason) = hold_reason(repo, tracked, step, take_remote, &staged)? {
             holds.push(Hold {
                 path: step.path.clone(),
                 reason,
@@ -709,6 +710,7 @@ fn hold_reason(
     tracked: &TrackedSet,
     step: &Step,
     take_remote: bool,
+    staged: &BTreeSet<PathBuf>,
 ) -> Result<Option<String>> {
     let expected = step.pending.local.clone();
     if saved_object(repo, tracked, &step.path)? != expected {
@@ -758,14 +760,8 @@ fn hold_reason(
     }
     // Saved/live comparison above is authoritative; preserve staged changes
     // independently, without consulting a machine's old application cache.
-    if let Some(status) = git_status(&step.path)?
-        && status != "??"
-        && status != "!!"
-    {
-        let staged = status.chars().next().is_some_and(|c| c != ' ' && c != '?');
-        if staged {
-            return Ok(Some("needs decision: staged git changes".into()));
-        }
+    if has_staged_changes(staged, &step.path) {
+        return Ok(Some("needs decision: staged git changes".into()));
     }
     Ok(None)
 }
@@ -847,34 +843,74 @@ fn saved_object(
     repo.restored_object_at(&head, &entry.tree_path(path)?)
 }
 
-/// The porcelain status of `path` in the user's checkout that contains
-/// it, if any (`None` outside a checkout).
-pub(super) fn git_status(path: &Path) -> Result<Option<String>> {
-    let Some(root) = path
-        .ancestors()
-        .skip(1)
-        .find(|dir| dir.join(".git").exists())
-    else {
-        return Ok(None);
-    };
-    let Some(git) = crate::git::plumbing_binary() else {
-        return Ok(None);
-    };
-    let output = std::process::Command::new(git)
-        .arg("-C")
-        .arg(root)
-        .args(["status", "--porcelain", "--untracked-files=all", "--"])
-        .arg(path)
-        .stdin(std::process::Stdio::null())
-        .output()?;
-    if !output.status.success() {
-        return Ok(None);
+/// Read each containing checkout's index once per preflight, not once per
+/// incoming file. Never retain this observation across subsequent validation.
+pub(super) fn staged_paths<'a>(paths: impl Iterator<Item = &'a Path>) -> Result<BTreeSet<PathBuf>> {
+    let roots: BTreeSet<_> = paths
+        .filter_map(|path| {
+            path.ancestors()
+                .find(|dir| dir.join(".git").exists())
+                .map(Path::to_path_buf)
+        })
+        .collect();
+    let mut staged = BTreeSet::new();
+    if roots.is_empty() {
+        return Ok(staged);
     }
-    let text = String::from_utf8_lossy(&output.stdout);
-    Ok(text
-        .lines()
+    let Some(git) = crate::git::plumbing_binary() else {
+        bail!("cannot check staged changes: git is unavailable");
+    };
+    for root in roots {
+        let mut command = std::process::Command::new(git);
+        crate::git::sanitize_git_command(&mut command);
+        let output = command
+            .arg("-C")
+            .arg(&root)
+            .args([
+                "-c",
+                "core.fsmonitor=false",
+                "diff",
+                "--cached",
+                "--name-only",
+                "-z",
+                "--no-renames",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--",
+            ])
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .stdin(std::process::Stdio::null())
+            .output()?;
+        if !output.status.success() {
+            bail!(
+                "cannot check staged changes in {}: {}",
+                display_path(&root),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        for name in output
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|name| !name.is_empty())
+        {
+            #[cfg(unix)]
+            let relative = {
+                use std::os::unix::ffi::OsStrExt;
+                PathBuf::from(std::ffi::OsStr::from_bytes(name))
+            };
+            #[cfg(not(unix))]
+            let relative = PathBuf::from(std::str::from_utf8(name)?);
+            staged.insert(normalize_target(&root.join(relative)));
+        }
+    }
+    Ok(staged)
+}
+
+pub(super) fn has_staged_changes(staged: &BTreeSet<PathBuf>, path: &Path) -> bool {
+    staged
+        .range(path.to_path_buf()..)
         .next()
-        .map(|line| line.chars().take(2).collect()))
+        .is_some_and(|entry| entry.starts_with(path))
 }
 
 /// The conflicts as rows for `mise bootstrap dotfiles status`.
@@ -903,6 +939,48 @@ pub(crate) fn resolution_advice(path: &str, reason: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn staged_lookup_batches_checkouts_and_preserves_filename_boundaries() -> eyre::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = std::fs::canonicalize(temp.path())?;
+        let git = crate::git::plumbing_binary().expect("git is required for history tests");
+        let run = |args: &[&str]| -> eyre::Result<()> {
+            let mut command = std::process::Command::new(git);
+            crate::git::sanitize_git_command(&mut command);
+            let output = command.arg("-C").arg(&root).args(args).output()?;
+            eyre::ensure!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            Ok(())
+        };
+        run(&["init", "--quiet"])?;
+        std::fs::create_dir(root.join("configs"))?;
+        let staged_file = root.join("configs/with spaces");
+        let untracked = root.join("configs/untracked");
+        std::fs::write(&staged_file, "staged")?;
+        std::fs::write(&untracked, "not staged")?;
+        run(&["add", "--", "configs/with spaces"])?;
+        #[cfg(unix)]
+        {
+            std::fs::write(root.join("configs/with\nnewline"), "staged")?;
+            run(&["add", "--", "configs/with\nnewline"])?;
+        }
+        let paths = [&staged_file, &untracked];
+        let staged = super::staged_paths(paths.into_iter().map(|path| path.as_path()))?;
+        assert!(super::has_staged_changes(&staged, &staged_file));
+        assert!(super::has_staged_changes(&staged, &root.join("configs")));
+        assert!(!super::has_staged_changes(&staged, &untracked));
+        #[cfg(unix)]
+        assert!(staged.contains(&root.join("configs/with\nnewline")));
+        // A fresh validation must observe changes to the index.
+        run(&["rm", "--cached", "--", "configs/with spaces"])?;
+        let staged = super::staged_paths(std::iter::once(staged_file.as_path()))?;
+        assert!(!super::has_staged_changes(&staged, &staged_file));
+        Ok(())
+    }
+
     use super::*;
     use crate::system::history::shadow::HistoryRepo;
 

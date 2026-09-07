@@ -1,5 +1,7 @@
 //! Encryption before Git capture and process-local decryption for live files.
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
+use std::sync::{LazyLock, Mutex};
 
 use eyre::{Result, WrapErr, bail};
 use serde::{Deserialize, Serialize};
@@ -8,6 +10,17 @@ use super::{layout, reconcile::Object};
 use crate::{agecrypt, system::history::shadow::HistoryRepo};
 
 const MAGIC: &[u8] = b"mise-encrypted-file-v1\n";
+
+#[derive(Clone)]
+struct VerifiedAncestry {
+    head: String,
+    protected: BTreeSet<String>,
+}
+
+// Process-local only: never trust an editable on-disk cache as proof that
+// plaintext was audited. The watcher reuses this across its short-lived stores.
+static AUDITS: LazyLock<Mutex<BTreeMap<PathBuf, VerifiedAncestry>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 /// Raw bytes serialized as a MessagePack `bin`, whatever the serializer's
 /// default for `Vec<u8>` is.
@@ -46,8 +59,38 @@ pub(crate) fn audit_history(
     head: &str,
     protected: &BTreeSet<String>,
 ) -> Result<()> {
-    let commits = repo.rev_list(head, usize::MAX)?;
+    audit_history_cached(repo, head, protected).map(|_| ())
+}
+
+fn audit_history_cached(
+    repo: &HistoryRepo,
+    head: &str,
+    protected: &BTreeSet<String>,
+) -> Result<usize> {
+    let cached = AUDITS
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(repo.dir()).cloned())
+        .filter(|cached| {
+            cached.head == head
+                || repo
+                    .merge_bases(&cached.head, head)
+                    .is_ok_and(|bases| bases.len() == 1 && bases[0] == cached.head)
+        });
+    if cached
+        .as_ref()
+        .is_some_and(|cached| cached.head == head && protected.is_subset(&cached.protected))
+    {
+        return Ok(0);
+    }
+    let mut commits = match &cached {
+        Some(cached) => repo.rev_list_after(head, &cached.head)?,
+        None => repo.rev_list(head, usize::MAX)?,
+    };
     let mut protected = protected.clone();
+    if let Some(cached) = &cached {
+        protected.extend(cached.protected.iter().cloned());
+    }
     // Policy changes cannot hide older plaintext, including on a merge
     // parent or a platform that this machine never activates.
     for commit in &commits {
@@ -55,11 +98,17 @@ pub(crate) fn audit_history(
             protected.extend(manifest.encrypted_paths());
         }
     }
-    if protected.is_empty() {
-        return Ok(());
+    // A newly protected path invalidates the old proof for that policy: its
+    // plaintext may live anywhere in old ancestry, including a merge parent.
+    if cached
+        .as_ref()
+        .is_some_and(|cached| cached.protected != protected)
+    {
+        commits = repo.rev_list(head, usize::MAX)?;
     }
+    let inspected = commits.len();
     let mut checked = BTreeSet::new();
-    for commit in commits {
+    for commit in commits.into_iter().filter(|_| !protected.is_empty()) {
         for entry in repo.ls_tree(&commit)? {
             if !protected.iter().any(|path| {
                 entry.path == *path
@@ -86,7 +135,21 @@ pub(crate) fn audit_history(
             }
         }
     }
-    Ok(())
+    if let Ok(mut cache) = AUDITS.lock() {
+        // One watcher normally uses one repository. Bound temporary onboarding
+        // probes without adding another durable history or state file.
+        if cache.len() >= 64 && !cache.contains_key(repo.dir()) {
+            cache.pop_first();
+        }
+        cache.insert(
+            repo.dir().to_path_buf(),
+            VerifiedAncestry {
+                head: head.into(),
+                protected,
+            },
+        );
+    }
+    Ok(inspected)
 }
 
 /// Resolve encrypted files from the same committed enrollment metadata.
@@ -301,6 +364,70 @@ pub(crate) fn encode(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn audit_reuses_verified_ancestry_but_rechecks_new_encryption_policy() {
+        use crate::system::history::manifest::{Enrollment, Manifest};
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let tree = repo
+            .write_tree(&[(
+                "100644".into(),
+                repo.hash_blob(b"plain").unwrap(),
+                "home/secret".into(),
+            )])
+            .unwrap();
+        let first = repo.commit_tree(&tree, vec![], "first").unwrap();
+        assert_eq!(
+            audit_history_cached(&repo, &first, &BTreeSet::new()).unwrap(),
+            1
+        );
+        assert_eq!(
+            audit_history_cached(&repo, &first, &BTreeSet::new()).unwrap(),
+            0
+        );
+        let second = repo.commit_tree(&tree, vec![&first], "second").unwrap();
+        assert_eq!(
+            audit_history_cached(&repo, &second, &BTreeSet::new()).unwrap(),
+            1
+        );
+
+        let key = age::x25519::Identity::generate();
+        let recipients: Vec<Box<dyn age::Recipient + Send>> = vec![Box::new(key.to_public())];
+        let encrypted = repo
+            .hash_blob(&encode("home/secret", "100644", b"plain", "test", &recipients).unwrap())
+            .unwrap();
+        let encrypted_tree = repo
+            .write_tree(&[("100644".into(), encrypted, "home/secret".into())])
+            .unwrap();
+        let manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/secret".into(),
+                autosave: true,
+                encrypt: true,
+                variants: vec![],
+            }],
+            ..Default::default()
+        };
+        let encrypted_tree = manifest.write(&repo, &encrypted_tree).unwrap();
+        let encrypted = repo
+            .commit_tree(&encrypted_tree, vec![&second], "encrypt now")
+            .unwrap();
+        // No caller-supplied policy is needed: the new manifest expands the
+        // protected set and forces the earlier plaintext commits to be checked.
+        assert!(audit_history_cached(&repo, &encrypted, &BTreeSet::new()).is_err());
+
+        // An unrelated branch cannot reuse proof about the previous branch.
+        let other = repo.commit_tree(&tree, vec![], "unrelated").unwrap();
+        assert_eq!(
+            audit_history_cached(&repo, &other, &BTreeSet::new()).unwrap(),
+            1
+        );
+        // A live policy change at the same head also invalidates the proof.
+        assert!(
+            audit_history_cached(&repo, &other, &BTreeSet::from(["home/secret".into()])).is_err()
+        );
+    }
+
     #[test]
     fn encrypted_tip_does_not_hide_plaintext_in_ancestry_or_merge_parents() {
         let tmp = tempfile::tempdir().unwrap();

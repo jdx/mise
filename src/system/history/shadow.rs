@@ -1322,6 +1322,17 @@ impl HistoryRepo {
         Ok(out.lines().map(str::to_string).collect())
     }
 
+    pub(crate) fn rev_list_after(&self, head: &str, verified: &str) -> Result<Vec<String>> {
+        let exclude = format!("^{verified}");
+        let out = self.output_str(PlumbingCall::new([
+            "rev-list",
+            "--topo-order",
+            head,
+            &exclude,
+        ]))?;
+        Ok(out.lines().map(str::to_string).collect())
+    }
+
     /// Three-way merges blob contents; `None` when they conflict or are not
     /// text.
     pub(crate) fn merge3(

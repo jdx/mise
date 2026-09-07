@@ -855,6 +855,17 @@ fn apply_resolutions(
     let fresh = repo
         .ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?
         .is_none();
+    let incoming_paths: Vec<_> = plans
+        .iter()
+        .filter(|plan| plan.apply.is_some())
+        .filter_map(|plan| {
+            roots
+                .locate(&plan.branch_path)
+                .path()
+                .map(Path::to_path_buf)
+        })
+        .collect();
+    let staged = super::apply::staged_paths(incoming_paths.iter().map(PathBuf::as_path))?;
     for plan in plans {
         let Some(incoming) = &plan.apply else {
             continue;
@@ -896,11 +907,7 @@ fn apply_resolutions(
         {
             kind = kind.or(Some(reconcile::ConflictKind::UnsavedEdits));
         }
-        if super::apply::git_status(path)?.is_some_and(|s| {
-            s.chars()
-                .next()
-                .is_some_and(|c| c != ' ' && c != '?' && c != '!')
-        }) {
+        if super::apply::has_staged_changes(&staged, path) {
             kind = kind.or(Some(reconcile::ConflictKind::StagedEdits));
         }
         if let Some(kind) = kind {
