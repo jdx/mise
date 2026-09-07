@@ -4,6 +4,7 @@ set -euo pipefail
 
 unset MISE_CARGO_HOME MISE_RUSTUP_HOME
 export MISE_OFFLINE=1
+export MISE_ENV_CACHE=1
 
 CONFIG_CARGO_HOME="$PWD/config-cargo"
 CONFIG_RUSTUP_HOME="$PWD/config-rustup"
@@ -114,6 +115,8 @@ EOF
 assert "mise run wrapped 2>/dev/null" "mbx:1
 cargo:1.81.0:check"
 assert "mise run check 2>/dev/null" "cargo:1.81.0:check"
+assert "mise run wrapped 2>/dev/null" "mbx:1
+cargo:1.81.0:check"
 mise reshim
 assert "mise exec 'rust[mr_boxington=true]@1.81.0' -- cargo check" "mbx:1
 cargo:1.81.0:check"

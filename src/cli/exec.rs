@@ -264,23 +264,6 @@ impl Exec {
             ts.notify_missing_versions(missing);
         });
 
-        // Environment-derived wrappers must follow the effective runtime tool
-        // requests rather than re-reading only the project defaults.
-        if !self.tool.is_empty() {
-            config = config.with_tool_request_set(
-                ts.versions
-                    .iter()
-                    .map(|(backend, versions)| {
-                        (
-                            backend.clone(),
-                            versions.requests.clone(),
-                            versions.source.clone(),
-                        )
-                    })
-                    .collect(),
-            );
-        }
-
         crate::shims::ensure_command_wrapper_shims(&config, &ts)?;
 
         let (mut env, env_remove) = measure!("env_with_path", {

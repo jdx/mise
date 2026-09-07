@@ -2095,20 +2095,6 @@ impl TaskExecutor {
             ts_build_start.elapsed().as_millis()
         );
 
-        // Wrapper activation must follow this task's effective requests, including opt-ins.
-        let config = &config.with_tool_request_set(
-            toolset
-                .versions
-                .iter()
-                .map(|(backend, versions)| {
-                    (
-                        backend.clone(),
-                        versions.requests.clone(),
-                        versions.source.clone(),
-                    )
-                })
-                .collect(),
-        );
         crate::shims::ensure_command_wrapper_shims(config, &toolset)?;
 
         let env_render_start = std::time::Instant::now();

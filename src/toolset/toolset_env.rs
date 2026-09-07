@@ -390,12 +390,18 @@ impl Toolset {
             })
             .collect();
 
-        // Collect tool versions
+        // Runtime options can change tool environments and wrapper activation without
+        // changing versions, so include them in the cache identity.
         let tool_versions: Vec<(String, String)> = self
             .list_current_versions()
             .into_iter()
-            .map(|(b, tv)| (b.id().to_string(), tv.version.clone()))
-            .collect();
+            .map(|(b, tv)| {
+                Ok((
+                    b.id().to_string(),
+                    serde_json::to_string(&(tv.version.clone(), tv.request.options()))?,
+                ))
+            })
+            .collect::<Result<_>>()?;
 
         // Get settings hash
         let settings_hash = compute_settings_hash();

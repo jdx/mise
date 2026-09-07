@@ -7703,6 +7703,11 @@ Print help
 .TP
 \fB\-\-postinstall\fR \fI<COMMAND>\fR
 Command to run after installing this tool
+.TP
+\fB\-\-tool\-option\fR \fI<KEY=VALUE>\fR
+Set an option for this tool (repeat for multiple options).
+Values use inline tool\-option types; unquoted text is treated as a string.
+Place these flags before the tool they apply to.
 \fBArguments:\fR
 .PP
 .TP
@@ -7739,6 +7744,12 @@ associate a different postinstall command with each tool
 .PP
 .RS 4
 mise use \-\-postinstall "setup\-a" tool\-a \-\-postinstall "setup\-b" tool\-b
+.RE
+.PP
+enable a Rust tool option while installing Rust and mbx
+.PP
+.RS 4
+mise use \-\-tool\-option mr_boxington=true rust mr\-boxington
 .RE
 .PP
 set the current version of node to 20.x in ~/.config/mise/config.toml will write the precise version (e.g.: 20.0.0)

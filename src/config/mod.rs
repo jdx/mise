@@ -1378,17 +1378,12 @@ impl Config {
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
             };
-            // Wrapper activation can depend on runtime Rust options, which are
-            // not part of the non-tool environment cache key.
+            // Keep only explicit wrappers in the non-tool environment. Tool-derived
+            // wrappers are selected later, after sourced env and tool templates resolve.
             env_results
                 .env_paths
                 .retain(|path| path != &*dirs::COMMAND_WRAPPERS);
-            if !load_command_wrappers(
-                &self.config_files,
-                self.get_tool_request_set().await?.tools.values().flatten(),
-            )?
-            .is_empty()
-            {
+            if !load_command_wrappers(&self.config_files, std::iter::empty())?.is_empty() {
                 env_results
                     .env_paths
                     .insert(0, dirs::COMMAND_WRAPPERS.clone());
@@ -1436,12 +1431,7 @@ impl Config {
             },
         )
         .await?;
-        if !load_command_wrappers(
-            &self.config_files,
-            self.get_tool_request_set().await?.tools.values().flatten(),
-        )?
-        .is_empty()
-        {
+        if !load_command_wrappers(&self.config_files, std::iter::empty())?.is_empty() {
             env_results
                 .env_paths
                 .insert(0, dirs::COMMAND_WRAPPERS.clone());
