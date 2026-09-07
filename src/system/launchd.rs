@@ -22,10 +22,16 @@ pub(crate) struct LaunchdTomlConfig {
     pub run_at_load: bool,
     #[serde(default)]
     pub keep_alive: bool,
+    /// `KeepAlive = { SuccessfulExit = false }`: relaunch only after a failure.
+    #[serde(default)]
+    pub keep_alive_on_failure: bool,
     #[serde(default)]
     pub start_interval: Option<u64>,
     #[serde(default)]
     pub throttle_interval: Option<u64>,
+    /// Niceness of the process (`Nice` in the plist).
+    #[serde(default)]
+    pub nice: Option<i8>,
     #[serde(default)]
     pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
     #[serde(default)]
@@ -71,8 +77,10 @@ pub(crate) struct LaunchdRequest {
     pub args: Vec<String>,
     pub run_at_load: bool,
     pub keep_alive: bool,
+    pub keep_alive_on_failure: bool,
     pub start_interval: Option<u64>,
     pub throttle_interval: Option<u64>,
+    pub nice: Option<i8>,
     pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
     pub queue_directories: Vec<String>,
     pub environment: IndexMap<String, String>,
@@ -109,6 +117,12 @@ impl LaunchdRequest {
         if program.is_empty() {
             bail!("agent '{name}' must set a non-empty `program`");
         }
+        if config.keep_alive && config.keep_alive_on_failure {
+            bail!("agent '{name}' cannot set both `keep_alive` and `keep_alive_on_failure`");
+        }
+        if config.nice.is_some_and(|nice| !(-20..=20).contains(&nice)) {
+            bail!("agent '{name}' `nice` must be between -20 and 20");
+        }
         if let Some(interval) = &config.start_calendar_interval {
             interval.validate(&name)?;
         }
@@ -134,8 +148,10 @@ impl LaunchdRequest {
             args: config.args,
             run_at_load: config.run_at_load,
             keep_alive: config.keep_alive,
+            keep_alive_on_failure: config.keep_alive_on_failure,
             start_interval: config.start_interval,
             throttle_interval: config.throttle_interval,
+            nice: config.nice,
             start_calendar_interval: config.start_calendar_interval,
             queue_directories: config.queue_directories,
             environment: config.environment,
@@ -317,6 +333,76 @@ pub(crate) async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<
     Ok(())
 }
 
+/// Whether the agent's process is currently running (not merely loaded).
+pub(crate) async fn is_running(label: &str) -> Result<bool> {
+    let target = format!("{}/{}", launchctl_domain(), label);
+    let output = tokio::process::Command::new("launchctl")
+        .args(["print", &target])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await?;
+    if !output.status.success() {
+        return Ok(false);
+    }
+    Ok(print_reports_running(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+fn print_reports_running(output: &str) -> bool {
+    output.lines().map(str::trim).any(|line| {
+        line.strip_prefix("state = ")
+            .is_some_and(|state| state.trim() == "running")
+    })
+}
+
+/// Unload (stopping its process) the agent `label` if it is loaded, keeping
+/// the plist in place.
+pub(crate) async fn unload(label: &str, dry_run: bool) -> Result<()> {
+    let domain = launchctl_domain();
+    let path = launch_agents_dir().join(format!("{label}.plist"));
+    if dry_run {
+        miseprintln!(
+            "{}",
+            shell_words::join([
+                "launchctl".to_string(),
+                "bootout".to_string(),
+                domain,
+                path.display().to_string(),
+            ])
+        );
+        return Ok(());
+    }
+    bootout(&domain, &path).await
+}
+
+/// Unload and delete the LaunchAgent mise wrote for `name`
+/// (`dev.mise.<name>`). Returns whether a plist existed.
+pub(crate) async fn remove_agent(name: &str, dry_run: bool) -> Result<bool> {
+    let label = format!("dev.mise.{name}");
+    let path = launch_agents_dir().join(format!("{label}.plist"));
+    if !path.exists() {
+        return Ok(false);
+    }
+    unload(&label, dry_run).await?;
+    if dry_run {
+        miseprintln!(
+            "{}",
+            shell_words::join(["rm".to_string(), path.display().to_string()])
+        );
+        return Ok(true);
+    }
+    std::fs::remove_file(&path)?;
+    Ok(true)
+}
+
+/// The plist path mise uses for an agent named `name`.
+pub(crate) fn agent_plist_path(name: &str) -> PathBuf {
+    launch_agents_dir().join(format!("dev.mise.{name}.plist"))
+}
+
 pub(crate) fn render_plist(request: &LaunchdRequest) -> Result<Vec<u8>> {
     let mut out = vec![];
     plist::to_writer_xml(&mut out, &plist_value(request))?;
@@ -334,12 +420,19 @@ fn plist_value(request: &LaunchdRequest) -> Value {
     }
     if request.keep_alive {
         dict.insert("KeepAlive".into(), Value::Boolean(true));
+    } else if request.keep_alive_on_failure {
+        let mut keep_alive = Dictionary::new();
+        keep_alive.insert("SuccessfulExit".into(), Value::Boolean(false));
+        dict.insert("KeepAlive".into(), Value::Dictionary(keep_alive));
     }
     if let Some(interval) = request.start_interval {
         dict.insert("StartInterval".into(), Value::Integer(interval.into()));
     }
     if let Some(interval) = request.throttle_interval {
         dict.insert("ThrottleInterval".into(), Value::Integer(interval.into()));
+    }
+    if let Some(nice) = request.nice {
+        dict.insert("Nice".into(), Value::Integer(nice.into()));
     }
     if let Some(interval) = &request.start_calendar_interval {
         dict.insert(
@@ -552,6 +645,17 @@ mod tests {
 
     #[test]
     fn test_launchd_request_validation() {
+        for nice in [-21, -20, 20, 21] {
+            let result = LaunchdRequest::from_toml(
+                "priority".into(),
+                LaunchdTomlConfig {
+                    program: Some("/bin/echo".into()),
+                    nice: Some(nice),
+                    ..Default::default()
+                },
+            );
+            assert_eq!(result.is_ok(), (-20..=20).contains(&nice));
+        }
         let request = LaunchdRequest::from_toml(
             "my-agent".to_string(),
             LaunchdTomlConfig {
@@ -615,8 +719,10 @@ mod tests {
             args: vec!["hello".to_string()],
             run_at_load: true,
             keep_alive: true,
+            keep_alive_on_failure: false,
             start_interval: Some(60),
             throttle_interval: Some(300),
+            nice: None,
             start_calendar_interval: Some(LaunchdCalendarIntervals::Single(
                 LaunchdCalendarInterval {
                     hour: Some(2),
@@ -725,8 +831,10 @@ mod tests {
             args: vec![],
             run_at_load: false,
             keep_alive: false,
+            keep_alive_on_failure: false,
             start_interval: None,
             throttle_interval: None,
+            nice: None,
             start_calendar_interval: Some(LaunchdCalendarIntervals::Multiple(vec![
                 LaunchdCalendarInterval {
                     hour: Some(3),
@@ -782,6 +890,7 @@ mod tests {
             LaunchdTomlConfig {
                 program: Some("/bin/echo".to_string()),
                 throttle_interval: Some(10),
+                nice: None,
                 queue_directories: vec![
                     "~/Library/Queues/sync".to_string(),
                     "/var/spool/sync".to_string(),

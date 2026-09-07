@@ -27,6 +27,8 @@ impl SettingsUnset {
 pub(super) fn unset(mut key: &str, local: bool) -> Result<()> {
     let path = if local {
         config::local_toml_config_path()
+    } else if key == "history.sync" && crate::env::MISE_GLOBAL_CONFIG_FILE.is_none() {
+        crate::cli::dotfiles::track::declaration_file(true)?
     } else {
         config::global_config_path()
     };

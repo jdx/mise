@@ -222,9 +222,20 @@ function sourcePath(url: string): string {
 
 function main() {
   const root = JSON.parse(
-    execFileSync("usage", ["generate", "json", "--file", "mise.usage.kdl"], {
-      encoding: "utf8",
-    }),
+    execFileSync(
+      "mise",
+      [
+        "x",
+        "usage",
+        "--",
+        "usage",
+        "generate",
+        "json",
+        "--file",
+        "mise.usage.kdl",
+      ],
+      { encoding: "utf8" },
+    ),
   ).cmd as Command;
   const commands = new Map<string, Command>();
   function visit(cmd: Command) {

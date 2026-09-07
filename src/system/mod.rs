@@ -53,6 +53,7 @@ pub(crate) mod firewall;
 #[cfg(not(target_os = "linux"))]
 #[path = "firewall_non_linux.rs"]
 pub(crate) mod firewall;
+pub(crate) mod history;
 pub(crate) mod hooks;
 pub(crate) mod launchd;
 pub(crate) mod login_shell;
@@ -62,6 +63,7 @@ pub(crate) mod remote;
 pub(crate) mod remote_repository;
 pub(crate) mod repos;
 pub(crate) mod resources;
+pub(crate) mod scheduled_tasks;
 pub(crate) mod secrets;
 #[cfg(target_os = "linux")]
 pub(crate) mod services;
@@ -72,6 +74,7 @@ pub(crate) mod services_common;
 pub(crate) mod shell_activation;
 pub(crate) mod sudo;
 pub(crate) mod systemd;
+pub(crate) mod user_services;
 
 /// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]

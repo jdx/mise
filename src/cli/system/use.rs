@@ -9,6 +9,7 @@ use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{ConfigPathOptions, resolve_target_config_path};
 use crate::file::display_path;
 use crate::system;
+use crate::system::history::OperationScope;
 use crate::system::packages::PackageRequest;
 
 /// Add bootstrap packages to [bootstrap.packages] and install them
@@ -67,6 +68,16 @@ pub(crate) struct SystemUse {
 
 impl SystemUse {
     pub(crate) async fn run(self) -> Result<()> {
+        OperationScope::wrap(
+            "bootstrap packages use",
+            "packages",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = crate::config::Config::get().await?;
         let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
         let mut entries: Vec<(String, String)> = vec![];

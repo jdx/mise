@@ -9,7 +9,7 @@ description: "Show configured Linux system service state"
 - **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
-Show configured Linux system service state
+Show configured service state (system and user scope)
 
 ## Flags
 - **`-J --json`** — Output in JSON format

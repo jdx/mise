@@ -12,6 +12,8 @@ use crate::file;
 use crate::path::PathExt;
 use crate::system;
 use crate::system::files::{FileManifest, FileMode, FileRequest};
+use crate::system::history::OperationScope;
+use crate::system::history::journal;
 use crate::ui::prompt;
 
 /// Add or update dotfiles in `[dotfiles]`
@@ -82,7 +84,18 @@ pub(crate) struct DotfilesAdd {
 
 impl DotfilesAdd {
     /// Validate and capture the requested targets as one transactional update.
-    pub(crate) async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
+        let mode = self.validate()?;
+        OperationScope::wrap(
+            "bootstrap dotfiles add",
+            "dotfiles",
+            self.dry_run,
+            self.run_inner(mode),
+        )
+        .await
+    }
+
+    fn validate(&self) -> Result<FileMode> {
         if self.changed && !self.targets.is_empty() {
             bail!("--changed does not accept target arguments");
         }
@@ -92,12 +105,18 @@ impl DotfilesAdd {
         if self.source.is_some() && self.targets.len() != 1 {
             bail!("--source can only be used with one target");
         }
-        let mode = match self.mode.as_deref() {
+        match self.mode.as_deref() {
+            Some("track") => bail!(
+                "`--mode track` tracks a file where it is and takes no source; use `mise bootstrap dotfiles track <path>`"
+            ),
             Some(mode) => {
-                FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))?
+                FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))
             }
-            None => system::files::default_mode(),
-        };
+            None => Ok(system::files::default_mode()),
+        }
+    }
+
+    async fn run_inner(mut self, mode: FileMode) -> Result<()> {
         let config = Config::get().await?;
         let managed = system::files::files_from_config(&config)?;
         if self.changed {
@@ -144,6 +163,14 @@ impl DotfilesAdd {
                 .collect::<PathBuf>();
             if target.is_relative() {
                 bail!("{target_raw}: target must be absolute or start with ~/");
+            }
+            if managed
+                .iter()
+                .any(|req| req.mode == FileMode::Track && req.target == target)
+            {
+                bail!(
+                    "{target_raw}: tracked in place; pass `--mode copy` after `mise bootstrap dotfiles untrack {target_raw}` to seed a source instead"
+                );
             }
             if managed_edits.iter().any(|req| {
                 system::files::matches_target(
@@ -284,6 +311,11 @@ impl DotfilesAdd {
                     let move_before_apply = item.mode == FileMode::Symlink
                         || (item.mode == FileMode::SymlinkEach && item.already_managed.is_none());
                     if !self.no_apply && move_before_apply && !item.target.is_symlink() {
+                        let pending = journal::begin_changes(
+                            "dotfiles",
+                            &item.target_raw,
+                            [item.target.clone(), item.source.clone()],
+                        )?;
                         remove_path(&item.source)?;
                         if let Some(parent) = item.source.parent() {
                             file::create_dir_all(parent)?;
@@ -325,6 +357,7 @@ impl DotfilesAdd {
                                 item.source.display_user()
                             ),
                         }
+                        journal::commit_changes(pending);
                         info!(
                             "dotfiles: moved {} to {}",
                             item.target.display_user(),
@@ -518,6 +551,9 @@ impl PlannedAdd {
                 .parent()
                 .unwrap_or(std::path::Path::new("."))
                 .to_path_buf(),
+            policy: system::files::FilePolicy::for_mode(self.mode),
+            variants: vec![],
+            enabled: true,
             origin: crate::system::resources::ResourceOrigin {
                 config: config_path.to_path_buf(),
                 config_root: crate::config::config_file::config_root::config_root(config_path),
@@ -590,7 +626,9 @@ fn describe_apply(item: &PlannedAdd) -> String {
         FileMode::Copy if item.source.is_dir() => format!("cp -r {source} {target}"),
         FileMode::Copy => format!("cp {source} {target}"),
         FileMode::Template => format!("render {source} -> {target}"),
-        FileMode::Content => unreachable!("dotfiles add always captures a source file"),
+        FileMode::Content | FileMode::Track => {
+            unreachable!("dotfiles add always captures a source file")
+        }
     }
 }
 

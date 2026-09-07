@@ -2,6 +2,7 @@ use eyre::Result;
 
 use crate::config::{Config, Settings};
 use crate::system;
+use crate::system::history::OperationScope;
 
 /// Apply dotfiles from `[dotfiles]`
 ///
@@ -53,6 +54,18 @@ impl DotfilesApply {
     }
 
     pub(crate) async fn run(self) -> Result<bool> {
+        OperationScope::wrap(
+            "bootstrap dotfiles apply",
+            "dotfiles",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    /// The apply without an operation of its own, for a caller that already
+    /// opened one.
+    pub(crate) async fn run_inner(self) -> Result<bool> {
         let config = Config::get().await?;
         let (files, edits) = self.requests(&config)?;
         if files.is_empty() && edits.is_empty() {
@@ -74,6 +87,7 @@ impl DotfilesApply {
         }
         if !edits.is_empty() {
             let opts = system::edits::ApplyOpts {
+                part: "dotfiles",
                 dry_run: self.dry_run,
                 verbose: Settings::get().verbose,
                 yes: self.yes,

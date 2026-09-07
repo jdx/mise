@@ -29,6 +29,36 @@ source_code_link_template #"""
 {%- set path = "dotfiles/status.rs" -%}
 {%- elif path == "bootstrap/dotfiles/unapply" -%}
 {%- set path = "dotfiles/unapply.rs" -%}
+{%- elif path == "bootstrap/dotfiles/history" -%}
+{%- set path = "dotfiles/history/mod.rs" -%}
+{%- elif path is starting_with(pat="bootstrap/dotfiles/history/") -%}
+{%- set path = path | replace(from="bootstrap/dotfiles/history/", to="dotfiles/history/") ~ ".rs" -%}
+{%- elif path == "bootstrap/dotfiles/paths" -%}
+{%- set path = "dotfiles/paths.rs" -%}
+{%- elif path == "bootstrap/dotfiles/save" -%}
+{%- set path = "dotfiles/save.rs" -%}
+{%- elif path == "bootstrap/dotfiles/capture" -%}
+{%- set path = "dotfiles/capture.rs" -%}
+{%- elif path == "bootstrap/dotfiles/track" -%}
+{%- set path = "dotfiles/track.rs" -%}
+{%- elif path == "bootstrap/dotfiles/untrack" -%}
+{%- set path = "dotfiles/untrack.rs" -%}
+{%- elif path == "bootstrap/dotfiles/rollback" -%}
+{%- set path = "dotfiles/rollback.rs" -%}
+{%- elif path == "bootstrap/dotfiles/undo" -%}
+{%- set path = "dotfiles/undo.rs" -%}
+{%- elif path == "bootstrap/dotfiles/watch" -%}
+{%- set path = "dotfiles/watch.rs" -%}
+{%- elif path == "bootstrap/dotfiles/exclude" or path == "bootstrap/dotfiles/include" -%}
+{%- set path = "dotfiles/exclude.rs" -%}
+{%- elif path == "bootstrap/dotfiles/origin" or path == "bootstrap/dotfiles/origin/set" -%}
+{%- set path = "dotfiles/origin.rs" -%}
+{%- elif path == "bootstrap/dotfiles/sync" -%}
+{%- set path = "dotfiles/sync.rs" -%}
+{%- elif path == "bootstrap/dotfiles/pull" -%}
+{%- set path = "dotfiles/pull.rs" -%}
+{%- elif path == "bootstrap/dotfiles/machines" -%}
+{%- set path = "dotfiles/machines.rs" -%}
 {%- elif path is starting_with(pat="bootstrap") -%}
 {%- set path = "bootstrap.rs" -%}
 {%- elif path == "tasks/run" -%}
@@ -419,11 +449,11 @@ Runs these phases in order, when configured and selected:
 
 1. Linux accounts, then package-manager plugins.
 2. The pre-packages hook, then packages handled by built-in managers.
-3. Privileged files/directories, system services, firewall, and Compose projects.
+3. Privileged files/directories, system and user services, firewall, and Compose projects.
 4. Git repositories, then dotfiles, each with its pre/post hooks.
 5. Shell activation, macOS defaults and LaunchAgents, Linux user units, and user settings.
 6. The pre-tools hook, versioned tools, and post-tools hook.
-7. Package-plugin packages, then the post-packages hook.
+7. Package-plugin packages, then the post-packages hook and services requiring tools.
 8. The `bootstrap` task, when defined, then the final hook.
 
 Defaults and user settings also have pre/post hooks. See
@@ -651,6 +681,22 @@ mise bootstrap dotfiles apply --dry-run
 mise bootstrap dotfiles apply --force --yes
 """#
         }
+        cmd capture help="Record tracked files before and after an external command" {
+            long_help #"""
+Record tracked files before and after an external command
+
+Runs the command directly, inheriting its terminal and environment. Keeps
+a linked checkpoint pair, including when the command fails or changes no
+files. Capture failures warn and never replace the command's exit status.
+Only tracked files are recorded: package, service, and other system effects
+are not reversible. Concurrent editor changes are part of the same interval.
+"""#
+            flag --label help="Describe this operation in history" {
+                arg <LABEL>
+            }
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true
+        }
         cmd diff help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
@@ -675,6 +721,239 @@ mise bootstrap dotfiles edit ~/.zshrc
 mise bootstrap dotfiles edit --apply ~/.config/starship.toml
 """#
         }
+        cmd exclude help="Never capture paths matching a glob" effect=write {
+            long_help #"""
+Never capture paths matching a glob
+
+Adds the glob to `[history] exclude` in the global config. Use it for
+logs, caches, databases, and constantly rewritten application state; a
+file that genuinely holds configuration but changes constantly is
+better tracked with `--no-autosave` and saved explicitly.
+"""#
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <GLOB> help="A glob such as `~/.config/hypr/plugins/**`"
+        }
+        cmd history help="Browse the checkpoints of your dotfiles" effect=read {
+            long_help #"""
+Browse the checkpoints of your dotfiles
+
+Every save, every mutating bootstrap command, and the watcher record a
+checkpoint of the tracked files: the global mise config directory, the
+dotfiles root, and every `[dotfiles]` entry. A checkpoint holds files,
+never package or service state: restoring one restores files. Without a
+subcommand this lists them, newest first.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles history\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history --path ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history show latest\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history diff\u{1b}[22m          # the working tree against the latest checkpoint\n    $ \u{1b}[1mmise bootstrap dotfiles history diff 11 12 --patch\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles save --description \"before the theme change\"\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles undo\u{1b}[22m\n"
+            flag "-J --json" help="Output in JSON format"
+            flag "-n --limit" help="Show at most this many checkpoints (0 for all)" default="20" {
+                arg <LIMIT>
+            }
+            flag --path help="Only checkpoints where this path (or something under it) changed" {
+                arg <PATH>
+            }
+            flag --trigger help="Only checkpoints with this trigger (edit, save, bootstrap, …)" {
+                arg <TRIGGER>
+            }
+            flag --label help="Only checkpoints with this label" {
+                arg <LABEL>
+            }
+            flag --pending help="Only checkpoints recorded by operations that did not finish"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            cmd describe help="Set the description of a checkpoint" effect=write {
+                flag "-h --help" help="Print help" action=help builtin=#true
+                arg <REF> help="Checkpoint id, `latest`, `latest~N`, or a uuid prefix"
+                arg <TEXT> help="The new description"
+            }
+            cmd diff help="Compare checkpoints, or the working tree against one" effect=read {
+                long_help #"""
+Compare checkpoints, or the working tree against one
+
+Without arguments, shows what changed by hand since the latest
+checkpoint. With one reference, shows what that checkpoint changed
+against the one before it. With two, compares the two states.
+"""#
+                flag --operation help="Compare an operation with its recorded protective checkpoint" {
+                    long_help #"""
+Compare an operation with its recorded protective checkpoint
+
+With no reference, use the newest operation, ignoring later saves. With one reference, use that operation. Fails if its before checkpoint is unavailable instead of comparing an unrelated preceding save.
+"""#
+                }
+                flag "-p --patch" help="Print the full patch instead of a per-file summary"
+                flag --path help="Restrict to one path (a file or a directory)" {
+                    arg <PATH>
+                }
+                flag --exit-code help="Exit 1 when the two sides differ"
+                flag "-h --help" help="Print help" action=help builtin=#true
+                arg "[A]" help="Checkpoint id, `latest`, `latest~N`, or a uuid prefix" required=#false
+                arg "[B]" help="Compare `A` with this checkpoint instead of its predecessor" required=#false
+            }
+            cmd ls help="List checkpoints, newest first" effect=read {
+                alias list
+                flag "-J --json" help="Output in JSON format"
+                flag "-n --limit" help="Show at most this many checkpoints (0 for all)" default="20" {
+                    arg <LIMIT>
+                }
+                flag --path help="Only checkpoints where this path (or something under it) changed" {
+                    arg <PATH>
+                }
+                flag --trigger help="Only checkpoints with this trigger (edit, save, bootstrap, …)" {
+                    arg <TRIGGER>
+                }
+                flag --label help="Only checkpoints with this label" {
+                    arg <LABEL>
+                }
+                flag --pending help="Only checkpoints recorded by operations that did not finish"
+                flag "-h --help" help="Print help" action=help builtin=#true
+            }
+            cmd show help="Show one checkpoint: what triggered it, what changed, and its journal" effect=read {
+                flag "-J --json" help="Output in JSON format"
+                flag --files help="List every file in the snapshot"
+                flag --path help="Resolve `latest~N` among the checkpoints where this path changed" {
+                    arg <PATH>
+                }
+                flag "-h --help" help="Print help" action=help builtin=#true
+                arg "[REF]" help="Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix" required=#false
+            }
+        }
+        cmd include help="Capture paths matching a glob again" effect=write {
+            long_help #"""
+Capture paths matching a glob again
+
+Removes the glob from `[history] exclude` in the global config.
+"""#
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <GLOB> help="The glob as written by `exclude`"
+        }
+        cmd origin help="Connect or disconnect the setup repository" effect=destructive {
+            long_help #"""
+Connect or disconnect the setup repository
+
+`set <url>` connects the ordinary tracked-file repository to an origin.
+All committed history becomes eligible for synchronization, including
+intermediate commits made before connecting. Preview the sync mode and
+tracked paths before confirming. Encrypted-file policy is checked across
+every reachable commit; unrelated histories are never replaced.
+The connection is written to machine-local `[history.origin]` configuration;
+the mode is `settings.history.sync`.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles origin set https://github.com/you/setup.git\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin set git@github.com:you/setup.git --name laptop --sync manual\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin\u{1b}[22m              # what is connected\n    $ \u{1b}[1mmise bootstrap dotfiles origin --remove\u{1b}[22m\n"
+            flag --remove help="Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)" effect=destructive
+            flag "-h --help" help="Print help" action=help builtin=#true
+            cmd set help="Connect a setup repository" effect=write {
+                flag --branch help="The setup branch" default=main {
+                    arg <BRANCH>
+                }
+                flag --sync help="How the repository is used: sync, fetch-only, or manual" {
+                    long_help #"""
+How the repository is used: sync, fetch-only, or manual
+
+Prompts when omitted. With --yes, accepts the configured mode (default: sync), including automatic publication and incoming writes. Use --sync manual to keep automatic local history without automatic network activity.
+"""#
+                    arg <MODE>
+                }
+                flag "-y --yes" help="Skip the confirmation prompt"
+                flag "-h --help" help="Print help" action=help builtin=#true
+                arg <URL> help="The repository url (any git url; a private repository is recommended)"
+            }
+        }
+        cmd paths help="Show what history tracks and under which policies" effect=read {
+            long_help #"""
+Show what history tracks and under which policies
+
+Every entry is listed with the file that declared it, its policies, and
+how many files it currently covers. Declarations that history could not
+honour are listed as invalid, omitted, or incomplete, so a failed
+enrollment is never mistaken for protection.
+"""#
+            flag "-J --json" help="Output in JSON format"
+            flag --preview help="Show what tracking this path would capture" {
+                arg <PATH>
+            }
+            flag --noisy help="List the paths the watcher found changing constantly"
+            flag "-h --help" help="Print help" action=help builtin=#true
+        }
+        cmd pull help="Pull incoming shared changes into the live files" effect=destructive {
+            long_help #"""
+Pull incoming shared changes into the live files
+
+Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
+(`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
+what other machines shared),
+as one recoverable transaction: a protective checkpoint first, every
+file written and journaled one at a time, reload hooks only afterwards,
+and `mise bootstrap dotfiles undo` to reverse it. Configuration and the sources it
+references apply together; an incoming configuration file that does not
+parse, a path with unsaved local edits, staged git changes in your own
+checkout, or a genuine local edit pauses the complete application.
+Conflicts pause both publication and application for the whole setup;
+local history and fetching continue. Decisions are recorded per path
+with `--take-remote` or `--keep-local`; sharing resumes only after all
+conflicts are resolved and the plan has been recomputed.
+
+In `sync` mode the watcher pulls conflict-free setups on its
+own; this command writes what is pending right now and decides
+conflicts. When an incoming configuration declares more tracked files,
+their shared versions follow in the same run.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --keep-local ~/.zshrc\u{1b}[22m\n"
+            flag "-n --dry-run" help="Show the plan without changing anything"
+            flag "-y --yes" help="Pull without prompting"
+            flag --take-remote help="Resolve a conflict with the repository's version" var=#true {
+                arg <PATH>
+            }
+            flag --keep-local help="Resolve a conflict by keeping this machine's version (published next)" var=#true {
+                arg <PATH>
+            }
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[PATH]…" help="Paths must cover the complete pending setup; partial pulls are rejected" required=#false var=#true
+        }
+        cmd rollback help="Return files to the version a checkpoint holds" effect=destructive {
+            long_help #"""
+Return files to the version a checkpoint holds
+
+Without `--to`, each path returns to its most recent saved version that
+differs from what is on disk; unrelated checkpoints never influence the
+choice. With `--to <ref>`, the named checkpoint is the source, and
+`--all` selects everything it covers. The current state is saved in a
+protective checkpoint first, so `mise bootstrap dotfiles undo` can reverse it.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles rollback ~/.zshrc --to 42\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles rollback --to latest~3 --all --dry-run\u{1b}[22m\n"
+            flag --to help="The checkpoint to roll back to: id, `latest`, `latest~N`, or a uuid prefix" {
+                arg <REF>
+            }
+            flag --all help="With --to: everything the checkpoint covers"
+            flag "-n --dry-run" help="Show the plan without changing anything"
+            flag "-y --yes" help="Apply without prompting"
+            flag --force help="Replace a path whose type changed (file, symlink, directory)"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[PATH]…" help="Paths to roll back (files or directories)" required=#false var=#true
+        }
+        cmd save help="Save a checkpoint of the tracked files now" effect=write {
+            long_help #"""
+Save a checkpoint of the tracked files now
+
+Fails when history cannot save or a requested path is not tracked, so a
+script or an agent gets a trustworthy result; a save that finds nothing
+changed succeeds as a no-op. `--best-effort` turns save errors into a
+warning for `set -e` update scripts.
+"""#
+            flag "-d --description" help="A description for the checkpoint" {
+                arg <TEXT>
+            }
+            flag --trigger help="What is saving: save (the default), agent, or update" default=save {
+                arg <TRIGGER>
+            }
+            flag --task help="The task an agent is working on" {
+                arg <ID>
+            }
+            flag --label help="A label to find the checkpoint by later" var=#true {
+                arg <LABEL>
+            }
+            flag --best-effort help="Warn instead of failing when history cannot save"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[PATH]…" help="Paths to save; every one must be tracked" required=#false var=#true
+        }
         cmd status help="Show the status of dotfiles from `[dotfiles]`" effect=read {
             alias ls
             long_help #"""
@@ -697,6 +976,48 @@ mise bootstrap dotfiles status --json
 mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
 """#
         }
+        cmd sync help="Publish, fetch, and record what is pending now" effect=write {
+            long_help #"""
+Publish, fetch, and record what is pending now
+
+Fetches the origin branch and publishes the ordinary local commit history.
+A rejected push fetches again and reconciles without rewriting history.
+Records incoming changes to apply and conflicts to decide.
+Live files are never changed here: `mise bootstrap dotfiles pull` does
+that. In `fetch-only` mode nothing is published.
+
+The history watcher does this on its own in `sync` and `fetch-only` mode
+(`settings.history.sync`); this command is for right now.
+"""#
+            flag --fetch-only help="Fetch without publishing"
+            flag --best-effort help="Warn instead of failing when the origin is unreachable"
+            flag "-h --help" help="Print help" action=help builtin=#true
+        }
+        cmd track help="Track a file or directory where it is" effect=write {
+            long_help #"""
+Track a file or directory where it is
+
+Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
+is, nothing is copied or linked, and history saves a checkpoint of it
+right away. With the history watcher service running, later edits are
+saved automatically; without it, `mise bootstrap dotfiles save` saves them.
+
+`--os` and `--profile` declare a variant: a separate shared stream for
+machines matching that platform or mise environment, so a Mac and a
+Linux box can share the same live path with different contents.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
+            flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
+                arg <OS>
+            }
+            flag --profile help="Declare a variant for this mise environment" {
+                arg <PROFILE>
+            }
+            flag --no-autosave help="Save only on `mise bootstrap dotfiles save <path>`, never automatically"
+            flag "-y --yes" help="Accept without prompting"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
+        }
         cmd unapply help="Remove dotfiles applied from `[dotfiles]`" effect=destructive {
             long_help #"""
 Remove dotfiles applied from `[dotfiles]`
@@ -717,6 +1038,67 @@ mise bootstrap dotfiles unapply ~/.zshrc
 mise bootstrap dotfiles unapply --dry-run
 mise bootstrap dotfiles unapply --force --yes
 """#
+        }
+        cmd undo help="Reverse a rollback, undo, or pull" effect=destructive {
+            long_help #"""
+Reverse a rollback, undo, or pull
+
+Restores exactly the paths that operation changed from the protective
+checkpoint it took, leaving everything else as it is now. Without a
+reference, the newest operation not yet undone is reversed.
+"""#
+            flag "-n --dry-run" help="Show the plan without changing anything"
+            flag "-y --yes" help="Apply without prompting"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[REF]" help="The operation's checkpoint: id, `latest`, `latest~N`, or a uuid prefix" required=#false
+        }
+        cmd untrack help="Stop tracking a file or directory" effect=write {
+            long_help #"""
+Stop tracking a file or directory
+
+Removes the `[dotfiles]` track entry (or switches an inherited one off in
+config.local.toml) and stops future captures. The file itself and its
+existing checkpoints are left exactly as they are.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles untrack ~/.zshrc\u{1b}[22m\n"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <PATH>… help="Paths to stop tracking" var=#true
+        }
+        cmd watch help="Save tracked files as they change" effect=write {
+            long_help #"""
+Save tracked files as they change
+
+Runs in the foreground: installs filesystem watches for every autosaved
+tracked entry, saves a checkpoint once a changed file has been quiet for
+`history.watch.debounce` (a file that keeps changing never delays the
+others; `history.watch.max_interval` saves it regardless), and
+reconciles the whole set at startup, every `history.watch.reconcile`,
+and when the configuration changes. Manual-save entries are never
+watched.
+
+With a connected setup repository the watcher also synchronizes per
+`settings.history.sync`: in `sync` mode it publishes within
+`history.sync_interval` after a save, fetches every
+`history.fetch_interval`, and applies incoming changes once the complete setup is conflict-free;
+in `fetch-only` mode it only fetches; in `manual` mode it does nothing
+on the network. A failed sync backs off and is retried while saving
+continues. `--once` runs one reconcile and one such synchronization.
+
+The `history-watch` built-in service runs this for you:
+
+    [bootstrap.services.mise-history]
+    builtin = "history-watch"
+
+Exit codes: 0 when history is disabled or another watcher already runs;
+1 when git is unusable, the store cannot open, or no watch can be
+installed. A capture that fails is retried with backoff and never drops
+the pending changes; one that would overlap another history operation
+is deferred.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles watch\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles watch --once\u{1b}[22m      # one reconcile, for a timer\n    $ \u{1b}[1mmise bootstrap dotfiles watch --json\u{1b}[22m\n"
+            flag --once help="Reconcile and synchronize once and exit (for timers and cron)"
+            flag "-J --json" help="One JSON object per line instead of log lines"
+            flag "-h --help" help="Print help" action=help builtin=#true
         }
     }
     cmd files subcommand_required=#true help="Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`" effect=read {
@@ -1314,20 +1696,34 @@ Place the executable and its arguments after `--`, for example `mise bootstrap r
             flag "-h --help" help="Print help" action=help builtin=#true
         }
     }
-    cmd services subcommand_required=#true help="Manage Linux system services from `[bootstrap.services]`" effect=read {
+    cmd services subcommand_required=#true help="Manage services from `[bootstrap.services]`" effect=read {
         long_help #"""
-Manage Linux system services from `[bootstrap.services]`
+Manage services from `[bootstrap.services]`
 
-These are system-level systemd services. For units in the current user session,
-use `bootstrap linux systemd-units` instead.
+System-scope entries (the default) converge existing Linux systemd system
+units. `scope = "user"` entries are services mise defines for the current
+user on every platform: a systemd user unit on Linux, a LaunchAgent on
+macOS, a Scheduled Task on Windows.
 """#
         flag "-h --help" help="Print help" action=help builtin=#true
-        cmd apply help="Apply configured Linux system service state" effect=destructive {
+        cmd apply help="Apply configured service state (system and user scope)" effect=destructive {
             flag "-n --dry-run" help="Print what would change without changing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
-        cmd status help="Show configured Linux system service state" effect=read {
+        cmd remove help="Remove an installed user-scope service, declared or not" effect=destructive {
+            long_help #"""
+Remove an installed user-scope service, declared or not
+
+Deleting a `scope = "user"` declaration leaves its installed unit, agent,
+or task in place; this removes it once. The next `mise bootstrap`
+recreates it if it is still declared.
+"""#
+            flag "-n --dry-run" help="Print what would change without changing anything"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <NAME> help="The installed user-service name to remove (declared or not)"
+        }
+        cmd status help="Show configured service state (system and user scope)" effect=read {
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 when any service is not converged"
             flag "-h --help" help="Print help" action=help builtin=#true
@@ -1809,7 +2205,12 @@ Show the status of dotfiles from `[dotfiles]`
 
 Template entries are rendered to compare their output; trusted template
 functions may execute. JSON includes each entry's origin and uses the states
-`applied`, `missing`, `differs`, and `source_missing`.
+`applied`, `missing`, `differs`, `source_missing`, and `tracked`.
+
+The management state of every declaration (applied, missing, differs,
+tracked) followed by the history state: what is tracked, the latest
+checkpoint, unfinished operations, and whether edits are saved
+automatically.
 """#
         flag "-J --json" help="Output in JSON format"
         flag --missing help=#"""
@@ -4202,6 +4603,10 @@ cmd ssh help="Open an SSH session, optionally borrowing read-only GitHub access"
     }
     flag --repository-update hide=#true
     flag --repository-yes hide=#true
+    flag --repository-dry-run help="Preview the transferred repository's installation without writing it" hide=#true
+    flag --repository-preview-directory hide=#true {
+        arg <REPOSITORY_PREVIEW_DIRECTORY>
+    }
     flag --global-config-directory hide=#true
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[DESTINATION]" help="OpenSSH destination or SSH-config alias" required=#false

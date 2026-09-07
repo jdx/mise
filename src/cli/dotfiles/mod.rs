@@ -3,17 +3,45 @@ use std::path::Path;
 
 mod add;
 mod apply;
+mod capture;
+pub(crate) mod capture_health;
 mod diff;
 mod edit;
+mod exclude;
+pub(crate) mod history;
+mod history_status;
+mod origin;
+mod paths;
+mod pull;
+mod rollback;
+mod save;
 mod status;
+mod sync;
+pub(crate) mod track;
 mod unapply;
+mod undo;
+mod untrack;
+mod watch;
 
 pub(crate) use add::DotfilesAdd;
 pub(crate) use apply::DotfilesApply;
+pub(crate) use capture::DotfilesCapture;
 pub(crate) use diff::DotfilesDiff;
 pub(crate) use edit::DotfilesEdit;
+pub(crate) use exclude::{DotfilesExclude, DotfilesInclude};
+pub(crate) use history::DotfilesHistory;
+pub(crate) use origin::DotfilesOrigin;
+pub(crate) use paths::DotfilesPaths;
+pub(crate) use pull::DotfilesPull;
+pub(crate) use rollback::DotfilesRollback;
+pub(crate) use save::DotfilesSave;
 pub(crate) use status::DotfilesStatus;
+pub(crate) use sync::DotfilesSync;
+pub(crate) use track::DotfilesTrack;
 pub(crate) use unapply::DotfilesUnapply;
+pub(crate) use undo::DotfilesUndo;
+pub(crate) use untrack::DotfilesUntrack;
+pub(crate) use watch::DotfilesWatch;
 
 /// Load, validate, and filter whole-file and edit requests with the same
 /// target semantics for every command that acts on both kinds of entry.

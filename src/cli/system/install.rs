@@ -3,6 +3,7 @@ use eyre::Result;
 use super::driver::{self, Action, DriverOpts};
 use crate::config::{Config, Settings};
 use crate::system;
+use crate::system::history::OperationScope;
 
 #[derive(Debug, Default)]
 pub(crate) struct BootstrapApplyReport {
@@ -58,6 +59,16 @@ pub(crate) struct SystemInstall {
 
 impl SystemInstall {
     pub(crate) async fn run(self) -> Result<()> {
+        OperationScope::wrap(
+            "bootstrap packages apply",
+            "packages",
+            self.dry_run,
+            self.run_inner(),
+        )
+        .await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let mgrs = if self.packages.is_empty() {
             let config = Config::get().await?;
             system::packages_from_config(&config)
@@ -221,6 +232,7 @@ pub(crate) fn apply_shell_activation(
         .map(|request| request.edit)
         .collect::<Vec<_>>();
     let opts = system::edits::ApplyOpts {
+        part: "mise-shell-activate",
         dry_run,
         verbose: Settings::get().verbose,
         yes,
