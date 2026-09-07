@@ -1,0 +1,1 @@
+{"v":1,"agent":"codex","cli_version":"0.10.5","type":"user","ts":"2026-09-07T17:52:53.049Z","content":[{"text":"i think with the new auto-merge release workflow we don't need to run e2e tests during the actual release"}]}
