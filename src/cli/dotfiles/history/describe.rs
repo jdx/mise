@@ -7,7 +7,7 @@ use crate::system::history::store::{Annotation, DescriptionSource};
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct HistoryDescribe {
-    /// Checkpoint id, `latest`, `latest~N`, or a uuid prefix
+    /// Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`
     #[usage(value_name = "REF")]
     reference: String,
 

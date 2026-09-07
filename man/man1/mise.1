@@ -1633,7 +1633,7 @@ Print help
 .PP
 .TP
 \fB<REF>\fR
-Checkpoint id, `latest`, `latest~N`, or a uuid prefix
+Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`
 .TP
 \fB<TEXT>\fR
 The new description
@@ -1669,7 +1669,7 @@ Print help
 .PP
 .TP
 \fB<A>\fR
-Checkpoint id, `latest`, `latest~N`, or a uuid prefix
+Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`
 .TP
 \fB<B>\fR
 Compare `A` with this checkpoint instead of its predecessor
@@ -1727,7 +1727,7 @@ Print help
 .PP
 .TP
 \fB<REF>\fR
-Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix
+Numeric checkpoint ID, `latest` (the default), `latest~N`, or `commit:<sha>`
 .SH "MISE BOOTSTRAP DOTFILES INCLUDE"
 Capture paths matching a glob again
 
@@ -1906,7 +1906,7 @@ protective checkpoint first, so `mise bootstrap dotfiles undo` can reverse it.
 .PP
 .TP
 \fB\-\-to\fR \fI<REF>\fR
-The checkpoint to roll back to: id, `latest`, `latest~N`, or a uuid prefix
+The checkpoint to roll back to: numeric ID, `latest`, `latest~N`, or `commit:<sha>`
 .TP
 \fB\-\-all\fR
 With \-\-to: everything the checkpoint covers
@@ -2122,7 +2122,7 @@ Print help
 .PP
 .TP
 \fB<REF>\fR
-The operation's checkpoint: id, `latest`, `latest~N`, or a uuid prefix
+The operation's checkpoint: numeric ID, `latest`, `latest~N`, or `commit:<sha>`
 .SH "MISE BOOTSTRAP DOTFILES UNTRACK"
 Stop tracking a file or directory
 

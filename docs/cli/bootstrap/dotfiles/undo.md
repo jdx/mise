@@ -12,7 +12,7 @@ checkpoint it took, leaving everything else as it is now. Without a
 reference, the newest operation not yet undone is reversed.
 
 ## Arguments
-- **`[REF]`** — The operation's checkpoint: id, `latest`, `latest~N`, or a uuid prefix
+- **`[REF]`** — The operation's checkpoint: numeric ID, `latest`, `latest~N`, or `commit:<sha>`
 
 ## Flags
 - **`-n --dry-run`** — Show the plan without changing anything

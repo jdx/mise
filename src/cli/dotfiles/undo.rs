@@ -10,7 +10,7 @@ use crate::system::history::replay::{self, UndoRequest};
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct DotfilesUndo {
-    /// The operation's checkpoint: id, `latest`, `latest~N`, or a uuid prefix
+    /// The operation's checkpoint: numeric ID, `latest`, `latest~N`, or `commit:<sha>`
     #[usage(value_name = "REF")]
     reference: Option<String>,
 

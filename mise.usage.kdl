@@ -761,7 +761,7 @@ subcommand this lists them, newest first.
             flag "-h --help" help="Print help" action=help builtin=#true
             cmd describe help="Set the description of a checkpoint" effect=write {
                 flag "-h --help" help="Print help" action=help builtin=#true
-                arg <REF> help="Checkpoint id, `latest`, `latest~N`, or a uuid prefix"
+                arg <REF> help="Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`"
                 arg <TEXT> help="The new description"
             }
             cmd diff help="Compare checkpoints, or the working tree against one" effect=read {
@@ -785,7 +785,7 @@ With no reference, use the newest operation, ignoring later saves. With one refe
                 }
                 flag --exit-code help="Exit 1 when the two sides differ"
                 flag "-h --help" help="Print help" action=help builtin=#true
-                arg "[A]" help="Checkpoint id, `latest`, `latest~N`, or a uuid prefix" required=#false
+                arg "[A]" help="Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`" required=#false
                 arg "[B]" help="Compare `A` with this checkpoint instead of its predecessor" required=#false
             }
             cmd ls help="List checkpoints, newest first" effect=read {
@@ -813,7 +813,7 @@ With no reference, use the newest operation, ignoring later saves. With one refe
                     arg <PATH>
                 }
                 flag "-h --help" help="Print help" action=help builtin=#true
-                arg "[REF]" help="Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix" required=#false
+                arg "[REF]" help="Numeric checkpoint ID, `latest` (the default), `latest~N`, or `commit:<sha>`" required=#false
             }
         }
         cmd include help="Capture paths matching a glob again" effect=write {
@@ -933,7 +933,7 @@ choice. With `--to <ref>`, the named checkpoint is the source, and
 protective checkpoint first, so `mise bootstrap dotfiles undo` can reverse it.
 """#
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles rollback ~/.zshrc --to 42\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles rollback --to latest~3 --all --dry-run\u{1b}[22m\n"
-            flag --to help="The checkpoint to roll back to: id, `latest`, `latest~N`, or a uuid prefix" {
+            flag --to help="The checkpoint to roll back to: numeric ID, `latest`, `latest~N`, or `commit:<sha>`" {
                 arg <REF>
             }
             flag --all help="With --to: everything the checkpoint covers"
@@ -1064,7 +1064,7 @@ reference, the newest operation not yet undone is reversed.
             flag "-n --dry-run" help="Show the plan without changing anything"
             flag "-y --yes" help="Apply without prompting"
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg "[REF]" help="The operation's checkpoint: id, `latest`, `latest~N`, or a uuid prefix" required=#false
+            arg "[REF]" help="The operation's checkpoint: numeric ID, `latest`, `latest~N`, or `commit:<sha>`" required=#false
         }
         cmd untrack help="Stop tracking a file or directory" effect=write {
             long_help #"""

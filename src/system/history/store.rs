@@ -318,8 +318,8 @@ impl OperationStatus {
     }
 }
 
-/// The `meta.json` record of one checkpoint. Immutable once its wrapper
-/// commit exists; descriptions, labels, and pins change through annotations.
+/// Derived checkpoint metadata. Durable metadata lives in ordinary commits;
+/// descriptions, labels, and pins change through annotations.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Checkpoint {
     pub schema_version: u32,
@@ -513,7 +513,7 @@ impl CommitOperation {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct TreeInfo {
-    /// The snapshot tree inside the wrapper commit (`snapshot/`).
+    /// The ordinary tracked-file tree of this commit.
     pub snapshot: Option<String>,
     /// False when no content snapshot could be taken (no usable `git`).
     pub available: bool,
@@ -546,8 +546,6 @@ pub(crate) struct Coverage {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub derived: Vec<DerivedRecord>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incomplete: Vec<PathReason>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omitted: Vec<PathReason>,
@@ -557,29 +555,17 @@ pub(crate) struct Coverage {
 pub(crate) struct CoverageEntry {
     /// `~`-relative when under `$HOME`, absolute otherwise.
     pub path: String,
-    /// `track`, `implicit`, `source`, `template`, `copy`, `content`, …
+    /// The explicit tracking mode.
     pub mode: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
     pub autosave: bool,
     #[serde(default)]
     pub encrypt: bool,
     /// `live`, `saved`, or `protective`.
     pub state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub promotion: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub private: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declared_in: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct DerivedRecord {
-    pub path: String,
-    pub from: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -787,17 +773,12 @@ pub(crate) fn pending_path_in(state_dir: &Path, uuid: &str) -> PathBuf {
     pending_dir_in(state_dir).join(format!("{uuid}.json"))
 }
 
-/// The pending outcome of an operation in progress: the record as written so
-/// far plus the git objects its journal already stored.
+/// Private write-ahead bookkeeping for an unfinished operation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Pending {
     pub id: u64,
     pub checkpoint: Checkpoint,
     pub recovery: RecoveryState,
-    /// sha256 -> blob oid for journal content already written to the
-    /// repository (unreferenced until the wrapper commit exists).
-    #[serde(default)]
-    pub blobs: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -905,7 +886,7 @@ pub(crate) fn list_in(state_dir: &Path) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
-/// Turns `ID`, `latest`, `latest~N`, or a uuid prefix into a checkpoint id,
+/// Turns `ID`, `latest`, `latest~N`, or `commit:<sha>` into a checkpoint id,
 /// resolved against `entries` (oldest first).
 pub(crate) fn resolve_ref(spec: &str, entries: &[Entry]) -> Result<u64> {
     if let Some(rest) = spec.strip_prefix("latest") {
@@ -928,10 +909,26 @@ pub(crate) fn resolve_ref(spec: &str, entries: &[Entry]) -> Result<u64> {
                 )
             });
     }
-    let numeric_id = spec.parse::<u64>().ok();
+    let prefix = if let Some(prefix) = spec.strip_prefix("commit:") {
+        prefix
+    } else if !spec.is_empty() && spec.bytes().all(|byte| byte.is_ascii_digit()) {
+        let id = spec.parse::<u64>().map_err(|_| {
+            eyre!("invalid checkpoint ID {spec:?}; use commit:<sha> for a numeric commit hash")
+        })?;
+        return entries
+            .iter()
+            .find(|entry| entry.id == id)
+            .map(|entry| entry.id)
+            .ok_or_else(|| eyre!("no history checkpoint matches {spec:?}"));
+    } else {
+        spec
+    };
+    if prefix.is_empty() {
+        bail!("invalid checkpoint reference {spec:?}");
+    }
     let matches: Vec<&Entry> = entries
         .iter()
-        .filter(|entry| Some(entry.id) == numeric_id || entry.checkpoint.uuid.starts_with(spec))
+        .filter(|entry| entry.checkpoint.uuid.starts_with(prefix))
         .collect();
     match matches.as_slice() {
         [one] => Ok(one.id),

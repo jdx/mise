@@ -1324,8 +1324,7 @@ fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
             return PathState::Omitted(format!("scan incomplete: {}", incomplete.reason));
         }
     }
-    let covered = coverage.entries.iter().any(|entry| under(&entry.path))
-        || coverage.derived.iter().any(|derived| under(&derived.path));
+    let covered = coverage.entries.iter().any(|entry| under(&entry.path));
     if !covered {
         return PathState::Uncovered;
     }

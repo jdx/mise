@@ -40,6 +40,12 @@ assert_succeed "mise --cd project bootstrap dotfiles origin set 'file://$PWD/pro
 assert_succeed 'mise --cd project bootstrap dotfiles sync'
 assert_succeed 'mise bootstrap dotfiles origin --remove'
 
+# Source directories from the old unpublished layout are ordinary paths now.
+mkdir -p "$MISE_CONFIG_DIR/sources"
+printf 'template input\n' >"$MISE_CONFIG_DIR/sources/gitconfig.tera"
+assert_succeed "mise bootstrap dotfiles track '$MISE_CONFIG_DIR/sources'"
+assert "git --git-dir='$repo' show main:config/sources/gitconfig.tera" 'template input'
+
 # Description metadata remains in Git without creating a phantom checkpoint.
 latest=$(mise bootstrap dotfiles history --json | jq -r '.[0].id')
 count=$(mise bootstrap dotfiles history --json | jq length)

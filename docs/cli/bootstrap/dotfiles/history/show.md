@@ -8,7 +8,7 @@
 Show one checkpoint: what triggered it, what changed, and its journal
 
 ## Arguments
-- **`[REF]`** — Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix
+- **`[REF]`** — Numeric checkpoint ID, `latest` (the default), `latest~N`, or `commit:<sha>`
 
 ## Flags
 - **`-J --json`** — Output in JSON format

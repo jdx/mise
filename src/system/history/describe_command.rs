@@ -16,9 +16,9 @@ use std::time::{Duration, Instant};
 use eyre::{Result, bail};
 use serde::Serialize;
 
-use super::checkpoint::{Store, annotate, describe_changes};
+use super::checkpoint::{Store, annotate};
 use super::shadow::DiffOpts;
-use super::store::{self, Annotation, Changes, DescriptionSource, Entry};
+use super::store::{self, Annotation, DescriptionSource, Entry};
 
 #[cfg(windows)]
 mod windows_job;
@@ -35,7 +35,7 @@ const DESCRIPTION_LIMIT: usize = 200;
 struct Input<'a> {
     uuid: &'a str,
     trigger: &'a str,
-    /// The computed description, with private paths counted, not named.
+    /// The computed description of explicitly tracked changes.
     description: String,
     added: Vec<&'a str>,
     modified: Vec<&'a str>,
@@ -209,15 +209,14 @@ fn shell(command: &str) -> Command {
 /// What the command is told: never an excluded path or encrypted contents.
 fn input<'a>(store: &Store, entry: &'a Entry) -> Result<Input<'a>> {
     let checkpoint = &entry.checkpoint;
-    let mut withheld: BTreeSet<&str> = BTreeSet::new();
-    let mut unbacked: BTreeSet<&str> = BTreeSet::new();
-    for coverage in &checkpoint.tree.coverage.entries {
-        if coverage.private.is_some() || coverage.mode == "private" {
-            withheld.insert(coverage.path.as_str());
-        } else if coverage.encrypt {
-            unbacked.insert(coverage.path.as_str());
-        }
-    }
+    let encrypted: BTreeSet<&str> = checkpoint
+        .tree
+        .coverage
+        .entries
+        .iter()
+        .filter(|entry| entry.encrypt)
+        .map(|entry| entry.path.as_str())
+        .collect();
     let under = |path: &str, roots: &BTreeSet<&str>| {
         roots.iter().any(|root| {
             path == *root
@@ -226,43 +225,12 @@ fn input<'a>(store: &Store, entry: &'a Entry) -> Result<Input<'a>> {
                     .is_some_and(|rest| rest.starts_with('/'))
         })
     };
-    let visible = |paths: &'a [String]| -> Vec<&'a str> {
-        paths
-            .iter()
-            .map(String::as_str)
-            .filter(|path| !under(path, &withheld))
-            .collect()
-    };
+    let visible =
+        |paths: &'a [String]| -> Vec<&'a str> { paths.iter().map(String::as_str).collect() };
     let added = visible(&checkpoint.changes.added);
     let modified = visible(&checkpoint.changes.modified);
     let removed = visible(&checkpoint.changes.removed);
-    let hidden = checkpoint.changes.added.len()
-        + checkpoint.changes.modified.len()
-        + checkpoint.changes.removed.len()
-        - added.len()
-        - modified.len()
-        - removed.len();
-    let visible_changes = Changes {
-        since: checkpoint.changes.since.clone(),
-        added: added.iter().map(|path| path.to_string()).collect(),
-        modified: modified.iter().map(|path| path.to_string()).collect(),
-        removed: removed.iter().map(|path| path.to_string()).collect(),
-        truncated: checkpoint.changes.truncated,
-    };
-    let mut description = if hidden == 0 {
-        checkpoint.description.clone()
-    } else {
-        describe_changes(&visible_changes)
-    };
-    if hidden > 0 {
-        if !description.is_empty() {
-            description.push_str("; ");
-        }
-        description.push_str(&format!(
-            "{hidden} private file{} changed",
-            if hidden == 1 { "" } else { "s" }
-        ));
-    }
+    let description = checkpoint.description.clone();
     let (diff, diff_truncated) = match (
         store.repo(),
         &checkpoint.tree.snapshot,
@@ -280,7 +248,7 @@ fn input<'a>(store: &Store, entry: &'a Entry) -> Result<Input<'a>> {
         (Some(repo), Some(snapshot), Some(previous)) => {
             let mut text = String::new();
             for path in added.iter().chain(&modified).chain(&removed) {
-                if under(path, &unbacked) {
+                if under(path, &encrypted) {
                     continue;
                 }
                 let tree_path = super::tracked::display_to_tree_path(path);

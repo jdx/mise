@@ -10,7 +10,7 @@
 //! processes spawned by hooks attach to the parent's operation instead of
 //! opening their own.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -414,7 +414,6 @@ impl Writer {
                 changes: Changes::default(),
                 operation: Some(operation),
             },
-            blobs: BTreeMap::new(),
         };
         // the pending record exists before anything is mutated
         store::write_pending_in(state_dir, &pending)?;
@@ -562,7 +561,6 @@ impl Writer {
         draft.uuid = Some(checkpoint.uuid.clone());
         draft.labels = checkpoint.labels.clone();
         draft.operation = Some(operation.clone());
-        draft.blobs = self.pending.blobs.clone();
         draft.explicit_paths = self.promote.clone();
         // Bootstrap writes are explicit saves of the paths it actually
         // changed, including manual-save destinations. Do not promote
@@ -810,7 +808,6 @@ fn recover_records(
                 .collect();
         }
         draft.operation = record.checkpoint.operation.clone();
-        draft.blobs = record.blobs.clone();
         // the record is the only trace of what the crashed run changed:
         // keep it until the failed operation is recorded
         let captured = if records_file_history(

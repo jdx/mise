@@ -8,7 +8,7 @@ use crate::ui::table::MiseTable;
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct HistoryShow {
-    /// Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix
+    /// Numeric checkpoint ID, `latest` (the default), `latest~N`, or `commit:<sha>`
     #[usage(value_name = "REF")]
     reference: Option<String>,
 
@@ -70,7 +70,7 @@ impl HistoryShow {
                     .find(|entry| entry.checkpoint.uuid == source.checkpoint)
                     .map(|entry| format!("checkpoint {}", entry.id))
                     .unwrap_or_else(|| {
-                        format!("checkpoint {} (pruned)", short(&source.checkpoint))
+                        format!("checkpoint {} (unavailable)", short(&source.checkpoint))
                     });
                 miseprintln!("  Source:      {label}: {}", source.paths.join(", "));
             }

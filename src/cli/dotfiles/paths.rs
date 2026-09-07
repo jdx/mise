@@ -36,12 +36,8 @@ struct PathRow {
     mode: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     variant: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
     autosave: bool,
     files: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     declared_in: Option<String>,
 }
@@ -62,8 +58,6 @@ impl DotfilesPaths {
                     mode: "track".into(),
                     policy: Policy::for_mode(FileMode::Track),
                     variant: None,
-                    source: None,
-                    note: None,
                     declared_in: None,
                 });
                 set
@@ -85,10 +79,8 @@ impl DotfilesPaths {
                 path: entry.display(),
                 mode: entry.mode.clone(),
                 variant: entry.variant.clone(),
-                source: entry.source.as_deref().map(display_path),
                 autosave: entry.policy.autosave,
                 files: counts[index],
-                note: entry.note.clone(),
                 declared_in: entry.declared_in.as_deref().map(display_path),
             })
             .collect();
@@ -96,7 +88,6 @@ impl DotfilesPaths {
             let out = serde_json::json!({
                 "entries": rows,
                 "exclude": tracked.exclude,
-                "derived": walk.derived,
                 "invalid": tracked.invalid,
                 "omitted": walk.omitted,
                 "incomplete": walk.incomplete,
@@ -119,10 +110,7 @@ impl DotfilesPaths {
                     Some(variant) => format!("{} ({variant})", row.mode),
                     None => row.mode.clone(),
                 };
-                let mut policy = super::history::show::policy(row.autosave);
-                if let Some(note) = &row.note {
-                    policy = format!("{policy}: {note}");
-                }
+                let policy = super::history::show::policy(row.autosave);
                 table.add_row(vec![
                     row.path.clone(),
                     mode,
@@ -134,9 +122,6 @@ impl DotfilesPaths {
             table.print()?;
             for glob in &tracked.exclude {
                 miseprintln!("  exclude: {glob}");
-            }
-            for derived in &walk.derived {
-                miseprintln!("  derived: {} (target of {})", derived.path, derived.from);
             }
         }
         for invalid in &tracked.invalid {

@@ -17,7 +17,7 @@ protective checkpoint first, so `mise bootstrap dotfiles undo` can reverse it.
 - **`[PATH]…`** — Paths to roll back (files or directories)
 
 ## Flags
-- **`--to <REF>`** — The checkpoint to roll back to: id, `latest`, `latest~N`, or a uuid prefix
+- **`--to <REF>`** — The checkpoint to roll back to: numeric ID, `latest`, `latest~N`, or `commit:<sha>`
 - **`--all`** — With --to: everything the checkpoint covers
 - **`-n --dry-run`** — Show the plan without changing anything
 - **`-y --yes`** — Apply without prompting

@@ -85,7 +85,9 @@ interpolation of file contents (the JSON is its stdin). A private file
 
 ## Referring to checkpoints
 
-Commands take a numeric id, `latest`, `latest~N`, or a commit prefix. With
+Commands take a numeric ID, `latest`, `latest~N`, or `commit:<sha>` (a full hash
+or an unambiguous prefix). Plain numbers always mean checkpoint IDs, never
+commit prefixes; nonnumeric unambiguous commit prefixes also work directly. With
 `--path`, `latest~N` counts only the checkpoints where that path changed, so
 `mise bootstrap dotfiles history show latest~1 --path ~/.zshrc` is the state before its most
 recent change however many other checkpoints came in between.

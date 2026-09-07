@@ -20,14 +20,13 @@ use walkdir::WalkDir;
 
 use super::select::{self, Selection};
 use super::shadow::{CaptureRoot, MAX_BYTES, MAX_FILE_BYTES, MAX_FILES};
-use super::store::{Coverage, CoverageEntry, DerivedRecord, PathReason};
+use super::store::{Coverage, CoverageEntry, PathReason};
 use crate::config::Config;
 use crate::dirs;
 use crate::file::{self, display_path};
 use crate::system::files::{FileMode, FilePolicy};
 
-/// Names under the global config directory that hold credentials: private
-/// by default, in every outgoing representation.
+/// Credential names excluded from capture by default.
 const CREDENTIAL_NAMES: &[&str] = &["github_tokens.toml", "hosts.yml", "age.txt"];
 const CREDENTIAL_GLOBS: &[&str] = &[
     ".netrc",
@@ -54,10 +53,6 @@ pub(crate) struct TrackedEntry {
     pub policy: Policy,
     /// The shared stream of a tracked file with variants.
     pub variant: Option<String>,
-    /// For outputs: the source that generates them.
-    pub source: Option<PathBuf>,
-    /// Why the entry is not shared although sharing was not switched off.
-    pub note: Option<String>,
     pub declared_in: Option<PathBuf>,
 }
 
@@ -83,8 +78,6 @@ impl TrackedEntry {
             mode: mode.to_string(),
             policy,
             variant: None,
-            source: None,
-            note: None,
             declared_in: None,
         }
     }
@@ -108,25 +101,15 @@ pub(crate) struct TrackedSet {
     pub invalid: Vec<PathReason>,
 }
 
-/// One private file found during a walk.
-#[derive(Clone, Debug)]
-pub(crate) struct PrivateFile {
-    pub path: PathBuf,
-    pub reason: String,
-    pub policy: Policy,
-}
-
 /// What a walk of the tracked set found.
 #[derive(Debug, Default)]
 pub(crate) struct Walk {
     pub manifest: super::manifest::Manifest,
-    /// The entries as walked: the set's entries plus derived ones.
+    /// The explicit entries as walked.
     pub entries: Vec<TrackedEntry>,
     pub roots: Vec<CaptureRoot>,
     /// Every captured file with the entry that owns it and its policy.
     pub files: BTreeMap<PathBuf, (usize, Policy)>,
-    pub private: Vec<PrivateFile>,
-    pub derived: Vec<DerivedRecord>,
     pub omitted: Vec<PathReason>,
     pub incomplete: Vec<PathReason>,
     pub warnings: Vec<String>,
@@ -426,42 +409,24 @@ impl TrackedSet {
 
     /// The rules this set captures under, for the checkpoint record.
     pub(crate) fn coverage(&self, walk: &Walk) -> Coverage {
-        let mut entries: Vec<CoverageEntry> = walk
+        let entries: Vec<CoverageEntry> = walk
             .entries
             .iter()
             .map(|entry| CoverageEntry {
                 path: entry.display(),
                 mode: entry.mode.clone(),
                 variant: entry.variant.clone(),
-                source: entry.source.as_deref().map(display_path),
                 autosave: entry.policy.autosave,
                 encrypt: entry.policy.encrypt,
                 state: "live".into(),
-                promotion: None,
-                private: entry.note.clone(),
                 declared_in: entry.declared_in.as_deref().map(display_path),
             })
             .collect();
-        for private in &walk.private {
-            entries.push(CoverageEntry {
-                path: display_path(&private.path),
-                mode: "private".into(),
-                variant: None,
-                source: None,
-                autosave: private.policy.autosave,
-                encrypt: private.policy.encrypt,
-                state: "live".into(),
-                promotion: None,
-                private: Some(private.reason.clone()),
-                declared_in: None,
-            });
-        }
         let mut omitted = walk.omitted.clone();
         omitted.extend(self.invalid.iter().cloned());
         Coverage {
             entries,
             exclude: self.exclude.clone(),
-            derived: walk.derived.clone(),
             incomplete: walk.incomplete.clone(),
             omitted,
         }
@@ -716,12 +681,7 @@ pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
     .map(normalize)
     .collect();
     dirs.push(normalize(&super::store::store_dir_in(&dirs::STATE)));
-    // the setup branch's reserved directories, should a checkout of it sit
-    // in the configuration directory: never captured, never republished
-    let config_dir = normalize(&global_config_dir());
-    for reserved in ["tracked", "sources", ".mise-history"] {
-        dirs.push(config_dir.join(reserved));
-    }
+    dirs.push(normalize(&global_config_dir()).join(".mise-history"));
     dirs.extend(
         crate::agecrypt::identity_paths()
             .iter()
@@ -993,7 +953,6 @@ mod tests {
         assert_eq!(walk.files.len(), 1);
         assert!(walk.files.contains_key(&included));
         assert_eq!(walk.omitted.len(), 2);
-        assert!(walk.private.is_empty());
         assert!(set.would_capture(&included).unwrap());
         assert!(!set.would_capture(&child.join("config.local.toml")).unwrap());
         assert!(!set.would_capture(&child.join("credentials.json")).unwrap());
@@ -1027,6 +986,5 @@ mod tests {
         let walk = set.walk().unwrap();
         assert!(walk.files.contains_key(&link));
         assert!(!walk.files.contains_key(&target));
-        assert!(walk.derived.is_empty());
     }
 }

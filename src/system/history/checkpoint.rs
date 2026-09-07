@@ -3,7 +3,7 @@
 //! Content is deduplicated, records are not: an automatic capture whose
 //! snapshot tree and coverage equal the newest checkpoint's records nothing,
 //! while a draft carrying metadata of its own (a description, a label, an
-//! operation) always writes a new wrapper commit, reusing the snapshot tree.
+//! operation) always writes an ordinary commit, reusing the tracked-file tree.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -42,8 +42,6 @@ pub(crate) struct Draft {
     /// Live contents captured for a `*-before` checkpoint; never promoted.
     pub protective: bool,
     pub operation: Option<Operation>,
-    /// Journal blobs already stored in the repository: sha256 -> oid.
-    pub blobs: BTreeMap<String, String>,
     /// A uuid reserved when the operation began, so the marker and the
     /// pending record name the outcome before it exists.
     pub uuid: Option<String>,
@@ -409,10 +407,8 @@ impl Store {
             };
             if manual.promote.contains(&index) {
                 record.state = "live".into();
-                record.promotion = None;
             } else {
                 record.state = "saved".into();
-                record.promotion = None;
             }
         }
         if !draft.has_metadata()
@@ -519,7 +515,7 @@ impl Store {
         });
         let commit = match &self.repo {
             Some(repo) => repo
-                .write_checkpoint(snapshot.as_deref(), &checkpoint, &draft.blobs)
+                .write_checkpoint(snapshot.as_deref(), &checkpoint)
                 .wrap_err("writing the checkpoint")?,
             None => String::new(),
         };
@@ -1119,9 +1115,14 @@ mod tests {
         second.id = 123;
         second.checkpoint.uuid = "abcdef".into();
         let entries = vec![*first, *second];
-        assert_eq!(store::resolve_ref("12", &entries)?, 42);
+        assert!(store::resolve_ref("12", &entries).is_err());
         assert_eq!(store::resolve_ref("42", &entries)?, 42);
-        assert!(store::resolve_ref("123", &entries).is_err());
+        assert_eq!(store::resolve_ref("123", &entries)?, 123);
+        assert_eq!(store::resolve_ref("commit:12", &entries)?, 42);
+        assert_eq!(store::resolve_ref("commit:123", &entries)?, 42);
+        assert!(store::resolve_ref("commit:", &entries).is_err());
+        assert!(store::resolve_ref("", &entries).is_err());
+        assert!(store::resolve_ref("1234567890123456789012345678901234567890", &entries).is_err());
         assert_eq!(store::resolve_ref("123abc", &entries)?, 42);
         Ok(())
     }

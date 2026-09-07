@@ -12,7 +12,7 @@ use crate::system::history::tracked::display_to_tree_path;
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct HistoryDiff {
-    /// Checkpoint id, `latest`, `latest~N`, or a uuid prefix
+    /// Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`
     #[usage(value_name = "A")]
     a: Option<String>,
 

@@ -8,7 +8,7 @@
 Set the description of a checkpoint
 
 ## Arguments
-- **`<REF>`** — Checkpoint id, `latest`, `latest~N`, or a uuid prefix
+- **`<REF>`** — Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`
 - **`<TEXT>`** — The new description
 
 ## Flags

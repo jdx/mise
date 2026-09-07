@@ -18,7 +18,7 @@ pub(crate) struct DotfilesRollback {
     #[usage(value_name = "PATH")]
     paths: Vec<PathBuf>,
 
-    /// The checkpoint to roll back to: id, `latest`, `latest~N`, or a uuid prefix
+    /// The checkpoint to roll back to: numeric ID, `latest`, `latest~N`, or `commit:<sha>`
     #[usage(long, value_name = "REF")]
     to: Option<String>,
 

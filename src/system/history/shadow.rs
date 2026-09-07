@@ -490,15 +490,13 @@ impl HistoryRepo {
         result
     }
 
-    /// Writes the wrapper commit for a checkpoint: `snapshot/`, `meta.json`,
-    /// and `blobs/<sha256>` for every referenced journal blob.
+    /// Commit the tracked-file tree and minimal metadata to ordinary history.
     pub(crate) fn write_checkpoint(
         &self,
         snapshot_tree: Option<&str>,
         checkpoint: &Checkpoint,
-        blobs: &BTreeMap<String, String>,
     ) -> Result<String> {
-        let commit = self.write_checkpoint_commit(snapshot_tree, checkpoint, blobs)?;
+        let commit = self.write_checkpoint_commit(snapshot_tree, checkpoint)?;
         self.advance_head(&commit)?;
         Ok(commit)
     }
@@ -509,7 +507,6 @@ impl HistoryRepo {
         &self,
         snapshot_tree: Option<&str>,
         checkpoint: &Checkpoint,
-        _blobs: &BTreeMap<String, String>,
     ) -> Result<String> {
         let tree = match snapshot_tree {
             Some(tree) => tree.to_owned(),
@@ -1568,9 +1565,7 @@ mod tests {
                 path: crate::file::display_path(crate::dirs::HOME.join(".native/unreadable")),
                 reason: "scan limit".into(),
             });
-        let commit = repo
-            .write_checkpoint(Some(&tree), &checkpoint, &BTreeMap::new())
-            .unwrap();
+        let commit = repo.write_checkpoint(Some(&tree), &checkpoint).unwrap();
         let rebuilt = repo.read_meta(&commit).unwrap();
         assert_eq!(rebuilt.tree.coverage.omitted[0].path, "~/.native/large");
         assert_eq!(
@@ -1646,11 +1641,8 @@ mod tests {
         let captured = repo.capture(&[root("home", &home, &[".zshrc"])]).unwrap();
         let checkpoint =
             crate::system::history::checkpoint::test_checkpoint("abc", Some(&captured.tree));
-        let blob = repo.hash_blob(b"journal content").unwrap();
-        let mut blobs = BTreeMap::new();
-        blobs.insert("deadbeef".to_string(), blob.clone());
         let commit = repo
-            .write_checkpoint(Some(&captured.tree), &checkpoint, &blobs)
+            .write_checkpoint(Some(&captured.tree), &checkpoint)
             .unwrap();
         assert_eq!(
             repo.checkpoint_refs().unwrap(),
@@ -1660,7 +1652,7 @@ mod tests {
         assert_eq!(meta.uuid, commit);
         let empty = repo.empty_object("tree").unwrap();
         let reused_metadata = repo
-            .write_checkpoint_commit(Some(&empty), &checkpoint, &BTreeMap::new())
+            .write_checkpoint_commit(Some(&empty), &checkpoint)
             .unwrap();
         assert_eq!(
             repo.read_meta(&reused_metadata).unwrap().tree.snapshot,
@@ -1672,7 +1664,7 @@ mod tests {
         let mut second = checkpoint.clone();
         second.uuid = "second".into();
         let next = repo
-            .write_checkpoint(Some(&captured.tree), &second, &BTreeMap::new())
+            .write_checkpoint(Some(&captured.tree), &second)
             .unwrap();
         assert_eq!(
             repo.rev_list(&next, 10).unwrap(),
@@ -1681,7 +1673,7 @@ mod tests {
         assert_eq!(repo.ref_oid(HistoryRepo::HISTORY_REF).unwrap(), Some(next));
         assert!(repo.list_refs("refs/checkpoints/").unwrap().is_empty());
         let stale = repo
-            .write_checkpoint_commit(Some(&captured.tree), &checkpoint, &BTreeMap::new())
+            .write_checkpoint_commit(Some(&captured.tree), &checkpoint)
             .unwrap();
         let parent = repo.ref_oid(HistoryRepo::HISTORY_REF).unwrap().unwrap();
         let manual = repo

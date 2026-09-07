@@ -12,7 +12,7 @@ checkpoint. With one reference, shows what that checkpoint changed
 against the one before it. With two, compares the two states.
 
 ## Arguments
-- **`[A]`** — Checkpoint id, `latest`, `latest~N`, or a uuid prefix
+- **`[A]`** — Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`
 - **`[B]`** — Compare `A` with this checkpoint instead of its predecessor
 
 ## Flags
