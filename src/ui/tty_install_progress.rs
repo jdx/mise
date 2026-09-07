@@ -38,6 +38,8 @@ const OSC_SCALE: usize = 10_000;
 struct Layout {
     version: bool,
     byline: bool,
+    /// The header's aggregate transfer rate.
+    rate: bool,
     header_bar: usize,
     row_bar: bool,
     bytes: bool,
@@ -50,18 +52,25 @@ impl Layout {
         const HEADER_FIXED: usize = 4 + 2 + 2 + 36;
         const BYLINE_WIDTH: usize = " by @jdx".len();
         // The byline is the last thing the header gives up: it goes only when
-        // even a ten-cell bar would not fit beside it.
+        // even a ten-cell bar would not fit beside it. Below that the bar stays
+        // at ten — cells freed by a dropped byline or rate are not handed back,
+        // so a shrinking terminal never sees the bar grow — and the aggregate
+        // rate leaves the status once the ten cells no longer fit with it.
         let byline = columns >= HEADER_FIXED + BYLINE_WIDTH + MIN_HEADER_BAR_WIDTH;
+        let rate = columns >= HEADER_FIXED + MIN_HEADER_BAR_WIDTH;
         let version = columns >= HEADER_FIXED + BYLINE_WIDTH + HEADER_BAR_WIDTH + 1 + version_width;
-        let header_bar = columns
-            .saturating_sub(HEADER_FIXED + if byline { BYLINE_WIDTH } else { 0 })
-            .clamp(MIN_HEADER_BAR_WIDTH, HEADER_BAR_WIDTH);
+        let header_bar = if byline {
+            (columns - HEADER_FIXED - BYLINE_WIDTH).clamp(MIN_HEADER_BAR_WIDTH, HEADER_BAR_WIDTH)
+        } else {
+            MIN_HEADER_BAR_WIDTH
+        };
         // What a row has after its prefix: the phase, then the optional cells,
         // then the elapsed time and the spinner.
         let free = columns.saturating_sub(prefix_width);
         Self {
             version,
             byline,
+            rate,
             header_bar,
             row_bar: free >= 46,
             bytes: free >= 70,
@@ -203,7 +212,9 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
     header.prop("byline", &byline_text(layout.byline));
     header.prop("bar", &state.bar_only(layout.header_bar));
     let mut status = state.count_label();
-    if let Some(rate) = state.aggregate_rate(now) {
+    if layout.rate
+        && let Some(rate) = state.aggregate_rate(now)
+    {
         status.push_str(&format!(" · {}/s", format_bytes(rate.round() as u64)));
     }
     let queued = state.queued_count();
@@ -489,6 +500,7 @@ mod tests {
             Layout {
                 version: true,
                 byline: true,
+                rate: true,
                 header_bar: HEADER_BAR_WIDTH,
                 row_bar: true,
                 bytes: true,
@@ -512,6 +524,16 @@ mod tests {
         assert!(!at(70).version && at(70).byline && at(70).header_bar == 18);
         assert!(!at(62).version && at(62).byline && at(62).header_bar == MIN_HEADER_BAR_WIDTH);
         assert!(!at(52).version && !at(52).byline && at(52).header_bar == MIN_HEADER_BAR_WIDTH);
+        // Below that the rate leaves the status too, so the ten-cell bar and
+        // the longest remaining status ("5/7 · 2 queued · 3.0s") fit in 40 —
+        // and the bar never grows back as the terminal shrinks.
+        assert!(at(54).rate && !at(52).rate);
+        assert_eq!(at(40).header_bar, MIN_HEADER_BAR_WIDTH);
+        let mut previous = HEADER_BAR_WIDTH;
+        for columns in (30..140).rev() {
+            assert!(at(columns).header_bar <= previous, "bar grew at {columns}");
+            previous = at(columns).header_bar;
+        }
     }
 
     #[test]
