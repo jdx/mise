@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1YB3M3GYD8BW91R5DFGT97Q",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-disabled-backend-version-selection",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dev-tools/backend_architecture.md",
+    "e2e/backend/test_disable_backends",
+    "schema/mise.json",
+    "settings.toml",
+    "src/cli/args/backend_arg.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6708,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 563200,
+    "output_tokens": 800,
+    "api_call_count": 7
+  }
+}
