@@ -312,6 +312,7 @@ impl Store {
             (Some(repo), None) => {
                 match repo.capture_tracked(&walk, &recipients, console::user_attended_stderr()) {
                     Ok(result) => {
+                        coverage.omitted.extend(result.omitted.iter().cloned());
                         for warning in &result.warnings {
                             warn!("history: {warning}");
                         }
@@ -348,6 +349,22 @@ impl Store {
                             &draft,
                             previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
                             &walk.entries,
+                        )?;
+                        let omissions: Vec<_> = coverage
+                            .omitted
+                            .iter()
+                            .chain(&coverage.incomplete)
+                            .collect();
+                        let composed = retain_omitted(
+                            repo,
+                            &composed,
+                            previous_tree
+                                .as_ref()
+                                .map(|(record, tree)| (record, tree.as_str())),
+                            tracked,
+                            &omissions,
+                            &mut modes,
+                            &walk,
                         )?;
                         let mut manifest = super::manifest::Manifest::read(repo, &composed)?
                             .ok_or_else(|| {
@@ -768,6 +785,77 @@ fn under_entry(path: &str, entry: &str) -> bool {
         || path
             .strip_prefix(entry)
             .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// A failed observation is not evidence of deletion. Carry only saved objects
+/// still permitted by explicit enrollment and exclusions; successful reads win.
+fn retain_omitted(
+    repo: &HistoryRepo,
+    tree: &str,
+    previous: Option<(&Checkpoint, &str)>,
+    tracked: &TrackedSet,
+    omissions: &[&store::PathReason],
+    modes: &mut BTreeMap<String, u32>,
+    walk: &super::tracked::Walk,
+) -> Result<String> {
+    let Some((record, parent)) = previous.filter(|_| !omissions.is_empty()) else {
+        return Ok(tree.into());
+    };
+    let roots = super::sync::layout::Roots::current();
+    let omitted: Vec<_> = omissions
+        .iter()
+        .map(|failure| crate::file::replace_path(&failure.path))
+        .collect();
+    let mut overlays = vec![];
+    let observed_directories: BTreeSet<_> = walk
+        .files
+        .keys()
+        .flat_map(|path| path.ancestors().skip(1))
+        .collect();
+    for file in repo.ls_tree(parent)? {
+        let located = roots.locate(&file.path);
+        let Some(path) = located.path() else { continue };
+        if !omitted.iter().any(|omitted| path.starts_with(omitted))
+            || !tracked.would_retain(path)?
+            || repo.object_at(tree, &file.path)?.is_some()
+        {
+            continue;
+        }
+        let Some(entry) = tracked.entry_for(path) else {
+            continue;
+        };
+        if entry.tree_path(path)? != file.path {
+            continue;
+        }
+        if entry.policy.encrypt && !repo.blob_starts_with(&file.oid, b"mise-encrypted-file-v1\n")? {
+            eyre::bail!(
+                "cannot retain an unreadable plaintext version of newly encrypted {}",
+                display_path(path)
+            );
+        }
+        let display = display_path(path);
+        modes.remove(&display);
+        if let Some(mode) = record.tree.modes.get(&display) {
+            modes.insert(display, *mode);
+        }
+        for parent in path
+            .ancestors()
+            .skip(1)
+            .take_while(|parent| parent.starts_with(&entry.path))
+        {
+            if !observed_directories.contains(parent) {
+                let display = display_path(parent);
+                if let Some(mode) = record.tree.modes.get(&display) {
+                    modes.insert(display, *mode);
+                }
+            }
+        }
+        overlays.push(Overlay {
+            path: file.path,
+            object: Some((file.mode, file.oid)),
+        });
+    }
+    repo.compose(tree, &overlays)
 }
 
 /// The permission bits of captured regular files that git cannot record

@@ -305,6 +305,21 @@ impl TrackedSet {
     /// Whether a capture of this set would include `path`: under an entry,
     /// not excluded, not inside mise's own directories or a `.git`.
     pub(crate) fn would_capture(&self, path: &Path) -> Result<bool> {
+        if !self.would_retain(path)? {
+            return Ok(false);
+        }
+        if let Ok(meta) = std::fs::symlink_metadata(path)
+            && !meta.is_dir()
+            && classify_file(&meta).is_err()
+        {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    /// Enrollment and exclusion policy, independent of current readability or
+    /// capture limits. An omitted saved file may be retained, never an excluded one.
+    pub(crate) fn would_retain(&self, path: &Path) -> Result<bool> {
         let Some(owner) = self.entry_for(path) else {
             return Ok(false);
         };
@@ -317,13 +332,6 @@ impl TrackedSet {
         if path
             .components()
             .any(|component| component.as_os_str() == ".git")
-        {
-            return Ok(false);
-        }
-        // what the walker omits: special files, files over the size limit
-        if let Ok(meta) = std::fs::symlink_metadata(path)
-            && !meta.is_dir()
-            && classify_file(&meta).is_err()
         {
             return Ok(false);
         }

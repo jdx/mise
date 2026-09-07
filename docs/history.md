@@ -50,7 +50,11 @@ ordinary Git tree entries, not a wrapper snapshot or filtered publication copy.
 
 Symlinks are stored as links and nested Git repositories as pointers. Oversized
 files, special files, and unreadable paths are reported rather than silently
-claimed as saved. Operation boundaries carry labels and pairing information;
+claimed as saved. If a file cannot be captured, its previously saved version
+remains in the tree while other files can still be saved; this does not claim
+that its current contents were captured. Explicit exclusions still remove it
+from future trees. Encryption failures stop capture instead of storing plaintext.
+Operation boundaries carry labels and pairing information;
 raw arguments, environment contents, and untracked recovery copies are not
 published as operation metadata.
 

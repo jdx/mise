@@ -313,8 +313,10 @@ impl Git {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
             let head = repo.head()?;
-            let id = head.id();
-            let sha = id.unwrap().to_string();
+            let sha = head
+                .id()
+                .ok_or_else(|| eyre::eyre!("repository {} has no commit at HEAD", dir.display()))?
+                .to_string();
             debug!("current sha for {dir:?}: {sha}");
             return Ok(sha);
         }

@@ -44,6 +44,8 @@ pub(crate) struct CaptureResult {
     pub tree: String,
     pub roots: Vec<RootRecord>,
     pub warnings: Vec<String>,
+    /// Files which were discovered but could not be read. They are not deletions.
+    pub omitted: Vec<super::store::PathReason>,
 }
 
 #[derive(Debug)]
@@ -358,7 +360,7 @@ impl HistoryRepo {
     /// Builds the snapshot tree for `roots`: one subtree per root holding
     /// exactly the listed files.
     pub(crate) fn capture(&self, roots: &[CaptureRoot]) -> Result<CaptureResult> {
-        let mut warnings = vec![];
+        let mut omitted = vec![];
         let mut entries: Vec<(String, String)> = vec![]; // (oid, name)
         let mut records = vec![];
         for root in roots {
@@ -373,7 +375,7 @@ impl HistoryRepo {
                 continue;
             }
             let tree = self
-                .tree_for_root(root, &mut warnings)
+                .tree_for_root(root, &mut omitted)
                 .wrap_err_with(|| format!("snapshotting {}", display_path(&root.path)))?;
             entries.push((tree, root.label.clone()));
             records.push(record);
@@ -387,49 +389,66 @@ impl HistoryRepo {
         Ok(CaptureResult {
             tree,
             roots: records,
-            warnings,
+            warnings: omitted
+                .iter()
+                .map(|failure| format!("{} was not captured: {}", failure.path, failure.reason))
+                .collect(),
+            omitted,
         })
     }
 
     /// Adds a root's files under a scratch index and returns the tree id.
-    fn tree_for_root(&self, root: &CaptureRoot, _warnings: &mut Vec<String>) -> Result<String> {
+    fn tree_for_root(
+        &self,
+        root: &CaptureRoot,
+        omitted: &mut Vec<super::store::PathReason>,
+    ) -> Result<String> {
         let mut overlays = vec![];
         for rel in &root.files {
             let live = root.path.join(rel);
-            let meta = std::fs::symlink_metadata(&live)?;
-            let (mode, oid) = if meta.file_type().is_symlink() {
-                (
-                    "120000",
-                    self.hash_blob(path_bytes(&std::fs::read_link(&live)?).as_ref())?,
-                )
-            } else if meta.is_dir() {
-                ("160000", crate::git::Git::new(&live).current_sha()?)
-            } else if meta.is_file() {
-                #[cfg(unix)]
-                let executable = {
-                    use std::os::unix::fs::PermissionsExt;
-                    meta.permissions().mode() & 0o100 != 0
+            let captured = (|| -> Result<Overlay> {
+                let meta = std::fs::symlink_metadata(&live)?;
+                let (mode, oid) = if meta.file_type().is_symlink() {
+                    (
+                        "120000",
+                        self.hash_blob(path_bytes(&std::fs::read_link(&live)?).as_ref())?,
+                    )
+                } else if meta.is_dir() {
+                    ("160000", crate::git::Git::new(&live).current_sha()?)
+                } else if meta.is_file() {
+                    #[cfg(unix)]
+                    let executable = {
+                        use std::os::unix::fs::PermissionsExt;
+                        meta.permissions().mode() & 0o100 != 0
+                    };
+                    #[cfg(not(unix))]
+                    let executable = false;
+                    let bytes = crate::agecrypt::read_bounded(
+                        std::fs::File::open(&live)?,
+                        crate::agecrypt::MAX_PLAINTEXT_BYTES,
+                    )?;
+                    (
+                        if executable { "100755" } else { "100644" },
+                        self.hash_blob(&bytes)?,
+                    )
+                } else {
+                    bail!("cannot capture non-file {}", display_path(&live));
                 };
-                #[cfg(not(unix))]
-                let executable = false;
-                let bytes = crate::agecrypt::read_bounded(
-                    std::fs::File::open(&live)?,
-                    crate::agecrypt::MAX_PLAINTEXT_BYTES,
-                )?;
-                (
-                    if executable { "100755" } else { "100644" },
-                    self.hash_blob(&bytes)?,
-                )
-            } else {
-                bail!("cannot capture non-file {}", display_path(&live));
-            };
-            overlays.push(Overlay {
-                path: rel
-                    .to_str()
-                    .ok_or_else(|| eyre::eyre!("non-UTF-8 tracked path"))?
-                    .replace('\\', "/"),
-                object: Some((mode.into(), oid)),
-            });
+                Ok(Overlay {
+                    path: rel
+                        .to_str()
+                        .ok_or_else(|| eyre::eyre!("non-UTF-8 tracked path"))?
+                        .replace('\\', "/"),
+                    object: Some((mode.into(), oid)),
+                })
+            })();
+            match captured {
+                Ok(overlay) => overlays.push(overlay),
+                Err(error) => omitted.push(super::store::PathReason {
+                    path: display_path(&live),
+                    reason: format!("unreadable: {error:#}"),
+                }),
+            }
         }
         self.compose(&self.empty_object("tree")?, &overlays)
     }

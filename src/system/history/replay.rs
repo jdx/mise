@@ -1407,9 +1407,14 @@ pub(crate) fn live_tree(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<Stri
     } else {
         vec![]
     };
-    Ok(repo
-        .capture_tracked(&walk, &recipients, console::user_attended_stderr())?
-        .tree)
+    let captured = repo.capture_tracked(&walk, &recipients, console::user_attended_stderr())?;
+    if !captured.omitted.is_empty() {
+        bail!(
+            "cannot verify current files for restoration: {}",
+            captured.warnings.join("; ")
+        );
+    }
+    Ok(captured.tree)
 }
 
 /// The newest checkpoint whose captured content for `path` differs from the
