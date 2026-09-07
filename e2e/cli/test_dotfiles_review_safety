@@ -34,6 +34,11 @@ assert_succeed 'mise --cd project bootstrap dotfiles save'
 git --git-dir="$repo" show main:home/.native >captured
 assert_succeed 'cmp ~/.native captured'
 assert_contains 'mise --cd project bootstrap dotfiles paths' '.native'
+# Ignored project declarations must not poison global synchronization health.
+git init -q --bare -b main project-origin.git
+assert_succeed "mise --cd project bootstrap dotfiles origin set 'file://$PWD/project-origin.git' --yes"
+assert_succeed 'mise --cd project bootstrap dotfiles sync'
+assert_succeed 'mise bootstrap dotfiles origin --remove'
 
 # Description metadata remains in Git without creating a phantom checkpoint.
 latest=$(mise bootstrap dotfiles history --json | jq -r '.[0].id')

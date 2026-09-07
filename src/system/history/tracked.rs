@@ -157,6 +157,9 @@ impl TrackedSet {
             .filter(|request| crate::system::files::declaration_is_global(config, request));
         set.add_requests(requests);
         for invalid in crate::system::files::invalid_declarations() {
+            if !crate::system::files::tracking_config_is_global(config, &invalid.config) {
+                continue;
+            }
             set.invalid.push(PathReason {
                 path: invalid.target,
                 reason: format!("{} ({})", invalid.reason, display_path(&invalid.config)),

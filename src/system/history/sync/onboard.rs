@@ -386,6 +386,32 @@ mod preview_tests {
     use crate::system::history::tracked::TrackedEntry;
 
     #[test]
+    fn preview_does_not_decrypt_encrypted_files_outside_configuration() -> Result<()> {
+        use crate::system::history::manifest::{Enrollment, Manifest};
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let repo = store.repo().unwrap();
+        // Deliberately not decryptable: preview must never read its contents.
+        let blob = repo.hash_blob(b"not an encrypted envelope")?;
+        let tree = repo.write_tree(&[("100644".into(), blob, "home/preview-secret".into())])?;
+        let manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/preview-secret".into(),
+                autosave: true,
+                encrypt: true,
+                variants: vec![],
+            }],
+            ..Default::default()
+        };
+        let tree = manifest.write(repo, &tree)?;
+        let head = repo.commit_tree(&tree, vec![], "preview fixture")?;
+        repo.update_ref(UPSTREAM_REF, &head, None)?;
+        let preview = preview_configuration(&store)?;
+        assert!(!preview.path().join("preview-secret").exists());
+        Ok(())
+    }
+
+    #[test]
     fn preview_strips_portable_root_and_requires_active_enrollment() {
         let mut tracked = TrackedSet::default();
         let policy =

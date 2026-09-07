@@ -294,13 +294,7 @@ pub(crate) fn sync(
             && let Some(head) =
                 repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?
         {
-            let protected = tracked
-                .entries
-                .iter()
-                .filter(|entry| entry.policy.encrypt)
-                .map(|entry| entry.tree_path(&entry.path))
-                .collect::<Result<_>>()?;
-            super::files::audit_history(repo, &head, &protected)?;
+            audit_publication(repo, &head, tracked)?;
         }
         let mut plans;
         let mut attempts = 0;
@@ -444,6 +438,20 @@ pub(crate) fn sync(
 /// How long a status update waits for a running sync or pull to finish.
 pub(crate) const STATUS_LOCK_WAIT: Duration = Duration::from_secs(5);
 const STATUS_LOCK_POLL: Duration = Duration::from_millis(100);
+
+fn audit_publication(
+    repo: &crate::system::history::shadow::HistoryRepo,
+    head: &str,
+    tracked: &TrackedSet,
+) -> Result<()> {
+    let protected = tracked
+        .entries
+        .iter()
+        .filter(|entry| entry.policy.encrypt)
+        .map(|entry| entry.tree_path(&entry.path))
+        .collect::<Result<_>>()?;
+    super::files::audit_history(repo, head, &protected)
+}
 
 fn lock_path(state_dir: &Path) -> PathBuf {
     hstore::store_dir_in(state_dir).join("sync.lock")
@@ -1074,6 +1082,35 @@ fn unsaved_paths(
 #[cfg(test)]
 mod capture_tests {
     use super::*;
+
+    #[test]
+    fn publication_checks_live_variant_encryption_even_without_a_new_capture() -> Result<()> {
+        use crate::system::history::tracked::TrackedEntry;
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let repo = store.repo().unwrap();
+        let mut policy =
+            crate::system::files::FilePolicy::for_mode(crate::system::files::FileMode::Track);
+        policy.encrypt = true;
+        let mut entry = TrackedEntry::new(
+            Roots::current().home.join("variant-secret"),
+            "track",
+            policy,
+        );
+        entry.variant = Some("macos".into());
+        let path = entry.tree_path(&entry.path)?;
+        assert_eq!(path, "home@macos/variant-secret");
+        let tree = repo.write_tree(&[("100644".into(), repo.hash_blob(b"plaintext")?, path)])?;
+        // No encrypted manifest was captured yet: the live policy alone must
+        // protect the stream when capture was skipped or failed.
+        let head = repo.commit_tree(&tree, vec![], "previous plaintext version")?;
+        let tracked = TrackedSet {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        assert!(audit_publication(repo, &head, &tracked).is_err());
+        Ok(())
+    }
 
     #[test]
     fn unsaved_observation_only_conflicts_when_there_is_an_incoming_write() -> Result<()> {

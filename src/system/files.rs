@@ -367,6 +367,14 @@ pub(crate) fn declaration_is_global(config: &Config, req: &FileRequest) -> bool 
     track_layer_allowed(&req.origin, &global_composed_roots(config))
 }
 
+/// Invalid project declarations must not block personal history either.
+pub(crate) fn tracking_config_is_global(config: &Config, path: &Path) -> bool {
+    crate::config::is_global_config(path)
+        || global_composed_roots(config)
+            .iter()
+            .any(|root| path.starts_with(root))
+}
+
 /// Whether a track declaration comes from a layer allowed to enroll files.
 fn track_layer_allowed(origin: &ResourceOrigin, trusted_roots: &[PathBuf]) -> bool {
     crate::config::is_global_config(&origin.config)

@@ -340,8 +340,12 @@ connected to, mise and the bundle are staged, and the target runs every check
 (dirty checkout, mismatched origin, adoption conflicts, `.local.toml` files) and
 says what it would do: clone, fast-forward, or adopt with the number of new
 files. When a global configuration already exists on the target, the bootstrap
-that follows is previewed with `--dry-run` too. Nothing persistent is written
-and the staging directory is removed.
+that follows is previewed with `--dry-run` too. Live configuration is not changed.
+The private staging directory is normally removed afterward; `--keep-staging`
+retains it for debugging. A setup preview can stage decrypted, explicitly tracked
+configuration and configuration-directory inputs needed to inspect bootstrap.
+Treat retained staging as sensitive; unrelated encrypted tracked files are not
+decrypted for this preview.
 
 `--from-git` uses the repository instead of the inventory's archive source and
 copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and
