@@ -20,6 +20,9 @@ use super::checkpoint::{Store, annotate, describe_changes};
 use super::shadow::DiffOpts;
 use super::store::{self, Annotation, Changes, DescriptionSource, Entry};
 
+#[cfg(windows)]
+mod windows_job;
+
 /// How long the command may take, how much diff it is given, and how long a
 /// description it may print.
 pub(crate) const TIMEOUT: Duration = Duration::from_secs(30);
@@ -43,34 +46,49 @@ struct Input<'a> {
 }
 
 /// The command running right now, so a shutdown can end it.
-static RUNNING: Mutex<Option<u32>> = Mutex::new(None);
+static RUNNING: Mutex<Option<RunningCommand>> = Mutex::new(None);
 
-/// Ends the running command and everything it started, if any.
-pub(crate) fn abort_running() {
-    let pid = RUNNING.lock().ok().and_then(|mut running| running.take());
-    if let Some(pid) = pid {
-        kill_tree(pid);
+#[derive(Clone)]
+struct RunningCommand {
+    pid: u32,
+    #[cfg(windows)]
+    job: std::sync::Arc<windows_job::Job>,
+}
+
+impl RunningCommand {
+    fn kill(&self) {
+        #[cfg(unix)]
+        {
+            let _ = nix::sys::signal::killpg(
+                nix::unistd::Pid::from_raw(self.pid as i32),
+                nix::sys::signal::Signal::SIGKILL,
+            );
+        }
+        #[cfg(windows)]
+        self.job.kill();
     }
 }
 
-/// Ends the command's whole process tree: the shell is its own process
-/// group on Unix, and Task Scheduler's tree kill covers Windows.
-fn kill_tree(pid: u32) {
-    #[cfg(unix)]
-    {
-        let _ = nix::sys::signal::killpg(
-            nix::unistd::Pid::from_raw(pid as i32),
-            nix::sys::signal::Signal::SIGKILL,
-        );
+struct ActiveCommand(RunningCommand);
+
+impl Drop for ActiveCommand {
+    fn drop(&mut self) {
+        self.0.kill();
+        if let Ok(mut running) = RUNNING.lock()
+            && running
+                .as_ref()
+                .is_some_and(|running| running.pid == self.0.pid)
+        {
+            *running = None;
+        }
     }
-    #[cfg(windows)]
-    {
-        let _ = Command::new("taskkill")
-            .args(["/T", "/F", "/PID", &pid.to_string()])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+}
+
+/// Ends the running command and everything it started, if any.
+pub(crate) fn abort_running() {
+    let running = RUNNING.lock().ok().and_then(|mut running| running.take());
+    if let Some(running) = running {
+        running.kill();
     }
 }
 
@@ -100,9 +118,17 @@ pub(crate) fn run(store: &Store, entry: &Entry, command: &str) -> Result<Option<
         // its own process group: a timeout ends what the shell started too
         shell.process_group(0);
     }
+    #[cfg(windows)]
+    let (mut child, job) = windows_job::spawn(&mut shell)?;
+    #[cfg(not(windows))]
     let mut child = shell.spawn()?;
+    let active = ActiveCommand(RunningCommand {
+        pid: child.id(),
+        #[cfg(windows)]
+        job: std::sync::Arc::new(job),
+    });
     if let Ok(mut running) = RUNNING.lock() {
-        *running = Some(child.id());
+        *running = Some(active.0.clone());
     }
     // stdin is written and closed on its own thread: a command that answers
     // before reading everything must not block us
@@ -110,11 +136,11 @@ pub(crate) fn run(store: &Store, entry: &Entry, command: &str) -> Result<Option<
     std::thread::spawn(move || {
         let _ = stdin.write_all(&input);
     });
-    let mut stdout = child.stdout.take().expect("piped");
+    let stdout = child.stdout.take().expect("piped");
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut out = Vec::new();
-        let _ = stdout.read_to_end(&mut out);
+        let _ = stdout.take(DIFF_LIMIT as u64 + 1).read_to_end(&mut out);
         let _ = sender.send(out);
     });
     let started = Instant::now();
@@ -125,25 +151,22 @@ pub(crate) fn run(store: &Store, entry: &Entry, command: &str) -> Result<Option<
         if started.elapsed() >= TIMEOUT {
             // the shell and whatever it started; the reader thread ends
             // with the last writer of the pipe, so it is not waited for
-            kill_tree(child.id());
+            active.0.kill();
             let _ = child.kill();
             let _ = child.wait();
-            if let Ok(mut running) = RUNNING.lock() {
-                *running = None;
-            }
             bail!("took longer than {}s", TIMEOUT.as_secs());
         }
         std::thread::sleep(Duration::from_millis(100));
     };
-    if let Ok(mut running) = RUNNING.lock() {
-        *running = None;
-    }
     // a descendant that outlived the shell and kept the pipe is not the
     // shell's answer: the output is waited for a moment, not forever
     let Ok(output) = receiver.recv_timeout(OUTPUT_GRACE) else {
-        kill_tree(child.id());
+        active.0.kill();
         bail!("a process it started kept its output open");
     };
+    if output.len() > DIFF_LIMIT {
+        bail!("description output exceeded {} bytes", DIFF_LIMIT);
+    }
     if !status.success() {
         bail!("exited with {status}");
     }
@@ -303,6 +326,42 @@ fn input<'a>(store: &Store, entry: &'a Entry) -> Result<Input<'a>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_lifecycle_bounds_inherited_output_and_keeps_history() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let outcome = store.attempt(
+            &super::super::tracked::TrackedSet::default(),
+            super::super::checkpoint::Draft::new(store::Trigger::Save),
+        )?;
+        let super::super::checkpoint::Outcome::Created(entry) = outcome else {
+            bail!("test requires an ordinary Git checkpoint");
+        };
+        assert_eq!(
+            run(&store, &entry, "echo named checkpoint")?.as_deref(),
+            Some("named checkpoint")
+        );
+        #[cfg(unix)]
+        let command = "sleep 30 & exit 0";
+        #[cfg(windows)]
+        let command = "start \"\" /B ping -n 30 127.0.0.1";
+        let started = Instant::now();
+        let error = run(&store, &entry, command).unwrap_err();
+        assert!(
+            error.to_string().contains("kept its output open"),
+            "{error:#}"
+        );
+        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(RUNNING.lock().unwrap().is_none());
+        #[cfg(unix)]
+        {
+            let error = run(&store, &entry, "yes oversized-output").unwrap_err();
+            assert!(error.to_string().contains("output exceeded"), "{error:#}");
+        }
+        assert_eq!(store::resolve_ref("latest", &store.list()?)?, entry.id);
+        Ok(())
+    }
 
     #[test]
     fn the_first_line_is_the_description() {
