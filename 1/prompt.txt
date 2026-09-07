@@ -1,0 +1,1 @@
+i think we should mention that there are several use-cases that do require them, we could have an explicit opt-out so make a pr for that. the claim doesn't even make sense and if it is making things brittle that's the real problem
