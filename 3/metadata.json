@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Y82P9W3FTRPA0QM02KED6A",
+  "session_id": "01a07c7f-5af2-7e93-b1c7-4ab81239f9f8",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T15:34:09.761452Z",
+  "branch": "codex/dotfiles-git-history",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/system/history/sync/network.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "93ec9092ec0d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 37050,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 66816,
+    "output_tokens": 532,
+    "api_call_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T15:34:09.722557Z",
+    "agent_lines": 317,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 317,
+    "total_lines_changed": 317,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
