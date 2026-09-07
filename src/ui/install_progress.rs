@@ -31,6 +31,9 @@ pub(crate) trait InstallProgress: Send + Sync {
     /// panicking in the scheduler.
     fn start_tool(&self, key: &str) -> Option<Box<dyn ToolProgress>>;
 
+    /// Resolution found work to do; release the lookup row back to the scheduler.
+    fn queue_tool(&self, key: &str);
+
     /// A tool the scheduler is holding until these dependencies finish.
     fn set_waiting(&self, key: &str, dependencies: Vec<String>);
 
@@ -46,6 +49,13 @@ pub(crate) fn install_progress(
     tools: impl Iterator<Item = (String, String)>,
 ) -> Option<Box<dyn InstallProgress>> {
     progress_for(mpr, Action::Install, tools)
+}
+
+/// A separate lookup phase, used before upgrade knows which tools need work.
+pub(crate) fn resolution_progress(
+    tools: impl Iterator<Item = (String, String)>,
+) -> Option<Box<dyn InstallProgress>> {
+    progress_for(&MultiProgressReport::get(), Action::Resolve, tools)
 }
 
 /// The same session for `prune`, `uninstall` and `upgrade`'s old versions.

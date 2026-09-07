@@ -30,6 +30,7 @@ pub(crate) struct ToolsetBuilder {
     scope: ConfigScope,
     default_to_latest: bool,
     resolve_options: ResolveOptions,
+    resolution_progress: bool,
     config_files: Option<ConfigMap>,
 }
 
@@ -50,6 +51,11 @@ impl ToolsetBuilder {
 
     pub(crate) fn with_scope(mut self, scope: ConfigScope) -> Self {
         self.scope = scope;
+        self
+    }
+
+    pub(crate) fn with_resolution_progress(mut self, enabled: bool) -> Self {
+        self.resolution_progress = enabled;
         self
     }
 
@@ -79,7 +85,7 @@ impl ToolsetBuilder {
         });
         measure!("toolset_builder::build::resolve", {
             if let Err(err) = toolset
-                .resolve_with_opts(config, &self.resolve_options)
+                .resolve_with_progress(config, &self.resolve_options, self.resolution_progress)
                 .await
             {
                 if Error::is_argument_err(&err) || Error::is_required_channel_resolution_err(&err) {

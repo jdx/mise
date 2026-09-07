@@ -405,6 +405,7 @@ fn format_bytes_in(bytes: u64, total: u64) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Action {
     Install,
+    Resolve,
     Remove,
 }
 
@@ -412,6 +413,7 @@ impl Action {
     pub(super) fn present(self) -> &'static str {
         match self {
             Action::Install => "installing",
+            Action::Resolve => "resolving",
             Action::Remove => "removing",
         }
     }
@@ -419,6 +421,7 @@ impl Action {
     pub(super) fn past(self) -> &'static str {
         match self {
             Action::Install => "installed",
+            Action::Resolve => "resolved",
             Action::Remove => "removed",
         }
     }
@@ -482,10 +485,17 @@ impl State {
         tool.started = Some(Instant::now());
         // A removal has nothing to resolve; its one phase is the verb itself.
         tool.message = match self.action {
-            Action::Install => "resolving".into(),
+            Action::Install | Action::Resolve => "resolving".into(),
             Action::Remove => "removing".into(),
         };
         Some(index)
+    }
+
+    pub(super) fn queue_tool(&mut self, key: &str) {
+        if let Some(index) = self.index_of(key) {
+            self.tools[index].started = None;
+            self.tools[index].message = "waiting to install".into();
+        }
     }
 
     pub(super) fn set_waiting(&mut self, key: &str, dependencies: Vec<String>) {
@@ -789,6 +799,10 @@ impl InstallProgress for TextInstallProgress {
         }))
     }
 
+    fn queue_tool(&self, key: &str) {
+        self.state.lock().unwrap().queue_tool(key);
+    }
+
     fn set_waiting(&self, key: &str, dependencies: Vec<String>) {
         self.state.lock().unwrap().set_waiting(key, dependencies);
     }
@@ -943,6 +957,22 @@ mod tests {
             started,
             resumed_at: 0,
         }
+    }
+
+    #[test]
+    fn resolved_request_returns_to_dependency_queue() {
+        let mut state = State::new([("node@22".into(), "node@22".into())].into_iter());
+        state.start_tool("node@22");
+        state.queue_tool("node@22");
+        state.set_waiting("node@22", vec!["dependency".into()]);
+        assert_eq!(
+            state.tools[0].waiting_message().as_deref(),
+            Some("waiting for dependency")
+        );
+        assert_eq!(state.complete_count(), 0);
+        state.start_tool("node@22");
+        assert!(state.tools[0].waiting_message().is_none());
+        assert_eq!(state.tools[0].message, "resolving");
     }
 
     #[test]

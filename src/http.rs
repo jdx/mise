@@ -1286,6 +1286,7 @@ impl Client {
         options: SendOnceOptions,
     ) -> Result<Response> {
         let original_url = url.clone();
+        crate::ui::resolve_progress::fetching(&url);
         #[cfg(unix)]
         if matches!(url.host_str(), Some("github.com" | "api.github.com"))
             && let Some(socket) = std::env::var_os("MISE_GITHUB_RELAY_SOCKET")
@@ -1300,6 +1301,7 @@ impl Client {
             return options.check_response(response);
         }
         apply_url_replacements(&mut url);
+        crate::ui::resolve_progress::fetching(&url);
         let host_key = http_host_key(&url);
         if Settings::get().prefer_offline()
             && let Some(host) = &host_key
@@ -2108,6 +2110,7 @@ where
                     err,
                     delay
                 );
+                crate::ui::resolve_progress::retrying(url, attempt + 1, delay);
                 tokio::time::sleep(delay).await;
                 attempt += 1;
             }
@@ -3294,8 +3297,27 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
         let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
 
-        let resp = client.get_async(url).await.unwrap();
+        let reporter = crate::ui::resolve_progress::tests::RecordingReport::default();
+        let resp = crate::ui::resolve_progress::scope(
+            Some(Box::new(reporter.clone())),
+            client.get_async(url),
+        )
+        .await
+        .unwrap();
 
+        let messages = reporter.0.lock().unwrap();
+        assert!(
+            messages
+                .first()
+                .unwrap()
+                .contains("fetching from 127.0.0.1")
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("retrying 127.0.0.1 (attempt 2"))
+        );
+        assert!(messages.last().unwrap().contains("fetching from 127.0.0.1"));
         assert!(resp.status().is_success());
         // Two connections: the aborted one, then the retry that succeeded.
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);

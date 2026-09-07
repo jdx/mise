@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+
+# Hold the version-list response until progress is visible. A progress line
+# printed after the lookup finishes cannot satisfy this test.
+export CI=0 MISE_COLOR=0 MISE_DEBUG=0 MISE_TRACE=0 MISE_LOG_LEVEL=info
+export MISE_FORCE_PROGRESS=0 MISE_HTTP_RETRIES=0
+
+python3 - <<'PY'
+import errno
+import fcntl
+import http.server
+import io
+import os
+from pathlib import Path
+import pty
+import re
+import select
+import struct
+import subprocess
+import tarfile
+import termios
+import threading
+import time
+
+archive = io.BytesIO()
+with tarfile.open(fileobj=archive, mode="w:gz") as tar:
+    content = b"#!/bin/sh\necho resolved\n"
+    entry = tarfile.TarInfo("bin/resolved")
+    entry.mode = 0o755
+    entry.size = len(content)
+    tar.addfile(entry, io.BytesIO(content))
+release = threading.Event()
+requested = threading.Event()
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith("/versions"):
+            requested.set()
+            if not release.wait(15):
+                self.send_error(504)
+                return
+            body = b"1.0.0\n2.0.0\n"
+        else:
+            body = archive.getvalue()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+port = server.server_address[1]
+
+def run_case(name, args, tty=False):
+    release.clear()
+    requested.clear()
+    Path("mise.toml").write_text(f'''[tools."http:{name}"]
+version = "1"
+url = "http://127.0.0.1:{port}/tool-{{{{version}}}}.tar.gz"
+version_list_url = "http://127.0.0.1:{port}/versions-{name}"
+''')
+    env = dict(os.environ, MISE_CACHE_DIR=str(Path(f"cache-{name}").absolute()))
+    if tty:
+        master, slave = pty.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
+        proc = subprocess.Popen(["mise", *args], stdout=subprocess.DEVNULL, stderr=slave, env=env)
+        os.close(slave)
+        fd = master
+    else:
+        proc = subprocess.Popen(["mise", *args], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env)
+        fd = proc.stderr.fileno()
+    output = bytearray()
+    saw_wait = False
+    deadline = time.monotonic() + 30
+    try:
+        while time.monotonic() < deadline:
+            if not select.select([fd], [], [], 0.1)[0]:
+                continue
+            try:
+                chunk = os.read(fd, 65536)
+            except OSError as error:
+                if error.errno == errno.EIO:
+                    break
+                raise
+            if not chunk:
+                break
+            output.extend(chunk)
+            plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", output.decode(errors="replace"))
+            if "fetching from 127.0.0.1" in plain and requested.is_set():
+                assert "by @jdx" in plain, plain
+                assert "resolving" in plain, plain
+                assert "0/1" in plain, plain
+                saw_wait = True
+                release.set()
+        assert saw_wait, output.decode(errors="replace")
+        assert proc.wait(timeout=5) == 0, output.decode(errors="replace")
+    finally:
+        release.set()
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if tty:
+            os.close(master)
+        else:
+            proc.stderr.close()
+    plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", output.decode(errors="replace"))
+    assert "installed 1 tool" in plain, plain
+    return env
+
+try:
+    env = run_case("resolve-bare", ["install"])
+    # The early session closes satisfied requests without counting them as installs.
+    result = subprocess.run(["mise", "install"], env=env, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert "1 already installed" in result.stderr, result.stderr
+    run_case("resolve-explicit", ["install", "http:resolve-explicit"])
+    run_case("resolve-tty", ["install"], tty=True)
+    run_case("resolve-upgrade", ["upgrade"])
+finally:
+    release.set()
+    server.shutdown()
+    server.server_close()
+PY
