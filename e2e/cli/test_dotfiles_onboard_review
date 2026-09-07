@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 require_cmd git
-export MISE_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=0
 printf 'original\n' >~/.onboard-review
 assert_succeed 'mise bootstrap dotfiles track ~/.onboard-review'
 origin="$PWD/origin.git"

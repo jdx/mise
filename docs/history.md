@@ -1,12 +1,5 @@
 # Dotfiles history
 
-> [!WARNING]
-> Tracking, checkpoints, rollback, watching, and synchronization are experimental.
-> Their interfaces and storage formats may change before stabilization.
-> This notice concerns the new tracking workflows, not ordinary symlink, copy,
-> template, and managed-edit workflows.
-> Enable these workflows with `mise settings experimental=true`.
-
 mise keeps checkpoints of your configuration files: the global mise config
 directory, the dotfiles root, every `[dotfiles]` entry, and any file you
 [track](/dotfiles.html#tracking-files-in-place) where it is. A checkpoint is

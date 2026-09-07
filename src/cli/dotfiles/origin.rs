@@ -5,7 +5,6 @@ use crate::system::history::sync::origin;
 
 /// Connect, disconnect, or purge the setup repository
 ///
-/// Experimental: enable with `mise settings experimental=true`.
 ///
 /// `set <url>` connects one repository that holds the shared setup branch
 /// and this machine's recovery refs. Before anything leaves the machine it
@@ -92,9 +91,6 @@ pub(crate) struct DotfilesOriginSet {
 
 impl DotfilesOrigin {
     pub(crate) async fn run(self) -> Result<()> {
-        if self.command.is_some() || self.remove || self.purge {
-            crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
-        }
         match self.command {
             Some(DotfilesOriginCommands::Set(cmd)) => cmd.run().await,
             None if self.purge => {

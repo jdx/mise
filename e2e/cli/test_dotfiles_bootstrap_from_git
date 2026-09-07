@@ -57,7 +57,6 @@ assert_fail "test -e $preview_home/.config/mise/config.toml"
 C="$(dirname "$HOME")/c-home"
 wrapper "$C" "$PWD/c"
 c="$PWD/c"
-assert_fail "MISE_EXPERIMENTAL=0 $c bootstrap --from-git file://$origin --yes --only dotfiles" 'dotfile tracking is experimental'
 assert_directory_not_exists "$C/.local/state/mise/history"
 assert_fail "test -e $C/.config/mise/config.toml"
 out="$($c bootstrap --from-git "file://$origin" --dry-run 2>&1)"
@@ -116,7 +115,8 @@ E="$(dirname "$HOME")/e-home"
 wrapper "$E" "$PWD/e"
 e="$PWD/e"
 assert_succeed "MISE_EXPERIMENTAL=0 $e bootstrap --from-git file://$plain --yes --only task"
-assert_directory_not_exists "$E/.local/state/mise/history"
+# Ordinary bootstrap may checkpoint configuration, but keeps the ordinary
+# checkout and does not connect it as a shared setup repository.
 assert_succeed "test -d $E/.config/mise/.git"
 assert_contains "cat $E/.config/mise/config.toml" 'PLAIN = "1"'
 assert_contains "$e bootstrap dotfiles status" "Setup repository: none"

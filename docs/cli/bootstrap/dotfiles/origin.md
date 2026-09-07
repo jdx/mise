@@ -7,8 +7,6 @@
 
 Connect, disconnect, or purge the setup repository
 
-Experimental: enable with `mise settings experimental=true`.
-
 `set <url>` connects one repository that holds the shared setup branch
 and this machine's recovery refs. Before anything leaves the machine it
 prints exactly what will happen: the sync mode, what is shared per

@@ -43,7 +43,6 @@ pub(crate) struct DotfilesSave {
 
 impl DotfilesSave {
     pub(crate) async fn run(self) -> Result<()> {
-        crate::system::history::ensure_experimental()?;
         self.save().await
     }
 

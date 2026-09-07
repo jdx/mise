@@ -5,7 +5,7 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/dotfiles/track.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/track.rs)
 
-Track a file or directory where it is (experimental)
+Track a file or directory where it is
 
 Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 is, nothing is copied or linked, and history saves a checkpoint of it

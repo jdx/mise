@@ -733,9 +733,9 @@ better tracked with `--no-autosave` and saved explicitly.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <GLOB> help="A glob such as `~/.config/hypr/plugins/**`"
         }
-        cmd history help="Browse the checkpoints of your dotfiles (experimental)" effect=read {
+        cmd history help="Browse the checkpoints of your dotfiles" effect=read {
             long_help #"""
-Browse the checkpoints of your dotfiles (experimental)
+Browse the checkpoints of your dotfiles
 
 Every save, every mutating bootstrap command, and the watcher record a
 checkpoint of the tracked files: the global mise config directory, the
@@ -829,7 +829,6 @@ Removes the glob from `[history] exclude` in the global config.
             long_help #"""
 List the machines with recovery refs in the setup repository
 
-Experimental: enable with `mise settings experimental=true`.
 
 This machine first, then every machine whose refs the last
 `mise bootstrap dotfiles sync` fetched. Their checkpoints are addressed as
@@ -845,7 +844,6 @@ identity among its recipients.
             long_help #"""
 Connect, disconnect, or purge the setup repository
 
-Experimental: enable with `mise settings experimental=true`.
 
 `set <url>` connects one repository that holds the shared setup branch
 and this machine's recovery refs. Before anything leaves the machine it
@@ -914,9 +912,9 @@ enrollment is never mistaken for protection.
             flag --noisy help="List the paths the watcher found changing constantly"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
-        cmd pull help="Pull incoming shared changes into the live files (experimental)" effect=destructive {
+        cmd pull help="Pull incoming shared changes into the live files" effect=destructive {
             long_help #"""
-Pull incoming shared changes into the live files (experimental)
+Pull incoming shared changes into the live files
 
 Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
 (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
@@ -949,9 +947,9 @@ their shared versions follow in the same run.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[PATH]…" help="Paths must cover the complete pending setup; partial pulls are rejected" required=#false var=#true
         }
-        cmd rollback help="Return files to the version a checkpoint holds (experimental)" effect=destructive {
+        cmd rollback help="Return files to the version a checkpoint holds" effect=destructive {
             long_help #"""
-Return files to the version a checkpoint holds (experimental)
+Return files to the version a checkpoint holds
 
 Without `--to`, each path returns to its most recent saved version that
 differs from what is on disk; unrelated checkpoints never influence the
@@ -1017,9 +1015,9 @@ mise bootstrap dotfiles status --json
 mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
 """#
         }
-        cmd sync help="Publish, fetch, and record what is pending now (experimental)" effect=write {
+        cmd sync help="Publish, fetch, and record what is pending now" effect=write {
             long_help #"""
-Publish, fetch, and record what is pending now (experimental)
+Publish, fetch, and record what is pending now
 
 Fetches the setup branch and other machines' recovery refs, publishes
 this machine's shared files and configuration (leased on the branch
@@ -1035,9 +1033,9 @@ The history watcher does this on its own in `sync` and `fetch-only` mode
             flag --best-effort help="Warn instead of failing when the origin is unreachable"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
-        cmd track help="Track a file or directory where it is (experimental)" effect=write {
+        cmd track help="Track a file or directory where it is" effect=write {
             long_help #"""
-Track a file or directory where it is (experimental)
+Track a file or directory where it is
 
 Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 is, nothing is copied or linked, and history saves a checkpoint of it
@@ -1110,9 +1108,9 @@ existing checkpoints are left exactly as they are.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PATH>… help="Paths to stop tracking" var=#true
         }
-        cmd watch help="Save tracked files as they change (experimental)" effect=write {
+        cmd watch help="Save tracked files as they change" effect=write {
             long_help #"""
-Save tracked files as they change (experimental)
+Save tracked files as they change
 
 Runs in the foreground: installs filesystem watches for every autosaved
 tracked entry, saves a checkpoint once a changed file has been quiet for
@@ -1135,7 +1133,7 @@ The `history-watch` built-in service runs this for you:
     [bootstrap.services.mise-history]
     builtin = "history-watch"
 
-Exit codes: 0 when history or experimental mode is disabled or another watcher already runs;
+Exit codes: 0 when history is disabled or another watcher already runs;
 1 when git is unusable, the store cannot open, or no watch can be
 installed. A capture that fails is retried with backoff and never drops
 the pending changes; one that would overlap another history operation
@@ -1547,7 +1545,6 @@ Select inventory hosts by name, tag, or `--all`, or supply ad-hoc `--host` targe
 The source is staged on each target and bootstrap runs there. `--from-git` instead
 installs persistent global configuration; preview that choice with `--dry-run`.
 """#
-        flag --experimental help="Enable experimental features on the target; retain opt-in after tracking setup"
         flag --from-git help="Install a Git repository as persistent global configuration on each target" {
             conflicts "--source" "--copy-link" "--copy-links" "--exclude"
             arg "<GIT_URL|OWNER/REPO>"

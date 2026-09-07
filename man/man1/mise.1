@@ -209,7 +209,7 @@ Edit a managed dotfile source
 Never capture paths matching a glob
 .TP
 \fBbootstrap dotfiles history\fR
-Browse the checkpoints of your dotfiles (experimental)
+Browse the checkpoints of your dotfiles
 .TP
 \fBbootstrap dotfiles history describe\fR
 Set the description of a checkpoint
@@ -242,10 +242,10 @@ Connect a setup repository
 Show what history tracks and under which policies
 .TP
 \fBbootstrap dotfiles pull\fR
-Pull incoming shared changes into the live files (experimental)
+Pull incoming shared changes into the live files
 .TP
 \fBbootstrap dotfiles rollback\fR
-Return files to the version a checkpoint holds (experimental)
+Return files to the version a checkpoint holds
 .TP
 \fBbootstrap dotfiles save\fR
 Save a checkpoint of the tracked files now
@@ -257,10 +257,10 @@ Show the status of dotfiles from `[dotfiles]`
 .RE
 .TP
 \fBbootstrap dotfiles sync\fR
-Publish, fetch, and record what is pending now (experimental)
+Publish, fetch, and record what is pending now
 .TP
 \fBbootstrap dotfiles track\fR
-Track a file or directory where it is (experimental)
+Track a file or directory where it is
 .TP
 \fBbootstrap dotfiles unapply\fR
 Remove dotfiles applied from `[dotfiles]`
@@ -272,7 +272,7 @@ Reverse a rollback, undo, or pull
 Stop tracking a file or directory
 .TP
 \fBbootstrap dotfiles watch\fR
-Save tracked files as they change (experimental)
+Save tracked files as they change
 .TP
 \fBbootstrap files\fR
 Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
@@ -1583,7 +1583,7 @@ Print help
 \fB<GLOB>\fR
 A glob such as `~/.config/hypr/plugins/**`
 .SH "MISE BOOTSTRAP DOTFILES HISTORY"
-Browse the checkpoints of your dotfiles (experimental)
+Browse the checkpoints of your dotfiles
 
 Every save, every mutating bootstrap command, and the watcher record a
 checkpoint of the tracked files: the global mise config directory, the
@@ -1748,7 +1748,6 @@ The glob as written by `exclude`
 .SH "MISE BOOTSTRAP DOTFILES MACHINES"
 List the machines with recovery refs in the setup repository
 
-Experimental: enable with `mise settings experimental=true`.
 
 This machine first, then every machine whose refs the last
 `mise bootstrap dotfiles sync` fetched. Their checkpoints are addressed as
@@ -1770,7 +1769,6 @@ Print help
 .SH "MISE BOOTSTRAP DOTFILES ORIGIN"
 Connect, disconnect, or purge the setup repository
 
-Experimental: enable with `mise settings experimental=true`.
 
 `set <url>` connects one repository that holds the shared setup branch
 and this machine's recovery refs. Before anything leaves the machine it
@@ -1870,7 +1868,7 @@ List the paths the watcher found changing constantly
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP DOTFILES PULL"
-Pull incoming shared changes into the live files (experimental)
+Pull incoming shared changes into the live files
 
 Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
 (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
@@ -1916,7 +1914,7 @@ Print help
 \fB<PATH>\fR
 Paths must cover the complete pending setup; partial pulls are rejected
 .SH "MISE BOOTSTRAP DOTFILES ROLLBACK"
-Return files to the version a checkpoint holds (experimental)
+Return files to the version a checkpoint holds
 
 Without `\-\-to`, each path returns to its most recent saved version that
 differs from what is on disk; unrelated checkpoints never influence the
@@ -2024,7 +2022,7 @@ mise bootstrap dotfiles status \-\-json
 mise bootstrap dotfiles status \-\-missing # exit 1 if anything is out of sync
 .RE
 .SH "MISE BOOTSTRAP DOTFILES SYNC"
-Publish, fetch, and record what is pending now (experimental)
+Publish, fetch, and record what is pending now
 
 Fetches the setup branch and other machines' recovery refs, publishes
 this machine's shared files and configuration (leased on the branch
@@ -2050,7 +2048,7 @@ Warn instead of failing when the origin is unreachable
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP DOTFILES TRACK"
-Track a file or directory where it is (experimental)
+Track a file or directory where it is
 
 Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 is, nothing is copied or linked, and history saves a checkpoint of it
@@ -2180,7 +2178,7 @@ Print help
 \fB<PATH>\fR
 Paths to stop tracking
 .SH "MISE BOOTSTRAP DOTFILES WATCH"
-Save tracked files as they change (experimental)
+Save tracked files as they change
 
 Runs in the foreground: installs filesystem watches for every autosaved
 tracked entry, saves a checkpoint once a changed file has been quiet for
@@ -2203,7 +2201,7 @@ The `history\-watch` built\-in service runs this for you:
     [bootstrap.services.mise\-history]
     builtin = "history\-watch"
 
-Exit codes: 0 when history or experimental mode is disabled or another watcher already runs;
+Exit codes: 0 when history is disabled or another watcher already runs;
 1 when git is unusable, the store cannot open, or no watch can be
 installed. A capture that fails is retried with backoff and never drops
 the pending changes; one that would overlap another history operation
@@ -2922,9 +2920,6 @@ installs persistent global configuration; preview that choice with `\-\-dry\-run
 .PP
 \fBOptions:\fR
 .PP
-.TP
-\fB\-\-experimental\fR
-Enable experimental features on the target; retain opt\-in after tracking setup
 .TP
 \fB\-\-from\-git\fR \fI<GIT_URL|OWNER/REPO>\fR
 Install a Git repository as persistent global configuration on each target

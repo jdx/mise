@@ -89,15 +89,6 @@ pub(crate) struct WatchOptions {
 /// Runs the watcher; returns the process exit code.
 pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     let out = Output { json: opts.json };
-    if let Err(err) = Settings::get().ensure_experimental("dotfile tracking") {
-        if opts.once {
-            return Err(err);
-        }
-        // Installed services restart on failure. Withdrawing opt-in must
-        // stop them cleanly, without opening or changing history state.
-        out.emit("disabled", &err.to_string(), json!({}));
-        return Ok(0);
-    }
     if !Settings::get().history.enabled {
         out.emit(
             "disabled",
@@ -1195,7 +1186,7 @@ impl State {
     /// Reloads the configuration; `Ok(false)` when history was disabled.
     async fn reload(&mut self) -> Result<bool> {
         Config::reset().await?;
-        if !Settings::get().experimental || !Settings::get().history.enabled {
+        if !Settings::get().history.enabled {
             return Ok(false);
         }
         let tracked = TrackedSet::effective().await?;
@@ -1336,13 +1327,6 @@ async fn stop_disabled(capture: &mut Capture, tracked: &TrackedSet) {
     capture
         .out
         .emit("disabled", "history was disabled; stopping", json!({}));
-    if !Settings::get().experimental {
-        // Keep pending work for a later explicit opt-in, without taking a
-        // final checkpoint after permission to use tracking was withdrawn.
-        capture.persist_schedule();
-        capture.write_health();
-        return;
-    }
     finish(capture, tracked, Restart::Final).await;
 }
 

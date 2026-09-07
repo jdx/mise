@@ -3,7 +3,7 @@
 # pull, undo, and recovery on a third machine using a separate recovery key.
 # shellcheck disable=SC2016
 require_cmd git
-export MISE_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=0
 
 origin="$PWD/origin.git"
 git init -q --bare -b main "$origin"

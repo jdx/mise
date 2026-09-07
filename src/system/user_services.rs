@@ -590,12 +590,6 @@ pub(crate) async fn apply(
         debug!("user services: skipping, {reason}");
         return Ok(Some(reason));
     }
-    if requests
-        .iter()
-        .any(|request| request.builtin.as_deref() == Some("history-watch"))
-    {
-        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
-    }
     let statuses = status(requests).await?;
     let mut targets = vec![];
     let mut skipped = 0;

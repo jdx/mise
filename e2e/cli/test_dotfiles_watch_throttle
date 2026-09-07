@@ -7,11 +7,12 @@
 # shellcheck disable=SC2016
 
 require_cmd git
+export MISE_EXPERIMENTAL=0
 
-# A previously installed service must stop cleanly when opt-in is withdrawn.
-assert_contains "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles watch --json" '"event":"disabled"'
+# A previously installed service must stop cleanly when history is disabled.
+assert_contains "MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles watch --json" '"event":"disabled"'
 assert_directory_not_exists "$MISE_STATE_DIR/history"
-assert_fail "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles watch --once" 'dotfile tracking is experimental'
+assert_succeed "MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles watch --once"
 
 count="mise bootstrap dotfiles history --json -n 0 | jq length"
 throttled="mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].interval_secs // 0'"
@@ -101,10 +102,13 @@ assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "autosave"
 captured="grep -c '\"event\":\"captured\"' watch.log"
 n="$(eval "$captured")"
 wait_until "[[ \$($captured) -gt $n ]]"
+churn_checkpoint="$(jq -r 'select(.event == "captured") | .uuid' watch.log | tail -1)"
 echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
 wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
-saved_n="$(mise bootstrap dotfiles history show latest --files 2>/dev/null | grep -c state.json || true)"
-assert "echo $saved_n" "1"
+# Pin the actual edit checkpoint: another scheduled save may become latest
+# while these assertions run. Compare snapshot contents, not display lines.
+monitor_checkpoint="$(jq -r 'select(.event == "captured" and (.description | contains("monitors.lua"))) | .uuid' watch.log | tail -1)"
+assert "$snapshot_of $monitor_checkpoint .config/hypr/state.json" "$($snapshot_of "$churn_checkpoint" .config/hypr/state.json)"
 
 # unsaved changes to the throttled file are visible as they happen
 wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].pending_changes // 0') -ge 1 ]]"

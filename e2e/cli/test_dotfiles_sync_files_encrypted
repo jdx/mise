@@ -2,7 +2,7 @@
 # Shared encrypted files use one recipient list; local files stay plaintext.
 # shellcheck disable=SC2016
 require_cmd git
-export MISE_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=0
 KEY="AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8"
 PUB="age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"
 KEY2="AGE-SECRET-KEY-12LCM5FM5DQ7HZDGYUZWMJ6QHM66J07NZ75VVP2VVGCZX53HYD5PQUXUN8K"

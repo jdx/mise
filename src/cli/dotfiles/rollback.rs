@@ -4,7 +4,7 @@ use eyre::Result;
 
 use crate::system::history::replay::{self, RollbackRequest};
 
-/// Return files to the version a checkpoint holds (experimental)
+/// Return files to the version a checkpoint holds
 ///
 /// Without `--to`, each path returns to its most recent saved version that
 /// differs from what is on disk; unrelated checkpoints never influence the
@@ -41,7 +41,6 @@ pub(crate) struct DotfilesRollback {
 
 impl DotfilesRollback {
     pub(crate) async fn run(self) -> Result<()> {
-        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         replay::rollback(RollbackRequest {
             paths: self.paths,
             to: self.to,
