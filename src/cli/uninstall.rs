@@ -8,6 +8,7 @@ use crate::backend::Backend;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
+use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{config, dirs, exit, file};
 
@@ -76,7 +77,7 @@ impl Uninstall {
             .collect::<Vec<_>>();
 
         let mpr = MultiProgressReport::get();
-        let mut has_work = false;
+        let mut to_remove = Vec::with_capacity(tool_versions.len());
         for (plugin, tv) in tool_versions {
             // `is_version_installed` resolves the install path, so it says no for a link whose
             // target is gone -- and that entry is precisely what someone running `uninstall` is
@@ -89,13 +90,37 @@ impl Uninstall {
                 warn!("{} is not installed", tv.style());
                 continue;
             }
+            to_remove.push((plugin, tv));
+        }
+        let has_work = !to_remove.is_empty();
 
-            has_work = true;
-            let pr = mpr.add(&tv.style());
-            if let Err(err) = plugin
+        // A dry run keeps its per-line report: it exists to be read.
+        let mut progress = if self.is_dry_run() {
+            None
+        } else {
+            removal_progress(
+                &mpr,
+                to_remove
+                    .iter()
+                    .map(|(_, tv)| (format!("{}@{}", tv.ba().short, tv.version), tv.style())),
+            )
+        };
+        for (plugin, tv) in to_remove {
+            let key = format!("{}@{}", tv.ba().short, tv.version);
+            let tool = progress
+                .as_ref()
+                .and_then(|progress| progress.start_tool(&key));
+            let pr = match &tool {
+                Some(tool) => tool.reporter(),
+                None => mpr.add(&tv.style()),
+            };
+            let result = plugin
                 .uninstall_version(&config, &tv, pr.as_ref(), self.is_dry_run())
-                .await
-            {
+                .await;
+            if let Some(tool) = &tool {
+                tool.complete(result.as_ref().err().map(|e| e.to_string()).as_deref());
+            }
+            if let Err(err) = result {
                 error!("{err}");
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
@@ -105,8 +130,13 @@ impl Uninstall {
                 if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
                     warn!("failed to clear tool purgatory entry: {err:#}");
                 }
-                pr.finish_with_message("uninstalled".into());
+                if tool.is_none() {
+                    pr.finish_with_message("uninstalled".into());
+                }
             }
+        }
+        if let Some(progress) = progress.as_mut() {
+            progress.finish(vec![]);
         }
 
         if self.is_dry_run() {

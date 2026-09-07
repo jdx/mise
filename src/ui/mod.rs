@@ -3,6 +3,7 @@ pub(crate) use prompt::confirm;
 #[cfg_attr(any(test, windows), path = "ctrlc_stub.rs")]
 pub(crate) mod ctrlc;
 pub(crate) mod info;
+pub(crate) mod install_progress;
 pub(crate) mod multi_progress_report;
 pub(crate) mod progress_report;
 pub(crate) mod prompt;
@@ -12,3 +13,4 @@ pub(crate) mod text_install_progress;
 pub(crate) mod theme;
 pub(crate) mod time;
 pub(crate) mod tree;
+pub(crate) mod tty_install_progress;

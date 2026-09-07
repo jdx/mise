@@ -50,6 +50,21 @@ pub(crate) trait SingleReport: Send + Sync + std::fmt::Debug {
     fn shows_process_output(&self) -> bool {
         false
     }
+
+    /// Secondary progress that is not a byte transfer — an embedded package
+    /// manager's `32/48 pkgs`. Reporters with one status line fold it into the
+    /// message; the install renderers show it beside the phase.
+    fn set_detail(&self, detail: String) {
+        let _ = detail;
+    }
+
+    /// Progress through the current operation in whole items rather than
+    /// bytes — packages resolved, packages fetched. Drives the bar the same way
+    /// `set_length`/`set_position` do, but is never formatted as a size or
+    /// folded into a transfer rate.
+    fn set_items(&self, done: u64, total: u64) {
+        let _ = (done, total);
+    }
     fn inc(&self, _delta: u64) {}
     fn set_position(&self, _delta: u64) {}
     fn set_length(&self, _length: u64) {}
@@ -106,6 +121,10 @@ fn normal_prefix(pad: usize, prefix: &str) -> String {
 #[derive(Debug)]
 pub(crate) struct ProgressReport {
     job: Arc<ProgressJob>,
+    /// The phase and any secondary detail, folded into one `message` prop:
+    /// this row has a single status cell.
+    phase: Mutex<String>,
+    detail: Mutex<String>,
 }
 
 impl ProgressReport {
@@ -131,7 +150,22 @@ impl ProgressReport {
             .prop("message", "")
             .start();
 
-        ProgressReport { job }
+        ProgressReport {
+            job,
+            phase: Mutex::new(String::new()),
+            detail: Mutex::new(String::new()),
+        }
+    }
+
+    fn render_message(&self) {
+        let phase = self.phase.lock().unwrap();
+        let detail = self.detail.lock().unwrap();
+        let message = if detail.is_empty() {
+            phase.clone()
+        } else {
+            format!("{phase}  {detail}")
+        };
+        self.job.prop("message", &message);
     }
 }
 
@@ -141,7 +175,13 @@ impl SingleReport for ProgressReport {
     }
 
     fn set_message(&self, message: String) {
-        self.job.prop("message", &message.replace('\r', ""));
+        *self.phase.lock().unwrap() = message.replace('\r', "");
+        self.render_message();
+    }
+
+    fn set_detail(&self, detail: String) {
+        *self.detail.lock().unwrap() = detail.replace('\r', "");
+        self.render_message();
     }
 
     fn inc(&self, delta: u64) {
@@ -194,6 +234,7 @@ impl SingleReport for QuietReport {}
 pub(crate) struct VerboseReport {
     prefix: String,
     prev_message: Mutex<String>,
+    prev_detail: Mutex<String>,
     pad: usize,
     total_operations: Mutex<Option<usize>>,
     current_operation: Mutex<usize>,
@@ -208,6 +249,7 @@ impl VerboseReport {
         VerboseReport {
             prefix,
             prev_message: Mutex::new("".to_string()),
+            prev_detail: Mutex::new("".to_string()),
             pad,
             total_operations: Mutex::new(None),
             current_operation: Mutex::new(0),
@@ -225,6 +267,21 @@ impl SingleReport for VerboseReport {
         // `shows_process_output` suppresses the failure replay.
         let prefix = pad_prefix(self.pad, &self.prefix);
         log::info!("{prefix} {message}");
+    }
+    fn set_detail(&self, detail: String) {
+        // One line per change, folded with the phase, the way this reporter
+        // printed the combined message before phase and detail were split.
+        if detail.trim().is_empty() {
+            return;
+        }
+        let phase = self.prev_message.lock().unwrap().clone();
+        let mut prev = self.prev_detail.lock().unwrap();
+        if *prev == detail {
+            return;
+        }
+        let prefix = pad_prefix(self.pad, &self.prefix);
+        log::info!("{prefix} {phase} {detail}");
+        *prev = detail;
     }
     fn shows_process_output(&self) -> bool {
         true
@@ -257,10 +314,11 @@ impl SingleReport for VerboseReport {
         *self.current_operation.lock().unwrap() = 1;
     }
     fn next_operation(&self) {
-        let total = *self.total_operations.lock().unwrap();
-        if total.is_some() {
+        if let Some(total) = *self.total_operations.lock().unwrap() {
             let mut current = self.current_operation.lock().unwrap();
-            *current += 1;
+            // A backend may step past its last declared operation to say "all
+            // declared work is done"; the counter stays at the last one.
+            *current = (*current + 1).min(total);
         }
     }
 }

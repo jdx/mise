@@ -31,6 +31,13 @@ impl LockFile {
     }
 
     pub(crate) fn lock(self) -> Result<fslock::LockFile> {
+        self.lock_with_notice(&|| {})
+    }
+
+    /// Like [`Self::lock`], but also runs a borrowed `on_wait` when the lock is
+    /// contended. For callers whose progress reporter cannot move into the
+    /// `'static` callback but should still say why the install is paused.
+    pub(crate) fn lock_with_notice(self, on_wait: &dyn Fn()) -> Result<fslock::LockFile> {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
@@ -39,6 +46,7 @@ impl LockFile {
             if let Some(f) = self.on_locked {
                 f(&self.path)
             }
+            on_wait();
             lock.lock()?;
         }
         Ok(lock)

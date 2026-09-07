@@ -23,8 +23,8 @@ use crate::toolset::tool_deps::{ToolDeps, ensure_compatible_install_requests, to
 use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::{ResolveOptions, ToolVersion};
+use crate::ui::install_progress::{InstallProgress, ToolProgress, install_progress};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::text_install_progress::{TextInstallProgress, TextToolProgress};
 use crate::{backend, config, hooks, runtime_symlinks, shims};
 
 impl Toolset {
@@ -280,14 +280,17 @@ impl Toolset {
         } else {
             opts.reason.clone()
         };
-        mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
-        let mut text_progress = (mpr.use_text_install_output()
-            && !opts.raw
-            && !opts.dry_run
-            && !versions.is_empty())
-        .then(|| {
-            TextInstallProgress::new(versions.iter().map(|tr| (tool_key(tr), tr.to_string())))
-        });
+        let mut install_progress = (!opts.raw && !opts.dry_run)
+            .then(|| {
+                install_progress(
+                    &mpr,
+                    versions.iter().map(|tr| (tool_key(tr), tr.to_string())),
+                )
+            })
+            .flatten();
+        if install_progress.is_none() {
+            mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
+        }
 
         hooks::run_one_hook_with_context(
             config,
@@ -330,7 +333,7 @@ impl Toolset {
 
         // Build dependency graph and install using Kahn's algorithm
         let (installed, failed, attempted_failures) = self
-            .install_with_deps(config, versions, opts, text_progress.as_ref())
+            .install_with_deps(config, versions, opts, install_progress.as_deref())
             .await;
         let failed_backends = attempted_failures
             .iter()
@@ -348,11 +351,12 @@ impl Toolset {
         let mut all_failed = disabled_backend_errors;
         all_failed.extend(plugin_errors);
         all_failed.extend(failed);
-        if let Some(progress) = text_progress.as_mut() {
+        if let Some(progress) = install_progress.as_mut() {
             progress.finish(
                 all_failed
                     .iter()
-                    .map(|(tr, error)| (tool_key(tr), error.to_string())),
+                    .map(|(tr, error)| (tool_key(tr), error.to_string()))
+                    .collect(),
             );
         }
 
@@ -503,7 +507,7 @@ impl Toolset {
         config: &Arc<Config>,
         versions: Vec<ToolRequest>,
         opts: &InstallOptions,
-        text_progress: Option<&TextInstallProgress>,
+        install_progress: Option<&dyn InstallProgress>,
     ) -> (
         Vec<ToolVersion>,
         Vec<(ToolRequest, eyre::Error)>,
@@ -532,6 +536,18 @@ impl Toolset {
                 return (vec![], failed, vec![]);
             }
         };
+
+        // Tell the display which tools are held behind which, before anything
+        // starts, so a row can say "waiting for node" instead of nothing.
+        if let Some(progress) = install_progress {
+            let deps = tool_deps.lock().await;
+            for tr in &versions {
+                let pending = deps.pending_dependencies(tr);
+                if !pending.is_empty() {
+                    progress.set_waiting(&tool_key(tr), pending);
+                }
+            }
+        }
 
         let mut rx = tool_deps.lock().await.subscribe();
 
@@ -608,10 +624,10 @@ impl Toolset {
                             let opts = opts.clone();
                             let tr_clone = tr.clone();
 
-                            let progress = text_progress.and_then(|p| p.start_tool(&tool_key(&tr)));
+                            let progress = install_progress.and_then(|p| p.start_tool(&tool_key(&tr)));
                             let handle = jset.spawn(async move {
                                 let _permit = permit;
-                                let result = Self::install_single_tool(&config, &ts, &tr, &opts, progress.as_ref()).await;
+                                let result = Self::install_single_tool(&config, &ts, &tr, &opts, progress.as_deref()).await;
                                 if let Some(progress) = progress {
                                     let error = result.as_ref().err().map(|e| e.to_string());
                                     progress.complete(error.as_deref());
@@ -681,7 +697,7 @@ impl Toolset {
         ts: &Arc<Toolset>,
         tr: &ToolRequest,
         opts: &Arc<InstallOptions>,
-        text_progress: Option<&TextToolProgress>,
+        tool_progress: Option<&dyn ToolProgress>,
     ) -> Result<ToolVersion> {
         let mpr = MultiProgressReport::get();
         let pre_resolve_backend = tr.backend()?;
@@ -703,9 +719,9 @@ impl Toolset {
         let ctx = InstallContext {
             config: config.clone(),
             ts: ts.clone(),
-            pr: if let Some(progress) = text_progress {
+            pr: if let Some(progress) = tool_progress {
                 progress.set_prefix(tv.style());
-                Box::new(progress.clone())
+                progress.reporter()
             } else {
                 mpr.add_with_options(&tv.style(), opts.dry_run)
             },

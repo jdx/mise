@@ -79,7 +79,9 @@ impl MultiProgressReport {
         let settings = Settings::get();
         let has_stderr = console::user_attended_stderr();
         let force_progress = *env::MISE_FORCE_PROGRESS;
-        let ci = settings.ci;
+        // A terminal that records frames instead of redrawing them gets the
+        // same append-only output as CI, for the same reason.
+        let ci = settings.ci || *env::FRAME_LOGGING_TERMINAL;
 
         progress_trace!(
             "MultiProgressReport::new: raw={}, quiet={}, verbose={}, has_stderr={}, force_progress={}, ci={}",
@@ -172,6 +174,12 @@ impl MultiProgressReport {
     pub(crate) fn use_text_install_output(&self) -> bool {
         let settings = Settings::get();
         !self.quiet && !self.use_progress_ui && !settings.verbose && !settings.raw
+    }
+
+    /// The live install region replaces the per-tool clx rows and the old
+    /// header whenever the animated display is on at all.
+    pub(crate) fn use_tty_install_output(&self) -> bool {
+        self.use_progress_ui
     }
 
     pub(crate) fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
