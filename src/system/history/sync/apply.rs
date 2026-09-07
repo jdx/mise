@@ -323,7 +323,11 @@ pub(crate) async fn apply(
 
     // the transaction
     let reload = crate::system::history::config::reload_commands()?;
-    let scope = OperationScope::begin_kind(OperationKind::Apply, "dotfiles pull", false).await?;
+    let scope = if req.automatic {
+        OperationScope::begin_automatic_apply().await?
+    } else {
+        OperationScope::begin_kind(OperationKind::Apply, "dotfiles pull", false).await?
+    };
     scope.with_operation(|op| {
         op.applied = status.upstream_commit.clone();
     });
