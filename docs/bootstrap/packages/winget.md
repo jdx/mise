@@ -1,3 +1,7 @@
+---
+description: Converge local Windows packages with WinGet during mise bootstrap.
+---
+
 # WinGet
 
 Windows applications and packages via the Windows Package Manager CLI.
