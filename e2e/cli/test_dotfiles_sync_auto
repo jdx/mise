@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# Automatic synchronization by the watcher: A's saves are published without a
+# command on either side and B's watcher fetches and applies them; an
+# unreachable origin only backs off while saving continues; a conflict is
+# held with both versions kept, B's file untouched, and notified once; a
+# rollback travels like any other change; fetch-only never publishes or
+# writes by itself; manual does nothing by itself.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+wait_until() {
+  for _ in $(seq 1 150); do
+    if eval "$1" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "timed out waiting for: $1" >&2
+  cat a.log b.log >&2 2>/dev/null
+  return 1
+}
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+
+# short intervals; the same environment reaches machine B through its wrapper
+export MISE_HISTORY_SYNC_INTERVAL=1s MISE_HISTORY_FETCH_INTERVAL=2s
+export MISE_HISTORY_WATCH_DEBOUNCE=2s MISE_HISTORY_WATCH_RECONCILE=0
+
+# machine B is a second HOME reached through a wrapper script.
+# outside A's home, so none of A's files is discovered as a project config of B
+B="$(dirname "$HOME")/b-home"
+mkdir -p "$B/.config/mise" "$B/.config/hypr" "$B/bin"
+cat <<EOF2 >"$PWD/b"
+#!/usr/bin/env bash
+export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
+  MISE_STATE_DIR="$B/.local/state/mise" MISE_DATA_DIR="$B/.local/share/mise" \\
+  MISE_CACHE_DIR="$B/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$B" PATH="$B/bin:\$PATH"
+cd "\$HOME" && exec mise "\$@"
+EOF2
+chmod +x "$PWD/b"
+b="$PWD/b"
+
+# ---- A tracks a directory and connects; both watchers start
+mkdir -p ~/.config/hypr
+echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --name laptop --yes"
+assert_succeed "$b bootstrap dotfiles origin set file://$origin --name desktop --yes"
+mise bootstrap dotfiles watch --json >a.log 2>&1 &
+a_watcher=$!
+$b bootstrap dotfiles watch --json >b.log 2>&1 &
+b_watcher=$!
+cleanup() {
+  kill "$a_watcher" "$b_watcher" 2>/dev/null || true
+  wait "$a_watcher" 2>/dev/null || true
+  wait "$b_watcher" 2>/dev/null || true
+}
+trap cleanup EXIT
+wait_until "grep -q '\"event\":\"started\"' a.log && grep -q '\"event\":\"started\"' b.log"
+
+# ---- B's watcher applies what A shared without a command on either side: the
+# configuration first, then the tracked files it declares
+wait_until "grep -q '\"event\":\"replan\"' b.log"
+assert "cat $B/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
+assert_contains "cat $B/.config/mise/config.toml" '"~/.config/hypr" = { mode = "track" }'
+assert_contains "cat b.log" '"event":"applied"'
+
+# ---- an edit on A is published by its watcher and applied by B's
+echo 'bind = SUPER, Q, exec, alacritty' >~/.config/hypr/bindings.lua
+wait_until "grep -q 'alacritty' $B/.config/hypr/bindings.lua"
+assert "git --git-dir=$origin show main:tracked/home/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, alacritty"
+assert_contains "cat a.log" '"published":"'
+
+# ---- the origin becomes unreachable: saving continues, syncing backs off and
+# says so, and everything converges once it is back
+mv "$origin" "$origin.away"
+echo 'bind = SUPER, W, exec, firefox' >>~/.config/hypr/bindings.lua
+wait_until "grep -q '\"event\":\"sync-error\"' a.log"
+assert_contains "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "bindings.lua"
+assert_contains "mise bootstrap dotfiles status 2>&1" "last error"
+# the failure has a start, so an origin that never answered is not "transient"
+# forever: after three fetch intervals doctor escalates
+assert_contains "mise bootstrap dotfiles status 2>&1" "failing since"
+wait_until "(mise doctor 2>&1 || true) | grep -q 'keeps failing'"
+assert "(mise doctor --json 2>/dev/null || true) | jq '.dotfiles.sync_failing_for_secs > 6'" "true"
+mv "$origin.away" "$origin"
+wait_until "grep -q 'firefox' $B/.config/hypr/bindings.lua"
+assert_not_contains "mise bootstrap dotfiles status 2>&1" "last error"
+assert_not_contains "mise bootstrap dotfiles status 2>&1" "failing since"
+
+# ---- a conflict: B changes a line while its watcher is down and A changes the
+# same line; both versions are kept, the entire setup waits, and one
+# notification is shown by default however often the sync retries
+kill "$b_watcher"
+wait "$b_watcher" 2>/dev/null || true
+printf 'bind = SUPER, Q, exec, wezterm\nbind = SUPER, W, exec, firefox\n' >"$B/.config/hypr/bindings.lua"
+printf 'bind = SUPER, Q, exec, foot\nbind = SUPER, W, exec, firefox\n' >~/.config/hypr/bindings.lua
+wait_until "git --git-dir=$origin show main:tracked/home/.config/hypr/bindings.lua | grep -q foot"
+$b bootstrap dotfiles watch --json >b.log 2>&1 &
+b_watcher=$!
+wait_until "grep -q '\"conflicts\":1' b.log"
+assert_contains "cat $B/.config/hypr/bindings.lua" "wezterm"
+assert_contains "$b bootstrap dotfiles status 2>&1" "both sides changed the same lines"
+assert_contains "$b bootstrap dotfiles status 2>&1" "mise bootstrap dotfiles pull"
+assert_contains "$b doctor 2>&1 || true" "sync conflict"
+echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
+wait_until "git --git-dir=$origin show main:tracked/home/.config/hypr/monitors.lua | grep -q DP-1"
+wait_until "grep -c '\"conflicts\":1' b.log | awk '{exit !(\$1 > 1)}'"
+assert_fail "test -e $B/.config/hypr/monitors.lua"
+assert "grep -c '\"conflicts\":1' b.log | awk '{print (\$1 > 1)}'" "1"
+# Notification delivery and deduplication are unit-tested without sending
+# real desktop alerts from the isolated test homes.
+assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/hypr/bindings.lua --yes"
+wait_until "test -e $B/.config/hypr/monitors.lua"
+assert "cat $B/.config/hypr/bindings.lua" $'bind = SUPER, Q, exec, foot\nbind = SUPER, W, exec, firefox'
+assert_not_contains "$b bootstrap dotfiles status 2>&1" "both sides changed"
+assert_not_contains "$b doctor 2>&1 || true" "sync conflict"
+
+# ---- a rollback is a new shared change, received like any other: the
+# branch grows, nothing is rewritten
+commits="$(git --git-dir="$origin" rev-list --count main)"
+head_before="$(git --git-dir="$origin" rev-parse main)"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua --yes"
+assert_contains "cat ~/.config/hypr/bindings.lua" "alacritty"
+wait_until "grep -q 'alacritty' $B/.config/hypr/bindings.lua"
+assert "git --git-dir=$origin rev-list --count main | awk -v n=$commits '{print (\$1 > n)}'" "1"
+assert_succeed "git --git-dir=$origin merge-base --is-ancestor $head_before main"
+
+# ---- fetch-only: B's watcher fetches, never publishes, never writes a file
+kill "$b_watcher"
+wait "$b_watcher" 2>/dev/null || true
+MISE_HISTORY_SYNC=fetch-only $b bootstrap dotfiles watch --json >b.log 2>&1 &
+b_watcher=$!
+echo '# only on B' >>"$B/.config/hypr/monitors.lua"
+echo 'bind = SUPER, E, exec, thunar' >>~/.config/hypr/bindings.lua
+wait_until "grep '\"event\":\"synced\"' b.log | grep -q '\"pending\":1'"
+assert_not_contains "cat $B/.config/hypr/bindings.lua" "thunar"
+assert_not_contains "git --git-dir=$origin show main:tracked/home/.config/hypr/monitors.lua" "only on B"
+assert_succeed "MISE_HISTORY_SYNC=fetch-only $b bootstrap dotfiles pull --yes"
+assert_contains "cat $B/.config/hypr/bindings.lua" "thunar"
+
+# ---- manual: nothing happens on its own
+kill "$b_watcher"
+wait "$b_watcher" 2>/dev/null || true
+MISE_HISTORY_SYNC=manual $b bootstrap dotfiles watch --json >b.log 2>&1 &
+b_watcher=$!
+wait_until "grep -q '\"event\":\"started\"' b.log"
+echo 'bind = SUPER, R, exec, rofi' >>~/.config/hypr/bindings.lua
+wait_until "git --git-dir=$origin show main:tracked/home/.config/hypr/bindings.lua | grep -q rofi"
+sleep 3
+assert_fail "grep -q '\"event\":\"sync\"' b.log"
+assert_not_contains "cat $B/.config/hypr/bindings.lua" "rofi"

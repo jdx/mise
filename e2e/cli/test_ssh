@@ -13,7 +13,9 @@ assert_fail "mise ssh devbox --github-relay-read-only --github-relay-all-repos -
 assert_fail "mise bootstrap remote --host devbox --from-git owner/repo --source ."
 assert_fail "mise bootstrap remote --from-git owner/repo"
 assert_fail "mise bootstrap remote --host devbox --from-git not/a/repository --dry-run"
-assert_contains "mise bootstrap remote --host devbox --from-git owner/repo --dry-run" "https://github.com/owner/repo.git"
+# a dry run fetches the repository like a real run; an unreachable one fails
+# before any connection is made
+assert_fail "mise bootstrap remote --host devbox --from-git file://$PWD/missing.git --dry-run" "could not fetch setup repository"
 
 mkdir -p fakebin
 cat >fakebin/ssh <<'EOF'

@@ -44,7 +44,8 @@ Every checkpoint carries:
   that was never covered.
 - **What changed** since the previous checkpoint, and a description computed
   from it (`edited hypr/bindings.lua; added omarchy/hooks/post-theme`).
-  `mise bootstrap dotfiles history describe <ref> "…"` replaces the description.
+  `mise bootstrap dotfiles history describe <ref> "…"` replaces the description,
+  and so can a command of yours (below).
 - **The trigger**: `save`, `baseline` (a newly tracked path), or the two halves
   of an operation: `bootstrap-before` (the protective checkpoint taken before
   a bootstrap command changes anything) and `bootstrap` (the outcome, with a
@@ -52,6 +53,29 @@ Every checkpoint carries:
 
 `mise bootstrap dotfiles history show <ref>` prints all of it; `--files` lists the snapshot,
 `--json` gives the record.
+
+### Descriptions from an agent
+
+`settings.history.describe_command` names a command that describes the
+checkpoints the watcher saves. It gets one JSON object on stdin, `uuid`,
+`trigger`, the computed `description`, the changed paths that are not
+private (`added`, `modified`, `removed`), and `diff`, a unified diff of the
+changed files that are backed up (at most 64 KiB, `diff_truncated` says
+when it was cut), and prints one line of at most 200 characters, which
+becomes the description (`description_source: command`). With Claude Code:
+
+```toml
+[settings]
+history.describe_command = "claude -p --output-format text --no-session-persistence 'Describe this change to my configuration files in one line of at most 120 characters, plain text, no quotes.'"
+```
+
+The checkpoint is saved before the command runs and keeps its computed
+description when the command fails, prints nothing, or takes longer than 30
+seconds. The command runs once per checkpoint the watcher saved, one at a
+time, never per filesystem event or retry, and never with a shell
+interpolation of file contents (the JSON is its stdin). A private file
+(`*.local.toml`, a credential store) is never named, and a file tracked with
+`backup = false` never has its contents sent.
 
 ## Referring to checkpoints
 
@@ -228,9 +252,11 @@ per store: a second one exits 0 immediately.
 
 ### Health
 
-The watcher never notifies you. It persists its health (`health.json` in
-the history store) and two commands read it, without starting a sync,
-applying anything, or prompting:
+The watcher speaks up only when sharing pauses for a conflict (a desktop
+notification on Linux and macOS, on by default; see
+[Sharing across machines](#sharing-across-machines) below). Otherwise it persists its
+health (`health.json` in the history store) and two commands read it, without
+starting a sync, applying anything, or prompting:
 
 - `mise doctor` prints a concise `dotfiles` section: a watcher that is
   declared but not running (with the command that starts it), repeated
@@ -247,7 +273,8 @@ applying anything, or prompting:
 
 One setup repository holds the shared setup and every machine's recovery
 refs. Connect it once per machine; nothing else is ever done with git by
-hand:
+hand ([Set up a machine](/bootstrap/setup.html) walks through connecting,
+editing, resolving a conflict, and setting up the next machine):
 
 ```sh
 mise bootstrap dotfiles origin set https://github.com/you/setup.git --name laptop
@@ -272,7 +299,26 @@ default; `--include-existing`), names that look like secrets with the
 `track … --no-share --no-backup` line for each, and private content already
 committed in the repository's history, which stops the connection unless
 `--allow-committed-private` is passed (rewriting history is your decision).
-The declaration goes to `[history.origin]` in the global config, the mode
+
+**What leaves the machine, in plain text.** Two things, both readable by
+anyone who can read the repository: the setup branch (the shared
+configuration, the sources it references, and the shared version of every
+tracked entry, per its policies) and this machine's recovery refs
+(`refs/mise-history/<machine>/…`: a snapshot of every tracked file with
+`backup = true`, with private paths and paths with `backup = false` removed
+from the snapshot, the metadata, and the descriptions). `share = false`
+keeps a file out of the setup branch and out of other machines;
+`backup = false` keeps it out of the recovery refs; `*.local.toml` and
+credential stores default to both `share = false` and `backup = false`
+unless a per-file declaration says otherwise.
+Everything else stays on this machine. Encrypted recovery refs are not
+implemented yet: `--encrypt-backups` and `encrypt_backups = true` are refused
+rather than silently uploading in plain text, so a file you would only back
+up encrypted is a file to track with `--no-backup` for now.
+The declaration goes to `[history.origin]` in `config.local.toml` next to the
+global config (machine-local, never published: each machine names the
+repository the way it reaches it, and a fresh machine's own declaration
+never conflicts with the configuration it pulls), the mode
 to `settings.history.sync`.
 
 **What is synchronized.** The setup branch mirrors the global configuration
@@ -292,6 +338,18 @@ git. A history-enabled repository carries
 repository (its `--from`/`--from-git` behaviour is unchanged) until you
 confirm its adoption, and a newer format stops with an upgrade message.
 
+**Another machine.** `mise bootstrap --from-git <url>` on a machine that has
+nothing yet recognizes the marker and sets the machine up from the
+repository: the branch goes into mise's own store (no checkout in
+`~/.config/mise`), the shared configuration, its sources, and this machine's
+tracked files are written by one recoverable pull (the configuration first,
+then what it declares; a file that already exists and differs is held for a
+decision), the connection is remembered, and the ordinary bootstrap runs:
+packages, tools, templates rendered from the sources that just arrived, the
+watcher service. From then on the machine syncs like any other. Over SSH the
+same happens through `mise bootstrap remote`; see
+[remote bootstrap](/bootstrap/remote.html).
+
 **How a sync decides.** For every path the saved version here (ours is
 always the saved version, never a live edit in progress), the fetched
 upstream version, and the recorded acknowledged/reconciled/applied versions
@@ -305,15 +363,43 @@ mise's own bare repository and pushed with a lease; a rejection fetches and
 retries; nothing is ever force-pushed or reset, so your own commits and
 unrelated files survive. Repeating a sync changes nothing.
 
-**Modes** (`settings.history.sync`): `sync` (default) publishes, fetches, and
-queues incoming changes for application; `fetch-only` only
-downloads; `manual` publishes and fetches but never applies by itself. In
-this release `mise bootstrap dotfiles sync` publishes and fetches and
-`mise bootstrap dotfiles pull` writes what is queued; the watcher's automatic
-publication and application follow in the next release. Applying never runs
-`mise bootstrap`, installs or removes packages, or renders templates: when
-incoming configuration changes declarations, `mise bootstrap dotfiles status`
-says to run `mise bootstrap`.
+**Modes** (`settings.history.sync`) say what the watcher does on its own:
+
+- `sync` (the default, recommended): after a save the watcher publishes
+  within `history.sync_interval` (5 minutes); every `history.fetch_interval`
+  (15 minutes) it fetches and applies incoming changes, with
+  a protective checkpoint first. A conflict or an unsaved edit pauses
+  publication and incoming application for the complete setup.
+- `fetch-only`: the watcher fetches; nothing is ever published and no live
+  file changes until you run `mise bootstrap dotfiles pull`.
+- `manual`: no automatic network activity at all.
+
+`mise bootstrap dotfiles sync` (publish and fetch now) and `mise bootstrap
+dotfiles pull` (write what is pending now, decide conflicts) work on request
+in every mode: they are for when you do not want to wait, not something the
+background mode needs you to run. A failed sync (the repository unreachable,
+credentials missing) backs off from a minute to an hour and is retried;
+saving continues meanwhile, and `mise bootstrap dotfiles status` and
+`mise doctor` show the last error. The watcher never publishes a throttled
+file's unsaved churn or a manual-save entry's unsaved edits: what it
+publishes is what it saved. Applying never runs `mise bootstrap`, installs
+or removes packages, or renders templates: when incoming configuration
+changes declarations, `mise bootstrap dotfiles status` says to run
+`mise bootstrap`.
+
+**Conflict notifications** are on by default. A desktop notification
+(`notify-send` on Linux, a bundled mise helper app on macOS) reports when sharing pauses
+for the setup. Retries and additional conflicts during the same pause stay
+silent; a later pause can notify again after recovery. Set
+`settings.history.notify = false` to opt out. Missing or failing notifiers
+never hold up history or sync.
+
+Linux and macOS notifications use the mise logo. On macOS, allow notifications
+for mise when asked on first use; you can change that permission in System
+Settings > Notifications > mise. The helper is included in mise: no compiler,
+extra notifier, or logo download is needed. Denied permissions never block sync.
+Alerts name the conflicting file, explain that local saves still work, and
+point to `mise bootstrap dotfiles status` for resolution steps.
 
 **Applying.** `mise bootstrap dotfiles pull` writes pending changes as one recoverable
 transaction (a protective checkpoint first, each file journaled, reload

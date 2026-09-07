@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use eyre::{Result, WrapErr, bail};
 use serde::{Deserialize, Serialize};
@@ -82,6 +83,13 @@ pub(crate) struct SyncStatus {
     pub declarations_changed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    /// When the current run of failed syncs began; a success clears it. An
+    /// origin that has never answered has no last success to measure from,
+    /// so `mise doctor` measures the failure from here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failing_since: Option<String>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub consecutive_failures: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backoff_until: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -98,6 +106,17 @@ pub(crate) struct SyncStatus {
     pub origin_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_branch: Option<String>,
+    /// Whether this conflict-paused episode has already been observed.
+    #[serde(default)]
+    pub conflict_pause_observed: bool,
+    /// `origin --remove` was run: the recorded repository no longer stands
+    /// in for a declaration.
+    #[serde(default)]
+    pub disconnected: bool,
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 pub(crate) fn status_path(state_dir: &Path) -> PathBuf {
@@ -119,7 +138,7 @@ pub(crate) fn write_status(state_dir: &Path, status: &SyncStatus) -> Result<()> 
 }
 
 #[cfg(test)]
-mod status_tests {
+mod status_read_tests {
     use super::*;
 
     #[test]
@@ -164,16 +183,54 @@ pub(crate) struct SyncOutcome {
 
 pub(crate) struct SyncRequest {
     pub fetch_only: bool,
+    /// Save the tracked set first, so what is published is what is on
+    /// disk. The watcher passes `false`: it saves on its own schedule, and a
+    /// throttled file's held version or a manual-save entry's unsaved edits
+    /// must not reach the repository through a sync.
+    pub capture: bool,
+    /// The repository to use instead of `[history.origin]` (onboarding,
+    /// before the configuration that declares it is in place).
+    pub origin: Option<OriginTomlConfig>,
+    /// No network: reconcile against the branch as last fetched and record
+    /// what is pending (after an incoming configuration declared more).
+    pub offline: bool,
+    /// A preview: nothing is announced (the caller puts the recorded state
+    /// back afterwards).
+    pub dry_run: bool,
+}
+
+impl SyncRequest {
+    pub(crate) fn new(fetch_only: bool) -> Self {
+        Self {
+            fetch_only,
+            capture: true,
+            origin: None,
+            offline: false,
+            dry_run: false,
+        }
+    }
 }
 
 /// The connected origin, or why there is none.
 pub(crate) fn origin() -> Result<OriginTomlConfig> {
-    match crate::system::history::config::origin()? {
-        Some((_, origin)) => Ok(origin),
-        None => bail!(
-            "no setup repository is connected; `mise bootstrap dotfiles origin set <url>` connects one"
-        ),
+    if let Some((_, origin)) = crate::system::history::config::origin()? {
+        return Ok(origin);
     }
+    // recorded when it was connected: a fresh machine's declaration may
+    // still be on its way in the configuration being pulled
+    let status = read_status(&crate::dirs::STATE)?;
+    if let (Some(url), Some(branch), false) =
+        (status.origin_url, status.origin_branch, status.disconnected)
+    {
+        return Ok(OriginTomlConfig {
+            url,
+            branch,
+            encrypt_backups: false,
+        });
+    }
+    bail!(
+        "no setup repository is connected; `mise bootstrap dotfiles origin set <url>` connects one"
+    )
 }
 
 /// Runs one synchronization.
@@ -184,7 +241,10 @@ pub(crate) fn sync(
 ) -> Result<SyncOutcome> {
     crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
     let _sync_lock = lock(store)?;
-    let origin = origin()?;
+    let origin = match &request.origin {
+        Some(origin) => origin.clone(),
+        None => origin()?,
+    };
     if origin.encrypt_backups {
         bail!("[history.origin] encrypt_backups is not supported yet; set it to false");
     }
@@ -199,22 +259,24 @@ pub(crate) fn sync(
     let mut outcome = SyncOutcome::default();
 
     let result = (|| -> Result<()> {
-        // a branch that vanished from a repository this machine had synced
-        // with is not an empty upstream: reading it as one would queue the
-        // deletion of every file it held
-        let found = remote.fetch_pruning(&origin.branch)?;
-        if !found && status.upstream_commit.is_some() {
-            bail!(
-                "the setup branch `{}` is not at {} any more (renamed, or deleted?); nothing was changed. `mise bootstrap dotfiles origin set {} --branch <name>` follows a renamed branch",
-                origin.branch,
-                origin.url,
-                origin.url
-            );
+        if !request.offline {
+            // a branch that vanished from a repository this machine had
+            // synced with is not an empty upstream: reading it as one would
+            // queue the deletion of every file it held
+            let found = remote.fetch_pruning(&origin.branch)?;
+            if !found && status.upstream_commit.is_some() {
+                bail!(
+                    "the setup branch `{}` is not at {} any more (renamed, or deleted?); nothing was changed. `mise bootstrap dotfiles origin set {} --branch <name>` follows a renamed branch",
+                    origin.branch,
+                    origin.url,
+                    origin.url
+                );
+            }
+            if !found && repo.ref_oid(UPSTREAM_REF)?.is_some() {
+                repo.delete_ref(UPSTREAM_REF)?;
+            }
+            status.last_fetch = Some(hstore::now_rfc3339());
         }
-        if !found && repo.ref_oid(UPSTREAM_REF)?.is_some() {
-            repo.delete_ref(UPSTREAM_REF)?;
-        }
-        status.last_fetch = Some(hstore::now_rfc3339());
         let mut upstream_commit = repo.ref_oid(UPSTREAM_REF)?;
         outcome.fetched_upstream = upstream_commit.clone();
         let repo_state = format::detect(repo, upstream_commit.as_deref())?;
@@ -228,11 +290,13 @@ pub(crate) fn sync(
         }
         // ours is the saved version: save what is live first, so a fresh
         // machine's existing files take part in adoption
-        capture_now(store, tracked);
+        if request.capture {
+            capture_now(store, tracked);
+        }
         let entries = store.list()?;
         let shared = share::current(repo, store, tracked)?;
         let unsaved = unsaved_paths(repo, tracked, &shared)?;
-        let publish = mode.publishes() && !request.fetch_only;
+        let publish = mode.publishes() && !request.fetch_only && !request.offline;
         let mut plans;
         let mut attempts = 0;
         loop {
@@ -353,11 +417,18 @@ pub(crate) fn sync(
         outcome.pending = status.pending_applications.len();
         outcome.conflicts = status.conflicts.len();
         status.last_error = None;
+        status.failing_since = None;
+        status.consecutive_failures = 0;
         status.backoff_until = None;
+        if !request.dry_run {
+            notify_new_conflicts(&mut status);
+        }
         Ok(())
     })();
     if let Err(err) = &result {
         status.last_error = Some(format!("{err:#}"));
+        status.failing_since.get_or_insert_with(hstore::now_rfc3339);
+        status.consecutive_failures = status.consecutive_failures.saturating_add(1);
     }
     if let Err(write_error) = write_status(state_dir, &status) {
         return match result {
@@ -370,10 +441,107 @@ pub(crate) fn sync(
     result.map(|()| outcome)
 }
 
+/// How long a status update waits for a running sync or pull to finish.
+pub(crate) const STATUS_LOCK_WAIT: Duration = Duration::from_secs(5);
+const STATUS_LOCK_POLL: Duration = Duration::from_millis(100);
+
+fn lock_path(state_dir: &Path) -> PathBuf {
+    hstore::store_dir_in(state_dir).join("sync.lock")
+}
+
+/// The sync lock: every reader-then-writer of `sync.json` holds it. A sync
+/// or pull takes it for its whole duration and fails at once when another
+/// holds it.
 pub(crate) fn lock(store: &Store) -> Result<fslock::LockFile> {
-    crate::lock_file::LockFile::new(&hstore::store_dir_in(store.state_dir()).join("sync.lock"))
+    lock_in(store.state_dir())
+}
+
+pub(crate) fn lock_in(state_dir: &Path) -> Result<fslock::LockFile> {
+    crate::lock_file::LockFile::new(&lock_path(state_dir))
         .try_lock()?
         .ok_or_else(|| eyre::eyre!("another setup sync or pull is running; retry shortly"))
+}
+
+/// Changes one thing in `sync.json` under the sync lock, reading the record
+/// again first, so a sync or pull that finished meanwhile is not written
+/// over with an older copy. Waits up to `wait` for a running one;
+/// `Duration::ZERO` tries once.
+pub(crate) fn update_status(
+    state_dir: &Path,
+    wait: Duration,
+    mutate: impl FnOnce(&mut SyncStatus),
+) -> Result<()> {
+    let _lock = lock_wait(state_dir, wait)?;
+    let mut status = read_status(state_dir)?;
+    mutate(&mut status);
+    write_status(state_dir, &status)
+}
+
+pub(crate) fn lock_wait(state_dir: &Path, wait: Duration) -> Result<fslock::LockFile> {
+    let deadline = Instant::now() + wait;
+    loop {
+        if let Some(lock) = crate::lock_file::LockFile::new(&lock_path(state_dir)).try_lock()? {
+            return Ok(lock);
+        }
+        if Instant::now() >= deadline {
+            bail!("another setup sync or pull is running; retry shortly");
+        }
+        std::thread::sleep(STATUS_LOCK_POLL);
+    }
+}
+
+/// A desktop notification for conflicts that newly need a decision, when
+/// `history.notify` is on. Notify once per whole-setup pause, not per path.
+/// Never blocks; a failure is only logged.
+fn notify_new_conflicts(status: &mut SyncStatus) {
+    notify_conflicts_with(
+        status,
+        crate::config::Settings::get().history.notify,
+        crate::system::history::notify::send,
+    );
+}
+
+fn notify_conflicts_with(status: &mut SyncStatus, enabled: bool, send: impl FnOnce(&str, &str)) {
+    let current: BTreeSet<String> = status
+        .conflicts
+        .iter()
+        .map(|conflict| conflict.branch_path.clone())
+        .collect();
+    if !current.is_empty() && !status.conflict_pause_observed && enabled {
+        let roots = Roots::current();
+        let lines: Vec<String> = status
+            .conflicts
+            .iter()
+            .take(1)
+            .map(|conflict| {
+                let path = roots
+                    .locate(&conflict.branch_path)
+                    .path()
+                    .map(display_path)
+                    .unwrap_or_else(|| conflict.branch_path.clone());
+                let mut chars = path.chars().filter(|ch| !ch.is_control());
+                let mut path: String = chars.by_ref().take(80).collect();
+                if chars.next().is_some() {
+                    path.push('…');
+                }
+                path
+            })
+            .collect();
+        let more = current.len().saturating_sub(1);
+        let body = if more > 0 {
+            let noun = if more == 1 { "file" } else { "files" };
+            format!("{} and {more} other {noun}", lines.join(""))
+        } else {
+            lines.join("\n")
+        };
+        send(
+            "mise: dotfile sync paused",
+            &format!(
+                "Conflicting changes in {body}.\nLocal saves still work. For resolution steps, run:\nmise bootstrap dotfiles status"
+            ),
+        );
+    }
+    status.conflict_pause_observed = !current.is_empty();
 }
 
 /// Saves the tracked set now (deduplicated against the newest checkpoint),
@@ -627,19 +795,26 @@ pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -
 /// A bootstrap finished: the declarations that arrived through sync are
 /// applied now, so `status` stops asking for one.
 pub(crate) fn bootstrap_completed() {
+    if !crate::config::Settings::get().experimental {
+        return;
+    }
     let state_dir: &Path = &crate::dirs::STATE;
-    let mut status = match read_status(state_dir) {
+    let status = match read_status(state_dir) {
         Ok(status) => status,
         Err(err) => {
             warn!("history: could not record that the bootstrap ran: {err:#}");
             return;
         }
     };
-    if status.declarations_changed {
+    if !status.declarations_changed {
+        return;
+    }
+    // under the sync lock, changing only this: a sync that finished during
+    // the bootstrap keeps its conflicts, pending changes, and uploads
+    if let Err(err) = update_status(state_dir, STATUS_LOCK_WAIT, |status| {
         status.declarations_changed = false;
-        if let Err(err) = write_status(state_dir, &status) {
-            debug!("history: could not record that the bootstrap ran: {err}");
-        }
+    }) {
+        debug!("history: could not record that the bootstrap ran: {err}");
     }
 }
 
@@ -681,4 +856,138 @@ fn unsaved_paths(
         }
     }
     Ok(unsaved)
+}
+
+#[cfg(test)]
+mod notification_tests {
+    use super::*;
+
+    fn conflict(path: &str) -> Conflict {
+        Conflict {
+            branch_path: path.into(),
+            kind: reconcile::ConflictKind::SameHunk,
+            local: None,
+            remote: None,
+            base: None,
+        }
+    }
+
+    #[test]
+    fn one_notification_per_pause_and_another_after_recovery() {
+        let mut status = SyncStatus {
+            conflicts: vec![conflict("tracked/home/.zshrc")],
+            ..Default::default()
+        };
+        let mut calls = 0;
+        notify_conflicts_with(&mut status, true, |title, body| {
+            assert!(title.contains("dotfile sync paused"));
+            assert!(body.contains(".zshrc"));
+            calls += 1;
+        });
+        status.conflicts.push(conflict("tracked/home/.gitconfig"));
+        notify_conflicts_with(&mut status, true, |_, _| calls += 1);
+        status.conflicts.remove(0);
+        notify_conflicts_with(&mut status, true, |_, _| calls += 1);
+        assert_eq!(calls, 1);
+        status.conflicts.clear();
+        notify_conflicts_with(&mut status, true, |_, _| calls += 1);
+        assert!(!status.conflict_pause_observed);
+        status.conflicts.push(conflict("tracked/home/.gitconfig"));
+        notify_conflicts_with(&mut status, true, |_, _| calls += 1);
+        assert_eq!(calls, 2);
+    }
+
+    #[test]
+    fn notification_keeps_the_action_visible_for_long_or_unusual_paths() {
+        let mut status = SyncStatus {
+            conflicts: vec![
+                conflict(&format!("tracked/home/\n{}", "x".repeat(200))),
+                conflict("tracked/home/.gitconfig"),
+            ],
+            ..Default::default()
+        };
+        notify_conflicts_with(&mut status, true, |_, body| {
+            assert!(body.contains("… and 1 other file"));
+            assert!(body.contains("Local saves still work."));
+            assert!(body.ends_with("mise bootstrap dotfiles status"));
+            assert_eq!(body.lines().count(), 3);
+            assert!(body.chars().count() < 250);
+        });
+    }
+
+    #[test]
+    fn explicit_opt_out_is_preserved() {
+        let mut status = SyncStatus {
+            conflicts: vec![conflict("tracked/home/.zshrc")],
+            ..Default::default()
+        };
+        notify_conflicts_with(&mut status, false, |_, _| panic!("notifications disabled"));
+        assert!(status.conflict_pause_observed);
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    fn conflict() -> Conflict {
+        Conflict {
+            branch_path: "tracked/home/.zshrc".to_string(),
+            kind: reconcile::ConflictKind::SameHunk,
+            local: None,
+            remote: None,
+            base: None,
+        }
+    }
+
+    #[test]
+    fn omitted_failure_fields_default_to_no_failures() {
+        let status: SyncStatus = serde_json::from_str("{}").unwrap();
+        assert_eq!(status.failing_since, None);
+        assert_eq!(status.consecutive_failures, 0);
+        let text = serde_json::to_string(&status).unwrap();
+        assert!(!text.contains("consecutive_failures"));
+    }
+
+    #[test]
+    fn an_update_changes_only_its_field_in_the_current_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state_dir = tmp.path();
+        let mut status = SyncStatus {
+            declarations_changed: true,
+            last_error: Some("unreachable".to_string()),
+            ..Default::default()
+        };
+        write_status(state_dir, &status).unwrap();
+        // a sync finishes meanwhile and records a conflict: the update reads
+        // that record, not the one it started from
+        status.conflicts.push(conflict());
+        write_status(state_dir, &status).unwrap();
+        update_status(state_dir, Duration::ZERO, |status| {
+            status.declarations_changed = false;
+        })
+        .unwrap();
+        let current = read_status(state_dir).unwrap();
+        assert!(!current.declarations_changed);
+        assert_eq!(current.conflicts.len(), 1);
+        assert_eq!(current.last_error.as_deref(), Some("unreachable"));
+    }
+
+    #[test]
+    fn an_update_gives_way_to_a_running_sync() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state_dir = tmp.path();
+        std::fs::create_dir_all(hstore::store_dir_in(state_dir)).unwrap();
+        let held = lock_in(state_dir).unwrap();
+        let err = update_status(state_dir, Duration::ZERO, |status| {
+            status.declarations_changed = false;
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("another setup sync or pull"));
+        drop(held);
+        update_status(state_dir, Duration::ZERO, |status| {
+            status.declarations_changed = false;
+        })
+        .unwrap();
+    }
 }

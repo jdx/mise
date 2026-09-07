@@ -19,6 +19,11 @@ use crate::system::history::sync::apply::{self, ApplyRequest};
 /// local history and fetching continue. Decisions are recorded per path
 /// with `--take-remote` or `--keep-local`; sharing resumes only after all
 /// conflicts are resolved and the plan has been recomputed.
+///
+/// In `sync` mode the watcher pulls conflict-free setups on its
+/// own; this command writes what is pending right now and decides
+/// conflicts. When an incoming configuration declares more tracked files,
+/// their shared versions follow in the same run.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesPull {
@@ -62,9 +67,12 @@ impl DotfilesPull {
                 yes: self.yes,
                 take_remote: self.take_remote.clone(),
                 keep_local: self.keep_local.clone(),
+                automatic: false,
+                plan_only: false,
             },
         )
-        .await
+        .await?;
+        Ok(())
     }
 }
 

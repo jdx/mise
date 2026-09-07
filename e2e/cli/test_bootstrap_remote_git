@@ -56,11 +56,18 @@ while test "$#" -gt 0; do
       esac
       export HOME="$FAKE_REMOTE_BASE/$destination"
       export MISE_CONFIG_DIR="$HOME/.config/mise"
-      export MISE_GLOBAL_CONFIG_FILE="$MISE_CONFIG_DIR/config.toml"
+      unset MISE_GLOBAL_CONFIG_FILE
+      if test "$destination" = explicit-global; then
+        export MISE_GLOBAL_CONFIG_FILE="$MISE_CONFIG_DIR/config.toml"
+      fi
       export MISE_DATA_DIR="$HOME/.local/share/mise"
       export MISE_CACHE_DIR="$HOME/.cache/mise"
+      export XDG_STATE_HOME="$HOME/.local/state"
+      export MISE_STATE_DIR="$HOME/.local/state/mise"
       unset MISE_GITHUB_TOKEN MISE_GITHUB_API_TOKEN GITHUB_TOKEN GH_TOKEN
+      unset MISE_EXPERIMENTAL MISE_BOOTSTRAP_REMOTE_EXPERIMENTAL
       mkdir -p "$MISE_CONFIG_DIR"
+      cd "$HOME" || exit 1
       exec sh -c "$1"
       ;;
   esac
@@ -71,6 +78,16 @@ export PATH="$PWD/fakebin:$PATH"
 
 mkdir -p remotes/one/.config/mise
 echo '# machine local' >remotes/one/.config/mise/config.local.toml
+# A dry run connects, inspects, and says what it would do without writing the
+# checkout (a clone on an empty host, an adoption on one with files already);
+# the bootstrap that follows is previewed too.
+assert_contains "mise bootstrap remote --host two --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --dry-run 2>&1" 'Would clone'
+assert_contains "cat '$SSH_LOG'" '--repository-dry-run'
+assert_contains "cat '$SSH_LOG'" 'bootstrap --dry-run'
+test ! -e remotes/two/.config/mise/.git
+assert_contains "mise bootstrap remote --host one --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --dry-run 2>&1" 'Would adopt'
+test ! -e remotes/one/.config/mise/.git
+assert "cat remotes/one/.config/mise/config.local.toml" '# machine local'
 mise bootstrap remote --host one --host two --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes
 assert "git -C remotes/one/.config/mise rev-parse HEAD" "$first_revision"
 assert "git -C remotes/two/.config/mise rev-parse HEAD" "$first_revision"
@@ -85,12 +102,17 @@ git -C seed -c core.hooksPath=/dev/null commit -m second
 second_revision=$(git -C seed rev-parse HEAD)
 mise bootstrap remote --host one --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes
 assert "git -C remotes/one/.config/mise rev-parse HEAD" "$first_revision"
+# an update is previewed against the existing checkout without moving it
+assert_contains "mise bootstrap remote --host one --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --update --dry-run 2>&1" 'Would fast-forward'
+assert "git -C remotes/one/.config/mise rev-parse HEAD" "$first_revision"
+assert_fail "git -C remotes/one/.config/mise cat-file -e $second_revision^{commit}"
 mise bootstrap remote --host one --from-git "$source_repo" --remote-mise "$binary" --only dotfiles --yes --update
 assert "git -C remotes/one/.config/mise rev-parse HEAD" "$second_revision"
 assert "git -C remotes/one/.config/mise rev-parse '@{upstream}'" "$second_revision"
 assert "cat remotes/one/.config/mise/config.local.toml" '# machine local'
 echo '# dirty' >>remotes/one/.config/mise/config.toml
 assert_fail "mise bootstrap remote --host one --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --update" 'uncommitted changes'
+assert_fail "mise bootstrap remote --host one --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --update --dry-run" 'uncommitted changes'
 
 # A failed forwarding request must prevent bootstrap and close the owned master.
 assert_fail "MISE_GITHUB_TOKEN=fake-local-relay-token mise bootstrap remote --host two --from-git '$source_repo' --remote-mise '$binary' --only dotfiles --yes --github-relay-read-only --github-relay-repo owner/repo" 'forwarding failed'
@@ -183,6 +205,32 @@ trap 'kill "$redirect_pid" 2>/dev/null || true' EXIT
 wait_for_file redirect-port 'HTTPS redirect fixture' 10 "$redirect_pid"
 # This test certificate is self-signed; disable verification only for this fixture.
 assert_fail "GIT_SSL_NO_VERIFY=1 mise bootstrap remote --host redirect --from-git 'https://127.0.0.1:$(cat redirect-port)/repo' --remote-mise '$binary' --yes" 'could not fetch setup repository'
+
+# Explicit remote opt-in survives the session only after tracking setup.
+export MISE_EXPERIMENTAL=1
+git init -q --bare -b main "$PWD/tracked-origin.git"
+printf 'tracked contents\n' >~/.remote-tracked
+assert_succeed 'mise bootstrap dotfiles track ~/.remote-tracked'
+assert_succeed "mise bootstrap dotfiles origin set file://$PWD/tracked-origin.git --sync manual --yes"
+assert_succeed 'mise bootstrap dotfiles sync'
+# Local tracked files must not make an unrelated source archive experimental.
+assert_succeed "mise bootstrap remote --host ordinary-source --source seed --remote-mise '$binary' --only dotfiles --yes"
+calls=$(wc -l <"$SSH_LOG" | tr -d ' ')
+assert_fail "mise bootstrap remote --host tracked --from-git file://$PWD/tracked-origin.git --remote-mise '$binary' --only dotfiles --yes" '--experimental'
+assert "wc -l <'$SSH_LOG' | tr -d ' '" "$calls"
+assert_succeed "mise bootstrap remote --experimental --host tracked --from-git file://$PWD/tracked-origin.git --remote-mise '$binary' --only dotfiles --dry-run"
+assert_fail 'test -f remotes/tracked/.config/mise/config.local.toml'
+assert_succeed "MISE_EXPERIMENTAL=0 mise bootstrap remote --experimental --host tracked --from-git file://$PWD/tracked-origin.git --remote-mise '$binary' --only dotfiles --yes"
+assert_contains 'cat remotes/tracked/.config/mise/config.local.toml' 'experimental = true'
+assert 'cat remotes/tracked/.remote-tracked' 'tracked contents'
+assert_contains 'cat remotes/tracked/.config/mise/config.local.toml' '[history.origin]'
+assert "ssh tracked '$binary settings get experimental'" 'true'
+assert_fail "mise bootstrap remote --experimental --host explicit-global --from-git file://$PWD/tracked-origin.git --remote-mise '$binary' --only dotfiles --yes" 'MISE_GLOBAL_CONFIG_FILE bypasses'
+assert_not_contains 'cat remotes/explicit-global/.config/mise/config.local.toml' 'experimental = true'
+mkdir -p remotes/conflicted
+printf 'keep my edit\n' >remotes/conflicted/.remote-tracked
+assert_fail "mise bootstrap remote --experimental --host conflicted --from-git file://$PWD/tracked-origin.git --remote-mise '$binary' --only dotfiles --yes"
+assert_not_contains 'cat remotes/conflicted/.config/mise/config.local.toml' 'experimental = true'
 test -f redirect-requested
 test ! -e redirect-followed
 kill "$redirect_pid"

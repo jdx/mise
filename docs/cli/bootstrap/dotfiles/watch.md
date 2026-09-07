@@ -15,6 +15,14 @@ reconciles the whole set at startup, every `history.watch.reconcile`,
 and when the configuration changes. Manual-save entries are never
 watched.
 
+With a connected setup repository the watcher also synchronizes per
+`settings.history.sync`: in `sync` mode it publishes within
+`history.sync_interval` after a save, fetches every
+`history.fetch_interval`, and applies incoming changes once the complete setup is conflict-free;
+in `fetch-only` mode it only fetches; in `manual` mode it does nothing
+on the network. A failed sync backs off and is retried while saving
+continues. `--once` runs one reconcile and one such synchronization.
+
 The `history-watch` built-in service runs this for you:
 
 ```
@@ -29,7 +37,7 @@ the pending changes; one that would overlap another history operation
 is deferred.
 
 ## Flags
-- **`--once`** — Reconcile once and exit (for timers and cron)
+- **`--once`** — Reconcile and synchronize once and exit (for timers and cron)
 - **`-J --json`** — One JSON object per line instead of log lines
 - **`-h --help`** — Print help
 

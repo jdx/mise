@@ -305,7 +305,7 @@ mise configuration directory:
 
 ```sh
 # Authenticate on this machine first (for example, using gh auth login).
-mise bootstrap remote --host devbox --from-git jdx/dotfiles \
+mise bootstrap remote --experimental --host devbox --from-git jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles
 ```
 
@@ -329,16 +329,50 @@ An existing matching checkout is reused unless `--update` requests a safe
 fast-forward. Dirty checkouts, mismatched origins, conflicting files, and source
 files ending in `.local.toml` require manual resolution. A nonempty non-Git
 directory can be adopted after confirmation: existing files and local overrides
-are preserved. With `--from-git`, `--dry-run` only reports the proposed operation;
-it does not fetch the source, open an SSH session, inspect the target, or create
-temporary staging. Dirty checkouts, mismatched origins, and adoption conflicts
-are therefore detected only during a real apply. By contrast, `--source .
---dry-run` connects to and inspects the target without applying persistent
-changes.
+are preserved. With `--from-git`, `--dry-run` previews the whole operation the
+way `--source . --dry-run` does: the revision is fetched locally, the target is
+connected to, mise and the bundle are staged, and the target runs every check
+(dirty checkout, mismatched origin, adoption conflicts, `.local.toml` files) and
+says what it would do: clone, fast-forward, or adopt with the number of new
+files. When a global configuration already exists on the target, the bootstrap
+that follows is previewed with `--dry-run` too. Nothing persistent is written
+and the staging directory is removed.
 
 `--from-git` uses the repository instead of the inventory's archive source and
 copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and
 `--exclude` flags cannot be combined with it.
+
+A **setup repository** (one connected with `mise bootstrap dotfiles origin set`,
+carrying `.mise-history/format.toml`) is set up from rather than checked out:
+the remote host fetches the transferred branch into its own history store,
+writes the shared configuration and this machine's tracked files with a
+recoverable pull, records the connection, and the bootstrap that follows
+installs the history watcher like any other user service. With `--dry-run` the
+target shows that plan (the files it would write, and any held for a decision),
+records no connection, and keeps no fetched branch:
+
+Tracking-enabled setup repositories require `--experimental`. This explicitly
+enables experimental features for the remote invocation and, after successful
+tracking setup, saves the opt-in in the target's machine-local mise configuration
+so its watcher can keep running. Dry runs do not persist it. Enabling experimental
+locally alone does not opt in the remote host. Ordinary repository-based bootstrap
+does not require the flag.
+
+The target must allow machine-local configuration discovery. If it sets
+`MISE_GLOBAL_CONFIG_FILE` to a different file, unset that override before setup;
+mise refuses to save an opt-in in a file that subsequent sessions would ignore.
+
+```sh
+mise bootstrap remote --experimental --host devbox --install-mise --from-git jdx/dotfiles \
+  --github-relay-read-only --github-relay-repo jdx/dotfiles
+```
+
+The borrowed GitHub access is read-only and ends with the session: the remote
+host can fetch through it but never publish. When the setup succeeded but the
+host cannot reach the repository on its own afterwards, the bootstrap says
+so; give the host credentials of its own for ongoing synchronization
+(`mise x gh -- gh auth login` and `mise x gh -- gh auth setup-git` there, or
+an SSH url through `mise bootstrap dotfiles origin set`).
 
 The relay is separate from this initial transfer. Enable it when bootstrap needs
 additional private GitHub content, authorizing each required repository with a
@@ -401,7 +435,7 @@ mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
   --github-relay-log-requests --github-relay-max-duration 1h
 
 # Structured relay events for troubleshooting or auditing:
-mise bootstrap remote --host devbox --from-git jdx/dotfiles \
+mise bootstrap remote --experimental --host devbox --from-git jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles \
   --github-relay-log-requests --github-relay-log-format jsonl
 ```

@@ -649,6 +649,9 @@ struct BootstrapComposeStatus {
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapRemote {
+    /// Enable experimental features on the target; retain opt-in after tracking setup
+    #[usage(long)]
+    experimental: bool,
     /// Install a Git repository as persistent global configuration on each target
     #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = ["source", "copy_link", "copy_links", "exclude"])]
     from_git: Option<String>,
@@ -1654,6 +1657,13 @@ impl Bootstrap {
             }
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PostDotfiles)
                 .await?;
+            if !self.dry_run
+                && files
+                    .iter()
+                    .any(|file| file.mode == system::files::FileMode::Track)
+            {
+                system::remote::persist_experimental_opt_in()?;
+            }
         }
 
         if skip.contains(&BootstrapPart::Shell) {
@@ -1864,6 +1874,36 @@ impl Bootstrap {
             .as_deref()
             .map(crate::github_relay::expand_repository)
             .transpose()?;
+        // a history-managed setup repository is not cloned into the
+        // configuration directory: its branch goes into mise's own store and
+        // its files are written by the same recoverable pull as any other
+        // incoming change; the ordinary bootstrap then runs from them
+        if let Some(url) = expanded.as_deref()
+            && let Some(outcome) =
+                system::history::sync::onboard::from_git(url, self.yes, self.dry_run).await?
+        {
+            if self.dry_run {
+                if let Some(preview) = outcome.preview_config.as_ref() {
+                    self.run_child_bootstrap(preview.path().to_path_buf())
+                        .await?;
+                }
+                return Ok(());
+            }
+            // the configuration that arrived is what to bootstrap from; one
+            // held for a decision leaves the existing one, whose tasks and
+            // installations are not what was asked for
+            if outcome.configuration_held {
+                bail!(
+                    "the configuration from {url} waits for a decision (a differing one is here already); nothing was bootstrapped. `mise bootstrap dotfiles status` lists it, `mise bootstrap dotfiles pull --take-remote|--keep-local <path>` decides, then run `mise bootstrap`"
+                );
+            }
+            let config_dir = system::history::tracked::global_config_dir();
+            self.run_child_bootstrap(config_dir).await?;
+            if !outcome.durable_access {
+                warn!("ongoing synchronization still needs credentials on this host (see above)");
+            }
+            return Ok(());
+        }
         let (url, checkout) = if let Some(url) = expanded.as_deref() {
             let checkout = crate::env::MISE_GLOBAL_CONFIG_FILE
                 .as_deref()
@@ -1921,6 +1961,12 @@ impl Bootstrap {
             return Ok(());
         }
 
+        self.run_child_bootstrap(checkout).await
+    }
+
+    /// Runs the bootstrap itself as a child process from `checkout` (the
+    /// global configuration directory for `--from-git`), trusted for it.
+    async fn run_child_bootstrap(&self, checkout: PathBuf) -> Result<()> {
         let checkout = dunce::canonicalize(&checkout)?;
         let mut command = Command::new(std::env::current_exe()?);
         command.args(bootstrap_from_child_args(
@@ -1928,19 +1974,28 @@ impl Bootstrap {
             &crate::env::ARGS.read().unwrap(),
         ));
         if self.from_git.is_some() {
-            let config_dir = crate::env::MISE_CONFIG_DIR.as_path();
-            let config_dir = if config_dir.is_absolute() {
-                config_dir.to_path_buf()
+            if self.dry_run {
+                command.env("MISE_CONFIG_DIR", &checkout);
+                let name = crate::env::MISE_GLOBAL_CONFIG_FILE
+                    .as_deref()
+                    .and_then(Path::file_name)
+                    .unwrap_or(std::ffi::OsStr::new("config.toml"));
+                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(name));
             } else {
-                std::env::current_dir()?.join(config_dir)
-            };
-            command.env("MISE_CONFIG_DIR", config_dir);
+                let config_dir = crate::env::MISE_CONFIG_DIR.as_path();
+                let config_dir = if config_dir.is_absolute() {
+                    config_dir.to_path_buf()
+                } else {
+                    std::env::current_dir()?.join(config_dir)
+                };
+                command.env("MISE_CONFIG_DIR", config_dir);
 
-            if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
-                .as_deref()
-                .and_then(Path::file_name)
-            {
-                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
+                if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
+                    .as_deref()
+                    .and_then(Path::file_name)
+                {
+                    command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
+                }
             }
         }
 
@@ -3051,6 +3106,7 @@ impl BootstrapRemote {
             bootstrap_command: self.bootstrap_command,
         };
         let options = system::remote::RemoteRunOptions {
+            experimental: self.experimental,
             relay,
             dry_run: self.dry_run,
             yes: self.yes,
@@ -3083,16 +3139,9 @@ impl BootstrapRemote {
             .transpose()?;
         if let Some(origin) = &repository {
             system::remote_repository::validate_origin(origin)?;
-            if self.dry_run {
-                for host in selected.values() {
-                    miseprintln!(
-                        "Would fetch one revision of {origin} locally, transfer it to {}, preview adoption/update of the persistent global configuration, and bootstrap there",
-                        host.name
-                    );
-                }
-                return Ok(());
-            }
         }
+        // a dry run fetches and transfers like a real one: the preview comes
+        // from the target, which inspects itself and the repository
         let repository = if let Some(origin) = repository {
             Some(
                 system::remote::interruptible(system::remote_repository::Source::fetch(origin))
@@ -3102,6 +3151,15 @@ impl BootstrapRemote {
             None
         };
         let mut artifacts = system::remote::RemoteArtifactResolver::default();
+        if !options.experimental
+            && let Some(repository) = &repository
+            && system::remote_repository::history_branch(&repository.bundle, &repository.revision)?
+                .is_some()
+        {
+            bail!(
+                "remote dotfile tracking requires explicit opt-in: pass `mise bootstrap remote --experimental`"
+            );
+        }
         for host in selected.values() {
             if let Err(error) =
                 system::remote::run(host, &options, &mut artifacts, repository.as_ref()).await

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# A reload of the watcher's configuration (here: the periodic reconcile, every
+# second) keeps the pending publication and fetch deadlines instead of
+# rebuilding the plan, so a save is published within its sync interval even
+# though reconciliation runs more often than that.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+wait_until() {
+  local tries=$1
+  shift
+  for _ in $(seq 1 "$tries"); do
+    if eval "$1" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "timed out waiting for: $1" >&2
+  cat a.log >&2 2>/dev/null
+  return 1
+}
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+
+# reconcile far more often than the publication delay; the first fetch would
+# only come after 15 seconds, so a publication seen sooner is the save's own
+export MISE_HISTORY_SYNC_INTERVAL=3s MISE_HISTORY_FETCH_INTERVAL=30s
+export MISE_HISTORY_WATCH_DEBOUNCE=1s MISE_HISTORY_WATCH_RECONCILE=1s
+
+mkdir -p ~/.config/hypr
+echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --name laptop --yes"
+mise bootstrap dotfiles watch --json >a.log 2>&1 &
+a_watcher=$!
+cleanup() {
+  kill "$a_watcher" 2>/dev/null || true
+  wait "$a_watcher" 2>/dev/null || true
+}
+trap cleanup EXIT
+wait_until 150 "grep -q '\"event\":\"started\"' a.log"
+
+# the edit is saved after the debounce and published within the sync
+# interval: well under the 15-second first fetch, reconcile ticks or not
+echo 'bind = SUPER, Q, exec, alacritty' >~/.config/hypr/bindings.lua
+wait_until 50 "git --git-dir=$origin show main:tracked/home/.config/hypr/bindings.lua | grep -q alacritty"
+# The remote ref becomes visible before the sync's remaining work and its
+# completion event finish. Wait for the event rather than racing that work.
+wait_until 50 "grep -q '\"published\":\"' a.log"
+# reconciliation did run meanwhile (each tick reloads the configuration)
+assert "grep -c '\"reason\":\"reconcile\"' a.log | awk '{print (\$1 >= 2) ? \"yes\" : \"no\"}'" "yes"

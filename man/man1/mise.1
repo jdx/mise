@@ -1839,6 +1839,11 @@ Conflicts pause both publication and application for the whole setup;
 local history and fetching continue. Decisions are recorded per path
 with `\-\-take\-remote` or `\-\-keep\-local`; sharing resumes only after all
 conflicts are resolved and the plan has been recomputed.
+
+In `sync` mode the watcher pulls conflict\-free setups on its
+own; this command writes what is pending right now and decides
+conflicts. When an incoming configuration declares more tracked files,
+their shared versions follow in the same run.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles pull [OPTIONS] [<PATH>] ...
 .PP
@@ -1981,6 +1986,9 @@ head; a rejection fetches again and retries), uploads eligible
 checkpoints, and records incoming changes to apply and conflicts to
 decide. Live files are never changed here: `mise bootstrap dotfiles pull` does
 that. In `fetch\-only` mode nothing is published.
+
+The history watcher does this on its own in `sync` and `fetch\-only` mode
+(`settings.history.sync`); this command is for right now.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles sync [OPTIONS]
 .PP
@@ -2133,6 +2141,14 @@ reconciles the whole set at startup, every `history.watch.reconcile`,
 and when the configuration changes. Manual\-save entries are never
 watched.
 
+With a connected setup repository the watcher also synchronizes per
+`settings.history.sync`: in `sync` mode it publishes within
+`history.sync_interval` after a save, fetches every
+`history.fetch_interval`, and applies incoming changes once the complete setup is conflict\-free;
+in `fetch\-only` mode it only fetches; in `manual` mode it does nothing
+on the network. A failed sync backs off and is retried while saving
+continues. `\-\-once` runs one reconcile and one such synchronization.
+
 The `history\-watch` built\-in service runs this for you:
 
     [bootstrap.services.mise\-history]
@@ -2150,7 +2166,7 @@ is deferred.
 .PP
 .TP
 \fB\-\-once\fR
-Reconcile once and exit (for timers and cron)
+Reconcile and synchronize once and exit (for timers and cron)
 .TP
 \fB\-J, \-\-json\fR
 One JSON object per line instead of log lines
@@ -2857,6 +2873,9 @@ installs persistent global configuration; preview that choice with `\-\-dry\-run
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-\-experimental\fR
+Enable experimental features on the target; retain opt\-in after tracking setup
 .TP
 \fB\-\-from\-git\fR \fI<GIT_URL|OWNER/REPO>\fR
 Install a Git repository as persistent global configuration on each target
@@ -6648,6 +6667,11 @@ Internal session adapter
 \fB\-\-repository\-update\fR
 .TP
 \fB\-\-repository\-yes\fR
+.TP
+\fB\-\-repository\-dry\-run\fR
+Preview the transferred repository's installation without writing it
+.TP
+\fB\-\-repository\-preview\-directory\fR \fI<REPOSITORY_PREVIEW_DIRECTORY>\fR
 .TP
 \fB\-\-global\-config\-directory\fR
 .TP

@@ -75,6 +75,19 @@ As with `--from`, an existing non-empty destination must be a git checkout
 whose `origin` exactly matches the requested URL; pass `--update` to
 fast-forward it before bootstrap.
 
+If the repository is a mise **setup repository** (one connected with
+`mise bootstrap dotfiles origin set`, recognizable by its
+`.mise-history/format.toml`), `--from-git` sets the machine up from it
+instead of cloning it: the branch is fetched into mise's own history store,
+the shared configuration, the sources it references, and this machine's
+tracked files are written by the same recoverable pull as any other incoming
+change (a file that already exists and differs is held for a decision, never
+overwritten; `--dry-run` shows the plan), the connection is remembered for
+the history watcher, and the ordinary bootstrap then runs from the
+configuration that arrived. Nothing is cloned into `$MISE_CONFIG_DIR`, and an
+existing checkout there is not converted. See [history](/history.html) for
+what happens next.
+
 ## How it runs
 
 `mise bootstrap` runs the steps below in order.
@@ -301,6 +314,10 @@ The `pre-dotfiles` and `post-dotfiles` phases also wrap
 `mise bootstrap dotfiles apply`.
 
 ## Common workflows
+
+The whole path from installing mise to a second machine that shares the
+same setup, with the output each step prints, is
+[Set up a machine](/bootstrap/setup.html).
 
 ### New machine
 

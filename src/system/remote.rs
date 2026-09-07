@@ -115,6 +115,7 @@ pub(crate) struct RemoteOverrides {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RemoteRunOptions {
+    pub experimental: bool,
     pub relay: Option<crate::github_relay::Scope>,
     pub dry_run: bool,
     pub yes: bool,
@@ -133,6 +134,35 @@ pub(crate) struct RemoteArtifactResolver {
     manifest: Option<ReleaseManifest>,
     artifacts: IndexMap<String, PathBuf>,
     official_local_verified: bool,
+}
+
+/// Retain an explicitly forwarded opt-in only after tracked setup succeeds.
+/// The machine-local file is not part of the shared setup configuration.
+pub(crate) fn persist_experimental_opt_in() -> Result<()> {
+    if std::env::var("MISE_BOOTSTRAP_REMOTE_EXPERIMENTAL").as_deref() != Ok("1") {
+        return Ok(());
+    }
+    let path = crate::cli::dotfiles::track::declaration_file(true)?;
+    if let Some(selected) = std::env::var_os("MISE_GLOBAL_CONFIG_FILE")
+        && Path::new(&selected) != path
+    {
+        bail!(
+            "cannot retain remote experimental opt-in: MISE_GLOBAL_CONFIG_FILE bypasses config.local.toml; unset it on the target and rerun with --experimental"
+        );
+    }
+    let mut document = crate::cli::dotfiles::track::read_document(&path)?;
+    let settings = document
+        .entry("settings")
+        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    let settings = settings
+        .as_table_mut()
+        .ok_or_else(|| eyre::eyre!("[settings] must be a table in {}", path.display()))?;
+    settings.insert("experimental", toml_edit::value(true));
+    if let Some(parent) = path.parent() {
+        crate::file::create_dir_all(parent)?;
+    }
+    crate::file::write(&path, document.to_string())?;
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -518,6 +548,19 @@ async fn finish_session(
     result
 }
 
+/// Whether a directory exists on the target (a dry run wrote nothing, so the
+/// configuration directory the helper reported may not be there).
+async fn remote_directory_exists(session: &SshSession<'_>, path: &str) -> Result<bool> {
+    let output = session
+        .output_async(&[
+            "sh",
+            "-c",
+            &format!("test -d {} && echo yes || echo no", shell_quote(path)),
+        ])
+        .await?;
+    Ok(output.trim() == "yes")
+}
+
 fn staging_creation_script() -> &'static str {
     r#"set -eu
 staging=$(mktemp -d /tmp/mise-bootstrap.XXXXXXXXXX)
@@ -543,6 +586,15 @@ async fn run_staged(
     repository: Option<&super::remote_repository::Source>,
 ) -> Result<()> {
     let project = format!("{staging}/project");
+    let preview_setup = options.dry_run
+        && match repository {
+            Some(repository) => {
+                super::remote_repository::history_branch(&repository.bundle, &repository.revision)?
+                    .is_some()
+            }
+            None => false,
+        };
+    let preview_directory = format!("{staging}/preview");
     session
         .status_async(&["mkdir", "-p", &project], false)
         .await?;
@@ -564,6 +616,7 @@ async fn run_staged(
             )
             .await?;
         let mut install = vec![
+            "env",
             mise.as_str(),
             "ssh",
             "--repository-bundle",
@@ -573,11 +626,28 @@ async fn run_staged(
             "--repository-revision",
             &repository.revision,
         ];
+        if options.experimental {
+            install.splice(
+                1..1,
+                [
+                    "MISE_EXPERIMENTAL=1",
+                    "MISE_BOOTSTRAP_REMOTE_EXPERIMENTAL=1",
+                ],
+            );
+        }
         if options.update {
             install.push("--repository-update");
         }
         if options.yes {
             install.push("--repository-yes");
+        }
+        // the whole operation previews: the helper inspects the target and the
+        // repository and says what it would write, before the bootstrap preview
+        if options.dry_run {
+            install.push("--repository-dry-run");
+        }
+        if preview_setup {
+            install.extend(["--repository-preview-directory", &preview_directory]);
         }
         // The helper uses the target's XDG/global-config environment. Only its
         // absolute result, never the staging directory, becomes trusted config.
@@ -590,7 +660,25 @@ async fn run_staged(
             bail!("invalid remote global configuration path");
         }
         session.status_async(&install, true).await?;
-        path
+        if options.dry_run && !preview_setup && !remote_directory_exists(session, &path).await? {
+            // nothing was written, so there is no configuration to preview the
+            // bootstrap against yet
+            miseprintln!(
+                "Would then run `mise bootstrap --dry-run` in {path} on {} once the configuration exists there",
+                session.host.name
+            );
+            if options.relay.is_some() {
+                info!(
+                    "borrowed GitHub access has ended; future private updates require remote credentials or another relay-enabled session"
+                );
+            }
+            return Ok(());
+        }
+        if preview_setup {
+            preview_directory
+        } else {
+            path
+        }
     } else {
         project
     };
@@ -599,6 +687,16 @@ async fn run_staged(
         format!("MISE_TRUSTED_CONFIG_PATHS={project}"),
     ];
     argv.push(format!("MISE_ENV={}", session.host.mise_env.join(",")));
+    if preview_setup {
+        argv.push(format!("MISE_CONFIG_DIR={project}"));
+        argv.push(format!("MISE_GLOBAL_CONFIG_FILE={project}/config.toml"));
+    }
+    if options.experimental {
+        argv.extend([
+            "MISE_EXPERIMENTAL=1".into(),
+            "MISE_BOOTSTRAP_REMOTE_EXPERIMENTAL=1".into(),
+        ]);
+    }
     #[cfg(unix)]
     if relay.is_some() {
         argv.extend([

@@ -1121,6 +1121,11 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "describe_command": {
+              "default": "",
+              "description": "A command that names checkpoints the watcher saves (an agent, say): it gets one JSON object on stdin (uuid, trigger, the computed description, the changed paths that are not private, and a unified diff of the changed files that are backed up, at most 64 KiB) and prints one line of at most 200 characters, which becomes the description. Empty: computed descriptions only.",
+              "type": "string"
+            },
             "enabled": {
               "default": true,
               "description": "Record experimental configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save. Requires experimental = true.",
@@ -1148,9 +1153,14 @@
                 }
               }
             },
+            "notify": {
+              "default": true,
+              "description": "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync.",
+              "type": "boolean"
+            },
             "sync": {
               "default": "sync",
-              "description": "How a connected setup repository is used: `sync` publishes, fetches, and queues nonconflicting incoming changes for application; `fetch-only` only downloads; `manual` publishes and fetches but never applies by itself. `mise bootstrap dotfiles pull` writes queued changes.",
+              "description": "What the history watcher does with a connected setup repository on its own: `sync` publishes after saves, fetches periodically, and applies incoming changes. Any conflict pauses publication and incoming application for the entire setup; local history, fetching, and eligible backups continue. `fetch-only` only fetches; `manual` does nothing automatically. `mise bootstrap dotfiles sync` and `pull` work on request in every mode.",
               "type": "string",
               "enum": ["sync", "fetch-only", "manual"]
             },

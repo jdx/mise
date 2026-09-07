@@ -25,6 +25,7 @@ use crate::system::history::store::{OperationKind, Summary};
 use crate::system::history::tracked::{TrackedSet, normalize_target};
 use crate::ui::table::MiseTable;
 
+#[derive(Clone, Debug)]
 pub(crate) struct ApplyRequest {
     /// Only these local paths (empty: everything pending).
     pub paths: Vec<PathBuf>,
@@ -34,6 +35,37 @@ pub(crate) struct ApplyRequest {
     pub take_remote: Vec<PathBuf>,
     /// Resolve these conflicts by publishing the local version next.
     pub keep_local: Vec<PathBuf>,
+    /// The watcher applying in the background: no prompt, no plan on
+    /// stdout, and held paths are a count, not a failure.
+    pub automatic: bool,
+    /// With `dry_run`: the plan is shown before a question, so no
+    /// "nothing was changed" note.
+    pub plan_only: bool,
+}
+
+impl ApplyRequest {
+    pub(crate) fn automatic() -> Self {
+        Self {
+            paths: vec![],
+            dry_run: false,
+            yes: true,
+            take_remote: vec![],
+            keep_local: vec![],
+            automatic: true,
+            plan_only: false,
+        }
+    }
+}
+
+/// What an application did.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ApplyOutcome {
+    /// Files written or removed.
+    pub written: usize,
+    /// Paths held for a decision (with their groups).
+    pub held: usize,
+    /// A configuration file was written: declarations may have changed.
+    pub configuration: bool,
 }
 
 /// Why a pending application is not written now.
@@ -53,13 +85,23 @@ struct Step {
     permissions: Option<std::fs::Permissions>,
 }
 
-pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyRequest) -> Result<()> {
+pub(crate) async fn apply(
+    store: &Store,
+    tracked: &TrackedSet,
+    req: &ApplyRequest,
+) -> Result<ApplyOutcome> {
     let _sync_lock = run::lock(store)?;
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("applying requires git"))?;
     let state_dir = store.state_dir();
     let mut status = run::read_status(state_dir)?;
+    if req.automatic && status.application_failure.is_some() {
+        return Ok(ApplyOutcome {
+            held: status.pending_applications.len().max(1),
+            ..Default::default()
+        });
+    }
     run::refresh(store, tracked, &mut status)?;
     let roots = Roots::current();
     let filter: BTreeSet<PathBuf> = req
@@ -127,7 +169,31 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
         run::write_status(state_dir, &status)?;
     }
     if !status.conflicts.is_empty() {
-        if take_remote.is_empty() && keep_local.is_empty() && !req.dry_run {
+        if req.dry_run {
+            // Preview the whole paused setup even when reconciliation
+            // cannot yet produce an applicable write set.
+            let mut table = MiseTable::new(false, &["Path", "Action", "Group"]);
+            for conflict in &status.conflicts {
+                if let Some(path) = roots.locate(&conflict.branch_path).path() {
+                    table.add_row(vec![
+                        display_path(path),
+                        "held: unresolved conflict".to_string(),
+                        conflict.branch_path.clone(),
+                    ]);
+                }
+            }
+            for pending in &status.pending_applications {
+                if let Some(path) = roots.locate(&pending.branch_path).path() {
+                    table.add_row(vec![
+                        display_path(path),
+                        "held: sharing paused for the entire setup".to_string(),
+                        pending.branch_path.clone(),
+                    ]);
+                }
+            }
+            table.print()?;
+        }
+        if take_remote.is_empty() && keep_local.is_empty() && !req.dry_run && !req.automatic {
             bail!(
                 "sync paused: resolve all {} conflict(s) before sharing resumes",
                 status.conflicts.len()
@@ -137,7 +203,10 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
             "sync paused: {} conflict(s) remain; no files applied or published",
             status.conflicts.len()
         );
-        return Ok(());
+        return Ok(ApplyOutcome {
+            held: status.conflicts.len(),
+            ..Default::default()
+        });
     }
 
     // the write set
@@ -173,12 +242,14 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
         });
     }
     if steps.is_empty() {
-        if !req.dry_run {
+        if !req.dry_run && !req.automatic {
             status.application_failure = None;
             run::write_status(state_dir, &status)?;
         }
-        info!("history: nothing to apply");
-        return Ok(());
+        if !req.automatic {
+            info!("history: nothing to apply");
+        }
+        return Ok(ApplyOutcome::default());
     }
 
     // validation and holds, per group
@@ -225,22 +296,38 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
             step.group.clone(),
         ]);
     }
-    table.print()?;
+    if !req.automatic {
+        table.print()?;
+    }
     if req.dry_run {
-        miseprintln!("history: dry run; nothing was changed");
-        return Ok(());
+        if !req.plan_only {
+            miseprintln!("history: dry run; nothing was changed");
+        }
+        return Ok(ApplyOutcome::default());
     }
     if ready.is_empty() {
+        if req.automatic {
+            return Ok(ApplyOutcome {
+                held: held.len(),
+                ..Default::default()
+            });
+        }
         bail!("nothing can be applied until the held paths are decided");
     }
-    if !super::origin::confirmed(req.yes, "history: apply these incoming changes?")? {
+    if !req.automatic
+        && !super::origin::confirmed(req.yes, "history: apply these incoming changes?")?
+    {
         info!("history: skipped");
-        return Ok(());
+        return Ok(ApplyOutcome::default());
     }
 
     // the transaction
     let reload = crate::system::history::config::reload_commands()?;
-    let scope = OperationScope::begin_kind(OperationKind::Apply, "dotfiles pull", false).await?;
+    let scope = if req.automatic {
+        OperationScope::begin_automatic_apply().await?
+    } else {
+        OperationScope::begin_kind(OperationKind::Apply, "dotfiles pull", false).await?
+    };
     scope.with_operation(|op| {
         op.applied = status.upstream_commit.clone();
     });
@@ -311,7 +398,7 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
                 message: Some("apply failed; recovery attempted".into()),
             }),
         );
-        return result;
+        return result.map(|()| ApplyOutcome::default());
     }
     let (error, summary) = match &result {
         Ok(()) => {
@@ -341,6 +428,7 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
         .retain(|pending| !applied.contains(&pending.branch_path));
     status.resolutions.retain(|path, _| !applied.contains(path));
     status.application_failure = None;
+    status.conflict_pause_observed = false;
     // the live declarations changed now: said until `mise bootstrap` ran
     let configuration_written = ready
         .iter()
@@ -358,13 +446,21 @@ pub(crate) async fn apply(store: &Store, tracked: &TrackedSet, req: &ApplyReques
     scope.finish(error, Some(summary));
     result?;
     replay::run_reload(&reload, &touched);
-    if ready.iter().any(|step| step.pending.configuration) {
+    let configuration = ready.iter().any(|step| step.pending.configuration);
+    if configuration && !req.automatic {
         info!(
             "history: configuration changed; declarations may differ from the applied setup: run `mise bootstrap --dry-run`"
         );
     }
-    info!("history: applied {} incoming change(s)", touched.len());
-    Ok(())
+    if !req.automatic {
+        info!("history: applied {} incoming change(s)", touched.len());
+    }
+    let outcome = ApplyOutcome {
+        written: touched.len(),
+        held: held.len(),
+        configuration,
+    };
+    Ok(outcome)
 }
 
 fn recover_step(repo: &crate::system::history::shadow::HistoryRepo, step: &Step) -> Result<()> {

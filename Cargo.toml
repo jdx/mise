@@ -28,6 +28,7 @@ include = [
   "/README.md",
   "/build.rs",
   "/completions/*",
+  "/docs/public/apple-touch-icon.png",
   "/minisign.pub",
   "/registry/*.toml",
   "/settings.toml",
@@ -302,6 +303,7 @@ windows-sys = { version = "0.61", features = [
 [build-dependencies]
 aqua-registry = { path = "crates/aqua-registry" }
 built = { version = "0.8", features = ["chrono"] }
+cc = "1"
 cfg_aliases = "0.2"
 eyre = "0.6"
 heck = "0.5"

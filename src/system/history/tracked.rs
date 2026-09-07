@@ -841,6 +841,12 @@ pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
     .map(normalize)
     .collect();
     dirs.push(normalize(&super::store::store_dir_in(&dirs::STATE)));
+    // the setup branch's reserved directories, should a checkout of it sit
+    // in the configuration directory: never captured, never republished
+    let config_dir = normalize(&global_config_dir());
+    for reserved in ["tracked", "sources", ".mise-history"] {
+        dirs.push(config_dir.join(reserved));
+    }
     dirs.sort();
     dirs.dedup();
     dirs

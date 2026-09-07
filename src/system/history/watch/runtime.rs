@@ -23,8 +23,12 @@ use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::system::history::checkpoint::{Draft, Outcome, Store};
+use crate::system::history::describe_command;
 use crate::system::history::health::{self, Health, ThrottledPath};
 use crate::system::history::store::{self, Trigger};
+use crate::system::history::sync::apply::{self, ApplyRequest};
+use crate::system::history::sync::run::{self as sync_run, SyncOutcome, SyncRequest};
+use crate::system::history::sync::{Automatic, SyncMode};
 use crate::system::history::tracked::{
     self, ExcludeSet, TrackedSet, hard_exclusions, normalize, normalize_target,
 };
@@ -48,10 +52,21 @@ enum Restart {
 const WATCH_LOCK_TRIES: u32 = 5;
 const WATCH_LOCK_RETRY: Duration = Duration::from_millis(200);
 
+/// How many checkpoints may wait for `history.describe_command` before the
+/// oldest keeps its computed description.
+const DESCRIBE_QUEUE: usize = 8;
+
 /// How often, and how many times, the shutdown capture waits for a running
 /// history operation to finish before giving up.
 const SHUTDOWN_RETRY_EVERY: Duration = Duration::from_secs(1);
 const SHUTDOWN_RETRIES: usize = 10;
+/// Automatic synchronization: the first fetch after a start, the follow-up
+/// after an incoming configuration changed the tracked set, and the
+/// backoff after a failed sync (local saves continue meanwhile).
+const SYNC_FIRST_FETCH: Duration = Duration::from_secs(15);
+const SYNC_FOLLOW_UP: Duration = Duration::from_secs(5);
+const SYNC_BACKOFF_MIN: Duration = Duration::from_secs(60);
+const SYNC_BACKOFF_MAX: Duration = Duration::from_secs(3600);
 
 /// What became of a capture attempt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -131,8 +146,27 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
         // file whose save is not due is held, not read live
         let outcome = capture.reconcile(&state.tracked, "startup reconcile");
         capture.write_health();
+        let synced = once_sync(&mut capture, &state).await;
+        if let Some(task) = start_describe(&mut capture)
+            && let Ok((id, result)) = task.await
+        {
+            match result {
+                Ok(Some(description)) => capture.out.emit(
+                    "described",
+                    &format!("checkpoint {id} described by history.describe_command: {description}"),
+                    json!({ "id": id, "description": description }),
+                ),
+                Ok(None) => {}
+                Err(err) => capture.out.emit(
+                    "describe-error",
+                    &format!("history.describe_command failed for checkpoint {id}: {err:#}; keeping the computed description"),
+                    json!({ "id": id, "message": format!("{err:#}") }),
+                ),
+            }
+        }
         return Ok(match outcome {
-            Attempt::Done => 0,
+            Attempt::Done if synced => 0,
+            Attempt::Done => 1,
             Attempt::Deferred => {
                 capture.out.emit(
                     "unsaved",
@@ -210,7 +244,15 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     let mut next_reconcile = intervals
         .reconcile
         .map(|every| tokio::time::Instant::now() + every);
+    // the network runs on a blocking task of its own: a slow origin never
+    // delays a capture
+    let mut sync_task: Option<tokio::task::JoinHandle<Result<SyncOutcome>>> = None;
+    // the description command runs one checkpoint at a time, off the loop
+    let mut describe_task: Option<tokio::task::JoinHandle<(u64, Result<Option<String>>)>> = None;
     loop {
+        if describe_task.is_none() {
+            describe_task = start_describe(&mut capture);
+        }
         // the next save, or the retry of a deferred or failed capture,
         // whichever comes first
         let flush_at = match (
@@ -230,6 +272,29 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
             match next_reconcile {
                 Some(at) => tokio::time::sleep_until(at).await,
                 None => std::future::pending::<()>().await,
+            }
+        };
+        let sync_at = if sync_task.is_none() {
+            capture.sync.as_ref().and_then(SyncPlan::deadline)
+        } else {
+            None
+        };
+        let sync_tick = async {
+            match sync_at {
+                Some(at) => tokio::time::sleep_until(tokio::time::Instant::from_std(at)).await,
+                None => std::future::pending::<()>().await,
+            }
+        };
+        let sync_done = async {
+            match &mut sync_task {
+                Some(task) => task.await,
+                None => std::future::pending().await,
+            }
+        };
+        let describe_done = async {
+            match &mut describe_task {
+                Some(task) => task.await,
+                None => std::future::pending().await,
             }
         };
         tokio::select! {
@@ -334,6 +399,8 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                     };
                             // the timing settings may have changed with it
                             apply_intervals(&mut capture, &mut intervals, &mut next_reconcile);
+                            // the origin or the mode may have changed with it
+                            refresh_sync_plan(&mut capture, now);
                             capture.out.emit(
                                 "replan",
                                 &format!("configuration changed; watching {} anchor(s)", installed.len()),
@@ -399,6 +466,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                                 }
                             };
                             apply_intervals(&mut capture, &mut intervals, &mut next_reconcile);
+                            refresh_sync_plan(&mut capture, Instant::now());
                             prune_schedule(&mut capture, &state);
                         }
                         Ok(false) => {
@@ -432,6 +500,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                         }
                     }
                     apply_intervals(&mut capture, &mut intervals, &mut next_reconcile);
+                    refresh_sync_plan(&mut capture, Instant::now());
                     // a replaced directory keeps its path but not its
                     // watch: an anchor that changed is watched anew
                     installed = match if anchor_changed {
@@ -524,6 +593,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                             }
                         };
                         apply_intervals(&mut capture, &mut intervals, &mut next_reconcile);
+                        refresh_sync_plan(&mut capture, Instant::now());
                         prune_schedule(&mut capture, &state);
                     }
                     Ok(false) => {
@@ -540,7 +610,80 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                 capture.reconcile(&state.tracked, "reconcile");
                 capture.write_health();
             }
+            _ = sync_tick => {
+                sync_task = start_sync(&mut capture, &state.tracked);
+            }
+            joined = describe_done => {
+                describe_task = None;
+                match joined {
+                    Ok((id, Ok(Some(description)))) => capture.out.emit(
+                        "described",
+                        &format!("checkpoint {id} described by history.describe_command: {description}"),
+                        json!({ "id": id, "description": description }),
+                    ),
+                    Ok((id, Ok(None))) => capture.out.emit(
+                        "described",
+                        &format!("history.describe_command printed nothing for checkpoint {id}; keeping the computed description"),
+                        json!({ "id": id, "description": null }),
+                    ),
+                    Ok((id, Err(err))) => capture.out.emit(
+                        "describe-error",
+                        &format!("history.describe_command failed for checkpoint {id}: {err:#}; keeping the computed description"),
+                        json!({ "id": id, "message": format!("{err:#}") }),
+                    ),
+                    Err(err) => capture.out.emit(
+                        "describe-error",
+                        &format!("history.describe_command stopped unexpectedly: {err}"),
+                        json!({ "message": err.to_string() }),
+                    ),
+                }
+            }
+            joined = sync_done => {
+                sync_task = None;
+                let outcome = match joined {
+                    Ok(outcome) => outcome,
+                    Err(err) => Err(eyre::eyre!("the sync task stopped unexpectedly: {err}")),
+                };
+                if finish_sync(&mut capture, &state.tracked, outcome).await == Some(true) {
+                    // the configuration that arrived may declare more:
+                    // replan, and fetch again soon for what it declares
+                    match state.reload().await {
+                        Ok(true) => {
+                            installed = match install(&mut debouncer, &installed, &state.plan.anchors, &mut capture) {
+                                Ok(installed) => installed,
+                                Err(err) => {
+                                    stop_after_install_failure(&mut capture, &state.tracked, &err, "re-installed").await;
+                                    debouncer.stop();
+                                    return Ok(1);
+                                }
+                            };
+                            capture.out.emit(
+                                "replan",
+                                &format!("incoming configuration applied; watching {} anchor(s)", installed.len()),
+                                json!({ "anchors": installed.len() }),
+                            );
+                            if let Some(plan) = &mut capture.sync {
+                                plan.follow_up(Instant::now());
+                            }
+                        }
+                        Ok(false) => {
+                            capture.out.emit("disabled", "history was disabled; stopping", json!({}));
+                            return Ok(0);
+                        }
+                        Err(err) => capture.out.emit(
+                            "error",
+                            &format!("configuration could not be reloaded; keeping the previous tracked set: {err:#}"),
+                            json!({ "message": format!("{err:#}") }),
+                        ),
+                    }
+                }
+            }
             _ = shutdown.wait() => {
+                if let Some(task) = sync_task.take() {
+                    // a publication in flight finishes; nothing is started after
+                    let outcome = task.await.unwrap_or_else(|err| Err(eyre::eyre!("the sync task stopped unexpectedly: {err}")));
+                    finish_sync(&mut capture, &state.tracked, outcome).await;
+                }
                 finish(&mut capture, &state.tracked, Restart::Final).await;
                 break;
             }
@@ -548,6 +691,307 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     }
     debouncer.stop();
     Ok(0)
+}
+
+/// Starts the description command for the newest checkpoint waiting for
+/// one, on a blocking task of its own. The checkpoint is saved already;
+/// whatever the command does, history is not held up.
+fn start_describe(
+    capture: &mut Capture,
+) -> Option<tokio::task::JoinHandle<(u64, Result<Option<String>>)>> {
+    let entry = capture.describe_next.pop_front()?;
+    let command = describe_command::configured()?;
+    let state_dir = capture.store.state_dir().to_path_buf();
+    Some(tokio::task::spawn_blocking(move || {
+        let id = entry.id;
+        let result = Store::open_in(&state_dir)
+            .and_then(|store| describe_command::run(&store, &entry, &command));
+        (id, result)
+    }))
+}
+
+/// Starts one synchronization on a blocking task, per the mode: the
+/// watcher's own captures decide what is saved, so the sync never captures
+/// (a throttled file's held version and a manual-save entry's unsaved edits
+/// stay on this machine).
+fn start_sync(
+    capture: &mut Capture,
+    tracked: &TrackedSet,
+) -> Option<tokio::task::JoinHandle<Result<SyncOutcome>>> {
+    let plan = capture.sync.as_mut()?;
+    let fetch_only = !plan.config.automatic.publish;
+    plan.next_publish = None;
+    plan.next_fetch = None;
+    capture.out.emit(
+        "sync",
+        if fetch_only {
+            "fetching the setup repository"
+        } else {
+            "publishing to and fetching the setup repository"
+        },
+        json!({ "fetch_only": fetch_only }),
+    );
+    let tracked = tracked.clone();
+    let state_dir = capture.store.state_dir().to_path_buf();
+    Some(tokio::task::spawn_blocking(move || {
+        let store = Store::open_in(&state_dir)?;
+        let mut request = SyncRequest::new(fetch_only);
+        request.capture = false;
+        sync_run::sync(&store, &tracked, &request)
+    }))
+}
+
+/// Records a sync's outcome and, in `sync` mode, applies what it recorded
+/// as pending. `None` after a failure (retried after the backoff), else
+/// whether a configuration file was written.
+async fn finish_sync(
+    capture: &mut Capture,
+    tracked: &TrackedSet,
+    outcome: Result<SyncOutcome>,
+) -> Option<bool> {
+    let now = Instant::now();
+    let outcome = match outcome {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            let retry_in = capture.sync_failed(now);
+            capture.out.emit(
+                "sync-error",
+                &format!(
+                    "could not synchronize: {err:#}; retrying in {} (saving continues meanwhile)",
+                    humantime(retry_in)
+                ),
+                json!({ "message": format!("{err:#}"), "retry_in_secs": retry_in.as_secs() }),
+            );
+            return None;
+        }
+    };
+    capture.sync_succeeded(now);
+    capture.out.emit(
+        "synced",
+        &format!(
+            "synchronized: {}, {} incoming change(s) pending, {} conflict(s)",
+            match &outcome.published {
+                Some(commit) =>
+                    format!("published {}", crate::cli::dotfiles::history::short(commit)),
+                None => "nothing new to publish".to_string(),
+            },
+            outcome.pending,
+            outcome.conflicts
+        ),
+        json!({
+            "published": outcome.published,
+            "uploaded": outcome.uploaded,
+            "pending": outcome.pending,
+            "conflicts": outcome.conflicts,
+        }),
+    );
+    let applies = capture
+        .sync
+        .as_ref()
+        .is_some_and(|plan| plan.config.automatic.apply);
+    if !applies || outcome.pending == 0 {
+        return Some(false);
+    }
+    match apply::apply(&capture.store, tracked, &ApplyRequest::automatic()).await {
+        Ok(applied) => {
+            capture.out.emit(
+                "applied",
+                &format!(
+                    "applied {} incoming change(s); {} path(s) held for a decision{}",
+                    applied.written,
+                    applied.held,
+                    if applied.configuration {
+                        "; configuration changed: run `mise bootstrap` when its declarations should take effect"
+                    } else {
+                        ""
+                    }
+                ),
+                json!({ "written": applied.written, "held": applied.held, "configuration": applied.configuration }),
+            );
+            Some(applied.configuration)
+        }
+        Err(err) => {
+            let retry_in = capture.sync_failed(now);
+            capture.out.emit(
+                "error",
+                &format!(
+                    "could not apply incoming changes: {err:#}; retrying in {}",
+                    humantime(retry_in)
+                ),
+                json!({ "message": format!("{err:#}"), "retry_in_secs": retry_in.as_secs() }),
+            );
+            Some(false)
+        }
+    }
+}
+
+/// `--once`: one synchronization per the mode, waited for. Whether it (and
+/// the application it may include) succeeded; `true` when nothing is due.
+async fn once_sync(capture: &mut Capture, state: &State) -> bool {
+    let Some(task) = start_sync(capture, &state.tracked) else {
+        return true;
+    };
+    let outcome = task
+        .await
+        .unwrap_or_else(|err| Err(eyre::eyre!("the sync task stopped unexpectedly: {err}")));
+    finish_sync(capture, &state.tracked, outcome)
+        .await
+        .is_some()
+}
+
+/// What the watcher does with the setup repository on its own, per
+/// `settings.history.sync`: when the next publication (at most
+/// `sync_interval` after a save) and the next fetch (every
+/// `fetch_interval`) are due, and the backoff after a failure.
+struct SyncPlan {
+    config: SyncConfig,
+    next_publish: Option<Instant>,
+    next_fetch: Option<Instant>,
+    backoff: Duration,
+}
+
+/// What `settings.history.sync` and `[history.origin]` say. Compared after a
+/// reload of the configuration, so a pending deadline survives an edit to
+/// something else.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SyncConfig {
+    automatic: Automatic,
+    publish_after: Duration,
+    fetch_every: Duration,
+    /// The repository's url and branch: another one starts afresh.
+    origin: (String, String),
+}
+
+impl SyncConfig {
+    /// `None` without a connected origin, or in `manual` mode.
+    fn from_settings(settings: &Settings) -> Option<Self> {
+        let (_, origin) = crate::system::history::config::origin().ok().flatten()?;
+        let automatic = SyncMode::parse(&settings.history.sync).ok()?.automatic();
+        if !automatic.publish && !automatic.fetch {
+            return None;
+        }
+        let parse = |name: &str, value: &str, default: Duration| {
+            crate::duration::parse_duration(value).unwrap_or_else(|err| {
+                warn!("history.{name}: {err}; using {default:?}");
+                default
+            })
+        };
+        Some(Self {
+            automatic,
+            publish_after: parse(
+                "sync_interval",
+                &settings.history.sync_interval,
+                Duration::from_secs(300),
+            ),
+            fetch_every: parse(
+                "fetch_interval",
+                &settings.history.fetch_interval,
+                Duration::from_secs(900),
+            ),
+            origin: (origin.url, origin.branch),
+        })
+    }
+}
+
+impl SyncPlan {
+    /// `None` without a connected origin, or in `manual` mode.
+    fn from_settings(settings: &Settings, now: Instant) -> Option<Self> {
+        SyncConfig::from_settings(settings).map(|config| Self::new(config, now))
+    }
+
+    /// A fresh plan: the first fetch soon, no publication pending.
+    fn new(config: SyncConfig, now: Instant) -> Self {
+        Self {
+            next_publish: None,
+            next_fetch: config
+                .automatic
+                .fetch
+                .then(|| now + SYNC_FIRST_FETCH.min(config.fetch_every)),
+            backoff: SYNC_BACKOFF_MIN.min(config.fetch_every),
+            config,
+        }
+    }
+
+    /// The configuration was reloaded. Another origin starts afresh;
+    /// otherwise what is pending stays, moved only by what changed: a
+    /// disabled activity loses its deadline, a newly enabled fetch gets its
+    /// first one, and a shorter interval brings a deadline forward, never
+    /// back. A reload that changes nothing changes nothing here, so a
+    /// reconcile tick or an edit elsewhere never postpones what is due.
+    fn reconfigure(&mut self, fresh: SyncConfig, now: Instant) {
+        if fresh == self.config {
+            return;
+        }
+        if fresh.origin != self.config.origin {
+            *self = Self::new(fresh, now);
+            return;
+        }
+        let previous = std::mem::replace(&mut self.config, fresh);
+        let config = &self.config;
+        if !config.automatic.publish {
+            self.next_publish = None;
+        } else if config.publish_after != previous.publish_after {
+            // nothing saved, nothing to bring forward
+            let at = now + config.publish_after;
+            self.next_publish = self.next_publish.map(|due| due.min(at));
+        }
+        if !config.automatic.fetch {
+            self.next_fetch = None;
+        } else if !previous.automatic.fetch {
+            self.next_fetch = Some(now + SYNC_FIRST_FETCH.min(config.fetch_every));
+        } else if config.fetch_every != previous.fetch_every {
+            let at = now + config.fetch_every;
+            self.next_fetch = Some(self.next_fetch.map_or(at, |due| due.min(at)));
+        }
+        self.backoff = self.backoff.min(SYNC_BACKOFF_MAX).max(self.backoff_floor());
+    }
+
+    /// The shortest backoff: a minute, or the fetch interval when that is
+    /// shorter (a test's, say).
+    fn backoff_floor(&self) -> Duration {
+        SYNC_BACKOFF_MIN.min(self.config.fetch_every)
+    }
+
+    fn deadline(&self) -> Option<Instant> {
+        match (self.next_publish, self.next_fetch) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// A checkpoint was saved: publish it soon, unless a publication is
+    /// already due sooner.
+    fn saved(&mut self, now: Instant) {
+        if !self.config.automatic.publish {
+            return;
+        }
+        let at = now + self.config.publish_after;
+        self.next_publish = Some(self.next_publish.map_or(at, |due| due.min(at)));
+    }
+
+    /// An incoming configuration changed the tracked set: fetch again soon.
+    fn follow_up(&mut self, now: Instant) {
+        let at = now + SYNC_FOLLOW_UP;
+        self.next_fetch = Some(self.next_fetch.map_or(at, |due| due.min(at)));
+    }
+
+    fn failed(&mut self, now: Instant) -> Duration {
+        let retry_in = self.backoff;
+        self.next_publish = None;
+        self.next_fetch = Some(now + retry_in);
+        self.backoff = (self.backoff * 2).min(SYNC_BACKOFF_MAX);
+        retry_in
+    }
+
+    fn succeeded(&mut self, now: Instant) {
+        self.backoff = self.backoff_floor();
+        self.next_publish = None;
+        self.next_fetch = self
+            .config
+            .automatic
+            .fetch
+            .then(|| now + self.config.fetch_every);
+    }
 }
 
 /// The final capture before the process ends: a full capture, not only the
@@ -635,6 +1079,9 @@ async fn finish(capture: &mut Capture, tracked: &TrackedSet, restart: Restart) -
         );
     }
     capture.persist_schedule();
+    // a description command still running is not waited for: its
+    // checkpoint keeps the computed description
+    describe_command::abort_running();
     capture.out.emit("stopped", "stopping", json!({}));
     capture.write_health();
     outcome
@@ -911,6 +1358,20 @@ fn apply_intervals(
     *intervals = fresh;
 }
 
+/// The synchronization plan as the configuration says now (the origin or
+/// the mode may have changed), adjusted rather than rebuilt: a pending
+/// publication or fetch keeps its deadline unless what it depends on changed.
+fn refresh_sync_plan(capture: &mut Capture, now: Instant) {
+    let fresh = SyncConfig::from_settings(&Settings::get());
+    capture.sync = match (capture.sync.take(), fresh) {
+        (Some(mut plan), Some(fresh)) => {
+            plan.reconfigure(fresh, now);
+            Some(plan)
+        }
+        (_, fresh) => fresh.map(|config| SyncPlan::new(config, now)),
+    };
+}
+
 /// Drops from the schedule what the tracked set no longer covers (excluded,
 /// untracked, switched to manual saving, a link's old target): no capture
 /// from now on holds it or carries its old version forward. A path that is
@@ -1029,6 +1490,12 @@ struct Capture {
     out: Output,
     schedule: Schedule,
     health: Health,
+    /// Automatic synchronization, when an origin is connected and the mode
+    /// allows any.
+    sync: Option<SyncPlan>,
+    /// Checkpoints waiting for `history.describe_command`, oldest first;
+    /// past the bound the oldest is skipped, and said so.
+    describe_next: std::collections::VecDeque<store::Entry>,
     backoff: Duration,
     retry_at: Option<Instant>,
     /// Why the last attempt did not run, while a retry is pending.
@@ -1076,6 +1543,8 @@ impl Capture {
             retry_at: None,
             retry_kind: None,
             anchor_ids: Default::default(),
+            sync: SyncPlan::from_settings(&Settings::get(), Instant::now()),
+            describe_next: std::collections::VecDeque::new(),
         }
     }
 
@@ -1146,6 +1615,24 @@ impl Capture {
         match result {
             Ok(Outcome::Created(entry)) => {
                 self.recovered();
+                if let Some(plan) = &mut self.sync {
+                    plan.saved(Instant::now());
+                }
+                if describe_command::configured().is_some() {
+                    self.describe_next.push_back((*entry).clone());
+                    if self.describe_next.len() > DESCRIBE_QUEUE
+                        && let Some(skipped) = self.describe_next.pop_front()
+                    {
+                        self.out.emit(
+                            "describe-skipped",
+                            &format!(
+                                "history.describe_command is behind; checkpoint {} keeps its computed description",
+                                skipped.id
+                            ),
+                            json!({ "id": skipped.id }),
+                        );
+                    }
+                }
                 self.health.watcher.last_capture = Some(store::now_rfc3339());
                 self.out.emit(
                     "captured",
@@ -1177,6 +1664,33 @@ impl Capture {
                 self.fail(reason, &format!("{err:#}"));
                 Attempt::Failed
             }
+        }
+    }
+
+    /// A sync failed: the next attempt after the backoff, recorded for
+    /// `mise doctor` and `mise bootstrap dotfiles status`.
+    fn sync_failed(&mut self, now: Instant) -> Duration {
+        let Some(plan) = &mut self.sync else {
+            return SYNC_BACKOFF_MIN;
+        };
+        let retry_in = plan.failed(now);
+        // under the sync lock, changing only this; no wait: this is the event
+        // loop, and an explicit sync or pull holding the lock writes its own
+        // fresh record
+        let until = rfc3339_in(retry_in);
+        if let Err(err) =
+            sync_run::update_status(self.store.state_dir(), Duration::ZERO, |status| {
+                status.backoff_until = Some(until);
+            })
+        {
+            debug!("history watch: could not record the sync backoff: {err}");
+        }
+        retry_in
+    }
+
+    fn sync_succeeded(&mut self, now: Instant) {
+        if let Some(plan) = &mut self.sync {
+            plan.succeeded(now);
         }
     }
 
@@ -1261,6 +1775,11 @@ fn epoch_secs() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+fn rfc3339_in(from_now: Duration) -> String {
+    let at = chrono::Utc::now() + chrono::Duration::from_std(from_now).unwrap_or_default();
+    at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 fn rfc3339_ago(ago: Duration) -> String {
@@ -1499,5 +2018,107 @@ mod tests {
         let state = state_of(tracked, root.join("mise"));
         assert!(!state.may_cover_missing(&hypr.join("bindings.lua")));
         assert!(!state.may_cover_missing(&root.join("elsewhere/target")));
+    }
+}
+
+#[cfg(test)]
+mod sync_plan_tests {
+    use super::*;
+
+    fn secs(n: u64) -> Duration {
+        Duration::from_secs(n)
+    }
+
+    fn config(mode: SyncMode, publish_after: u64, fetch_every: u64) -> SyncConfig {
+        SyncConfig {
+            automatic: mode.automatic(),
+            publish_after: secs(publish_after),
+            fetch_every: secs(fetch_every),
+            origin: ("file:///setup.git".to_string(), "main".to_string()),
+        }
+    }
+
+    #[test]
+    fn a_reload_that_changes_nothing_keeps_the_deadlines() {
+        let start = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.saved(start);
+        let retry = plan.failed(start + secs(1));
+        let (publish, fetch, backoff) = (plan.next_publish, plan.next_fetch, plan.backoff);
+        assert_eq!(fetch, Some(start + secs(1) + retry));
+        plan.reconfigure(config(SyncMode::Sync, 300, 900), start + secs(5));
+        assert_eq!(plan.next_publish, publish);
+        assert_eq!(plan.next_fetch, fetch);
+        assert_eq!(plan.backoff, backoff);
+    }
+
+    #[test]
+    fn fetch_only_drops_the_pending_publication() {
+        let start = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.saved(start);
+        let fetch = plan.next_fetch;
+        plan.reconfigure(config(SyncMode::FetchOnly, 300, 900), start + secs(5));
+        assert_eq!(plan.next_publish, None);
+        assert_eq!(plan.next_fetch, fetch);
+        // and a save in fetch-only mode schedules nothing
+        plan.saved(start + secs(6));
+        assert_eq!(plan.next_publish, None);
+    }
+
+    #[test]
+    fn a_shorter_fetch_interval_brings_the_next_fetch_forward_a_longer_one_does_not_delay_it() {
+        let start = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.succeeded(start);
+        assert_eq!(plan.next_fetch, Some(start + secs(900)));
+        plan.reconfigure(config(SyncMode::Sync, 300, 2), start + secs(5));
+        assert_eq!(plan.next_fetch, Some(start + secs(7)));
+        plan.reconfigure(config(SyncMode::Sync, 300, 900), start + secs(6));
+        assert_eq!(plan.next_fetch, Some(start + secs(7)));
+    }
+
+    #[test]
+    fn a_shorter_publish_delay_brings_a_pending_publication_forward() {
+        let start = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.reconfigure(config(SyncMode::Sync, 1, 900), start + secs(1));
+        // nothing saved: a new delay arms nothing
+        assert_eq!(plan.next_publish, None);
+        plan.saved(start + secs(2));
+        assert_eq!(plan.next_publish, Some(start + secs(3)));
+        plan.reconfigure(config(SyncMode::Sync, 300, 900), start + secs(2));
+        assert_eq!(plan.next_publish, Some(start + secs(3)));
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.saved(start);
+        plan.reconfigure(config(SyncMode::Sync, 1, 900), start + secs(2));
+        assert_eq!(plan.next_publish, Some(start + secs(3)));
+    }
+
+    #[test]
+    fn enabling_fetch_arms_the_first_fetch() {
+        let start = Instant::now();
+        let mut publish_only = config(SyncMode::Sync, 300, 900);
+        publish_only.automatic.fetch = false;
+        let mut plan = SyncPlan::new(publish_only, start);
+        assert_eq!(plan.next_fetch, None);
+        plan.reconfigure(config(SyncMode::Sync, 300, 900), start + secs(5));
+        assert_eq!(plan.next_fetch, Some(start + secs(5) + SYNC_FIRST_FETCH));
+    }
+
+    #[test]
+    fn another_origin_starts_afresh() {
+        let start = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), start);
+        plan.saved(start);
+        plan.failed(start);
+        plan.failed(start + secs(60));
+        assert!(plan.backoff > plan.backoff_floor());
+        let mut moved = config(SyncMode::Sync, 300, 900);
+        moved.origin.1 = "work".to_string();
+        plan.reconfigure(moved, start + secs(100));
+        assert_eq!(plan.backoff, plan.backoff_floor());
+        assert_eq!(plan.next_publish, None);
+        assert_eq!(plan.next_fetch, Some(start + secs(100) + SYNC_FIRST_FETCH));
     }
 }

@@ -194,7 +194,7 @@ impl HistoryRepo {
         tree
     }
 
-    fn mktree(&self, listing: &str) -> Result<String> {
+    pub(crate) fn mktree(&self, listing: &str) -> Result<String> {
         self.output_str(PlumbingCall::new(["mktree"]).stdin(listing.as_bytes()))
     }
 

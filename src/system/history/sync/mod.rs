@@ -15,6 +15,7 @@ pub(crate) mod format;
 pub(crate) mod layout;
 pub(crate) mod machines;
 pub(crate) mod network;
+pub(crate) mod onboard;
 pub(crate) mod origin;
 mod preflight;
 pub(crate) mod privacy;
@@ -24,15 +25,27 @@ pub(crate) mod run;
 pub(crate) mod share;
 pub(crate) mod state;
 
-/// `settings.history.sync`.
+/// `settings.history.sync`: what the watcher does on its own. Explicit
+/// commands (`sync`, `pull`) work the same in every mode except that
+/// `fetch-only` never publishes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SyncMode {
-    /// Publish and fetch; any conflict pauses publication and incoming application for the setup.
+    /// The watcher publishes after saves, fetches periodically, and applies
+    /// incoming changes once the complete setup is free of conflicts.
     Sync,
-    /// Download only: never publish, never change live files.
+    /// The watcher fetches periodically; nothing is ever published and no
+    /// live file changes without `pull`.
     FetchOnly,
-    /// Publish and fetch; apply only on `mise bootstrap dotfiles pull`.
+    /// No automatic network activity: `sync` and `pull` on request only.
     Manual,
+}
+
+/// What a mode does in the background.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Automatic {
+    pub publish: bool,
+    pub fetch: bool,
+    pub apply: bool,
 }
 
 impl SyncMode {
@@ -61,17 +74,37 @@ impl SyncMode {
         self != Self::FetchOnly
     }
 
+    pub(crate) fn automatic(self) -> Automatic {
+        match self {
+            Self::Sync => Automatic {
+                publish: true,
+                fetch: true,
+                apply: true,
+            },
+            Self::FetchOnly => Automatic {
+                publish: false,
+                fetch: true,
+                apply: false,
+            },
+            Self::Manual => Automatic {
+                publish: false,
+                fetch: false,
+                apply: false,
+            },
+        }
+    }
+
     /// What the mode does and does not do, disclosed when connecting.
     pub(crate) fn disclosure(self) -> &'static str {
         match self {
             Self::Sync => {
-                "sync: this machine publishes its shared files and configuration and fetches the repository. Any conflict pauses publication and incoming application for the entire setup; local history, fetching, and eligible machine backups continue. Once all conflicts are resolved, `mise bootstrap dotfiles pull` applies the complete incoming batch with a protective checkpoint and recovery journal. Applying never runs `mise bootstrap`, installs or removes packages, or renders templates; when incoming configuration changes declarations, `mise bootstrap dotfiles status` says to run `mise bootstrap`."
+                "sync: the watcher publishes saved changes and fetches periodically. Any conflict pauses publication and incoming application for the entire setup; local history, fetching, and eligible machine backups continue. Incoming changes are preflighted together and applied with a protective checkpoint and recovery journal. Applying never runs `mise bootstrap` or renders templates. Run `mise bootstrap` when the new declarations need to be applied."
             }
             Self::FetchOnly => {
-                "fetch-only: this machine only downloads the repository and other machines' recovery refs. Nothing is published, no live file changes."
+                "fetch-only: the watcher only downloads the repository and other machines' recovery refs. Nothing is ever published, and no live file changes unless you run `mise bootstrap dotfiles pull`."
             }
             Self::Manual => {
-                "manual: this machine publishes and fetches automatically; incoming changes are applied only by `mise bootstrap dotfiles pull`."
+                "manual: no automatic network activity. `mise bootstrap dotfiles sync` publishes and fetches, and `mise bootstrap dotfiles pull` applies, when you run them."
             }
         }
     }

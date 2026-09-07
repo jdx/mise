@@ -49,6 +49,11 @@ pub(crate) struct Ssh {
     repository_update: bool,
     #[usage(long, hide = true)]
     repository_yes: bool,
+    /// Preview the transferred repository's installation without writing it
+    #[usage(long, hide = true)]
+    repository_dry_run: bool,
+    #[usage(long, hide = true)]
+    repository_preview_directory: Option<PathBuf>,
     #[usage(long, hide = true)]
     global_config_directory: bool,
     /// Command to execute after --; omit for an interactive shell
@@ -76,12 +81,61 @@ impl Ssh {
             let revision = self
                 .repository_revision
                 .ok_or_else(|| eyre::eyre!("missing repository revision"))?;
+            // a history-managed setup repository is set up from, never
+            // checked out into the configuration directory
+            if let Some(branch) =
+                crate::system::remote_repository::history_branch(&bundle, &revision)?
+            {
+                use crate::system::history::sync::onboard;
+                crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
+                let store = crate::system::history::checkpoint::Store::open()?;
+                if let Some(reason) = store.unavailable() {
+                    bail!("cannot set up from a setup repository: {reason}");
+                }
+                let fetch_from = bundle.to_string_lossy().into_owned();
+                let outcome = onboard::run(
+                    &store,
+                    &onboard::Onboarding {
+                        fetch_from,
+                        origin,
+                        branch,
+                        yes: self.repository_yes,
+                        dry_run: self.repository_dry_run,
+                    },
+                )
+                .await?;
+                if let Some(directory) = &self.repository_preview_directory {
+                    if !self.repository_dry_run {
+                        bail!("a repository preview directory requires a dry run");
+                    }
+                    let preview = outcome
+                        .preview_config
+                        .as_ref()
+                        .ok_or_else(|| eyre::eyre!("missing setup configuration preview"))?;
+                    // The remote runner supplies a new directory inside its
+                    // private staging area; never overwrite an existing tree.
+                    std::fs::create_dir(directory)?;
+                    crate::file::copy_dir_all_preserve_symlinks(preview.path(), directory)?;
+                }
+                if !self.repository_dry_run
+                    && (outcome.configuration_held
+                        || !crate::system::history::sync::run::read_status(store.state_dir())?
+                            .conflicts
+                            .is_empty())
+                {
+                    bail!(
+                        "setup has conflicts; nothing was bootstrapped; use `mise bootstrap dotfiles status` to resolve them"
+                    );
+                }
+                return Ok(());
+            }
             crate::system::remote_repository::install(
                 &bundle,
                 &origin,
                 &revision,
                 self.repository_update,
                 self.repository_yes,
+                self.repository_dry_run,
             )?;
             return Ok(());
         }

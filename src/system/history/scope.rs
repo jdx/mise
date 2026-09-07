@@ -100,6 +100,26 @@ impl OperationScope {
         command: &str,
         dry_run: bool,
     ) -> Result<Self> {
+        Self::begin_with_wait(kind, command, dry_run, OPERATION_LOCK_WAIT).await
+    }
+
+    /// The watcher retries contention later rather than delaying its event loop.
+    pub(crate) async fn begin_automatic_apply() -> Result<Self> {
+        Self::begin_with_wait(
+            OperationKind::Apply,
+            "dotfiles pull",
+            false,
+            std::time::Duration::ZERO,
+        )
+        .await
+    }
+
+    async fn begin_with_wait(
+        kind: OperationKind,
+        command: &str,
+        dry_run: bool,
+        wait: std::time::Duration,
+    ) -> Result<Self> {
         if dry_run || !Settings::get().experimental {
             return Ok(Self(None));
         }
@@ -119,7 +139,7 @@ impl OperationScope {
         let tracked = TrackedSet::effective().await?;
         let command = command.to_owned();
         let writer = tokio::task::spawn_blocking(move || {
-            Writer::begin(&dirs::STATE, kind, &command, tracked)
+            Writer::begin(&dirs::STATE, kind, &command, tracked, wait)
         })
         .await??;
         let uuid = writer.pending.checkpoint.uuid.clone();
@@ -263,9 +283,10 @@ impl Writer {
         kind: OperationKind,
         command: &str,
         tracked: TrackedSet,
+        wait: std::time::Duration,
     ) -> Result<Self> {
         let store = Store::open_in(state_dir)?;
-        let lock = take_operation_lock(&store, &tracked)?;
+        let lock = take_operation_lock_with_wait(&store, &tracked, wait)?;
         let argv: Vec<String> = env::ARGS.read().unwrap().iter().skip(1).cloned().collect();
         // What the user typed is the better label; the caller's name is the
         // fallback for in-process callers with no argv (tests).
@@ -515,23 +536,54 @@ impl Writer {
 /// own (an explicit save) holds this for its duration too, so it never
 /// interleaves with a bootstrap, rollback, or undo.
 pub(crate) fn take_operation_lock(store: &Store, tracked: &TrackedSet) -> Result<fslock::LockFile> {
+    take_operation_lock_with_wait(store, tracked, OPERATION_LOCK_WAIT)
+}
+
+fn take_operation_lock_with_wait(
+    store: &Store,
+    tracked: &TrackedSet,
+    wait: std::time::Duration,
+) -> Result<fslock::LockFile> {
     let state_dir = store.state_dir();
-    let lock = LockFile::new(&store::operation_lock_in(state_dir)).try_lock()?;
-    let Some(lock) = lock else {
-        let marker = store::read_marker_in(state_dir)?;
-        match marker {
-            Some(marker) => bail!(
-                "another history operation is running: {} since {} ({})",
-                marker.kind.as_str(),
-                marker.started_at,
-                marker.command
-            ),
-            None => bail!("another history operation is running"),
+    let path = store::operation_lock_in(state_dir);
+    // a running operation (the watcher applying incoming changes, say) is
+    // usually over in moments: wait for it a bounded while before failing
+    let deadline = std::time::Instant::now() + wait;
+    let mut announced = false;
+    let lock = loop {
+        if let Some(lock) = LockFile::new(&path).try_lock()? {
+            break lock;
         }
+        let marker = store::read_marker_in(state_dir)?;
+        if std::time::Instant::now() >= deadline {
+            match marker {
+                Some(marker) => bail!(
+                    "another history operation is running: {} since {} ({})",
+                    marker.kind.as_str(),
+                    marker.started_at,
+                    marker.command
+                ),
+                None => bail!("another history operation is running"),
+            }
+        }
+        if !announced {
+            announced = true;
+            info!(
+                "history: waiting for another history operation to finish{}",
+                marker
+                    .map(|marker| format!(": {} ({})", marker.kind.as_str(), marker.command))
+                    .unwrap_or_default()
+            );
+        }
+        std::thread::sleep(OPERATION_LOCK_POLL);
     };
     recover_stale(store, tracked)?;
     Ok(lock)
 }
+
+/// How long an operation waits for a running one, and how often it looks.
+const OPERATION_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+const OPERATION_LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// Closes the pending records of operations that died. Only the holder of
 /// the operation lock may call this: a pending record whose operation is
@@ -600,5 +652,37 @@ fn outcome_trigger(kind: OperationKind) -> Trigger {
         OperationKind::Rollback | OperationKind::BootstrapRollback => Trigger::Rollback,
         OperationKind::Undo => Trigger::Undo,
         OperationKind::Apply => Trigger::Apply,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn automatic_operation_lock_does_not_wait() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open_in(temp.path()).unwrap();
+        let held = LockFile::new(&store::operation_lock_in(temp.path()))
+            .try_lock()
+            .unwrap()
+            .unwrap();
+        let started = std::time::Instant::now();
+        let result = take_operation_lock_with_wait(
+            &store,
+            &TrackedSet::default(),
+            std::time::Duration::ZERO,
+        );
+        assert!(result.is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        drop(held);
+        assert!(
+            take_operation_lock_with_wait(
+                &store,
+                &TrackedSet::default(),
+                std::time::Duration::ZERO,
+            )
+            .is_ok()
+        );
     }
 }

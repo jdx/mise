@@ -12,6 +12,14 @@ use crate::system::history::watch::runtime::{self, WatchOptions};
 /// and when the configuration changes. Manual-save entries are never
 /// watched.
 ///
+/// With a connected setup repository the watcher also synchronizes per
+/// `settings.history.sync`: in `sync` mode it publishes within
+/// `history.sync_interval` after a save, fetches every
+/// `history.fetch_interval`, and applies incoming changes once the complete setup is conflict-free;
+/// in `fetch-only` mode it only fetches; in `manual` mode it does nothing
+/// on the network. A failed sync backs off and is retried while saving
+/// continues. `--once` runs one reconcile and one such synchronization.
+///
 /// The `history-watch` built-in service runs this for you:
 ///
 ///     [bootstrap.services.mise-history]
@@ -25,7 +33,7 @@ use crate::system::history::watch::runtime::{self, WatchOptions};
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesWatch {
-    /// Reconcile once and exit (for timers and cron)
+    /// Reconcile and synchronize once and exit (for timers and cron)
     #[usage(long)]
     once: bool,
 

@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# `mise bootstrap --from-git` on a history-managed setup repository sets a
+# fresh machine up from it with one command: the branch goes into mise's own
+# store (no checkout in the configuration directory), the shared configuration,
+# its sources, and this machine's tracked files are written by a recoverable
+# pull, the connection is remembered for the watcher, and the ordinary
+# bootstrap runs afterwards. An ordinary repository keeps the old clone.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+
+# ---- machine A publishes its setup: a tracked directory and a template with
+# its source
+mkdir -p ~/.config/hypr "$MISE_CONFIG_DIR/templates"
+echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
+printf 'name = "{{ vars.name }}"\n' >"$MISE_CONFIG_DIR/templates/gitconfig.tera"
+cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
+[vars]
+name = "shared"
+
+[dotfiles]
+"~/.gitconfig-shared" = { source = "templates/gitconfig.tera", mode = "template" }
+EOF2
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --name laptop --yes"
+assert_contains "git --git-dir=$origin ls-tree -r --name-only main" "templates/gitconfig.tera"
+
+# other machines are other HOMEs reached through wrapper scripts
+wrapper() {
+  local home="$1" script="$2"
+  mkdir -p "$home"
+  cat <<EOF2 >"$script"
+#!/usr/bin/env bash
+export HOME="$home" XDG_CONFIG_HOME="$home/.config" MISE_CONFIG_DIR="$home/.config/mise" \\
+  MISE_STATE_DIR="$home/.local/state/mise" MISE_DATA_DIR="$home/.local/share/mise" \\
+  MISE_CACHE_DIR="$home/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$home"
+cd "\$HOME" && exec mise "\$@"
+EOF2
+  chmod +x "$script"
+}
+
+# ---- machine C: a fresh HOME, one command
+preview_home="$(dirname "$HOME")/conflict-preview-home"
+wrapper "$preview_home" "$PWD/conflict-preview"
+mkdir -p "$preview_home/.config/hypr"
+echo local >"$preview_home/.config/hypr/bindings.lua"
+preview="$("$PWD/conflict-preview" bootstrap --from-git "file://$origin" --dry-run 2>&1)"
+assert_contains "echo \"$preview\"" "bindings.lua"
+assert_contains "echo \"$preview\"" "held: unresolved conflict"
+assert_contains "echo \"$preview\"" "config.toml"
+assert "cat $preview_home/.config/hypr/bindings.lua" "local"
+assert_fail "test -e $preview_home/.config/mise/config.toml"
+
+C="$(dirname "$HOME")/c-home"
+wrapper "$C" "$PWD/c"
+c="$PWD/c"
+assert_fail "MISE_EXPERIMENTAL=0 $c bootstrap --from-git file://$origin --yes --only dotfiles" 'dotfile tracking is experimental'
+assert_directory_not_exists "$C/.local/state/mise/history"
+assert_fail "test -e $C/.config/mise/config.toml"
+out="$($c bootstrap --from-git "file://$origin" --dry-run 2>&1)"
+assert_contains "echo \"$out\"" "is a mise setup repository"
+assert_contains "echo \"$out\"" "config.toml"
+assert_contains "echo \"$out\"" "Dry run: nothing was changed"
+assert_fail "test -e $C/.config/mise/config.toml"
+# a preview leaves no connection, pending changes, or fetched branch behind
+assert "find $C -name sync.json | wc -l | tr -d ' '" "0"
+assert "find $C -path '*/refs/setup/*' | wc -l | tr -d ' '" "0"
+assert_succeed "$c bootstrap --from-git file://$origin --yes --only dotfiles"
+assert_fail "test -e $C/.config/mise/.git"
+assert "cat $C/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
+assert_contains "cat $C/.config/mise/config.toml" '"~/.config/hypr" = { mode = "track" }'
+assert "cat $C/.config/mise/templates/gitconfig.tera" 'name = "{{ vars.name }}"'
+# the bootstrap that followed rendered the template on C from the shared source
+assert "cat $C/.gitconfig-shared" 'name = "shared"'
+assert_contains "cat $C/.config/mise/config.local.toml" 'url = "file://'
+assert_contains "$c bootstrap dotfiles status" "mode sync"
+assert_contains "$c bootstrap dotfiles machines" "laptop"
+assert "$c bootstrap dotfiles history --json | jq -r '[.[].trigger] | index(\"apply\") != null'" "true"
+# running it again is a sync, not a second setup
+assert_succeed "$c bootstrap --from-git file://$origin --yes --only dotfiles"
+# C's edits reach A through the usual sync
+echo 'bind = SUPER, Q, exec, foot' >"$C/.config/hypr/bindings.lua"
+assert_contains "$c bootstrap dotfiles sync 2>&1" "published"
+assert_succeed "mise bootstrap dotfiles sync && mise bootstrap dotfiles pull --yes"
+assert "cat ~/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, foot"
+
+# ---- machine D already has a differing configuration: nothing is overwritten
+D="$(dirname "$HOME")/d-home"
+wrapper "$D" "$PWD/d"
+d="$PWD/d"
+mkdir -p "$D/.config/mise"
+printf '[env]\nD_ONLY = "1"\n' >"$D/.config/mise/config.toml"
+# the differing configuration is held, so nothing is bootstrapped from the
+# old one: the command says what to decide and fails
+assert_fail "$d bootstrap --from-git file://$origin --yes --only dotfiles 2>&1" "need a decision"
+assert_fail "$d bootstrap --from-git file://$origin --yes --only dotfiles 2>&1" "nothing was bootstrapped"
+assert "cat $D/.config/mise/config.toml" $'[env]\nD_ONLY = "1"'
+assert_contains "$d bootstrap dotfiles status" "needs adoption"
+assert_succeed "$d bootstrap dotfiles pull --take-remote $D/.config/mise/config.toml --yes"
+assert "cat $D/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, foot"
+
+# ---- an ordinary repository keeps the old behaviour: a checkout in the
+# configuration directory
+plain="$PWD/plain.git"
+git init -q --bare -b main "$plain"
+seed="$PWD/plain-seed"
+git init -q -b main "$seed"
+printf '[env]\nPLAIN = "1"\n' >"$seed/config.toml"
+git -C "$seed" add config.toml
+git -C "$seed" -c user.name=t -c user.email=t@t commit -q -m init
+git -C "$seed" push -q "file://$plain" main
+E="$(dirname "$HOME")/e-home"
+wrapper "$E" "$PWD/e"
+e="$PWD/e"
+assert_succeed "MISE_EXPERIMENTAL=0 $e bootstrap --from-git file://$plain --yes --only task"
+assert_directory_not_exists "$E/.local/state/mise/history"
+assert_succeed "test -d $E/.config/mise/.git"
+assert_contains "cat $E/.config/mise/config.toml" 'PLAIN = "1"'
+assert_contains "$e bootstrap dotfiles status" "Setup repository: none"
+
+# ---- the repository's default branch is followed, not `main` by its name
+other="$PWD/other.git"
+git clone -q --bare "file://$origin" "$other"
+git --git-dir="$other" branch -q setup main
+git --git-dir="$other" symbolic-ref HEAD refs/heads/setup
+# a stale `main` left behind at the first commit
+git --git-dir="$other" update-ref refs/heads/main "$(git --git-dir="$other" rev-list --max-parents=0 setup | tail -1)"
+F="$(dirname "$HOME")/f-home"
+wrapper "$F" "$PWD/f"
+f="$PWD/f"
+assert_contains "$f bootstrap --from-git file://$other --dry-run 2>&1" "branch setup"
