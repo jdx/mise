@@ -4288,6 +4288,28 @@
           "propertyNames": {
             "pattern": "^[A-Za-z0-9_-]+:.+$"
           },
+          "allOf": [
+            {
+              "patternProperties": {
+                "^pacman:": true
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "const": "present"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ],
           "additionalProperties": {
             "oneOf": [
               {
