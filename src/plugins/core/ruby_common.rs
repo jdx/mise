@@ -130,20 +130,17 @@ pub(super) fn parse_gemfile(path: &Path) -> Result<String> {
 }
 
 fn parse_gemfile_contents(body: &str, gemfile_path: Option<&Path>) -> String {
-    let line = body
-        .lines()
-        .find(|line| line.trim().starts_with("ruby "))
-        .unwrap_or_default()
-        .trim()
-        .split('#')
-        .next()
-        .unwrap_or_default()
-        .to_string();
-    if let Some(filename) = ruby_file_option(&line) {
-        return gemfile_path
-            .and_then(|path| read_ruby_file_option(path, &filename))
-            .unwrap_or_default();
-    }
+    let line = gemfile_ruby_directive(body).unwrap_or_default();
+    let line = if let Some(filename) = ruby_file_option(&line) {
+        let Some(file_version) =
+            gemfile_path.and_then(|path| read_ruby_file_option(path, &filename))
+        else {
+            return String::new();
+        };
+        rewrite_ruby_line_with_file_version(&line, &file_version)
+    } else {
+        line
+    };
     let v = line
         .replace("engine:", ":engine =>")
         .replace("engine_version:", ":engine_version =>");
@@ -162,25 +159,86 @@ fn parse_gemfile_contents(body: &str, gemfile_path: Option<&Path>) -> String {
     v
 }
 
+fn gemfile_ruby_directive(body: &str) -> Option<String> {
+    body.lines()
+        .find(|line| line.trim().starts_with("ruby "))
+        .map(|line| strip_ruby_line_comment(line.trim()).to_string())
+}
+
+/// Drop a `#` comment unless it sits inside quotes (`file: ".ruby-version#ci"`).
+fn strip_ruby_line_comment(line: &str) -> &str {
+    let mut in_single = false;
+    let mut in_double = false;
+    for (i, c) in line.char_indices() {
+        match c {
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '#' if !in_single && !in_double => return line[..i].trim_end(),
+            _ => {}
+        }
+    }
+    line
+}
+
 fn ruby_file_option(line: &str) -> Option<String> {
     regex!(r#"(?:^|\s)(?:file\s*:|:file\s*=>)\s*['"]([^'"]+)['"]"#)
         .captures(line)
         .map(|caps| caps[1].to_string())
 }
 
-fn read_ruby_file_option(gemfile_path: &Path, filename: &str) -> Option<String> {
+fn rewrite_ruby_line_with_file_version(line: &str, version: &str) -> String {
+    let stripped = regex!(r#"(?:,\s*)?(?:file\s*:|:file\s*=>)\s*['"][^'"]+['"]"#)
+        .replace(line, "")
+        .to_string();
+    let rest = stripped
+        .trim()
+        .strip_prefix("ruby")
+        .unwrap_or(stripped.trim())
+        .trim_start()
+        .trim_start_matches(',')
+        .trim();
+    if rest.is_empty() {
+        format!("ruby \"{version}\"")
+    } else {
+        format!("ruby \"{version}\", {rest}")
+    }
+}
+
+fn is_safe_relative_ruby_file(filename: &str) -> bool {
     let rel = Path::new(filename);
-    if filename.is_empty()
-        || rel.components().any(|c| {
+    !filename.is_empty()
+        && !rel.components().any(|c| {
             matches!(
                 c,
                 Component::ParentDir | Component::Prefix(_) | Component::RootDir
             )
         })
+}
+
+/// Relative paths from a Gemfile `ruby file:` option, for hook-env watches.
+pub(crate) fn gemfile_watch_patterns(gemfile_path: &Path) -> Vec<String> {
+    if gemfile_path
+        .file_name()
+        .is_none_or(|name| name != "Gemfile")
     {
+        return vec![];
+    }
+    let Ok(body) = file::read_to_string(gemfile_path) else {
+        return vec![];
+    };
+    match gemfile_ruby_directive(&body).and_then(|line| ruby_file_option(&line)) {
+        Some(filename) if is_safe_relative_ruby_file(&filename) && filename != "Gemfile" => {
+            vec![filename]
+        }
+        _ => vec![],
+    }
+}
+
+fn read_ruby_file_option(gemfile_path: &Path, filename: &str) -> Option<String> {
+    if !is_safe_relative_ruby_file(filename) {
         return None;
     }
-    let path = gemfile_path.parent()?.join(rel);
+    let path = gemfile_path.parent()?.join(filename);
     if path.file_name().is_some_and(|name| name == "Gemfile") {
         return None;
     }
@@ -197,7 +255,9 @@ fn read_ruby_file_option(gemfile_path: &Path, filename: &str) -> Option<String> 
 fn parse_bundler_ruby_version_file(body: &str) -> String {
     let normalized = normalize_idiomatic_contents(body);
     for line in normalized.lines() {
-        if let Some(version) = capture_bundler_ruby_line(line.trim()) {
+        if let Some(version) = capture_bundler_ruby_line(line.trim())
+            && is_ruby_version_string(&version)
+        {
             return version;
         }
     }
@@ -212,8 +272,12 @@ fn parse_bundler_ruby_version_file(body: &str) -> String {
 }
 
 fn capture_bundler_ruby_line(line: &str) -> Option<String> {
+    // `ruby-3.2.2` is a version; `ruby-build 2024.1.1` is a different tool.
+    if let Some(caps) = regex!(r"^ruby-(\d[\w.]*)$").captures(line) {
+        return Some(caps[1].to_string());
+    }
     let caps =
-        regex!(r#"^ruby[\s-]*(?:=\s*)?(?:"([^"]+)"|'([^']+)'|([^\s#"']+))"#).captures(line)?;
+        regex!(r#"^ruby(?:\s*=\s*|\s+)(?:"([^"]+)"|'([^']+)'|([^\s#"']+))"#).captures(line)?;
     Some(
         caps.get(1)
             .or_else(|| caps.get(2))
@@ -362,5 +426,52 @@ mod tests {
 
         file::write(&gemfile, "ruby file: \".ruby-version\"\n").unwrap();
         assert_eq!(parse_gemfile(&gemfile).unwrap(), "");
+    }
+
+    #[test]
+    fn parse_gemfile_file_option_applies_engine_options() {
+        let dir = tempfile::tempdir().unwrap();
+        let gemfile = dir.path().join("Gemfile");
+        file::write(dir.path().join(".ruby-version"), "1.9.3\n").unwrap();
+        file::write(
+            &gemfile,
+            "ruby file: \".ruby-version\", engine: \"jruby\", engine_version: \"1.6.7\"\n",
+        )
+        .unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "jruby-1.6.7");
+    }
+
+    #[test]
+    fn parse_gemfile_file_option_skips_hyphenated_tools() {
+        let dir = tempfile::tempdir().unwrap();
+        let gemfile = dir.path().join("Gemfile");
+        file::write(
+            dir.path().join(".tool-versions"),
+            "ruby-build 2024.1.1\nruby 3.3.6\n",
+        )
+        .unwrap();
+        file::write(&gemfile, "ruby file: \".tool-versions\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "3.3.6");
+    }
+
+    #[test]
+    fn parse_gemfile_file_option_keeps_hash_in_quoted_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        let gemfile = dir.path().join("Gemfile");
+        file::write(dir.path().join(".ruby-version#ci"), "3.3.6\n").unwrap();
+        file::write(&gemfile, "ruby file: \".ruby-version#ci\" # comment\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "3.3.6");
+    }
+
+    #[test]
+    fn gemfile_watch_patterns_include_referenced_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let gemfile = dir.path().join("Gemfile");
+        file::write(&gemfile, "ruby file: \".ruby-version\"\n").unwrap();
+        assert_eq!(
+            gemfile_watch_patterns(&gemfile),
+            vec![".ruby-version".to_string()]
+        );
+        assert!(gemfile_watch_patterns(&dir.path().join(".ruby-version")).is_empty());
     }
 }

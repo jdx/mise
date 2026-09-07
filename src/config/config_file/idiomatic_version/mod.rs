@@ -6,7 +6,9 @@ use crate::backend::BackendList;
 use crate::cli::args::{BackendArg, BackendResolution};
 use crate::config::config_file::ConfigFile;
 use crate::file;
+use crate::plugins;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
+use crate::watch_files::WatchFile;
 
 pub(crate) mod package_json;
 
@@ -157,6 +159,18 @@ impl ConfigFile for IdiomaticVersionFile {
 
     fn to_tool_request_set(&self) -> Result<ToolRequestSet> {
         Ok(self.tools.clone())
+    }
+
+    fn watch_files(&self) -> Result<Vec<WatchFile>> {
+        Ok(plugins::core::gemfile_watch_patterns(&self.path)
+            .into_iter()
+            .map(|pattern| WatchFile {
+                patterns: vec![pattern],
+                run: None,
+                shell: None,
+                task: None,
+            })
+            .collect())
     }
 }
 
