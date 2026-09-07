@@ -14,7 +14,7 @@ on:
         type: boolean
         default: false
       finish_draft_tag:
-        description: "Finish an existing draft tag only (attest/packslip/publish). Example: v2026.9.2"
+        description: "Attest/packslip/publish for a release tag (draft or published missing packslip). Example: v2026.9.2"
         type: string
         required: false
         default: ""
@@ -769,16 +769,17 @@ jobs:
             echo "::error::No release found for $TAG"
             exit 1
           fi
-          DRAFT="$(jq -r '.draft' <<< "$RELEASE")"
-          if [[ "$DRAFT" != "true" ]]; then
-            echo "::error::Release $TAG is not a draft (draft=$DRAFT)"
-            exit 1
-          fi
           RELEASE_ID="$(jq -r '.id' <<< "$RELEASE")"
           test -n "$RELEASE_ID"
+          DRAFT="$(jq -r '.draft' <<< "$RELEASE")"
+          HAS_PACKSLIP="$(jq -r '[.assets[].name] | any(. == "packslip.sigstore.json")' <<< "$RELEASE")"
+          if [[ "$DRAFT" != "true" && "$HAS_PACKSLIP" == "true" ]]; then
+            echo "::error::Release $TAG is already published with a packslip"
+            exit 1
+          fi
           echo "release-id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Finishing draft $TAG (id=$RELEASE_ID)"
+          echo "Finishing release $TAG (id=$RELEASE_ID draft=$DRAFT has_packslip=$HAS_PACKSLIP)"
 
   finish-draft-attest:
     needs: [gate, finish-draft-resolve]
@@ -899,6 +900,8 @@ jobs:
             --jq '.assets[] | select(.digest | startswith("sha256:")) | "\(.digest[7:])  ./\(.name)"' \
             | sort > /tmp/draft-assets
           diff -u /tmp/expected-assets /tmp/draft-assets
+          # Idempotent: a recovery run may already have published the release
+          # before packslip/attest were attached.
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
