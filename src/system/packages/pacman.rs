@@ -309,22 +309,35 @@ async fn pacman_query(names: &[String]) -> Result<String> {
     debug!("$ pacman {}", args.join(" "));
     let output = tokio::process::Command::new("pacman")
         .args(&args)
-        // pacman localizes its messages via gettext, so the "was not found"
-        // check below only works against the untranslated output.
+        // pacman localizes diagnostics, so matching requires untranslated output
         .env("LC_ALL", "C")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .await?;
-    // pacman -Q exits 1 when any package is missing ("error: package 'x'
-    // was not found" on stderr); installed ones still print to stdout.
-    // Anything else on stderr (corrupt db, lock file) is a real error.
+    // pacman -Q exits 1 for missing packages while still printing installed ones to stdout
+    // It also suggests -p/--file when a missing name is a readable file or directory
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let only_missing = !stderr.is_empty()
-        && stderr
-            .lines()
-            .all(|line| line.trim().is_empty() || line.contains("was not found"));
+    let missing = stderr
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("error: package '")?
+                .strip_suffix("' was not found")
+        })
+        .filter(|name| names.iter().any(|requested| requested == name))
+        .collect::<HashSet<_>>();
+    let only_missing = !missing.is_empty()
+        && stderr.lines().all(|line| {
+            line.trim().is_empty()
+                || missing.iter().any(|name| {
+                    line == format!("error: package '{name}' was not found")
+                        || line
+                            == format!(
+                                "warning: '{name}' is a file, you might want to use -p/--file."
+                            )
+                })
+        });
     if !output.status.success() && (output.status.code() != Some(1) || !only_missing) {
         bail!("pacman -Q failed: {}", stderr.trim());
     }
@@ -566,6 +579,59 @@ mod tests {
             version: version.map(str::to_string),
             tap_url: None,
             desired: crate::system::packages::PackageDesiredState::Present,
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_pacman_query_file_advisory() {
+        let dir = tempfile::tempdir().unwrap();
+        let pacman = dir.path().join("pacman");
+        let mut env = crate::test::EnvVarGuard::new();
+        let path = std::env::join_paths(std::iter::once(dir.path().to_path_buf()).chain(
+            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+        ))
+        .unwrap();
+        env.set("PATH", path);
+        let missing = "error: package 'fish' was not found\n";
+        let advisory = "warning: 'fish' is a file, you might want to use -p/--file.\n";
+        let cases = [
+            (0, String::new(), true),
+            (1, missing.to_string(), true),
+            (1, format!("{missing}{advisory}"), true),
+            (1, advisory.to_string(), false),
+            (
+                1,
+                format!("{missing}error: could not open database\n"),
+                false,
+            ),
+            (
+                1,
+                format!("{missing}warning: 'git' is a file, you might want to use -p/--file.\n"),
+                false,
+            ),
+            (2, format!("{missing}{advisory}"), false),
+        ];
+        for (code, stderr, accepted) in cases {
+            std::fs::write(
+                &pacman,
+                format!(
+                    "#!/bin/sh\n\
+                     [ \"$LC_ALL\" = C ] || exit 99\n\
+                     [ \"$*\" = '-Q -- curl fish' ] || exit 98\n\
+                     printf 'curl 8.19.0-1\\n'\n\
+                     cat >&2 <<'STDERR'\n{stderr}STDERR\n\
+                     exit {code}\n"
+                ),
+            )
+            .unwrap();
+            crate::file::make_executable(&pacman).unwrap();
+            let result = pacman_query(&["curl".to_string(), "fish".to_string()]).await;
+            if accepted {
+                assert_eq!(result.unwrap(), "curl 8.19.0-1\n");
+            } else {
+                assert!(result.is_err(), "accepted exit {code}: {stderr}");
+            }
         }
     }
 
