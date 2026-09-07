@@ -1004,6 +1004,27 @@ fn is_legacy_windows_cmd_shim(contents: &[u8]) -> bool {
     )
 }
 
+/// Create wrappers needed by a runtime toolset without removing another task's wrappers.
+pub(crate) fn ensure_command_wrapper_shims(config: &Config, ts: &Toolset) -> Result<()> {
+    let wrappers = load_command_wrappers(
+        &config.config_files,
+        ts.versions.values().flat_map(|versions| &versions.requests),
+    )?;
+    validate_wrapper_names(wrappers.keys())?;
+    if wrappers.is_empty() {
+        return Ok(());
+    }
+    let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
+    let shims = wrappers
+        .keys()
+        .flat_map(|name| platform_shim_names(&mise_bin, name))
+        .collect();
+    if let Some(error) = write_bootstrap_shims(&mise_bin, &dirs::COMMAND_WRAPPERS, &shims)? {
+        return Err(error);
+    }
+    Ok(())
+}
+
 fn sync_command_wrapper_shims(
     config: &Config,
     ts: &Toolset,

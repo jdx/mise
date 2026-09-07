@@ -5,6 +5,12 @@ assert_contains "cat mise.toml" 'enabled = "true"'
 assert_contains "cat mise.toml" 'count = "2"'
 assert_contains "cat mise.toml" 'label = "hello"'
 
+# Versionless updates also preserve options from the existing inline table.
+mise use --tool-option label=updated dummy
+assert "mise config get tools.dummy.count" "2"
+assert "mise config get tools.dummy.enabled" "true"
+assert "mise config get tools.dummy.label" "updated"
+
 mise use --tool-option enabled=false dummy@1.0.0 --tool-option label=second tiny@2.0.0
 assert "mise config get tools.dummy.enabled" "false"
 assert "mise config get tools.tiny.label" "second"

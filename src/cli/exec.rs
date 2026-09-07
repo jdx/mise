@@ -281,6 +281,8 @@ impl Exec {
             );
         }
 
+        crate::shims::ensure_command_wrapper_shims(&config, &ts)?;
+
         let (mut env, env_remove) = measure!("env_with_path", {
             ts.env_with_path_and_removals(&config).await?
         });

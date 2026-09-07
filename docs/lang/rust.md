@@ -120,6 +120,7 @@ mise exec -- cargo build
 
 Editors and coding agents must invoke mise's Cargo shim or use `mise exec`.
 Direct calls to rustup's Cargo proxy or a toolchain's Cargo binary bypass mise.
+Safe mode ignores the opt-in from project-scoped Rust entries.
 
 An explicit `[wrappers.cargo]` configuration takes precedence over this option.
 The [generic command wrapper configuration](/dev-tools/shims.html#command-wrappers)

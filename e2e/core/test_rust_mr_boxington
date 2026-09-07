@@ -71,6 +71,7 @@ EOF
 mise use --tool-option mr_boxington=true rust@1.81.0 "mr-boxington@path:$PWD/mbx"
 assert "mise config get tools.rust.mr_boxington" "true"
 assert_contains "cat mise.toml" 'mr_boxington = true'
+assert_contains "cat mise.toml" 'components = ["rustfmt"]'
 assert "mise exec -- cargo check" "mbx:1
 cargo:1.81.0:check"
 assert "mise run check 2>/dev/null" "mbx:1
@@ -100,6 +101,22 @@ mkdir child
   printf '[tools]\nrust = "1.81.0"\n' >mise.toml
   assert "mise exec -- cargo check" "cargo:1.81.0:check"
 )
+
+# Task and exec opt-ins work without a previously generated wrapper.
+mise use --tool-option mr_boxington=false rust@1.81.0
+mise reshim
+assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin/cargo'"
+cat >>mise.toml <<'EOF'
+[tasks.wrapped]
+tools = { rust = { version = "1.81.0", mr_boxington = true } }
+run = "cargo check"
+EOF
+assert "mise run wrapped 2>/dev/null" "mbx:1
+cargo:1.81.0:check"
+assert "mise run check 2>/dev/null" "cargo:1.81.0:check"
+mise reshim
+assert "mise exec 'rust[mr_boxington=true]@1.81.0' -- cargo check" "mbx:1
+cargo:1.81.0:check"
 
 # Explicit wrappers take precedence.
 cat >>mise.toml <<'EOF'
