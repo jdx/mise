@@ -204,7 +204,7 @@ impl Backend for RubyPlugin {
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let v = match path.file_name() {
-            Some(name) if name == "Gemfile" => parse_gemfile(&file::read_to_string(path)?),
+            Some(name) if name == "Gemfile" => super::ruby_common::parse_gemfile(path)?,
             _ => {
                 // .ruby-version
                 let body = normalize_idiomatic_contents(&file::read_to_string(path)?);
@@ -259,33 +259,6 @@ impl Backend for RubyPlugin {
     }
 }
 
-fn parse_gemfile(body: &str) -> String {
-    let v = body
-        .lines()
-        .find(|line| line.trim().starts_with("ruby "))
-        .unwrap_or_default()
-        .trim()
-        .split('#')
-        .next()
-        .unwrap_or_default()
-        .replace("engine:", ":engine =>")
-        .replace("engine_version:", ":engine_version =>");
-    let v = regex!(r#".*:engine *=> *['"](?<engine>[^'"]*).*:engine_version *=> *['"](?<engine_version>[^'"]*).*"#).replace_all(&v, "${engine_version}__ENGINE__${engine}").to_string();
-    let v = regex!(r#".*:engine_version *=> *['"](?<engine_version>[^'"]*).*:engine *=> *['"](?<engine>[^'"]*).*"#).replace_all(&v, "${engine_version}__ENGINE__${engine}").to_string();
-    let v = regex!(r#" *ruby *['"]([^'"]*).*"#)
-        .replace_all(&v, "$1")
-        .to_string();
-    let v = regex!(r#"^[^0-9]"#).replace_all(&v, "").to_string();
-    let v = regex!(r#"(.*)__ENGINE__(.*)"#)
-        .replace_all(&v, "$2-$1")
-        .to_string();
-    // make sure it's like "ruby-3.0.0" or "3.0.0"
-    if !regex!(r"^(\w+-)?([0-9])(\.[0-9])*$").is_match(&v) {
-        return "".to_string();
-    }
-    v
-}
-
 /// The archive a lockfile already pins for this platform, as `(url, filename)`.
 /// `None` when nothing is locked or the URL yields no filename, in which case
 /// the caller resolves the archive itself.
@@ -298,7 +271,6 @@ fn locked_archive(locked_url: Option<&str>) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use crate::config::Config;
-    use indoc::indoc;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -347,41 +319,6 @@ mod tests {
                 .unwrap()
                 .is_empty(),
             "versions for truffleruby+graalvm-24 should not be empty"
-        );
-    }
-
-    #[test]
-    fn test_parse_gemfile() {
-        assert_eq!(
-            parse_gemfile(indoc! {r#"
-            ruby '2.7.2'
-        "#}),
-            "2.7.2"
-        );
-        assert_eq!(
-            parse_gemfile(indoc! {r#"
-            ruby '1.9.3', engine: 'jruby', engine_version: "1.6.7"
-        "#}),
-            "jruby-1.6.7"
-        );
-        assert_eq!(
-            parse_gemfile(indoc! {r#"
-            ruby '1.9.3', :engine => 'jruby', :engine_version => '1.6.7'
-        "#}),
-            "jruby-1.6.7"
-        );
-        assert_eq!(
-            parse_gemfile(indoc! {r#"
-            ruby '1.9.3', :engine_version => '1.6.7', :engine => 'jruby'
-        "#}),
-            "jruby-1.6.7"
-        );
-        assert_eq!(
-            parse_gemfile(indoc! {r#"
-            source "https://rubygems.org"
-            ruby File.read(File.expand_path(".ruby-version", __dir__)).strip
-        "#}),
-            ""
         );
     }
 }

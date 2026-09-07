@@ -188,7 +188,8 @@ ruby = { version = "latest", install_env = { RUBY_CONFIGURE_OPTS = "--disable-in
 
 mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions.
 However, it can also read the ruby-specific version files `.ruby-version` and `Gemfile`
-(if it specifies a ruby version).
+(if it specifies a ruby version). A Gemfile may pin ruby with `ruby "3.3.6"` or Bundler's
+`ruby file: ".ruby-version"` (the path is resolved next to the Gemfile).
 
 Create a `.ruby-version` file for the current version of ruby:
 

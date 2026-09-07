@@ -1,6 +1,11 @@
+use std::path::{Component, Path};
+
+use crate::backend::normalize_idiomatic_contents;
+use crate::file;
 use crate::github;
 use crate::lockfile::PlatformInfo;
 use eyre::Result;
+use xx::regex;
 
 const RUBYINSTALLER_REPO: &str = "oneclick/rubyinstaller2";
 
@@ -112,9 +117,122 @@ pub(super) async fn resolve_rubyinstaller_lock_info(version: &str) -> Result<Pla
     })
 }
 
+/// Parse a Bundler `Gemfile` for a ruby version request.
+///
+/// Supports `ruby "3.3.6"`, engine options, and Bundler's
+/// `ruby file: ".ruby-version"` (also `:file =>`). The referenced file is
+/// resolved relative to the Gemfile and must stay in that directory.
+pub(super) fn parse_gemfile(path: &Path) -> Result<String> {
+    Ok(parse_gemfile_contents(
+        &file::read_to_string(path)?,
+        Some(path),
+    ))
+}
+
+fn parse_gemfile_contents(body: &str, gemfile_path: Option<&Path>) -> String {
+    let line = body
+        .lines()
+        .find(|line| line.trim().starts_with("ruby "))
+        .unwrap_or_default()
+        .trim()
+        .split('#')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    if let Some(filename) = ruby_file_option(&line) {
+        return gemfile_path
+            .and_then(|path| read_ruby_file_option(path, &filename))
+            .unwrap_or_default();
+    }
+    let v = line
+        .replace("engine:", ":engine =>")
+        .replace("engine_version:", ":engine_version =>");
+    let v = regex!(r#".*:engine *=> *['"](?<engine>[^'"]*).*:engine_version *=> *['"](?<engine_version>[^'"]*).*"#).replace_all(&v, "${engine_version}__ENGINE__${engine}").to_string();
+    let v = regex!(r#".*:engine_version *=> *['"](?<engine_version>[^'"]*).*:engine *=> *['"](?<engine>[^'"]*).*"#).replace_all(&v, "${engine_version}__ENGINE__${engine}").to_string();
+    let v = regex!(r#" *ruby *['"]([^'"]*).*"#)
+        .replace_all(&v, "$1")
+        .to_string();
+    let v = regex!(r#"^[^0-9]"#).replace_all(&v, "").to_string();
+    let v = regex!(r#"(.*)__ENGINE__(.*)"#)
+        .replace_all(&v, "$2-$1")
+        .to_string();
+    if !is_ruby_version_string(&v) {
+        return String::new();
+    }
+    v
+}
+
+fn ruby_file_option(line: &str) -> Option<String> {
+    regex!(r#"(?:^|\s)(?:file\s*:|:file\s*=>)\s*['"]([^'"]+)['"]"#)
+        .captures(line)
+        .map(|caps| caps[1].to_string())
+}
+
+fn read_ruby_file_option(gemfile_path: &Path, filename: &str) -> Option<String> {
+    let rel = Path::new(filename);
+    if filename.is_empty()
+        || rel.components().any(|c| {
+            matches!(
+                c,
+                Component::ParentDir | Component::Prefix(_) | Component::RootDir
+            )
+        })
+    {
+        return None;
+    }
+    let path = gemfile_path.parent()?.join(rel);
+    if path.file_name().is_some_and(|name| name == "Gemfile") {
+        return None;
+    }
+    let version = parse_bundler_ruby_version_file(&file::read_to_string(&path).ok()?);
+    if is_ruby_version_string(&version) {
+        Some(version)
+    } else {
+        None
+    }
+}
+
+/// Bundler `normalize_ruby_file`: `ruby-3.2.2`, `ruby 3.2.2`, `ruby = "3.2.2"`,
+/// or a single-line `.ruby-version` body.
+fn parse_bundler_ruby_version_file(body: &str) -> String {
+    let normalized = normalize_idiomatic_contents(body);
+    for line in normalized.lines() {
+        if let Some(version) = capture_bundler_ruby_line(line.trim()) {
+            return version;
+        }
+    }
+    if normalized.trim().lines().nth(1).is_some() {
+        return String::new();
+    }
+    normalized
+        .trim()
+        .trim_start_matches("ruby-")
+        .trim_start_matches('v')
+        .to_string()
+}
+
+fn capture_bundler_ruby_line(line: &str) -> Option<String> {
+    let caps =
+        regex!(r#"^ruby[\s-]*(?:=\s*)?(?:"([^"]+)"|'([^']+)'|([^\s#"']+))"#).captures(line)?;
+    Some(
+        caps.get(1)
+            .or_else(|| caps.get(2))
+            .or_else(|| caps.get(3))?
+            .as_str()
+            .to_string(),
+    )
+}
+
+fn is_ruby_version_string(version: &str) -> bool {
+    // optional engine prefix, one or more numeric segments: "3.0.0", "3.4.10",
+    // "ruby-3.0.0", "jruby-9.4.12.0"
+    regex!(r"^(\w+-)?\d+(\.\d+)*$").is_match(version)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::file;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -151,5 +269,98 @@ mod tests {
         assert!(is_mri_version("3.4.4"));
         assert!(!is_mri_version("jruby-9.4.0.0"));
         assert!(!is_mri_version("truffleruby-24.1.1"));
+    }
+
+    #[test]
+    fn parse_gemfile_literals() {
+        assert_eq!(parse_gemfile_contents("ruby '2.7.2'\n", None), "2.7.2");
+        assert_eq!(parse_gemfile_contents("ruby \"3.4.10\"\n", None), "3.4.10");
+        assert_eq!(parse_gemfile_contents("ruby \"4.0.6\"\n", None), "4.0.6");
+        assert_eq!(
+            parse_gemfile_contents(
+                "ruby '1.9.3', engine: 'jruby', engine_version: \"1.6.7\"\n",
+                None
+            ),
+            "jruby-1.6.7"
+        );
+        assert_eq!(
+            parse_gemfile_contents(
+                "ruby '1.9.3', :engine => 'jruby', :engine_version => '1.6.7'\n",
+                None
+            ),
+            "jruby-1.6.7"
+        );
+        assert_eq!(
+            parse_gemfile_contents(
+                "ruby '1.9.3', :engine_version => '1.6.7', :engine => 'jruby'\n",
+                None
+            ),
+            "jruby-1.6.7"
+        );
+        assert_eq!(
+            parse_gemfile_contents(
+                "ruby \"3.3.0\", engine: \"jruby\", engine_version: \"9.4.12.0\"\n",
+                None
+            ),
+            "jruby-9.4.12.0"
+        );
+        assert_eq!(
+            parse_gemfile_contents(
+                "source \"https://rubygems.org\"\nruby File.read(File.expand_path(\".ruby-version\", __dir__)).strip\n",
+                None
+            ),
+            ""
+        );
+    }
+
+    #[test]
+    fn parse_gemfile_file_option_reads_ruby_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let gemfile = dir.path().join("Gemfile");
+        file::write(dir.path().join(".ruby-version"), "3.3.6\n").unwrap();
+        file::write(
+            &gemfile,
+            "source \"https://rubygems.org\"\nruby file: \".ruby-version\"\n",
+        )
+        .unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "3.3.6");
+    }
+
+    #[test]
+    fn parse_gemfile_file_option_accepts_hash_rocket_and_single_quotes() {
+        let dir = tempfile::tempdir().unwrap();
+        let gemfile = dir.path().join("Gemfile");
+        file::write(dir.path().join(".ruby-version"), "ruby-3.4.10\n").unwrap();
+        file::write(&gemfile, "ruby :file => '.ruby-version'\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "3.4.10");
+    }
+
+    #[test]
+    fn parse_gemfile_file_option_reads_tool_versions_and_mise_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        file::write(
+            dir.path().join(".tool-versions"),
+            "nodejs 20\nruby 3.3.6 # comment\n",
+        )
+        .unwrap();
+        file::write(dir.path().join("mise.toml"), "[tools]\nruby = \"4.0.6\"\n").unwrap();
+
+        let gemfile = dir.path().join("Gemfile");
+        file::write(&gemfile, "ruby file: \".tool-versions\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "3.3.6");
+
+        file::write(&gemfile, "ruby file: \"mise.toml\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "4.0.6");
+    }
+
+    #[test]
+    fn parse_gemfile_file_option_rejects_parent_dir_and_missing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let gemfile = dir.path().join("Gemfile");
+        file::write(&gemfile, "ruby file: \"../.ruby-version\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "");
+
+        file::write(&gemfile, "ruby file: \".ruby-version\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "");
     }
 }
