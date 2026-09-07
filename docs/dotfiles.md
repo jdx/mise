@@ -4,6 +4,8 @@ description: "Declare dotfiles in [dotfiles] to manage complete files and direct
 
 # Dotfiles
 
+For an introduction, read [Dotfiles that save themselves](https://jdx.dev/posts/2026-09-07-dotfiles-that-save-themselves/).
+
 `[dotfiles]` declares how each of your configuration files is managed. The
 recommended way to adopt a file you already edit in place is to **track** it:
 the file stays where it is, nothing is copied or linked, and
@@ -85,6 +87,11 @@ Enrollment accepts exact files and directories, not glob patterns. A directory
 includes new descendants subject to exclusions. Tracking a symlink records
 the link, not its target. Neither the global mise config directory nor
 `dotfiles.root` is implicitly enrolled.
+
+Tracking a path through a symlinked parent directory is rejected, because
+resolving that alias would silently change its destination on another machine.
+Explicitly track the link itself and its real target instead. Aliases in the
+home or mise configuration root are handled by the portable root mapping.
 
 To keep a file out of the origin, do not track it. Untracking or excluding a
 file does not erase versions that are already committed.

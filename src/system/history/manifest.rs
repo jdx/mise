@@ -258,6 +258,7 @@ impl Manifest {
                 .path()
                 .ok_or_else(|| eyre::eyre!("invalid enrollment path {}", enrollment.path))?
                 .to_path_buf();
+            super::tracked::ensure_portable_ancestors(&local)?;
             let mut policy =
                 crate::system::files::FilePolicy::for_mode(crate::system::files::FileMode::Track);
             policy.autosave = enrollment.autosave;
@@ -396,8 +397,16 @@ impl Manifest {
         if mode != "100644" {
             bail!("dotfile enrollment metadata must be a regular file");
         }
-        let manifest: Self =
-            serde_json::from_slice(&repo.cat_object_bounded(&oid, 4 * 1024 * 1024)?)?;
+        #[derive(Deserialize)]
+        struct FormatHeader {
+            format: u64,
+        }
+        let bytes = repo.cat_object_bounded(&oid, 4 * 1024 * 1024)?;
+        let header: FormatHeader = serde_json::from_slice(&bytes)?;
+        if header.format != 1 {
+            bail!("unsupported dotfile repository format {}", header.format);
+        }
+        let manifest: Self = serde_json::from_slice(&bytes)?;
         manifest.validate()?;
         Ok(Some(manifest))
     }
@@ -425,6 +434,39 @@ impl Manifest {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn future_format_is_reported_before_unknown_fields() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let repo = HistoryRepo::open_or_init_in(temp.path())?.unwrap();
+        for (json, message) in [
+            (
+                r#"{"format":2,"future_field":true}"#,
+                "unsupported dotfile repository format 2",
+            ),
+            (r#"{"format":1,"future_field":true}"#, "unknown field"),
+            (r#"{"format":1,"format":1}"#, "duplicate field"),
+            (
+                r#"{"format":1,"enrollment":[],"enrollment":[]}"#,
+                "duplicate field",
+            ),
+        ] {
+            let tree = repo.compose(
+                &repo.mktree("")?,
+                &[Overlay {
+                    path: PATH.into(),
+                    object: Some(("100644".into(), repo.hash_blob(json.as_bytes())?)),
+                }],
+            )?;
+            assert!(
+                Manifest::read(&repo, &tree)
+                    .unwrap_err()
+                    .to_string()
+                    .contains(message)
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn permission_merge_is_per_path_and_rejects_divergence() {

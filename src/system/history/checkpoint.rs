@@ -148,7 +148,7 @@ impl Store {
         self.unavailable.as_deref()
     }
 
-    /// Serializes captures, index writes, and pruning.
+    /// Serializes captures and index writes.
     pub(crate) fn lock(&self) -> Result<fslock::LockFile> {
         LockFile::new(&store::store_lock_path_in(&self.state_dir))
             .with_callback(|path| {
@@ -548,7 +548,6 @@ impl Store {
             summary,
             task: draft.task.clone(),
             labels: draft.labels.clone(),
-            pinned: false,
             tree: TreeInfo {
                 snapshot: snapshot.clone(),
                 available,
@@ -1105,7 +1104,6 @@ pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint 
         summary: "test".into(),
         task: None,
         labels: vec![],
-        pinned: false,
         tree: TreeInfo {
             snapshot: snapshot.map(str::to_string),
             available: snapshot.is_some(),

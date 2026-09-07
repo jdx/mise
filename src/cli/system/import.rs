@@ -78,13 +78,7 @@ pub(crate) struct SystemImport {
 
 impl SystemImport {
     pub(crate) async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap packages import",
-            "packages",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap packages import", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {

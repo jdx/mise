@@ -260,14 +260,7 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
             .rev()
             .find(|entry| {
                 entry.checkpoint.operation.as_ref().is_some_and(|op| {
-                    matches!(
-                        op.kind,
-                        OperationKind::Rollback
-                            | OperationKind::Undo
-                            | OperationKind::Apply
-                            | OperationKind::Bootstrap
-                            | OperationKind::Capture
-                    ) && op.status != OperationStatus::Pending
+                    op.status != OperationStatus::Pending
                         && op.before.is_some()
                         && !op.affected.is_empty()
                 }) && !undone.contains(&entry.checkpoint.uuid)
@@ -279,20 +272,6 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
         bail!("checkpoint {} is not an operation", operation.id);
     };
     // Undo restores tracked files only, never package or service state.
-    if !matches!(
-        op.kind,
-        OperationKind::Rollback
-            | OperationKind::Undo
-            | OperationKind::Apply
-            | OperationKind::Bootstrap
-            | OperationKind::Capture
-    ) {
-        bail!(
-            "checkpoint {} is a {} operation without tracked-file undo support",
-            operation.id,
-            op.kind.as_str()
-        );
-    }
     if op.status == OperationStatus::Pending {
         bail!(
             "checkpoint {} is still running or was interrupted; nothing to undo",
@@ -318,7 +297,7 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
         .cloned()
     else {
         bail!(
-            "checkpoint {} was pruned; the state before operation {} is gone",
+            "checkpoint {} is unavailable; cannot find the state before operation {}",
             before_uuid,
             operation.id
         );

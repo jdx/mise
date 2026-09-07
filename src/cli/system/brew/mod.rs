@@ -27,19 +27,14 @@ impl SystemBrew {
         match self.command {
             Commands::Tap(cmd) => {
                 let dry_run = cmd.dry_run;
-                OperationScope::wrap("bootstrap packages brew tap", "packages", dry_run, async {
-                    cmd.run()
-                })
-                .await
+                OperationScope::wrap("bootstrap packages brew tap", dry_run, async { cmd.run() })
+                    .await
             }
             Commands::Untap(cmd) => {
                 let dry_run = cmd.dry_run;
-                OperationScope::wrap(
-                    "bootstrap packages brew untap",
-                    "packages",
-                    dry_run,
-                    async { cmd.run() },
-                )
+                OperationScope::wrap("bootstrap packages brew untap", dry_run, async {
+                    cmd.run()
+                })
                 .await
             }
         }

@@ -2603,13 +2603,7 @@ impl BootstrapAccounts {
 
 impl BootstrapAccountsApply {
     async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap accounts apply",
-            "accounts",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap accounts apply", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {
@@ -2662,13 +2656,7 @@ impl BootstrapFiles {
 
 impl BootstrapFilesApply {
     async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap files apply",
-            "files",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap files apply", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {
@@ -2787,13 +2775,7 @@ impl BootstrapServices {
 
 impl BootstrapServicesRemove {
     async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap services remove",
-            "services",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap services remove", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {
@@ -2824,13 +2806,7 @@ impl BootstrapServicesRemove {
 
 impl BootstrapServicesApply {
     async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap services apply",
-            "services",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap services apply", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {
@@ -2919,13 +2895,7 @@ impl BootstrapFirewall {
 
 impl BootstrapFirewallApply {
     async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap firewall apply",
-            "firewall",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap firewall apply", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {
@@ -2981,13 +2951,7 @@ impl BootstrapCompose {
 
 impl BootstrapComposeApply {
     async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap compose apply",
-            "compose",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap compose apply", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {
@@ -4193,13 +4157,7 @@ impl BootstrapDotfilesApply {
         // one operation around both hook phases and the apply itself, so a
         // hook that edits a tracked file is inside the checkpoint pair
         let dry_run = self.cmd.dry_run();
-        OperationScope::wrap(
-            "bootstrap dotfiles apply",
-            "dotfiles",
-            dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap dotfiles apply", dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {
@@ -4321,13 +4279,7 @@ impl BootstrapPlugins {
 
 impl BootstrapPluginsApply {
     async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap plugins apply",
-            "plugins",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap plugins apply", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {
@@ -4392,13 +4344,7 @@ impl BootstrapRepos {
 
 impl BootstrapReposApply {
     async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap repos apply",
-            "repos",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap repos apply", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {
@@ -4415,13 +4361,7 @@ impl BootstrapReposApply {
 
 impl BootstrapReposUpdate {
     async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap repos update",
-            "repos",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap repos update", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {
@@ -4563,7 +4503,6 @@ impl BootstrapLaunchdApply {
     async fn run(self) -> Result<()> {
         OperationScope::wrap(
             "bootstrap macos launchd-agents apply",
-            "macos-launchd-agents",
             self.dry_run,
             self.run_inner(),
         )
@@ -4676,7 +4615,6 @@ impl BootstrapSystemdApply {
     async fn run(self) -> Result<()> {
         OperationScope::wrap(
             "bootstrap linux systemd-units apply",
-            "linux-systemd-units",
             self.dry_run,
             self.run_inner(),
         )
@@ -4783,7 +4721,6 @@ impl BootstrapMacosDefaultsApply {
     async fn run(self) -> Result<()> {
         OperationScope::wrap(
             "bootstrap macos defaults apply",
-            "macos-defaults",
             self.dry_run,
             self.run_inner(),
         )
@@ -4899,7 +4836,6 @@ impl BootstrapShellApply {
     async fn run(self) -> Result<()> {
         OperationScope::wrap(
             "bootstrap mise-shell-activate apply",
-            "mise-shell-activate",
             self.dry_run,
             self.run_inner(),
         )
@@ -4986,13 +4922,7 @@ impl BootstrapUser {
 
 impl BootstrapUserApply {
     async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap user apply",
-            "user",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap user apply", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {

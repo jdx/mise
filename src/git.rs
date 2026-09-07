@@ -852,6 +852,10 @@ impl GitPlumbing {
     /// and aliases still cannot act on mise's repository because only
     /// plumbing runs here. Prompts are disabled when nobody is attending.
     pub(crate) fn network_output(&self, call: PlumbingCall<'_>) -> Result<std::process::Output> {
+        eyre::ensure!(
+            call.work_tree.is_none() && call.index_file.is_none() && call.stdin.is_none(),
+            "network Git calls do not accept a work tree, alternate index, or stdin"
+        );
         let git =
             plumbing_binary().ok_or_else(|| eyre!("no unattended git executable is available"))?;
         let mut cmd = std::process::Command::new(git);
@@ -1033,6 +1037,25 @@ mod tests {
     use crate::cmd::CmdLineRunner;
     use crate::config::Settings;
     use std::process::Command;
+
+    #[test]
+    fn network_calls_reject_unsupported_plumbing_fields() {
+        use super::{GitPlumbing, PlumbingCall};
+        let temp = tempfile::tempdir().unwrap();
+        let repo = GitPlumbing::new(temp.path().join("unused.git"));
+        for call in [
+            PlumbingCall::new(["fetch"]).work_tree(temp.path()),
+            PlumbingCall::new(["fetch"]).index_file(temp.path()),
+            PlumbingCall::new(["fetch"]).stdin(b"unexpected"),
+        ] {
+            assert!(
+                repo.network_output(call)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("network Git calls do not accept")
+            );
+        }
+    }
 
     #[test]
     fn sha_detection() {

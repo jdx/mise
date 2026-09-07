@@ -77,9 +77,8 @@ async fn set_inner(
         .repo()
         .ok_or_else(|| eyre::eyre!("connecting a setup repository requires git"))?;
     let state_dir = store.state_dir();
-    // what a previous repository left behind, before the fetch adds to it
-    // nothing is pruned before confirmation: declining preserves the
-    // connected repository's remote-tracking ref
+    // This is the disposable preview repository. The connected repository's
+    // remote-tracking ref remains untouched unless the connection is confirmed.
     let remote = Remote::new(repo, &opts.url);
     if !remote.fetch(&opts.branch)? && repo.ref_oid(UPSTREAM_REF)?.is_some() {
         repo.delete_ref(UPSTREAM_REF)?;

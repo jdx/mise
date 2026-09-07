@@ -215,6 +215,9 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     // landing between the two reaches the scheduler instead of waiting for
     // the next reconcile
     capture.reconcile(&state.tracked, "startup reconcile");
+    // Readiness must mean a service manager can immediately stop us cleanly.
+    // Install signal handlers before publishing the started event.
+    let mut shutdown = Shutdown::new()?;
     capture.out.emit(
         "started",
         &format!(
@@ -231,7 +234,6 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     );
     capture.write_health();
 
-    let mut shutdown = Shutdown::new()?;
     let mut next_reconcile = intervals
         .reconcile
         .map(|every| tokio::time::Instant::now() + every);
@@ -1150,7 +1152,7 @@ struct State {
     /// Links inside tracked directories seen by a walk (a link whose target
     /// is missing now derives nothing, but still declares where it points,
     /// wherever that is by now).
-    derived_links: Vec<PathBuf>,
+    tracked_links: Vec<PathBuf>,
     plan: WatchPlan,
     exclude: ExcludeSet,
     hard: Vec<PathBuf>,
@@ -1165,12 +1167,12 @@ impl State {
 
     fn from_tracked(tracked: TrackedSet) -> Result<Self> {
         let exclude = tracked.exclude_set()?;
-        let (watched, derived_links) = watched_set(&tracked)?;
+        let (watched, tracked_links) = watched_set(&tracked)?;
         let plan = build_plan(&watched);
         Ok(Self {
             tracked,
             watched,
-            derived_links,
+            tracked_links,
             plan,
             exclude,
             hard: hard_exclusions(),
@@ -1189,9 +1191,9 @@ impl State {
         // a link whose target is between two versions derives nothing
         // right now; the link is remembered while it is one, and consulted
         // for where it points now (it may have been retargeted meanwhile)
-        for link in self.derived_links.drain(..) {
-            if link.is_symlink() && !fresh.derived_links.contains(&link) {
-                fresh.derived_links.push(link);
+        for link in self.tracked_links.drain(..) {
+            if link.is_symlink() && !fresh.tracked_links.contains(&link) {
+                fresh.tracked_links.push(link);
             }
         }
         *self = fresh;
@@ -1249,13 +1251,11 @@ impl State {
     }
 }
 
-/// The set the watcher plans and filters by: the declared entries plus the
-/// derived ones the walk discovers (targets of tracked symlinks).
+/// The declared entries the watcher plans and filters by, plus the tracked
+/// links themselves so dangling links remain observable. Targets are not enrolled.
 fn watched_set(tracked: &TrackedSet) -> Result<(TrackedSet, Vec<PathBuf>)> {
     let walk = tracked.walk()?;
-    // Dangling links are captured themselves even though their missing targets
-    // cannot become derived entries. Rediscover them on startup so pruning
-    // preserves a missing target's persisted throttling, just as reload does.
+    // Rediscover dangling links on startup without enrolling their targets.
     let links = walk
         .files
         .keys()
@@ -1930,7 +1930,7 @@ mod tests {
             invalid: vec![],
         };
         let state = State::from_tracked(tracked.clone()).unwrap();
-        assert!(state.derived_links.contains(&link));
+        assert!(state.tracked_links.contains(&link));
         assert!(!state.may_cover_missing(&target));
         let mut excluded = tracked;
         excluded.exclude.push(link.to_string_lossy().into_owned());
@@ -1944,7 +1944,7 @@ mod tests {
     fn state_of(tracked: TrackedSet, config_dir: PathBuf) -> State {
         State {
             watched: tracked.clone(),
-            derived_links: vec![],
+            tracked_links: vec![],
             plan: build_plan(&tracked),
             exclude: tracked.exclude_set().unwrap(),
             hard: vec![],
@@ -1989,7 +1989,7 @@ mod tests {
         let inner = hypr.join("inner-link");
         std::os::unix::fs::symlink(root.join("elsewhere/inner"), &inner).unwrap();
         let mut remembered = state_of(tracked.clone(), root.join("mise"));
-        remembered.derived_links = vec![inner.clone()];
+        remembered.tracked_links = vec![inner.clone()];
         assert!(!remembered.may_cover_missing(&root.join("elsewhere/inner")));
         // retargeted while its new target is missing: the new target is
         // what it declares now, the old one no longer

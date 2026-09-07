@@ -54,13 +54,7 @@ impl DotfilesApply {
     }
 
     pub(crate) async fn run(self) -> Result<bool> {
-        OperationScope::wrap(
-            "bootstrap dotfiles apply",
-            "dotfiles",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap dotfiles apply", self.dry_run, self.run_inner()).await
     }
 
     /// The apply without an operation of its own, for a caller that already

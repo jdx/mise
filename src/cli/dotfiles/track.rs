@@ -64,6 +64,7 @@ impl DotfilesTrack {
             if target.is_relative() {
                 bail!("{target_raw}: target must be absolute or start with ~/");
             }
+            crate::system::history::tracked::ensure_portable_ancestors(&target)?;
             let target_key = normalized_target(&target);
             if !target.exists() && !target.is_symlink() {
                 warn!(

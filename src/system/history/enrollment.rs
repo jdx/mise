@@ -56,17 +56,32 @@ pub(crate) fn resolve(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(error.into()),
     };
-    let historical = if previous.is_none() && !current.enrollment.is_empty() {
-        repo.rev_list(&head, usize::MAX)?
-            .iter()
-            .map(|commit| Manifest::read(repo, commit))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect()
-    } else {
-        vec![]
-    };
+    let mut historical = vec![];
+    if previous.is_none() && !current.enrollment.is_empty() {
+        let mut undecided: Vec<_> = current.enrollment.iter().collect();
+        for commit in repo.rev_list(&head, usize::MAX)? {
+            let Some(manifest) = Manifest::read(repo, &commit)? else {
+                continue;
+            };
+            let matched: Vec<_> = undecided
+                .iter()
+                .filter(|entry| manifest.enrollment.contains(entry))
+                .map(|entry| (*entry).clone())
+                .collect();
+            if !matched.is_empty() {
+                undecided.retain(|entry| !matched.contains(entry));
+                // Retain only answers to the membership question, not every
+                // historical configuration and its potentially large fields.
+                historical.push(Manifest {
+                    enrollment: matched,
+                    ..Default::default()
+                });
+            }
+            if undecided.is_empty() {
+                break;
+            }
+        }
+    }
     let mut manifest = reconcile(&saved, current, previous.as_ref(), &historical);
     let roots = super::sync::layout::Roots::current();
     for path in enroll {

@@ -579,7 +579,6 @@ impl HistoryRepo {
             summary: String::new(),
             task: None,
             labels: vec![],
-            pinned: false,
             tree: super::store::TreeInfo {
                 snapshot: None,
                 available: true,
@@ -606,7 +605,6 @@ impl HistoryRepo {
             record.description_source = metadata.description_source;
             record.task = metadata.task;
             record.labels = metadata.labels;
-            record.pinned = metadata.pinned;
             let missing = |path: String| super::store::PathReason {
                 path: super::tracked::tree_path_to_display(&path),
                 reason: "not captured in this commit".into(),

@@ -182,6 +182,13 @@ impl TrackedSet {
             if !request.enabled || request.mode != FileMode::Track {
                 continue;
             }
+            if let Err(error) = ensure_portable_ancestors(&request.target) {
+                set.invalid.push(PathReason {
+                    path: display_path(&request.target),
+                    reason: error.to_string(),
+                });
+                continue;
+            }
             let target = normalize_target(&request.target);
             let portable =
                 if let Ok(relative) = target.strip_prefix(normalize(&global_config_dir())) {
@@ -778,6 +785,63 @@ pub(crate) fn tree_path_to_display(tree_path: &str) -> String {
     }
 }
 
+/// Root aliases are portable through the home/config mapping. Aliases below
+/// those roots are not: canonicalizing them would silently change the enrolled
+/// destination on another machine. The leaf itself may still be a symlink.
+pub(crate) fn ensure_portable_ancestors(path: &Path) -> Result<()> {
+    eyre::ensure!(
+        path.to_str().is_some(),
+        "tracking does not support non-UTF-8 filenames"
+    );
+    let roots = super::sync::layout::Roots::current();
+    let bases = [
+        dirs::HOME.to_path_buf(),
+        global_config_dir(),
+        roots.home,
+        roots.config_dir,
+    ];
+    let relative = |base: &Path| {
+        let mut components = path.components();
+        for expected in base.components() {
+            let actual = components.next()?;
+            if actual != expected
+                && !(cfg!(windows)
+                    && actual
+                        .as_os_str()
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case(&expected.as_os_str().to_string_lossy()))
+            {
+                return None;
+            }
+        }
+        Some(components.collect::<PathBuf>())
+    };
+    let Some((base, rest)) = bases
+        .iter()
+        .filter_map(|base| relative(base).map(|rest| (base, rest)))
+        .max_by_key(|(base, _)| base.components().count())
+    else {
+        eyre::bail!(
+            "tracking requires a portable path under home or the mise configuration directory"
+        );
+    };
+    let mut ancestor = base.clone();
+    for component in rest
+        .components()
+        .take(rest.components().count().saturating_sub(1))
+    {
+        ancestor.push(component);
+        if file::is_symlink_or_junction(&ancestor) {
+            eyre::bail!(
+                "cannot track {} through symlinked parent {}; explicitly track the link itself and its real target instead",
+                display_path(path),
+                display_path(&ancestor)
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Turns a display or absolute path into its snapshot-tree path.
 pub(crate) fn display_to_tree_path(path: &str) -> String {
     // the link itself, never its destination: a tracked symlink is captured
@@ -811,6 +875,33 @@ pub(crate) fn display_to_tree_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn enrollment_rejects_alias_parents_but_allows_links_and_real_targets() -> Result<()> {
+        let roots = super::super::sync::layout::Roots::current();
+        let temp = tempfile::tempdir_in(&roots.home)?;
+        let real = temp.path().join("real");
+        let alias = temp.path().join("alias");
+        std::fs::create_dir(&real)?;
+        std::fs::write(real.join("config"), "native")?;
+        std::os::unix::fs::symlink("real", &alias)?;
+        assert!(ensure_portable_ancestors(&alias).is_ok());
+        assert!(ensure_portable_ancestors(&real.join("config")).is_ok());
+        assert!(ensure_portable_ancestors(&alias.join("config")).is_err());
+        assert!(ensure_portable_ancestors(&alias.join("missing/child")).is_err());
+        let manifest = super::super::manifest::Manifest {
+            enrollment: vec![super::super::manifest::Enrollment {
+                path: roots.branch_path(&alias.join("config"), None).unwrap(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![],
+            }],
+            ..Default::default()
+        };
+        assert!(manifest.tracking().is_err());
+        Ok(())
+    }
 
     #[cfg(unix)]
     #[test]

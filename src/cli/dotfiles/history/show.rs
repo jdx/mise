@@ -47,9 +47,6 @@ impl HistoryShow {
         if !c.labels.is_empty() {
             miseprintln!("  Labels:      {}", c.labels.join(", "));
         }
-        if c.pinned {
-            miseprintln!("  Pinned:      yes");
-        }
         if let Some(operation) = &c.operation {
             miseprintln!(
                 "  Operation:   {} ({})",

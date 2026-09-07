@@ -586,7 +586,6 @@ async fn run_staged(
             )
             .await?;
         let mut install = vec![
-            "env",
             mise.as_str(),
             "ssh",
             "--repository-bundle",

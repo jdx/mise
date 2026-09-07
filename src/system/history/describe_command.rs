@@ -179,7 +179,6 @@ pub(crate) fn run(store: &Store, entry: &Entry, command: &str) -> Result<Option<
         Annotation {
             description: Some(line.clone()),
             description_source: Some(DescriptionSource::Command),
-            pinned: None,
             labels: None,
             updated_at: store::now_rfc3339(),
         },

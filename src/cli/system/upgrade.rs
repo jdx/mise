@@ -51,13 +51,7 @@ pub(crate) struct SystemUpgrade {
 
 impl SystemUpgrade {
     pub(crate) async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap packages upgrade",
-            "packages",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap packages upgrade", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {

@@ -118,11 +118,16 @@ fn validate_destination(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn read_blob(state_dir: &Path, blob: &Blob) -> Result<Vec<u8>> {
-    use base64::Engine;
-    if blob.sha256.len() != 64 || !blob.sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+fn validate_blob_id(hash: &str) -> Result<()> {
+    if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
         bail!("invalid recovery content identifier");
     }
+    Ok(())
+}
+
+pub(super) fn read_blob(state_dir: &Path, blob: &Blob) -> Result<Vec<u8>> {
+    use base64::Engine;
+    validate_blob_id(&blob.sha256)?;
     let bytes = match &blob.inline {
         Some(inline) => base64::engine::general_purpose::STANDARD.decode(inline)?,
         None => {
@@ -305,9 +310,7 @@ fn discard_except(
         }
     }
     for hash in candidates {
-        if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-            bail!("invalid recovery content identifier");
-        }
+        validate_blob_id(&hash)?;
         let path = super::journal::blobs_dir_in(state_dir).join(hash);
         match std::fs::remove_file(path) {
             Ok(()) => {}

@@ -46,13 +46,7 @@ impl DotfilesEdit {
     pub(crate) async fn run(self) -> Result<()> {
         // The editor itself changes the managed source, so the whole command
         // is one generation, not just the optional apply.
-        OperationScope::wrap(
-            "bootstrap dotfiles edit",
-            "dotfiles",
-            false,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap dotfiles edit", false, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {

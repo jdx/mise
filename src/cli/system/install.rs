@@ -59,13 +59,7 @@ pub(crate) struct SystemInstall {
 
 impl SystemInstall {
     pub(crate) async fn run(self) -> Result<()> {
-        OperationScope::wrap(
-            "bootstrap packages apply",
-            "packages",
-            self.dry_run,
-            self.run_inner(),
-        )
-        .await
+        OperationScope::wrap("bootstrap packages apply", self.dry_run, self.run_inner()).await
     }
 
     async fn run_inner(self) -> Result<()> {

@@ -86,13 +86,7 @@ impl DotfilesAdd {
     /// Validate and capture the requested targets as one transactional update.
     pub(crate) async fn run(self) -> Result<()> {
         let mode = self.validate()?;
-        OperationScope::wrap(
-            "bootstrap dotfiles add",
-            "dotfiles",
-            self.dry_run,
-            self.run_inner(mode),
-        )
-        .await
+        OperationScope::wrap("bootstrap dotfiles add", self.dry_run, self.run_inner(mode)).await
     }
 
     fn validate(&self) -> Result<FileMode> {

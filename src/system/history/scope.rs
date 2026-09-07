@@ -175,14 +175,13 @@ impl OperationScope {
 
     /// Runs `f` inside an operation for `command`, a single-part command,
     /// and finishes it with the outcome.
-    pub(crate) async fn wrap<T, F>(command: &str, part: &str, dry_run: bool, f: F) -> Result<T>
+    pub(crate) async fn wrap<T, F>(command: &str, dry_run: bool, f: F) -> Result<T>
     where
         F: Future<Output = Result<T>>,
     {
         let scope = Self::begin(command, dry_run).await?;
         let result = f.await;
         scope.refresh_tracked().await;
-        let _ = part;
         let summary = Summary { message: None };
         scope.finish(
             result.as_ref().err().map(|err| format!("{err:#}")),
@@ -402,7 +401,6 @@ impl Writer {
                 summary: String::new(),
                 task: None,
                 labels: vec![],
-                pinned: false,
                 tree: TreeInfo {
                     snapshot: None,
                     available: store.unavailable().is_none(),
@@ -542,6 +540,9 @@ impl Writer {
         summary: Option<Summary>,
         writes_finished: bool,
     ) -> Result<()> {
+        // Completed writes remain in place on an ordinary command failure;
+        // only entries without a matching completion need recovery. When the
+        // caller reports incomplete application, retry the whole journal.
         self.pending.recovery = if writes_finished {
             store::RecoveryState::UnfinishedWrites
         } else {
@@ -890,7 +891,7 @@ fn before_trigger(kind: OperationKind) -> Trigger {
     match kind {
         OperationKind::Capture => Trigger::CaptureBefore,
         OperationKind::Bootstrap => Trigger::BootstrapBefore,
-        OperationKind::Rollback | OperationKind::BootstrapRollback => Trigger::RollbackBefore,
+        OperationKind::Rollback => Trigger::RollbackBefore,
         OperationKind::Undo => Trigger::UndoBefore,
         OperationKind::Apply => Trigger::ApplyBefore,
     }
@@ -900,7 +901,7 @@ fn outcome_trigger(kind: OperationKind) -> Trigger {
     match kind {
         OperationKind::Capture => Trigger::Capture,
         OperationKind::Bootstrap => Trigger::Bootstrap,
-        OperationKind::Rollback | OperationKind::BootstrapRollback => Trigger::Rollback,
+        OperationKind::Rollback => Trigger::Rollback,
         OperationKind::Undo => Trigger::Undo,
         OperationKind::Apply => Trigger::Apply,
     }

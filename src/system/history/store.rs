@@ -55,7 +55,7 @@ pub(crate) fn operation_lock_in(state_dir: &Path) -> PathBuf {
     store_dir_in(state_dir).join("operation")
 }
 
-/// The lock serializing captures, index writes, and pruning.
+/// The lock serializing captures and index writes.
 pub(crate) fn store_lock_path_in(state_dir: &Path) -> PathBuf {
     store_dir_in(state_dir).join("store")
 }
@@ -283,7 +283,6 @@ pub(crate) enum OperationKind {
     Rollback,
     Undo,
     Apply,
-    BootstrapRollback,
 }
 
 impl OperationKind {
@@ -294,7 +293,6 @@ impl OperationKind {
             Self::Rollback => "rollback",
             Self::Undo => "undo",
             Self::Apply => "apply",
-            Self::BootstrapRollback => "bootstrap-rollback",
         }
     }
 }
@@ -323,6 +321,8 @@ impl OperationStatus {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Checkpoint {
     pub schema_version: u32,
+    /// Committed records use the Git commit OID. Pending operation records
+    /// reserve a provisional UUID before their outcome commit exists.
     pub uuid: String,
     pub machine: Machine,
     /// RFC 3339, UTC.
@@ -337,8 +337,6 @@ pub(crate) struct Checkpoint {
     pub task: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
-    #[serde(default)]
-    pub pinned: bool,
     pub tree: TreeInfo,
     pub changes: Changes,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -367,7 +365,6 @@ impl Checkpoint {
             description_source: self.description_source,
             task: self.task.clone(),
             labels: self.labels.clone(),
-            pinned: self.pinned,
             omitted: self
                 .tree
                 .coverage
@@ -431,7 +428,6 @@ pub(crate) struct CommitRecord {
     pub description_source: DescriptionSource,
     pub task: Option<String>,
     pub labels: Vec<String>,
-    pub pinned: bool,
     /// Portable paths that this commit could not capture, not known absences.
     pub omitted: Vec<String>,
     /// Portable directory prefixes whose inventory was incomplete.
@@ -728,8 +724,6 @@ pub(crate) struct Annotation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description_source: Option<DescriptionSource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pinned: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub labels: Option<Vec<String>>,
     pub updated_at: String,
 }
@@ -740,9 +734,6 @@ impl Annotation {
             checkpoint.description = description.clone();
             checkpoint.description_source =
                 self.description_source.unwrap_or(DescriptionSource::User);
-        }
-        if let Some(pinned) = self.pinned {
-            checkpoint.pinned = pinned;
         }
         if let Some(labels) = &self.labels {
             checkpoint.labels = labels.clone();

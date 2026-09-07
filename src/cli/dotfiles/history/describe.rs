@@ -23,7 +23,6 @@ impl HistoryDescribe {
         let annotation = Annotation {
             description: Some(self.text.trim().to_string()),
             description_source: Some(DescriptionSource::User),
-            pinned: None,
             labels: None,
             updated_at: crate::system::history::store::now_rfc3339(),
         };

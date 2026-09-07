@@ -607,22 +607,9 @@ pub(crate) async fn apply(
         return result.map(|()| ApplyOutcome::default());
     }
     let written = touched.len() + directories.len();
-    let (error, summary) = match &result {
-        Ok(()) => {
-            scope.promote(&touched);
-            (
-                None,
-                Summary {
-                    message: Some(format!("applied {written} incoming change(s)")),
-                },
-            )
-        }
-        Err(err) => (
-            Some(format!("{err:#}")),
-            Summary {
-                message: Some("apply failed".into()),
-            },
-        ),
+    scope.promote(&touched);
+    let summary = Summary {
+        message: Some(format!("applied {written} incoming change(s)")),
     };
     state::save(repo, &sync_state, "applied")?;
     let applied: BTreeSet<String> = ready
@@ -651,8 +638,7 @@ pub(crate) async fn apply(
         status.last_apply = Some(crate::system::history::store::now_rfc3339());
     }
     run::write_status(state_dir, &status)?;
-    scope.finish(error, Some(summary));
-    result?;
+    scope.finish(None, Some(summary));
     replay::run_reload(&reload, &touched);
     let configuration = ready.iter().any(|step| step.pending.configuration);
     if configuration && !req.automatic {
