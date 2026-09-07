@@ -208,6 +208,24 @@ pub(crate) fn publication(
     changes: &BTreeMap<String, Option<Object>>,
     interactive: bool,
 ) -> Result<BTreeMap<String, Option<Object>>> {
+    publication_with(
+        repo,
+        upstream,
+        shared,
+        changes,
+        interactive,
+        crate::system::history::config::file_recipients,
+    )
+}
+
+fn publication_with(
+    repo: &HistoryRepo,
+    upstream: Option<&str>,
+    shared: &ShareReport,
+    changes: &BTreeMap<String, Option<Object>>,
+    interactive: bool,
+    configured_recipients: impl FnOnce() -> Result<Vec<String>>,
+) -> Result<BTreeMap<String, Option<Object>>> {
     let mut out = changes.clone();
     let mut existing = BTreeMap::new();
     let mut protected = BTreeSet::new();
@@ -243,7 +261,7 @@ pub(crate) fn publication(
         }
         return Ok(out);
     }
-    let strings = crate::system::history::config::file_recipients()?;
+    let strings = configured_recipients()?;
     if strings.is_empty() {
         bail!("encrypted dotfiles require [history.encryption].recipients; nothing was published");
     }
@@ -263,13 +281,9 @@ pub(crate) fn publication(
             "hardware-only file recipients: device loss can make these files unrecoverable; add an independent recovery recipient"
         );
     }
-    let recipients: Vec<_> = strings
-        .iter()
-        .map(|s| {
-            agecrypt::parse_recipient_mode(s, interactive)?
-                .ok_or_else(|| eyre::eyre!("invalid encrypted-file recipient"))
-        })
-        .collect::<Result<_>>()?;
+    // Reusing cached ciphertext requires no recipient plugin or hardware.
+    // Resolve recipients only if a file actually needs fresh encryption.
+    let mut recipients = None;
     for path in &protected {
         let previous = existing.get(path);
         let current = if let Some(change) = changes.get(path) {
@@ -291,9 +305,21 @@ pub(crate) fn publication(
         {
             out.remove(path);
         } else {
+            let recipients = match &recipients {
+                Some(recipients) => recipients,
+                None => recipients.insert(
+                    strings
+                        .iter()
+                        .map(|s| {
+                            agecrypt::parse_recipient_mode(s, interactive)?
+                                .ok_or_else(|| eyre::eyre!("invalid encrypted-file recipient"))
+                        })
+                        .collect::<Result<Vec<_>>>()?,
+                ),
+            };
             out.insert(
                 path.clone(),
-                Some(encrypt(repo, path, &current, &scheme, &recipients)?),
+                Some(encrypt(repo, path, &current, &scheme, recipients)?),
             );
         }
     }
@@ -324,6 +350,45 @@ pub(crate) fn publication(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unchanged_ciphertext_does_not_initialize_recipients() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let key = age::x25519::Identity::generate();
+        let recipients: Vec<Box<dyn age::Recipient + Send>> = vec![Box::new(key.to_public())];
+        // Parsing this recipient would fail. Cached content with the same
+        // scheme must not parse recipients at all, as with a hardware plugin.
+        let configured = "unavailable-plugin-recipient";
+        let scheme = crate::hash::hash_sha256_to_str(configured);
+        let path = "tracked/home/secret";
+        let object = ("100644".into(), repo.hash_blob(b"secret").unwrap());
+        let encrypted = encrypt(&repo, path, &object, &scheme, &recipients).unwrap();
+        let mut delta = BTreeMap::from([(path.to_string(), Some(encrypted))]);
+        write_index(&repo, None, BTreeSet::from([path.to_string()]), &mut delta).unwrap();
+        let tree = repo
+            .compose(
+                &repo.empty_object("tree").unwrap(),
+                &delta
+                    .into_iter()
+                    .map(|(path, object)| crate::system::history::shadow::Overlay { path, object })
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+        let plain = ("100644".into(), repo.hash_blob(b"new plaintext").unwrap());
+        let changes = BTreeMap::from([("tracked/home/plain".into(), Some(plain.clone()))]);
+        let result = publication_with(
+            &repo,
+            Some(&tree),
+            &ShareReport::default(),
+            &changes,
+            false,
+            || Ok(vec![configured.into()]),
+        )
+        .unwrap();
+        assert_eq!(result.get("tracked/home/plain"), Some(&Some(plain)));
+        assert!(!result.contains_key(path));
+    }
+
     #[test]
     fn plaintext_magic_is_not_an_encryption_declaration() {
         let tmp = tempfile::tempdir().unwrap();
