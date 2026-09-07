@@ -1,0 +1,5 @@
+edit the pr for jdx/blog for [https://deploy-preview-99--jdxcode.netlify.app/posts/2026-09-07-dotfiles-that-save-themselves/](https://deploy-preview-99--jdxcode.netlify.app/posts/2026-09-07-dotfiles-that-save-themselves/)
+
+---
+
+critique it
