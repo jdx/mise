@@ -23,6 +23,7 @@ pub(crate) struct DotfilesUntrack {
 
 impl DotfilesUntrack {
     pub(crate) async fn run(self) -> Result<()> {
+        let _declarations = super::track::declaration_lock()?;
         let config = Config::get().await?;
         let managed = crate::system::files::files_from_config(&config)?;
         let tracked = TrackedSet::effective().await?;

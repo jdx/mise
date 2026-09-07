@@ -15,6 +15,7 @@ pub(crate) struct DotfilesExclude {
 
 impl DotfilesExclude {
     pub(crate) async fn run(self) -> Result<()> {
+        let _declarations = super::track::declaration_lock()?;
         super::paths::edit_exclude(&self.glob, true)
     }
 }
@@ -31,6 +32,7 @@ pub(crate) struct DotfilesInclude {
 
 impl DotfilesInclude {
     pub(crate) async fn run(self) -> Result<()> {
+        let _declarations = super::track::declaration_lock()?;
         super::paths::edit_exclude(&self.glob, false)
     }
 }

@@ -49,6 +49,7 @@ pub(crate) struct DotfilesTrack {
 
 impl DotfilesTrack {
     pub(crate) async fn run(self) -> Result<()> {
+        let _declarations = declaration_lock()?;
         let config = Config::get().await?;
         let managed = crate::system::files::composed_files_from_config(&config)?;
         let global = declaration_file(false)?;
@@ -259,12 +260,6 @@ impl DeclarationEdit {
     }
 
     fn write(&mut self, path: &Path) -> Result<()> {
-        if DeclarationEdit::read(path)?.original != self.original {
-            bail!(
-                "{} changed while preparing enrollment; retry",
-                display_path(path)
-            );
-        }
         if let Some(table) = self.document["dotfiles"].as_table_mut() {
             table.sort_values();
         }
@@ -272,7 +267,8 @@ impl DeclarationEdit {
         if let Some(parent) = path.parent() {
             file::create_dir_all(parent)?;
         }
-        file::write(path, &body)?;
+        let prepared = file::prepare_atomic_write(path, &body)?;
+        commit_declaration(path, self.original.as_deref(), prepared)?;
         self.written = Some(body);
         Ok(())
     }
@@ -281,14 +277,59 @@ impl DeclarationEdit {
         let Some(written) = &self.written else {
             return Ok(());
         };
-        if std::fs::read_to_string(path)? != *written {
-            bail!("concurrent declaration edit preserved; inspect the tracking entry");
-        }
         match &self.original {
-            Some(original) => file::write(path, original),
-            None => Ok(std::fs::remove_file(path)?),
+            Some(original) => {
+                let prepared = file::prepare_atomic_write(path, original)?;
+                commit_declaration(path, Some(written), prepared)
+            }
+            None => {
+                check_declaration(path, Some(written))?;
+                Ok(std::fs::remove_file(path)?)
+            }
         }
     }
+}
+
+/// Serialize tracking declaration commands across their entire read/edit/
+/// baseline/recovery interval. Use one lock for multiple config files, and
+/// fail promptly rather than blocking an async runtime worker.
+pub(super) fn declaration_lock() -> Result<fslock::LockFile> {
+    declaration_lock_for(&crate::config::global_shared_config_path())
+}
+
+fn declaration_lock_for(config: &Path) -> Result<fslock::LockFile> {
+    crate::lock_file::LockFile::new(&config.with_extension("dotfiles-declarations.lock"))
+        .try_lock()?
+        .ok_or_else(|| {
+            eyre::eyre!("another tracking declaration command is running; retry shortly")
+        })
+}
+
+fn check_declaration(path: &Path, expected: Option<&str>) -> Result<()> {
+    let current = match std::fs::read_to_string(path) {
+        Ok(body) => Some(body),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    if current.as_deref() != expected {
+        bail!(
+            "{} changed while preparing enrollment; concurrent declaration edit preserved; retry",
+            display_path(path)
+        );
+    }
+    Ok(())
+}
+
+fn commit_declaration(
+    path: &Path,
+    expected: Option<&str>,
+    prepared: file::PreparedAtomicWrite,
+) -> Result<()> {
+    // Check after formatting, directory creation, writing, and fsync. The
+    // declaration lock coordinates mise writers; unrelated editors do not
+    // participate, so this is not a filesystem compare-and-swap guarantee.
+    check_declaration(path, expected)?;
+    prepared.commit()
 }
 
 /// Checks that every declared entry is active and saves their baseline.
@@ -442,6 +483,30 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
 #[cfg(test)]
 mod declaration_tests {
     use super::*;
+
+    #[test]
+    fn declaration_commands_fail_promptly_on_contention() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("config.toml");
+        let first = declaration_lock_for(&path).unwrap();
+        assert!(declaration_lock_for(&path).is_err());
+        drop(first);
+        assert!(declaration_lock_for(&path).is_ok());
+    }
+
+    #[test]
+    fn edits_during_replacement_preparation_are_preserved() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("config.toml");
+        std::fs::write(&path, "# original\n").unwrap();
+        let prepared = file::prepare_atomic_write(&path, "# mise replacement\n").unwrap();
+        std::fs::write(&path, "# external editor\n").unwrap();
+        assert!(commit_declaration(&path, Some("# original\n"), prepared).is_err());
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            "# external editor\n"
+        );
+    }
 
     #[test]
     fn failed_enrollment_restores_only_its_own_declaration_version() {
