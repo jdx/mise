@@ -12,7 +12,7 @@ use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
 use crate::system::history::tracked::{EntryKind, TrackedSet, normalize_target};
 
-/// Track a file or directory where it is (experimental)
+/// Track a file or directory where it is
 ///
 /// Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 /// is, nothing is copied or linked, and history saves a checkpoint of it
@@ -64,7 +64,6 @@ pub(crate) struct DotfilesTrack {
 
 impl DotfilesTrack {
     pub(crate) async fn run(self) -> Result<()> {
-        crate::system::history::ensure_experimental()?;
         let config = Config::get().await?;
         let managed = crate::system::files::files_from_config(&config)?;
         let config_path = declaration_file(self.local)?;

@@ -2,7 +2,7 @@ use eyre::{Result, bail};
 
 use crate::system::history::sync::run::{self, SyncRequest};
 
-/// Publish, fetch, and record what is pending now (experimental)
+/// Publish, fetch, and record what is pending now
 ///
 /// Fetches the setup branch and other machines' recovery refs, publishes
 /// this machine's shared files and configuration (leased on the branch
@@ -27,7 +27,6 @@ pub(crate) struct DotfilesSync {
 
 impl DotfilesSync {
     pub(crate) async fn run(self) -> Result<()> {
-        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         match self.sync().await {
             Ok(()) => Ok(()),
             Err(err) if self.best_effort => {

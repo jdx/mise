@@ -135,7 +135,6 @@ pub(crate) async fn from_git(url: &str, yes: bool, dry_run: bool) -> Result<Opti
     if !matches!(probe(&store, url, &branch)?, RepoState::Marked(_)) {
         return Ok(None);
     }
-    crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
     let store = Store::open()?;
     if let Some(reason) = store.unavailable() {
         bail!("cannot onboard this setup repository: history is unavailable: {reason}");
@@ -213,7 +212,6 @@ pub(crate) fn probe(store: &Store, fetch_from: &str, branch: &str) -> Result<Rep
 /// the connection, and pulls (the configuration first, then what it
 /// declares, like any pull).
 pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcome> {
-    crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
     let state_dir = store.state_dir();
     let mode = SyncMode::current()?;
     let config_dir = global_config_dir();
@@ -311,7 +309,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     refuse_other_connection(store, &onboarding.origin, &onboarding.branch)?;
     request.capture = true;
     request.dry_run = false;
-    let synced = run::sync(store, &tracked, &request)?;
+    run::sync(store, &tracked, &request)?;
 
     // the connection: declared machine-locally, recorded for the watcher
     let newest = store
@@ -366,9 +364,6 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         }
     );
     let durable_access = durable_access(&onboarding.origin, &onboarding.branch);
-    if applied.held == 0 && synced.conflicts == 0 && !configuration_held {
-        crate::system::remote::persist_experimental_opt_in()?;
-    }
     if !durable_access {
         warn!(
             "setup complete, but ongoing synchronization needs credentials on this host: the borrowed GitHub access ends with this session. Run `mise x gh -- gh auth login` and `mise x gh -- gh auth setup-git` here, or connect an SSH url with `mise bootstrap dotfiles origin set <url>`"

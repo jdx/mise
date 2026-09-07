@@ -5,7 +5,6 @@ use crate::ui::table::MiseTable;
 
 /// List the machines with recovery refs in the setup repository
 ///
-/// Experimental: enable with `mise settings experimental=true`.
 ///
 /// This machine first, then every machine whose refs the last
 /// `mise bootstrap dotfiles sync` fetched. Their checkpoints are addressed as
@@ -23,7 +22,6 @@ pub(crate) struct DotfilesMachines {
 
 impl DotfilesMachines {
     pub(crate) async fn run(self) -> Result<()> {
-        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         let (store, _, entries) = super::history::open().await?;
         let Some(repo) = store.repo() else {
             eyre::bail!("listing machines requires git");

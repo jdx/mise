@@ -120,7 +120,7 @@ impl OperationScope {
         dry_run: bool,
         wait: std::time::Duration,
     ) -> Result<Self> {
-        if dry_run || !Settings::get().experimental {
+        if dry_run {
             return Ok(Self(None));
         }
         if !Settings::get().history.enabled {

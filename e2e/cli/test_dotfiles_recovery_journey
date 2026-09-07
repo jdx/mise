@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# One recovery journey: independent/offline edits, conflicts, an interrupted
+# pull, undo, and recovery on a third machine using a separate recovery key.
+# shellcheck disable=SC2016
+require_cmd git
+export MISE_EXPERIMENTAL=0
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+KEY='AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8'
+PUB='age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l'
+RECOVERY_KEY='AGE-SECRET-KEY-12LCM5FM5DQ7HZDGYUZWMJ6QHM66J07NZ75VVP2VVGCZX53HYD5PQUXUN8K'
+RECOVERY_PUB='age15myzzpkenzud22ag88x5ksqd80g4tkwtruu976uev57l4r240qcqcuqnt9'
+printf '%s\n' "$KEY" >"$MISE_CONFIG_DIR/age.txt"
+mkdir -p ~/.config/journey
+printf 'initial\n' >~/.config/journey/bindings
+printf 'machine-specific\n' >~/.config/journey/monitor
+chmod 600 ~/.config/journey/monitor
+assert_succeed 'mise bootstrap dotfiles track ~/.config/journey/bindings'
+assert_succeed 'mise bootstrap dotfiles track ~/.config/journey/monitor --no-share'
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --name laptop --sync manual --encrypt-backups --recipient $PUB --recipient $RECOVERY_PUB --include-existing --yes"
+
+wrapper() {
+  mkdir -p "$2/.config/mise"
+  cat <<WRAPPER >"$PWD/$1"
+#!/usr/bin/env bash
+export HOME="$2" XDG_CONFIG_HOME="$2/.config" MISE_CONFIG_DIR="$2/.config/mise" \\
+  MISE_STATE_DIR="$2/.local/state/mise" MISE_DATA_DIR="$2/.local/share/mise" \\
+  MISE_CACHE_DIR="$2/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$2"
+cd "\$HOME" && exec mise "\$@"
+WRAPPER
+  chmod +x "$PWD/$1"
+}
+B="$(dirname "$HOME")/journey-b"
+C="$(dirname "$HOME")/journey-c"
+wrapper journey-b "$B"
+wrapper journey-c "$C"
+b="$PWD/journey-b"
+c="$PWD/journey-c"
+assert_succeed "$b bootstrap --from-git file://$origin --yes --only dotfiles"
+assert "cat $B/.config/journey/bindings" 'initial'
+assert_fail "test -e $B/.config/journey/monitor"
+
+# Independent edits survive an offline interval; neither side silently wins.
+printf 'laptop edit\n' >~/.config/journey/bindings
+assert_succeed 'mise bootstrap dotfiles save'
+mv "$origin" "$origin.offline"
+printf 'desktop edit\n' >"$B/.config/journey/bindings"
+assert_succeed "$b bootstrap dotfiles save"
+assert_fail "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles history diff latest --patch" '+desktop edit'
+mv "$origin.offline" "$origin"
+assert_succeed 'mise bootstrap dotfiles sync'
+assert_succeed "$b bootstrap dotfiles sync"
+assert_fail "$b bootstrap dotfiles pull --yes" 'sync paused'
+assert "cat $B/.config/journey/bindings" 'desktop edit'
+assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/journey/bindings --yes"
+assert "cat $B/.config/journey/bindings" 'laptop edit'
+
+# Stop a real pull at its first Git operation after the live file changes,
+# before it records the outcome checkpoint. The shim affects only this child.
+pidfile="$PWD/pull.pid"
+real_git=$(command -v git)
+mkdir "$PWD/crash-bin"
+cat <<WRAPPER >"$PWD/crash-bin/git"
+#!/usr/bin/env bash
+if [[ \$(cat "$B/.config/journey/bindings") == 'incoming edit' ]]; then
+  kill -KILL "\$(cat "$pidfile")"
+  exit 1
+fi
+exec "$real_git" "\$@"
+WRAPPER
+chmod +x "$PWD/crash-bin/git"
+cat <<WRAPPER >"$PWD/interrupted-pull"
+#!/usr/bin/env bash
+echo \$\$ >"$pidfile"
+export PATH="$PWD/crash-bin:\$PATH"
+exec "$b" bootstrap dotfiles pull --yes
+WRAPPER
+chmod +x "$PWD/interrupted-pull"
+printf 'incoming edit\n' >~/.config/journey/bindings
+assert_succeed 'mise bootstrap dotfiles sync'
+assert_succeed "$b bootstrap dotfiles sync"
+assert_fail "$PWD/interrupted-pull"
+assert "cat $B/.config/journey/bindings" 'incoming edit'
+assert "$b bootstrap dotfiles history --pending --json | jq length" '1'
+assert_succeed "$b bootstrap dotfiles save"
+assert_succeed "$b bootstrap dotfiles undo --yes"
+assert "cat $B/.config/journey/bindings" 'laptop edit'
+
+# Fresh-machine bootstrap restores shared state, but not private machine files.
+assert_succeed "$c bootstrap --from-git file://$origin --yes --only dotfiles"
+assert "cat $C/.config/journey/bindings" 'incoming edit'
+assert_fail "test -e $C/.config/journey/monitor"
+assert_contains "$c bootstrap dotfiles machines" 'laptop'
+assert_fail "$c bootstrap dotfiles rollback $C/.config/journey/monitor --to laptop/latest --yes" 'identity'
+# Recover with the independent key, not the lost machine's original identity.
+assert_succeed "MISE_AGE_KEY=$RECOVERY_KEY $c bootstrap dotfiles rollback $C/.config/journey/monitor --to laptop/latest --yes"
+assert "cat $C/.config/journey/monitor" 'machine-specific'
+mode=$(stat -c %a "$C/.config/journey/monitor" 2>/dev/null || stat -f %Lp "$C/.config/journey/monitor")
+assert "echo $mode" '600'
+assert_fail "test -e $C/.config/mise/age.txt"
+# The recovery-only file never appeared on the shared setup branch.
+shared_commits=$(git --git-dir="$origin" rev-list main)
+assert_succeed "test -n '$shared_commits'"
+for shared_commit in $shared_commits; do
+  assert_fail "git --git-dir=$origin cat-file -e $shared_commit:tracked/home/.config/journey/monitor"
+done

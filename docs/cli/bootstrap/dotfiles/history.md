@@ -5,7 +5,7 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/dotfiles/history/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/history/mod.rs)
 
-Browse the checkpoints of your dotfiles (experimental)
+Browse the checkpoints of your dotfiles
 
 Every save, every mutating bootstrap command, and the watcher record a
 checkpoint of the tracked files: the global mise config directory, the

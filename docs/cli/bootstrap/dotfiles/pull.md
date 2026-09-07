@@ -5,7 +5,7 @@
 - **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/dotfiles/pull.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/pull.rs)
 
-Pull incoming shared changes into the live files (experimental)
+Pull incoming shared changes into the live files
 
 Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
 (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes

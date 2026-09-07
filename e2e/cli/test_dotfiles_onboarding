@@ -2,7 +2,7 @@
 # Sharing and backups are distinct destinations; private contents stay local.
 # shellcheck disable=SC2016
 require_cmd git
-export MISE_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=0
 
 printf 'private contents\n' >~/.private-config
 printf 'shared contents\n' >~/.shared-config

@@ -2,7 +2,7 @@
 # A populated tree moved into a missing tracked path is captured without a
 # periodic scan or a later edit inside the tree.
 require_cmd git
-export MISE_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=0
 export MISE_HISTORY_WATCH_RECONCILE=0
 export MISE_HISTORY_WATCH_DEBOUNCE=100ms
 

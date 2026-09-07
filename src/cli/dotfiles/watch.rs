@@ -2,7 +2,7 @@ use eyre::Result;
 
 use crate::system::history::watch::runtime::{self, WatchOptions};
 
-/// Save tracked files as they change (experimental)
+/// Save tracked files as they change
 ///
 /// Runs in the foreground: installs filesystem watches for every autosaved
 /// tracked entry, saves a checkpoint once a changed file has been quiet for
@@ -25,7 +25,7 @@ use crate::system::history::watch::runtime::{self, WatchOptions};
 ///     [bootstrap.services.mise-history]
 ///     builtin = "history-watch"
 ///
-/// Exit codes: 0 when history or experimental mode is disabled or another watcher already runs;
+/// Exit codes: 0 when history is disabled or another watcher already runs;
 /// 1 when git is unusable, the store cannot open, or no watch can be
 /// installed. A capture that fails is retried with backoff and never drops
 /// the pending changes; one that would overlap another history operation

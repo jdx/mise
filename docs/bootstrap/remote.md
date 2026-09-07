@@ -305,7 +305,7 @@ mise configuration directory:
 
 ```sh
 # Authenticate on this machine first (for example, using gh auth login).
-mise bootstrap remote --experimental --host devbox --from-git jdx/dotfiles \
+mise bootstrap remote --host devbox --from-git jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles
 ```
 
@@ -351,19 +351,8 @@ installs the history watcher like any other user service. With `--dry-run` the
 target shows that plan (the files it would write, and any held for a decision),
 records no connection, and keeps no fetched branch:
 
-Tracking-enabled setup repositories require `--experimental`. This explicitly
-enables experimental features for the remote invocation and, after successful
-tracking setup, saves the opt-in in the target's machine-local mise configuration
-so its watcher can keep running. Dry runs do not persist it. Enabling experimental
-locally alone does not opt in the remote host. Ordinary repository-based bootstrap
-does not require the flag.
-
-The target must allow machine-local configuration discovery. If it sets
-`MISE_GLOBAL_CONFIG_FILE` to a different file, unset that override before setup;
-mise refuses to save an opt-in in a file that subsequent sessions would ignore.
-
 ```sh
-mise bootstrap remote --experimental --host devbox --install-mise --from-git jdx/dotfiles \
+mise bootstrap remote --host devbox --install-mise --from-git jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles
 ```
 
@@ -435,7 +424,7 @@ mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
   --github-relay-log-requests --github-relay-max-duration 1h
 
 # Structured relay events for troubleshooting or auditing:
-mise bootstrap remote --experimental --host devbox --from-git jdx/dotfiles \
+mise bootstrap remote --host devbox --from-git jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles \
   --github-relay-log-requests --github-relay-log-format jsonl
 ```

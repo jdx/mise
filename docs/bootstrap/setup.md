@@ -1,10 +1,5 @@
 # Set up a machine with mise
 
-> [!WARNING]
-> Dotfile tracking and synchronization are experimental. Enable them with
-> `mise settings experimental=true`. Interfaces and storage formats may change.
-> Existing source-managed dotfiles do not require experimental mode.
-
 Keep editing your dotfiles where they are. This guide shows how to save local
 history, restore a file, and optionally share your setup through a Git repository.
 Start with one file; add more once you have tried restoring a change.
@@ -16,7 +11,6 @@ You need Git installed. If mise is already installed, skip the first two command
 ```sh
 curl https://mise.run | sh
 export PATH="$HOME/.local/bin:$PATH"
-mise settings experimental=true
 ```
 
 ## Track a file
@@ -152,7 +146,6 @@ same repository host:
 ```sh
 curl https://mise.run | sh
 export PATH="$HOME/.local/bin:$PATH"
-mise settings experimental=true
 mise use -g gh
 mise x gh -- gh auth login --hostname github.com --git-protocol https --web
 mise x gh -- gh auth setup-git --hostname github.com
@@ -172,7 +165,7 @@ For setup over SSH, see [remote bootstrap](/bootstrap/remote.html). Tracked setu
 require explicit target opt-in:
 
 ```sh
-mise bootstrap remote --experimental --host devbox --install-mise --from-git you/setup \
+mise bootstrap remote --host devbox --install-mise --from-git you/setup \
   --github-relay-read-only --github-relay-repo you/setup
 ```
 

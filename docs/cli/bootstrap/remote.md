@@ -15,7 +15,6 @@ installs persistent global configuration; preview that choice with `--dry-run`.
 - **`[TARGET]…`** — Inventory host names from `[bootstrap.remote.hosts]`
 
 ## Flags
-- **`--experimental`** — Enable experimental features on the target; retain opt-in after tracking setup
 - **`--from-git <GIT_URL|OWNER/REPO>`** — Install a Git repository as persistent global configuration on each target
 - **`--github-relay-read-only`** — Borrow read-only GitHub access for this invocation
 - **`--github-relay-repo <OWNER/REPO>`** — Approved GitHub repository; repeat for multiple repositories

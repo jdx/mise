@@ -256,7 +256,6 @@ pub(crate) fn sync(
     tracked: &TrackedSet,
     request: &SyncRequest,
 ) -> Result<SyncOutcome> {
-    crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
     let _sync_lock = lock(store)?;
     let origin = match &request.origin {
         Some(origin) => origin.clone(),
@@ -893,9 +892,6 @@ pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -
 /// A bootstrap finished: the declarations that arrived through sync are
 /// applied now, so `status` stops asking for one.
 pub(crate) fn bootstrap_completed() {
-    if !crate::config::Settings::get().experimental {
-        return;
-    }
     let state_dir: &Path = &crate::dirs::STATE;
     let status = match read_status(state_dir) {
         Ok(status) => status,

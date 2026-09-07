@@ -57,7 +57,7 @@ assert_succeed "mise bootstrap dotfiles origin set file://$origin --name laptop 
 assert_contains "git --git-dir=$origin ls-tree -r --name-only main" "tracked/home/.config/hypr/bindings.lua"
 
 # ---- a dry run on a fresh host previews and leaves no trace
-out="$(mise bootstrap remote --experimental --host fresh --from-git "file://$origin" --remote-mise "$binary" --only repos --dry-run 2>&1)"
+out="$(mise bootstrap remote --host fresh --from-git "file://$origin" --remote-mise "$binary" --only repos --dry-run 2>&1)"
 export out
 assert_contains 'printf "%s\n" "$out"' "is a mise setup repository"
 assert_contains 'printf "%s\n" "$out"' "bindings.lua"
@@ -73,7 +73,7 @@ assert "find remotes/fresh -path '*/refs/setup/*' | wc -l | tr -d ' '" "0"
 assert "find remotes/fresh -name config.local.toml | wc -l | tr -d ' '" "0"
 
 # ---- the real run writes what the dry run showed
-assert_succeed "mise bootstrap remote --experimental --host fresh --from-git file://$origin --remote-mise '$binary' --only dotfiles --yes"
+assert_succeed "mise bootstrap remote --host fresh --from-git file://$origin --remote-mise '$binary' --only dotfiles --yes"
 assert_fail "test -e remotes/fresh/.config/mise/.git"
 assert "cat remotes/fresh/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
 assert_contains "cat remotes/fresh/.config/mise/config.toml" '"~/.config/hypr" = { mode = "track" }'
@@ -82,7 +82,7 @@ assert "find remotes/fresh -name sync.json | wc -l | tr -d ' '" "1"
 assert_contains "cat '$SSH_LOG'" '/.config/mise bootstrap'
 
 # ---- a dry run on a set-up host previews the bootstrap against its configuration
-out="$(mise bootstrap remote --experimental --host fresh --from-git "file://$origin" --remote-mise "$binary" --only dotfiles --dry-run 2>&1)"
+out="$(mise bootstrap remote --host fresh --from-git "file://$origin" --remote-mise "$binary" --only dotfiles --dry-run 2>&1)"
 assert_contains 'printf "%s\n" "$out"' "Dry run: nothing was changed"
 assert_contains "cat '$SSH_LOG'" 'bootstrap --dry-run'
 assert "cat remotes/fresh/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"

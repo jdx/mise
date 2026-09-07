@@ -4,7 +4,7 @@ use eyre::{Result, bail};
 
 use crate::system::history::sync::apply::{self, ApplyRequest};
 
-/// Pull incoming shared changes into the live files (experimental)
+/// Pull incoming shared changes into the live files
 ///
 /// Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
 /// (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
@@ -50,7 +50,6 @@ pub(crate) struct DotfilesPull {
 
 impl DotfilesPull {
     pub(crate) async fn run(self) -> Result<()> {
-        crate::config::Settings::get().ensure_experimental("dotfile tracking")?;
         if !crate::config::Settings::get().history.enabled {
             bail!("history is disabled (history.enabled = false)");
         }

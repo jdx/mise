@@ -50,7 +50,6 @@ struct PathRow {
 
 impl DotfilesPaths {
     pub(crate) async fn run(self) -> Result<()> {
-        crate::system::history::ensure_experimental()?;
         if self.noisy {
             return self.print_noisy();
         }

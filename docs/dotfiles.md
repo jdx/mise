@@ -1,12 +1,5 @@
 # Dotfiles
 
-> [!WARNING]
-> Tracking, checkpoints, rollback, watching, and synchronization are experimental.
-> Their interfaces and storage formats may change before stabilization.
-> This notice concerns the new tracking workflows, not ordinary symlink, copy,
-> template, and managed-edit workflows.
-> Enable these workflows with `mise settings experimental=true`.
-
 `[dotfiles]` declares how each of your configuration files is managed. The
 recommended way to adopt a file you already edit in place is to **track** it:
 the file stays where it is, nothing is copied or linked, and

@@ -1,12 +1,5 @@
 # Dotfiles history
 
-> [!WARNING]
-> Tracking, checkpoints, rollback, watching, and synchronization are experimental.
-> Their interfaces and storage formats may change before stabilization.
-> This notice concerns the new tracking workflows, not ordinary symlink, copy,
-> template, and managed-edit workflows.
-> Enable these workflows with `mise settings experimental=true`.
-
 mise keeps checkpoints of your configuration files: the global mise config
 directory, the dotfiles root, every `[dotfiles]` entry, and any file you
 [track](/dotfiles.html#tracking-files-in-place) where it is. A checkpoint is
@@ -520,6 +513,32 @@ mise bootstrap dotfiles origin set https://github.com/you/setup.git
 
 Existing working credentials skip the two `gh` steps. SSH remotes work when
 the service environment can reach an agent or an unencrypted key.
+
+## Test recovery before you need it
+
+Keep an independent recovery identity outside the machine being backed up and
+include its public recipient when enabling encrypted backups. A private Git
+repository's authentication and an age decryption identity serve different
+purposes: a replacement machine needs both repository access and a matching
+identity to restore encrypted content.
+
+After bootstrapping a spare machine from your setup repository, configure its
+recovery identity locally using `settings.age.identity_files`, or place the key
+in `~/.config/mise/age.txt` with permissions `0600`. Do this before either rollback
+command below: the dry run also needs to decrypt the backup. Then fetch the latest
+recovery refs and inspect a machine-specific file that was backed up but not shared:
+
+```sh
+mise bootstrap dotfiles sync
+mise bootstrap dotfiles machines
+mise bootstrap dotfiles rollback ~/.config/hypr/monitors.lua --to laptop/latest --dry-run
+mise bootstrap dotfiles rollback ~/.config/hypr/monitors.lua --to laptop/latest
+```
+
+Verify the recovered file and its permissions;
+`mise bootstrap dotfiles undo` reverses the restore.
+Try this while the original machine is still available. Successful publication
+alone does not demonstrate that a replacement machine can decrypt a backup.
 
 ## What is tracked
 

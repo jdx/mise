@@ -26,8 +26,3 @@ pub(crate) mod tracked;
 pub(crate) mod watch;
 
 pub(crate) use scope::OperationScope;
-
-/// Tracking and its recovery/synchronization interfaces are experimental.
-pub(crate) fn ensure_experimental() -> eyre::Result<()> {
-    crate::config::Settings::get().ensure_experimental("dotfile tracking")
-}

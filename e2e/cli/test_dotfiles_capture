@@ -2,9 +2,7 @@
 # External commands retain linked pairs and their own exit result.
 # shellcheck disable=SC2016
 require_cmd git
-export MISE_EXPERIMENTAL=1
-assert_fail "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles capture -- sh -c 'touch ~/.ungated-capture'" 'experimental'
-assert_fail 'test -e ~/.ungated-capture'
+export MISE_EXPERIMENTAL=0
 printf 'initial\n' >~/.captured
 assert_succeed 'mise bootstrap dotfiles track ~/.captured --no-autosave'
 printf 'user edit\n' >~/.captured

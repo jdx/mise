@@ -1,7 +1,7 @@
 Describe 'history watch' {
     BeforeAll {
         $script:OriginalExperimental = [Environment]::GetEnvironmentVariable('MISE_EXPERIMENTAL', 'Process')
-        $env:MISE_EXPERIMENTAL = '1'
+        $env:MISE_EXPERIMENTAL = '0'
         $script:OriginalDir = Get-Location
         Set-Location TestDrive:
 
@@ -32,14 +32,14 @@ Describe 'history watch' {
         }
     }
 
-    It 'requires experimental opt-in before tracking' {
+    It 'tracks without experimental opt-in' {
         $env:MISE_EXPERIMENTAL = '0'
         try {
             $output = mise bootstrap dotfiles track $script:Tracked 2>&1 | Out-String
-            $LASTEXITCODE | Should -Not -Be 0
-            $output | Should -Match 'dotfile tracking is experimental'
+            $LASTEXITCODE | Should -Be 0
+            $output | Should -Not -Match 'dotfile tracking is experimental'
         } finally {
-            $env:MISE_EXPERIMENTAL = '1'
+            $env:MISE_EXPERIMENTAL = '0'
         }
     }
 
@@ -50,12 +50,13 @@ Describe 'history watch' {
 
         $status = mise bootstrap dotfiles status --json | Out-String | ConvertFrom-Json
         $status.history.watcher | Should -Be 'not-declared'
+        $before = @(mise bootstrap dotfiles history --json | Out-String | ConvertFrom-Json).Count
 
         'two' | Out-File -FilePath (Join-Path $script:Tracked 'file.txt') -Encoding utf8NoBOM
         mise bootstrap dotfiles watch --once 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0
         $entries = mise bootstrap dotfiles history --json | Out-String | ConvertFrom-Json
-        $entries.Count | Should -Be 2
+        $entries.Count | Should -Be ($before + 1)
         $entries[0].trigger | Should -Be 'edit'
 
         @"

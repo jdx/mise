@@ -1,7 +1,7 @@
 Describe 'dotfiles' {
     BeforeAll {
         $script:OriginalExperimental = [Environment]::GetEnvironmentVariable('MISE_EXPERIMENTAL', 'Process')
-        $env:MISE_EXPERIMENTAL = '1'
+        $env:MISE_EXPERIMENTAL = '0'
         $script:OriginalDir = Get-Location
         $script:TestRoot = Join-Path $TestDrive ([System.Guid]::NewGuid().ToString())
         New-Item -ItemType Directory -Path $script:TestRoot | Out-Null

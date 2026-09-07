@@ -3,12 +3,12 @@
 # refs are age-encrypted for its recipients. Another machine lists them
 # without a key and restores them with one; changing the scheme replaces the
 # refs on the origin; a machine with no key anywhere gets an identity
-# generated. Dotfile tracking and synchronization require experimental mode.
+# generated. Tracking and synchronization work without experimental mode.
 # shellcheck disable=SC2016
 
 require_cmd git
 
-export MISE_EXPERIMENTAL=1
+export MISE_EXPERIMENTAL=0
 
 origin="$PWD/origin.git"
 git init -q --bare -b main "$origin"
@@ -28,7 +28,7 @@ wrapper() { # name dir
 #!/usr/bin/env bash
 export HOME="$2" XDG_CONFIG_HOME="$2/.config" MISE_CONFIG_DIR="$2/.config/mise" \\
   MISE_STATE_DIR="$2/.local/state/mise" MISE_DATA_DIR="$2/.local/share/mise" \\
-  MISE_CACHE_DIR="$2/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$2" MISE_EXPERIMENTAL=1
+  MISE_CACHE_DIR="$2/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$2" MISE_EXPERIMENTAL=0
 cd "\$HOME" && exec mise "\$@"
 EOF
   chmod +x "$PWD/$1"
