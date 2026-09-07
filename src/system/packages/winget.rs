@@ -33,15 +33,17 @@ impl WingetManager {
 
 /// Builds the non-interactive source refresh arguments.
 fn source_update_args() -> Vec<String> {
-    [
-        "source",
-        "update",
-        "--accept-source-agreements",
-        "--disable-interactivity",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
+    ["source", "update", "--disable-interactivity"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
+/// Builds a query that accepts source agreements before a mutating operation.
+fn accept_source_agreements_args(request: &PackageRequest) -> Vec<String> {
+    let mut args = list_args(request);
+    args.insert(args.len() - 1, "--accept-source-agreements".to_string());
+    args
 }
 
 /// Builds a side-effect-free exact-ID installed-state query.
@@ -78,28 +80,40 @@ fn package_args(command: &str, request: &PackageRequest) -> Vec<String> {
     args
 }
 
-/// Compares an installed version with an optional opaque version pin.
-fn package_state(request: &PackageRequest, installed: String) -> PackageState {
+/// Compares installed versions with an optional opaque version pin.
+fn package_state(request: &PackageRequest, installed: &[String]) -> PackageState {
+    if let Some(requested) = &request.version
+        && installed.iter().any(|version| version == requested)
+    {
+        return PackageState::Installed {
+            version: requested.clone(),
+        };
+    }
+
+    let installed = installed[0].clone();
     match &request.version {
-        Some(requested) if requested != &installed => PackageState::VersionMismatch { installed },
-        _ => PackageState::Installed { version: installed },
+        Some(_) => PackageState::VersionMismatch { installed },
+        None => PackageState::Installed { version: installed },
     }
 }
 
-/// Extracts the installed version from an exact-ID WinGet list row.
-fn parse_list_row(output: &str, package_id: &str) -> Option<String> {
-    output.lines().find_map(|line| {
-        let offset = line.rfind(package_id)?;
-        let before = &line[..offset];
-        let after = &line[offset + package_id.len()..];
-        let bounded_before = before.chars().next_back().is_none_or(char::is_whitespace);
-        let bounded_after = after.chars().next().is_none_or(char::is_whitespace);
-        if bounded_before && bounded_after {
-            after.split_whitespace().next().map(str::to_string)
-        } else {
-            None
-        }
-    })
+/// Extracts every installed version from exact-ID WinGet list rows.
+fn parse_list_rows(output: &str, package_id: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let offset = line.rfind(package_id)?;
+            let before = &line[..offset];
+            let after = &line[offset + package_id.len()..];
+            let bounded_before = before.chars().next_back().is_none_or(char::is_whitespace);
+            let bounded_after = after.chars().next().is_none_or(char::is_whitespace);
+            if bounded_before && bounded_after {
+                after.split_whitespace().next().map(str::to_string)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Classifies WinGet list output as installed, missing, or failed.
@@ -111,13 +125,14 @@ fn query_state(
 ) -> Result<PackageState> {
     match code {
         Some(0) => {
-            let installed = parse_list_row(stdout, &request.name).ok_or_else(|| {
-                eyre::eyre!(
+            let installed = parse_list_rows(stdout, &request.name);
+            if installed.is_empty() {
+                return Err(eyre::eyre!(
                     "winget list succeeded but returned no parseable row for '{}'",
                     request.name
-                )
-            })?;
-            Ok(package_state(request, installed))
+                ));
+            }
+            Ok(package_state(request, &installed))
         }
         Some(NO_APPLICATIONS_FOUND) => Ok(PackageState::Missing),
         _ => {
@@ -221,6 +236,25 @@ impl SystemPackageManager for WingetManager {
         Ok(statuses)
     }
 
+    async fn prepare_mutation(&self, pkgs: &[PackageRequest]) -> Result<()> {
+        let Some(pkg) = pkgs.first() else {
+            return Ok(());
+        };
+        let args = accept_source_agreements_args(pkg);
+        debug!("$ winget {}", args.join(" "));
+        let output = tokio::process::Command::new("winget")
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .status()
+            .await?;
+        if !command_succeeded(output.code(), &[NO_APPLICATIONS_FOUND]) {
+            bail!("winget source agreement preparation failed with {output}");
+        }
+        Ok(())
+    }
+
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if opts.update && !pkgs.is_empty() {
             self.refresh(opts.dry_run).await?;
@@ -255,33 +289,54 @@ mod tests {
                       ------------------------------------------------------------------------\n\
                       PowerToys (Preview) ARM64 Microsoft.PowerToys 0.86.0  0.101.0   winget\n";
         assert_eq!(
-            parse_list_row(output, "Microsoft.PowerToys"),
-            Some("0.86.0".to_string())
+            parse_list_rows(output, "Microsoft.PowerToys"),
+            vec!["0.86.0"]
         );
     }
 
     #[test]
     fn parses_row_when_name_contains_the_id() {
         let output = "Example.Tool Example.Tool 1.2.3 winget\n";
-        assert_eq!(
-            parse_list_row(output, "Example.Tool"),
-            Some("1.2.3".to_string())
-        );
+        assert_eq!(parse_list_rows(output, "Example.Tool"), vec!["1.2.3"]);
     }
 
     #[test]
     fn compares_pins_as_opaque_strings() {
         let request = req("Example.Tool", Some("2026-preview.1"));
         assert_eq!(
-            package_state(&request, "2026-preview.1".to_string()),
+            package_state(&request, &["2026-preview.1".to_string()]),
             PackageState::Installed {
                 version: "2026-preview.1".to_string()
             }
         );
         assert_eq!(
-            package_state(&request, "2026-preview.2".to_string()),
+            package_state(&request, &["2026-preview.2".to_string()]),
             PackageState::VersionMismatch {
                 installed: "2026-preview.2".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn finds_requested_version_in_a_later_duplicate_row() {
+        let output = "Example Example.Tool 1.0.0 winget\n\
+                      Example Example.Tool 2.0.0 winget\n";
+        assert_eq!(
+            query_state(Some(0), output, "", &req("Example.Tool", Some("2.0.0")),).unwrap(),
+            PackageState::Installed {
+                version: "2.0.0".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn conflicting_duplicate_rows_fall_back_to_the_first_version() {
+        let output = "Example Example.Tool 2.0.0 winget\n\
+                      Example Example.Tool 1.0.0 winget\n";
+        assert_eq!(
+            query_state(Some(0), output, "", &req("Example.Tool", Some("3.0.0"))).unwrap(),
+            PackageState::VersionMismatch {
+                installed: "2.0.0".to_string()
             }
         );
     }
@@ -320,12 +375,22 @@ mod tests {
     }
 
     #[test]
-    fn source_update_accepts_agreements_non_interactively() {
+    fn source_update_uses_only_supported_noninteractive_flags() {
         assert_eq!(
             source_update_args(),
+            vec!["source", "update", "--disable-interactivity"]
+        );
+    }
+
+    #[test]
+    fn mutation_preparation_accepts_source_agreements_via_list() {
+        assert_eq!(
+            accept_source_agreements_args(&req("Example.Tool", None)),
             vec![
-                "source",
-                "update",
+                "list",
+                "--id",
+                "Example.Tool",
+                "--exact",
                 "--accept-source-agreements",
                 "--disable-interactivity",
             ]

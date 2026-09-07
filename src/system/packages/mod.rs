@@ -173,6 +173,15 @@ pub(crate) trait SystemPackageManager: Send + Sync {
     /// Query installed state. Must be side-effect free and never elevate.
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>>;
 
+    /// Prepare for a mutating package operation before querying installed state.
+    ///
+    /// This hook is never called for status or dry-run operations. Managers may
+    /// use it for mutation prerequisites that their read-only query cannot
+    /// perform, such as accepting repository agreements.
+    async fn prepare_mutation(&self, _pkgs: &[PackageRequest]) -> Result<()> {
+        Ok(())
+    }
+
     /// Whether each name exists as an installable package, positionally.
     ///
     /// This is *availability*, not installed state — [`Self::installed`]
