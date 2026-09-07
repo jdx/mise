@@ -1284,7 +1284,15 @@ fn build_plan(tracked: &TrackedSet) -> WatchPlan {
             };
             (entry.path.clone(), kind)
         });
-    WatchPlan::build(paths, |path| {
+    // Observe configuration changes even when configuration is not enrolled.
+    // This anchor only reloads policy; capture still uses the explicit set.
+    let config_dir = normalize(&tracked::global_config_dir());
+    let config_kind = if config_dir.is_dir() {
+        PathKind::Directory
+    } else {
+        PathKind::Missing
+    };
+    WatchPlan::build(paths.chain([(config_dir, config_kind)]), |path| {
         path.ancestors()
             .skip(1)
             .find(|ancestor| ancestor.is_dir())
