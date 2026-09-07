@@ -57,6 +57,10 @@ use crate::{config, env, exit, file};
         help = r###"associate a different postinstall command with each tool"###
     ),
     example(
+        r###"mise use --tool-option mr_boxington=true rust mr-boxington"###,
+        help = r###"enable a Rust tool option while installing Rust and mbx"###
+    ),
+    example(
         r###"mise use -g --pin node@20"###,
         help = r###"set the current version of node to 20.x in ~/.config/mise/config.toml will write the precise version (e.g.: 20.0.0)"###
     ),
@@ -153,6 +157,12 @@ struct UseTool {
     #[usage(long, value_name = "COMMAND")]
     postinstall: Option<String>,
 
+    /// Set an option for this tool (repeat for multiple options).
+    /// Values use inline tool-option types; unquoted text is treated as a string.
+    /// Place these flags before the tool they apply to.
+    #[usage(long, value_name = "KEY=VALUE", verbatim_doc_comment)]
+    tool_option: Vec<String>,
+
     /// Tool to add to config file
     ///
     /// e.g.: node@20, cargo:ripgrep@latest, npm:prettier@3
@@ -165,6 +175,63 @@ struct UseTool {
     tool: ToolArg,
 }
 
+impl UseTool {
+    fn has_options(&self) -> bool {
+        self.postinstall.is_some() || !self.tool_option.is_empty()
+    }
+
+    fn request_options(&self) -> Result<ToolVersionOptions> {
+        let mut options = ToolVersionOptions::default();
+        let mut entries = Vec::new();
+        if let Some(command) = &self.postinstall {
+            entries.push((
+                "postinstall".to_string(),
+                toml::Value::String(command.clone()),
+                "--postinstall",
+            ));
+        }
+        for option in &self.tool_option {
+            let (key, value) = option
+                .split_once('=')
+                .ok_or_else(|| eyre!("--tool-option expects KEY=VALUE: {option}"))?;
+            let key = key.trim();
+            if key.is_empty() {
+                bail!("--tool-option requires a non-empty key");
+            }
+            let value = toml::from_str::<toml::Table>(&format!("value = {value}"))
+                .ok()
+                .filter(|table| table.len() == 1)
+                .and_then(|mut table| table.remove("value"))
+                .unwrap_or_else(|| toml::Value::String(value.to_string()));
+            entries.push((key.to_string(), value, "--tool-option"));
+        }
+        let mut seen = std::collections::HashSet::new();
+        for (key, value, flag) in entries {
+            if !seen.insert(key.clone()) {
+                bail!(
+                    "tool option {key:?} was specified more than once for {}",
+                    self.tool
+                );
+            }
+            if self
+                .tool
+                .ba
+                .explicit_opts()
+                .is_some_and(|options| options.contains_key(&key))
+            {
+                bail!(
+                    "cannot combine {flag} with an inline {key} option for {}",
+                    self.tool
+                );
+            }
+            options
+                .insert_option(key, value)
+                .map_err(|error| eyre!(error))?;
+        }
+        Ok(options)
+    }
+}
+
 impl Use {
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
@@ -174,6 +241,7 @@ impl Use {
         if self.tools.is_empty() && self.remove.is_empty() {
             self.tools = vec![UseTool {
                 postinstall: None,
+                tool_option: Vec::new(),
                 tool: self.tool_selector()?,
             }];
         }
@@ -199,6 +267,14 @@ impl Use {
         {
             bail!("--postinstall requires a TOML config file");
         }
+        if self
+            .tools
+            .iter()
+            .any(|target| !target.tool_option.is_empty())
+            && !matches!(cf.source(), ToolSource::MiseToml(_))
+        {
+            bail!("--tool-option requires a TOML config file");
+        }
         let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
@@ -216,27 +292,7 @@ impl Use {
             .tools
             .iter()
             .map(|target| {
-                if target.postinstall.is_some()
-                    && target
-                        .tool
-                        .ba
-                        .explicit_opts()
-                        .is_some_and(|options| options.contains_key("postinstall"))
-                {
-                    bail!(
-                        "cannot combine --postinstall with an inline postinstall option for {}",
-                        target.tool
-                    );
-                }
-                let mut request_options = ToolVersionOptions::default();
-                if let Some(command) = &target.postinstall {
-                    request_options
-                        .insert_option(
-                            "postinstall".to_string(),
-                            toml::Value::String(command.clone()),
-                        )
-                        .map_err(|error| eyre!(error))?;
-                }
+                let request_options = target.request_options()?;
                 match target.tool.tvr.clone() {
                     Some(tvr) => {
                         if tvr.version() == "latest" && !Settings::get().locked {
@@ -246,7 +302,7 @@ impl Use {
                             resolve_options.use_locked_version = false;
                         }
                         let mut tvr = tvr;
-                        if target.postinstall.is_some() {
+                        if target.has_options() {
                             tvr.set_options(request_options);
                         }
                         Ok(tvr)
@@ -348,7 +404,7 @@ impl Use {
 
     async fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
-        let has_postinstall = self.tools.iter().any(|target| target.postinstall.is_some());
+        let has_options = self.tools.iter().any(UseTool::has_options);
         let explicit_file = self.path.as_ref().is_some_and(|path| !path.is_dir());
         let opts = ConfigPathOptions {
             global: self.global,
@@ -359,7 +415,7 @@ impl Use {
             prevent_home_local: true, // When in HOME, use global config
         };
         let mut path = resolve_target_config_path(opts)?;
-        if has_postinstall && !explicit_file && path.extension().is_none_or(|ext| ext != "toml") {
+        if has_options && !explicit_file && path.extension().is_none_or(|ext| ext != "toml") {
             // Tool-level options cannot be represented in .tool-versions or idiomatic
             // version files. Keep the selected directory, but write the hook to its
             // default TOML config rather than unexpectedly selecting a TOML file above it.

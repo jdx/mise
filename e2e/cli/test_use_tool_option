@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+mise use --tool-option enabled=true --tool-option count=2 --tool-option label=hello dummy@1.0.0
+assert_contains "cat mise.toml" 'enabled = "true"'
+assert_contains "cat mise.toml" 'count = "2"'
+assert_contains "cat mise.toml" 'label = "hello"'
+
+mise use --tool-option enabled=false dummy@1.0.0 --tool-option label=second tiny@2.0.0
+assert "mise config get tools.dummy.enabled" "false"
+assert "mise config get tools.tiny.label" "second"
+assert_fail "mise config get tools.tiny.enabled"
+assert "mise config get tools.dummy.count" "2"
+
+mise use --tool-option 'items=["one", "two"]' --postinstall 'touch installed' 'dummy[inline=yes]@2.0.0'
+assert_contains "cat mise.toml" 'items = ["one", "two"]'
+assert "mise config get tools.dummy.inline" "yes"
+assert "test -f installed" ""
+
+assert_fail_contains "mise use --tool-option missing dummy 2>&1" "expects KEY=VALUE"
+assert_fail_contains "mise use --tool-option '=value' dummy 2>&1" "non-empty key"
+assert_fail_contains "mise use --tool-option enabled=true --tool-option enabled=false dummy 2>&1" "specified more than once"
+assert_fail_contains "mise use --tool-option enabled=true 'dummy[enabled=false]' 2>&1" "inline enabled option"
+assert_fail_contains "mise use --postinstall one --tool-option postinstall=two dummy 2>&1" "specified more than once"
+assert_fail_contains "mise use --tool-option enabled=true 2>&1" "TOOL@VERSION"
+
+mise use --dry-run --tool-option enabled=true dummy@3.0.0
+assert "mise config get tools.dummy.version" "2.0.0"
+
+mkdir legacy
+(
+  cd legacy
+  printf 'dummy 1.0.0\n' >.tool-versions
+  mise use --tool-option enabled=true dummy@1.0.0
+  assert_contains "cat mise.toml" 'enabled = "true"'
+  assert "cat .tool-versions" "dummy 1.0.0"
+  assert_fail_contains "mise use --path .tool-versions --tool-option enabled=true dummy 2>&1" "--tool-option requires a TOML config file"
+)

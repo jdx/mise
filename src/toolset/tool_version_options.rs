@@ -630,7 +630,7 @@ fn normalize_backend_option_value(key: &str, value: toml::Value) -> toml::Value 
 }
 
 fn preserves_backend_option_type(key: &str) -> bool {
-    matches!(key, "allow_builds")
+    matches!(key, "allow_builds" | "mr_boxington")
 }
 
 /// `pub(crate)` so callers that only want to know whether a value would resolve can ask the same
