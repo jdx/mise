@@ -189,7 +189,19 @@ impl<'a> Remote<'a> {
             .ok()
             .and_then(|url| url.to_file_path().ok())
             .unwrap_or_else(|| std::path::PathBuf::from(&self.url));
-        self.fetch_with_depth(branch, !local.is_file())
+        if local.is_file() {
+            return self.fetch(branch);
+        }
+        match self.fetch_with_depth(branch, true) {
+            Err(error) if error.downcast_ref::<NetworkError>().is_some() => {
+                // Dumb HTTP and older transports may support ordinary fetch
+                // but not shallow fetch. This store is disposable, so retrying
+                // cannot leave shallow state in the user's real repository.
+                debug!("shallow setup probe failed; retrying an ordinary fetch");
+                self.fetch(branch)
+            }
+            result => result,
+        }
     }
 
     fn fetch_with_depth(&self, branch: &str, shallow: bool) -> Result<bool> {
