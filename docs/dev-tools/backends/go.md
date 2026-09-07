@@ -1,3 +1,7 @@
+---
+description: "Build and install Go command-line packages with go install."
+---
+
 # Go Backend
 
 The `go` backend builds Go command-line packages with `go install`. Use the

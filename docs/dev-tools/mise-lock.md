@@ -1,3 +1,7 @@
+---
+socialDescription: "Lock resolved tool versions and artifact checksums for reproducible installations."
+---
+
 # mise.lock Lockfile
 
 `mise.toml` records the versions a project accepts; `mise.lock` records the

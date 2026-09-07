@@ -1,3 +1,7 @@
+---
+description: "Install binaries, scripts, and archives from direct download URLs."
+---
+
 # HTTP Backend
 
 The `http` backend installs a binary, script, or archive from a direct download

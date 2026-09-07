@@ -1,3 +1,7 @@
+---
+socialDescription: "Apply your bootstrap configuration to remote machines over SSH."
+---
+
 # Remote bootstrap over SSH
 
 `mise bootstrap remote` applies a bootstrap project to one or more machines

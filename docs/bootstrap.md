@@ -1,3 +1,7 @@
+---
+description: "Declare and apply machine setup: packages, dotfiles, repositories, and services."
+---
+
 # Bootstrap
 
 `mise bootstrap` applies the machine setup declared in your mise configuration:

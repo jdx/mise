@@ -1,3 +1,7 @@
+---
+socialDescription: "Explore task options for commands, dependencies, arguments, and execution."
+---
+
 # Task Configuration
 
 This is an exhaustive list of the configuration options available for tasks in `mise.toml` or as

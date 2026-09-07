@@ -1,3 +1,7 @@
+---
+socialDescription: "Install and manage multiple Erlang versions on the same system."
+---
+
 # Erlang
 
 `mise` can be used to install and manage multiple versions of [erlang](https://www.erlang.org/) on the same system.

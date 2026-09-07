@@ -1,3 +1,7 @@
+---
+description: "Install release binaries from Codeberg and other Forgejo-compatible hosts."
+---
+
 # Forgejo Backend
 
 You can install release assets from Codeberg and other Forgejo-compatible instances directly using the `forgejo` backend. It downloads release assets from Forgejo repositories and is ideal for tools that distribute pre-built binaries through Forgejo releases.

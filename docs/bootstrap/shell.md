@@ -1,3 +1,7 @@
+---
+socialDescription: "Configure Bash, Zsh, and Fish shell activation as part of machine setup."
+---
+
 # Shell Activation
 
 mise can declaratively add [shell activation](/getting-started.html#activate-mise)

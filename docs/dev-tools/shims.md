@@ -1,3 +1,7 @@
+---
+description: "Run the right tool version through shims, including outside an activated shell."
+---
+
 # Shims
 
 There are several ways to load the `mise` context (dev tools, environment variables) into your shell:

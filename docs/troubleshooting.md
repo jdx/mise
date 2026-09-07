@@ -1,3 +1,7 @@
+---
+description: "Diagnose installation, shell activation, tool version, and performance problems."
+---
+
 # Troubleshooting
 
 If you're looking for help with a specific error message, see [Errors](/errors.html) — this

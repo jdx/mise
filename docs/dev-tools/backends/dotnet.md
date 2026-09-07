@@ -1,3 +1,7 @@
+---
+description: "Install .NET command-line tools from NuGet with the dotnet backend."
+---
+
 # .NET Tool Backend
 
 The `dotnet:` backend installs command-line tool packages from NuGet using

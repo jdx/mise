@@ -1,3 +1,7 @@
+---
+socialDescription: "Manage Linux systemd user services and timers from mise.toml."
+---
+
 # Linux systemd user units
 
 mise can declare Linux systemd user services and timers in

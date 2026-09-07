@@ -1,3 +1,7 @@
+---
+socialDescription: "Declare and install host packages for your development machines."
+---
+
 # Bootstrap Packages
 
 Declare shared host packages in `[bootstrap.packages]`, then apply them with

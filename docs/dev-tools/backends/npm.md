@@ -1,3 +1,7 @@
+---
+description: "Install npm command-line packages into separate tool directories."
+---
+
 # npm Backend
 
 The `npm` backend installs command-line packages from npm registries into

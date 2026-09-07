@@ -1,3 +1,7 @@
+---
+socialDescription: "Clone, update, and manage Git repositories from mise.toml."
+---
+
 # Git repositories
 
 mise can declare git repositories in `[bootstrap.repos]` and apply them with

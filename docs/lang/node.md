@@ -1,3 +1,7 @@
+---
+socialDescription: "Install and switch between Node.js versions for each project."
+---
+
 # Node.js
 
 Like `nvm` (or `volta`, `fnm`, or `asdf`), `mise` can manage multiple versions of Node.js on the same system.

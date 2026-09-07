@@ -1,3 +1,7 @@
+---
+socialDescription: "Manage system files and directories, including paths that require root privileges."
+---
+
 # System files and directories
 
 `[bootstrap.files]` and `[bootstrap.directories]` declaratively manage absolute

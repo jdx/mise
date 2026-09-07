@@ -1,3 +1,7 @@
+---
+socialDescription: "Define project tasks as standalone scripts with mise metadata."
+---
+
 # File Tasks
 
 In addition to defining tasks in config files, you can define them as standalone script files in one of the following directories:

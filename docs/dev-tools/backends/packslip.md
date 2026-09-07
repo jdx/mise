@@ -1,3 +1,8 @@
+---
+description: Install tools from signed release manifests with mise, including publisher verification, artifact integrity checks, and version-matched completions and agent skills.
+socialDescription: Signed releases, verified downloads, and version-matched completions and agent skills.
+---
+
 # Packslip Backend
 
 The [Packslip](https://packslip.dev) backend installs tools using signed release

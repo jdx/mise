@@ -1,3 +1,7 @@
+---
+socialDescription: "Declare and apply macOS preferences from your mise configuration."
+---
+
 # macOS Defaults
 
 mise can declare macOS user defaults (preferences) in the

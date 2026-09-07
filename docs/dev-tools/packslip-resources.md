@@ -1,3 +1,7 @@
+---
+socialDescription: "Use shell completions and agent skills that match your active tool versions."
+---
+
 # Packslip Completions and Skills
 
 Tools installed with the [Packslip backend](/dev-tools/backends/packslip.html)

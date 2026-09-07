@@ -1,3 +1,7 @@
+---
+description: "Implement a remote cache service for sharing mise task artifacts."
+---
+
 # Remote Build Cache Protocol
 
 > [!WARNING]
