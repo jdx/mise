@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Y9WS2WYCWK8AF56JKN3FVW",
+  "session_id": "01a07c7d-f26d-7142-8334-a0532b50c6cd",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T16:05:50.796502Z",
+  "branch": "codex/fix-pwsh-pipeline",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e-win/activate_pipeline.Tests.ps1"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "583129fb45ef",
+  "checkpoint_transcript_start": 879,
+  "transcript_lines_at_start": 879,
+  "compact_transcript_start": 131,
+  "token_usage": {
+    "input_tokens": 21193,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1589760,
+    "output_tokens": 2695,
+    "api_call_count": 12
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T16:05:50.749624Z",
+    "agent_lines": 3,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 3,
+    "total_lines_changed": 3,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
