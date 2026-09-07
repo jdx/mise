@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1Y82P9W3FTRPA0QM02KED6A",
   "strategy": "manual-commit",
   "branch": "codex/dotfiles-git-history",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "src/system/history/sync/network.rs"
   ],
@@ -21,13 +21,20 @@
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 57040,
+    "input_tokens": 99822,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 1533824,
-    "output_tokens": 8378,
-    "api_call_count": 23
+    "cache_read_tokens": 1848320,
+    "output_tokens": 12193,
+    "api_call_count": 29
   }
 }
