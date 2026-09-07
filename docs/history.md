@@ -87,6 +87,57 @@ checkpoints carry its last saved version forward, and only
 disk. `mise bootstrap dotfiles history diff --path <file>` shows saved against live. Promotions
 are recorded in the repository (`refs/promoted`), never only in an index.
 
+## Rolling back
+
+```sh
+mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua        # its most recent saved version that differs from disk
+mise bootstrap dotfiles rollback ~/.zshrc --to 42                    # that checkpoint's version
+mise bootstrap dotfiles rollback --to latest~3 --all --dry-run       # everything the checkpoint covers
+mise bootstrap dotfiles undo                                         # reverse the newest rollback or undo
+```
+
+A rollback is planned first: for every selected path, `write` when the
+checkpoint holds a different version, `delete` when the checkpoint knows the
+path was absent, `unchanged`, `skip` when the checkpoint never covered or
+omitted it, or `conflict` when the path changed type (a file became a
+directory or a symlink) — conflicts need `--force`. Without `--to`, a
+checkpoint that knew the path was absent counts as a version to return to,
+so a file created since rolls back to "missing". `--dry-run` stops after the
+plan.
+
+Rolling back a parent directory leaves unrecorded empty folders alone: Git
+snapshots do not record them. An explicitly selected empty folder can still
+be removed, and undo restores it.
+
+Then the current state of the affected paths is saved in a protective
+checkpoint (`rollback-before`); the plan is verified against the working tree
+again (an editor may have written meanwhile) and every path about to change
+must be captured in that checkpoint as it is now, or the rollback stops
+without touching anything. Files are written one at a time, each journaled
+and recorded as affected as soon as it is written, and each checked once
+more right before it is replaced (a file that appeared meanwhile stops the
+rollback there). Only afterwards do `[history.reload]` commands run — once per matching
+glob, resolved from the system and global configuration before the operation
+began, so nothing a rollback writes can change which commands run:
+
+```toml
+[history.reload]
+"~/.config/hypr/**" = "hyprctl reload"
+```
+
+A rollback is a new forward change: the outcome is a new checkpoint, the
+version you left is still recoverable, and nothing is rewritten. Restoring a
+mise configuration file never runs bootstrap; the outcome says when
+declarations may differ from the applied setup.
+
+`mise bootstrap dotfiles undo` restores exactly the paths an operation touched from the
+protective checkpoint it took, leaving everything else as it is now, so
+unrelated work done since is preserved. That includes an operation that
+failed midway (only the paths it did change are reversed), a type change it
+forced, and an empty directory it replaced. It refuses when that checkpoint
+was pruned. Undoing an undo re-applies the operation; an undo that changed
+nothing does not count as having reversed it.
+
 ## What is tracked
 
 `mise bootstrap dotfiles paths` lists every entry with its mode, policies, the file that

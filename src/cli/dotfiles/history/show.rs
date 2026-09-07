@@ -64,6 +64,16 @@ impl HistoryShow {
             {
                 miseprintln!("  Before:      checkpoint {}", before.id);
             }
+            for source in &operation.sources {
+                let label = entries
+                    .iter()
+                    .find(|entry| entry.checkpoint.uuid == source.checkpoint)
+                    .map(|entry| format!("checkpoint {}", entry.id))
+                    .unwrap_or_else(|| {
+                        format!("checkpoint {} (pruned)", short(&source.checkpoint))
+                    });
+                miseprintln!("  Source:      {label}: {}", source.paths.join(", "));
+            }
             if let Some(message) = &operation.message {
                 miseprintln!("  Note:        {message}");
             }

@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use eyre::{Result, bail};
@@ -40,6 +40,9 @@ struct Writer {
     _lock: fslock::LockFile,
     before: Option<(u64, String)>,
     pending: Pending,
+    /// Paths the outcome capture reads live and promotes (the affected
+    /// paths of a rollback, undo, or apply).
+    promote: Vec<PathBuf>,
 }
 
 type Shared = Arc<Mutex<Writer>>;
@@ -165,6 +168,62 @@ impl OperationScope {
         result
     }
 
+    /// Changes the pending outcome record (its `to`, `undoes`, `affected`,
+    /// message) before it is written.
+    pub(crate) fn with_operation(&self, f: impl FnOnce(&mut Operation)) {
+        if let Some(shared) = &self.0 {
+            let mut writer = lock_unpoisoned(shared);
+            f(writer.operation_mut());
+            if let Err(err) = writer.write_pending() {
+                warn!("history: could not persist the operation record: {err:#}");
+            }
+        }
+    }
+
+    /// The protective checkpoint this operation took, if any.
+    pub(crate) fn before(&self) -> Option<(u64, String)> {
+        self.0
+            .as_ref()
+            .and_then(|shared| lock_unpoisoned(shared).before.clone())
+    }
+
+    /// Retakes the protective checkpoint, replacing the earlier one, when
+    /// files changed between it and the verified plan.
+    pub(crate) fn recapture_before(&self) -> Result<()> {
+        let Some(shared) = &self.0 else {
+            return Ok(());
+        };
+        let mut writer = lock_unpoisoned(shared);
+        // held across the reservation, the capture, and the removal: the
+        // capture writes the index and a checkpoint ref, which a concurrent
+        // `mise bootstrap dotfiles save` must not interleave with
+        let _store_lock = writer.store.lock()?;
+        let previous = writer.before.take();
+        let id = writer.store.reserve_id()?;
+        writer.capture_before(id);
+        match (writer.before.is_some(), previous) {
+            // the recapture succeeded: the checkpoint it replaces can go
+            (true, Some((old_id, _))) => writer.store.remove(old_id)?,
+            // it did not: keep the earlier protective checkpoint, which is
+            // still what the pending record points at
+            (false, Some(previous)) => {
+                writer.operation_mut().before = Some(previous.1.clone());
+                writer.before = Some(previous);
+            }
+            (_, None) => {}
+        }
+        Ok(())
+    }
+
+    /// Marks paths the outcome capture reads live and promotes.
+    pub(crate) fn promote(&self, paths: &[PathBuf]) {
+        if let Some(shared) = &self.0 {
+            lock_unpoisoned(shared)
+                .promote
+                .extend(paths.iter().cloned());
+        }
+    }
+
     /// Captures the outcome and marks the operation completed, or failed
     /// when `error` is set.
     pub(crate) fn finish(mut self, error: Option<String>, summary: Option<Summary>) {
@@ -244,6 +303,9 @@ impl Writer {
             undoes: None,
             applied: None,
             affected: vec![],
+            sources: vec![],
+            directories: vec![],
+            directory_modes: Default::default(),
             message: None,
             journal: vec![],
         };
@@ -283,6 +345,7 @@ impl Writer {
             _lock: lock,
             before: None,
             pending,
+            promote: vec![],
         };
         writer.capture_before(before_id);
         Ok(writer)
@@ -398,6 +461,7 @@ impl Writer {
         draft.uuid = Some(checkpoint.uuid.clone());
         draft.operation = Some(operation.clone());
         draft.blobs = self.pending.blobs.clone();
+        draft.explicit_paths = self.promote.clone();
         // Bootstrap writes are explicit saves of the paths it actually
         // changed, including manual-save destinations. Do not promote
         // unrelated manual edits merely because an operation ran.
@@ -429,6 +493,7 @@ impl Writer {
         // rejected request with proven unchanged files is not useful history.
         let noop = (operation.status == OperationStatus::Completed || !retain_empty_failure)
             && operation.journal.is_empty()
+            && operation.affected.is_empty()
             && entry.checkpoint.tree.snapshot.is_some()
             && self.before.is_some()
             && entry.checkpoint.changes.is_empty();

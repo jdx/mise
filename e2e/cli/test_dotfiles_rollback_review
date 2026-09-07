@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+require_cmd git
+mkdir -p ~/.config/review
+echo original >~/.config/review/file
+assert_succeed "mise bootstrap dotfiles track ~/.config/review"
+echo current >~/.config/review/file
+assert_succeed "mise bootstrap dotfiles save"
+chmod 600 ~/.config/review/file
+assert_succeed "mise bootstrap dotfiles save"
+# Directory selection must see child permission-only history too.
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review --yes"
+assert "cat ~/.config/review/file" "current"
+if [[ "$(uname -s)" == Darwin ]]; then
+  assert "stat -f %Lp ~/.config/review/file" "644"
+else
+  assert "stat -c %a ~/.config/review/file" "644"
+fi
+assert_succeed "mise bootstrap dotfiles undo --yes"
+# The directory's differing tree predates the file's permission-only
+# checkpoint. The explicit child selection wins, in either argument order.
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review ~/.config/review/file --yes"
+assert "cat ~/.config/review/file" "current"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review/file ~/.config/review --yes"
+assert "cat ~/.config/review/file" "current"
+
+mkdir ~/.config/review/empty
+chmod 700 ~/.config/review/empty
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review/empty --yes"
+assert_fail "test -d ~/.config/review/empty"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert_succeed "test -d ~/.config/review/empty"
+if [[ $(uname) == Darwin ]]; then
+  assert "stat -f %Lp ~/.config/review/empty" "700"
+else
+  assert "stat -c %a ~/.config/review/empty" "700"
+fi
+
+# Cleanup must retain contents that no checkpoint can restore.
+before="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+mkdir -p ~/.config/review/with-excluded
+echo saved >~/.config/review/with-excluded/tracked
+echo keep >~/.config/review/with-excluded/private
+printf '\n[history]\nexclude = ["~/.config/review/with-excluded/private"]\n' >>"$MISE_CONFIG_DIR/config.toml"
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review --to $before --yes"
+assert "cat ~/.config/review/with-excluded/private" "keep"
+assert_fail "test -e ~/.config/review/with-excluded/tracked"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.config/review/with-excluded/private" "keep"
+assert "cat ~/.config/review/with-excluded/tracked" "saved"
+
+# Parent rollback preserves unrecorded empty descendants even when it
+# removes neighboring files and their otherwise-new parent directory.
+before="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+mkdir -p ~/.config/review/new-dir/empty
+mkdir -p ~/.config/review/unreadable-dir/child
+echo temporary >~/.config/review/unreadable-dir/transient
+echo temporary >~/.config/review/new-dir/transient
+assert_succeed "mise bootstrap dotfiles save"
+chmod 000 ~/.config/review/unreadable-dir/child
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/review --to $before --yes"
+chmod 755 ~/.config/review/unreadable-dir/child
+assert_succeed "test -d ~/.config/review/unreadable-dir/child"
+assert_fail "test -e ~/.config/review/unreadable-dir/transient"
+assert_fail "test -e ~/.config/review/new-dir/transient"
+assert_succeed "test -d ~/.config/review/new-dir/empty"
+assert_succeed "test -d ~/.config/review/empty"
+
+# A canonical target outside HOME retains restrictive parent permissions.
+external="$(dirname "$HOME")/external-private"
+mkdir -m 700 "$external"
+echo secret >"$external/key"
+chmod 600 "$external/key"
+ln -s "$external" ~/.config/review/external
+assert_succeed "mise bootstrap dotfiles track $external"
+before="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+mv "$external" "$external.removed"
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles rollback $external/key --to $before --yes"
+assert "cat $external/key" "secret"
+if [[ "$(uname -s)" == Darwin ]]; then
+  assert "stat -f %Lp $external" "700"
+  assert "stat -f %Lp $external/key" "600"
+else
+  assert "stat -c %a $external" "700"
+  assert "stat -c %a $external/key" "600"
+fi

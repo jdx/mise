@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# `mise bootstrap dotfiles rollback` and `undo` across type changes: known absences,
+# directories replacing files (and back), empty directories, and the sources
+# a multi-path rollback records.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+mkdir -p ~/.config/hypr
+echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
+echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+
+# a known absence is a version to return to: a file created after a checkpoint
+# rolls back to "missing" without naming that checkpoint
+echo 'new' >~/.config/hypr/new.conf
+assert_succeed "mise bootstrap dotfiles save"
+assert "mise bootstrap dotfiles rollback ~/.config/hypr/new.conf --dry-run | grep -c 'new.conf *delete'" "1"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/new.conf --yes"
+assert_fail "test -e ~/.config/hypr/new.conf"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.affected | join(\",\")'" "~/.config/hypr/new.conf"
+
+# a directory created after a checkpoint returns to missing with its files,
+# and undo brings it back
+mkdir -p ~/.config/hypr/later/deep
+echo 'l' >~/.config/hypr/later/deep/l.conf
+assert_succeed "mise bootstrap dotfiles save"
+assert_contains "mise bootstrap dotfiles rollback ~/.config/hypr/later --dry-run 2>&1" "later/deep  "
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/later --yes"
+assert_fail "test -e ~/.config/hypr/later"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.config/hypr/later/deep/l.conf" "l"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/later --yes"
+assert_fail "test -e ~/.config/hypr/later"
+
+# a nested repository is never written into or removed by a rollback, even
+# where a checkpoint held plain files
+mkdir -p ~/.config/hypr/plugin
+echo 'old' >~/.config/hypr/plugin/old.txt
+assert_succeed "mise bootstrap dotfiles save"
+plain_id="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+rm -r ~/.config/hypr/plugin
+git init -q ~/.config/hypr/plugin
+echo 'new' >~/.config/hypr/plugin/new.txt
+git -C ~/.config/hypr/plugin add new.txt
+git -C ~/.config/hypr/plugin -c user.name=t -c user.email=t@t commit -q -m init
+assert_succeed "mise bootstrap dotfiles save"
+assert_contains "mise bootstrap dotfiles rollback ~/.config/hypr/plugin --to $plain_id --dry-run 2>&1" "nested repository"
+assert_not_contains "mise bootstrap dotfiles rollback ~/.config/hypr/plugin --to $plain_id --dry-run 2>&1" "old.txt"
+assert_fail "test -e ~/.config/hypr/plugin/old.txt"
+assert "cat ~/.config/hypr/plugin/new.txt" "new"
+
+# --force replaces a file with the directory a checkpoint holds, and undo
+# reverses that type change exactly
+mkdir -p ~/.config/hypr/sub
+echo 'a' >~/.config/hypr/sub/a.conf
+assert_succeed "mise bootstrap dotfiles save"
+dir_id="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+rm -rf ~/.config/hypr/sub
+echo 'file now' >~/.config/hypr/sub
+assert_succeed "mise bootstrap dotfiles save"
+assert_fail "mise bootstrap dotfiles rollback ~/.config/hypr/sub --to $dir_id --yes" "conflict"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/sub --to $dir_id --yes --force"
+assert "cat ~/.config/hypr/sub/a.conf" "a"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.config/hypr/sub" "file now"
+
+# an empty directory an operation replaced is recreated by undo, although no
+# snapshot can hold it
+rm ~/.config/hypr/sub
+echo 'was a file' >~/.config/hypr/empty
+assert_succeed "mise bootstrap dotfiles save"
+file_id="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+rm ~/.config/hypr/empty
+mkdir ~/.config/hypr/empty
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/empty --to $file_id --yes --force"
+assert "cat ~/.config/hypr/empty" "was a file"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.directories | join(\",\")'" "~/.config/hypr/empty"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "test -d ~/.config/hypr/empty && echo dir" "dir"
+
+# paths that resolve to different checkpoints are all recorded as sources
+rmdir ~/.config/hypr/empty
+echo 'm1' >~/.config/hypr/monitors.lua
+assert_succeed "mise bootstrap dotfiles save"
+echo 'b1' >~/.config/hypr/bindings.lua
+assert_succeed "mise bootstrap dotfiles save"
+echo 'm2' >~/.config/hypr/monitors.lua
+assert_succeed "mise bootstrap dotfiles save"
+echo 'b2' >~/.config/hypr/bindings.lua
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/monitors.lua ~/.config/hypr/bindings.lua --yes"
+assert "cat ~/.config/hypr/monitors.lua" "m1"
+assert "cat ~/.config/hypr/bindings.lua" "b1"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.sources | length'" "2"
+assert "mise bootstrap dotfiles history show latest | grep -c 'Source:'" "2"
+
+# recreating an empty directory is a change of its own: with the file the
+# rollback wrote already gone, undo still restores the directory
+echo 'was a file' >~/.config/hypr/empty2
+assert_succeed "mise bootstrap dotfiles save"
+file2_id="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+rm ~/.config/hypr/empty2
+mkdir ~/.config/hypr/empty2
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/empty2 --to $file2_id --yes --force"
+rm ~/.config/hypr/empty2
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "test -d ~/.config/hypr/empty2 && echo dir" "dir"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.affected | length'" "1"
+rmdir ~/.config/hypr/empty2
+
+# replacing a directory removes what is inside it: an excluded file goes with
+# it (said out loud, since no checkpoint holds it), and an empty subdirectory
+# is recreated by undo although no snapshot can hold it
+mkdir -p ~/.config/hypr/pack
+echo 'p' >~/.config/hypr/pack/p.conf
+assert_succeed "mise bootstrap dotfiles save"
+rm -rf ~/.config/hypr/pack
+echo 'a file now' >~/.config/hypr/pack
+assert_succeed "mise bootstrap dotfiles save"
+pack_file_id="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"
+rm ~/.config/hypr/pack
+mkdir -p ~/.config/hypr/pack/empty-sub ~/.config/hypr/pack/cache
+echo 'p' >~/.config/hypr/pack/p.conf
+echo 'c' >~/.config/hypr/pack/cache/c.bin
+printf '\n[history]\nexclude = ["~/.config/hypr/pack/cache/**"]\n' >>"$MISE_CONFIG_DIR/config.toml"
+assert_succeed "mise bootstrap dotfiles save"
+assert_contains "mise bootstrap dotfiles rollback ~/.config/hypr/pack --to $pack_file_id --yes --force 2>&1" "files history does not cover; they are removed with it and cannot be undone: ~/.config/hypr/pack/cache/c.bin"
+assert "cat ~/.config/hypr/pack" "a file now"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.directories | join(\",\")'" "~/.config/hypr/pack,~/.config/hypr/pack/empty-sub"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.config/hypr/pack/p.conf" "p"
+assert "test -d ~/.config/hypr/pack/empty-sub && echo dir" "dir"
+assert_fail "test -e ~/.config/hypr/pack/cache"
+
+# private files come back private: 0600 stays 0600 across rollback and undo,
+# and a deleted 0600 file (in a 0700 directory) is restored with the modes
+# the checkpoint recorded, never readable to others in between
+perm_of="$PWD/perm_of"
+cat <<'EOF2' >"$perm_of"
+#!/usr/bin/env bash
+stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
+EOF2
+chmod +x "$perm_of"
+
+# a permission change alone rolls back, in both directions
+echo 'mode=1' >~/.config/hypr/mode.conf
+assert_succeed "mise bootstrap dotfiles save"
+chmod 600 ~/.config/hypr/mode.conf
+assert_succeed "mise bootstrap dotfiles save"
+chmod 644 ~/.config/hypr/mode.conf
+assert_contains "mise bootstrap dotfiles rollback ~/.config/hypr/mode.conf --dry-run 2>&1" "mode 600"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/mode.conf --yes"
+assert "$perm_of ~/.config/hypr/mode.conf" "600"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/mode.conf --yes"
+assert "$perm_of ~/.config/hypr/mode.conf" "644"
+mkdir -p ~/.config/hypr/private
+chmod 700 ~/.config/hypr/private
+echo 'token=1' >~/.config/hypr/secret.conf
+echo 'k1' >~/.config/hypr/private/key
+chmod 600 ~/.config/hypr/secret.conf ~/.config/hypr/private/key
+assert_succeed "mise bootstrap dotfiles save"
+echo 'token=2' >~/.config/hypr/secret.conf
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/secret.conf --yes"
+assert "cat ~/.config/hypr/secret.conf" "token=1"
+assert "$perm_of ~/.config/hypr/secret.conf" "600"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.config/hypr/secret.conf" "token=2"
+assert "$perm_of ~/.config/hypr/secret.conf" "600"
+rm -r ~/.config/hypr/secret.conf ~/.config/hypr/private
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/secret.conf ~/.config/hypr/private/key --yes"
+assert "cat ~/.config/hypr/secret.conf" "token=2"
+assert "$perm_of ~/.config/hypr/secret.conf" "600"
+assert "$perm_of ~/.config/hypr/private/key" "600"
+assert "$perm_of ~/.config/hypr/private" "700"
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert_fail "test -e ~/.config/hypr/secret.conf"

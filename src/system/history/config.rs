@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 
 use eyre::Result;
+use indexmap::IndexMap;
 use serde::Deserialize;
 
 use crate::config::config_file::mise_toml::MiseToml;
@@ -17,6 +18,9 @@ pub(crate) struct HistoryTomlConfig {
     /// Globs (with `~`) never captured; `!glob` re-includes.
     #[serde(default)]
     pub exclude: Vec<String>,
+    /// Commands to run after a rollback touches a matching path.
+    #[serde(default)]
+    pub reload: IndexMap<String, String>,
 }
 
 /// The `[history]` tables of the system and global layers, in discovery
@@ -41,6 +45,28 @@ pub(crate) fn layers() -> Result<Vec<(PathBuf, HistoryTomlConfig)>> {
         }
     }
     Ok(layers)
+}
+
+/// The effective reload map: glob -> command, a later layer overriding an
+/// earlier one for the same glob. Read from the trusted layers only, and
+/// resolved before an operation begins so nothing it writes can change it.
+pub(crate) fn reload_commands() -> Result<IndexMap<String, String>> {
+    let mut commands = IndexMap::new();
+    for (path, layer) in layers()? {
+        if !crate::config::config_file::is_trusted(&path) {
+            if !layer.reload.is_empty() {
+                warn!(
+                    "history: ignoring [history.reload] in untrusted {}",
+                    display_path(&path)
+                );
+            }
+            continue;
+        }
+        for (glob, command) in &layer.reload {
+            commands.insert(glob.clone(), command.clone());
+        }
+    }
+    Ok(commands)
 }
 
 /// The effective `exclude` list: every layer's globs in order, later

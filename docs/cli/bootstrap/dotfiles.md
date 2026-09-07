@@ -18,10 +18,12 @@ Manage dotfiles from `[dotfiles]`
 - [`mise bootstrap dotfiles edit [FLAGS] <TARGET>`](/cli/bootstrap/dotfiles/edit.html)
 - [`mise bootstrap dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/history.html)
 - [`mise bootstrap dotfiles paths [-J --json] [--preview <PATH>]`](/cli/bootstrap/dotfiles/paths.html)
+- [`mise bootstrap dotfiles rollback [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/rollback.html)
 - [`mise bootstrap dotfiles save [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/save.html)
 - [`mise bootstrap dotfiles status [-J --json] [--missing] [TARGET]…`](/cli/bootstrap/dotfiles/status.html)
 - [`mise bootstrap dotfiles track [FLAGS] <PATH>…`](/cli/bootstrap/dotfiles/track.html)
 - [`mise bootstrap dotfiles unapply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/unapply.html)
+- [`mise bootstrap dotfiles undo [-n --dry-run] [-y --yes] [REF]`](/cli/bootstrap/dotfiles/undo.html)
 - [`mise bootstrap dotfiles untrack <PATH>…`](/cli/bootstrap/dotfiles/untrack.html)
 
 <!-- generated reference navigation -->

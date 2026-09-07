@@ -39,6 +39,8 @@ mise bootstrap dotfiles history show latest
 mise bootstrap dotfiles history diff          # the working tree against the latest checkpoint
 mise bootstrap dotfiles history diff 11 12 --patch
 mise bootstrap dotfiles save --description "before the theme change"
+mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua
+mise bootstrap dotfiles undo
 ```
 
 <!-- generated reference navigation -->

@@ -114,5 +114,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap dotfiles history diff</bold>          # the working tree against the latest checkpoint
     $ <bold>mise bootstrap dotfiles history diff 11 12 --patch</bold>
     $ <bold>mise bootstrap dotfiles save --description "before the theme change"</bold>
+    $ <bold>mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua</bold>
+    $ <bold>mise bootstrap dotfiles undo</bold>
 "#
 );
