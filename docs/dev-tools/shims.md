@@ -178,6 +178,18 @@ explicit `lazy = true` declaration.
 
 :::
 
+To explicitly keep tool shims out of full shell activation, including when auto-install or
+lazy tools are enabled, run `mise settings set activate_shims false` and restart your shell.
+See [`activate_shims`](/configuration/settings.html#activate_shims) for the tradeoffs.
+Shims serve several purposes: installing missing configured versions, bootstrapping lazy tools,
+and dispatching configured command wrappers. Wrappers such as `cargo` through mr-boxington
+use their own `command-wrappers/bin` directory, which remains active with this setting disabled.
+Explicit `mise activate --shims` also continues to work.
+
+If shims cause unexpected command resolution, please report the command, expected and actual
+executable, and `mise doctor` output. The opt-out is available, but the underlying resolution
+problem should still be investigated and fixed.
+
 ::: info
 When a shim cannot resolve a mise-managed tool (for example, a version pinned in `mise.toml` that hasn't
 been installed and [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) is

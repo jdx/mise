@@ -32,6 +32,17 @@ system-cargo"
 assert "cargo check" "mbx:1
 system-cargo"
 
+# Disabling tool shim activation preserves configured wrappers.
+export MISE_ACTIVATE_SHIMS=false
+eval "$(mise activate bash --no-hook-env)"
+eval "$(mise hook-env -s bash --force)"
+case ":$PATH:" in
+  *":$MISE_DATA_DIR/shims:"*) exit 1 ;;
+esac
+assert "cargo check" "mbx:1
+system-cargo"
+unset MISE_ACTIVATE_SHIMS
+
 mise install dummy@1.0.0
 managed_bin="$MISE_DATA_DIR/installs/dummy/1.0.0/bin"
 cat >"$managed_bin/cargo" <<'EOF'

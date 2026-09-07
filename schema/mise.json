@@ -521,6 +521,11 @@
           "description": "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.",
           "type": "boolean"
         },
+        "activate_shims": {
+          "default": true,
+          "description": "Allow full shell activation to add tool shims to PATH.",
+          "type": "boolean"
+        },
         "age": {
           "type": "object",
           "unevaluatedProperties": false,
