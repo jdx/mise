@@ -584,7 +584,7 @@ instructions: [Secure Enclave on macOS](https://github.com/remko/age-plugin-se) 
 recipient** in the shared list or backup `--recipient` options, and configure the
 local identity file with `settings.age.identity_files`. Native `age1tag` public
 recipients from newer TPM plugins are also supported. Plugin binaries must be
-available on PATH. Mise does not provision hardware keys or install plugins.
+available on PATH. mise does not provision hardware keys or install plugins.
 
 Multiple recipients can decrypt independently: for example, a Mac's Secure
 Enclave, a Linux TPM, and an offline software recovery identity. Keep an independent
@@ -592,7 +592,9 @@ recovery recipient: losing hardware can make hardware-only data unrecoverable.
 Explicit `--recipient` arguments replace backup defaults rather than adding to them.
 
 Interactive restoration may request Touch ID or a PIN. Background work never
-starts hardware identity plugins; status and doctor report them as configured but
+starts identity or recipient plugins. A recipient that requires a plugin must
+be used interactively; native age, SSH, and native tagged recipients can be used
+in the background. Status and doctor report hardware identities as configured but
 unverified. Once decrypted, the local cache may be reused without hardware access.
 
 ### Encryption limits and backup replacement
