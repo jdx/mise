@@ -27,7 +27,7 @@ use crate::system::packages::PackageRequest;
     visible_alias = "u",
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap packages use brew:jq brew-cask:firefox
+        r###"mise bootstrap packages use brew:jq brew-cask:firefox winget:BurntSushi.ripgrep.MSVC
 mise bootstrap packages use -g brew:postgresql@17
 mise bootstrap packages use apt:curl@8.5.0-2"###
     )

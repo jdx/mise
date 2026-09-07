@@ -5,8 +5,9 @@ through the locally installed OpenSSH client. Targets can live in versioned
 configuration or be supplied ad hoc from the command line.
 
 Remote targets must provide a POSIX shell plus `cksum`, `mktemp`, `tar`, and `uname`.
-Minimal images may need these utilities installed first. The orchestrating
-machine needs local `ssh` and `tar` commands.
+Minimal images may need these utilities installed first. Native Windows
+SSH/PowerShell targets are not currently supported. The orchestrating machine
+may be Windows, macOS, or Linux and needs local `ssh` and `tar` commands.
 
 ## First remote run
 

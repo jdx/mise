@@ -11,9 +11,9 @@ use crate::system;
 /// available version (apk, apt, and dnf honor a version pinned in config), brew
 /// pours the formula's current bottle and replaces the old keg, brew-cask
 /// installs the current cask artifact, flatpak and flatpak-user update
-/// applications and runtimes, and mas upgrades App Store apps. Packages that
-/// are not installed yet are skipped — use `mise bootstrap packages apply` for
-/// those.
+/// applications and runtimes, mas upgrades App Store apps, and winget upgrades
+/// Windows packages. Packages that are not installed yet are skipped — use
+/// `mise bootstrap packages apply` for those.
 ///
 /// Packages can also be given explicitly in `manager:package` form.
 #[derive(Debug, usage_rs::Args)]
@@ -25,6 +25,7 @@ use crate::system;
 mise bootstrap packages upgrade brew:postgresql@17
 mise bootstrap packages upgrade --manager brew-cask
 mise bootstrap packages upgrade --manager mas
+mise bootstrap packages upgrade --manager winget
 mise bootstrap packages upgrade --manager apt --yes
 mise bootstrap packages upgrade --dry-run"###
     )

@@ -126,7 +126,7 @@ hero:
           platform-specific settings to keep machine setup alongside your tools.
         </p>
         <ul class="landing-checklist">
-          <li>Packages through brew, apt, dnf, pacman, apk, and mas</li>
+          <li>Packages through brew, apt, dnf, pacman, apk, mas, and winget</li>
           <li>Dotfiles as symlinks, copies, or templates, plus single-line edits</li>
           <li>Remote hosts over SSH with <code>mise bootstrap remote</code></li>
         </ul>

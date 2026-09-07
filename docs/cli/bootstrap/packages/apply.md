@@ -13,8 +13,8 @@ system package manager. Built-in system managers may elevate with sudo when
 not running as root (see `system_packages.sudo`); package plugins never do.
 
 Packages can also be given explicitly in `manager:package` form (e.g.
-`apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
-the config. Explicit packages and `--manager` scope the run to packages
+`apk:zlib-dev`, `apt:curl`, `brew:jq`, `winget:BurntSushi.ripgrep.MSVC`);
+they are installed whether or not they appear in the config. Explicit packages and `--manager` scope the run to packages
 only. `install` is accepted as an alias for this command.
 
 ## Arguments
@@ -24,14 +24,14 @@ only. `install` is accepted as an alias for this command.
 - **`-m --manager <MANAGER>`** — Only install packages for this built-in or plugin manager
 - **`-n --dry-run`** — Print the commands that would run without running them
 - **`-y --yes`** — Skip the confirmation prompt
-- **`--update`** — Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
+- **`--update`** — Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`, winget: `source update`)
 - **`-h --help`** — Print help
 
 ## Examples
 
 ```
 mise bootstrap packages apply
-mise bootstrap packages apply brew:jq brew-cask:firefox
+mise bootstrap packages apply brew:jq brew-cask:firefox winget:BurntSushi.ripgrep.MSVC
 mise bootstrap packages apply --dry-run
 mise bootstrap packages apply --manager apt --yes
 ```

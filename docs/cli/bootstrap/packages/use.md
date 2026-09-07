@@ -34,7 +34,7 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
 ## Examples
 
 ```
-mise bootstrap packages use brew:jq brew-cask:firefox
+mise bootstrap packages use brew:jq brew-cask:firefox winget:BurntSushi.ripgrep.MSVC
 mise bootstrap packages use -g brew:postgresql@17
 mise bootstrap packages use apt:curl@8.5.0-2
 ```

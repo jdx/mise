@@ -587,6 +587,13 @@ pub(crate) async fn hint_commands(missing: &[&SystemDep]) -> Vec<String> {
     by_mgr
         .into_iter()
         .map(|(mgr, requests)| {
+            if mgr == "winget" {
+                return requests
+                    .iter()
+                    .map(|request| format!("winget install --id {} --exact", request.name))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+            }
             let pkgs = requests
                 .iter()
                 .map(|r| r.name.as_str())

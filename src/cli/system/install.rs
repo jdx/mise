@@ -19,8 +19,8 @@ pub(crate) struct BootstrapApplyReport {
 /// not running as root (see `system_packages.sudo`); package plugins never do.
 ///
 /// Packages can also be given explicitly in `manager:package` form (e.g.
-/// `apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
-/// the config. Explicit packages and `--manager` scope the run to packages
+/// `apk:zlib-dev`, `apt:curl`, `brew:jq`, `winget:BurntSushi.ripgrep.MSVC`);
+/// they are installed whether or not they appear in the config. Explicit packages and `--manager` scope the run to packages
 /// only. `install` is accepted as an alias for this command.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
@@ -28,7 +28,7 @@ pub(crate) struct BootstrapApplyReport {
     verbatim_doc_comment,
     example(
         r###"mise bootstrap packages apply
-mise bootstrap packages apply brew:jq brew-cask:firefox
+mise bootstrap packages apply brew:jq brew-cask:firefox winget:BurntSushi.ripgrep.MSVC
 mise bootstrap packages apply --dry-run
 mise bootstrap packages apply --manager apt --yes"###
     )
@@ -51,7 +51,7 @@ pub(crate) struct SystemInstall {
     #[usage(long, short)]
     yes: bool,
 
-    /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
+    /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`, winget: `source update`)
     #[usage(long)]
     update: bool,
 }
