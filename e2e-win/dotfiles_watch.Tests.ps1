@@ -50,12 +50,13 @@ Describe 'history watch' {
 
         $status = mise bootstrap dotfiles status --json | Out-String | ConvertFrom-Json
         $status.history.watcher | Should -Be 'not-declared'
+        $before = @(mise bootstrap dotfiles history --json | Out-String | ConvertFrom-Json).Count
 
         'two' | Out-File -FilePath (Join-Path $script:Tracked 'file.txt') -Encoding utf8NoBOM
         mise bootstrap dotfiles watch --once 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0
         $entries = mise bootstrap dotfiles history --json | Out-String | ConvertFrom-Json
-        $entries.Count | Should -Be 2
+        $entries.Count | Should -Be ($before + 1)
         $entries[0].trigger | Should -Be 'edit'
 
         @"
