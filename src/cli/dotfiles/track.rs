@@ -376,16 +376,20 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
         .map(|(_, path)| normalize_target(path))
         .collect();
     draft.description = Some(format!("tracked {names}"));
-    // a write like a save: never interleaved with a running operation
-    let _operation = crate::system::history::scope::take_operation_lock(&store, tracked)?;
-    match store.attempt(tracked, draft)? {
-        Outcome::Created(entry) => {
-            info!("history: saved baseline checkpoint {}", entry.id);
-            Ok(())
+    let tracked = tracked.clone();
+    tokio::task::spawn_blocking(move || {
+        // Lock waits and filesystem capture must not block a Tokio worker.
+        let _operation = crate::system::history::scope::take_operation_lock(&store, &tracked)?;
+        match store.attempt(&tracked, draft)? {
+            Outcome::Created(entry) => {
+                info!("history: saved baseline checkpoint {}", entry.id);
+                Ok(())
+            }
+            Outcome::Unchanged => Ok(()),
+            Outcome::Unavailable(reason) => bail!("dotfiles: cannot save the baseline: {reason}"),
         }
-        Outcome::Unchanged => Ok(()),
-        Outcome::Unavailable(reason) => bail!("dotfiles: cannot save the baseline: {reason}"),
-    }
+    })
+    .await?
 }
 
 /// `config.toml`, or `config.local.toml` next to it for machine-only

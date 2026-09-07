@@ -182,7 +182,6 @@ impl DotfilesUntrack {
             return Ok(());
         }
         let store = crate::system::history::checkpoint::Store::open()?;
-        let _operation = crate::system::history::scope::take_operation_lock(&store, &tracked)?;
         let mut draft = crate::system::history::checkpoint::Draft::new(
             crate::system::history::store::Trigger::Save,
         );
@@ -192,11 +191,16 @@ impl DotfilesUntrack {
             .iter()
             .map(|path| normalize_target(&crate::system::files::resolve_target_arg(path)))
             .collect();
-        if let crate::system::history::checkpoint::Outcome::Unavailable(reason) =
-            store.attempt(&tracked, draft)?
-        {
-            bail!("tracking declarations updated, but could not commit the change: {reason}");
-        }
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let _operation = crate::system::history::scope::take_operation_lock(&store, &tracked)?;
+            if let crate::system::history::checkpoint::Outcome::Unavailable(reason) =
+                store.attempt(&tracked, draft)?
+            {
+                bail!("tracking declarations updated, but could not commit the change: {reason}");
+            }
+            Ok(())
+        })
+        .await??;
         info!(
             "dotfiles: live files were left in place; their previously committed versions remain in Git"
         );

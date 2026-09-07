@@ -62,7 +62,7 @@ impl DotfilesSave {
         }
     }
 
-    async fn save(&self) -> Result<()> {
+    async fn save(self) -> Result<()> {
         let trigger = match self.trigger.as_str() {
             "save" => Trigger::Save,
             "agent" => Trigger::Agent,
@@ -114,7 +114,7 @@ impl DotfilesSave {
         });
         draft.task = self.task.clone();
         draft.labels = self.label.clone();
-        self.save_checkpoint(&store, &tracked, draft)
+        tokio::task::spawn_blocking(move || self.save_checkpoint(&store, &tracked, draft)).await?
     }
 
     fn capture(
