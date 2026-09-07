@@ -5132,6 +5132,241 @@
             }
           },
           "additionalProperties": false
+        },
+        "groups": {
+          "type": "object",
+          "description": "local Linux groups managed with `mise bootstrap accounts apply`, keyed by group name",
+          "propertyNames": {
+            "pattern": "^([A-Za-z_][A-Za-z0-9_-]{0,31}|[A-Za-z_][A-Za-z0-9_-]{0,30}\\$)$",
+            "description": "group name: at most 32 ASCII letters, digits, `_` or `-`, starting with a letter or `_`, with an optional trailing `$`"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["present", "absent"],
+                "default": "present",
+                "description": "desired group state"
+              },
+              "gid": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295,
+                "description": "numeric group ID to pin"
+              },
+              "system": {
+                "type": "boolean",
+                "default": false,
+                "description": "create the group in the platform's system-account GID range"
+              }
+            },
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "absent"
+                }
+              },
+              "required": ["state"]
+            },
+            "then": {
+              "title": "absent group (only state allowed)",
+              "not": {
+                "anyOf": [
+                  {
+                    "required": ["gid"]
+                  },
+                  {
+                    "properties": {
+                      "system": {
+                        "const": true
+                      }
+                    },
+                    "required": ["system"]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "users": {
+          "type": "object",
+          "description": "local Linux users managed with `mise bootstrap accounts apply`, keyed by user name",
+          "propertyNames": {
+            "pattern": "^([A-Za-z_][A-Za-z0-9_-]{0,31}|[A-Za-z_][A-Za-z0-9_-]{0,30}\\$)$",
+            "description": "user name: at most 32 ASCII letters, digits, `_` or `-`, starting with a letter or `_`, with an optional trailing `$`"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["present", "absent"],
+                "default": "present",
+                "description": "desired user state"
+              },
+              "uid": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295,
+                "description": "numeric user ID to pin"
+              },
+              "group": {
+                "type": "string",
+                "pattern": "^([A-Za-z_][A-Za-z0-9_-]{0,31}|[A-Za-z_][A-Za-z0-9_-]{0,30}\\$)$",
+                "description": "primary group name; required for present users"
+              },
+              "groups": {
+                "type": "array",
+                "description": "supplementary group memberships; by default mise only adds missing memberships",
+                "items": {
+                  "type": "string",
+                  "pattern": "^([A-Za-z_][A-Za-z0-9_-]{0,31}|[A-Za-z_][A-Za-z0-9_-]{0,30}\\$)$"
+                }
+              },
+              "exclusive_groups": {
+                "type": "boolean",
+                "default": false,
+                "description": "make `groups` exact, removing supplementary memberships not listed there"
+              },
+              "home": {
+                "type": "string",
+                "pattern": "^/[^:\\r\\n]*$",
+                "description": "home directory as an absolute path; must not contain ':', CR, or LF"
+              },
+              "shell": {
+                "type": "string",
+                "pattern": "^/[^:\\r\\n]*$",
+                "description": "login shell as an absolute path; must not contain ':', CR, or LF"
+              },
+              "comment": {
+                "type": "string",
+                "pattern": "^[^:\\r\\n]*$",
+                "description": "GECOS comment field; must not contain ':', CR, or LF"
+              },
+              "system": {
+                "type": "boolean",
+                "default": false,
+                "description": "create the user in the platform's system-account UID range"
+              },
+              "create_home": {
+                "type": "boolean",
+                "description": "create a new user's home directory; defaults to true for regular users and false for system users"
+              },
+              "move_home": {
+                "type": "boolean",
+                "default": false,
+                "description": "move an existing home directory when changing `home`"
+              },
+              "remove_home": {
+                "type": "boolean",
+                "default": false,
+                "description": "also delete the home directory and mail spool when removing an absent user"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "absent"
+                    }
+                  },
+                  "required": ["state"]
+                },
+                "then": {
+                  "title": "absent user (only state and remove_home allowed)",
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": ["uid"]
+                      },
+                      {
+                        "required": ["group"]
+                      },
+                      {
+                        "required": ["groups"]
+                      },
+                      {
+                        "required": ["home"]
+                      },
+                      {
+                        "required": ["shell"]
+                      },
+                      {
+                        "required": ["comment"]
+                      },
+                      {
+                        "required": ["create_home"]
+                      },
+                      {
+                        "properties": {
+                          "exclusive_groups": {
+                            "const": true
+                          }
+                        },
+                        "required": ["exclusive_groups"]
+                      },
+                      {
+                        "properties": {
+                          "system": {
+                            "const": true
+                          }
+                        },
+                        "required": ["system"]
+                      },
+                      {
+                        "properties": {
+                          "move_home": {
+                            "const": true
+                          }
+                        },
+                        "required": ["move_home"]
+                      }
+                    ]
+                  }
+                },
+                "else": {
+                  "title": "present user (requires group; remove_home not allowed)",
+                  "required": ["group"],
+                  "not": {
+                    "properties": {
+                      "remove_home": {
+                        "const": true
+                      }
+                    },
+                    "required": ["remove_home"]
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "exclusive_groups": {
+                      "const": true
+                    }
+                  },
+                  "required": ["exclusive_groups"]
+                },
+                "then": {
+                  "required": ["groups"]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "move_home": {
+                      "const": true
+                    }
+                  },
+                  "required": ["move_home"]
+                },
+                "then": {
+                  "required": ["home"]
+                }
+              }
+            ]
+          }
         }
       }
     },
