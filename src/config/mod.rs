@@ -1378,9 +1378,12 @@ impl Config {
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
             };
-            if !load_command_wrappers(&self.config_files)?.is_empty()
-                && !env_results.env_paths.contains(&*dirs::COMMAND_WRAPPERS)
-            {
+            // Keep only explicit wrappers in the non-tool environment. Tool-derived
+            // wrappers are selected later, after sourced env and tool templates resolve.
+            env_results
+                .env_paths
+                .retain(|path| path != &*dirs::COMMAND_WRAPPERS);
+            if !load_command_wrappers(&self.config_files, std::iter::empty())?.is_empty() {
                 env_results
                     .env_paths
                     .insert(0, dirs::COMMAND_WRAPPERS.clone());
@@ -1428,7 +1431,7 @@ impl Config {
             },
         )
         .await?;
-        if !load_command_wrappers(&self.config_files)?.is_empty() {
+        if !load_command_wrappers(&self.config_files, std::iter::empty())?.is_empty() {
             env_results
                 .env_paths
                 .insert(0, dirs::COMMAND_WRAPPERS.clone());
@@ -3123,8 +3126,9 @@ fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {
 }
 
 /// Load command wrappers from global through project scope.
-pub(crate) fn load_command_wrappers(
+pub(crate) fn load_command_wrappers<'a>(
     config_files: &ConfigMap,
+    tools: impl IntoIterator<Item = &'a crate::toolset::ToolRequest>,
 ) -> Result<IndexMap<String, CommandWrapper>> {
     let mut wrappers = IndexMap::new();
     let safe_mode = Settings::safe_mode();
@@ -3139,6 +3143,7 @@ pub(crate) fn load_command_wrappers(
             wrappers.insert(name, wrapper);
         }
     }
+    command_wrapper::add_rust_wrapper(&mut wrappers, tools)?;
     Ok(wrappers)
 }
 

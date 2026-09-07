@@ -90,37 +90,56 @@ can change which override rustup sees.
 
 ## Share Cargo builds with Mr Boxington
 
-[Mr Boxington](https://mr-boxington.jdx.dev/) (`mbx`) gives every checkout on a machine one shared,
-self-pruning compilation cache. A crate compiled in one worktree can be reused in another, and concurrent Cargo
-commands share a CPU and memory budget instead of oversubscribing the machine. It can also share cached artifacts
-with teammates and CI runners through a cache server, S3, or GitHub Actions.
+[Mr Boxington](https://mr-boxington.jdx.dev/) (`mbx`) is a Rust build cache and scheduler.
+It reuses matching compilations across projects, worktrees, and CI, so a fresh checkout can benefit from
+work you've already built. Parallel Cargo commands share a CPU and memory budget, and the cache prunes itself.
+You keep using ordinary Cargo commands; no cache server is needed for local use.
+See the [benchmarks](https://mr-boxington.jdx.dev/benchmarks) for examples.
 
-Install `mbx` and configure mise's [`cargo` command wrapper](/dev-tools/shims.html#command-wrappers) to use it:
+Enable the `mr_boxington` tool option and install mbx as a separate tool:
+
+```sh
+mise use --tool-option mr_boxington=true rust mr-boxington
+```
+
+This writes the equivalent of:
 
 ```toml [mise.toml]
 [tools]
-rust = "latest"
+rust = { version = "latest", mr_boxington = true }
 mr-boxington = "latest"
-
-[wrappers.cargo]
-command = "mbx"
-env = { MBX_CARGO_SHIM_MODE = "1" }
 ```
 
-Run `mise reshim` after adding the wrapper. Existing commands and mise tasks can keep invoking `cargo` normally:
+Cargo commands run through mbx in `mise exec`, tasks, activated shells, and
+mise shims. No `mbx setup` or postinstall hook is needed. mbx uses its normal
+mise version selection and lockfile entry, independently of Rust.
 
-```toml [mise.toml]
-[tasks.build]
-run = "cargo build"
+```sh
+mise exec -- cargo build
 ```
 
-Within the mise environment, the wrapper transparently routes those commands through `mbx`. This also avoids
-rewriting every task as `mbx build`, and keeps the same tasks usable if the wrapper is later removed.
+Editors and coding agents must invoke mise's Cargo shim or use `mise exec`.
+Direct calls to rustup's Cargo proxy or a toolchain's Cargo binary bypass mise.
+Safe mode ignores the opt-in from project-scoped Rust entries.
+
+An explicit `[wrappers.cargo]` configuration takes precedence over this option.
+The [generic command wrapper configuration](/dev-tools/shims.html#command-wrappers)
+remains available when Rust is managed outside mise.
 
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `rust` backend—these
 go in `[tools]` in `mise.toml`.
+
+### `mr_boxington`
+
+Set `mr_boxington = true` to wrap Cargo with Mr Boxington. Defaults to `false`.
+Requires `mr-boxington` in the active tool configuration; merely having `mbx` on
+PATH is not sufficient. Keep its version in a separate `[tools]` entry.
+
+The option applies to the first platform-supported Rust version in the selected
+configuration. Set it to `false` in a project's Rust entry to disable an inherited
+opt-in. An explicitly configured Cargo wrapper is unaffected.
 
 ### `install_env`
 

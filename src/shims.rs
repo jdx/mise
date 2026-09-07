@@ -65,7 +65,7 @@ pub(crate) fn task_tool_args_env(tools: &[ToolArg]) -> Result<Option<String>> {
     }
 }
 
-fn task_tool_args_from_env() -> Result<Vec<ToolArg>> {
+pub(crate) fn task_tool_args_from_env() -> Result<Vec<ToolArg>> {
     let Ok(serialized) = env::var(TASK_TOOL_ARGS_ENV) else {
         return Ok(vec![]);
     };
@@ -218,7 +218,10 @@ async fn which_shim(
         .with_resolve_options(resolve_options)
         .build(config)
         .await?;
-    let wrappers = load_command_wrappers(&config.config_files)?;
+    let wrappers = load_command_wrappers(
+        &config.config_files,
+        ts.versions.values().flat_map(|versions| &versions.requests),
+    )?;
     validate_wrapper_names(wrappers.keys())?;
     let wrapper = if cfg!(macos) {
         wrappers
@@ -626,7 +629,7 @@ pub(crate) async fn reshim_for(
     )?;
 
     if matches!(requested_scope, ShimScope::User | ShimScope::Both) {
-        sync_command_wrapper_shims(config, &mise_bin, full_rebuild)?;
+        sync_command_wrapper_shims(config, ts, &mise_bin, full_rebuild)?;
     }
 
     Ok(())
@@ -1001,8 +1004,37 @@ fn is_legacy_windows_cmd_shim(contents: &[u8]) -> bool {
     )
 }
 
-fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> Result<()> {
-    let wrappers = load_command_wrappers(&config.config_files)?;
+/// Create wrappers needed by a runtime toolset without removing another task's wrappers.
+pub(crate) fn ensure_command_wrapper_shims(config: &Config, ts: &Toolset) -> Result<()> {
+    let wrappers = load_command_wrappers(
+        &config.config_files,
+        ts.versions.values().flat_map(|versions| &versions.requests),
+    )?;
+    validate_wrapper_names(wrappers.keys())?;
+    if wrappers.is_empty() {
+        return Ok(());
+    }
+    let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
+    let shims = wrappers
+        .keys()
+        .flat_map(|name| platform_shim_names(&mise_bin, name))
+        .collect();
+    if let Some(error) = write_bootstrap_shims(&mise_bin, &dirs::COMMAND_WRAPPERS, &shims)? {
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn sync_command_wrapper_shims(
+    config: &Config,
+    ts: &Toolset,
+    mise_bin: &Path,
+    force: bool,
+) -> Result<()> {
+    let wrappers = load_command_wrappers(
+        &config.config_files,
+        ts.versions.values().flat_map(|versions| &versions.requests),
+    )?;
     validate_wrapper_names(wrappers.keys())?;
     if wrappers.is_empty() {
         if cfg!(windows) {
@@ -1044,7 +1076,7 @@ fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> 
     Ok(())
 }
 
-fn command_names_eq(a: &str, b: &str) -> bool {
+pub(crate) fn command_names_eq(a: &str, b: &str) -> bool {
     if cfg!(macos) {
         a.to_lowercase() == b.to_lowercase()
     } else {

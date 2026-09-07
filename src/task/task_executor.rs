@@ -2095,6 +2095,8 @@ impl TaskExecutor {
             ts_build_start.elapsed().as_millis()
         );
 
+        crate::shims::ensure_command_wrapper_shims(config, &toolset)?;
+
         let env_render_start = std::time::Instant::now();
         // extra_vars contains resolved vars from the task's config hierarchy.
         let (mut env, task_env, extra_vars, mut env_remove) = if let Some(task_cf) = task_cf {

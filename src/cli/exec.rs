@@ -264,10 +264,22 @@ impl Exec {
             ts.notify_missing_versions(missing);
         });
 
+        crate::shims::ensure_command_wrapper_shims(&config, &ts)?;
+
         let (mut env, env_remove) = measure!("env_with_path", {
             ts.env_with_path_and_removals(&config).await?
         });
         env.extend(wrapper_env);
+        if !self.tool.is_empty() {
+            // A dispatched shim reloads config in a new process. Preserve both
+            // enclosing task overrides and these explicit exec overrides.
+            let mut tools = crate::shims::task_tool_args_from_env()?;
+            tools.retain(|tool| !self.tool.iter().any(|explicit| explicit.ba == tool.ba));
+            tools.extend(self.tool.iter().cloned());
+            if let Some(value) = crate::shims::task_tool_args_env(&tools)? {
+                env.insert(crate::shims::TASK_TOOL_ARGS_ENV.into(), value);
+            }
+        }
         if strip_dispatch_dirs && let Some(path) = env.get_mut(&*env::PATH_KEY) {
             *path = crate::file::strip_dispatch_dirs_from_path(path);
         }

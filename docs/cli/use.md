@@ -70,6 +70,9 @@ an activated shell on its next prompt, or immediately in `mise exec` commands.
 - **`--remove <TOOL>`** — Remove the tool(s) from config file
 - **`-h --help`** — Print help
 - **`--postinstall <COMMAND>`** — Command to run after installing this tool
+- **`--tool-option <KEY=VALUE>`** — Set an option for this tool (repeat for multiple options).
+  Values use inline tool-option types; unquoted text is treated as a string.
+  Place these flags before the tool they apply to.
 
 ## Examples
 
@@ -95,6 +98,12 @@ associate a different postinstall command with each tool
 
 ```
 mise use --postinstall "setup-a" tool-a --postinstall "setup-b" tool-b
+```
+
+enable a Rust tool option while installing Rust and mbx
+
+```
+mise use --tool-option mr_boxington=true rust mr-boxington
 ```
 
 set the current version of node to 20.x in ~/.config/mise/config.toml will write the precise version (e.g.: 20.0.0)

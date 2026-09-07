@@ -118,7 +118,8 @@ impl Toolset {
         paths.extend(self.list_paths(config).await);
 
         // 6. env_results.env_paths (from load_post_env like _.path directives) - these go at the front
-        let paths = env_results.env_paths.into_iter().chain(paths).collect();
+        let mut paths = env_results.env_paths.into_iter().chain(paths).collect();
+        self.apply_command_wrapper_paths(config, &mut paths)?;
         Ok(paths)
     }
 
@@ -137,6 +138,7 @@ impl Toolset {
         // env_results.env_paths must come FIRST for highest precedence
         let mut user_paths = env_results.env_paths;
         user_paths.extend(config.path_dirs().await?.clone());
+        self.apply_command_wrapper_paths(config, &mut user_paths)?;
 
         // Tool paths start empty
         let mut tool_paths = Vec::new();
@@ -153,5 +155,19 @@ impl Toolset {
         tool_paths.extend(self.list_paths(config).await);
 
         Ok((user_paths, tool_paths))
+    }
+    /// Select wrappers after tool templates and runtime options have been resolved.
+    fn apply_command_wrapper_paths(&self, config: &Config, paths: &mut Vec<PathBuf>) -> Result<()> {
+        paths.retain(|path| path != &*crate::dirs::COMMAND_WRAPPERS);
+        let wrappers = crate::config::load_command_wrappers(
+            &config.config_files,
+            self.versions
+                .values()
+                .flat_map(|versions| &versions.requests),
+        )?;
+        if !wrappers.is_empty() {
+            paths.insert(0, crate::dirs::COMMAND_WRAPPERS.clone());
+        }
+        Ok(())
     }
 }
