@@ -39,3 +39,9 @@ head=$(git --git-dir="$repo" rev-parse HEAD)
 assert_contains 'mise bootstrap dotfiles recover --help' '--keep-current'
 assert_succeed 'mise bootstrap dotfiles recover'
 assert "git --git-dir='$repo' rev-parse HEAD" "$head"
+
+# Local history ignores shell-injected Git configuration, even invalid values.
+printf 'fourth\r\n' >~/.native
+assert_succeed 'GIT_CONFIG_COUNT=invalid GIT_CONFIG_PARAMETERS=invalid mise bootstrap dotfiles save'
+git --git-dir="$repo" show main:home/.native >captured
+assert_succeed 'cmp ~/.native captured'

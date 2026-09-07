@@ -76,6 +76,8 @@ pub(crate) enum ConflictKind {
     /// A file became a symlink (or the reverse) on one side while the
     /// other side changed it.
     TypeChange,
+    /// Both sides changed a symlink to different targets.
+    LinkTarget,
     /// Both sides have the file, with no common base, and they differ.
     NeedsAdoption,
     /// Both sides changed a file that is not text.
@@ -96,6 +98,7 @@ impl ConflictKind {
             Self::DeleteModify => "deleted upstream, changed here",
             Self::ModifyDelete => "deleted here, changed upstream",
             Self::TypeChange => "changed type on one side and content on the other",
+            Self::LinkTarget => "both sides changed the symlink target",
             Self::NeedsAdoption => "needs adoption: both sides have a version and no common base",
             Self::Binary => "both sides changed a binary file",
             Self::UnsavedEdits => "unsaved edits: save or discard them first",
@@ -334,8 +337,11 @@ fn merge(
             if o.1 == t.1 && o.0 == t.0 {
                 return Ok(Merged::Clean(Some(o.clone())));
             }
-            if kind(ours) != kind(theirs) || o.0 == "120000" {
+            if kind(ours) != kind(theirs) {
                 return Ok(Merged::Conflict(ConflictKind::TypeChange));
+            }
+            if o.0 == "120000" {
+                return Ok(Merged::Conflict(ConflictKind::LinkTarget));
             }
             let Some(base) = base else {
                 return Ok(Merged::Conflict(ConflictKind::NeedsAdoption));
@@ -372,6 +378,23 @@ mod tests {
 
     fn obj(oid: &str) -> Object {
         ("100644".to_string(), oid.to_string())
+    }
+
+    #[test]
+    fn divergent_symlink_targets_are_not_type_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let ours = ("120000".into(), repo.hash_blob(b"local-target").unwrap());
+        let theirs = ("120000".into(), repo.hash_blob(b"remote-target").unwrap());
+        assert!(matches!(
+            merge(&repo, None, Some(&ours), Some(&theirs)).unwrap(),
+            Merged::Conflict(ConflictKind::LinkTarget)
+        ));
+        let file = ("100644".into(), theirs.1.clone());
+        assert!(matches!(
+            merge(&repo, None, Some(&ours), Some(&file)).unwrap(),
+            Merged::Conflict(ConflictKind::TypeChange)
+        ));
     }
 
     fn rec(a: Option<&str>, u: Option<&str>, l: Option<&str>) -> SyncRecord {

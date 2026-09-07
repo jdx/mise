@@ -15,7 +15,7 @@ use crate::system::history::{
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct DotfilesRecover {
-    /// Pending operation identifier or an unambiguous prefix
+    /// Pending numeric ID or an unambiguous operation UUID prefix
     #[usage(value_name = "OPERATION")]
     operation: Option<String>,
 
@@ -49,9 +49,9 @@ impl DotfilesRecover {
         let selected = pending
             .iter()
             .filter(|(_, record)| {
-                self.operation
-                    .as_ref()
-                    .is_none_or(|prefix| record.checkpoint.uuid.starts_with(prefix))
+                self.operation.as_ref().is_none_or(|selector| {
+                    matches_operation(selector, record.id, &record.checkpoint.uuid)
+                })
             })
             .collect::<Vec<_>>();
         if selected.is_empty() {
@@ -102,5 +102,24 @@ impl DotfilesRecover {
             info!("dotfiles: recovered operation {}", record.checkpoint.uuid);
         }
         Ok(())
+    }
+}
+
+fn matches_operation(selector: &str, id: u64, uuid: &str) -> bool {
+    selector.parse::<u64>().ok() == Some(id) || uuid.starts_with(selector)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::matches_operation;
+
+    #[test]
+    fn accepts_listed_numeric_ids_and_operation_uuid_prefixes() {
+        assert!(matches_operation("42", 42, "abc-123"));
+        assert!(matches_operation("abc", 42, "abc-123"));
+        assert!(!matches_operation("43", 42, "abc-123"));
+        // Matching both records is intentionally possible: the caller rejects
+        // an ambiguous selection rather than discarding the wrong copies.
+        assert!(matches_operation("42", 43, "42abc-123"));
     }
 }

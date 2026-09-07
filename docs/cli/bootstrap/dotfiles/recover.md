@@ -13,7 +13,7 @@ explicitly accepts their live contents and discards only the selected
 operation's temporary recovery copies; it does not erase Git history.
 
 ## Arguments
-- **`[OPERATION]`** — Pending operation identifier or an unambiguous prefix
+- **`[OPERATION]`** — Pending numeric ID or an unambiguous operation UUID prefix
 
 ## Flags
 - **`--keep-current`** — Accept live files instead of restoring temporary recovery copies

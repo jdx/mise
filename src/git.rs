@@ -731,12 +731,14 @@ impl<'a> PlumbingCall<'a> {
 #[derive(Debug)]
 pub(crate) struct GitPlumbing {
     git_dir: PathBuf,
+    disabled_hooks: std::sync::Mutex<Option<tempfile::TempDir>>,
 }
 
 impl GitPlumbing {
     pub(crate) fn new(git_dir: impl Into<PathBuf>) -> Self {
         Self {
             git_dir: git_dir.into(),
+            disabled_hooks: std::sync::Mutex::new(None),
         }
     }
 
@@ -881,6 +883,21 @@ impl GitPlumbing {
             plumbing_binary().ok_or_else(|| eyre!("no unattended git executable is available"))?;
         let mut cmd = std::process::Command::new(git);
         sanitize_git_command(&mut cmd);
+        // Internal object and ref operations must not inherit configuration
+        // injected by the calling shell. Network commands intentionally keep
+        // these variables for credential helpers and the GitHub relay.
+        cmd.env_remove("GIT_CONFIG_COUNT")
+            .env_remove("GIT_CONFIG_PARAMETERS");
+        let mut hooks = self
+            .disabled_hooks
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if hooks.is_none() {
+            *hooks = Some(tempfile::tempdir()?);
+        }
+        let mut hooks_config = OsString::from("core.hooksPath=");
+        hooks_config.push(hooks.as_ref().expect("hooks directory initialized").path());
+        cmd.arg("-c").arg(hooks_config);
         let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
         cmd.env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", null)
@@ -1490,12 +1507,21 @@ mod plumbing_tests {
             Some(OsString::from("1"))
         );
         assert!(envs.contains_key(OsStr::new("GIT_CONFIG_GLOBAL")));
+        for variable in ["GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS"] {
+            assert_eq!(envs.get(OsStr::new(variable)), Some(&None));
+        }
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
-        assert!(args[0].starts_with("--git-dir="), "{args:?}");
-        assert!(args[1].starts_with("--work-tree="), "{args:?}");
+        assert!(
+            args.iter().any(|arg| arg.starts_with("--git-dir=")),
+            "{args:?}"
+        );
+        assert!(
+            args.iter().any(|arg| arg.starts_with("--work-tree=")),
+            "{args:?}"
+        );
         assert_eq!(args.last().map(String::as_str), Some("write-tree"));
     }
 
@@ -1540,6 +1566,11 @@ mod plumbing_tests {
             "untrusted-hooks",
         ]))
         .unwrap();
+        let internal = repo
+            .output_str(PlumbingCall::new(["config", "--get", "core.hooksPath"]))
+            .unwrap();
+        assert!(Path::new(&internal).is_dir());
+        assert_eq!(std::fs::read_dir(&internal).unwrap().count(), 0);
         let out = repo
             .network_output(PlumbingCall::new(["config", "--get", "core.hooksPath"]))
             .unwrap();
