@@ -34,13 +34,7 @@ impl Shell for Pwsh {
             }}
 
             function mise {{
-                [CmdletBinding(PositionalBinding=$false)]
-                param(
-                    [Parameter(ValueFromPipeline=$true)]
-                    [object] $pipelineInput,
-                    [Parameter(ValueFromRemainingArguments=$true, Position=0)]  # Allow any number of arguments, including none
-                    [string[]] $arguments = @()  # defaults to an empty array: a bare `mise` binds $null, which Set-StrictMode rejects on .count
-                )
+                $arguments = $args
 
                 $previous_out_encoding = $OutputEncoding
                 $previous_console_out_encoding = [Console]::OutputEncoding
