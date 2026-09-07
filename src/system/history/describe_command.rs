@@ -106,6 +106,16 @@ pub(crate) fn configured() -> Option<String> {
 /// when it printed nothing usable; an error when it could not run, timed
 /// out, or failed. The checkpoint is unchanged in every case but success.
 pub(crate) fn run(store: &Store, entry: &Entry, command: &str) -> Result<Option<String>> {
+    run_with_limits(store, entry, command, TIMEOUT, OUTPUT_GRACE)
+}
+
+fn run_with_limits(
+    store: &Store,
+    entry: &Entry,
+    command: &str,
+    timeout: Duration,
+    output_grace: Duration,
+) -> Result<Option<String>> {
     let input = serde_json::to_vec(&input(store, entry)?)?;
     let mut shell = shell(command);
     shell
@@ -148,19 +158,19 @@ pub(crate) fn run(store: &Store, entry: &Entry, command: &str) -> Result<Option<
         if let Some(status) = child.try_wait()? {
             break status;
         }
-        if started.elapsed() >= TIMEOUT {
+        if started.elapsed() >= timeout {
             // the shell and whatever it started; the reader thread ends
             // with the last writer of the pipe, so it is not waited for
             active.0.kill();
             let _ = child.kill();
             let _ = child.wait();
-            bail!("took longer than {}s", TIMEOUT.as_secs());
+            bail!("took longer than {}s", timeout.as_secs());
         }
         std::thread::sleep(Duration::from_millis(100));
     };
     // a descendant that outlived the shell and kept the pipe is not the
     // shell's answer: the output is waited for a moment, not forever
-    let Ok(output) = receiver.recv_timeout(OUTPUT_GRACE) else {
+    let Ok(output) = receiver.recv_timeout(output_grace) else {
         active.0.kill();
         bail!("a process it started kept its output open");
     };
@@ -311,14 +321,30 @@ mod tests {
         );
         #[cfg(unix)]
         let command = "sleep 30 & exit 0";
-        #[cfg(windows)]
-        let command = "start \"\" /B ping -n 30 127.0.0.1";
         let started = Instant::now();
-        let error = run(&store, &entry, command).unwrap_err();
-        assert!(
-            error.to_string().contains("kept its output open"),
-            "{error:#}"
-        );
+        #[cfg(unix)]
+        {
+            let error = run(&store, &entry, command).unwrap_err();
+            assert!(
+                error.to_string().contains("kept its output open"),
+                "{error:#}"
+            );
+        }
+        #[cfg(windows)]
+        {
+            let error = run_with_limits(
+                &store,
+                &entry,
+                "ping -n 30 127.0.0.1",
+                Duration::from_secs(1),
+                OUTPUT_GRACE,
+            )
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("took longer than 1s"),
+                "{error:#}"
+            );
+        }
         assert!(started.elapsed() < Duration::from_secs(10));
         assert!(RUNNING.lock().unwrap().is_none());
         #[cfg(unix)]

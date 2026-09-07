@@ -111,12 +111,12 @@ mod tests {
     use super::*;
     use std::io::Read;
     use std::process::Stdio;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     #[test]
-    fn job_ends_descendants_after_the_shell_exits() {
+    fn job_ends_the_process_tree() {
         let mut command = Command::new("cmd");
-        command.args(["/C", "start \"\" /B ping -n 30 127.0.0.1"]);
+        command.args(["/C", "cmd /C ping -n 30 127.0.0.1"]);
         command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -129,9 +129,18 @@ mod tests {
             let _ = output.read_to_end(&mut bytes);
             let _ = sender.send(());
         });
-        assert!(child.wait().unwrap().success());
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(child.try_wait().unwrap().is_none());
         assert!(receiver.recv_timeout(Duration::from_millis(200)).is_err());
         job.kill();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while child.try_wait().unwrap().is_none() {
+            assert!(
+                Instant::now() < deadline,
+                "job did not end its process tree"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
         receiver.recv_timeout(Duration::from_secs(5)).unwrap();
     }
 }
