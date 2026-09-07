@@ -164,11 +164,9 @@ pub(crate) fn strip_opts(s: &str) -> String {
 
 /// Whether a plugin installed under `short` takes precedence over the registry entry.
 ///
-/// A plugin whose backend is disabled by `disable_backends` does not, unless a version is
-/// already installed through that same backend. `disable_backends` is an install-time guard
-/// that intentionally keeps reporting the recorded backend of an installed tool, but a
-/// leftover plugin must not route a registry shorthand to a disabled backend and turn the
-/// install into an error when the registry offers an enabled backend (discussions/6021).
+/// A plugin whose backend is disabled by `disable_backends` does not. Existing installations
+/// are left on disk, but a disabled backend must not participate in shorthand resolution
+/// (discussions/6021, discussions/12921).
 fn plugin_overrides_registry(short: &str) -> bool {
     let Some(plugin_type) = install_state::get_plugin_type(short) else {
         return false;
@@ -179,14 +177,7 @@ fn plugin_overrides_registry(short: &str) -> bool {
         PluginType::VfoxBackend => BackendType::VfoxBackend(short.to_string()),
         PluginType::Package => return true,
     };
-    if !backend::is_disabled_backend_type(&backend_type) {
-        return true;
-    }
-    // Versions are recorded per shorthand, so check the backend they were installed with:
-    // a version that came from an enabled registry backend must not keep the disabled
-    // plugin authoritative.
-    !install_state::list_versions(short).is_empty()
-        && install_state::backend_type(short).ok().flatten() == Some(backend_type)
+    !backend::is_disabled_backend_type(&backend_type)
 }
 
 fn parse_backend_components(

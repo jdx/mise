@@ -159,8 +159,8 @@ Use the global settings file to prevent installation through selected backends:
 disable_backends = ["asdf", "vfox"]
 ```
 
-This is an installation restriction, not an uninstall operation. Existing tools
-can still report the backend that installed them.
+Disabled backends are excluded from tool resolution and new installs. Existing
+installations are left on disk and become available again if the backend is re-enabled.
 
 ### Force Backend for Tool
 
