@@ -3,8 +3,9 @@ require_cmd git
 export MISE_EXPERIMENTAL=0
 printf 'original\n' >~/.onboard-review
 assert_succeed 'mise bootstrap dotfiles track ~/.onboard-review'
+assert_succeed 'mise bootstrap dotfiles track ~/.config/mise/config.toml'
 origin="$PWD/origin.git"
-git init -q --bare "$origin"
+git init -q --bare -b main "$origin"
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync fetch-only --yes"
 assert 'mise settings get history.sync' 'fetch-only'
 assert_succeed 'mise settings set history.sync manual'
@@ -36,8 +37,8 @@ assert "git --git-dir=$MISE_STATE_DIR/history/repo.git for-each-ref --format='%(
 
 # A validation failure after fetching also leaves the old state untouched.
 git clone -q "$origin" damaged
-printf '[broken\n' >damaged/config.toml
-git -C damaged add config.toml
+printf '[broken\n' >damaged/config/config.toml
+git -C damaged add config/config.toml
 git -C damaged -c user.name=test -c user.email=test@example.com commit -qm invalid
 git -C damaged push -q
 assert_fail "mise bootstrap --from-git file://$origin --dry-run --only dotfiles"

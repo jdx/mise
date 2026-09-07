@@ -157,11 +157,13 @@ n="$(eval "$count")"
 sleep 3
 assert "$count" "$n"
 
-# the target of a symlink inside a tracked directory is watched too, even
-# outside every declared root and with reconciliation off
+# A symlink records only the link. Its target needs explicit enrollment.
 echo 'outside' >~/outside.conf
 ln -s ~/outside.conf ~/.config/hypr/link.conf
 wait_until "grep -q 'a tracked path appeared' watch.log"
+wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"link.conf\")'"
+assert_not_contains "mise bootstrap dotfiles history show latest --files" "outside.conf"
+assert_succeed "mise bootstrap dotfiles track ~/outside.conf"
 echo 'outside2' >~/outside.conf
 wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"outside.conf\")'"
 

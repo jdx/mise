@@ -83,6 +83,7 @@ assert "find remotes/fresh -name sync.json | wc -l | tr -d ' '" "1"
 assert_contains "cat '$SSH_LOG'" '/.config/mise bootstrap'
 
 # ---- a dry run on a set-up host previews the bootstrap against its configuration
+: >"$SSH_LOG"
 out="$(mise bootstrap remote --host fresh --from-git "file://$origin" --remote-mise "$binary" --only dotfiles --dry-run 2>&1)"
 assert_contains 'printf "%s\n" "$out"' "Dry run: nothing was changed"
 assert_contains "cat '$SSH_LOG'" 'bootstrap --dry-run'

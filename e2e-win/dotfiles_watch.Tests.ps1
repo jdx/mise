@@ -62,7 +62,7 @@ Describe 'history watch' {
         @"
 [bootstrap.services.mise-history]
 builtin = "history-watch"
-"@ | Out-File -FilePath (Join-Path $env:MISE_CONFIG_DIR 'config.toml') -Encoding utf8NoBOM
+"@ | Out-File -FilePath (Join-Path $env:MISE_CONFIG_DIR 'config.toml') -Encoding utf8NoBOM -Append
         $status = mise bootstrap dotfiles status --json | Out-String | ConvertFrom-Json
         $status.history.watcher | Should -Be 'declared-not-running'
     }

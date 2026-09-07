@@ -132,11 +132,12 @@ assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edit
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].description_source'" "computed"
 
 # stopping saves what is still pending
-echo 'monitor=DP-5' >~/.config/hypr/monitors.lua
+echo 'monitor=DP-6' >~/.config/hypr/monitors.lua
 sleep 0.3
 kill -TERM "$watcher"
 wait "$watcher" || true
 assert_contains "cat watch.log" '"event":"stopped"'
+assert_succeed "mise bootstrap dotfiles history diff --path ~/.config/hypr/monitors.lua --exit-code"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua"
 assert_contains "mise bootstrap dotfiles status" "declared but not running"
 

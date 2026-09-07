@@ -68,9 +68,14 @@ command = "powershell.exe -NoProfile -Command Start-Sleep 300"
         $LASTEXITCODE | Should -Be 0
         schtasks /query /tn $script:Task 2>&1 | Out-Null
         $LASTEXITCODE | Should -Be 0
-        $json = mise bootstrap services status --json | Out-String
-        $LASTEXITCODE | Should -Be 0
-        $status = ($json | ConvertFrom-Json)[0]
+        $deadline = (Get-Date).AddSeconds(20)
+        do {
+            $json = mise bootstrap services status --json | Out-String
+            $LASTEXITCODE | Should -Be 0
+            $status = ($json | ConvertFrom-Json)[0]
+            if ($status.current -eq 'running') { break }
+            Start-Sleep -Milliseconds 200
+        } while ((Get-Date) -lt $deadline)
         $status.current | Should -Be 'running'
         $status.action | Should -Be 'noop'
 
