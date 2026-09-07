@@ -30,7 +30,7 @@ assert_contains "mise settings --json-extended" "{
       \"java\"
     ],
     \"type\": \"array\",
-    \"description\": \"Backends to disable for new installs, such as \`asdf\`, \`pipx\`, or a vfox-backend plugin name. This does not uninstall or disable tools already installed with those backends.\",
+    \"description\": \"Backends to exclude from tool resolution and new installs, such as \`asdf\`, \`pipx\`, or a vfox-backend plugin name. Existing installations are left on disk and become available again if the backend is re-enabled.\",
     \"source\": \"$HOME/workdir/mise.toml\"
   }
 }"
