@@ -20,6 +20,8 @@ concurrency:
 env:
   MBX_DISABLE: "1"
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_EXPERIMENTAL: 1
   MISE_LOCKFILE: 1
@@ -38,8 +40,10 @@ jobs:
       full-ci: ${{ steps.classify.outputs.full-ci }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: github.event_name == 'pull_request'
         with:
           fetch-depth: 0
+          filter: blob:none
       - name: Classify changes
         id: classify
         env:
@@ -77,8 +81,8 @@ jobs:
           cargo build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
-      # Downstream jobs only execute this binary, so keep full debug symbols in
-      # the build job while transferring a much smaller stripped copy.
+      # Downstream jobs only execute this binary. Compile with line tables
+      # (CARGO_PROFILE_DEV_DEBUG) and strip the uploaded copy further.
       - name: Prepare mise artifact
         run: |
           install -Dm755 target/debug/mise target/ci-artifacts/mise
@@ -224,67 +228,28 @@ jobs:
     # The release PR runs the full suite against the packaged release tarball.
     # Keep that stronger signal instead of also testing the debug artifact.
     if: ${{ needs.classify-changes.outputs.full-ci == 'true' && (github.event_name != 'pull_request' || github.head_ref != 'release' || github.base_ref != 'main') }}
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
     needs: [build-ubuntu, classify-changes]
     timeout-minutes: 125
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-      # Fetch sequentially so the pool can rotate its cursor between requests.
-      # Each token is also rejected by the action when its core budget is empty.
-      - name: Fetch token 0
-        id: token_0
+      - name: Fetch tokens
+        id: tokens
         uses: ./.github/actions/fetch-token
         with:
           api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-      - name: Fetch token 1
-        id: token_1
-        uses: ./.github/actions/fetch-token
-        with:
-          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-      - name: Fetch token 2
-        id: token_2
-        uses: ./.github/actions/fetch-token
-        with:
-          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-      - name: Fetch token 3
-        id: token_3
-        uses: ./.github/actions/fetch-token
-        with:
-          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-      - name: Fetch token 4
-        id: token_4
-        uses: ./.github/actions/fetch-token
-        with:
-          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-      - name: Fetch token 5
-        id: token_5
-        uses: ./.github/actions/fetch-token
-        with:
-          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-      - name: Fetch token 6
-        id: token_6
-        uses: ./.github/actions/fetch-token
-        with:
-          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-      - name: Fetch token 7
-        id: token_7
-        uses: ./.github/actions/fetch-token
-        with:
-          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: mise-ubuntu-latest
-          path: target/debug
-      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+          count: "8"
       - parallel:
-          - uses: ./.github/actions/mise-tools
+          - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+            with:
+              name: mise-ubuntu-latest
+              path: target/debug
           - name: Pull e2e Docker image
             run: docker pull ghcr.io/jdx/mise:e2e
-      # Each test gets isolated host directories and an ephemeral container.
-      # Run four branches on a standard runner; each branch handles two
-      # token-isolated tranches sequentially, capped at eight containers total.
+      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      # Tests run in ephemeral containers and do not need host mise tools.
+      # Four branches on a large runner; each handles two token-isolated
+      # tranches sequentially, capped at eight containers total.
       - parallel:
           - name: Test tranches 0 and 4
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
@@ -295,8 +260,8 @@ jobs:
               TEST_TRANCHE_COUNT: 8
               TRANCHE_A: 0
               TRANCHE_B: 4
-              TOKEN_A: ${{ steps.token_0.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              TOKEN_B: ${{ steps.token_4.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_A: ${{ steps.tokens.outputs.token_0 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_B: ${{ steps.tokens.outputs.token_4 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: &e2e-retry
               timeout_minutes: 30
               retry_wait_seconds: 30
@@ -315,8 +280,8 @@ jobs:
               TEST_TRANCHE_COUNT: 8
               TRANCHE_A: 1
               TRANCHE_B: 5
-              TOKEN_A: ${{ steps.token_1.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              TOKEN_B: ${{ steps.token_5.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_A: ${{ steps.tokens.outputs.token_1 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_B: ${{ steps.tokens.outputs.token_5 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: *e2e-retry
           - name: Test tranches 2 and 6
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
@@ -327,8 +292,8 @@ jobs:
               TEST_TRANCHE_COUNT: 8
               TRANCHE_A: 2
               TRANCHE_B: 6
-              TOKEN_A: ${{ steps.token_2.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              TOKEN_B: ${{ steps.token_6.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_A: ${{ steps.tokens.outputs.token_2 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_B: ${{ steps.tokens.outputs.token_6 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: *e2e-retry
           - name: Test tranches 3 and 7
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
@@ -339,8 +304,8 @@ jobs:
               TEST_TRANCHE_COUNT: 8
               TRANCHE_A: 3
               TRANCHE_B: 7
-              TOKEN_A: ${{ steps.token_3.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              TOKEN_B: ${{ steps.token_7.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_A: ${{ steps.tokens.outputs.token_3 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_B: ${{ steps.tokens.outputs.token_7 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: *e2e-retry
 
   bootstrap-linux-host:
