@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1YEFC07VANGJG28DFDZ78AX",
+  "session_id": "01a07cda-106b-7c02-88fa-c11a5c445251",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T17:25:54.686251Z",
+  "branch": "codex/dotfiles-git-history",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "d90975c5aefb",
+  "checkpoint_transcript_start": 223,
+  "transcript_lines_at_start": 223,
+  "compact_transcript_start": 30,
+  "token_usage": {
+    "input_tokens": 36683,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2108800,
+    "output_tokens": 1960,
+    "api_call_count": 18
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 4,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "docs/dev-tools/backends/packslip.md": 4
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 427,
+      "agent_lines_removed": 25
+    }
+  ]
+}
