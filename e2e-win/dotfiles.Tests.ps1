@@ -102,32 +102,17 @@ Describe 'dotfiles' {
         Test-Path $script:Target | Should -BeFalse
     }
 
-    It 'records a history checkpoint pair for an apply' {
-        # The previous test left the target unapplied, so this apply changes something and
-        # must leave a pair of checkpoints behind; a no-op apply would record nothing.
+    It 'does not enroll an untracked deployment or retain its operation history' {
+        # Deployment ownership is not enrollment. Temporary write recovery must
+        # not become ongoing file history after a successful apply.
         mise bootstrap dotfiles apply 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0
 
         $json = mise bootstrap dotfiles history --json 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
-        $checkpoints = $json | ConvertFrom-Json
-        @($checkpoints).Count | Should -BeGreaterOrEqual 1
-        $latest = @($checkpoints)[0]
-        $latest.operation.status | Should -Be 'completed'
-        $latest.operation.command | Should -BeLike 'bootstrap dotfiles apply*'
-        $latest.trigger | Should -Be 'bootstrap'
-        $status = mise bootstrap dotfiles status --json 2>&1 | Out-String | ConvertFrom-Json
-        $status.history.unavailable | Should -BeNullOrEmpty -Because ("the store should be usable: " + ($status.history | ConvertTo-Json -Depth 6 -Compress))
-        $latest.tree.available | Should -BeTrue -Because ("the checkpoint should hold a snapshot: " + ($latest.tree | ConvertTo-Json -Depth 4 -Compress))
-        Test-Path (Join-Path $env:MISE_STATE_DIR 'history\repo.git') | Should -BeTrue -Because ("the store lives under " + $env:MISE_STATE_DIR)
-
-        $out = mise bootstrap dotfiles history show latest 2>&1 | Out-String
-        $LASTEXITCODE | Should -Be 0
-        $out | Should -BeLike '*Operation:*bootstrap (completed)*'
-
-        $history = mise bootstrap dotfiles history --json 2>&1 | Out-String
-        $LASTEXITCODE | Should -Be 0
-        $checkpoints = $history | ConvertFrom-Json
-        @($checkpoints)[1].trigger | Should -Be 'bootstrap-before'
+        $checkpoints = @($json | ConvertFrom-Json)
+        $checkpoints.Count | Should -Be 0
+        $pending = Join-Path $env:MISE_STATE_DIR 'history\pending'
+        @(Get-ChildItem $pending -ErrorAction SilentlyContinue).Count | Should -Be 0
     }
 }
