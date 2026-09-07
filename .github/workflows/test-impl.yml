@@ -158,6 +158,9 @@ jobs:
       - run: mise run test:e2e e2e/cli/test_dotfiles_rollback
       - run: mise run test:e2e e2e/cli/test_dotfiles_rollback_types
       - run: mise run test:e2e e2e/cli/test_bootstrap_user_services
+      - run: mise run test:e2e e2e/cli/test_dotfiles_watch
+      - run: mise run test:e2e e2e/cli/test_dotfiles_watch_pending
+      - run: mise run test:e2e e2e/cli/test_dotfiles_watch_throttle
 
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}

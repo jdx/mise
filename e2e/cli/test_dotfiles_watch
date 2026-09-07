@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# `mise bootstrap dotfiles watch`: edits to tracked files are saved automatically once
+# they are quiet, configuration changes replan the watches, one watcher runs
+# per store, and `--once` reconciles for timers.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+export MISE_HISTORY_WATCH_DEBOUNCE=1s
+export MISE_HISTORY_WATCH_MAX_INTERVAL=5s
+
+count="mise bootstrap dotfiles history --json -n 0 | jq length"
+
+# waits until the checkpoint count reaches $1 (or fails after ~10s)
+wait_for_count() {
+  for _ in $(seq 1 50); do
+    if [[ "$(eval "$count")" -ge $1 ]]; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "expected at least $1 checkpoints, found $(eval "$count")" >&2
+  [[ -f watch.log ]] && cat watch.log >&2
+  return 1
+}
+
+mkdir -p ~/.config/hypr
+echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+assert "$count" "1"
+assert_contains "mise bootstrap dotfiles status" "automatic capture: not declared"
+
+# a declared but not running watcher is reported with the next command
+cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+EOF
+assert_contains "mise bootstrap dotfiles status" "declared but not running"
+assert_contains "mise bootstrap dotfiles status" "mise bootstrap services apply"
+assert "mise bootstrap dotfiles status --json | jq -r .history.watcher" "declared-not-running"
+
+# --once reconciles and exits: an edit made while nothing watched is saved
+echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
+assert_succeed "mise bootstrap dotfiles watch --once"
+assert "$count" "2"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].trigger'" "edit"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua, mise/config.toml"
+
+# the foreground watcher saves an edit once the file is quiet
+mise bootstrap dotfiles watch --json >watch.log 2>&1 &
+watcher=$!
+cleanup() { kill "$watcher" 2>/dev/null || true; }
+trap cleanup EXIT
+for _ in $(seq 1 50); do
+  grep -q '"event":"started"' watch.log && break
+  sleep 0.2
+done
+assert_contains "cat watch.log" '"event":"started"'
+assert "mise bootstrap dotfiles status --json | jq -r .history.watcher" "running"
+assert_contains "mise bootstrap dotfiles status" "automatic capture: running"
+
+# one watcher per store: a second one exits 0 immediately
+assert_contains "mise bootstrap dotfiles watch --json" '"event":"already-running"'
+
+echo 'monitor=DP-3' >~/.config/hypr/monitors.lua
+echo 'bind = SUPER, Q' >~/.config/hypr/bindings.lua
+wait_for_count 3
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua; added hypr/bindings.lua"
+assert_contains "cat watch.log" '"event":"captured"'
+
+# a configuration change replans: an excluded file stops being captured
+assert_succeed "mise bootstrap dotfiles exclude '~/.config/hypr/bindings.lua'"
+wait_for_count 4
+assert_contains "cat watch.log" '"event":"replan"'
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited mise/config.toml; removed hypr/bindings.lua"
+echo 'bind = SUPER, W' >~/.config/hypr/bindings.lua
+echo 'monitor=DP-4' >~/.config/hypr/monitors.lua
+wait_for_count 5
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua"
+assert_succeed "mise bootstrap dotfiles include '~/.config/hypr/bindings.lua'"
+wait_for_count 6
+
+# a running history operation defers the watcher instead of racing it: the
+# rollback records its own pair and the watcher saves nothing extra
+n="$(eval "$count")"
+assert_succeed "mise bootstrap dotfiles rollback ~/.config/hypr/monitors.lua --yes"
+sleep 2.5
+assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-3"
+assert "$count" "$((n + 2))"
+
+# stopping saves what is still pending
+echo 'monitor=DP-5' >~/.config/hypr/monitors.lua
+sleep 0.3
+kill -TERM "$watcher"
+wait "$watcher" || true
+assert_contains "cat watch.log" '"event":"stopped"'
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua"
+assert_contains "mise bootstrap dotfiles status" "declared but not running"
+
+# the watcher is a no-op when history is disabled, and fails clearly when
+# nothing can be watched
+assert_contains "MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles watch --json" '"event":"disabled"'
+assert_succeed "MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles watch"

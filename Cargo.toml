@@ -118,6 +118,7 @@ dunce = "1"
 homedir = "0.3"
 expr-lang = "2"
 eyre = "0.6"
+file-id = "0.2"
 filetime = "0.2"
 flate2 = "1"
 futures-util = "0.3"
@@ -152,6 +153,10 @@ miette = { version = "7", features = ["fancy"] }
 netrc-rs = "0.1"
 nodejs-semver = "5"
 nucleo-matcher = "0.3"
+notify = { version = "8", default-features = false, features = [
+  "macos_fsevent",
+] }
+notify-debouncer-full = { version = "0.7", default-features = false }
 num_cpus = "1"
 once_cell = "1"
 packslip = { version = "0.3", default-features = false }

@@ -86,6 +86,9 @@ export const commands: { [key: string]: Command } = {
           edit: {
             hide: false,
           },
+          exclude: {
+            hide: false,
+          },
           history: {
             hide: false,
             subcommands: {
@@ -102,6 +105,9 @@ export const commands: { [key: string]: Command } = {
                 hide: false,
               },
             },
+          },
+          include: {
+            hide: false,
           },
           paths: {
             hide: false,
@@ -125,6 +131,9 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
           untrack: {
+            hide: false,
+          },
+          watch: {
             hide: false,
           },
         },

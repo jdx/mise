@@ -695,6 +695,18 @@ mise bootstrap dotfiles edit ~/.zshrc
 mise bootstrap dotfiles edit --apply ~/.config/starship.toml
 """#
         }
+        cmd exclude help="Never capture paths matching a glob" effect=write {
+            long_help #"""
+Never capture paths matching a glob
+
+Adds the glob to `[history] exclude` in the global config. Use it for
+logs, caches, databases, and constantly rewritten application state; a
+file that genuinely holds configuration but changes constantly is
+better tracked with `--no-autosave` and saved explicitly.
+"""#
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <GLOB> help="A glob such as `~/.config/hypr/plugins/**`"
+        }
         cmd history help="Browse the checkpoints of your dotfiles (experimental)" effect=read {
             long_help #"""
 Browse the checkpoints of your dotfiles (experimental)
@@ -765,6 +777,15 @@ against the one before it. With two, compares the two states.
                 arg "[REF]" help="Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix" required=#false
             }
         }
+        cmd include help="Capture paths matching a glob again" effect=write {
+            long_help #"""
+Capture paths matching a glob again
+
+Removes the glob from `[history] exclude` in the global config.
+"""#
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <GLOB> help="The glob as written by `exclude`"
+        }
         cmd paths help="Show what history tracks and under which policies" effect=read {
             long_help #"""
 Show what history tracks and under which policies
@@ -778,6 +799,7 @@ enrollment is never mistaken for protection.
             flag --preview help="Show what tracking this path would capture" {
                 arg <PATH>
             }
+            flag --noisy help="List the paths the watcher found changing constantly"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
         cmd rollback help="Return files to the version a checkpoint holds (experimental)" effect=destructive {
@@ -921,6 +943,34 @@ existing checkpoints are left exactly as they are.
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles untrack ~/.zshrc\u{1b}[22m\n"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PATH>… help="Paths to stop tracking" var=#true
+        }
+        cmd watch help="Save tracked files as they change (experimental)" effect=write {
+            long_help #"""
+Save tracked files as they change (experimental)
+
+Runs in the foreground: installs filesystem watches for every autosaved
+tracked entry, saves a checkpoint once a changed file has been quiet for
+`history.watch.debounce` (a file that keeps changing never delays the
+others; `history.watch.max_interval` saves it regardless), and
+reconciles the whole set at startup, every `history.watch.reconcile`,
+and when the configuration changes. Manual-save entries are never
+watched.
+
+The `history-watch` built-in service runs this for you:
+
+    [bootstrap.services.mise-history]
+    builtin = "history-watch"
+
+Exit codes: 0 when history or experimental mode is disabled or another watcher already runs;
+1 when git is unusable, the store cannot open, or no watch can be
+installed. A capture that fails is retried with backoff and never drops
+the pending changes; one that would overlap another history operation
+is deferred.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles watch\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles watch --once\u{1b}[22m      # one reconcile, for a timer\n    $ \u{1b}[1mmise bootstrap dotfiles watch --json\u{1b}[22m\n"
+            flag --once help="Reconcile once and exit (for timers and cron)"
+            flag "-J --json" help="One JSON object per line instead of log lines"
+            flag "-h --help" help="Print help" action=help builtin=#true
         }
     }
     cmd files subcommand_required=#true help="Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`" effect=read {

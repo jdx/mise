@@ -1142,6 +1142,27 @@
                   "minimum": 0
                 }
               }
+            },
+            "watch": {
+              "type": "object",
+              "unevaluatedProperties": false,
+              "properties": {
+                "debounce": {
+                  "default": "2s",
+                  "description": "How long a changed file must stay quiet before the history watcher saves it (the base autosave interval). A file that keeps changing is stretched on its own and never delays the others.",
+                  "type": "string"
+                },
+                "max_interval": {
+                  "default": "24h",
+                  "description": "The longest autosave interval the history watcher stretches a constantly changing file to. Sustained churn doubles a file's own interval up to this; a settled file is saved promptly again, and a sustained quiet period resets it.",
+                  "type": "string"
+                },
+                "reconcile": {
+                  "default": "10m",
+                  "description": "How often the history watcher rescans the whole tracked set for changes its watches missed. `0` disables periodic reconciliation (startup and configuration changes still reconcile).",
+                  "type": "string"
+                }
+              }
             }
           }
         },

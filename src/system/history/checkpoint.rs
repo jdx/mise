@@ -53,6 +53,11 @@ pub(crate) struct Draft {
     /// Paths named explicitly: manual-save entries covering them are read
     /// live and promoted, becoming their new saved version.
     pub explicit_paths: Vec<PathBuf>,
+    /// Paths the watcher is throttling: their files are carried forward
+    /// from the newest checkpoint instead of read live, so a capture for
+    /// another path never defeats their schedule. Ignored by protective
+    /// captures and explicit saves.
+    pub held: Vec<PathBuf>,
 }
 
 impl Draft {
@@ -264,6 +269,19 @@ impl Store {
                 modes.entry(path).or_insert(bits);
             }
         }
+        // a held path keeps the mode the previous checkpoint recorded (or
+        // none), like its content
+        if !draft.held.is_empty() && !draft.protective && draft.explicit_paths.is_empty() {
+            for held in &draft.held {
+                let display = display_path(held);
+                modes.remove(&display);
+                if let Some((previous_checkpoint, _)) = &previous_tree
+                    && let Some(bits) = previous_checkpoint.tree.modes.get(&display)
+                {
+                    modes.insert(display, *bits);
+                }
+            }
+        }
         let mut coverage = tracked.coverage(&walk);
         let promoted_head = match &self.repo {
             Some(repo) => repo.promoted_head()?,
@@ -304,6 +322,12 @@ impl Store {
                             }
                         }
                     }
+                    let composed = self.hold_paths(
+                        repo,
+                        &composed,
+                        &draft,
+                        previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
+                    )?;
                     (Some(composed), result.roots, true, None)
                 }
                 Err(err) => {
@@ -473,6 +497,39 @@ impl Store {
     /// versions, and promotes the ones the draft names explicitly. A
     /// promotion is durable (a new commit on `refs/promoted`) before the
     /// checkpoint referencing it is written.
+    /// Carries the draft's held paths forward from the previous checkpoint:
+    /// their live content is not what this capture records. Protective
+    /// captures and explicit saves hold nothing.
+    /// Held paths (files whose save is not due yet) take their previous
+    /// version, or previous absence, from the newest checkpoint: a change,
+    /// a creation, and a deletion are all held until the path is due. Held
+    /// paths are files, matched exactly.
+    fn hold_paths(
+        &self,
+        repo: &HistoryRepo,
+        tree: &str,
+        draft: &Draft,
+        previous: Option<&str>,
+    ) -> Result<String> {
+        if draft.held.is_empty() || draft.protective || !draft.explicit_paths.is_empty() {
+            return Ok(tree.to_string());
+        }
+        // with no previous checkpoint there is nothing to carry forward:
+        // the live content is the only content there is
+        let Some(previous) = previous else {
+            return Ok(tree.to_string());
+        };
+        let mut overlays = vec![];
+        for held in &draft.held {
+            let tree_path = display_to_tree_path(&display_path(held));
+            overlays.push(Overlay {
+                object: repo.object_at(previous, &tree_path)?,
+                path: tree_path,
+            });
+        }
+        repo.compose(tree, &overlays)
+    }
+
     fn compose_manual(
         &self,
         repo: &HistoryRepo,

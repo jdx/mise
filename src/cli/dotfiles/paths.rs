@@ -24,6 +24,10 @@ pub(crate) struct DotfilesPaths {
     /// Show what tracking this path would capture
     #[usage(long, value_name = "PATH")]
     preview: Option<PathBuf>,
+
+    /// List the paths the watcher found changing constantly
+    #[usage(long)]
+    noisy: bool,
 }
 
 #[derive(Serialize)]
@@ -47,6 +51,9 @@ struct PathRow {
 impl DotfilesPaths {
     pub(crate) async fn run(self) -> Result<()> {
         crate::system::history::ensure_experimental()?;
+        if self.noisy {
+            return self.print_noisy();
+        }
         let tracked = match &self.preview {
             Some(path) => {
                 let mut set = TrackedSet {
@@ -167,4 +174,62 @@ impl DotfilesPaths {
         }
         Ok(())
     }
+}
+
+impl DotfilesPaths {
+    fn print_noisy(&self) -> Result<()> {
+        use crate::system::history::watch::{noise, runtime};
+        let record = noise::read(&runtime::noisy_path_in(
+            &crate::system::history::store::state_dir(),
+        ));
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&record.paths)?);
+            return Ok(());
+        }
+        if record.paths.is_empty() {
+            info!("the watcher is not throttling any path");
+            return Ok(());
+        }
+        let mut table = MiseTable::new(
+            false,
+            &["Path", "Saving every", "Unsaved changes", "Last seen"],
+        );
+        for (path, noisy) in &record.paths {
+            table.add_row(vec![
+                path.clone(),
+                crate::system::history::watch::runtime::humantime(std::time::Duration::from_secs(
+                    noisy.interval_secs,
+                )),
+                noisy.pending_changes.to_string(),
+                noisy.last_seen.clone(),
+            ]);
+        }
+        table.print()?;
+        miseprintln!(
+            "These paths keep changing, so the watcher saves them ever more rarely (never excluded or switched to manual saving on its own). Exclude a log, cache, or database with `mise bootstrap dotfiles exclude '<glob>'`; track configuration that changes constantly with `--no-autosave` and save it explicitly."
+        );
+        Ok(())
+    }
+}
+
+pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<()> {
+    let glob = glob.trim();
+    if glob.is_empty() {
+        eyre::bail!("a glob is required");
+    }
+    let global = crate::config::global_config_path();
+    let changed = crate::cli::dotfiles::track::edit_exclude(glob, add)?;
+    match (add, changed) {
+        (true, true) => info!(
+            "history: {glob} is excluded from capture ({})",
+            display_path(&global)
+        ),
+        (true, false) => info!("history: {glob} was already excluded"),
+        (false, true) => info!(
+            "history: {glob} is captured again ({})",
+            display_path(&global)
+        ),
+        (false, false) => info!("history: {glob} was not excluded"),
+    }
+    Ok(())
 }

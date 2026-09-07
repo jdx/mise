@@ -87,7 +87,7 @@ impl TrackedEntry {
         display_path(&self.path)
     }
 
-    fn new(path: PathBuf, kind: EntryKind, mode: &str, policy: Policy) -> Self {
+    pub(crate) fn new(path: PathBuf, kind: EntryKind, mode: &str, policy: Policy) -> Self {
         Self {
             path,
             kind,
@@ -539,7 +539,7 @@ fn walk_entry(
 ) {
     let home = normalize(&dirs::HOME);
     let display = entry.display();
-    if entry.path == home || home.starts_with(&entry.path) || entry.path.parent().is_none() {
+    if is_refused_root(&entry.path, &home) {
         walk.omitted.push(PathReason {
             path: display,
             reason: "refused: the home directory or above".into(),
@@ -861,6 +861,55 @@ pub(crate) fn normalize_target(path: &Path) -> PathBuf {
             .join(name);
     }
     dunce::canonicalize(&expanded).unwrap_or_else(|_| lexical(&expanded))
+}
+
+/// The home directory or above: never walked, never watched.
+pub(crate) fn is_refused_root(path: &Path, home: &Path) -> bool {
+    path == home || home.starts_with(path) || path.parent().is_none()
+}
+
+/// A path that may not exist, in the form the tracked set uses: the
+/// deepest existing ancestor resolved, the rest appended as written.
+pub(crate) fn normalize_missing(path: &Path) -> PathBuf {
+    let path = lexical(path);
+    let mut rest: Vec<std::ffi::OsString> = vec![];
+    let mut current = path.as_path();
+    loop {
+        if let Ok(real) = dunce::canonicalize(current) {
+            return rest.iter().rev().fold(real, |acc, name| acc.join(name));
+        }
+        let Some(name) = current.file_name() else {
+            return path;
+        };
+        rest.push(name.to_os_string());
+        let Some(parent) = current.parent() else {
+            return path;
+        };
+        current = parent;
+    }
+}
+
+/// Where a chain of symlinks ends: the last link's target, which need not
+/// exist (a target between two versions, say), in the tracked set's form.
+pub(crate) fn link_target(link: &Path) -> Option<PathBuf> {
+    let mut current = link.to_path_buf();
+    let mut seen = BTreeSet::new();
+    for _ in 0..MAX_LINK_DEPTH {
+        if !seen.insert(current.clone()) {
+            return None;
+        }
+        let dest = std::fs::read_link(&current).ok()?;
+        let joined = if dest.is_absolute() {
+            dest
+        } else {
+            current.parent()?.join(dest)
+        };
+        current = lexical(&joined);
+        if !current.is_symlink() {
+            return Some(normalize_missing(&current));
+        }
+    }
+    None
 }
 
 fn lexical(path: &Path) -> PathBuf {

@@ -11,6 +11,7 @@
 
 pub(crate) mod checkpoint;
 pub(crate) mod config;
+pub(crate) mod health;
 pub(crate) mod journal;
 pub(crate) mod replay;
 pub(crate) mod retention;
@@ -19,6 +20,7 @@ pub(crate) mod select;
 pub(crate) mod shadow;
 pub(crate) mod store;
 pub(crate) mod tracked;
+pub(crate) mod watch;
 
 pub(crate) use scope::OperationScope;
 

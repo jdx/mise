@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+# Adaptive autosaving: a constantly rewritten file is saved ever more rarely
+# (never excluded, never switched to manual saving), never delays an ordinary
+# edit, is captured promptly once it settles, keeps its throttling across a
+# watcher restart, and is reported by `mise doctor` and `dotfiles status`
+# without either of them changing anything.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+# A previously installed service must stop cleanly when opt-in is withdrawn.
+assert_contains "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles watch --json" '"event":"disabled"'
+assert_directory_not_exists "$MISE_STATE_DIR/history"
+assert_fail "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles watch --once" 'dotfile tracking is experimental'
+
+count="mise bootstrap dotfiles history --json -n 0 | jq length"
+throttled="mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].interval_secs // 0'"
+repo="$MISE_STATE_DIR/history/repo.git"
+# the content of a path inside a checkpoint's snapshot (a script: assertions
+# run in a subshell where shell functions are not available)
+snapshot_of="$PWD/snapshot_of"
+cat <<EOF2 >"$snapshot_of"
+#!/usr/bin/env bash
+git --git-dir="$repo" show "refs/checkpoints/\$(mise bootstrap dotfiles history show "\$1" --json | jq -r .uuid):snapshot/home/\$2"
+EOF2
+chmod +x "$snapshot_of"
+
+wait_until() {
+  for _ in $(seq 1 100); do
+    if eval "$1" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "timed out waiting for: $1" >&2
+  [[ -f watch.log ]] && cat watch.log >&2
+  return 1
+}
+
+mkdir -p ~/.config/hypr
+echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
+echo '{"n":0}' >~/.config/hypr/state.json
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+# the timing settings live in the configuration so a change to them can be
+# observed while the watcher runs; reconciliation is off, so only events and
+# retries save anything
+cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+
+[settings]
+history.watch.debounce = "2s"
+history.watch.max_interval = "8s"
+history.watch.reconcile = "0"
+
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+EOF
+
+# doctor reports the declared-but-not-running watcher without touching anything
+n="$(eval "$count")"
+assert_contains "mise doctor 2>&1 || true" "the history watcher is declared but not running"
+assert_contains "mise doctor 2>&1 || true" "mise bootstrap services apply"
+assert "mise doctor --json 2>/dev/null | jq -r .dotfiles.watcher" "declared but not running"
+assert "$count" "$n"
+
+mise bootstrap dotfiles watch --json >watch.log 2>&1 &
+watcher=$!
+churn=""
+cleanup() {
+  kill "$churn" 2>/dev/null || true
+  kill "$watcher" 2>/dev/null || true
+}
+trap cleanup EXIT
+wait_until "grep -q '\"event\":\"started\"' watch.log"
+
+# a loop rewrites state.json ten times a second
+(
+  i=0
+  while :; do
+    i=$((i + 1))
+    echo "{\"n\":$i}" >~/.config/hypr/state.json
+    sleep 0.1
+  done
+) &
+churn=$!
+
+# the churning file is throttled: its interval grows past the base
+wait_until "[[ \$($throttled) -ge 8 ]]"
+assert_contains "cat watch.log" '"event":"throttled"'
+assert_contains "mise bootstrap dotfiles paths --noisy" "state.json"
+assert_contains "mise bootstrap dotfiles status" "throttled: ~/.config/hypr/state.json changes constantly"
+assert_contains "mise doctor 2>&1 || true" "state.json changes constantly"
+assert_not_contains "mise doctor 2>&1 || true" "warning"
+# never excluded, never switched to manual saving
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "exclude"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "autosave"
+
+# an ordinary edit is still saved promptly while the churn goes on, and the
+# checkpoint it makes does not carry the churning file's live content (the
+# edit lands right after a save of the churning file, so its next save is a
+# whole interval away)
+captured="grep -c '\"event\":\"captured\"' watch.log"
+n="$(eval "$captured")"
+wait_until "[[ \$($captured) -gt $n ]]"
+echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
+wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
+saved_n="$(mise bootstrap dotfiles history show latest --files 2>/dev/null | grep -c state.json || true)"
+assert "echo $saved_n" "1"
+
+# unsaved changes to the throttled file are visible as they happen
+wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].pending_changes // 0') -ge 1 ]]"
+
+# the throttling survives a restart of the watcher while the churn goes on:
+# the startup capture holds the throttled file at its saved version instead
+# of saving it early, and its pending changes are still reported
+kill -TERM "$watcher"
+wait "$watcher" || true
+assert_contains "cat $MISE_STATE_DIR/history/watch-schedule.json" "state.json"
+cp "$MISE_STATE_DIR/history/watch-schedule.json" schedule.saved
+saved_before="$($snapshot_of latest .config/hypr/state.json)"
+sleep 1.2
+mise bootstrap dotfiles watch --json >watch.log 2>&1 &
+watcher=$!
+wait_until "grep -q '\"event\":\"started\"' watch.log"
+assert "$snapshot_of latest .config/hypr/state.json" "$saved_before"
+assert "mise bootstrap dotfiles status --json | jq -r '.history.health.throttled | length'" "1"
+wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].pending_changes // 0') -ge 1 ]]"
+
+# excluding the churning file while it is throttled takes it out of the
+# schedule at once: no later capture holds it or carries its old version
+assert_succeed "mise bootstrap dotfiles exclude '~/.config/hypr/state.json'"
+wait_until "grep -q 'configuration changed' watch.log"
+wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health.throttled | length') -eq 0 ]]"
+assert_not_contains "cat $MISE_STATE_DIR/history/watch-schedule.json" "state.json"
+echo 'monitor=DP-9' >~/.config/hypr/monitors.lua
+wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
+assert_not_contains "mise bootstrap dotfiles history show latest --files" "state.json"
+assert_succeed "mise bootstrap dotfiles include '~/.config/hypr/state.json'"
+wait_until "[[ \$($throttled) -ge 2 ]]"
+
+# a timing setting changed while running takes effect: the interval is
+# clamped to the new maximum
+sed -i.bak 's/max_interval = "8s"/max_interval = "2s"/' "$MISE_CONFIG_DIR/config.toml"
+wait_until "[[ \$($throttled) -le 2 ]]"
+
+# the churn stops: the final state is captured promptly
+kill "$churn"
+churn=""
+sleep 0.3
+final="$(cat ~/.config/hypr/state.json)"
+wait_until "mise bootstrap dotfiles history diff --path ~/.config/hypr/state.json --exit-code"
+# and nothing else is saved once everything is quiet
+n="$(eval "$count")"
+sleep 3
+assert "$count" "$n"
+
+# the target of a symlink inside a tracked directory is watched too, even
+# outside every declared root and with reconciliation off
+echo 'outside' >~/outside.conf
+ln -s ~/outside.conf ~/.config/hypr/link.conf
+wait_until "grep -q 'a tracked path appeared' watch.log"
+echo 'outside2' >~/outside.conf
+wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"outside.conf\")'"
+
+# a capture deferred by a running history operation is retried once the
+# operation finished (nothing else could save it: reconciliation is off).
+# The operation is an apply whose pre-dotfiles hook holds the operation lock
+# for a while
+cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+
+[bootstrap.hooks.pre-dotfiles]
+run = "date +%s%N >>$HOME/applying && sleep 4"
+EOF
+wait_until "grep -q 'configuration changed' watch.log"
+mise bootstrap dotfiles apply --yes >apply.log 2>&1 &
+applying=$!
+sleep 1
+echo 'monitor=DP-3' >~/.config/hypr/monitors.lua
+wait_until "grep -q '\"event\":\"deferred\"' watch.log"
+wait "$applying" || true
+
+wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
+
+# Replacing an anchor together with a config edit must reinstall the
+# retained path's watch, not keep a watch attached to its old inode.
+replans="$(grep -c 'configuration changed; watching' watch.log)"
+mv ~/.config/hypr ~/.config/hypr.old
+cp -R ~/.config/hypr.old ~/.config/hypr
+printf '\n# replan with a replaced root\n' >>"$MISE_CONFIG_DIR/config.toml"
+wait_until "[[ \$(grep -c 'configuration changed; watching' watch.log) -gt $replans ]]"
+echo 'monitor=replaced-root' >~/.config/hypr/monitors.lua
+wait_until "mise bootstrap dotfiles history diff --path ~/.config/hypr/monitors.lua --exit-code"
+
+kill -TERM "$watcher"
+wait "$watcher" || true
+assert "cat ~/.config/hypr/state.json" "$final"
+
+# `--once` reports that nothing was saved while an operation holds the lock
+# (the hook's marker says the lock is held; a slow start would let `--once`
+# run first)
+mise bootstrap dotfiles apply --yes >apply.log 2>&1 &
+applying=$!
+wait_until 'test "$(wc -l <~/applying)" -ge 2'
+assert_fail "mise bootstrap dotfiles watch --once --json 2>&1" '"reason":"deferred"'
+wait "$applying" || true
+
+# Stopped watcher diagnostics are historical, and a successful one-shot
+# capture clears old watch-installation degradation.
+health="$MISE_STATE_DIR/history/health.json"
+jq '.watcher.last_error = "old capture failure" | .watcher.consecutive_failures = 1 | .watcher.degraded = ["old watch unavailable"]' "$health" >health.updated
+mv health.updated "$health"
+assert_not_contains "mise doctor 2>&1 || true" "Edits since then are not protected"
+assert_not_contains "mise doctor 2>&1 || true" "Changes there are saved by reconciliation only"
+assert_succeed "mise bootstrap dotfiles watch --once --json"
+assert "jq '.watcher.degraded | length' $health" "0"
+assert "jq '.watcher.last_error // \"cleared\"' -r $health" "cleared"
+
+# Exclusions made while stopped prune the restored schedule before even
+# a one-shot startup capture can carry the excluded file forward.
+assert_succeed "mise bootstrap dotfiles exclude '~/.config/hypr/state.json'"
+cp schedule.saved "$MISE_STATE_DIR/history/watch-schedule.json"
+assert_succeed "mise bootstrap dotfiles watch --once --json"
+assert_not_contains "cat $MISE_STATE_DIR/history/watch-schedule.json" "state.json"
+latest_uuid="$(mise bootstrap dotfiles history show latest --json | jq -r .uuid)"
+assert_not_contains "git --git-dir=$repo ls-tree -r --name-only refs/checkpoints/$latest_uuid" "state.json"

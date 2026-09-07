@@ -17,6 +17,8 @@ pub(crate) struct HistoryReport {
     pub pending_operations: usize,
     pub watcher: super::capture_health::Watcher,
     pub unavailable: Option<String>,
+    /// What the watcher last persisted, if anything.
+    pub health: Option<crate::system::history::health::Health>,
 }
 
 #[derive(Serialize)]
@@ -38,7 +40,8 @@ pub(crate) async fn report() -> Result<HistoryReport> {
             checkpoints: 0,
             latest: None,
             pending_operations: 0,
-            watcher: super::capture_health::watcher(),
+            health: None,
+            watcher: super::capture_health::watcher().await?,
             unavailable: Some("dotfile tracking requires experimental = true".into()),
         });
     }
@@ -62,8 +65,9 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         checkpoints: entries.len(),
         latest,
         pending_operations,
-        watcher: super::capture_health::watcher(),
+        watcher: super::capture_health::watcher().await?,
         unavailable: store.unavailable().map(str::to_string),
+        health: crate::system::history::health::read(store.state_dir()),
     })
 }
 
@@ -108,5 +112,56 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
         report.watcher.as_str(),
         super::capture_health::advice(report.watcher)
     );
+    if let Some(health) = &report.health {
+        use crate::system::history::health::age_secs;
+        use crate::system::history::watch::runtime::humantime;
+        let age = age_secs(health)
+            .map(|secs| format!("{} ago", humantime(std::time::Duration::from_secs(secs))))
+            .unwrap_or_else(|| "at an unknown time".into());
+        let w = &health.watcher;
+        miseprintln!(
+            "  watcher health (updated {age}): last capture {}, last reconcile {}{}",
+            w.last_capture
+                .as_deref()
+                .map(local_time)
+                .unwrap_or_else(|| "never".into()),
+            w.last_reconcile
+                .as_deref()
+                .map(local_time)
+                .unwrap_or_else(|| "never".into()),
+            if report.watcher == super::capture_health::Watcher::Running {
+                ""
+            } else {
+                "; the watcher is not running now, so this is what it last reported"
+            }
+        );
+        if let Some(error) = &w.last_error {
+            miseprintln!(
+                "  last capture failure: {error} ({} consecutive; at {}). Edits since then are not protected.",
+                w.consecutive_failures,
+                w.last_error_at
+                    .as_deref()
+                    .map(local_time)
+                    .unwrap_or_else(|| "unknown".into())
+            );
+        }
+        for degraded in &w.degraded {
+            miseprintln!("  degraded: {degraded}");
+        }
+        for throttled in &health.throttled {
+            miseprintln!(
+                "  throttled: {} changes constantly; saved every {} ({} unsaved change(s), last saved {}). Not a failure: `mise bootstrap dotfiles exclude '{}'` if it is a log, cache, or database, or track it with --no-autosave and save explicitly.",
+                throttled.path,
+                humantime(std::time::Duration::from_secs(throttled.interval_secs)),
+                throttled.pending_changes,
+                throttled
+                    .last_saved
+                    .as_deref()
+                    .map(local_time)
+                    .unwrap_or_else(|| "never".into()),
+                throttled.path
+            );
+        }
+    }
     Ok(())
 }

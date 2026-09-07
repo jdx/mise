@@ -74,6 +74,18 @@ enum SystemDefaultsDiagnosis {
 }
 
 /// outcome of the `[bootstrap.user].login_shell` doctor check
+#[derive(serde::Serialize)]
+struct DotfilesDiagnosis {
+    tracked: usize,
+    watcher: String,
+    stale: bool,
+    health_age_secs: Option<u64>,
+    unavailable: Option<String>,
+    last_error: Option<String>,
+    degraded: Vec<String>,
+    throttled: Vec<crate::system::history::health::ThrottledPath>,
+}
+
 enum SystemLoginShellDiagnosis {
     Unavailable {
         reason: String,
@@ -243,6 +255,9 @@ impl Doctor {
 
         if let Some(system_defaults) = self.system_defaults_json(&config).await {
             data.insert("system_defaults".into(), system_defaults);
+        }
+        if let Some(dotfiles) = self.dotfiles_json(&config).await {
+            data.insert("dotfiles".into(), dotfiles);
         }
 
         if let Some(system_login_shell) = self.system_login_shell_json(&config).await {
@@ -503,6 +518,7 @@ impl Doctor {
 
         self.analyze_system_packages(config).await?;
         self.analyze_system_defaults(config).await?;
+        self.analyze_dotfiles(config).await?;
         self.analyze_system_login_shell(config).await?;
 
         Ok(())
@@ -654,6 +670,135 @@ impl Doctor {
             }
         };
         info::section("system_defaults", line)?;
+        Ok(())
+    }
+
+    /// Dotfiles history health: the watcher, capture failures, and throttled
+    /// files, from the health the watcher persists and the store itself.
+    /// Inspects only: never syncs, applies, or prompts. Returns `None` when
+    /// nothing is tracked and no watcher is declared.
+    async fn check_dotfiles(&mut self, config: &Arc<Config>) -> Option<DotfilesDiagnosis> {
+        use crate::system::history::health;
+        use crate::system::history::tracked::{EntryKind, TrackedSet};
+        if !crate::config::Settings::get().history.enabled {
+            return None;
+        }
+        let tracked = TrackedSet::from_config(config).ok()?;
+        let watcher = crate::cli::dotfiles::capture_health::watcher().await.ok()?;
+        let tracks = tracked
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == EntryKind::Track)
+            .count();
+        if tracks == 0 && watcher == crate::cli::dotfiles::capture_health::Watcher::NotDeclared {
+            return None;
+        }
+        if !crate::config::Settings::get().experimental {
+            self.warnings.push(
+                "dotfiles: tracking is experimental and disabled. Enable it with: mise settings experimental=true".into(),
+            );
+            return None;
+        }
+        let state_dir = crate::system::history::store::state_dir();
+        let unavailable = crate::system::history::checkpoint::Store::open()
+            .map(|store| store.unavailable().map(str::to_string))
+            .unwrap_or_else(|err| Some(format!("{err:#}")));
+        let health = health::read(&state_dir);
+        let running = watcher == crate::cli::dotfiles::capture_health::Watcher::Running;
+        let age = health.as_ref().and_then(health::age_secs);
+        let reconcile = crate::duration::parse_duration(
+            &crate::config::Settings::get().history.watch.reconcile,
+        )
+        .map(|d| d.as_secs())
+        .unwrap_or(600);
+        let stale = running && age.is_some_and(|age| reconcile > 0 && age > reconcile * 2);
+        let mut diagnosis = DotfilesDiagnosis {
+            tracked: tracks,
+            watcher: watcher.as_str().to_string(),
+            stale,
+            health_age_secs: age,
+            unavailable: unavailable.clone(),
+            last_error: None,
+            degraded: vec![],
+            throttled: vec![],
+        };
+        if let Some(reason) = unavailable {
+            self.errors.push(format!(
+                "dotfiles: checkpoints cannot be saved ({reason}).\n     Edits are not being protected.\n     Inspect with: mise bootstrap dotfiles status"
+            ));
+        }
+        if watcher == crate::cli::dotfiles::capture_health::Watcher::DeclaredNotRunning {
+            self.warnings.push(
+                "dotfiles: the history watcher is declared but not running.\n     Edits are not saved automatically until it runs; explicit saves still work.\n     Run: mise bootstrap services apply"
+                    .to_string(),
+            );
+        }
+        if let Some(health) = &health {
+            let w = &health.watcher;
+            if let Some(error) = &w.last_error
+                && w.consecutive_failures > 0
+            {
+                diagnosis.last_error = Some(error.clone());
+                if running {
+                    self.errors.push(format!(
+                    "dotfiles: the watcher could not save a checkpoint ({error}; {} consecutive failure(s), last at {}).\n     Edits since then are not protected.\n     Inspect with: mise bootstrap dotfiles status",
+                    w.consecutive_failures,
+                    w.last_error_at.as_deref().unwrap_or("unknown")
+                ));
+                } else {
+                    self.warnings.push(format!(
+                        "dotfiles: the stopped watcher's last capture failed ({error}).\n     This is historical health, not a current capture attempt.\n     Check or save with: mise bootstrap dotfiles save"
+                    ));
+                }
+            }
+            for degraded in w.degraded.iter().filter(|_| running) {
+                diagnosis.degraded.push(degraded.clone());
+                self.warnings.push(format!(
+                    "dotfiles: {degraded}.\n     Changes there are saved by reconciliation only.\n     Inspect with: mise bootstrap dotfiles status"
+                ));
+            }
+            diagnosis.throttled = health.throttled.clone();
+        }
+        Some(diagnosis)
+    }
+
+    async fn dotfiles_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
+        let diagnosis = self.check_dotfiles(config).await?;
+        serde_json::to_value(diagnosis).ok()
+    }
+
+    async fn analyze_dotfiles(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        let Some(diagnosis) = self.check_dotfiles(config).await else {
+            return Ok(());
+        };
+        let mut lines = vec![format!(
+            "{} tracked entr{}, watcher {}",
+            diagnosis.tracked,
+            if diagnosis.tracked == 1 { "y" } else { "ies" },
+            diagnosis.watcher
+        )];
+        if diagnosis.stale {
+            lines.push(format!(
+                "health information is stale (last update {} ago); the watcher may be stuck",
+                crate::system::history::watch::runtime::humantime(std::time::Duration::from_secs(
+                    diagnosis.health_age_secs.unwrap_or(0)
+                ))
+            ));
+        }
+        // informational: throttling protects the history, it does not
+        // compromise it
+        for throttled in &diagnosis.throttled {
+            lines.push(format!(
+                "{} changes constantly: saved every {} ({} unsaved change(s); last saved {}). Not a failure; `mise bootstrap dotfiles exclude` if it is a log, cache, or database",
+                throttled.path,
+                crate::system::history::watch::runtime::humantime(std::time::Duration::from_secs(
+                    throttled.interval_secs
+                )),
+                throttled.pending_changes,
+                throttled.last_saved.as_deref().unwrap_or("never")
+            ));
+        }
+        info::section("dotfiles", lines.join("\n"))?;
         Ok(())
     }
 
