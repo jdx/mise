@@ -703,9 +703,12 @@ pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
 pub(crate) fn global_config_dir() -> PathBuf {
     crate::env::MISE_GLOBAL_CONFIG_FILE
         .as_deref()
-        .and_then(Path::parent)
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .map(Path::to_path_buf)
+        .map(|path| {
+            path.parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf()
+        })
         .unwrap_or_else(|| dirs::CONFIG.to_path_buf())
 }
 
