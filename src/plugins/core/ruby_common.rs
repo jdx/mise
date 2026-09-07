@@ -215,6 +215,10 @@ fn is_safe_relative_ruby_file(filename: &str) -> bool {
         })
 }
 
+fn is_gemfile_path(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == "Gemfile")
+}
+
 /// Relative paths from a Gemfile `ruby file:` option, for hook-env watches.
 pub(crate) fn gemfile_watch_patterns(gemfile_path: &Path) -> Vec<String> {
     if gemfile_path
@@ -227,7 +231,9 @@ pub(crate) fn gemfile_watch_patterns(gemfile_path: &Path) -> Vec<String> {
         return vec![];
     };
     match gemfile_ruby_directive(&body).and_then(|line| ruby_file_option(&line)) {
-        Some(filename) if is_safe_relative_ruby_file(&filename) && filename != "Gemfile" => {
+        Some(filename)
+            if is_safe_relative_ruby_file(&filename) && !is_gemfile_path(Path::new(&filename)) =>
+        {
             vec![filename]
         }
         _ => vec![],
@@ -239,7 +245,7 @@ fn read_ruby_file_option(gemfile_path: &Path, filename: &str) -> Option<String> 
         return None;
     }
     let path = gemfile_path.parent()?.join(filename);
-    if path.file_name().is_some_and(|name| name == "Gemfile") {
+    if is_gemfile_path(&path) {
         return None;
     }
     let version = parse_bundler_ruby_version_file(&file::read_to_string(&path).ok()?);
@@ -473,5 +479,29 @@ mod tests {
             vec![".ruby-version".to_string()]
         );
         assert!(gemfile_watch_patterns(&dir.path().join(".ruby-version")).is_empty());
+    }
+
+    #[test]
+    fn gemfile_watch_patterns_skip_self_and_nested_gemfile() {
+        let dir = tempfile::tempdir().unwrap();
+        let gemfile = dir.path().join("Gemfile");
+        file::write(&gemfile, "ruby file: \"./Gemfile\"\n").unwrap();
+        assert!(gemfile_watch_patterns(&gemfile).is_empty());
+
+        file::write(&gemfile, "ruby file: \"nested/Gemfile\"\n").unwrap();
+        assert!(gemfile_watch_patterns(&gemfile).is_empty());
+    }
+
+    #[test]
+    fn parse_gemfile_file_option_rejects_self_and_nested_gemfile() {
+        let dir = tempfile::tempdir().unwrap();
+        let gemfile = dir.path().join("Gemfile");
+        file::write(&gemfile, "ruby file: \"./Gemfile\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "");
+
+        file::create_dir_all(dir.path().join("nested")).unwrap();
+        file::write(dir.path().join("nested/Gemfile"), "ruby \"3.3.6\"\n").unwrap();
+        file::write(&gemfile, "ruby file: \"nested/Gemfile\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "");
     }
 }
