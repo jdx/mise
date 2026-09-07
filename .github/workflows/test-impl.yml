@@ -164,6 +164,7 @@ jobs:
           '^test_dotfiles_rollback_types$' '^test_bootstrap_user_services$'
           '^test_dotfiles_rollback_review$' '^test_dotfiles_sync_permissions$'
           '^test_dotfiles_managed_manual$' '^test_bootstrap_from_git_dumb_http$'
+          '^test_dotfiles_alias_enrollment$'
           '^test_dotfiles_watch$' '^test_dotfiles_watch_pending$'
           '^test_dotfiles_watch_throttle$' '^test_dotfiles_sync$'
           '^test_dotfiles_sync_files_encrypted$' '^test_dotfiles_directory_permissions$'
