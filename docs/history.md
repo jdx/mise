@@ -165,6 +165,13 @@ copies exist only to complete or safely recover interrupted writes, and are
 deleted afterwards. Unresolved recovery is never expired; concurrent edits are
 preserved and reported for action.
 
+Ordinary bootstrap deployments warn and continue if a temporary preimage cannot
+be captured, for example for an oversized destination. Such a write cannot be
+automatically recovered after interruption. History-driven pull, rollback, and
+undo instead refuse writes without the required recovery data. Disabling history
+recording also removes ordinary bootstrap's dependency on the history store;
+explicit history-driven writes retain their recovery safeguards.
+
 Run `mise bootstrap dotfiles recover` to retry interrupted writes safely. If
 later edits prevent recovery, inspect the reported paths first. You can then
 explicitly accept the live files with
@@ -239,9 +246,8 @@ content, so a whole-set reconciliation never defeats the throttling. As soon
 as the file stops changing its final state is captured promptly (after a
 fraction of its interval, at most five minutes), and a sustained quiet
 period (four intervals, at least five minutes) resets it to the base interval.
-A busy file never delays an ordinary one. Explicit saves and the protective
-checkpoints before a bootstrap, rollback, or undo always read every file
-live.
+A busy file never delays an ordinary one. Throttling does not delay explicit
+saves or protective captures before bootstrap, rollback, or undo.
 
 The thresholds are fixed: an interval doubles when a file changed again
 within its settle time of the previous save and at least two changes
@@ -267,6 +273,11 @@ mise bootstrap dotfiles include '~/.config/hypr/plugins/**'
 mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave
 mise bootstrap dotfiles save ~/.config/app/state.json
 ```
+
+Enrollment saves the initial version even with `autosave = false`, including
+when a new declaration is first picked up by reconciliation. Later edits to
+that entry require an explicit save; ordinary reconciliation carries its saved
+version forward.
 
 ### Reconciliation and failures
 

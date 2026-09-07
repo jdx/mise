@@ -13,7 +13,7 @@ use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
 use crate::system::history::tracked::{TrackedSet, normalize_target};
 
-/// Track a file or directory where it is
+/// Track a file or directory in place
 ///
 /// Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 /// is, nothing is copied or linked, and history saves a checkpoint of it

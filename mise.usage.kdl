@@ -1007,9 +1007,9 @@ The history watcher does this on its own in `sync` and `fetch-only` mode
             flag --best-effort help="Warn instead of failing when the origin is unreachable"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
-        cmd track help="Track a file or directory where it is" effect=write {
+        cmd track help="Track a file or directory in place" effect=write {
             long_help #"""
-Track a file or directory where it is
+Track a file or directory in place
 
 Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 is, nothing is copied or linked, and history saves a checkpoint of it

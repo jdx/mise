@@ -183,6 +183,13 @@ impl Store {
         draft: Draft,
         reserved_id: Option<u64>,
     ) -> Result<Outcome> {
+        if self.repo.is_none() {
+            return Ok(Outcome::Unavailable(
+                self.unavailable
+                    .clone()
+                    .unwrap_or_else(shadow::unavailable_reason),
+            ));
+        }
         let resolved = match &self.repo {
             Some(repo) => super::enrollment::resolve(
                 &self.state_dir,
@@ -956,6 +963,44 @@ pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unavailable_git_does_not_create_a_parallel_metadata_history() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let mut store = Store::open_in(temp.path())?;
+        store.repo = None;
+        store.unavailable = Some("Git is unavailable".into());
+        let mut draft = Draft::new(Trigger::Agent);
+        draft.description = Some("labeled operation".into());
+        assert!(matches!(
+            store.attempt(&TrackedSet::default(), draft)?,
+            Outcome::Unavailable(_)
+        ));
+        assert!(store::load_index_in(temp.path())?.entries.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn numeric_commit_prefixes_cannot_silently_select_another_checkpoint() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let Outcome::Created(mut first) =
+            store.attempt(&TrackedSet::default(), Draft::new(Trigger::Agent))?
+        else {
+            panic!("expected a checkpoint");
+        };
+        first.id = 42;
+        first.checkpoint.uuid = "123abc".into();
+        let mut second = first.clone();
+        second.id = 123;
+        second.checkpoint.uuid = "abcdef".into();
+        let entries = vec![*first, *second];
+        assert_eq!(store::resolve_ref("12", &entries)?, 42);
+        assert_eq!(store::resolve_ref("42", &entries)?, 42);
+        assert!(store::resolve_ref("123", &entries).is_err());
+        assert_eq!(store::resolve_ref("123abc", &entries)?, 42);
+        Ok(())
+    }
 
     #[cfg(unix)]
     #[test]

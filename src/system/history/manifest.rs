@@ -367,6 +367,7 @@ impl Manifest {
                 bail!("invalid or repeated enrollment path {}", entry.path);
             }
             let mut variants = std::collections::BTreeSet::new();
+            super::select::validate(&entry.variants)?;
             for variant in &entry.variants {
                 let name = variant.name();
                 if name.contains('@')

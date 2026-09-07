@@ -3080,8 +3080,19 @@ fn touched_paths(req: &FileRequest) -> Result<Vec<(PathBuf, Capture)>> {
             for (_, target) in walk_source_files(req)? {
                 paths.insert(target, Capture::Full);
             }
-            for stale in stale_links(req)? {
-                paths.insert(stale, Capture::Full);
+            let stale = stale_links(req)?;
+            for path in &stale {
+                paths.insert(path.clone(), Capture::Full);
+            }
+            // Journal removed parents after their children, so crash recovery
+            // recreates directories (including their modes) before the links.
+            for dir in stale
+                .iter()
+                .flat_map(|path| dirs_between(path, &req.target))
+                .sorted_by_key(|path| std::cmp::Reverse(path.components().count()))
+                .unique()
+            {
+                paths.entry(dir).or_insert(Capture::Shallow);
             }
             paths.insert(symlink_each_state_path(req), Capture::Full);
         }
@@ -3273,6 +3284,66 @@ fn link_path(source: &Path, target: &Path, allow_windows_symlink: bool) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn stale_link_parent_directories_have_recovery_preimages() -> Result<()> {
+        use crate::system::history::journal::{JournalEntry, PathSnapshot, PathState};
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir()?;
+        let root = temp.path().canonicalize()?;
+        let source = root.join("source");
+        let target = root.join("target");
+        std::fs::create_dir_all(&source)?;
+        let nested = target.join("nested");
+        std::fs::create_dir_all(&nested)?;
+        std::fs::set_permissions(&nested, std::fs::Permissions::from_mode(0o700))?;
+        for name in ["a", "b"] {
+            std::os::unix::fs::symlink(source.join("nested").join(name), nested.join(name))?;
+        }
+        let req = link_req(&source, &target, FileMode::SymlinkEach);
+        let state = temp.path().join("recovery");
+        let mut journal = touched_paths(&req)?
+            .into_iter()
+            .map(|(path, capture)| {
+                let prior = PathSnapshot::capture_with(&state, &path, capture);
+                JournalEntry::PathChanged {
+                    part: "dotfiles".into(),
+                    item: "test".into(),
+                    path,
+                    prior,
+                }
+            })
+            .collect::<Vec<_>>();
+        prune_stale_links(&req)?;
+        assert!(!nested.exists());
+        let committed = journal
+            .iter()
+            .enumerate()
+            .filter_map(|(seq, entry)| {
+                let JournalEntry::PathChanged { path, .. } = entry else {
+                    return None;
+                };
+                Some(JournalEntry::Committed {
+                    seq: seq as u32,
+                    after: PathState::observe(path),
+                })
+            })
+            .collect::<Vec<_>>();
+        journal.extend(committed);
+        crate::system::history::recovery::recover(&state, &journal)?;
+        assert_eq!(
+            std::fs::metadata(&nested)?.permissions().mode() & 0o777,
+            0o700
+        );
+        for name in ["a", "b"] {
+            assert_eq!(
+                std::fs::read_link(nested.join(name))?,
+                source.join("nested").join(name)
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn configuration_reload_discards_old_declaration_diagnostics() {

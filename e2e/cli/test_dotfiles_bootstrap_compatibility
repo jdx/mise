@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Existing deployments do not depend on tracking or its capture size limits.
+printf '[dotfiles]\n"~/.large-config" = { mode = "copy", source = "replacement" }\n' >mise.toml
+printf 'replacement\n' >replacement
+dd if=/dev/zero of=~/.large-config bs=1048576 count=9 2>/dev/null
+assert_succeed 'mise bootstrap dotfiles apply --yes'
+assert_succeed 'cmp replacement ~/.large-config'
+
+# Unsetting machine-local sync also removes a value in the shared global
+# layer, rather than silently exposing that value again.
+assert_succeed "MISE_GLOBAL_CONFIG_FILE='$MISE_CONFIG_DIR/config.toml' mise settings set history.sync manual"
+assert 'mise settings get history.sync' 'manual'
+assert_succeed 'mise settings unset history.sync'
+assert 'mise settings get history.sync' 'sync'
+assert_succeed "MISE_GLOBAL_CONFIG_FILE='$MISE_CONFIG_DIR/config.toml' mise settings set history.sync manual"
+assert_succeed 'mise settings set history.sync sync'
+assert_succeed 'mise settings unset history.sync'
+assert 'mise settings get history.sync' 'sync'
+
+# Disabling recording avoids creating or opening the history repository.
+printf 'next replacement\n' >replacement
+assert_succeed "MISE_HISTORY_ENABLED=0 MISE_STATE_DIR='$PWD/disabled-state' mise bootstrap dotfiles apply --yes"
+assert_succeed 'cmp replacement ~/.large-config'
+assert_fail 'test -e disabled-state/history'
+
+mkdir -p disabled-state/history/repo.git
+printf 'invalid repository\n' >disabled-state/history/repo.git/HEAD
+printf 'final replacement\n' >replacement
+assert_succeed "MISE_HISTORY_ENABLED=0 MISE_STATE_DIR='$PWD/disabled-state' mise bootstrap dotfiles apply --yes"
+assert_succeed 'cmp replacement ~/.large-config'

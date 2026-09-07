@@ -928,15 +928,10 @@ pub(crate) fn resolve_ref(spec: &str, entries: &[Entry]) -> Result<u64> {
                 )
             });
     }
-    if let Ok(id) = spec.parse::<u64>() {
-        if entries.iter().any(|entry| entry.id == id) {
-            return Ok(id);
-        }
-        bail!("no history checkpoint {id}");
-    }
+    let numeric_id = spec.parse::<u64>().ok();
     let matches: Vec<&Entry> = entries
         .iter()
-        .filter(|entry| entry.checkpoint.uuid.starts_with(spec))
+        .filter(|entry| Some(entry.id) == numeric_id || entry.checkpoint.uuid.starts_with(spec))
         .collect();
     match matches.as_slice() {
         [one] => Ok(one.id),

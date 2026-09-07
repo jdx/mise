@@ -260,7 +260,7 @@ Show the status of dotfiles from `[dotfiles]`
 Publish, fetch, and record what is pending now
 .TP
 \fBbootstrap dotfiles track\fR
-Track a file or directory where it is
+Track a file or directory in place
 .TP
 \fBbootstrap dotfiles unapply\fR
 Remove dotfiles applied from `[dotfiles]`
@@ -2025,7 +2025,7 @@ Warn instead of failing when the origin is unreachable
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP DOTFILES TRACK"
-Track a file or directory where it is
+Track a file or directory in place
 
 Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 is, nothing is copied or linked, and history saves a checkpoint of it

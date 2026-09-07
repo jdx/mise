@@ -217,6 +217,13 @@ impl TrackedSet {
                 set.invalid.push(PathReason { path: display_path(&target), reason: "tracking requires a portable path under home or the mise configuration directory".into() });
                 continue;
             };
+            if let Err(error) = select::validate(&request.variants) {
+                set.invalid.push(PathReason {
+                    path: display_path(&target),
+                    reason: error.to_string(),
+                });
+                continue;
+            }
             set.manifest.enrollment.retain(|entry| entry.path != path);
             set.manifest.enrollment.push(super::manifest::Enrollment {
                 path,
@@ -730,24 +737,34 @@ pub(crate) fn normalize(path: &Path) -> PathBuf {
     dunce::canonicalize(&expanded).unwrap_or_else(|_| lexical(&expanded))
 }
 
-/// [`normalize`] for a tracked target: a symlink is tracked as the link
-/// itself (its destination becomes a derived entry), so only the parent is
-/// resolved.
+/// Resolve existing ancestors consistently even when the leaf is missing.
+/// A symlink leaf is tracked as a link, never as its destination.
 pub(crate) fn normalize_target(path: &Path) -> PathBuf {
     let expanded = file::replace_path(path);
-    let is_link =
-        std::fs::symlink_metadata(&expanded).is_ok_and(|meta| meta.file_type().is_symlink());
-    if is_link && let (Some(parent), Some(name)) = (expanded.parent(), expanded.file_name()) {
-        let parent = if parent.as_os_str().is_empty() {
+    let mut tail = Vec::new();
+    let mut ancestor = expanded.as_path();
+    if let (Some(parent), Some(name)) = (ancestor.parent(), ancestor.file_name()) {
+        tail.push(name.to_os_string());
+        ancestor = parent;
+    }
+    loop {
+        let candidate = if ancestor.as_os_str().is_empty() {
             Path::new(".")
         } else {
-            parent
+            ancestor
         };
-        return dunce::canonicalize(parent)
-            .unwrap_or_else(|_| lexical(parent))
-            .join(name);
+        if let Ok(mut resolved) = dunce::canonicalize(candidate) {
+            for component in tail.iter().rev() {
+                resolved.push(component);
+            }
+            return lexical(&resolved);
+        }
+        let (Some(parent), Some(name)) = (ancestor.parent(), ancestor.file_name()) else {
+            return lexical(&expanded);
+        };
+        tail.push(name.to_os_string());
+        ancestor = parent;
     }
-    dunce::canonicalize(&expanded).unwrap_or_else(|_| lexical(&expanded))
 }
 
 /// The home directory or above: never walked, never watched.
@@ -818,6 +835,26 @@ pub(crate) fn display_to_tree_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_descendants_keep_their_resolved_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().join("real");
+        std::fs::create_dir_all(real.join("nested")).unwrap();
+        let alias = temp.path().join("alias");
+        std::os::unix::fs::symlink(&real, &alias).unwrap();
+        let path = alias.join("nested/file");
+        std::fs::write(&path, "contents").unwrap();
+        let before = normalize_target(&path);
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(real.join("nested")).unwrap();
+        assert_eq!(normalize_target(&path), before);
+        assert_eq!(
+            normalize_target(&alias),
+            normalize(temp.path()).join("alias")
+        );
+    }
 
     fn entry(path: &Path) -> TrackedEntry {
         TrackedEntry::new(

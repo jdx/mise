@@ -83,6 +83,20 @@ pub(crate) enum Selection {
     Ambiguous(Vec<Variant>),
 }
 
+/// Reject fallbacks whose selectors would be ignored during selection.
+pub(crate) fn validate(variants: &[Variant]) -> eyre::Result<()> {
+    let mut default_seen = false;
+    for variant in variants {
+        if variant.default {
+            if default_seen || !variant.os.is_empty() || variant.profile.is_some() {
+                eyre::bail!("variants allow only one default, without os or profile selectors");
+            }
+            default_seen = true;
+        }
+    }
+    Ok(())
+}
+
 /// Picks the variant for this machine given the active mise environments.
 pub(crate) fn select(variants: &[Variant], environments: &[String]) -> Selection {
     if variants.is_empty() {
@@ -135,6 +149,30 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn defaults_must_be_unique_and_unqualified() {
+        let fallback = Variant {
+            default: true,
+            ..Variant::default()
+        };
+        assert!(validate(std::slice::from_ref(&fallback)).is_ok());
+        assert!(validate(&[fallback.clone(), fallback.clone()]).is_err());
+        assert!(
+            validate(&[Variant {
+                os: vec!["macos".into()],
+                ..fallback.clone()
+            }])
+            .is_err()
+        );
+        assert!(
+            validate(&[Variant {
+                profile: Some("work".into()),
+                ..fallback
+            }])
+            .is_err()
+        );
+    }
 
     fn v(os: &[&str], profile: Option<&str>, default: bool) -> Variant {
         Variant {

@@ -34,3 +34,10 @@ printf '[bootstrap.services.worker]\nscope = "invalid"\n' >services-invalid.toml
 assert_fail "$tombi_lint services-invalid.toml"
 printf '[bootstrap.services.worker]\nrestart = "invalid"\n' >services-invalid.toml
 assert_fail "$tombi_lint services-invalid.toml"
+# Tombi does not enforce JSON Schema's `not`; validate this cross-field
+# constraint with the same JSON Schema implementation used by repository lint.
+mise use -g node@24 npm:ajv-cli@5.0.0
+printf '{"bootstrap":{"services":{"worker":{"builtin":"history-watch","command":"worker"}}}}\n' >services-invalid.json
+assert_fail "mise x npm:ajv-cli@5.0.0 -- ajv validate --spec=draft2020 -s '$ROOT/schema/mise.json' -d services-invalid.json"
+printf '{"bootstrap":{"services":{"worker":{"builtin":"history-watch"}}}}\n' >services-valid.json
+assert_succeed "mise x npm:ajv-cli@5.0.0 -- ajv validate --spec=draft2020 -s '$ROOT/schema/mise.json' -d services-valid.json"

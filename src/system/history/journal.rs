@@ -530,8 +530,14 @@ pub(crate) fn begin_changes_with(
     for (path, capture) in paths {
         let prior = PathSnapshot::capture_with(&dirs::STATE, &path, capture);
         if let PathSnapshot::Unrecorded { reason, .. } = &prior {
-            eyre::bail!(
-                "cannot safely change {} without a recovery preimage: {reason}",
+            if super::scope::requires_recovery_preimage() {
+                eyre::bail!(
+                    "cannot safely change {} without a recovery preimage: {reason}",
+                    display_path(&path)
+                );
+            }
+            warn!(
+                "bootstrap: temporary recovery is unavailable for {}: {reason}; proceeding with deployment",
                 display_path(&path)
             );
         }

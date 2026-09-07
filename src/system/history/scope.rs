@@ -74,6 +74,14 @@ pub(crate) fn is_active() -> bool {
     lock_unpoisoned(&CURRENT).is_some()
 }
 
+/// History-driven writes require recoverable preimages. Ordinary bootstrap
+/// retains its existing ability to deploy large files and special targets.
+pub(crate) fn requires_recovery_preimage() -> bool {
+    lock_unpoisoned(&CURRENT)
+        .as_ref()
+        .is_some_and(|writer| lock_unpoisoned(writer).kind() != OperationKind::Bootstrap)
+}
+
 /// RAII handle for the operation a command records into. Inactive scopes
 /// (dry runs, recording disabled, nested commands) are no-ops so callers
 /// never branch on them.
@@ -115,7 +123,9 @@ impl OperationScope {
         if dry_run {
             return Ok(Self(None));
         }
-        if !Settings::get().history.enabled && kind == OperationKind::Capture {
+        if !Settings::get().history.enabled
+            && matches!(kind, OperationKind::Capture | OperationKind::Bootstrap)
+        {
             debug!("history: disabled by settings");
             return Ok(Self(None));
         }
@@ -565,9 +575,12 @@ impl Writer {
                     _ => None,
                 }
             }));
-        if records_file_history(&self.store, &self.tracked, Some(self.kind()))? {
-            self.store
-                .attempt_locked(&self.tracked, draft, Some(self.pending.id))?;
+        if records_file_history(&self.store, &self.tracked, Some(self.kind()))?
+            && let Outcome::Unavailable(reason) =
+                self.store
+                    .attempt_locked(&self.tracked, draft, Some(self.pending.id))?
+        {
+            warn!("history: operation completed without a Git history commit: {reason}");
         }
         let uuid = self.pending.checkpoint.uuid.clone();
         store::remove_pending_in(&state_dir, &uuid);

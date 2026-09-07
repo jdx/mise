@@ -361,7 +361,7 @@ records no connection, and keeps no fetched branch:
 
 ```sh
 mise bootstrap remote --host devbox --install-mise --from-git jdx/dotfiles \
-  --github-relay-read-only --github-relay-repo jdx/dotfiles
+  --github-relay-read-only --github-relay-repo jdx/dotfiles --dry-run
 ```
 
 The borrowed GitHub access is read-only and ends with the session: the remote

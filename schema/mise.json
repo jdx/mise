@@ -4365,6 +4365,9 @@
           "description": "System services and portable user services managed by mise bootstrap, keyed by service name",
           "additionalProperties": {
             "type": "object",
+            "not": {
+              "required": ["builtin", "command"]
+            },
             "properties": {
               "state": {
                 "type": "string",
