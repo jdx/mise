@@ -96,6 +96,12 @@ that would follow it. Nothing is cloned into `$MISE_CONFIG_DIR`, and an
 existing checkout there is not converted. See [history](/history.html) for
 what happens next.
 
+Setup repositories always fetch and reconcile their latest branch, with or
+without `--update`. That flag is still forwarded to the following bootstrap
+for package metadata and declared repository updates. If the global config
+directory is already a Git checkout, its origin must match the requested
+repository before setup can proceed.
+
 ## How it runs
 
 `mise bootstrap` runs the steps below in order.

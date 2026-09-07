@@ -53,7 +53,11 @@ as pipes and redirections need an explicitly invoked shell or a wrapper script.
 | `working_directory`       | `WorkingDirectory`                       |
 | `stdout_path`             | `StandardOutPath`                        |
 | `stderr_path`             | `StandardErrorPath`                      |
-| `kickstart`               | run `launchctl kickstart`                |
+
+`keep_alive` and `keep_alive_on_failure` are mutually exclusive. Set only one:
+the former keeps the process running after any exit, while the latter restarts
+it only after a failure.
+| `kickstart` | run `launchctl kickstart` |
 
 `program`, `working_directory`, `stdout_path`, `stderr_path`, and each entry in
 `queue_directories` expand bare `~` and `~/` to the current user's home

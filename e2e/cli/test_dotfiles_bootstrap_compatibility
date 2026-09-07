@@ -6,6 +6,15 @@ dd if=/dev/zero of=~/.large-config bs=1048576 count=9 2>/dev/null
 assert_succeed 'mise bootstrap dotfiles apply --yes'
 assert_succeed 'cmp replacement ~/.large-config'
 
+# The setup-repository path must retain the existing checkout-origin guard,
+# before probing or connecting a different repository.
+require_cmd git
+mkdir -p checkout
+git -C checkout init -q
+git -C checkout remote add origin file://old-origin.git
+assert_fail "MISE_CONFIG_DIR='$PWD/checkout' mise bootstrap --from-git file://different-origin.git --yes" 'has origin'
+assert_fail "MISE_CONFIG_DIR='$PWD/checkout' mise bootstrap --from-git file://different-origin.git --dry-run" 'has origin'
+
 # Unsetting machine-local sync also removes a value in the shared global
 # layer, rather than silently exposing that value again.
 assert_succeed "MISE_GLOBAL_CONFIG_FILE='$MISE_CONFIG_DIR/config.toml' mise settings set history.sync manual"

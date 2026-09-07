@@ -324,7 +324,6 @@ pub(crate) async fn apply(
     }
 
     // validation and holds, per group
-    let mut held_groups: BTreeSet<String> = BTreeSet::new();
     for step in &steps {
         let take_remote = status
             .resolutions
@@ -335,11 +334,14 @@ pub(crate) async fn apply(
                 path: step.path.clone(),
                 reason,
             });
-            held_groups.insert(step.group.clone());
         }
     }
-    let (ready, held): (Vec<&Step>, Vec<&Step>) =
-        steps.iter().partition(|_| held_groups.is_empty());
+    // One unsafe path holds the complete batch; there is no partial apply.
+    let (ready, held): (Vec<&Step>, Vec<&Step>) = if holds.is_empty() {
+        (steps.iter().collect(), vec![])
+    } else {
+        (vec![], steps.iter().collect())
+    };
     if held.is_empty()
         && let Some(tree) = &inventory_tree
     {

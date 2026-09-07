@@ -898,6 +898,18 @@ mod tests {
     }
 
     #[test]
+    fn existing_leaf_uses_the_filesystem_canonical_spelling() {
+        let temp = tempfile::tempdir().unwrap();
+        let actual = temp.path().join("MixedCase");
+        std::fs::write(&actual, "contents").unwrap();
+        let alternative = temp.path().join("mixedcase");
+        // This exercises case folding only on filesystems which provide it.
+        if alternative.exists() {
+            assert_eq!(normalize_target(&alternative), normalize_target(&actual));
+        }
+    }
+
+    #[test]
     fn deployment_requests_do_not_enroll_files_or_sources() {
         use crate::system::files::FileRequest;
         use crate::system::resources::ResourceOrigin;

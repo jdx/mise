@@ -118,8 +118,8 @@ pub(crate) struct ExplicitFields {
 }
 
 impl FilePolicy {
-    /// The defaults for a mode: tracked files and copies are fully covered;
-    /// rendered and inline output is recoverable locally but not backed up.
+    /// Policy defaults do not enroll a deployment. Only explicit Track
+    /// declarations observe files, regardless of how those files are deployed.
     pub(crate) fn for_mode(_mode: FileMode) -> Self {
         Self {
             autosave: true,

@@ -1858,6 +1858,14 @@ impl Bootstrap {
             .as_deref()
             .map(crate::github_relay::expand_repository)
             .transpose()?;
+        // A setup repository must not bypass the released checkout-origin
+        // guard and install its files inside another repository's checkout.
+        if let Some(url) = expanded.as_deref() {
+            let config_dir = system::history::tracked::global_config_dir();
+            if config_dir.join(".git").exists() {
+                validate_bootstrap_checkout(&config_dir, url)?;
+            }
+        }
         // a history-managed setup repository is not cloned into the
         // configuration directory: its branch goes into mise's own store and
         // its files are written by the same recoverable pull as any other
@@ -3782,7 +3790,7 @@ impl BootstrapStatus {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };
-            let missing = state != FileState::Applied;
+            let missing = !matches!(state, FileState::Applied | FileState::Tracked);
             report.row(
                 "shell",
                 request.target.name(),
@@ -4921,7 +4929,7 @@ impl BootstrapShellStatus {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };
-            any_missing |= state != FileState::Applied;
+            any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
                 let mut entry = json!({
                     "target": request.target.name(),

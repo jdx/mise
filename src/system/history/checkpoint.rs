@@ -257,7 +257,7 @@ impl Store {
         let manual = manual_plan(&walk, &draft, &promoted);
         if !manual.carry.is_empty() {
             let carried: BTreeSet<usize> = manual.carry.iter().copied().collect();
-            let dropped: Vec<PathBuf> = walk
+            let dropped: BTreeSet<PathBuf> = walk
                 .files
                 .iter()
                 .filter(|(_, (owner, _))| carried.contains(owner))
@@ -271,10 +271,8 @@ impl Store {
                     .retain(|rel| !dropped.contains(&root.path.join(rel)));
             }
         }
-        // the modes of the files read live, plus those recorded for entries
-        // carried forward unread: from the newest checkpoint that is not
-        // protective, since a protective one holds the live bits of a
-        // manual-save file, not its saved ones
+        // Live modes plus the ordinary parent's modes for carried entries.
+        // Protective commits use the same history, not a separate saved state.
         let mut modes = file_modes(&walk);
         if !manual.carry.is_empty() {
             let carried: Vec<String> = manual
