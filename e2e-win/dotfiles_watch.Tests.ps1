@@ -12,7 +12,7 @@ Describe 'history watch' {
         $env:MISE_CONFIG_DIR = Join-Path $TestDrive 'config'
         $env:MISE_STATE_DIR = Join-Path $TestDrive 'state'
         New-Item -ItemType Directory -Force -Path $env:MISE_CONFIG_DIR | Out-Null
-        $script:Tracked = Join-Path $TestDrive 'tracked'
+        $script:Tracked = Join-Path $env:MISE_CONFIG_DIR 'tracked'
         New-Item -ItemType Directory -Force -Path $script:Tracked | Out-Null
         'one' | Out-File -FilePath (Join-Path $script:Tracked 'file.txt') -Encoding utf8NoBOM
     }

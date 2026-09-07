@@ -150,7 +150,12 @@ kill "$b_watcher"
 wait "$b_watcher" 2>/dev/null || true
 MISE_HISTORY_SYNC=fetch-only $b bootstrap dotfiles watch --json >b.log 2>&1 &
 b_watcher=$!
+wait_until "grep -q '\"event\":\"started\"' b.log"
 echo '# only on B' >>"$B/.config/hypr/monitors.lua"
+wait_until "$b bootstrap dotfiles history diff --path $B/.config/hypr/monitors.lua --exit-code"
+# Require a completed synchronization after capture, not a pre-edit fetch.
+b_synced="$(grep -c '\"event\":\"synced\"' b.log || true)"
+wait_until "[[ \$(grep -c '\"event\":\"synced\"' b.log) -gt $b_synced ]]"
 echo 'bind = SUPER, E, exec, thunar' >>~/.config/hypr/bindings.lua
 # The pending count also includes repository metadata, not only live files.
 wait_until "grep '\"event\":\"synced\"' b.log | jq -e 'select(.pending > 0)'"

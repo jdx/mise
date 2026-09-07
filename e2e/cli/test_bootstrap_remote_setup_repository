@@ -63,7 +63,10 @@ assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
 assert_contains "git --git-dir=$origin ls-tree -r --name-only main" "home/.config/hypr/bindings.lua"
 
 # ---- a dry run on a fresh host previews and leaves no trace
-out="$(mise bootstrap remote --host fresh --from-git "file://$origin" --remote-mise "$binary" --only repos,dotfiles --dry-run 2>&1)"
+out="$(mise bootstrap remote --host fresh --from-git "file://$origin" --remote-mise "$binary" --only repos,dotfiles --dry-run 2>&1)" || {
+  printf '%s\n' "$out"
+  exit 1
+}
 export out
 assert_contains 'printf "%s\n" "$out"' "is a mise setup repository"
 assert_contains 'printf "%s\n" "$out"' "bindings.lua"
