@@ -1,9 +1,11 @@
 {
   "cli_version": "0.10.5",
   "checkpoint_id": "01M1Y7XRP5W4XB2VDWMWGV16NE",
+  "session_id": "01a07c7e-2da0-7622-b6d3-21784ec05daf",
   "strategy": "manual-commit",
+  "created_at": "2026-09-07T15:31:26.302298Z",
   "branch": "codex/dotfiles-git-history",
-  "checkpoints_count": 3,
+  "checkpoints_count": 1,
   "files_touched": [
     "docs/cli/bootstrap/dotfiles/history/describe.md",
     "docs/cli/bootstrap/dotfiles/history/diff.md",
@@ -28,34 +30,36 @@
     "src/system/history/store.rs",
     "src/system/history/tracked.rs"
   ],
-  "sessions": [
-    {
-      "metadata": "/0/metadata.json",
-      "transcript": "/0/full.jsonl",
-      "compact_transcript": "/0/transcript.jsonl",
-      "content_hash": "/0/content_hash.txt",
-      "prompt": ""
-    },
-    {
-      "metadata": "/1/metadata.json",
-      "transcript": "/1/full.jsonl",
-      "compact_transcript": "/1/transcript.jsonl",
-      "content_hash": "/1/content_hash.txt",
-      "prompt": ""
-    },
-    {
-      "metadata": "/2/metadata.json",
-      "transcript": "/2/full.jsonl",
-      "compact_transcript": "/2/transcript.jsonl",
-      "content_hash": "/2/content_hash.txt",
-      "prompt": ""
-    }
-  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "95e19f77655c",
+  "compact_transcript_start": 0,
   "token_usage": {
-    "input_tokens": 136297,
+    "input_tokens": 34580,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 381696,
-    "output_tokens": 4118,
-    "api_call_count": 13
-  }
+    "cache_read_tokens": 33024,
+    "output_tokens": 647,
+    "api_call_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T15:31:26.289544Z",
+    "agent_lines": 10932,
+    "agent_removed": 19,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 10932,
+    "total_lines_changed": 10951,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
 }
