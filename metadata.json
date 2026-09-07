@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1WS7RN87822GT69TZPG37DT",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-auto-fixes",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/history.md",
+    "src/system/history/sync/run.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 127223,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6305280,
+    "output_tokens": 27283,
+    "api_call_count": 53
+  }
+}
