@@ -1,0 +1,5 @@
+could we reduce crates by editing the features we use?
+
+---
+
+ok make a pr
