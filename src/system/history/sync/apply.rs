@@ -928,7 +928,7 @@ mod tests {
     #[test]
     fn staged_lookup_batches_checkouts_and_preserves_filename_boundaries() -> eyre::Result<()> {
         let temp = tempfile::tempdir()?;
-        let root = std::fs::canonicalize(temp.path())?;
+        let root = crate::system::history::tracked::normalize_target(temp.path());
         let git = crate::git::plumbing_binary().expect("git is required for history tests");
         let run = |args: &[&str]| -> eyre::Result<()> {
             let mut command = std::process::Command::new(git);
