@@ -1,0 +1,40 @@
+could we improve this? [https://www.opengraph.to/u/mise.jdx.dev/dev-tools/backends/packslip.html](https://www.opengraph.to/u/mise.jdx.dev/dev-tools/backends/packslip.html)
+
+---
+
+i'm wondering if we can improve all of the og images, like maybe we could add a very short descripiton to each one or something
+
+---
+
+fix all og related things you see
+
+---
+
+PLEASE IMPLEMENT THIS PLAN:
+# Improve social previews across the docs
+
+## Summary
+
+Refine the existing dark cards and chef branding, adding a short, useful description to every page’s image. Fix related metadata across all 333 documentation pages using automatic summaries plus curated overrides.
+
+## Implementation
+
+- Derive summaries from the first meaningful prose paragraph using Markdown tokens. Skip headings, generated command metadata, code blocks, navigation, HTML/Vue components, and admonitions. Preserve readable link labels and inline code.
+- Use frontmatter `description` when supplied; otherwise use the extracted summary. Add optional `socialDescription` for a shorter image subtitle. Curate overrides for the homepage, main guides, backend pages, and pages whose automatic summaries are missing or unhelpful. Keep generated CLI descriptions derived from their existing command help.
+- Keep images at 1200×630. Add a muted, readable subtitle below the title, limited to two measured lines and approximately 100 characters. Wrap at word boundaries and truncate with an ellipsis. Reserve separate title, subtitle, logo, and footer regions; shrink unusually long titles without allowing overlaps.
+- Retain local rendering, bundled fonts, and PNG content hashes so changed cards receive fresh URLs.
+- Feed the resolved page description consistently into HTML, Open Graph, Twitter, and structured metadata. Improve the homepage’s social title, include subtitle content in image alt text, and declare PNG image type.
+- Keep canonical URLs and `og:url` aligned with the existing `.html` convention and directory index URLs. Both Packslip URL variants currently return 200; the checker’s alias warning does not warrant changing the site’s URL structure.
+- Update the social-preview documentation to explain automatic extraction and editorial overrides.
+
+## Validation
+
+- Extend existing tests for description extraction, Markdown cleanup, escaped characters, subtitle wrapping, long titles, and description-driven image cache invalidation.
+- Extend the built-site checker to verify unique required metadata, matching descriptions and URLs, correct image contents, dimensions, type, and alt text.
+- Build the full docs site and audit all resolved summaries for generic fallbacks, empty text, markup leakage, and awkward truncation.
+- Visually inspect a contact sheet covering the homepage, Packslip, other backends, tasks, settings, CLI commands, and the longest titles.
+- Treat the checker’s HTML-size advice separately: measure it, but avoid removing rendered documentation or navigation merely to raise its score.
+
+## Defaults and delivery
+
+Use the selected automatic-plus-curated approach and refine the current design. Preserve the Packslip description already added; its prior build passed. Deliver local changes and representative rendered previews for review, with no deployment or external publication.
