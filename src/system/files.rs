@@ -99,7 +99,7 @@ impl FileMode {
 /// How history treats a destination: whether edits are saved automatically,
 /// whether the file's saved version is shared with other machines, and
 /// whether it enters remote backups.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FilePolicy {
     pub autosave: bool,
     pub share: bool,
@@ -114,7 +114,7 @@ pub(crate) struct FilePolicy {
 }
 
 /// The fields a `[dotfiles]` declaration wrote explicitly.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ExplicitFields {
     pub autosave: bool,
     pub share: bool,

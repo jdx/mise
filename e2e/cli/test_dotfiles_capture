@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# External commands retain linked pairs and their own exit result.
+# shellcheck disable=SC2016
+require_cmd git
+export MISE_EXPERIMENTAL=1
+assert_fail "MISE_EXPERIMENTAL=0 mise bootstrap dotfiles capture -- sh -c 'touch ~/.ungated-capture'" 'experimental'
+assert_fail 'test -e ~/.ungated-capture'
+printf 'initial\n' >~/.captured
+assert_succeed 'mise bootstrap dotfiles track ~/.captured --no-autosave'
+printf 'user edit\n' >~/.captured
+assert_succeed "mise bootstrap dotfiles capture --label update -- sh -c 'printf \"updated\\n\" >~/.captured'"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].trigger, .[1].trigger, .[0].operation.status, .[0].labels[0]'" $'capture\ncapture-before\ncompleted\nupdate'
+assert_contains 'mise bootstrap dotfiles history diff --operation --patch' '-user edit'
+assert_contains 'mise bootstrap dotfiles history diff --operation --patch' '+updated'
+assert_not_contains 'mise bootstrap dotfiles history diff --operation --patch' '-initial'
+assert "mise bootstrap dotfiles history --label update --json | jq length" '1'
+operation=$(mise bootstrap dotfiles history --json | jq -r '.[0].uuid')
+# A later explicit save must not move the operation's baseline.
+printf 'afterward\n' >~/.captured
+assert_succeed 'mise bootstrap dotfiles save ~/.captured'
+assert_contains 'mise bootstrap dotfiles history diff --operation --patch' '+updated'
+assert_not_contains 'mise bootstrap dotfiles history diff --operation --patch' '+afterward'
+assert_contains "mise bootstrap dotfiles history diff $operation --operation --patch" '-user edit'
+assert_fail 'mise bootstrap dotfiles history diff latest --operation' 'is not an operation'
+assert_fail 'mise bootstrap dotfiles history diff latest latest --operation' 'at most one'
+
+# The caller sees the exact child exit code, with failed files still captured.
+set +e
+mise bootstrap dotfiles capture --label failed -- sh -c 'echo broken >~/.captured; exit 37'
+result=$?
+set -e
+assert "echo $result" '37'
+assert "mise bootstrap dotfiles history --label failed --json | jq -r '.[0].operation.status'" 'failed'
+assert_contains 'mise bootstrap dotfiles history diff --operation --patch' '+broken'
+# Recover the file from the recorded before checkpoint, leaving other files alone.
+before=$(mise bootstrap dotfiles history --json | jq -r '.[0].operation.before')
+assert_succeed "mise bootstrap dotfiles rollback ~/.captured --to $before --yes"
+assert 'cat ~/.captured' 'afterward'
+
+# No-op and spawn failures remain inspectable operations.
+assert_succeed 'mise bootstrap dotfiles capture --label noop -- true'
+assert "mise bootstrap dotfiles history --label noop --json | jq length" '1'
+assert_fail 'mise bootstrap dotfiles capture --label missing -- mise-capture-missing-command' 'could not run'
+assert "mise bootstrap dotfiles history --label missing --json | jq -r '.[0].operation.status'" 'failed'
+# An unavailable history store must not stop the command or mask its result.
+set +e
+MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles capture -- sh -c 'echo ran >~/.ran; exit 23'
+result=$?
+set -e
+assert "echo $result" '23'
+assert 'cat ~/.ran' 'ran'
+# Signals are represented by the conventional 128 + signal exit status.
+set +e
+mise bootstrap dotfiles capture -- sh -c 'kill -TERM $$'
+result=$?
+set -e
+assert "echo $result" '143'
+
+# An interrupt delivered to the wrapper must not cancel outcome finalization.
+set +e
+mise bootstrap dotfiles capture --label ctrl-c -- bash -c 'echo interrupted-by-user >~/.captured; kill -INT "$PPID"; exit 130'
+result=$?
+set -e
+assert "echo $result" '130'
+assert "mise bootstrap dotfiles history --label ctrl-c --json | jq -r '.[0].operation.status'" 'failed'
+assert_contains 'mise bootstrap dotfiles history diff --operation --patch' '+interrupted-by-user'
+
+# Crash recovery retains the label and the live manual-save file.
+pidfile="$PWD/capture.pid"
+cat <<WRAPPER >"$PWD/interrupted-capture"
+#!/usr/bin/env bash
+echo \$\$ >"$pidfile"
+exec mise bootstrap dotfiles capture --label interrupted -- sh -c 'echo interrupted >~/.captured; kill -KILL "\$(cat "$pidfile")"'
+WRAPPER
+chmod +x "$PWD/interrupted-capture"
+assert_fail "$PWD/interrupted-capture"
+assert_succeed 'mise bootstrap dotfiles save ~/.captured'
+assert "mise bootstrap dotfiles history --label interrupted --json | jq -r '.[0].operation.status'" 'failed'
+interrupted=$(mise bootstrap dotfiles history --label interrupted --json | jq -r '.[0].uuid')
+assert_contains "mise bootstrap dotfiles history diff $interrupted --operation --patch" '+interrupted'
+
+# Removing a declaration during a command must not hide that file's outcome.
+printf 'before removal\n' >~/.removed-during-command
+assert_succeed 'mise bootstrap dotfiles track ~/.removed-during-command --no-autosave'
+assert_succeed "mise bootstrap dotfiles capture --label untrack-edit -- sh -c 'echo after-removal >~/.removed-during-command; mise bootstrap dotfiles untrack ~/.removed-during-command'"
+assert_contains 'mise bootstrap dotfiles history diff --operation --patch' '-before removal'
+assert_contains 'mise bootstrap dotfiles history diff --operation --patch' '+after-removal'
+
+# Recovery retains start-time coverage even after the declaration is gone.
+printf 'before crash\n' >~/.removed-before-crash
+assert_succeed 'mise bootstrap dotfiles track ~/.removed-before-crash --no-autosave'
+cat <<WRAPPER >"$PWD/interrupted-capture"
+#!/usr/bin/env bash
+echo \$\$ >"$pidfile"
+exec mise bootstrap dotfiles capture --label untrack-crash -- sh -c 'echo after-crash >~/.removed-before-crash; mise bootstrap dotfiles untrack ~/.removed-before-crash; kill -KILL "\$(cat "$pidfile")"'
+WRAPPER
+assert_fail "$PWD/interrupted-capture"
+assert_succeed 'mise bootstrap dotfiles save ~/.captured'
+recovered=$(mise bootstrap dotfiles history --label untrack-crash --json | jq -r '.[0].uuid')
+assert_contains "mise bootstrap dotfiles history diff $recovered --operation --patch" '-before crash'
+assert_contains "mise bootstrap dotfiles history diff $recovered --operation --patch" '+after-crash'

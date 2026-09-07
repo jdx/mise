@@ -3,6 +3,7 @@ use std::path::Path;
 
 mod add;
 mod apply;
+mod capture;
 pub(crate) mod capture_health;
 mod diff;
 mod edit;
@@ -25,6 +26,7 @@ mod watch;
 
 pub(crate) use add::DotfilesAdd;
 pub(crate) use apply::DotfilesApply;
+pub(crate) use capture::DotfilesCapture;
 pub(crate) use diff::DotfilesDiff;
 pub(crate) use edit::DotfilesEdit;
 pub(crate) use exclude::{DotfilesExclude, DotfilesInclude};

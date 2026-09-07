@@ -196,6 +196,9 @@ Add or update dotfiles in `[dotfiles]`
 \fBbootstrap dotfiles apply\fR
 Apply dotfiles from `[dotfiles]`
 .TP
+\fBbootstrap dotfiles capture\fR
+Record tracked files before and after an external command
+.TP
 \fBbootstrap dotfiles diff\fR
 Show the changes needed to apply dotfiles from `[dotfiles]`
 .TP
@@ -1479,6 +1482,30 @@ mise bootstrap dotfiles apply
 mise bootstrap dotfiles apply \-\-dry\-run
 mise bootstrap dotfiles apply \-\-force \-\-yes
 .RE
+.SH "MISE BOOTSTRAP DOTFILES CAPTURE"
+Record tracked files before and after an external command
+
+Runs the command directly, inheriting its terminal and environment. Keeps
+a linked checkpoint pair, including when the command fails or changes no
+files. Capture failures warn and never replace the command's exit status.
+Only tracked files are recorded: package, service, and other system effects
+are not reversible. Concurrent editor changes are part of the same interval.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles capture [OPTIONS] <COMMAND> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-label\fR \fI<LABEL>\fR
+Describe this operation in history
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<COMMAND>\fR
+Command and arguments to run, after \-\-
 .SH "MISE BOOTSTRAP DOTFILES DIFF"
 Show the changes needed to apply dotfiles from `[dotfiles]`
 .PP
@@ -1584,6 +1611,9 @@ Only checkpoints where this path (or something under it) changed
 \fB\-\-trigger\fR \fI<TRIGGER>\fR
 Only checkpoints with this trigger (edit, save, bootstrap, …)
 .TP
+\fB\-\-label\fR \fI<LABEL>\fR
+Only checkpoints with this label
+.TP
 \fB\-\-pending\fR
 Only checkpoints recorded by operations that did not finish
 .TP
@@ -1618,6 +1648,11 @@ against the one before it. With two, compares the two states.
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-\-operation\fR
+Compare an operation with its recorded protective checkpoint
+
+With no reference, use the newest operation, ignoring later saves. With one reference, use that operation. Fails if its before checkpoint is unavailable instead of comparing an unrelated preceding save.
 .TP
 \fB\-p, \-\-patch\fR
 Print the full patch instead of a per\-file summary
@@ -1660,6 +1695,9 @@ Only checkpoints where this path (or something under it) changed
 .TP
 \fB\-\-trigger\fR \fI<TRIGGER>\fR
 Only checkpoints with this trigger (edit, save, bootstrap, …)
+.TP
+\fB\-\-label\fR \fI<LABEL>\fR
+Only checkpoints with this label
 .TP
 \fB\-\-pending\fR
 Only checkpoints recorded by operations that did not finish

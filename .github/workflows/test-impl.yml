@@ -153,6 +153,7 @@ jobs:
       # Line Tools guard exercised on a real macOS runner.
       - run: mise run test:e2e e2e/cli/test_dotfiles_history_bootstrap
       - run: mise run test:e2e e2e/cli/test_dotfiles_history
+      - run: mise run test:e2e e2e/cli/test_dotfiles_capture
       - run: mise run test:e2e e2e/cli/test_dotfiles_onboarding
       - run: mise run test:e2e e2e/cli/test_dotfiles_track
       - run: mise run test:e2e e2e/cli/test_dotfiles_history_policies

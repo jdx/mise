@@ -161,9 +161,20 @@ impl OperationScope {
             Err(err) => Err(err),
         };
         match tracked {
-            Ok(tracked) => {
+            Ok(mut tracked) => {
                 if let Some(shared) = &self.0 {
-                    lock_unpoisoned(shared).tracked = tracked;
+                    let mut writer = lock_unpoisoned(shared);
+                    if writer.operation_mut().kind == OperationKind::Capture {
+                        // A command may edit a file and remove its declaration.
+                        // Keep observing those paths through the outcome while
+                        // letting the current declarations and exclusions win.
+                        for entry in &writer.tracked.entries {
+                            if tracked.entry_for(&entry.path).is_none() {
+                                tracked.push(entry.clone());
+                            }
+                        }
+                    }
+                    writer.tracked = tracked;
                 }
             }
             Err(err) => warn!("history: keeping the tracked set from before the run: {err:#}"),
@@ -196,6 +207,26 @@ impl OperationScope {
             f(writer.operation_mut());
             if let Err(err) = writer.write_pending() {
                 warn!("history: could not persist the operation record: {err:#}");
+            }
+        }
+    }
+
+    /// External commands cannot journal individual writes. Capture all tracked
+    /// entries live (including manual-save files) and keep the label on the
+    /// pending record so crash recovery can identify the operation too.
+    pub(crate) fn prepare_capture(&self, label: Option<&str>) {
+        if let Some(shared) = &self.0 {
+            let mut writer = lock_unpoisoned(shared);
+            writer.promote = writer
+                .tracked
+                .entries
+                .iter()
+                .map(|entry| entry.path.clone())
+                .collect();
+            writer.pending.checkpoint.labels = label.into_iter().map(str::to_owned).collect();
+            writer.operation_mut().message = label.map(str::to_owned);
+            if let Err(err) = writer.write_pending() {
+                warn!("history: could not persist the capture label: {err:#}");
             }
         }
     }
@@ -332,6 +363,11 @@ impl Writer {
         };
         let pending = Pending {
             id: outcome_id,
+            capture_entries: if kind == OperationKind::Capture {
+                tracked.entries.clone()
+            } else {
+                vec![]
+            },
             checkpoint: Checkpoint {
                 schema_version: store::SCHEMA_VERSION,
                 uuid,
@@ -480,6 +516,7 @@ impl Writer {
         let operation = self.operation().clone();
         let mut draft = Draft::new(checkpoint.trigger);
         draft.uuid = Some(checkpoint.uuid.clone());
+        draft.labels = checkpoint.labels.clone();
         draft.operation = Some(operation.clone());
         draft.blobs = self.pending.blobs.clone();
         draft.explicit_paths = self.promote.clone();
@@ -512,7 +549,8 @@ impl Writer {
         // carried-forward manual-save entries already discounted.
         // Keep abandoned operations for recovery diagnostics, but an ordinary
         // rejected request with proven unchanged files is not useful history.
-        let noop = (operation.status == OperationStatus::Completed || !retain_empty_failure)
+        let noop = operation.kind != OperationKind::Capture
+            && (operation.status == OperationStatus::Completed || !retain_empty_failure)
             && operation.journal.is_empty()
             && operation.affected.is_empty()
             && entry.checkpoint.tree.snapshot.is_some()
@@ -599,6 +637,12 @@ pub(crate) fn recover_stale(store: &Store, tracked: &TrackedSet) -> Result<()> {
     let _store_lock = store.lock()?;
     let index = store::load_index_in(state_dir)?;
     for (path, mut record) in pending {
+        let mut recovered_tracked = tracked.clone();
+        for entry in &record.capture_entries {
+            if recovered_tracked.entry_for(&entry.path).is_none() {
+                recovered_tracked.push(entry.clone());
+            }
+        }
         if index.by_uuid(&record.checkpoint.uuid).is_some() {
             warn!(
                 "history: dropping a stale pending record for checkpoint {}, which was recorded",
@@ -614,15 +658,28 @@ pub(crate) fn recover_stale(store: &Store, tracked: &TrackedSet) -> Result<()> {
         if let Some(operation) = record.checkpoint.operation.as_mut() {
             operation.status = OperationStatus::Failed;
             operation.finished_at = Some(store::now_rfc3339());
-            operation.error = Some("the command exited before finishing".into());
+            operation.error = Some("the command exited before finishing; files observed during recovery may include later edits".into());
         }
         let mut draft = Draft::new(record.checkpoint.trigger);
         draft.uuid = Some(record.checkpoint.uuid.clone());
+        draft.labels = record.checkpoint.labels.clone();
+        if record
+            .checkpoint
+            .operation
+            .as_ref()
+            .is_some_and(|op| op.kind == OperationKind::Capture)
+        {
+            draft.explicit_paths = recovered_tracked
+                .entries
+                .iter()
+                .map(|entry| entry.path.clone())
+                .collect();
+        }
         draft.operation = record.checkpoint.operation.clone();
         draft.blobs = record.blobs.clone();
         // the record is the only trace of what the crashed run changed:
         // keep it until the failed operation is recorded
-        match store.attempt_locked(tracked, draft, Some(record.id)) {
+        match store.attempt_locked(&recovered_tracked, draft, Some(record.id)) {
             Ok(_) => {
                 let _ = std::fs::remove_file(&path);
             }
@@ -639,6 +696,7 @@ pub(crate) fn recover_stale(store: &Store, tracked: &TrackedSet) -> Result<()> {
 
 fn before_trigger(kind: OperationKind) -> Trigger {
     match kind {
+        OperationKind::Capture => Trigger::CaptureBefore,
         OperationKind::Bootstrap => Trigger::BootstrapBefore,
         OperationKind::Rollback | OperationKind::BootstrapRollback => Trigger::RollbackBefore,
         OperationKind::Undo => Trigger::UndoBefore,
@@ -648,6 +706,7 @@ fn before_trigger(kind: OperationKind) -> Trigger {
 
 fn outcome_trigger(kind: OperationKind) -> Trigger {
     match kind {
+        OperationKind::Capture => Trigger::Capture,
         OperationKind::Bootstrap => Trigger::Bootstrap,
         OperationKind::Rollback | OperationKind::BootstrapRollback => Trigger::Rollback,
         OperationKind::Undo => Trigger::Undo,

@@ -37,6 +37,8 @@ source_code_link_template #"""
 {%- set path = "dotfiles/paths.rs" -%}
 {%- elif path == "bootstrap/dotfiles/save" -%}
 {%- set path = "dotfiles/save.rs" -%}
+{%- elif path == "bootstrap/dotfiles/capture" -%}
+{%- set path = "dotfiles/capture.rs" -%}
 {%- elif path == "bootstrap/dotfiles/track" -%}
 {%- set path = "dotfiles/track.rs" -%}
 {%- elif path == "bootstrap/dotfiles/untrack" -%}
@@ -679,6 +681,22 @@ mise bootstrap dotfiles apply --dry-run
 mise bootstrap dotfiles apply --force --yes
 """#
         }
+        cmd capture help="Record tracked files before and after an external command" {
+            long_help #"""
+Record tracked files before and after an external command
+
+Runs the command directly, inheriting its terminal and environment. Keeps
+a linked checkpoint pair, including when the command fails or changes no
+files. Capture failures warn and never replace the command's exit status.
+Only tracked files are recorded: package, service, and other system effects
+are not reversible. Concurrent editor changes are part of the same interval.
+"""#
+            flag --label help="Describe this operation in history" {
+                arg <LABEL>
+            }
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true
+        }
         cmd diff help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
@@ -736,6 +754,9 @@ subcommand this lists them, newest first.
             flag --trigger help="Only checkpoints with this trigger (edit, save, bootstrap, …)" {
                 arg <TRIGGER>
             }
+            flag --label help="Only checkpoints with this label" {
+                arg <LABEL>
+            }
             flag --pending help="Only checkpoints recorded by operations that did not finish"
             flag "-h --help" help="Print help" action=help builtin=#true
             cmd describe help="Set the description of a checkpoint" effect=write {
@@ -751,6 +772,13 @@ Without arguments, shows what changed by hand since the latest
 checkpoint. With one reference, shows what that checkpoint changed
 against the one before it. With two, compares the two states.
 """#
+                flag --operation help="Compare an operation with its recorded protective checkpoint" {
+                    long_help #"""
+Compare an operation with its recorded protective checkpoint
+
+With no reference, use the newest operation, ignoring later saves. With one reference, use that operation. Fails if its before checkpoint is unavailable instead of comparing an unrelated preceding save.
+"""#
+                }
                 flag "-p --patch" help="Print the full patch instead of a per-file summary"
                 flag --path help="Restrict to one path (a file or a directory)" {
                     arg <PATH>
@@ -771,6 +799,9 @@ against the one before it. With two, compares the two states.
                 }
                 flag --trigger help="Only checkpoints with this trigger (edit, save, bootstrap, …)" {
                     arg <TRIGGER>
+                }
+                flag --label help="Only checkpoints with this label" {
+                    arg <LABEL>
                 }
                 flag --pending help="Only checkpoints recorded by operations that did not finish"
                 flag "-h --help" help="Print help" action=help builtin=#true
