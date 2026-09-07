@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Y9NA231C2GFJK19YMZWDAN",
+  "session_id": "01a07c89-2b87-7df3-8a5d-cc8ad4b79b64",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T16:01:46.428117Z",
+  "branch": "codex/fix-pwsh-pipeline",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "e2e-win/activate_pipeline.Tests.ps1",
+    "src/shell/pwsh.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "62e34b4804ce",
+  "checkpoint_transcript_start": 410,
+  "transcript_lines_at_start": 410,
+  "compact_transcript_start": 52,
+  "token_usage": {
+    "input_tokens": 4008,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 891264,
+    "output_tokens": 695,
+    "api_call_count": 9
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T16:01:46.389775Z",
+    "agent_lines": 2,
+    "agent_removed": 2,
+    "human_added": 1,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 3,
+    "total_lines_changed": 6,
+    "agent_percentage": 66.66666666666666,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
