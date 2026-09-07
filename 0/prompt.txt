@@ -24,3 +24,7 @@ ok fix both
 ---
 
 could we also include a very short description of the article or something?
+
+---
+
+can you go on every blog post including the posts in open prs and add a social descripiton to use in the og image for each one? this should be a required field for new posts if we can do that
