@@ -877,7 +877,8 @@ jobs:
           retention-days: 1
 
   finish-draft-publish:
-    needs: [gate, finish-draft-resolve, finish-draft-attest, finish-draft-packslip]
+    needs:
+      [gate, finish-draft-resolve, finish-draft-attest, finish-draft-packslip]
     if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-packslip.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
