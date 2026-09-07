@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+mkdir -p ~/private/nested
+echo private >~/private/nested/config
+chmod 700 ~/private
+chmod 750 ~/private/nested
+assert_succeed 'mise bootstrap dotfiles track ~/private'
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
+second="$(dirname "$HOME")/directory-permissions-b"
+mkdir -p "$second"
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export second
+export -f b
+if [[ "$(uname)" == Darwin ]]; then
+  mode_of='stat -f %Lp'
+else
+  mode_of='stat -c %a'
+fi
+assert_succeed "b bootstrap --from-git file://$origin --yes"
+assert "$mode_of $second/private" 700
+assert "$mode_of $second/private/nested" 750
+chmod 750 ~/private
+assert_succeed 'mise bootstrap dotfiles save'
+assert_succeed 'mise bootstrap dotfiles sync'
+assert_succeed 'b bootstrap dotfiles sync'
+assert_succeed 'b bootstrap dotfiles pull --yes'
+assert "$mode_of $second/private" 750
+chmod 700 ~/private/nested
+assert_succeed 'mise bootstrap dotfiles save'
+assert_succeed 'mise bootstrap dotfiles sync'
+# Fetching continues, but an unsaved chmod must not be overwritten.
+assert_succeed 'b bootstrap dotfiles sync --fetch-only'
+chmod 711 "$second/private/nested"
+assert_fail 'b bootstrap dotfiles pull --yes' 'unsaved directory permission'
+assert "$mode_of $second/private/nested" 711
+assert "cat $second/private/nested/config" private

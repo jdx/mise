@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Browsing and restoring ordinary Git commits, with a disposable derived index.
+require_cmd git
+repository="$MISE_STATE_DIR/history/repo.git"
+echo one >~/.history-file
+assert_succeed 'mise bootstrap dotfiles track ~/.history-file'
+first=$(git --git-dir="$repository" rev-parse HEAD)
+assert_contains 'mise bootstrap dotfiles save 2>&1' 'nothing changed'
+echo two >~/.history-file
+assert_succeed 'mise bootstrap dotfiles save --description second'
+second=$(git --git-dir="$repository" rev-parse HEAD)
+assert "mise bootstrap dotfiles history show latest --json | jq -r .uuid" "$second"
+assert "mise bootstrap dotfiles history show latest --json | jq -r .changes.since" "$first"
+echo three >~/.history-file
+assert_contains 'mise bootstrap dotfiles history diff --patch --path ~/.history-file' '+three'
+assert_fail 'mise bootstrap dotfiles history diff --exit-code'
+assert_contains "mise bootstrap dotfiles history diff $first $second --patch" '+two'
+assert_fail 'mise bootstrap dotfiles history show 999999'
+assert_succeed "mise bootstrap dotfiles history describe $second 'the second version'"
+assert "mise bootstrap dotfiles history show $second --json | jq -r .description" 'the second version'
+assert "git --git-dir=$repository for-each-ref --format='%(refname)' refs/notes" ''
+assert_succeed "mise bootstrap dotfiles rollback ~/.history-file --to $first --yes"
+assert 'cat ~/.history-file' one
+assert_succeed 'mise bootstrap dotfiles undo --yes'
+assert 'cat ~/.history-file' three
+mv "$MISE_STATE_DIR/history/index" "$MISE_STATE_DIR/history/old-index"
+assert "mise bootstrap dotfiles history show $second --json | jq -r .description" 'the second version'
+assert_succeed "git --git-dir=$repository merge-base --is-ancestor $first HEAD"
+assert_succeed "git --git-dir=$repository fsck --no-progress"
+assert_fail 'MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles save' 'history is disabled'

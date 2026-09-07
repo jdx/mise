@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Format probing must retain ordinary Git transports without shallow support.
+require_cmd git
+require_cmd python3
+mkdir -p seed served
+git -C seed init -q -b main
+printf '[dotfiles]\n' >seed/config.toml
+git -C seed add config.toml
+git -C seed -c user.name=Test -c user.email=test@example.invalid commit -qm initial
+git clone -q --bare seed served/origin.git
+git --git-dir=served/origin.git update-server-info
+python3 - "$PWD/served" >port 2>http.log <<'PY' &
+import functools
+import http.server
+import sys
+
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[1])
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+print(server.server_port, flush=True)
+server.serve_forever()
+PY
+http_pid=$!
+trap 'kill "$http_pid" 2>/dev/null || true; wait "$http_pid" 2>/dev/null || true' EXIT
+for _ in $(seq 1 30); do
+  test -s port && break
+  sleep 0.1
+done
+assert_succeed 'test -s port'
+url="http://127.0.0.1:$(cat port)/origin.git"
+git init -q --bare probe.git
+assert_fail "git --git-dir=probe.git fetch --depth=1 '$url' main" 'dumb http transport does not support shallow capabilities'
+assert_succeed "MISE_CONFIG_DIR='$PWD/target' mise bootstrap --from-git '$url' --only dotfiles --dry-run"
+assert_fail 'test -e target/config.toml'
+assert_succeed "MISE_CONFIG_DIR='$PWD/target' mise bootstrap --from-git '$url' --only dotfiles --yes"
+assert_directory_exists 'target/.git'
+assert 'cat target/config.toml' '[dotfiles]'

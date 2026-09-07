@@ -1,5 +1,7 @@
 Describe 'dotfiles' {
     BeforeAll {
+        $script:OriginalExperimental = [Environment]::GetEnvironmentVariable('MISE_EXPERIMENTAL', 'Process')
+        $env:MISE_EXPERIMENTAL = '0'
         $script:OriginalDir = Get-Location
         $script:TestRoot = Join-Path $TestDrive ([System.Guid]::NewGuid().ToString())
         New-Item -ItemType Directory -Path $script:TestRoot | Out-Null
@@ -8,6 +10,9 @@ Describe 'dotfiles' {
         # an inherited value would leave the next suite without it.
         $script:OriginalTrusted = [Environment]::GetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', 'Process')
         $env:MISE_TRUSTED_CONFIG_PATHS = $script:TestRoot
+        # Applies record file checkpoints under the state dir; keep them out of the runner's.
+        $script:OriginalStateDir = [Environment]::GetEnvironmentVariable('MISE_STATE_DIR', 'Process')
+        $env:MISE_STATE_DIR = Join-Path $script:TestRoot "state"
 
         New-Item -ItemType Directory -Path (Join-Path $script:TestRoot "dotfiles") | Out-Null
         $script:Source = Join-Path $script:TestRoot "dotfiles\gitconfig"
@@ -24,12 +29,18 @@ Describe 'dotfiles' {
     }
 
     AfterAll {
+        [Environment]::SetEnvironmentVariable('MISE_EXPERIMENTAL', $script:OriginalExperimental, 'Process')
         Set-Location $script:OriginalDir
         Remove-Item -Path $script:TestRoot -Recurse -Force -ErrorAction Ignore
         if ($null -eq $script:OriginalTrusted) {
             Remove-Item Env:MISE_TRUSTED_CONFIG_PATHS -ErrorAction Ignore
         } else {
             [Environment]::SetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', $script:OriginalTrusted, 'Process')
+        }
+        if ($null -eq $script:OriginalStateDir) {
+            Remove-Item Env:MISE_STATE_DIR -ErrorAction Ignore
+        } else {
+            [Environment]::SetEnvironmentVariable('MISE_STATE_DIR', $script:OriginalStateDir, 'Process')
         }
     }
 
@@ -61,6 +72,21 @@ Describe 'dotfiles' {
         Write-Host "  applied as: $(if ($link) { $link } else { 'copy' })"
     }
 
+    It 'keeps history private despite inherited parent permissions' {
+        mise bootstrap dotfiles apply 2>&1 | Out-String | Out-Null
+        $LASTEXITCODE | Should -Be 0
+        $history = Join-Path $env:MISE_STATE_DIR 'history'
+        $acl = Get-Acl -LiteralPath $history
+        $acl.AreAccessRulesProtected | Should -BeTrue
+        $acl.Sddl | Should -Match ';;;OW\)'
+        @($acl.Access).Count | Should -Be 1
+        $probe = Join-Path $history 'private-acl-probe'
+        Set-Content -LiteralPath $probe -Value 'private'
+        $inherited = Get-Acl -LiteralPath $probe
+        @($inherited.Access).Count | Should -Be 1
+        $inherited.Sddl | Should -Match ';;;OW\)'
+    }
+
     It 'unapplies without needing --force' {
         # The regression this guards: a real symlink used to be routed through the content
         # comparison, which rejects a symlink and demands --force.
@@ -74,5 +100,19 @@ Describe 'dotfiles' {
         mise bootstrap dotfiles unapply 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0
         Test-Path $script:Target | Should -BeFalse
+    }
+
+    It 'does not enroll an untracked deployment or retain its operation history' {
+        # Deployment ownership is not enrollment. Temporary write recovery must
+        # not become ongoing file history after a successful apply.
+        mise bootstrap dotfiles apply 2>&1 | Out-String | Out-Null
+        $LASTEXITCODE | Should -Be 0
+
+        $json = mise bootstrap dotfiles history --json 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $checkpoints = @($json | ConvertFrom-Json)
+        $checkpoints.Count | Should -Be 0
+        $pending = Join-Path $env:MISE_STATE_DIR 'history\pending'
+        @(Get-ChildItem $pending -ErrorAction SilentlyContinue).Count | Should -Be 0
     }
 }

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# Git enrollment works without copying the declaring mise configuration.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+echo original >~/.native
+echo untouched >~/.other
+assert_succeed "mise bootstrap dotfiles track ~/.native ~/.other"
+repository="$MISE_STATE_DIR/history/repo.git"
+second="$(dirname "$HOME")/manifest-machine"
+mkdir -p "$second/.local/state/mise/history"
+git clone -q --bare "$repository" "$second/.local/state/mise/history/repo.git"
+echo original >"$second/.native"
+echo untouched >"$second/.other"
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export second
+export -f b
+echo changed >"$second/.native"
+assert_succeed "b bootstrap dotfiles save"
+second_repo="$second/.local/state/mise/history/repo.git"
+assert "git --git-dir=$second_repo show main:home/.native" "changed"
+assert "git --git-dir=$second_repo show main:home/.other" "untouched"
+assert_fail "test -f $second/.config/mise/config.toml"
+before=$(git --git-dir="$second_repo" rev-parse main)
+assert_succeed "b bootstrap dotfiles capture -- mise bootstrap dotfiles untrack $second/.native"
+assert "cat $second/.native" "changed"
+assert_fail "git --git-dir=$second_repo cat-file -e main:home/.native"
+assert "git --git-dir=$second_repo show $before:home/.native" "changed"
+assert "git --git-dir=$second_repo show main:home/.other" "untouched"
+echo later >"$second/.native"
+assert_succeed "b bootstrap dotfiles save"
+assert_fail "git --git-dir=$second_repo cat-file -e main:home/.native"
+assert_succeed "b bootstrap dotfiles track $second/.native"
+assert "git --git-dir=$second_repo show main:home/.native" "later"

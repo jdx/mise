@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# Untracked preimages are temporary recovery material, never Git history.
+require_cmd git
+mkdir -p "$MISE_CONFIG_DIR"
+awk 'BEGIN { for (i = 0; i < 70000; i++) printf "a"; print "" }' >~/.managed
+old_hash=$(git hash-object ~/.managed)
+echo first >~/source
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.managed" = { mode = "copy", source = "~/source" }
+TOML
+assert_succeed 'mise bootstrap dotfiles apply --force --yes'
+assert 'cat ~/.managed' 'first'
+repo="$MISE_STATE_DIR/history/repo.git"
+assert_fail "git --git-dir=$repo rev-parse --verify HEAD"
+assert_fail "git --git-dir=$repo cat-file -e $old_hash"
+assert "find $MISE_STATE_DIR/history/index/blobs -type f | wc -l | tr -d ' '" '0'
+
+echo second >~/source
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[bootstrap.hooks.post-dotfiles]
+run = 'kill -KILL "$(cat "$HOME/bootstrap.pid")"'
+TOML
+cat >"$PWD/interrupted-bootstrap" <<'SH'
+#!/usr/bin/env bash
+echo $$ >"$HOME/bootstrap.pid"
+exec mise bootstrap dotfiles apply --force --yes
+SH
+chmod +x "$PWD/interrupted-bootstrap"
+assert_fail "$PWD/interrupted-bootstrap"
+assert 'cat ~/.managed' 'second'
+assert 'mise bootstrap dotfiles history --pending --json | jq length' '1'
+
+# A later user edit must survive and keep the unresolved journal available.
+echo concurrent >~/.managed
+assert_fail 'mise bootstrap dotfiles save' 'recovery needs attention'
+assert 'cat ~/.managed' 'concurrent'
+assert 'mise bootstrap dotfiles history --pending --json | jq length' '1'
+
+# Once the recorded result is restored, recovery can finish safely.
+echo second >~/.managed
+assert_succeed 'mise bootstrap dotfiles save'
+assert 'cat ~/.managed' 'first'
+assert 'mise bootstrap dotfiles history --pending --json | jq length' '0'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.managed"
+assert_fail "git --git-dir=$repo cat-file -e $old_hash"
+
+# A normally returned hook failure does not roll back completed bootstrap phases.
+echo third >~/source
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.managed" = { mode = "copy", source = "~/source" }
+[bootstrap.hooks.post-dotfiles]
+run = "exit 29"
+TOML
+assert_fail 'mise bootstrap dotfiles apply --force --yes'
+assert 'cat ~/.managed' 'third'
+assert 'mise bootstrap dotfiles history --pending --json | jq length' '0'
