@@ -129,6 +129,20 @@ pub(crate) struct LatestReport {
 pub(crate) async fn report() -> Result<HistoryReport> {
     let settings = crate::config::Settings::get();
     let enabled = settings.history.enabled;
+    if !enabled {
+        return Ok(HistoryReport {
+            enabled: false,
+            tracked_entries: 0,
+            tracked_files: 0,
+            checkpoints: 0,
+            latest: None,
+            pending_operations: 0,
+            watcher: super::capture_health::Watcher::NotDeclared,
+            unavailable: None,
+            health: None,
+            sync: None,
+        });
+    }
     let (store, tracked, entries) = super::history::open().await?;
     let walk = tracked.walk()?;
     let tracked_files = walk.roots.iter().map(|root| root.files.len() as u64).sum();

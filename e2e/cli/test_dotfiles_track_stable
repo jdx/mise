@@ -16,3 +16,7 @@ assert_succeed "mise bootstrap dotfiles apply --yes"
 assert "cat ~/.copied" copied
 assert "cat ~/.native" original
 assert_succeed "mise bootstrap dotfiles status"
+
+# Disabled history does not open an unavailable store merely to report status.
+touch "$PWD/not-a-state-directory"
+assert_contains "MISE_STATE_DIR=$PWD/not-a-state-directory MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles status" "History: disabled"
