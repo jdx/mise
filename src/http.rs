@@ -1110,11 +1110,23 @@ impl Client {
                         pr.inc(chunk.len() as u64);
                     }
                 }
+                Ok::<_, Report>(())
+            }
+            .await;
+            // Outside the transfer, so it also runs when the transfer failed.
+            // `tokio::fs::File` buffers writes and dropping one does not flush,
+            // so a transfer that dies part way through was leaving the bytes it
+            // had already received unwritten — the resume then asked for a range
+            // starting before them and downloaded them again. Whether any of it
+            // survived depended on when the background flush happened to land.
+            let persisted = async {
                 file.shutdown().await?;
                 file.sync_all().await?;
                 Ok::<_, Report>(())
             }
             .await;
+            // Before `clear()`: flushing into a file that has just been removed
+            // would recreate it.
             if transfer.is_err()
                 && !resumable
                 && let Err(err) = partial.clear()
@@ -1122,6 +1134,7 @@ impl Client {
                 debug!("failed to remove unvalidated partial download: {err:#}");
             }
             transfer?;
+            persisted?;
 
             if let Some(total_size) = total_size {
                 let actual_size = tokio::fs::metadata(&partial.path).await?.len();
@@ -3740,6 +3753,12 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
             .download_file_with_headers_metadata(&url, &destination, &headers, None)
             .await
             .unwrap_err();
+        // The whole point of the partial: the bytes that arrived before the
+        // body was cut short have to be on disk, or the `Range: bytes=5-` at
+        // the bottom of this test is asking to resume from somewhere the file
+        // does not reach. This was intermittently empty on macOS until the
+        // download path started flushing on the failure branch too — do not
+        // relax it to a length check.
         assert_eq!(std::fs::read(&partial.path).unwrap(), b"hello");
         let state = std::fs::read_to_string(&partial.state_path).unwrap();
         assert!(!state.contains("url-secret"));
