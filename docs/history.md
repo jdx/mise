@@ -1,3 +1,7 @@
+---
+description: "Track, inspect, synchronize, and restore dotfiles with mise's Git-backed history."
+---
+
 # Dotfiles history
 
 mise automatically commits changes to files you explicitly track, then

@@ -1,3 +1,7 @@
+---
+description: "Set up a machine with tracked dotfiles, local history, recovery, and optional synchronization."
+---
+
 # Set up a machine with mise
 
 Keep editing your dotfiles where they are. This guide shows how to save local
