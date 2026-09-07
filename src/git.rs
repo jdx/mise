@@ -794,7 +794,7 @@ impl GitPlumbing {
         use std::io::Read;
         use std::process::Stdio;
         let mut child = self
-            .command(&PlumbingCall::new(["cat-file", "blob", oid]))
+            .command(&PlumbingCall::new(["cat-file", "blob", oid]))?
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()?;
