@@ -31,3 +31,39 @@ test system::history::describe\_command::tests::the\_first\_line\_is\_the\_descr
 
 
 [https://github.com/jdx/mise/actions/runs/34144734233/job/101814241727?pr=12918](https://github.com/jdx/mise/actions/runs/34144734233/job/101814241727?pr=12918)
+
+---
+
+fix 12918
+
+---
+
+rebase, then after you push, if the pr stack (both prs) is green after this go ahead and merge it
+
+It has failed and it's in the middle of a retry btw:
+
+test windows\_posix::tests::windows\_path\_quotes\_protect\_semicolons\_without\_adding\_empty\_entries ... ok&#x20;
+failures:&#x20;
+\---- system::history::sync::apply::tests::staged\_lookup\_batches\_checkouts\_and\_preserves\_filename\_boundaries stdout ----&#x20;
+thread 'system::history::sync::apply::tests::staged\_lookup\_batches\_checkouts\_and\_preserves\_filename\_boundaries' (2892) panicked at src\system\history\sync\apply.rs:958:9:&#x20;
+assertion failed: super::has\_staged\_changes(&staged, &staged\_file)&#x20;
+stack backtrace:&#x20;
+&#x20;  0: std::panicking::panic\_handler&#x20;
+&#x20;            at /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library\std\src\panicking.rs:679&#x20;
+&#x20;  1: core::panicking::panic\_fmt&#x20;
+&#x20;            at /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library\core\src\panicking.rs:80&#x20;
+&#x20;  2: core::panicking::panic&#x20;
+&#x20;            at /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library\core\src\panicking.rs:150&#x20;
+&#x20;  3: mise::system::history::sync::apply::tests::staged\_lookup\_batches\_checkouts\_and\_preserves\_filename\_boundaries&#x20;
+&#x20;            at D:\a\mise\mise\src\system\history\sync\apply.rs:958&#x20;
+&#x20;  4: mise::system::history::sync::apply::tests::staged\_lookup\_batches\_checkouts\_and\_preserves\_filename\_boundaries::closure$0&#x20;
+&#x20;            at D:\a\mise\mise\src\system\history\sync\apply.rs:929&#x20;
+&#x20;  5: core::ops::function::FnOnce::call\_once\<mise::system::history::sync::apply::tests::staged\_lookup\_batches\_checkouts\_and\_preserves\_filename\_boundaries::closure\_env$0,tuple$<> >&#x20;
+&#x20;            at /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library\core\src\ops\function.rs:250&#x20;
+&#x20;  6: core::ops::function::FnOnce::call\_once&#x20;
+&#x20;            at /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library\core\src\ops\function.rs:250&#x20;
+note: Some details are omitted, run with \`RUST\_BACKTRACE=full\` for a verbose backtrace.&#x20;
+failures:&#x20;
+&#x20;   system::history::sync::apply::tests::staged\_lookup\_batches\_checkouts\_and\_preserves\_filename\_boundaries&#x20;
+test result: FAILED. 3165 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 148.38s&#x20;
+**error**: test failed, to rerun pass \`--bin mise\`&#x20;
