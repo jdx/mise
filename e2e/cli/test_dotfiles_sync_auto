@@ -157,6 +157,9 @@ wait_until "$b bootstrap dotfiles history diff --path $B/.config/hypr/monitors.l
 b_synced="$(grep -c '\"event\":\"synced\"' b.log || true)"
 wait_until "[[ \$(grep -c '\"event\":\"synced\"' b.log) -gt $b_synced ]]"
 echo 'bind = SUPER, E, exec, thunar' >>~/.config/hypr/bindings.lua
+wait_until "git --git-dir=$origin show main:home/.config/hypr/bindings.lua | grep -q thunar"
+b_synced="$(grep -c '\"event\":\"synced\"' b.log || true)"
+wait_until "[[ \$(grep -c '\"event\":\"synced\"' b.log) -gt $b_synced ]]"
 # The pending count also includes repository metadata, not only live files.
 wait_until "grep '\"event\":\"synced\"' b.log | jq -e 'select(.pending > 0)'"
 assert_not_contains "cat $B/.config/hypr/bindings.lua" "thunar"
