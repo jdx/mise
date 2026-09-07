@@ -36,6 +36,7 @@ pub(crate) struct SetOptions {
 
 /// Connects the setup repository.
 pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) -> Result<()> {
+    super::network::validate_url(&opts.url)?;
     let mut preview_lock = Some(run::lock(store)?);
     let repo = store
         .repo()
@@ -301,7 +302,7 @@ async fn set_inner(
         "history: connected {} ({}); [history.origin] written to {}",
         opts.url,
         opts.mode.as_str(),
-        display_path(crate::config::global_shared_config_path())
+        display_path(crate::cli::dotfiles::track::declaration_file(true)?)
     );
 
     // the first synchronization
@@ -393,7 +394,7 @@ fn unshared_destinations(shared: &share::ShareReport, tracked: &TrackedSet) -> V
 }
 
 fn write_config(url: &str, branch: &str, mode: SyncMode) -> Result<()> {
-    let global = crate::config::global_shared_config_path();
+    let global = crate::cli::dotfiles::track::declaration_file(true)?;
     let mut doc = crate::cli::dotfiles::track::read_document(&global)?;
     let history = doc
         .entry("history")
@@ -458,7 +459,7 @@ fn reset_sync_state(
 /// Disconnects: the declaration is removed; local refs, state, and
 /// checkpoints stay.
 pub(crate) fn remove() -> Result<()> {
-    let global = crate::config::global_shared_config_path();
+    let global = crate::cli::dotfiles::track::declaration_file(true)?;
     let mut doc = crate::cli::dotfiles::track::read_document(&global)?;
     let mut removed = false;
     if let Some(history) = doc.get_mut("history").and_then(Item::as_table_mut) {

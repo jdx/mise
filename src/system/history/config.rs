@@ -47,6 +47,7 @@ pub(crate) fn origin() -> Result<Option<(PathBuf, OriginTomlConfig)>> {
     let mut found = None;
     for (path, layer) in layers()? {
         if let Some(origin) = layer.origin {
+            super::sync::network::validate_url(&origin.url)?;
             found = Some((path, origin));
         }
     }

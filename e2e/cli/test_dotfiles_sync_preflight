@@ -19,6 +19,8 @@ chmod +x "$PWD/b"
 b="$PWD/b"
 echo initial >~/.zshrc
 assert_succeed "mise bootstrap dotfiles track ~/.zshrc"
+assert_fail "mise bootstrap dotfiles origin set https://user:secret@example.invalid/setup.git --yes 2>&1" "must not contain credentials"
+assert_not_contains "mise bootstrap dotfiles origin set https://user:secret@example.invalid/setup.git --yes 2>&1 || true" "user:secret"
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
 assert_succeed "$b bootstrap dotfiles origin set file://$origin --yes"
 assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/mise/config.toml --yes"
@@ -139,6 +141,15 @@ assert_succeed "MISE_GLOBAL_CONFIG_FILE=$override mise bootstrap dotfiles exclud
 assert_contains "cat $override" "~/.noise"
 
 # Damaged status must block sync/pull rather than discard decisions or backups.
+git -C editor rm -q conf.d/invalid.toml
+printf '\n[history.origin]\nurl = "https://example.invalid/other.git"\n' >>editor/config.toml
+git -C editor add config.toml
+git -C editor -c user.name=test -c user.email=test@example.com commit -qm shared-origin
+git -C editor push -q origin main
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" 'history.origin is machine-local'
+assert_not_contains "cat $B/.config/mise/config.toml" 'example.invalid/other.git'
+
 state_file="$B/.local/state/mise/history/sync.json"
 assert_succeed "test -f $state_file"
 printf '{"resolutions": broken' >"$state_file"

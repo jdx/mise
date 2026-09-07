@@ -16,6 +16,25 @@ pub(crate) const MACHINES_PREFIX: &str = "refs/machines/";
 /// Where machine recovery refs live on the remote.
 pub(crate) const REMOTE_MACHINES_PREFIX: &str = "refs/mise-history/";
 
+/// Authentication belongs in a credential helper or SSH agent, never in
+/// persisted connection URLs or the errors recorded in history health.
+pub(crate) fn validate_url(value: &str) -> Result<()> {
+    if let Ok(url) = url::Url::parse(value) {
+        let http = matches!(url.scheme(), "http" | "https");
+        if url.password().is_some()
+            || (http
+                && (!url.username().is_empty()
+                    || url.query().is_some()
+                    || url.fragment().is_some()))
+        {
+            bail!(
+                "setup repository URLs must not contain credentials, query parameters, or fragments; use a Git credential helper or SSH agent"
+            );
+        }
+    }
+    Ok(())
+}
+
 pub(crate) struct Remote<'a> {
     repo: &'a HistoryRepo,
     url: String,
@@ -51,6 +70,7 @@ impl<'a> Remote<'a> {
     }
 
     fn fetch_with(&self, branch: &str, prune: bool) -> Result<bool> {
+        validate_url(&self.url)?;
         let mut args = vec!["fetch", "--quiet", "--no-tags"];
         if prune {
             args.push("--prune");
@@ -92,6 +112,7 @@ impl<'a> Remote<'a> {
         refspecs: &[String],
         lease: Option<(&str, Option<&str>)>,
     ) -> Result<PushOutcome> {
+        validate_url(&self.url)?;
         let mut args = vec!["push".to_string(), "--quiet".to_string()];
         if let Some((branch, expected)) = lease {
             args.push(format!(

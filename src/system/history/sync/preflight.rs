@@ -57,10 +57,10 @@ pub(super) fn prospective(
         let parsed = MiseToml::for_history_preflight(&body, path)?;
         if parsed
             .history_config()
-            .is_some_and(|history| history.origin.is_some_and(|origin| origin.encrypt_backups))
+            .is_some_and(|history| history.origin.is_some())
         {
             bail!(
-                "encrypted backups are not supported yet ({})",
+                "incoming history.origin is machine-local configuration; remove it from the shared setup and use `mise bootstrap dotfiles origin set` on this machine ({})",
                 path.display()
             );
         }
