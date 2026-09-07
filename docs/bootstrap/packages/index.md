@@ -1,4 +1,5 @@
 ---
+description: "Declare and install host packages for your development machines."
 socialDescription: "Declare and install host packages for your development machines."
 ---
 

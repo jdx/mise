@@ -1,4 +1,5 @@
 ---
+description: "Install and switch between Node.js versions for each project."
 socialDescription: "Install and switch between Node.js versions for each project."
 ---
 

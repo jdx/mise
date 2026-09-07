@@ -1,4 +1,5 @@
 ---
+description: "Configure Bash, Zsh, and Fish shell activation as part of machine setup."
 socialDescription: "Configure Bash, Zsh, and Fish shell activation as part of machine setup."
 ---
 

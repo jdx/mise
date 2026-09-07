@@ -1,3 +1,7 @@
+---
+description: "[bootstrap.secrets] declares the sensitive inputs a bootstrap configuration needs without storing their values in mise configuration."
+---
+
 # Bootstrap secret inputs
 
 `[bootstrap.secrets]` declares the sensitive inputs a bootstrap configuration

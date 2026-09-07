@@ -1,3 +1,7 @@
+---
+description: "mise can automatically execute scripts during a mise activate session."
+---
+
 # Hooks
 
 mise can automatically execute scripts during a `mise activate` session. Except for the `preinstall`

@@ -1,3 +1,7 @@
+---
+description: "System packages for Red Hat-family Linux (Fedora, RHEL, CentOS Stream, Rocky, Alma, ...)."
+---
+
 # RPM packages (dnf)
 
 System packages for Red Hat-family Linux (Fedora, RHEL, CentOS Stream, Rocky,

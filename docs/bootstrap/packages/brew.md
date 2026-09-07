@@ -1,3 +1,7 @@
+---
+description: "Homebrew formulae and casks — without requiring Homebrew to be installed."
+---
+
 # Homebrew formulae and casks
 
 Homebrew formulae and casks — **without requiring Homebrew to be installed**.

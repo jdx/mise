@@ -1,4 +1,5 @@
 ---
+description: "Install and manage multiple Erlang versions on the same system."
 socialDescription: "Install and manage multiple Erlang versions on the same system."
 ---
 

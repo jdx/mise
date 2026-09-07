@@ -1,3 +1,7 @@
+---
+description: "This directory contains the mise documentation website, built with VitePress."
+---
+
 # Working on the mise docs
 
 This directory contains the [mise documentation website](https://mise.jdx.dev/),

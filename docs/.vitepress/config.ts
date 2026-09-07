@@ -378,18 +378,10 @@ export default withMermaid(
       ];
     },
     transformPageData(pageData) {
-      const specialDescriptions: Record<string, string> = {
-        "cli/index.md":
-          "Explore mise commands for managing tools, environments, tasks, and machine setup.",
-      };
-      const description =
-        specialDescriptions[pageData.relativePath] ||
-        pageDescription(
-          readFileSync(resolve(configDir, "..", pageData.relativePath), "utf8"),
-          pageData.frontmatter,
-        );
-      if (!description)
-        throw new Error(`Missing social description: ${pageData.relativePath}`);
+      const description = pageDescription(
+        pageData.frontmatter,
+        pageData.relativePath,
+      );
       pageData.description = description;
       pageData.frontmatter.description = description;
       const canonicalUrl = pageUrl(pageData.relativePath);

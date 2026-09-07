@@ -1,3 +1,7 @@
+---
+description: "Install mise inside an image, use it to run project commands, or preinstall tools outside user home directories for shared development containers."
+---
+
 # Docker Cookbook
 
 Install mise inside an image, use it to run project commands, or preinstall tools

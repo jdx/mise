@@ -1,3 +1,7 @@
+---
+description: "For questions about mise, start a GitHub Discussion."
+---
+
 # Contact
 
 For questions about mise, start a [GitHub Discussion](https://github.com/jdx/mise/discussions/new/choose).

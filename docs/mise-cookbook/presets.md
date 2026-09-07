@@ -1,3 +1,7 @@
+---
+description: "A preset is a task you write to create a project's starting configuration."
+---
+
 # Presets
 
 A preset is a task you write to create a project's starting configuration. Store

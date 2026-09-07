@@ -1,4 +1,5 @@
 ---
+description: "Declare and apply macOS preferences from your mise configuration."
 socialDescription: "Declare and apply macOS preferences from your mise configuration."
 ---
 

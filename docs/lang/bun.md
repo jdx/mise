@@ -1,3 +1,7 @@
+---
+description: "mise can be used to install and manage multiple versions of bun on the same system."
+---
+
 # Bun
 
 `mise` can be used to install and manage multiple versions of [bun](https://bun.sh/) on the same system.

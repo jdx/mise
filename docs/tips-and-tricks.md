@@ -1,3 +1,7 @@
+---
+description: "Short recipes for common workflows."
+---
+
 # Tips & Tricks
 
 Short recipes for common workflows. Each section links to the full guide when setup or

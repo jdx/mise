@@ -1,4 +1,5 @@
 ---
+description: "Manage Linux systemd user services and timers from mise.toml."
 socialDescription: "Manage Linux systemd user services and timers from mise.toml."
 ---
 

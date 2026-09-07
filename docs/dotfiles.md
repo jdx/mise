@@ -1,3 +1,7 @@
+---
+description: "Declare dotfiles in [dotfiles] to manage complete files and directories, or a named block or line in a file shared with other tools."
+---
+
 # Dotfiles
 
 > [!WARNING]

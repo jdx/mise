@@ -1,3 +1,7 @@
+---
+description: "A collection of shell utilities that build on mise."
+---
+
 # Shell tricks
 
 A collection of shell utilities that build on mise.

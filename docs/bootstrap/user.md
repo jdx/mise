@@ -1,4 +1,5 @@
 ---
+description: "Declare and apply your user's login shell."
 socialDescription: "Declare and apply your user's login shell."
 ---
 

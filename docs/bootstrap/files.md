@@ -1,4 +1,5 @@
 ---
+description: "Manage system files and directories, including paths that require root privileges."
 socialDescription: "Manage system files and directories, including paths that require root privileges."
 ---
 

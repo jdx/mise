@@ -1,4 +1,5 @@
 ---
+description: "Clone, update, and manage Git repositories from mise.toml."
 socialDescription: "Clone, update, and manage Git repositories from mise.toml."
 ---
 

@@ -1,3 +1,7 @@
+---
+description: "mise's embedded Lua 5.1 runtime provides modules for plugin hooks, including backend, tool, environment, and package plugins."
+---
+
 # Plugin Lua Modules
 
 mise's embedded Lua 5.1 runtime provides modules for plugin hooks, including backend, tool,

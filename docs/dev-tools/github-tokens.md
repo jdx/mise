@@ -1,4 +1,5 @@
 ---
+description: "Configure GitHub authentication for release discovery and tool downloads."
 socialDescription: "Configure GitHub authentication for release discovery and tool downloads."
 ---
 

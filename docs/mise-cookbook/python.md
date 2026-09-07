@@ -1,3 +1,7 @@
+---
+description: "Choose a recipe for an existing requirements-based project, a uv project, or a standalone Python script."
+---
+
 # Python Cookbook
 
 Choose a recipe for an existing requirements-based project, a uv project, or a

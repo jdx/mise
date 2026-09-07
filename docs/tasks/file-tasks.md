@@ -1,4 +1,5 @@
 ---
+description: "Define project tasks as standalone scripts with mise metadata."
 socialDescription: "Define project tasks as standalone scripts with mise metadata."
 ---
 

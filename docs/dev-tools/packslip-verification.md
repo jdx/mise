@@ -1,4 +1,5 @@
 ---
+description: "Discover releases, verify publishers, and enforce Packslip installation policies."
 socialDescription: "Discover releases, verify publishers, and enforce Packslip installation policies."
 ---
 

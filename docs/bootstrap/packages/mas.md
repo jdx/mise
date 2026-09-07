@@ -1,3 +1,7 @@
+---
+description: "Mac App Store apps via the mas CLI."
+---
+
 # Mac App Store applications (mas)
 
 Mac App Store apps via the [`mas`](https://github.com/mas-cli/mas) CLI.

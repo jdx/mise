@@ -1,3 +1,7 @@
+---
+description: "mise oci build turns a mise.toml into a container image, with one OCI layer per installed tool."
+---
+
 # mise oci <Badge type="warning" text="experimental" />
 
 `mise oci build` turns a `mise.toml` into a container image, with one

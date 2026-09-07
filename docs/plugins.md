@@ -1,3 +1,7 @@
+---
+description: "Plugins add installation logic, environment directives, or bootstrap package managers to mise."
+---
+
 # Plugins
 
 Plugins add installation logic, environment directives, or bootstrap package managers to

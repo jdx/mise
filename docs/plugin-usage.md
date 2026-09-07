@@ -1,3 +1,7 @@
+---
+description: "Use a plugin when an integration needs custom installation logic, environment directives, or a host package manager."
+---
+
 # Using Plugins
 
 Use a plugin when an integration needs custom installation logic, environment directives,

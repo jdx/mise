@@ -1,3 +1,7 @@
+---
+description: "Encrypt individual environment variable values directly in mise.toml using age encryption."
+---
+
 # Direct age Encryption <Badge type="warning" text="experimental" />
 
 Encrypt individual environment variable values directly in `mise.toml` using [age](https://github.com/FiloSottile/age) encryption. Encryption and decryption are built into mise. The optional `age-keygen` command below comes from the separate age CLI.

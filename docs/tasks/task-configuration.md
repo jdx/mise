@@ -1,4 +1,5 @@
 ---
+description: "Explore task options for commands, dependencies, arguments, and execution."
 socialDescription: "Explore task options for commands, dependencies, arguments, and execution."
 ---
 

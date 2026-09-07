@@ -1,3 +1,7 @@
+---
+description: "mise can be used to manage multiple elixir versions on the same system."
+---
+
 # Elixir
 
 `mise` can be used to manage multiple [`elixir`](https://elixir-lang.org/) versions on the same system.

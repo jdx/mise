@@ -1,3 +1,7 @@
+---
+description: "Highlight scripts embedded in mise.toml and metadata in file tasks, then add language-server features with otter.nvim."
+---
+
 # Neovim Cookbook
 
 Highlight scripts embedded in `mise.toml` and metadata in file tasks, then add

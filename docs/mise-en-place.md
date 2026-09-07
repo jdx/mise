@@ -1,3 +1,7 @@
+---
+description: "Listen to the mise theme song with the player below, or download the MP3."
+---
+
 # mise-en-place: The Song
 
 Listen to the mise theme song with the player below, or [download the MP3](/mise-en-place.mp3).

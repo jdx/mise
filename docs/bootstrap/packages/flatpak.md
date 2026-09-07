@@ -1,3 +1,7 @@
+---
+description: "Flatpak applications and runtimes installed system-wide or for the current user via the flatpak CLI."
+---
+
 # Flatpak
 
 Flatpak applications and runtimes installed system-wide or for the current user via the

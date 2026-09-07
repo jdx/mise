@@ -1,3 +1,7 @@
+---
+description: "mise reads .tool-versions and supports legacy asdf plugins."
+---
+
 # Comparison to asdf
 
 mise reads `.tool-versions` and supports [legacy asdf plugins](/dev-tools/backends/asdf.html).

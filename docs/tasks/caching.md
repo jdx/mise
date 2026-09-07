@@ -1,3 +1,7 @@
+---
+description: "Use ordinary sources and outputs checks to skip work that is already up to date."
+---
+
 # Task caching
 
 Use ordinary `sources` and `outputs` checks to skip work that is already up to

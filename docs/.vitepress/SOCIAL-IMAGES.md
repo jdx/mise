@@ -7,14 +7,15 @@ no rendering service or system font is required. Image URLs include a content
 hash of the final PNG bytes so title, artwork, font, and renderer changes get a
 new URL.
 
-Descriptions default to the first standalone prose paragraph in the Markdown
-source. Extraction skips headings, lists (including generated CLI metadata),
-code, components, and callouts. Link labels and inline code remain readable.
-CLI pages therefore use their generated command help without manual edits.
-The CLI index has a dedicated summary in the site configuration.
+Every Markdown page must provide a non-empty string in frontmatter `description`.
+Missing, blank, or non-string descriptions fail the docs build with the page path.
+There is no automatic fallback to page prose or the site description.
+CLI generation writes this field from command help, with a dedicated summary for
+the CLI index; do not edit generated CLI pages by hand. VitePress's built-in 404
+page uses its built-in description and remains marked noindex.
 
-Set frontmatter `description` to override the automatic summary for HTML,
-Open Graph, Twitter, and structured metadata. Set `socialDescription` when the
+The required `description` supplies HTML, Open Graph, Twitter, and structured
+metadata. Set optional `socialDescription` when the
 image needs a shorter editorial subtitle, for example:
 
 ```yaml
@@ -25,7 +26,7 @@ socialDescription: Signed releases and verified downloads.
 Subtitles are limited to approximately 100 characters and two measured lines.
 Titles use at most three lines, shrinking and truncating when necessary. Both
 have reserved space separate from the logo and footer. Empty page summaries
-fail the build so new pages cannot silently inherit generic site copy.
+fail the build even when a `socialDescription` is supplied.
 
 `docs:build` tests text wrapping and PNG rendering, then checks the built HTML
 for matching Open Graph/Twitter metadata and the exact image expected from each

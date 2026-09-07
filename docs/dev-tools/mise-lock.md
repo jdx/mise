@@ -1,4 +1,5 @@
 ---
+description: "Lock resolved tool versions and artifact checksums for reproducible installations."
 socialDescription: "Lock resolved tool versions and artifact checksums for reproducible installations."
 ---
 

@@ -1,4 +1,5 @@
 ---
+description: "Connect your editor, language server, and debugger to mise-managed tools."
 socialDescription: "Connect your editor, language server, and debugger to mise-managed tools."
 ---
 

@@ -1,4 +1,5 @@
 ---
+description: "Manage development environments with mise, pronounced “meez.”"
 socialDescription: "Manage development environments with mise, pronounced “meez.”"
 ---
 

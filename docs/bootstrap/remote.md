@@ -1,4 +1,5 @@
 ---
+description: "Apply your bootstrap configuration to remote machines over SSH."
 socialDescription: "Apply your bootstrap configuration to remote machines over SSH."
 ---
 

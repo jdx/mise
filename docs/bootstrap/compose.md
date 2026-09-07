@@ -1,4 +1,5 @@
 ---
+description: "Declare and manage long-running Docker Compose projects."
 socialDescription: "Declare and manage long-running Docker Compose projects."
 ---
 

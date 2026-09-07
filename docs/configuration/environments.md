@@ -1,3 +1,7 @@
+---
+description: "Config environments select additional files such as mise.development.toml and mise.production.toml."
+---
+
 # Config Environments
 
 Config environments select additional files such as `mise.development.toml` and

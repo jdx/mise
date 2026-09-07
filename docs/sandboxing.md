@@ -1,3 +1,7 @@
+---
+description: "mise can restrict filesystem, network, and environment access for commands launched by mise exec and mise run."
+---
+
 # Sandboxing
 
 mise can restrict filesystem, network, and environment access for commands launched by

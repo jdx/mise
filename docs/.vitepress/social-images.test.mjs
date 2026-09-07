@@ -12,17 +12,21 @@ import {
   wrapTitle,
   writeSocialCard,
 } from "./social-images.mjs";
-import { extractDescription, pageDescription } from "./social-descriptions.mjs";
+import { pageDescription } from "./social-descriptions.mjs";
 
-test("summaries skip metadata, components, callouts, and code while preserving prose", () => {
-  const source =
-    '---\ntitle: Example\n---\n# Example\n\n<script setup>\nimport X from "x";\n</script>\n\n::: warning\nAvoid this.\n:::\n\n- **Usage:** `mise use`\n\n```sh\nmise use\n```\n\nInstall [tools](https://example.com) with `mise` &amp; friends.\n';
+test("descriptions require a non-empty string even when a subtitle is supplied", () => {
+  for (const description of [undefined, null, "", " \n ", false, 123, [], {}]) {
+    assert.throws(
+      () =>
+        pageDescription(
+          { description, socialDescription: "Subtitle" },
+          "guide.md",
+        ),
+      /frontmatter description: guide.md/,
+    );
+  }
   assert.equal(
-    extractDescription(source),
-    "Install tools with mise & friends.",
-  );
-  assert.equal(
-    pageDescription(source, { description: "Custom summary." }),
+    pageDescription({ description: "  Custom\nsummary.  " }, "guide.md"),
     "Custom summary.",
   );
 });
