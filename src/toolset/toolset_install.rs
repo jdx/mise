@@ -255,8 +255,19 @@ impl Toolset {
     pub async fn install_all_versions(
         &mut self,
         config: &mut Arc<Config>,
+        versions: Vec<ToolRequest>,
+        opts: &InstallOptions,
+    ) -> Result<Vec<ToolVersion>> {
+        self.install_all_versions_with_progress(config, versions, opts, None)
+            .await
+    }
+
+    pub(crate) async fn install_all_versions_with_progress(
+        &mut self,
+        config: &mut Arc<Config>,
         mut versions: Vec<ToolRequest>,
         opts: &InstallOptions,
+        progress: Option<Box<dyn InstallProgress>>,
     ) -> Result<Vec<ToolVersion>> {
         if versions.is_empty() {
             // Configured plugins are still installed when no tools need work
@@ -280,14 +291,16 @@ impl Toolset {
         } else {
             opts.reason.clone()
         };
-        let mut install_progress = (!opts.raw && !opts.dry_run)
-            .then(|| {
-                install_progress(
-                    &mpr,
-                    versions.iter().map(|tr| (tool_key(tr), tr.to_string())),
-                )
-            })
-            .flatten();
+        let mut install_progress = progress.or_else(|| {
+            (!opts.raw && !opts.dry_run)
+                .then(|| {
+                    install_progress(
+                        &mpr,
+                        versions.iter().map(|tr| (tool_key(tr), tr.to_string())),
+                    )
+                })
+                .flatten()
+        });
         if install_progress.is_none() {
             mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
         }
@@ -706,7 +719,11 @@ impl Toolset {
         if should_refresh_remote_versions(tr, &pre_resolve_backend, &resolve_options) {
             resolve_options.refresh_remote_versions = true;
         }
-        let mut tv = tr.resolve(config, &resolve_options).await?;
+        let mut tv = crate::ui::resolve_progress::scope(
+            tool_progress.map(|p| p.reporter()),
+            tr.resolve(config, &resolve_options),
+        )
+        .await?;
         let backend = tv.backend()?;
         backend::ensure_backend_enabled(&backend.get_type())?;
         if let Some(dir) = &opts.install_dir {

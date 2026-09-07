@@ -7,6 +7,7 @@ pub(crate) mod install_progress;
 pub(crate) mod multi_progress_report;
 pub(crate) mod progress_report;
 pub(crate) mod prompt;
+pub(crate) mod resolve_progress;
 pub(crate) mod style;
 pub(crate) mod table;
 pub(crate) mod text_install_progress;

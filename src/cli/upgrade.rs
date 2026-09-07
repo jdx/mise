@@ -195,6 +195,7 @@ impl Upgrade {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let ts = ToolsetBuilder::new()
+            .with_resolution_progress(!self.is_dry_run() && !self.raw)
             .with_args(&self.tool)
             .with_scope(self.scope())
             .build(&config)
@@ -225,7 +226,14 @@ impl Upgrade {
             None
         };
         let mut outdated = ts
-            .list_outdated_versions_filtered(&config, self.bump, &opts, filter_tools, exclude_tools)
+            .list_outdated_versions_with_progress(
+                &config,
+                self.bump,
+                &opts,
+                filter_tools,
+                exclude_tools,
+                !self.is_dry_run() && !self.raw,
+            )
             .await;
         self.warn_if_newer_versions_hidden_by_minimum_release_age(
             &config,

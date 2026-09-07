@@ -284,6 +284,14 @@ impl InstallProgress for TtyInstallProgress {
         }))
     }
 
+    fn queue_tool(&self, key: &str) {
+        let mut state = self.state.lock().unwrap();
+        state.queue_tool(key);
+        if let Some(index) = state.index_of(key) {
+            self.row(index, &state.tools[index], ProgressStatus::Pending);
+        }
+    }
+
     fn set_waiting(&self, key: &str, dependencies: Vec<String>) {
         let mut state = self.state.lock().unwrap();
         state.set_waiting(key, dependencies);

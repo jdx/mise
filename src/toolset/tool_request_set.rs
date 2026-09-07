@@ -47,20 +47,6 @@ impl ToolRequestSet {
     //         .collect()
     // }
 
-    /// Lists requests whose complete backend-managed install state is unsatisfied.
-    pub(crate) async fn missing_tools_for_install(
-        &self,
-        config: &Arc<Config>,
-    ) -> Vec<&ToolRequest> {
-        let mut tools = vec![];
-        for tr in self.tools.values().flatten() {
-            if tr.is_os_supported() && !tr.is_install_satisfied(config).await {
-                tools.push(tr);
-            }
-        }
-        tools
-    }
-
     pub(crate) fn list_tools(&self) -> Vec<&Arc<BackendArg>> {
         self.tools.keys().collect()
     }
