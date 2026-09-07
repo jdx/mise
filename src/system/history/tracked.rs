@@ -749,7 +749,7 @@ pub(crate) fn normalize(path: &Path) -> PathBuf {
 /// A symlink leaf is tracked as a link, never as its destination.
 pub(crate) fn normalize_target(path: &Path) -> PathBuf {
     let expanded = file::replace_path(path);
-    if !expanded.is_symlink()
+    if !file::is_symlink_or_junction(&expanded)
         && let Ok(resolved) = dunce::canonicalize(&expanded)
     {
         return lexical(&resolved);
@@ -915,6 +915,19 @@ mod tests {
         if alternative.exists() {
             assert_eq!(normalize_target(&alternative), normalize_target(&actual));
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn junction_leaf_keeps_its_enrolled_location() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(temp.path()).unwrap();
+        let target = root.join("target");
+        let link = root.join("junction");
+        std::fs::create_dir(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+        assert_eq!(normalize_target(&link), link);
+        assert_ne!(normalize_target(&link), target);
     }
 
     #[test]

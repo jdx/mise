@@ -353,7 +353,7 @@ impl HistoryRepo {
         let mut temporary = tempfile::NamedTempFile::new_in(cache_path.parent().unwrap())?;
         serde_json::to_writer(temporary.as_file_mut(), &cache)?;
         temporary.as_file().sync_all()?;
-        temporary.persist(&cache_path)?;
+        crate::file::persist_atomic(temporary, &cache_path)?;
         Ok(captured)
     }
 

@@ -3,9 +3,9 @@
 //! the current directory never contributes, so no project can change what
 //! personal history captures.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
@@ -99,18 +99,19 @@ pub(crate) fn layers() -> Result<Vec<(PathBuf, HistoryTomlConfig)>> {
         .filter(|path| path.is_file())
         .filter(|path| path.extension().is_some_and(|ext| ext == "toml"));
     for path in files {
-        let toml = match MiseToml::from_file(&path) {
-            Ok(toml) => toml,
-            Err(err) => {
-                warn!("history: skipping {}: {err}", display_path(&path));
-                continue;
-            }
-        };
-        if let Some(history) = toml.history_config() {
+        if let Some(history) = read_layer(&path)? {
             layers.push((path, history));
         }
     }
     Ok(layers)
+}
+
+fn read_layer(path: &Path) -> Result<Option<HistoryTomlConfig>> {
+    // Ignoring a malformed later layer could restore obsolete recipients or
+    // remove exclusions. Fail closed instead of falling back to another policy.
+    let toml = MiseToml::from_file(path)
+        .wrap_err_with(|| format!("cannot read history configuration: {}", display_path(path)))?;
+    Ok(toml.history_config())
 }
 
 /// The effective reload map: glob -> command, a later layer overriding an
@@ -146,4 +147,21 @@ pub(crate) fn exclude_globs() -> Result<Vec<String>> {
         globs.extend(layer.exclude.iter().cloned());
     }
     Ok(globs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_encryption_is_rejected_and_layer_errors_propagate() {
+        let error = toml::from_str::<HistoryTomlConfig>("[encryption]\nrecipents = ['typo']\n")
+            .unwrap_err();
+        assert!(error.to_string().contains("recipents"));
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("config.toml");
+        std::fs::write(&path, "[history.encryption]\nrecipents = ['typo']\n").unwrap();
+        let error = read_layer(&path).unwrap_err();
+        assert!(format!("{error:#}").contains("config.toml"));
+    }
 }

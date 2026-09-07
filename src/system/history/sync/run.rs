@@ -1069,6 +1069,43 @@ mod capture_tests {
     use super::*;
 
     #[test]
+    fn unsaved_observation_only_conflicts_when_there_is_an_incoming_write() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let repo = store.repo().ok_or_else(|| eyre::eyre!("git required"))?;
+        let path = format!(
+            "home/.mise-test-{}",
+            crate::system::history::store::new_uuid()
+        );
+        let saved = ("100644".into(), repo.hash_blob(b"saved")?);
+        let incoming = ("100644".into(), repo.hash_blob(b"incoming")?);
+        let shared = BTreeMap::from([(path.clone(), saved.clone())]);
+        let upstream = reconcile::Upstream::default();
+        let mut status = SyncStatus::default();
+        let mut plans = vec![PathPlan {
+            branch_path: path,
+            publish: Some(Some(saved)),
+            ..Default::default()
+        }];
+        // The missing live file differs from its saved object, just as an
+        // autosave edit still waiting in the debounce queue does. Publishing
+        // saved commits must not inspect it when no incoming write is planned.
+        apply_resolutions(repo, &mut status, &shared, &upstream, &mut plans)?;
+        assert!(plans[0].conflict.is_none());
+        assert!(plans[0].publish.is_some());
+
+        // Conversely, exempting autosave entries from the check would lose
+        // their pending edits when there really is an incoming write.
+        plans[0].apply = Some(Some(incoming));
+        apply_resolutions(repo, &mut status, &shared, &upstream, &mut plans)?;
+        assert_eq!(
+            plans[0].conflict.as_ref().map(|c| c.kind),
+            Some(reconcile::ConflictKind::UnsavedEdits)
+        );
+        Ok(())
+    }
+
+    #[test]
     fn sync_capture_does_not_observe_an_active_write_operation() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let store = Store::open_in(temp.path())?;

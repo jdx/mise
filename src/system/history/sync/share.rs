@@ -35,11 +35,7 @@ impl ShareReport {
 /// Read committed files, including manually saved files missing on disk.
 /// Live directory enumeration is never the authority for a saved version.
 pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareReport> {
-    if tracked
-        .invalid
-        .iter()
-        .any(|entry| entry.reason.contains("encrypt"))
-    {
+    if !tracked.invalid.is_empty() {
         eyre::bail!("invalid dotfile declarations; correct them before publishing");
     }
     let mut report = ShareReport::default();
@@ -68,4 +64,24 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
             .insert(file.path, SharedFile { local, mode, oid });
     }
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_enrollment_blocks_publication_independently_of_wording() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = crate::system::history::checkpoint::Store::open_in(temp.path()).unwrap();
+        let Some(repo) = store.repo() else { return };
+        let tracked = TrackedSet {
+            invalid: vec![crate::system::history::store::PathReason {
+                path: "unrepresentable".into(),
+                reason: "not a portable location".into(),
+            }],
+            ..Default::default()
+        };
+        assert!(current(repo, &tracked).is_err());
+    }
 }
