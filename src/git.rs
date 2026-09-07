@@ -822,7 +822,8 @@ impl GitPlumbing {
     /// and aliases still cannot act on mise's repository because only
     /// plumbing runs here. Prompts are disabled when nobody is attending.
     pub(crate) fn network_output(&self, call: PlumbingCall<'_>) -> Result<std::process::Output> {
-        let git = plumbing_binary().unwrap_or_else(|| Path::new("git"));
+        let git =
+            plumbing_binary().ok_or_else(|| eyre!("no unattended git executable is available"))?;
         let mut cmd = std::process::Command::new(git);
         sanitize_git_command(&mut cmd);
         if !console::user_attended_stderr() {
