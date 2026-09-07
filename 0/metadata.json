@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Z0TBTZXP3NANQP90H4Q65H",
+  "session_id": "01a07e0a-7c1e-7233-be01-c31aab58a199",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T22:46:29.378168Z",
+  "branch": "codex/home-pronunciation",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/.vitepress/theme/HomeHero.vue",
+    "docs/.vitepress/theme/landing.css"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "fcf99fd3a6b1",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 109192,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 899840,
+    "output_tokens": 2469,
+    "api_call_count": 19
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T22:46:29.305364Z",
+    "agent_lines": 29,
+    "agent_removed": 11,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 29,
+    "total_lines_changed": 40,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
