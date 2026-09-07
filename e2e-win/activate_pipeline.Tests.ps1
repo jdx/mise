@@ -8,6 +8,8 @@ Describe 'mise activate pwsh pipeline input' {
         @(
             '[Console]::In.ReadToEnd()'
             "`$args -join '|'"
+            '$nativePath = & cmd.exe /d /c ''echo %PATH%'''
+            '"native-path=$nativePath"'
         ) | Set-Content $reader
         @(
             '[tasks.read-stdin]'
@@ -35,6 +37,7 @@ Describe 'mise activate pwsh pipeline input' {
         $LASTEXITCODE | Should -BeExactly 0
         $output | Should -Match '(?m)^alpha\r?\nbeta\r?$'
         $output | Should -Match '(?m)^-pipelineInput\|value\r?$'
+        $output | Should -Match '(?m)^native-path=[^\r\n]*;[^\r\n]*\r?$'
         $output | Should -Not -Match 'cannot be bound to any parameters'
     }
 }
