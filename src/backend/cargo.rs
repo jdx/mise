@@ -282,16 +282,15 @@ impl Backend for CargoBackend {
                     bail!("cargo-binstall is not available, but cargo.binstall_only is set");
                 }
                 BinstallStatus::Unavailable => match Settings::get().cargo.binstall_native {
-                    Some(true) => {
+                    Some(true)
                         if self
                             .native_binstall(ctx, &tv, NativeBinstallAction::Install)
-                            .await?
-                        {
-                            self.write_install_state_best_effort(&tv);
-                            return Ok(tv.clone());
-                        }
+                            .await? =>
+                    {
+                        self.write_install_state_best_effort(&tv);
+                        return Ok(tv.clone());
                     }
-                    Some(false) => {}
+                    Some(_) => {}
                     None if native_binstall::rollout_warning_active() => {
                         self.native_binstall(ctx, &tv, NativeBinstallAction::WarnOnly)
                             .await?;

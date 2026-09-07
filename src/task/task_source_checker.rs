@@ -289,10 +289,8 @@ fn parent_dir_pops_glob(pattern: &Path) -> bool {
     for component in pattern.components() {
         match component {
             Component::CurDir => {}
-            Component::ParentDir => {
-                if stack.pop() == Some(true) {
-                    return true;
-                }
+            Component::ParentDir if stack.pop() == Some(true) => {
+                return true;
             }
             Component::Normal(part) => {
                 stack.push(part.to_string_lossy().contains(['*', '?', '[', '{']));
