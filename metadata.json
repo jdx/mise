@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Y7XRP5W4XB2VDWMWGV16NE",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-git-history",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/cli/bootstrap/dotfiles/history/describe.md",
+    "docs/cli/bootstrap/dotfiles/history/diff.md",
+    "docs/cli/bootstrap/dotfiles/history/show.md",
+    "docs/cli/bootstrap/dotfiles/rollback.md",
+    "docs/cli/bootstrap/dotfiles/undo.md",
+    "docs/history.md",
+    "e2e/cli/test_dotfiles_review_safety",
+    "man/man1/mise.1",
+    "mise.usage.kdl",
+    "src/cli/dotfiles/history/describe.rs",
+    "src/cli/dotfiles/history/diff.rs",
+    "src/cli/dotfiles/history/show.rs",
+    "src/cli/dotfiles/paths.rs",
+    "src/cli/dotfiles/rollback.rs",
+    "src/cli/dotfiles/undo.rs",
+    "src/system/history/checkpoint.rs",
+    "src/system/history/describe_command.rs",
+    "src/system/history/replay.rs",
+    "src/system/history/scope.rs",
+    "src/system/history/shadow.rs",
+    "src/system/history/store.rs",
+    "src/system/history/tracked.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 57274,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 239872,
+    "output_tokens": 1965,
+    "api_call_count": 7
+  }
+}
