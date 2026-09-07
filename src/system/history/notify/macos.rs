@@ -34,6 +34,12 @@ fn executable(app: &Path) -> PathBuf {
     app.join("Contents/MacOS/mise-notify")
 }
 
+fn complete(app: &Path) -> bool {
+    executable(app).is_file()
+        && app.join("Contents/Info.plist").is_file()
+        && app.join("Contents/Resources/mise.icns").is_file()
+}
+
 pub(super) fn notification(title: &str, body: &str) -> Result<Command> {
     let app = ensure_app(&crate::dirs::DATA.join("notifications"))?;
     Ok(notification_command(&app, title, body))
@@ -47,13 +53,13 @@ fn notification_command(app: &Path, title: &str, body: &str) -> Command {
 
 fn ensure_app(root: &Path) -> Result<PathBuf> {
     let app = app_path(root);
-    if executable(&app).is_file() {
+    if complete(&app) {
         return Ok(app);
     }
     crate::file::create_dir_all(root)?;
     let mut lock = fslock::LockFile::open(&root.join("install.lock"))?;
     lock.lock()?;
-    if executable(&app).is_file() {
+    if complete(&app) {
         return Ok(app);
     }
     let staging = tempfile::tempdir_in(root)?;
@@ -87,6 +93,20 @@ fn ensure_app(root: &Path) -> Result<PathBuf> {
         bail!("could not sign the mise notification helper");
     }
     std::fs::create_dir_all(app.parent().unwrap())?;
+    if app.symlink_metadata().is_ok() {
+        // Preserve an incomplete installation for inspection, rather than
+        // deleting anything a user may have placed in it. The install lock
+        // serializes repair with other mise processes.
+        let quarantine = tempfile::Builder::new()
+            .prefix("incomplete-")
+            .tempdir_in(root)?;
+        std::fs::rename(&app, quarantine.path().join("mise.app"))?;
+        let preserved = quarantine.keep();
+        debug!(
+            "preserved incomplete notification helper at {}",
+            preserved.display()
+        );
+    }
     std::fs::rename(staged, &app)?;
     Ok(app)
 }
@@ -133,5 +153,31 @@ mod tests {
         let root = temp.path().join("not-a-directory");
         std::fs::write(&root, b"").unwrap();
         assert!(ensure_app(&root).is_err());
+    }
+
+    #[test]
+    fn incomplete_installation_is_repaired_without_discarding_its_contents() {
+        for missing in ["Contents/MacOS/mise-notify", "Contents/Resources/mise.icns"] {
+            let temp = tempfile::tempdir().unwrap();
+            let app = ensure_app(temp.path()).unwrap();
+            std::fs::remove_file(app.join(missing)).unwrap();
+            std::fs::write(app.join("inspection.txt"), "preserve me").unwrap();
+            assert_eq!(ensure_app(temp.path()).unwrap(), app);
+            assert!(complete(&app));
+            let preserved = std::fs::read_dir(temp.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .find(|path| {
+                    path.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with("incomplete-")
+                })
+                .unwrap();
+            assert_eq!(
+                std::fs::read_to_string(preserved.join("mise.app/inspection.txt")).unwrap(),
+                "preserve me"
+            );
+        }
     }
 }
