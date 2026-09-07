@@ -1,9 +1,12 @@
 {
   "cli_version": "0.10.5",
   "checkpoint_id": "01M1YE1BGJAFTP1S1R4PAA2C38",
+  "session_id": "01a07cda-106b-7c02-88fa-c11a5c445251",
   "strategy": "manual-commit",
+  "created_at": "2026-09-07T17:18:19.577213Z",
   "branch": "codex/improve-social-previews",
-  "checkpoints_count": 6,
+  "checkpoints_count": 1,
+  "save_step_count": 1,
   "files_touched": [
     "docs/.vitepress/SOCIAL-IMAGES.md",
     "docs/.vitepress/check-social-images.mjs",
@@ -69,34 +72,49 @@
     "docs/tasks/task-configuration.md",
     "docs/troubleshooting.md"
   ],
-  "sessions": [
-    {
-      "metadata": "/0/metadata.json",
-      "transcript": "/0/full.jsonl",
-      "compact_transcript": "/0/transcript.jsonl",
-      "content_hash": "/0/content_hash.txt",
-      "prompt": "/0/prompt.txt"
-    },
-    {
-      "metadata": "/1/metadata.json",
-      "transcript": "/1/full.jsonl",
-      "compact_transcript": "/1/transcript.jsonl",
-      "content_hash": "/1/content_hash.txt",
-      "prompt": "/1/prompt.txt"
-    },
-    {
-      "metadata": "/2/metadata.json",
-      "transcript": "/2/full.jsonl",
-      "compact_transcript": "/2/transcript.jsonl",
-      "content_hash": "/2/content_hash.txt",
-      "prompt": "/2/prompt.txt"
-    }
-  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "d90975c5aefb",
+  "compact_transcript_start": 0,
   "token_usage": {
-    "input_tokens": 364941,
+    "input_tokens": 71567,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 9192576,
-    "output_tokens": 42916,
-    "api_call_count": 119
-  }
+    "cache_read_tokens": 1711488,
+    "output_tokens": 10492,
+    "api_call_count": 26
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T17:18:19.492074Z",
+    "agent_lines": 423,
+    "agent_removed": 25,
+    "human_added": 8,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 431,
+    "total_lines_changed": 456,
+    "agent_percentage": 98.24561403508771,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 4,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "docs/dev-tools/backends/packslip.md": 4
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 427,
+      "agent_lines_removed": 25
+    }
+  ]
 }

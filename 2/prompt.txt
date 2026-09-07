@@ -1,0 +1,33 @@
+i think this is hanging:
+
+test system::files::tests::reconciliation\_preserves\_ownership\_for\_missing\_active\_source ... ok&#x20;
+test system::files::tests::symlink\_each\_also\_treats\_an\_unmanaged\_file\_as\_a\_conflict ... ok&#x20;
+test system::files::tests::symlink\_each\_still\_copies\_on\_windows ... ok&#x20;
+test system::files::tests::test\_character\_class\_target\_expansion ... ok&#x20;
+test system::files::tests::test\_exclude\_bare\_pattern\_matches\_any\_component ... ok&#x20;
+test system::files::tests::test\_exclude\_directory\_component\_takes\_children ... ok&#x20;
+test system::files::tests::test\_exclude\_empty\_matches\_nothing ... ok&#x20;
+test system::files::tests::test\_exclude\_slash\_pattern\_is\_anchored ... ok&#x20;
+test system::files::tests::test\_exclude\_wildcard\_matches\_by\_component ... ok&#x20;
+test system::files::tests::test\_file\_mode\_parse ... ok&#x20;
+test system::files::tests::test\_question\_mark\_target\_expansion ... ok&#x20;
+test system::files::tests::test\_recursive\_wildcard\_matches\_zero\_directories ... ok&#x20;
+test system::files::tests::test\_recursive\_wildcard\_target\_expansion ... ok&#x20;
+test system::files::tests::test\_wildcard\_target\_expansion ... ok&#x20;
+test system::files::tests::test\_windows\_separator\_recursive\_wildcard\_expansion ... ok&#x20;
+test system::files::tests::test\_windows\_separator\_wildcard\_expansion ... ok&#x20;
+test system::files::tests::tracking\_does\_not\_claim\_an\_apply\_footprint ... ok&#x20;
+test system::history::checkpoint::preimages::tests::first\_preimages\_survive\_multiple\_phases\_without\_saving\_siblings ... ok&#x20;
+test system::history::checkpoint::preimages::tests::manual\_preimages\_are\_encrypted\_before\_git\_storage ... ok&#x20;
+test system::history::checkpoint::tests::automatic\_capture\_without\_enrollment\_does\_not\_create\_a\_root ... ok&#x20;
+test system::history::checkpoint::tests::descriptions\_group\_sort\_and\_cap ... ok&#x20;
+test system::history::checkpoint::tests::metadata\_decides\_deduplication ... ok&#x20;
+test system::history::checkpoint::tests::numeric\_commit\_prefixes\_cannot\_silently\_select\_another\_checkpoint ... ok&#x20;
+test system::history::checkpoint::tests::operation\_descriptions\_name\_the\_kind ... ok&#x20;
+test system::history::checkpoint::tests::unavailable\_git\_does\_not\_create\_a\_parallel\_metadata\_history ... ok&#x20;
+test system::history::config::tests::malformed\_encryption\_is\_rejected\_and\_layer\_errors\_propagate ... ok&#x20;
+test system::history::describe\_command::tests::command\_lifecycle\_bounds\_inherited\_output\_and\_keeps\_history ... FAILED&#x20;
+test system::history::describe\_command::tests::the\_first\_line\_is\_the\_description ... ok
+
+
+[https://github.com/jdx/mise/actions/runs/34144734233/job/101814241727?pr=12918](https://github.com/jdx/mise/actions/runs/34144734233/job/101814241727?pr=12918)
