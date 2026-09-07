@@ -751,7 +751,7 @@ jobs:
   #   gh workflow run release.yml --ref <branch> -f finish_draft_tag=v2026.9.2
   finish-draft-resolve:
     needs: [gate]
-    if: needs.gate.outputs.finish-draft == 'true'
+    if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
@@ -783,7 +783,7 @@ jobs:
 
   finish-draft-attest:
     needs: [gate, finish-draft-resolve]
-    if: needs.gate.outputs.finish-draft == 'true'
+    if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-resolve.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       attestations: write
@@ -812,7 +812,7 @@ jobs:
 
   finish-draft-packslip:
     needs: [gate, finish-draft-resolve, finish-draft-attest]
-    if: needs.gate.outputs.finish-draft == 'true'
+    if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-attest.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -878,7 +878,7 @@ jobs:
 
   finish-draft-publish:
     needs: [gate, finish-draft-resolve, finish-draft-attest, finish-draft-packslip]
-    if: needs.gate.outputs.finish-draft == 'true'
+    if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-packslip.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
