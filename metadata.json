@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1Y8KCTB28E5YNWBVX0M30SG",
   "strategy": "manual-commit",
   "branch": "codex/dotfiles-git-acceptance",
-  "checkpoints_count": 3,
+  "checkpoints_count": 4,
   "files_touched": [
     "e2e/cli/test_bootstrap_from_git_dumb_http"
   ],
@@ -28,13 +28,20 @@
       "compact_transcript": "/2/transcript.jsonl",
       "content_hash": "/2/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/3/metadata.json",
+      "transcript": "/3/full.jsonl",
+      "compact_transcript": "/3/transcript.jsonl",
+      "content_hash": "/3/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 28456,
+    "input_tokens": 74492,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 3056640,
-    "output_tokens": 9335,
-    "api_call_count": 35
+    "cache_read_tokens": 3168896,
+    "output_tokens": 9909,
+    "api_call_count": 39
   }
 }

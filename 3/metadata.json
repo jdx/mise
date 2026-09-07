@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Y8KCTB28E5YNWBVX0M30SG",
+  "session_id": "01a07c89-2b87-7df3-8a5d-cc8ad4b79b64",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T15:43:15.783122Z",
+  "branch": "codex/dotfiles-git-acceptance",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_bootstrap_from_git_dumb_http"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "b97affbe9004",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 46036,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 112256,
+    "output_tokens": 574,
+    "api_call_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T15:43:15.768286Z",
+    "agent_lines": 36,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 36,
+    "total_lines_changed": 36,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 84,
+      "user_lines_removed": 12,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "e2e-win/activate_pipeline.Tests.ps1": 36,
+        "src/shell/pwsh.rs": 24,
+        "src/shell/snapshots/mise__shell__pwsh__tests__activate.snap": 24
+      },
+      "user_removed_per_file": {
+        "src/shell/pwsh.rs": 6,
+        "src/shell/snapshots/mise__shell__pwsh__tests__activate.snap": 6
+      }
+    }
+  ]
+}
