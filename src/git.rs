@@ -835,12 +835,14 @@ impl GitPlumbing {
         let mut git_dir = OsString::from("--git-dir=");
         git_dir.push(&self.git_dir);
         cmd.arg(git_dir);
-        cmd.args([
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-c",
-            "advice.fetchShowForcedUpdates=false",
-        ]);
+        // A private empty directory is an unambiguous hooks path on every
+        // platform, unlike Unix null-device spellings on native Windows.
+        let hooks = tempfile::tempdir()?;
+        let mut hooks_config = OsString::from("core.hooksPath=");
+        hooks_config.push(hooks.path());
+        cmd.arg("-c")
+            .arg(hooks_config)
+            .args(["-c", "advice.fetchShowForcedUpdates=false"]);
         cmd.args(&call.args);
         if let Some(cwd) = call.cwd {
             cmd.current_dir(cwd);
@@ -1496,5 +1498,33 @@ mod plumbing_tests {
             ]))
             .unwrap();
         assert!(!global.status.success() || global.stdout.is_empty());
+    }
+
+    #[test]
+    fn network_commands_override_hooks_with_a_private_directory() {
+        if plumbing_binary().is_none() {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let repo = GitPlumbing::new(temp.path().join("network.git"));
+        repo.init_bare().unwrap();
+        repo.run(PlumbingCall::new([
+            "config",
+            "core.hooksPath",
+            "untrusted-hooks",
+        ]))
+        .unwrap();
+        let out = repo
+            .network_output(PlumbingCall::new(["config", "--get", "core.hooksPath"]))
+            .unwrap();
+        assert!(out.status.success());
+        let hooks = String::from_utf8(out.stdout).unwrap();
+        let hooks = Path::new(hooks.trim());
+        assert!(hooks.is_absolute());
+        assert_ne!(hooks, Path::new("/dev/null"));
+        assert!(
+            !hooks.exists(),
+            "temporary hooks directory was not cleaned up"
+        );
     }
 }

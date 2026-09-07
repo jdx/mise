@@ -42,8 +42,8 @@ assert_contains "cat $PWD/connect.log" "machine-local configuration (private unl
 assert_contains "cat $PWD/connect.log" "published"
 assert "git --git-dir=$origin ls-tree -r --name-only main | LC_ALL=C sort | tr '\n' ' '" ".mise-history/format.toml config.toml tracked/home/.config/hypr/bindings.lua "
 assert "git --git-dir=$origin show main:.mise-history/format.toml | grep -c 'format = 1'" "1"
-assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'url = "file://'
-assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'sync = "sync"'
+assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" 'url = "file://'
+assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" 'sync = "sync"'
 assert_contains "mise bootstrap dotfiles status" "mode sync, machine laptop"
 assert "git --git-dir=$origin for-each-ref --format='%(refname)' refs/mise-history | grep -c ." "2"
 # private files never reach the branch or the machine refs
@@ -254,7 +254,7 @@ assert_succeed "mise bootstrap dotfiles sync"
 assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
 
 # ---- fetch-only publishes nothing; disconnecting keeps local history
-assert_succeed "mise settings set history.sync fetch-only"
+assert_succeed "MISE_GLOBAL_CONFIG_FILE=$MISE_CONFIG_DIR/config.local.toml mise settings set history.sync fetch-only"
 echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
 assert_contains "mise bootstrap dotfiles sync 2>&1" "nothing new to publish"
 assert "git --git-dir=$origin show main:tracked/home/.config/hypr/monitors.lua" "monitor=DP-1"
@@ -266,7 +266,7 @@ assert "mise bootstrap dotfiles history --json -n 0 | jq length | awk '{print (\
 # knew is read as a deletion; the local files are published to it
 origin2="$PWD/origin2.git"
 git init -q --bare -b main "$origin2"
-assert_succeed "mise settings set history.sync sync"
+assert_succeed "MISE_GLOBAL_CONFIG_FILE=$MISE_CONFIG_DIR/config.local.toml mise settings set history.sync sync"
 assert_contains "mise bootstrap dotfiles origin set file://$origin2 --name laptop --yes 2>&1" "previous one's sync state is discarded"
 assert "git --git-dir=$origin2 show main:tracked/home/.config/hypr/monitors.lua" "monitor=DP-2"
 assert_not_contains "mise bootstrap dotfiles status" "incoming change(s) pending"
@@ -283,3 +283,48 @@ git --git-dir="$store" for-each-ref refs/setup refs/machines >"$PWD/refs-after"
 assert_succeed "diff $PWD/refs-before $PWD/refs-after"
 assert_succeed "diff $PWD/status-before $MISE_STATE_DIR/history/sync.json"
 assert_succeed "diff $PWD/config-before $MISE_CONFIG_DIR/config.toml"
+
+# A cleanup failure must retain the primary refusal and still attempt the
+# remaining ref restorations, including the connected upstream.
+REAL_PREVIEW_GIT="$(command -v git)"
+export REAL_PREVIEW_GIT
+export PREVIEW_FAIL_ONCE="$PWD/fail-cleanup-once"
+export PREVIEW_CLEANUP_LOG="$PWD/cleanup-commands"
+mkdir -p "$PWD/preview-git"
+cat >"$PWD/preview-git/git" <<'EOF'
+#!/usr/bin/env bash
+case " $* " in
+  *' update-ref '*)
+    printf '%s\n' "$*" >>"$PREVIEW_CLEANUP_LOG"
+    if test -f "$PREVIEW_FAIL_ONCE"; then
+      rm "$PREVIEW_FAIL_ONCE"
+      echo 'injected preview cleanup failure' >&2
+      exit 1
+    fi
+    ;;
+esac
+exec "$REAL_PREVIEW_GIT" "$@"
+EOF
+chmod +x "$PWD/preview-git/git"
+touch "$PREVIEW_FAIL_ONCE"
+upstream_before="$(git --git-dir="$store" rev-parse refs/setup/upstream)"
+assert_fail "PATH=$PWD/preview-git:\$PATH MISE_YES=0 mise bootstrap dotfiles origin set file://$origin --name declined </dev/null >$PWD/cleanup-failed.log 2>&1"
+assert_contains "cat $PWD/cleanup-failed.log" 'not connected'
+assert_contains "cat $PWD/cleanup-failed.log" 'injected preview cleanup failure'
+assert_contains "cat $PWD/cleanup-failed.log" 'could not completely restore'
+assert_succeed "test \$(wc -l <$PREVIEW_CLEANUP_LOG) -gt 1"
+assert "git --git-dir=$store rev-parse refs/setup/upstream" "$upstream_before"
+
+# A base-stream file without a declaration on this machine is neither
+# installed nor published as a deletion on the next sync.
+git clone -q "$origin2" "$PWD/foreign-setup"
+mkdir -p "$PWD/foreign-setup/tracked/home"
+echo foreign >"$PWD/foreign-setup/tracked/home/.foreign-only"
+git -C "$PWD/foreign-setup" add .
+git -C "$PWD/foreign-setup" commit -qm 'file owned by another setup'
+git -C "$PWD/foreign-setup" push -q origin main
+assert_succeed "mise bootstrap dotfiles sync"
+assert_succeed "mise bootstrap dotfiles pull --yes"
+assert_fail "test -e $HOME/.foreign-only"
+assert_succeed "mise bootstrap dotfiles sync"
+assert "git --git-dir=$origin2 show main:tracked/home/.foreign-only" "foreign"

@@ -466,7 +466,11 @@ fn prepare(
                 .map(|(path, object)| (path.clone(), object.clone()))
                 .collect(),
         };
-        reconcile::reconcile(repo, shared, &selected, sync_state, unsaved)
+        let mut plans = reconcile::reconcile(repo, shared, &selected, sync_state, unsaved)?;
+        // Old acknowledgements are not authority to delete a path this
+        // machine no longer declares or selects.
+        plans.retain(|plan| eligible(&roots, set, &plan.branch_path));
+        Ok::<_, eyre::Report>(plans)
     };
     let mut plans = reconcile_set(tracked)?;
     apply_resolutions(repo, status, shared, upstream, &mut plans)?;
@@ -607,14 +611,13 @@ fn apply_resolutions(
 /// sources always; a tracked entry's stream only when it is the one this
 /// machine selects (its variant, or the base stream when it has none), so
 /// another platform's version is never applied here and never read as a
-/// change. A path no entry covers yet (a fresh machine before its
-/// configuration arrived) takes the base stream, what a declaration
-/// without variants selects; a variant stream waits for the declaration.
+/// change. Undeclared paths wait for prospective incoming configuration;
+/// their absence from this machine is not a publication of a deletion.
 pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
     match roots.locate(branch_path) {
         Located::Tracked { path, variant } => match tracked.entry_for(&path) {
-            Some(entry) => entry.variant == variant,
-            None => variant.is_none(),
+            Some(entry) => entry.policy.share && entry.variant == variant,
+            None => false,
         },
         Located::Config(_) | Located::Source(_) | Located::Marker => true,
         Located::Unmapped => false,

@@ -48,21 +48,45 @@ pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) 
     if !accepted {
         // Preview fetches must not change the active connection, even when
         // validation or privacy checks fail before the prompt.
-        for (name, _) in repo.list_refs(MACHINES_PREFIX)? {
-            if !previous_machines.iter().any(|(old, _)| old == &name) {
-                repo.delete_ref(&name)?;
+        let mut cleanup_errors = Vec::new();
+        match repo.list_refs(MACHINES_PREFIX) {
+            Ok(refs) => {
+                for (name, _) in refs {
+                    if !previous_machines.iter().any(|(old, _)| old == &name)
+                        && let Err(err) = repo.delete_ref(&name)
+                    {
+                        cleanup_errors.push(format!("{name}: {err:#}"));
+                    }
+                }
             }
+            Err(err) => cleanup_errors.push(format!("listing fetched machine refs: {err:#}")),
         }
         for (name, oid) in previous_machines {
-            let current = repo.ref_oid(&name)?;
-            repo.update_ref(&name, &oid, current.as_deref())?;
-        }
-        match previous_upstream {
-            Some(oid) => {
-                let current = repo.ref_oid(UPSTREAM_REF)?;
-                repo.update_ref(UPSTREAM_REF, &oid, current.as_deref())?;
+            let restored = repo
+                .ref_oid(&name)
+                .and_then(|current| repo.update_ref(&name, &oid, current.as_deref()));
+            if let Err(err) = restored {
+                cleanup_errors.push(format!("{name}: {err:#}"));
             }
-            None => repo.delete_ref(UPSTREAM_REF)?,
+        }
+        let restored = match previous_upstream {
+            Some(oid) => repo
+                .ref_oid(UPSTREAM_REF)
+                .and_then(|current| repo.update_ref(UPSTREAM_REF, &oid, current.as_deref())),
+            None => repo.delete_ref(UPSTREAM_REF),
+        };
+        if let Err(err) = restored {
+            cleanup_errors.push(format!("{UPSTREAM_REF}: {err:#}"));
+        }
+        if !cleanup_errors.is_empty() {
+            let message = format!(
+                "could not completely restore setup preview refs: {}; retry connecting before syncing",
+                cleanup_errors.join("; ")
+            );
+            return Err(match result {
+                Err(err) => err.wrap_err(message),
+                Ok(()) => eyre::eyre!(message),
+            });
         }
     }
     result

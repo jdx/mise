@@ -19,6 +19,17 @@ pub(crate) const REMOTE_MACHINES_PREFIX: &str = "refs/mise-history/";
 /// Authentication belongs in a credential helper or SSH agent, never in
 /// persisted connection URLs or the errors recorded in history health.
 pub(crate) fn validate_url(value: &str) -> Result<()> {
+    let http_like = value
+        .trim_start()
+        .get(..5)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("http:"))
+        || value
+            .trim_start()
+            .get(..6)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https:"));
+    if http_like && url::Url::parse(value).is_err() {
+        bail!("invalid HTTP setup repository URL; use a Git credential helper for authentication");
+    }
     if let Ok(url) = url::Url::parse(value) {
         let http = matches!(url.scheme(), "http" | "https");
         if url.password().is_some()
@@ -33,6 +44,24 @@ pub(crate) fn validate_url(value: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_url;
+
+    #[test]
+    fn malformed_http_remotes_fail_without_echoing_credentials() {
+        for value in [
+            "https://secret@example.com:bad/repo",
+            "HTTP://secret@[broken/repo",
+        ] {
+            let error = validate_url(value).unwrap_err().to_string();
+            assert!(!error.contains("secret"));
+        }
+        assert!(validate_url("git@github.com:jdx/dotfiles.git").is_ok());
+        assert!(validate_url("/tmp/setup.git").is_ok());
+    }
 }
 
 pub(crate) struct Remote<'a> {
