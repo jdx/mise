@@ -1710,6 +1710,8 @@ The glob as written by `exclude`
 .SH "MISE BOOTSTRAP DOTFILES MACHINES"
 List the machines with recovery refs in the setup repository
 
+Experimental: enable with `mise settings experimental=true`.
+
 This machine first, then every machine whose refs the last
 `mise bootstrap dotfiles sync` fetched. Their checkpoints are addressed as
 `<machine>/<ref>`: `mise bootstrap dotfiles rollback \-\-to laptop/latest \-\-all`
@@ -1727,6 +1729,8 @@ Output in JSON format
 Print help
 .SH "MISE BOOTSTRAP DOTFILES ORIGIN"
 Connect, disconnect, or purge the setup repository
+
+Experimental: enable with `mise settings experimental=true`.
 
 `set <url>` connects one repository that holds the shared setup branch
 and this machine's recovery refs. Before anything leaves the machine it

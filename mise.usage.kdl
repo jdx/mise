@@ -798,6 +798,8 @@ Removes the glob from `[history] exclude` in the global config.
             long_help #"""
 List the machines with recovery refs in the setup repository
 
+Experimental: enable with `mise settings experimental=true`.
+
 This machine first, then every machine whose refs the last
 `mise bootstrap dotfiles sync` fetched. Their checkpoints are addressed as
 `<machine>/<ref>`: `mise bootstrap dotfiles rollback --to laptop/latest --all`
@@ -809,6 +811,8 @@ recovers a machine's backed-up files; their journals are data only.
         cmd origin help="Connect, disconnect, or purge the setup repository" effect=destructive {
             long_help #"""
 Connect, disconnect, or purge the setup repository
+
+Experimental: enable with `mise settings experimental=true`.
 
 `set <url>` connects one repository that holds the shared setup branch
 and this machine's recovery refs. Before anything leaves the machine it

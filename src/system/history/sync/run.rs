@@ -359,7 +359,14 @@ pub(crate) fn sync(
     if let Err(err) = &result {
         status.last_error = Some(format!("{err:#}"));
     }
-    write_status(state_dir, &status)?;
+    if let Err(write_error) = write_status(state_dir, &status) {
+        return match result {
+            Err(error) => Err(error.wrap_err(format!(
+                "also failed to record sync health: {write_error:#}"
+            ))),
+            Ok(()) => Err(write_error),
+        };
+    }
     result.map(|()| outcome)
 }
 
