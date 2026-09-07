@@ -87,7 +87,7 @@ config_roots = ["service-root"]
 
         $out = mise bootstrap packages apply --manager winget --update --dry-run --yes 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
-        $out | Should -BeLike '*winget source update --disable-interactivity*'
+        $out | Should -BeLike '*winget source update --accept-source-agreements --disable-interactivity*'
         $out | Should -BeLike '*winget install --id Mise.Does.Not.Exist.0123456789 --exact --silent --accept-source-agreements --accept-package-agreements --disable-interactivity*'
     }
 

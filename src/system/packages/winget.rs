@@ -9,29 +9,56 @@ use crate::result::Result;
 // APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND. WinGet returns the HRESULT as
 // a signed process exit code on Windows.
 const NO_APPLICATIONS_FOUND: i32 = -1_978_335_212;
+const UPDATE_NOT_APPLICABLE: i32 = -1_978_335_189;
 
 /// Windows Package Manager via winget.
 pub(crate) struct WingetManager {}
 
 impl WingetManager {
+    /// Creates a WinGet package manager.
     pub(crate) fn new() -> Self {
         Self {}
     }
 
+    /// Refreshes configured WinGet sources before a mutating operation.
     async fn refresh(&self, dry_run: bool) -> Result<()> {
-        let args = vec![
-            "source".to_string(),
-            "update".to_string(),
-            "--disable-interactivity".to_string(),
-        ];
+        let args = source_update_args();
         if dry_run {
             miseprintln!("winget {}", args.join(" "));
             return Ok(());
         }
-        run_winget(&args, "source update").await
+        run_winget(&args, "source update", &[]).await
     }
 }
 
+/// Builds the non-interactive source refresh arguments.
+fn source_update_args() -> Vec<String> {
+    [
+        "source",
+        "update",
+        "--accept-source-agreements",
+        "--disable-interactivity",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+/// Builds a side-effect-free exact-ID installed-state query.
+fn list_args(request: &PackageRequest) -> Vec<String> {
+    [
+        "list",
+        "--id",
+        request.name.as_str(),
+        "--exact",
+        "--disable-interactivity",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+/// Builds exact-ID install or upgrade arguments for a package request.
 fn package_args(command: &str, request: &PackageRequest) -> Vec<String> {
     let mut args = vec![
         command.to_string(),
@@ -51,6 +78,7 @@ fn package_args(command: &str, request: &PackageRequest) -> Vec<String> {
     args
 }
 
+/// Compares an installed version with an optional opaque version pin.
 fn package_state(request: &PackageRequest, installed: String) -> PackageState {
     match &request.version {
         Some(requested) if requested != &installed => PackageState::VersionMismatch { installed },
@@ -58,6 +86,7 @@ fn package_state(request: &PackageRequest, installed: String) -> PackageState {
     }
 }
 
+/// Extracts the installed version from an exact-ID WinGet list row.
 fn parse_list_row(output: &str, package_id: &str) -> Option<String> {
     output.lines().find_map(|line| {
         let offset = line.rfind(package_id)?;
@@ -73,6 +102,7 @@ fn parse_list_row(output: &str, package_id: &str) -> Option<String> {
     })
 }
 
+/// Classifies WinGet list output as installed, missing, or failed.
 fn query_state(
     code: Option<i32>,
     stdout: &str,
@@ -101,15 +131,9 @@ fn query_state(
     }
 }
 
+/// Queries one package without accepting agreements or changing WinGet state.
 async fn query_package(request: &PackageRequest) -> Result<PackageStatus> {
-    let args = [
-        "list",
-        "--id",
-        request.name.as_str(),
-        "--exact",
-        "--accept-source-agreements",
-        "--disable-interactivity",
-    ];
+    let args = list_args(request);
     debug!("$ winget {}", args.join(" "));
     let output = tokio::process::Command::new("winget")
         .args(args)
@@ -127,7 +151,13 @@ async fn query_package(request: &PackageRequest) -> Result<PackageStatus> {
     })
 }
 
-async fn run_winget(args: &[String], action: &str) -> Result<()> {
+/// Returns whether an exit code is successful for the current operation.
+fn command_succeeded(code: Option<i32>, accepted_exit_codes: &[i32]) -> bool {
+    code == Some(0) || code.is_some_and(|code| accepted_exit_codes.contains(&code))
+}
+
+/// Runs WinGet and accepts only zero plus explicitly allowed no-op codes.
+async fn run_winget(args: &[String], action: &str, accepted_exit_codes: &[i32]) -> Result<()> {
     debug!("$ winget {}", args.join(" "));
     let status = tokio::process::Command::new("winget")
         .args(args)
@@ -136,19 +166,30 @@ async fn run_winget(args: &[String], action: &str) -> Result<()> {
         .stderr(Stdio::inherit())
         .status()
         .await?;
-    if !status.success() {
+    if !command_succeeded(status.code(), accepted_exit_codes) {
         bail!("winget {action} failed with {status}");
     }
     Ok(())
 }
 
-async fn run_packages(command: &str, pkgs: &[PackageRequest], dry_run: bool) -> Result<()> {
+/// Applies a WinGet command to each requested package in order.
+async fn run_packages(
+    command: &str,
+    pkgs: &[PackageRequest],
+    dry_run: bool,
+    accepted_exit_codes: &[i32],
+) -> Result<()> {
     for pkg in pkgs {
         let args = package_args(command, pkg);
         if dry_run {
             miseprintln!("winget {}", args.join(" "));
         } else {
-            run_winget(&args, &format!("{command} {}", pkg.name)).await?;
+            run_winget(
+                &args,
+                &format!("{command} {}", pkg.name),
+                accepted_exit_codes,
+            )
+            .await?;
         }
     }
     Ok(())
@@ -184,14 +225,14 @@ impl SystemPackageManager for WingetManager {
         if opts.update && !pkgs.is_empty() {
             self.refresh(opts.dry_run).await?;
         }
-        run_packages("install", pkgs, opts.dry_run).await
+        run_packages("install", pkgs, opts.dry_run, &[]).await
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if !pkgs.is_empty() {
             self.refresh(opts.dry_run).await?;
         }
-        run_packages("upgrade", pkgs, opts.dry_run).await
+        run_packages("upgrade", pkgs, opts.dry_run, &[UPDATE_NOT_APPLICABLE]).await
     }
 }
 
@@ -265,6 +306,33 @@ mod tests {
     }
 
     #[test]
+    fn list_is_non_interactive_without_accepting_agreements() {
+        assert_eq!(
+            list_args(&req("Example.Tool", None)),
+            vec![
+                "list",
+                "--id",
+                "Example.Tool",
+                "--exact",
+                "--disable-interactivity",
+            ]
+        );
+    }
+
+    #[test]
+    fn source_update_accepts_agreements_non_interactively() {
+        assert_eq!(
+            source_update_args(),
+            vec![
+                "source",
+                "update",
+                "--accept-source-agreements",
+                "--disable-interactivity",
+            ]
+        );
+    }
+
+    #[test]
     fn builds_upgrade_args_without_latest_as_a_literal_version() {
         let args = package_args("upgrade", &req("Example.Tool", None));
         assert_eq!(
@@ -286,6 +354,17 @@ mod tests {
     fn documents_the_no_applications_hresult() {
         assert_eq!(NO_APPLICATIONS_FOUND, -1_978_335_212);
         assert_eq!(NO_APPLICATIONS_FOUND as u32, 0x8A15_0014);
+    }
+
+    #[test]
+    fn upgrade_not_applicable_is_an_accepted_no_op() {
+        assert_eq!(UPDATE_NOT_APPLICABLE as u32, 0x8A15_002B);
+        assert!(command_succeeded(
+            Some(UPDATE_NOT_APPLICABLE),
+            &[UPDATE_NOT_APPLICABLE]
+        ));
+        assert!(!command_succeeded(Some(UPDATE_NOT_APPLICABLE), &[]));
+        assert!(!command_succeeded(Some(-1_978_335_188), &[]));
     }
 
     #[test]
