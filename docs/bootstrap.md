@@ -115,6 +115,13 @@ preflight prevents a missing input from leaving a partially provisioned host.
 17. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
 18. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
+Every mutating run — the full `mise bootstrap`, each `mise bootstrap <part>
+apply`, and the commands that change dotfiles or bootstrap config in place
+(`dotfiles add`, `unapply`, `edit`, `packages use`, `import`, brew `tap`) —
+records a pair of [history checkpoints](/history.html): the tracked files
+before and after the run, plus a journal of what the run changed. Dry runs
+record nothing.
+
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
 `accounts`, `plugins`, `packages`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`,
 `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`,
@@ -213,6 +220,15 @@ mise bootstrap macos launchd-agents status
 mise bootstrap linux systemd-units status
 mise bootstrap firewall status
 mise bootstrap user status
+```
+
+Use `mise bootstrap dotfiles history` to see the checkpoints bootstrap has recorded — a pair per
+mutating run, with the tracked files before and after. See [History](/history.html).
+
+```sh
+mise bootstrap dotfiles history
+mise bootstrap dotfiles history show latest
+mise bootstrap dotfiles history diff 11 12
 ```
 
 `mise bootstrap status --missing` checks the whole declarative bootstrap

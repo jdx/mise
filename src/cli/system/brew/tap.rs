@@ -31,7 +31,7 @@ pub(crate) struct SystemBrewTap {
 
     /// Print the config change without writing it
     #[usage(long, short = 'n')]
-    dry_run: bool,
+    pub(super) dry_run: bool,
 
     /// Write to this config file or directory
     #[usage(

@@ -182,6 +182,10 @@ export const sidebar: SidebarItem[] = [
         text: "User Login Shell",
         link: "/bootstrap/user",
       },
+      {
+        text: "Dotfiles history",
+        link: "/history",
+      },
     ],
   },
   {

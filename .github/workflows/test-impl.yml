@@ -149,6 +149,12 @@ jobs:
       # The full E2E suite runs on Linux. Tests whose filenames contain `macos`
       # are also discovered and exercised here for platform-specific coverage.
       - run: mise run test:e2e macos
+      # Generation snapshots shell out to git and need the Xcode Command
+      # Line Tools guard exercised on a real macOS runner.
+      - run: mise run test:e2e e2e/cli/test_dotfiles_history_bootstrap
+      - run: mise run test:e2e e2e/cli/test_dotfiles_history
+      - run: mise run test:e2e e2e/cli/test_dotfiles_track
+      - run: mise run test:e2e e2e/cli/test_dotfiles_history_policies
 
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}

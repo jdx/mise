@@ -15,7 +15,6 @@ use crate::config::Settings;
 use crate::file::touch_dir;
 use crate::ui::progress_report::SingleReport;
 
-#[cfg(unix)]
 use std::ffi::OsString;
 
 pub(crate) struct Git {
@@ -653,6 +652,266 @@ fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     }
 }
 
+/// A git binary mise can run unattended for its own plumbing, or None.
+///
+/// On macOS `/usr/bin/git` is a shim that opens the Xcode Command Line Tools
+/// installer dialog when the tools are absent, so it only counts once
+/// `xcode-select -p` confirms an installation. Any other git on PATH
+/// (Homebrew, MacPorts) is taken as-is.
+pub(crate) fn plumbing_binary() -> Option<&'static Path> {
+    static BIN: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
+        // spawnable as-is: on Windows that is `git.exe`, which a plain
+        // lookup of `git` does not find
+        let git = crate::file::which_spawnable("git")?;
+        if cfg!(target_os = "macos") && git == Path::new("/usr/bin/git") {
+            let installed = std::process::Command::new("xcode-select")
+                .arg("-p")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success());
+            if !installed {
+                return None;
+            }
+        }
+        Some(git)
+    });
+    BIN.as_deref()
+}
+
+/// One invocation of git plumbing against a [`GitPlumbing`] repository.
+#[derive(Debug, Default)]
+pub(crate) struct PlumbingCall<'a> {
+    pub args: Vec<OsString>,
+    /// Adds `--work-tree=<path>`.
+    pub work_tree: Option<&'a Path>,
+    /// Sets `GIT_INDEX_FILE` so the call never touches the repository's own
+    /// index. Applied after [`sanitize_git_command`], which strips it.
+    pub index_file: Option<&'a Path>,
+    pub cwd: Option<&'a Path>,
+    pub stdin: Option<&'a [u8]>,
+}
+
+impl<'a> PlumbingCall<'a> {
+    pub(crate) fn new<I, S>(args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<OsString>,
+    {
+        Self {
+            args: args.into_iter().map(Into::into).collect(),
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn work_tree(mut self, path: &'a Path) -> Self {
+        self.work_tree = Some(path);
+        self
+    }
+
+    pub(crate) fn index_file(mut self, path: &'a Path) -> Self {
+        self.index_file = Some(path);
+        self
+    }
+
+    pub(crate) fn cwd(mut self, path: &'a Path) -> Self {
+        self.cwd = Some(path);
+        self
+    }
+
+    pub(crate) fn stdin(mut self, bytes: &'a [u8]) -> Self {
+        self.stdin = Some(bytes);
+        self
+    }
+}
+
+/// Runs git plumbing against a repository mise owns (a bare "shadow" repo),
+/// isolated from the user's git configuration.
+///
+/// Every call ignores the system and global gitconfig, so `filter.*`
+/// (git-crypt, LFS), `core.hooksPath`, `core.excludesFile`, aliases, and
+/// credential helpers from the user's setup cannot act on mise's repository,
+/// and pins a fixed committer identity. Only plumbing commands should be run
+/// through it; porcelain (`commit`, `checkout`) would consult hooks.
+#[derive(Debug)]
+pub(crate) struct GitPlumbing {
+    git_dir: PathBuf,
+}
+
+impl GitPlumbing {
+    pub(crate) fn new(git_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            git_dir: git_dir.into(),
+        }
+    }
+
+    pub(crate) fn git_dir(&self) -> &Path {
+        &self.git_dir
+    }
+
+    /// Whether the repository has been initialised.
+    pub(crate) fn exists(&self) -> bool {
+        self.git_dir.join("HEAD").is_file()
+    }
+
+    /// Creates the bare repository if needed. Idempotent.
+    pub(crate) fn init_bare(&self) -> Result<()> {
+        if self.exists() {
+            return Ok(());
+        }
+        if let Some(parent) = self.git_dir.parent() {
+            crate::file::create_dir_all(parent)?;
+        }
+        let mut cmd = self.base_command()?;
+        cmd.args(["init", "--bare", "--quiet"]).arg(&self.git_dir);
+        run_plumbing(cmd, None)?;
+        for (key, value) in [
+            ("core.autocrlf", "false"),
+            ("core.logAllRefUpdates", "false"),
+            ("gc.auto", "0"),
+            #[cfg(unix)]
+            ("core.symlinks", "true"),
+        ] {
+            self.run(PlumbingCall::new(["config", key, value]))?;
+        }
+        Ok(())
+    }
+
+    /// Runs the call, failing on a non-zero exit with stderr in the error.
+    pub(crate) fn run(&self, call: PlumbingCall<'_>) -> Result<()> {
+        self.output(call).map(|_| ())
+    }
+
+    /// Runs the call and returns its stdout bytes.
+    pub(crate) fn output(&self, call: PlumbingCall<'_>) -> Result<Vec<u8>> {
+        let cmd = self.command(&call)?;
+        run_plumbing(cmd, call.stdin)
+    }
+
+    /// Runs the call and returns its full output without treating a non-zero
+    /// exit as an error, for commands whose status carries meaning.
+    pub(crate) fn output_unchecked(&self, call: PlumbingCall<'_>) -> Result<std::process::Output> {
+        let cmd = self.command(&call)?;
+        spawn_plumbing(cmd, call.stdin)
+    }
+
+    /// Runs the call with stdout and stderr inherited, for output that goes
+    /// straight to the terminal (a patch can be as large as a snapshot), and
+    /// returns its status without treating a non-zero exit as an error.
+    pub(crate) fn status_inherited(
+        &self,
+        call: PlumbingCall<'_>,
+    ) -> Result<std::process::ExitStatus> {
+        let mut cmd = self.command(&call)?;
+        cmd.stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .stdin(std::process::Stdio::null());
+        cmd.status()
+            .wrap_err_with(|| format!("failed to run {}", describe_plumbing(&cmd)))
+    }
+
+    /// Runs the call and returns its trimmed stdout.
+    pub(crate) fn output_str(&self, call: PlumbingCall<'_>) -> Result<String> {
+        let out = self.output(call)?;
+        Ok(String::from_utf8_lossy(&out).trim().to_string())
+    }
+
+    fn base_command(&self) -> Result<std::process::Command> {
+        let git =
+            plumbing_binary().ok_or_else(|| eyre!("no unattended git executable is available"))?;
+        let mut cmd = std::process::Command::new(git);
+        sanitize_git_command(&mut cmd);
+        let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+        cmd.env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", null)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .env("GIT_AUTHOR_NAME", "mise")
+            .env("GIT_AUTHOR_EMAIL", "mise@localhost")
+            .env("GIT_COMMITTER_NAME", "mise")
+            .env("GIT_COMMITTER_EMAIL", "mise@localhost")
+            .env("LC_ALL", "C")
+            .stdin(std::process::Stdio::null());
+        Ok(cmd)
+    }
+
+    fn command(&self, call: &PlumbingCall<'_>) -> Result<std::process::Command> {
+        let mut cmd = self.base_command()?;
+        let mut git_dir = OsString::from("--git-dir=");
+        git_dir.push(&self.git_dir);
+        cmd.arg(git_dir);
+        if let Some(work_tree) = call.work_tree {
+            let mut arg = OsString::from("--work-tree=");
+            arg.push(work_tree);
+            cmd.arg(arg);
+        }
+        cmd.args([
+            "-c",
+            "core.autocrlf=false",
+            "-c",
+            "core.quotePath=false",
+            "-c",
+            "advice.addEmbeddedRepo=false",
+        ]);
+        cmd.args(&call.args);
+        if let Some(index) = call.index_file {
+            cmd.env("GIT_INDEX_FILE", index);
+        }
+        if let Some(cwd) = call.cwd {
+            cmd.current_dir(cwd);
+        }
+        if call.stdin.is_some() {
+            cmd.stdin(std::process::Stdio::piped());
+        }
+        Ok(cmd)
+    }
+}
+
+fn describe_plumbing(cmd: &std::process::Command) -> String {
+    let args = cmd
+        .get_args()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    format!("git {}", args.join(" "))
+}
+
+fn spawn_plumbing(
+    mut cmd: std::process::Command,
+    stdin: Option<&[u8]>,
+) -> Result<std::process::Output> {
+    use std::io::Write;
+
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd
+        .spawn()
+        .wrap_err_with(|| format!("failed to spawn {}", describe_plumbing(&cmd)))?;
+    if let Some(bytes) = stdin {
+        let mut pipe = child.stdin.take().expect("stdin was piped");
+        // git may exit before reading everything (a bad pathspec, say); that
+        // shows up in its status, so a broken pipe here is not the error.
+        let _ = pipe.write_all(bytes);
+        drop(pipe);
+    }
+    child
+        .wait_with_output()
+        .wrap_err_with(|| format!("failed to run {}", describe_plumbing(&cmd)))
+}
+
+fn run_plumbing(cmd: std::process::Command, stdin: Option<&[u8]>) -> Result<Vec<u8>> {
+    let describe = describe_plumbing(&cmd);
+    let output = spawn_plumbing(cmd, stdin)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(eyre!(
+            "{describe} failed ({}): {}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+    Ok(output.stdout)
+}
+
 impl Debug for Git {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Git").field("dir", &self.dir).finish()
@@ -1130,5 +1389,80 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
             s.gix = Some(backups.0);
             s.libgit2 = Some(backups.1);
         });
+    }
+}
+
+#[cfg(test)]
+mod plumbing_tests {
+    use super::*;
+
+    #[test]
+    fn plumbing_isolates_user_config_and_keeps_the_scratch_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = GitPlumbing::new(tmp.path().join("shadow.git"));
+        let index = tmp.path().join("scratch-index");
+        let work_tree = tmp.path().join("tree");
+        let cmd = repo
+            .command(
+                &PlumbingCall::new(["write-tree"])
+                    .work_tree(&work_tree)
+                    .index_file(&index),
+            )
+            .unwrap();
+        let envs: HashMap<_, _> = cmd
+            .get_envs()
+            .map(|(k, v)| (k.to_os_string(), v.map(|v| v.to_os_string())))
+            .collect();
+        // sanitize_git_command strips GIT_INDEX_FILE; the call sets it afterwards
+        assert_eq!(
+            envs.get(OsStr::new("GIT_INDEX_FILE")).cloned().flatten(),
+            Some(index.into_os_string())
+        );
+        assert_eq!(
+            envs.get(OsStr::new("GIT_DIR")).cloned(),
+            Some(None),
+            "GIT_DIR must be removed rather than inherited"
+        );
+        assert_eq!(
+            envs.get(OsStr::new("GIT_CONFIG_NOSYSTEM"))
+                .cloned()
+                .flatten(),
+            Some(OsString::from("1"))
+        );
+        assert!(envs.contains_key(OsStr::new("GIT_CONFIG_GLOBAL")));
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(args[0].starts_with("--git-dir="), "{args:?}");
+        assert!(args[1].starts_with("--work-tree="), "{args:?}");
+        assert_eq!(args.last().map(String::as_str), Some("write-tree"));
+    }
+
+    #[test]
+    fn init_bare_is_idempotent_and_ignores_global_config() {
+        if plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = GitPlumbing::new(tmp.path().join("shadow.git"));
+        assert!(!repo.exists());
+        repo.init_bare().unwrap();
+        assert!(repo.exists());
+        repo.init_bare().unwrap();
+        let hooks = repo
+            .output_str(PlumbingCall::new(["config", "--get", "gc.auto"]))
+            .unwrap();
+        assert_eq!(hooks, "0");
+        // a global hooksPath or filter must not reach the shadow repository
+        let global = repo
+            .output_unchecked(PlumbingCall::new([
+                "config",
+                "--global",
+                "--get",
+                "core.hooksPath",
+            ]))
+            .unwrap();
+        assert!(!global.status.success() || global.stdout.is_empty());
     }
 }

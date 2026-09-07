@@ -252,6 +252,7 @@ impl Config {
                 GLOB_RESULTS.lock().unwrap().clear();
                 crate::lockfile::invalidate_caches();
                 crate::task::reset();
+                crate::system::files::clear_invalid_declarations();
                 Ok(())
             },
             Duration::from_secs(5),

@@ -86,10 +86,39 @@ export const commands: { [key: string]: Command } = {
           edit: {
             hide: false,
           },
+          history: {
+            hide: false,
+            subcommands: {
+              describe: {
+                hide: false,
+              },
+              diff: {
+                hide: false,
+              },
+              ls: {
+                hide: false,
+              },
+              show: {
+                hide: false,
+              },
+            },
+          },
+          paths: {
+            hide: false,
+          },
+          save: {
+            hide: false,
+          },
           status: {
             hide: false,
           },
+          track: {
+            hide: false,
+          },
           unapply: {
+            hide: false,
+          },
+          untrack: {
             hide: false,
           },
         },

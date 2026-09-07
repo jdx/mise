@@ -1,5 +1,7 @@
 use eyre::Result;
 
+use crate::system::history::OperationScope;
+
 pub(super) mod tap;
 pub(super) mod untap;
 
@@ -23,8 +25,23 @@ enum Commands {
 impl SystemBrew {
     pub(crate) async fn run(self) -> Result<()> {
         match self.command {
-            Commands::Tap(cmd) => cmd.run(),
-            Commands::Untap(cmd) => cmd.run(),
+            Commands::Tap(cmd) => {
+                let dry_run = cmd.dry_run;
+                OperationScope::wrap("bootstrap packages brew tap", "packages", dry_run, async {
+                    cmd.run()
+                })
+                .await
+            }
+            Commands::Untap(cmd) => {
+                let dry_run = cmd.dry_run;
+                OperationScope::wrap(
+                    "bootstrap packages brew untap",
+                    "packages",
+                    dry_run,
+                    async { cmd.run() },
+                )
+                .await
+            }
         }
     }
 }

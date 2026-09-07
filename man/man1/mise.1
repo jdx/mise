@@ -202,14 +202,44 @@ Show the changes needed to apply dotfiles from `[dotfiles]`
 \fBbootstrap dotfiles edit\fR
 Edit a managed dotfile source
 .TP
+\fBbootstrap dotfiles history\fR
+Browse the checkpoints of your dotfiles (experimental)
+.TP
+\fBbootstrap dotfiles history describe\fR
+Set the description of a checkpoint
+.TP
+\fBbootstrap dotfiles history diff\fR
+Compare checkpoints, or the working tree against one
+.TP
+\fBbootstrap dotfiles history ls\fR
+List checkpoints, newest first
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
+\fBbootstrap dotfiles history show\fR
+Show one checkpoint: what triggered it, what changed, and its journal
+.TP
+\fBbootstrap dotfiles paths\fR
+Show what history tracks and under which policies
+.TP
+\fBbootstrap dotfiles save\fR
+Save a checkpoint of the tracked files now
+.TP
 \fBbootstrap dotfiles status\fR
 Show the status of dotfiles from `[dotfiles]`
 .RS
 \fIAliases: \fRls
 .RE
 .TP
+\fBbootstrap dotfiles track\fR
+Track a file or directory where it is (experimental)
+.TP
 \fBbootstrap dotfiles unapply\fR
 Remove dotfiles applied from `[dotfiles]`
+.TP
+\fBbootstrap dotfiles untrack\fR
+Stop tracking a file or directory
 .TP
 \fBbootstrap files\fR
 Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
@@ -1472,6 +1502,200 @@ Target to edit
 mise bootstrap dotfiles edit ~/.zshrc
 mise bootstrap dotfiles edit \-\-apply ~/.config/starship.toml
 .RE
+.SH "MISE BOOTSTRAP DOTFILES HISTORY"
+Browse the checkpoints of your dotfiles (experimental)
+
+Every save, every mutating bootstrap command, and the watcher record a
+checkpoint of the tracked files: the global mise config directory, the
+dotfiles root, and every `[dotfiles]` entry. A checkpoint holds files,
+never package or service state: restoring one restores files. Without a
+subcommand this lists them, newest first.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
+Show at most this many checkpoints (0 for all)
+.RS
+\fIDefault: \fR20
+.RE
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Only checkpoints where this path (or something under it) changed
+.TP
+\fB\-\-trigger\fR \fI<TRIGGER>\fR
+Only checkpoints with this trigger (edit, save, bootstrap, …)
+.TP
+\fB\-\-pending\fR
+Only checkpoints recorded by operations that did not finish
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES HISTORY DESCRIBE"
+Set the description of a checkpoint
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history describe [OPTIONS] <REF> <TEXT>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<REF>\fR
+Checkpoint id, `latest`, `latest~N`, or a uuid prefix
+.TP
+\fB<TEXT>\fR
+The new description
+.SH "MISE BOOTSTRAP DOTFILES HISTORY DIFF"
+Compare checkpoints, or the working tree against one
+
+Without arguments, shows what changed by hand since the latest
+checkpoint. With one reference, shows what that checkpoint changed
+against the one before it. With two, compares the two states.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history diff [OPTIONS] [<A>] [<B>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-p, \-\-patch\fR
+Print the full patch instead of a per\-file summary
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Restrict to one path (a file or a directory)
+.TP
+\fB\-\-exit\-code\fR
+Exit 1 when the two sides differ
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<A>\fR
+Checkpoint id, `latest`, `latest~N`, or a uuid prefix
+.TP
+\fB<B>\fR
+Compare `A` with this checkpoint instead of its predecessor
+.SH "MISE BOOTSTRAP DOTFILES HISTORY LS"
+List checkpoints, newest first
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
+Show at most this many checkpoints (0 for all)
+.RS
+\fIDefault: \fR20
+.RE
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Only checkpoints where this path (or something under it) changed
+.TP
+\fB\-\-trigger\fR \fI<TRIGGER>\fR
+Only checkpoints with this trigger (edit, save, bootstrap, …)
+.TP
+\fB\-\-pending\fR
+Only checkpoints recorded by operations that did not finish
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES HISTORY SHOW"
+Show one checkpoint: what triggered it, what changed, and its journal
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history show [OPTIONS] [<REF>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-files\fR
+List every file in the snapshot
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Resolve `latest~N` among the checkpoints where this path changed
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<REF>\fR
+Checkpoint id, `latest` (the default), `latest~N`, or a uuid prefix
+.SH "MISE BOOTSTRAP DOTFILES PATHS"
+Show what history tracks and under which policies
+
+Every entry is listed with the file that declared it, its policies, and
+how many files it currently covers. Declarations that history could not
+honour are listed as invalid, omitted, or incomplete, so a failed
+enrollment is never mistaken for protection.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles paths [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-preview\fR \fI<PATH>\fR
+Show what tracking this path would capture
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES SAVE"
+Save a checkpoint of the tracked files now
+
+Fails when history cannot save or a requested path is not tracked, so a
+script or an agent gets a trustworthy result; a save that finds nothing
+changed succeeds as a no\-op. `\-\-best\-effort` turns save errors into a
+warning for `set \-e` update scripts.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles save [OPTIONS] [<PATH>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-d, \-\-description\fR \fI<TEXT>\fR
+A description for the checkpoint
+.TP
+\fB\-\-trigger\fR \fI<TRIGGER>\fR
+What is saving: save (the default), agent, or update
+.RS
+\fIDefault: \fRsave
+.RE
+.TP
+\fB\-\-task\fR \fI<ID>\fR
+The task an agent is working on
+.TP
+\fB\-\-label\fR \fI<LABEL>\fR
+A label to find the checkpoint by later
+.TP
+\fB\-\-best\-effort\fR
+Warn instead of failing when history cannot save
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Paths to save; every one must be tracked
 .SH "MISE BOOTSTRAP DOTFILES STATUS"
 Show the status of dotfiles from `[dotfiles]`
 
@@ -1506,6 +1730,51 @@ mise bootstrap dotfiles status ~/.zshrc
 mise bootstrap dotfiles status \-\-json
 mise bootstrap dotfiles status \-\-missing # exit 1 if anything is out of sync
 .RE
+.SH "MISE BOOTSTRAP DOTFILES TRACK"
+Track a file or directory where it is (experimental)
+
+Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
+is, nothing is copied or linked, and history saves a checkpoint of it
+right away. With the history watcher service running, later edits are
+saved automatically; without it, `mise bootstrap dotfiles save` saves them.
+
+`\-\-os` and `\-\-profile` declare a variant: a separate shared stream for
+machines matching that platform or mise environment, so a Mac and a
+Linux box can share the same live path with different contents.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles track [OPTIONS] <PATH> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-os\fR \fI<OS>\fR
+Declare a variant for this platform (macos, linux, linux/arm64, …)
+.TP
+\fB\-\-profile\fR \fI<PROFILE>\fR
+Declare a variant for this mise environment
+.TP
+\fB\-\-no\-autosave\fR
+Save only on `mise bootstrap dotfiles save <path>`, never automatically
+.TP
+\fB\-\-no\-share\fR
+Keep the file out of the shared setup (still backed up)
+.TP
+\fB\-\-no\-backup\fR
+Keep the file out of remote backups (still protected locally)
+.TP
+\fB\-\-local\fR
+Write to config.local.toml (this machine only) instead of config.toml
+.TP
+\fB\-y, \-\-yes\fR
+Accept without prompting
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Paths to track (absolute or starting with ~/)
 .SH "MISE BOOTSTRAP DOTFILES UNAPPLY"
 Remove dotfiles applied from `[dotfiles]`
 
@@ -1544,6 +1813,25 @@ mise bootstrap dotfiles unapply ~/.zshrc
 mise bootstrap dotfiles unapply \-\-dry\-run
 mise bootstrap dotfiles unapply \-\-force \-\-yes
 .RE
+.SH "MISE BOOTSTRAP DOTFILES UNTRACK"
+Stop tracking a file or directory
+
+Removes the `[dotfiles]` track entry (or switches an inherited one off in
+config.local.toml) and stops future captures. The file itself and its
+existing checkpoints are left exactly as they are.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles untrack [OPTIONS] <PATH> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Paths to stop tracking
 .SH "MISE BOOTSTRAP FILES"
 Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
 

@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# Saved versus live: a manual-save file is carried forward from its promoted
+# version by every automatic and protective capture, and only an explicit
+# save (or an operation naming it) promotes what is on disk.
+
+require_cmd git
+
+repo="$MISE_STATE_DIR/history/repo.git"
+count="mise bootstrap dotfiles history --json -n 0 | jq length"
+# the content of a path inside a checkpoint's snapshot (a script, since
+# assertions run in a subshell where shell functions are not available)
+snapshot_of="$PWD/snapshot_of"
+cat <<EOF2 >"$snapshot_of"
+#!/usr/bin/env bash
+git --git-dir="$repo" show "refs/checkpoints/\$(mise bootstrap dotfiles history show "\$1" --json | jq -r .uuid):snapshot/home/\$2"
+EOF2
+chmod +x "$snapshot_of"
+
+mkdir -p ~/.config/app "$MISE_CONFIG_DIR/templates"
+echo v1 >~/.config/app/state.json
+printf 'name = "{{ vars.name }}"\n' >"$MISE_CONFIG_DIR/templates/gitconfig.tera"
+cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
+[vars]
+name = "test"
+[dotfiles]
+"~/.gitconfig" = { source = "templates/gitconfig.tera", mode = "template" }
+EOF2
+
+# tracking with --no-autosave promotes the baseline
+assert_succeed "mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave"
+assert "grep -c 'autosave = false' '$MISE_CONFIG_DIR/config.toml'" "1"
+assert "$count" "1"
+assert "mise bootstrap dotfiles history show 1 --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.config/app/state.json\") | \"\\(.state) \\(.autosave)\"'" "live false"
+assert_succeed "git --git-dir='$repo' rev-parse --verify -q refs/promoted"
+assert "jq -r '.[\"~/.config/app/state.json\"].trigger' '$MISE_STATE_DIR/history/index/saved.json'" "baseline"
+
+# a rewrite of the live file survives unrelated saves unpromoted
+echo v2-live >~/.config/app/state.json
+sed -i.bak 's/name = "test"/name = "test2"/' "$MISE_CONFIG_DIR/config.toml" && rm -f "$MISE_CONFIG_DIR/config.toml.bak"
+assert_succeed "mise bootstrap dotfiles save"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited mise/config.toml"
+assert "$snapshot_of latest .config/app/state.json" "v1"
+assert "mise bootstrap dotfiles history show latest --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.config/app/state.json\") | .state'" "saved"
+assert_contains "mise bootstrap dotfiles history diff --patch --path ~/.config/app/state.json" "+v2-live"
+assert "git --git-dir='$repo' rev-list --count refs/promoted" "1"
+
+# an explicit save of the path promotes it
+assert_succeed "mise bootstrap dotfiles save ~/.config/app/state.json"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited app/state.json"
+assert "$snapshot_of latest .config/app/state.json" "v2-live"
+assert "mise bootstrap dotfiles history show latest --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.config/app/state.json\") | .state'" "live"
+assert "git --git-dir='$repo' rev-list --count refs/promoted" "2"
+assert "jq -r '.[\"~/.config/app/state.json\"] | \"\\(.trigger) \\(.checkpoint | length)\"' '$MISE_STATE_DIR/history/index/saved.json'" "save 36"
+assert_fail "mise bootstrap dotfiles save ~/.untracked" "is not captured"
+
+# a protective capture records the live contents but never promotes them; the
+# outcome carries the saved version forward, and a no-op run still records nothing
+echo v3-live >~/.config/app/state.json
+cat <<'EOF2' >>"$MISE_CONFIG_DIR/config.toml"
+"~/.x" = { content = "x\n" }
+EOF2
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "mise bootstrap dotfiles history --json | jq -r '.[1].trigger'" "bootstrap-before"
+assert "$snapshot_of 'latest~1' .config/app/state.json" "v3-live"
+assert "mise bootstrap dotfiles history show 'latest~1' --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.config/app/state.json\") | .state'" "protective"
+assert "$snapshot_of latest .config/app/state.json" "v2-live"
+assert "git --git-dir='$repo' rev-list --count refs/promoted" "2"
+n="$(eval "$count")"
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "$count" "$n"
+
+# the saved index is derived from the promotion chain
+rm "$MISE_STATE_DIR/history/index/saved.json"
+assert_succeed "mise bootstrap dotfiles save --description rebuild"
+assert "jq -r '.[\"~/.config/app/state.json\"].trigger' '$MISE_STATE_DIR/history/index/saved.json'" "save"
+
+# a hand-written manual-save entry is promoted by its first capture, never dropped
+mkdir -p ~/.config/other
+echo hand >~/.config/other/state.json
+cat <<'EOF2' >>"$MISE_CONFIG_DIR/config.toml"
+"~/.config/other/state.json" = { mode = "track", autosave = false }
+EOF2
+assert_succeed "mise bootstrap dotfiles save --description hand-written"
+assert "$snapshot_of latest .config/other/state.json" "hand"
+assert "jq -r '.[\"~/.config/other/state.json\"].trigger' '$MISE_STATE_DIR/history/index/saved.json'" "save"
+echo hand2 >~/.config/other/state.json
+assert_succeed "mise bootstrap dotfiles save --description unrelated"
+assert "$snapshot_of latest .config/other/state.json" "hand"
+
+# a saved deletion is a saved absence, not a fresh start: the recreated file
+# stays unsaved until the user saves it again
+rm ~/.config/other/state.json
+assert_succeed "mise bootstrap dotfiles save ~/.config/other/state.json"
+assert "jq -r '.[\"~/.config/other/state.json\"].absent' '$MISE_STATE_DIR/history/index/saved.json'" "true"
+assert_fail "$snapshot_of latest .config/other/state.json"
+echo recreated >~/.config/other/state.json
+assert_succeed "mise bootstrap dotfiles save --description unrelated-again"
+assert_fail "$snapshot_of latest .config/other/state.json"
+assert_succeed "mise bootstrap dotfiles save ~/.config/other/state.json"
+assert "$snapshot_of latest .config/other/state.json" "recreated"
+
+# naming one child of a manual-save directory promotes that child only
+# (the sibling's recorded permissions stay with its saved version too)
+mode_of="$PWD/mode_of"
+cat <<'EOF2' >"$mode_of"
+#!/usr/bin/env bash
+mise bootstrap dotfiles history show latest --json | jq -r --arg p "$1" '.tree.modes | to_entries[] | select(.key | endswith("/" + $p)) | .value'
+EOF2
+chmod +x "$mode_of"
+mkdir -p ~/.config/manual-dir
+echo a1 >~/.config/manual-dir/a
+echo b1 >~/.config/manual-dir/b
+chmod 600 ~/.config/manual-dir/b
+cat <<'EOF2' >>"$MISE_CONFIG_DIR/config.toml"
+"~/.config/manual-dir" = { mode = "track", autosave = false }
+EOF2
+assert_succeed "mise bootstrap dotfiles save --description manual-dir"
+assert "$snapshot_of latest .config/manual-dir/b" "b1"
+assert "$mode_of manual-dir/b" "384"
+echo a2 >~/.config/manual-dir/a
+echo b2 >~/.config/manual-dir/b
+chmod 644 ~/.config/manual-dir/b
+assert_succeed "mise bootstrap dotfiles save ~/.config/manual-dir/a"
+assert "$snapshot_of latest .config/manual-dir/a" "a2"
+assert "$snapshot_of latest .config/manual-dir/b" "b1"
+assert "$mode_of manual-dir/b" "384"
+assert_succeed "mise bootstrap dotfiles save --description unrelated-dir"
+assert "$snapshot_of latest .config/manual-dir/a" "a2"
+assert "$snapshot_of latest .config/manual-dir/b" "b1"
+assert "$mode_of manual-dir/b" "384"
+
+# a permission change alone is a change: an automatic capture records it,
+# and records its removal
+echo 'x = 1' >"$MISE_CONFIG_DIR/perm.toml"
+assert_succeed "mise bootstrap dotfiles save"
+assert "$mode_of perm.toml" ""
+n="$(eval "$count")"
+chmod 600 "$MISE_CONFIG_DIR/perm.toml"
+assert_succeed "mise bootstrap dotfiles save"
+assert "$count" "$((n + 1))"
+assert "$mode_of perm.toml" "384"
+# a permission-only checkpoint is one the path's history lists
+assert "mise bootstrap dotfiles history --json --path ~/.config/mise/perm.toml | jq length" "2"
+assert_contains "mise bootstrap dotfiles history --path ~/.config/mise/perm.toml" "perm.toml"
+chmod 644 "$MISE_CONFIG_DIR/perm.toml"
+assert_succeed "mise bootstrap dotfiles save"
+assert "$count" "$((n + 2))"
+assert "$mode_of perm.toml" ""
+assert "mise bootstrap dotfiles history --json --path ~/.config/mise/perm.toml | jq length" "3"
+
+# a template's rendered output is tracked locally and never shared
+assert "mise bootstrap dotfiles history show latest --json | jq -r '.tree.coverage.entries[] | select(.path == \"~/.gitconfig\") | \"\\(.mode) \\(.share) \\(.backup)\"'" "template false false"
+assert_contains "mise bootstrap dotfiles history show latest --files" "~/.gitconfig"
+
+# pruning compacts the promotion chain, so a promoted version no retained
+# checkpoint holds is freed instead of staying reachable forever
+v1="$(printf 'v1\n' | git --git-dir="$repo" hash-object --stdin)"
+assert_succeed "git --git-dir='$repo' cat-file -e $v1"
+assert "git --git-dir='$repo' rev-list --count refs/promoted | awk '{print (\$1 > 1)}'" "1"
+echo final >~/.config/app/state.json
+assert_succeed "MISE_HISTORY_KEEP_COUNT=1 mise bootstrap dotfiles save ~/.config/app/state.json"
+assert "$count" "1"
+assert "git --git-dir='$repo' rev-list --count refs/promoted" "1"
+assert_fail "git --git-dir='$repo' cat-file -e $v1"
+assert "$snapshot_of latest .config/app/state.json" "final"

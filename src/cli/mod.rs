@@ -20,7 +20,7 @@ mod current;
 mod deactivate;
 mod direnv;
 mod doctor;
-mod dotfiles;
+pub(crate) mod dotfiles;
 mod en;
 mod env;
 pub(crate) mod exec;

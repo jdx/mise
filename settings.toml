@@ -1244,6 +1244,34 @@ env = "MISE_GPG_VERIFY"
 optional = true
 type = "Bool"
 
+[history.enabled]
+default = true
+description = "Record experimental configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save. Requires experimental = true."
+docs = """
+Dotfile tracking and history are experimental. Enable them with `mise settings experimental=true`.
+Interfaces and storage formats may change while experimental.
+
+Every `mise bootstrap` run, every `mise bootstrap <part> apply`, and every `mise bootstrap dotfiles save`
+records a checkpoint under `$MISE_STATE_DIR/history/` so `mise bootstrap dotfiles history` can list, compare, and
+recover file versions. Dry runs never record. Set to `false` to turn recording off; delete that
+directory to discard what was recorded.
+"""
+env = "MISE_HISTORY_ENABLED"
+type = "Bool"
+
+[history.keep.age]
+default = "90d"
+description = "Checkpoints older than this are pruned after each capture. `0` keeps them regardless of age."
+env = "MISE_HISTORY_KEEP_AGE"
+type = "Duration"
+
+[history.keep.count]
+default = 500
+description = "How many checkpoints to retain. The oldest are pruned after each capture, automatic captures before explicit saves and operations; `0` keeps all of them."
+env = "MISE_HISTORY_KEEP_COUNT"
+rust_type = "usize"
+type = "Integer"
+
 [hook_env.cache_ttl]
 default = "0s"
 description = "Cache hook-env directory checks for this duration. Useful for slow filesystems like NFS."

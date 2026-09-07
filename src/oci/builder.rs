@@ -936,6 +936,9 @@ fn build_dotfiles_layer(
         }
 
         match req.mode {
+            // a tracked file lives on the machine that tracks it; an image
+            // has nothing to copy
+            FileMode::Track => continue,
             FileMode::Symlink | FileMode::Copy => {
                 collect_source_as_files(&req.source, &oci_target_path(req)?, &mut entries)
                     .wrap_err_with(|| {

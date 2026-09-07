@@ -1117,6 +1117,34 @@
           "description": "Verify OpenPGP signatures for all tools (built-in, no external gpg required). Set to false to disable.",
           "type": "boolean"
         },
+        "history": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Record experimental configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save. Requires experimental = true.",
+              "type": "boolean"
+            },
+            "keep": {
+              "type": "object",
+              "unevaluatedProperties": false,
+              "properties": {
+                "age": {
+                  "default": "90d",
+                  "description": "Checkpoints older than this are pruned after each capture. `0` keeps them regardless of age.",
+                  "type": "string"
+                },
+                "count": {
+                  "default": 500,
+                  "description": "How many checkpoints to retain. The oldest are pruned after each capture, automatic captures before explicit saves and operations; `0` keeps all of them.",
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
         "hook_env": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1210,7 +1238,8 @@
         "jobs": {
           "default": 8,
           "description": "How many jobs to run concurrently such as tool installs. Values below 1 are treated as 1.",
-          "type": "integer"
+          "type": "integer",
+          "minimum": 0
         },
         "legacy_version_file": {
           "default": true,
@@ -5134,6 +5163,20 @@
           "additionalProperties": false
         }
       }
+    },
+    "history": {
+      "type": "object",
+      "description": "dotfiles history: what is never captured (https://mise.jdx.dev/history.html)",
+      "properties": {
+        "exclude": {
+          "type": "array",
+          "description": "globs never captured by dotfiles history; a `!glob` entry re-includes a path an earlier glob excluded",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "task_config": {
       "description": "configuration for task execution and management",
