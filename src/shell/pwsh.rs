@@ -34,9 +34,11 @@ impl Shell for Pwsh {
             }}
 
             function mise {{
-                [CmdletBinding()]
+                [CmdletBinding(PositionalBinding=$false)]
                 param(
-                    [Parameter(ValueFromRemainingArguments=$true)]  # Allow any number of arguments, including none
+                    [Parameter(ValueFromPipeline=$true)]
+                    [object] $pipelineInput,
+                    [Parameter(ValueFromRemainingArguments=$true, Position=0)]  # Allow any number of arguments, including none
                     [string[]] $arguments = @()  # defaults to an empty array: a bare `mise` binds $null, which Set-StrictMode rejects on .count
                 )
 
@@ -50,11 +52,19 @@ impl Shell for Pwsh {
                 }}
 
                 if ($arguments.count -eq 0) {{
-                    & '{exe}'
+                    if ($MyInvocation.ExpectingInput) {{
+                        $input | & '{exe}'
+                    }} else {{
+                        & '{exe}'
+                    }}
                     _reset_output_encoding
                     return
                 }} elseif ($arguments -contains '-h' -or $arguments -contains '--help') {{
-                    & '{exe}' @arguments
+                    if ($MyInvocation.ExpectingInput) {{
+                        $input | & '{exe}' @arguments
+                    }} else {{
+                        & '{exe}' @arguments
+                    }}
                     _reset_output_encoding
                     return
                 }}
@@ -68,11 +78,19 @@ impl Shell for Pwsh {
 
                 switch ($command) {{
                     {{ $_ -in 'deactivate', 'shell', 'sh' }} {{
-                        & '{exe}' $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                        if ($MyInvocation.ExpectingInput) {{
+                            $input | & '{exe}' $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                        }} else {{
+                            & '{exe}' $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                        }}
                         _reset_output_encoding
                     }}
                     default {{
-                        & '{exe}' $command @remainingArgs
+                        if ($MyInvocation.ExpectingInput) {{
+                            $input | & '{exe}' $command @remainingArgs
+                        }} else {{
+                            & '{exe}' $command @remainingArgs
+                        }}
                         if ($(Test-Path -Path Function:\_mise_hook)){{
                             _mise_hook
                         }}

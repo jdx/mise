@@ -8,9 +8,11 @@ if (-not (Test-Path -Path Env:/__MISE_ORIG_PATH)) {
 }
 
 function mise {
-    [CmdletBinding()]
+    [CmdletBinding(PositionalBinding=$false)]
     param(
-        [Parameter(ValueFromRemainingArguments=$true)]  # Allow any number of arguments, including none
+        [Parameter(ValueFromPipeline=$true)]
+        [object] $pipelineInput,
+        [Parameter(ValueFromRemainingArguments=$true, Position=0)]  # Allow any number of arguments, including none
         [string[]] $arguments = @()  # defaults to an empty array: a bare `mise` binds $null, which Set-StrictMode rejects on .count
     )
 
@@ -24,11 +26,19 @@ function mise {
     }
 
     if ($arguments.count -eq 0) {
-        & '/some/dir/mise'
+        if ($MyInvocation.ExpectingInput) {
+            $input | & '/some/dir/mise'
+        } else {
+            & '/some/dir/mise'
+        }
         _reset_output_encoding
         return
     } elseif ($arguments -contains '-h' -or $arguments -contains '--help') {
-        & '/some/dir/mise' @arguments
+        if ($MyInvocation.ExpectingInput) {
+            $input | & '/some/dir/mise' @arguments
+        } else {
+            & '/some/dir/mise' @arguments
+        }
         _reset_output_encoding
         return
     }
@@ -42,11 +52,19 @@ function mise {
 
     switch ($command) {
         { $_ -in 'deactivate', 'shell', 'sh' } {
-            & '/some/dir/mise' $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+            if ($MyInvocation.ExpectingInput) {
+                $input | & '/some/dir/mise' $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+            } else {
+                & '/some/dir/mise' $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+            }
             _reset_output_encoding
         }
         default {
-            & '/some/dir/mise' $command @remainingArgs
+            if ($MyInvocation.ExpectingInput) {
+                $input | & '/some/dir/mise' $command @remainingArgs
+            } else {
+                & '/some/dir/mise' $command @remainingArgs
+            }
             if ($(Test-Path -Path Function:\_mise_hook)){
                 _mise_hook
             }
