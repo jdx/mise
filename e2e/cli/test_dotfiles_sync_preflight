@@ -7,7 +7,6 @@ origin="$PWD/origin.git"
 git init -q --bare -b main "$origin"
 B="$(dirname "$HOME")/b-home"
 mkdir -p "$B/.config/mise"
-printf '[env]\nB_ONLY = "yes"\n' >"$B/.config/mise/config.toml"
 cat <<EOF >"$PWD/b"
 #!/usr/bin/env bash
 export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
@@ -25,10 +24,7 @@ assert_succeed 'mise bootstrap dotfiles track ~/.config/mise/conf.d'
 assert_fail "mise bootstrap dotfiles origin set https://user:secret@example.invalid/setup.git --yes 2>&1" "must not contain credentials"
 assert_not_contains "mise bootstrap dotfiles origin set https://user:secret@example.invalid/setup.git --yes 2>&1 || true" "user:secret"
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
-mkdir -p "$B/.local/state/mise/history"
-git clone -q --bare "$origin" "$B/.local/state/mise/history/repo.git"
-assert_succeed "$b bootstrap dotfiles origin set file://$origin --yes"
-assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/mise/config.toml --yes"
+assert_succeed "$b bootstrap --from-git file://$origin --yes"
 assert "cat $B/.zshrc" "initial"
 
 case "$(uname -s)" in
@@ -133,9 +129,6 @@ git -C editor add config/config.toml config/conf.d/invalid.toml
 git -C editor -c user.name=test -c user.email=test@example.com commit -qm invalid-conf-d
 git -C editor push -q origin main
 explicit_config="$B/.config/mise/config.toml"
-if [[ -f "$B/.config/mise/config.local.toml" ]]; then
-  explicit_config="$B/.config/mise/config.local.toml"
-fi
 assert_succeed "MISE_GLOBAL_CONFIG_FILE=$explicit_config $b bootstrap dotfiles sync"
 assert_contains "$b bootstrap dotfiles status" "unknown dotfile mode"
 assert_fail "test -e $B/.config/mise/conf.d/invalid.toml"
