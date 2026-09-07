@@ -1,3 +1,7 @@
+---
+description: "System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...)."
+---
+
 # Arch packages (pacman)
 
 System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).

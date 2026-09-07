@@ -1,3 +1,7 @@
+---
+description: "[bootstrap.linux.firewall] declaratively manages a Linux host firewall."
+---
+
 # Linux host firewall
 
 `[bootstrap.linux.firewall]` declaratively manages a Linux host firewall. It

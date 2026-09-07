@@ -1,3 +1,7 @@
+---
+description: "Use tasks to keep infrastructure commands pointed at the same working directory."
+---
+
 # Terraform and OpenTofu Cookbook
 
 Use tasks to keep infrastructure commands pointed at the same working directory.

@@ -1,3 +1,8 @@
+---
+description: "Extend bootstrap packages with custom package manager plugins."
+socialDescription: "Extend bootstrap packages with custom package manager plugins."
+---
+
 # Package Manager Plugins
 
 Package manager plugins extend [`[bootstrap.packages]`](/bootstrap/packages/)

@@ -1,3 +1,7 @@
+---
+description: "Task templates let you define reusable task definitions that multiple tasks can extend."
+---
+
 # Task Templates
 
 Task templates let you define reusable task definitions that multiple tasks can extend. They are particularly useful in monorepos or projects with similar task patterns across components.

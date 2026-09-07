@@ -1,3 +1,7 @@
+---
+description: "Use url_replacements to route requests made by mise's HTTP client through an internal mirror or proxy."
+---
+
 # URL Replacements
 
 Use `url_replacements` to route requests made by mise's HTTP client through an internal

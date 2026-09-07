@@ -1,3 +1,7 @@
+---
+description: "Customize how mise installs tools, resolves configuration, and runs tasks."
+---
+
 # Settings
 
 <script setup>

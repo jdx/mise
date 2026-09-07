@@ -1,3 +1,7 @@
+---
+description: "A tool stub is an executable file that records how to obtain and run one tool."
+---
+
 # Tool Stubs
 
 A tool stub is an executable file that records how to obtain and run one tool.

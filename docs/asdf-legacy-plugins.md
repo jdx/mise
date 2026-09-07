@@ -1,3 +1,7 @@
+---
+description: "mise maintains compatibility with the asdf plugin ecosystem through its asdf backend."
+---
+
 # asdf (Legacy) Plugins
 
 ::: warning

@@ -1,3 +1,7 @@
+---
+description: "Define project shortcuts for an interactive Bash, Zsh, or Fish shell with mise activate."
+---
+
 # Shell Aliases
 
 Define project shortcuts for an interactive Bash, Zsh, or Fish shell with

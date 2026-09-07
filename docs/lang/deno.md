@@ -1,3 +1,7 @@
+---
+description: "mise can be used to install and manage multiple versions of deno on the same system."
+---
+
 # Deno
 
 `mise` can be used to install and manage multiple versions of [deno](https://deno.land/) on the same system.

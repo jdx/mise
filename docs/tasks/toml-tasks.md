@@ -1,3 +1,7 @@
+---
+description: "Tasks can be defined in mise.toml files in different ways."
+---
+
 # TOML-based Tasks
 
 Tasks can be defined in `mise.toml` files in different ways. Trivial tasks can be written into a `[tasks]` section, while more detailed tasks each get their own section.

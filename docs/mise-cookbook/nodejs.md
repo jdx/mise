@@ -1,3 +1,7 @@
+---
+description: "Use mise to select Node.js and your package manager, then run the scripts and dependencies declared by the project."
+---
+
 # Node.js Cookbook
 
 Use mise to select [Node.js](/lang/node.html) and your package manager, then run

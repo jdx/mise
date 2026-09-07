@@ -1,3 +1,7 @@
+---
+description: "mise caches version metadata, computed environments, and task results separately."
+---
+
 # Cache Behavior
 
 mise caches version metadata, computed environments, and task results separately. Start with

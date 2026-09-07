@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Resvg } from "@resvg/resvg-js";
+import { shortenDescription } from "./social-descriptions.mjs";
 
 const fontFile = fileURLToPath(
   new URL("./fonts/SpaceGrotesk.ttf", import.meta.url),
@@ -70,20 +71,34 @@ export function wrapTitle(title, size = 62, width = 720) {
 }
 
 /** Render a title card and address it by the final PNG bytes, including renderer changes. */
-export function socialCard(title) {
+export function socialCard(title, description = "") {
   let size = 62;
   let lines = wrapTitle(title, size);
-  if (lines.length > 4) {
+  if (lines.length > 3) {
     size = 54;
     lines = wrapTitle(title, size);
   }
-  if (lines.length > 4) {
-    lines = lines.slice(0, 4);
-    while (textWidth(`${lines[3]}…`, size) > 720)
-      lines[3] = Array.from(lines[3]).slice(0, -1).join("");
-    lines[3] += "…";
+  if (lines.length > 3) {
+    lines = lines.slice(0, 3);
+    while (textWidth(`${lines[2]}…`, size) > 720)
+      lines[2] = Array.from(lines[2]).slice(0, -1).join("");
+    lines[2] += "…";
   }
-  const start = 298 - ((lines.length - 1) * (size + 14)) / 2;
+  const start = 320 - (lines.length - 1) * (size + 14);
+  let subtitle = shortenDescription(description, 100);
+  while (wrapTitle(subtitle, 32).length > 2) {
+    const words = subtitle.replace(/…$/, "").split(" ");
+    subtitle =
+      words.length > 1
+        ? words.slice(0, -1).join(" ") + "…"
+        : Array.from(subtitle).slice(0, -2).join("") + "…";
+  }
+  const subtitleSvg = wrapTitle(subtitle, 32)
+    .map(
+      (line, i) =>
+        `<text x="64" y="${386 + i * 43}" font-size="32" fill="#c2b6a4">${escapeXml(line)}</text>`,
+    )
+    .join("");
   const heading = lines
     .map(
       (line, i) =>
@@ -96,6 +111,7 @@ export function socialCard(title) {
     <g font-family="Space Grotesk">
       <text x="64" y="85" font-size="30" fill="#c75b7a">mise / docs</text>
       ${heading}
+      ${subtitleSvg}
       <path d="M64 508 H1136" stroke="#3d3540"/>
       <text x="64" y="564" font-size="26" fill="#c2b6a4">mise.jdx.dev</text>
       <text x="1136" y="564" text-anchor="end" font-size="26" fill="#c75b7a">mise</text>
@@ -104,7 +120,7 @@ export function socialCard(title) {
   </svg>`;
   const png = new Resvg(svg, { font: fontOptions }).render().asPng();
   const hash = createHash("sha256").update(png).digest("hex").slice(0, 16);
-  return { svg, png, path: `social/${hash}.png` };
+  return { svg, png, subtitle, path: `social/${hash}.png` };
 }
 
 /** Write the already rendered card to the VitePress output directory. */

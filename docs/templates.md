@@ -1,3 +1,7 @@
+---
+description: "Use Tera expressions to derive configuration values from the project directory, environment, or [vars]."
+---
+
 # Templates
 
 Use Tera expressions to derive configuration values from the project directory,

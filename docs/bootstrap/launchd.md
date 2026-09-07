@@ -1,3 +1,8 @@
+---
+description: "Declare and apply macOS user LaunchAgents in mise.toml."
+socialDescription: "Declare and apply macOS user LaunchAgents in mise.toml."
+---
+
 # macOS LaunchAgents
 
 mise can declare macOS user LaunchAgents in

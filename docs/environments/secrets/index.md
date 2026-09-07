@@ -1,3 +1,7 @@
+---
+description: "Choose how to supply secret values to the project."
+---
+
 # Secrets
 
 Choose how to supply secret values to the project. mise passes resolved values to

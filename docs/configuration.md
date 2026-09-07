@@ -1,3 +1,7 @@
+---
+description: "Configure tools, environment variables, and tasks in mise.toml."
+---
+
 # Configuration
 
 A project's `mise.toml` declares tools, environment variables, and tasks. Global

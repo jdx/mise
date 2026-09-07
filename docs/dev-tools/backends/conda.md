@@ -1,3 +1,7 @@
+---
+description: "Install Conda packages and dependencies directly, without a separate Conda installation."
+---
+
 # Conda Backend
 
 The `conda` backend installs command-line packages and their transitive

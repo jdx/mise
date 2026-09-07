@@ -1,3 +1,7 @@
+---
+description: "Install Ruby command-line applications from RubyGems into separate tool directories."
+---
+
 # gem Backend
 
 The `gem` backend installs Ruby command-line applications from RubyGems into

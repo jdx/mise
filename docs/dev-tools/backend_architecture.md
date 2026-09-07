@@ -1,3 +1,7 @@
+---
+description: "A backend resolves a tool's versions, installs it, and supplies its executable paths and environment."
+---
+
 # Backend Architecture
 
 A backend resolves a tool's versions, installs it, and supplies its executable

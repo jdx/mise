@@ -1,3 +1,7 @@
+---
+description: "The core .NET plugin installs .NET SDKs using Microsoft's official install script."
+---
+
 # .NET
 
 The core .NET plugin installs .NET SDKs using Microsoft's official install script. All SDK versions are

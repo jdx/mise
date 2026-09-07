@@ -1,3 +1,7 @@
+---
+description: "Like rvm, rbenv, or asdf, mise can manage multiple versions of Ruby on the same system."
+---
+
 # Ruby
 
 Like `rvm`, `rbenv`, or `asdf`, `mise` can manage multiple versions of [Ruby](https://www.ruby-lang.org/) on the same system.

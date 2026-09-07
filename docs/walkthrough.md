@@ -1,3 +1,7 @@
+---
+description: "Use this guide to add mise to an existing project and maintain its configuration: select tools, share defaults, upgrade versions, and run everyday commands."
+---
+
 # Walkthrough
 
 Use this guide to add mise to an existing project and maintain its configuration:

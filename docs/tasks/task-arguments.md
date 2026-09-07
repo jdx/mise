@@ -1,3 +1,7 @@
+---
+description: "Define arguments when a task needs named inputs, validation, help, or completions."
+---
+
 # Task Arguments
 
 Define arguments when a task needs named inputs, validation, help, or completions.

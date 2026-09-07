@@ -1,3 +1,7 @@
+---
+description: "Install release binaries using Aqua registry recipes and supported verification checks."
+---
+
 # Aqua Backend
 
 [Aqua](https://aquaproj.github.io/) tools can be used natively in mise. aqua is a Tier 2 backend

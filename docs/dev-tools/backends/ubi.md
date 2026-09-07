@@ -1,3 +1,7 @@
+---
+description: "Migrate deprecated ubi configurations to the GitHub, GitLab, or HTTP backend."
+---
+
 # Ubi Backend <Badge type="danger" text="deprecated" />
 
 ::: warning

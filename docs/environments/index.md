@@ -1,3 +1,7 @@
+---
+description: "Manage project environment variables, secrets, and PATH entries with mise."
+---
+
 # Environments
 
 Define project environment variables in `[env]`. mise supplies them to commands

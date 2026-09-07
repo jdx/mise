@@ -1,3 +1,7 @@
+---
+description: "[bootstrap.services] declaratively manages the lifecycle of existing Linux systemd system units."
+---
+
 # System services
 
 `[bootstrap.services]` declaratively manages the lifecycle of existing Linux

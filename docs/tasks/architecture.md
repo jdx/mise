@@ -1,3 +1,7 @@
+---
+description: "Understanding how mise's task system works helps you write more efficient tasks and troubleshoot dependency issues."
+---
+
 # Task System Architecture
 
 Understanding how mise's task system works helps you write more efficient tasks and troubleshoot dependency issues.

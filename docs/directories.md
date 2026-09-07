@@ -1,3 +1,7 @@
+---
+description: "mise separates configuration, installed tools, disposable metadata, and machine-local state."
+---
+
 # Directory Structure
 
 mise separates configuration, installed tools, disposable metadata, and machine-local state.

@@ -1,3 +1,7 @@
+---
+description: "mise can install Rust/cargo using rustup under the hood."
+---
+
 # Rust
 
 mise can install Rust/cargo using rustup under the hood. It installs rustup if it is not already installed, then

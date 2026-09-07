@@ -1,3 +1,7 @@
+---
+description: "The mise MCP server lets an AI assistant inspect a project's tools, tasks, environment, and configuration, and run mise tasks."
+---
+
 # Model Context Protocol (MCP)
 
 The mise MCP server lets an AI assistant inspect a project's tools, tasks, environment, and

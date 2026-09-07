@@ -1,3 +1,7 @@
+---
+description: "Install tools through legacy asdf-compatible plugin scripts."
+---
+
 # asdf Backend
 
 ::: warning

@@ -1,3 +1,7 @@
+---
+description: "mise deps runs project dependency installers when tracked inputs change or outputs go missing."
+---
+
 # Deps <Badge type="warning" text="experimental" />
 
 `mise deps` runs project dependency installers when tracked inputs change or

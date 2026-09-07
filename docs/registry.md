@@ -1,4 +1,5 @@
 ---
+description: "The registry maps short tool names to one or more installation backends."
 editLink: false
 ---
 

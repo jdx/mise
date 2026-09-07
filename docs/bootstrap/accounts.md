@@ -1,3 +1,7 @@
+---
+description: "[bootstrap.groups] and [bootstrap.users] declaratively manage local Linux accounts."
+---
+
 # Linux users and groups
 
 `[bootstrap.groups]` and `[bootstrap.users]` declaratively manage local Linux

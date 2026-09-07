@@ -1,3 +1,7 @@
+---
+description: "Core tools have installation logic built into mise."
+---
+
 # Core Tools
 
 Core tools have installation logic built into mise. They do not require a separately

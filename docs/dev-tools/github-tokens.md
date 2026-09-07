@@ -1,3 +1,8 @@
+---
+description: "Configure GitHub authentication for release discovery and tool downloads."
+socialDescription: "Configure GitHub authentication for release discovery and tool downloads."
+---
+
 # GitHub Tokens
 
 Many tools in mise are hosted on GitHub. For public releases, mise uses [mise-versions](https://mise-versions.jdx.dev) by default as a shared cache for version lists, release metadata, and GitHub artifact attestations. This avoids most unauthenticated GitHub API calls during normal installs, including CI and Docker builds.

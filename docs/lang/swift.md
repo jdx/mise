@@ -1,3 +1,7 @@
+---
+description: "mise can be used to manage multiple versions of swift on the same system."
+---
+
 # Swift
 
 `mise` can be used to manage multiple versions of [`swift`](https://swift.org/) on the same system. Swift is supported on macOS and Linux.

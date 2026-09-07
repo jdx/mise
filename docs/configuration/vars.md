@@ -1,3 +1,7 @@
+---
+description: "Define reusable configuration variables and reference them in Tera templates."
+---
+
 # Variables
 
 `[vars]` defines values that can be reused in mise configuration templates. Vars are similar to

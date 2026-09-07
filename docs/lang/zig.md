@@ -1,3 +1,7 @@
+---
+description: "mise can be used to install and manage multiple versions of zig on the same system."
+---
+
 # Zig
 
 `mise` can be used to install and manage multiple versions of [zig](https://ziglang.org/) on the same system.

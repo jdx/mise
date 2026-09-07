@@ -1,3 +1,7 @@
+---
+description: "Backend plugins in mise use dedicated backend hooks to manage multiple tools with the plugin:tool format."
+---
+
 # Backend Plugin Development
 
 ::: tip

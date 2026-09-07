@@ -1,3 +1,7 @@
+---
+description: "Environment plugins return variables and PATH entries without installing a versioned tool."
+---
+
 # Environment Plugin Development
 
 Environment plugins return variables and PATH entries without installing a versioned tool.

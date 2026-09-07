@@ -1,3 +1,7 @@
+---
+description: "Install prebuilt tools directly from GitLab release assets."
+---
+
 # GitLab Backend
 
 The `gitlab` backend installs release assets directly from GitLab repositories. It is ideal for tools that distribute pre-built binaries through GitLab releases.

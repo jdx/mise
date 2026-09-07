@@ -29,6 +29,21 @@ for (const file of walk(root).filter((file) => file.endsWith(".html"))) {
   const html = readFileSync(file, "utf8");
   assert.equal(meta(html, "og:title"), meta(html, "twitter:title"));
   assert.equal(meta(html, "og:description"), meta(html, "twitter:description"));
+  assert.equal(meta(html, "description"), meta(html, "og:description"));
+  assert.ok(meta(html, "description").trim(), `Empty description: ${file}`);
+  assert.equal(meta(html, "og:image:type"), "image/png");
+  assert.equal(meta(html, "og:image:width"), "1200");
+  assert.equal(meta(html, "og:image:height"), "630");
+  const canonicals = [...html.matchAll(/<link\b[^>]*rel="canonical"[^>]*>/g)];
+  if (file === join(root, "404.html")) {
+    assert.equal(meta(html, "robots"), "noindex");
+  } else {
+    assert.equal(canonicals.length, 1, `Expected one canonical: ${file}`);
+    assert.equal(
+      canonicals[0][0].match(/href="([^"]+)"/)[1],
+      meta(html, "og:url"),
+    );
+  }
   // Check the actual page title rather than only counting distinct image URLs.
   const decode = (value) =>
     value.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[\da-f]+);/gi, (_, entity) => {
@@ -42,6 +57,17 @@ for (const file of walk(root).filter((file) => file.endsWith(".html"))) {
     / \| mise-en-place$/,
     "",
   );
+  const structured = [
+    ...html.matchAll(
+      /<script\b[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g,
+    ),
+  ]
+    .map(([, json]) => JSON.parse(json))
+    .filter((data) => data["@type"] === "WebPage");
+  assert.equal(structured.length, 1, `Expected one WebPage schema: ${file}`);
+  assert.equal(structured[0].description, decode(meta(html, "description")));
+  assert.equal(structured[0].name, decode(meta(html, "og:title")));
+  assert.equal(structured[0].url, decode(meta(html, "og:url")));
   const heading =
     file === join(root, "index.html")
       ? "Dev tools, environments, and tasks"
@@ -51,13 +77,12 @@ for (const file of walk(root).filter((file) => file.endsWith(".html"))) {
     typeof alt === "string" && alt.trim(),
     `Empty image alt text: ${file}`,
   );
-  assert.equal(
-    decode(alt),
-    heading + " — mise docs",
-    `Wrong image alt text: ${file}`,
-  );
+  const prefix = heading + " — mise docs. ";
+  assert.ok(decode(alt).startsWith(prefix), `Wrong image alt text: ${file}`);
+  const subtitle = decode(alt).slice(prefix.length);
+  assert.ok(subtitle.trim(), `Empty subtitle: ${file}`);
   assert.equal(meta(html, "twitter:card"), "summary_large_image");
-  const expected = socialCard(heading);
+  const expected = socialCard(heading, subtitle);
   const image = meta(html, "og:image");
   assert.equal(meta(html, "twitter:image"), image);
   assert.equal(meta(html, "twitter:image:alt"), meta(html, "og:image:alt"));

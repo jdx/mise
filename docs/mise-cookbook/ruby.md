@@ -1,3 +1,7 @@
+---
+description: "Use mise to select Ruby and tasks to run the application's Bundler and Rails commands."
+---
+
 # Ruby Cookbook
 
 Use mise to select Ruby and tasks to run the application's Bundler and Rails

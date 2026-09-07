@@ -1,3 +1,7 @@
+---
+description: "The aur manager installs packages from the Arch User Repository with yay or paru:"
+---
+
 # Arch User Repository (AUR)
 
 The `aur` manager installs packages from the

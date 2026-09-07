@@ -1,3 +1,7 @@
+---
+description: "Install mise on macOS, Linux, or Windows and connect it to your shell."
+---
+
 # Installing mise
 
 If you are new to `mise`, follow the [Getting Started](/getting-started) guide first.
