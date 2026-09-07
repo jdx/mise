@@ -571,9 +571,14 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
 
+  # !cancelled() replaces the implicit success() gate. Tag publishes skip
+  # e2e-linux; release still runs via !cancelled(), but without a status
+  # check here the default success() treats that skipped ancestor as failure
+  # and skips attest/packslip/publish — leaving the GitHub release stuck as a
+  # draft (see v2026.9.2).
   attest-release:
     needs: release
-    if: needs.release.outputs.created == 'true'
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
     permissions:
       attestations: write
@@ -605,7 +610,7 @@ jobs:
     needs:
       - release
       - attest-release
-    if: needs.release.outputs.created == 'true'
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.attest-release.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -689,7 +694,7 @@ jobs:
       - release
       - attest-release
       - packslip
-    if: needs.release.outputs.created == 'true'
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.attest-release.result == 'success' && needs.packslip.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
