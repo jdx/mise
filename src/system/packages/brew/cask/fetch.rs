@@ -94,16 +94,12 @@ pub(super) async fn fetch_cask_url(
     let mut cask = HTTP_FETCH
         .json_cached::<Cask, _>(url)
         .await
-        .wrap_err_with(|| {
-            format!(
-                "failed to fetch Homebrew cask '{requested_token}' directly. \
-                 mise needs API metadata at api/cask/{requested_token}.json; for a \
-                 third-party tap that means a JSON file on the tap's default branch, \
-                 which most taps do not publish. mise will not proxy to the brew CLI; \
-                 install it with `brew`, or see \
-                 https://mise.jdx.dev/bootstrap/packages/brew.html#third-party-taps"
-            )
-        })?;
+        // Context only. What to do about it depends on which caller failed, and
+        // each of them already says: the parent-tap probe logs and moves on, the
+        // tap path reports that the Ruby definition could not be evaluated
+        // either, and an official cask has no tap story to tell. Mirrors
+        // `api::formula`.
+        .wrap_err_with(|| format!("failed to fetch Homebrew cask '{requested_token}'"))?;
     cask.raw_base = raw_base;
     validate_cask_identity(&cask, requested_token, official_api)?;
     Ok(cask)
