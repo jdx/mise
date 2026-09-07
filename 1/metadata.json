@@ -1,9 +1,11 @@
 {
   "cli_version": "0.10.5",
   "checkpoint_id": "01M1Y7XRP5W4XB2VDWMWGV16NE",
+  "session_id": "01a07c7d-f26d-7142-8334-a0532b50c6cd",
   "strategy": "manual-commit",
+  "created_at": "2026-09-07T15:31:26.148202Z",
   "branch": "codex/dotfiles-git-history",
-  "checkpoints_count": 2,
+  "checkpoints_count": 1,
   "files_touched": [
     "docs/cli/bootstrap/dotfiles/history/describe.md",
     "docs/cli/bootstrap/dotfiles/history/diff.md",
@@ -28,27 +30,36 @@
     "src/system/history/store.rs",
     "src/system/history/tracked.rs"
   ],
-  "sessions": [
-    {
-      "metadata": "/0/metadata.json",
-      "transcript": "/0/full.jsonl",
-      "compact_transcript": "/0/transcript.jsonl",
-      "content_hash": "/0/content_hash.txt",
-      "prompt": ""
-    },
-    {
-      "metadata": "/1/metadata.json",
-      "transcript": "/1/full.jsonl",
-      "compact_transcript": "/1/transcript.jsonl",
-      "content_hash": "/1/content_hash.txt",
-      "prompt": ""
-    }
-  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "4b900563a1f9",
+  "compact_transcript_start": 0,
   "token_usage": {
-    "input_tokens": 101717,
+    "input_tokens": 44443,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 348672,
-    "output_tokens": 3471,
-    "api_call_count": 11
-  }
+    "cache_read_tokens": 108800,
+    "output_tokens": 1506,
+    "api_call_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T15:31:26.137343Z",
+    "agent_lines": 10932,
+    "agent_removed": 19,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 10932,
+    "total_lines_changed": 10951,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
 }
