@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1YB0Y3QQN5Y1VZJXND2H1YA",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-review-cleanup",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dotfiles.md",
+    "e2e/cli/test_dotfiles_alias_enrollment",
+    "src/cli/bootstrap.rs",
+    "src/cli/dotfiles/add.rs",
+    "src/cli/dotfiles/apply.rs",
+    "src/cli/dotfiles/edit.rs",
+    "src/cli/dotfiles/history/describe.rs",
+    "src/cli/dotfiles/history/show.rs",
+    "src/cli/dotfiles/track.rs",
+    "src/cli/dotfiles/unapply.rs",
+    "src/cli/system/brew/mod.rs",
+    "src/cli/system/import.rs",
+    "src/cli/system/install.rs",
+    "src/cli/system/prune.rs",
+    "src/cli/system/upgrade.rs",
+    "src/cli/system/use.rs",
+    "src/git.rs",
+    "src/system/history/checkpoint.rs",
+    "src/system/history/describe_command.rs",
+    "src/system/history/enrollment.rs",
+    "src/system/history/manifest.rs",
+    "src/system/history/recovery.rs",
+    "src/system/history/replay.rs",
+    "src/system/history/scope.rs",
+    "src/system/history/shadow.rs",
+    "src/system/history/store.rs",
+    "src/system/history/sync/apply.rs",
+    "src/system/history/sync/origin.rs",
+    "src/system/history/tracked.rs",
+    "src/system/history/watch/runtime.rs",
+    "src/system/remote.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3582,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 785536,
+    "output_tokens": 554,
+    "api_call_count": 10
+  }
+}
