@@ -338,7 +338,9 @@ async fn pacman_query(names: &[String]) -> Result<String> {
                             )
                 })
         });
-    if !output.status.success() && (output.status.code() != Some(1) || !only_missing) {
+    let valid_result = (output.status.success() && stderr.is_empty())
+        || (output.status.code() == Some(1) && only_missing);
+    if !valid_result {
         bail!("pacman -Q failed: {}", stderr.trim());
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
@@ -597,6 +599,7 @@ mod tests {
         let advisory = "warning: 'fish' is a file, you might want to use -p/--file.\n";
         let cases = [
             (0, String::new(), true),
+            (0, advisory.to_string(), false),
             (1, missing.to_string(), true),
             (1, format!("{missing}{advisory}"), true),
             (1, advisory.to_string(), false),
