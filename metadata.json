@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1WKTK97W8H2QR9MD43G80ZM",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-restack-9",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/cli/bootstrap/dotfiles/machines.md",
+    "docs/cli/bootstrap/dotfiles/origin.md",
+    "man/man1/mise.1",
+    "mise.usage.kdl",
+    "src/cli/dotfiles/machines.rs",
+    "src/cli/dotfiles/origin.rs",
+    "src/system/history/sync/run.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
