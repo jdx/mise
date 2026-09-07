@@ -60,3 +60,38 @@ not_found_auto_install = true
 EOF
 eval "$(mise hook-env --force --shell bash)"
 assert_shims_present
+
+# The explicit opt-out overrides auto-install and lazy declarations, and removes both farms.
+mkdir -p "$MISE_SYSTEM_SHIMS_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+activate_shims = false
+not_found_auto_install = true
+
+[tools]
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] }
+EOF
+export PATH="$MISE_SYSTEM_SHIMS_DIR:$PATH"
+eval "$(mise activate bash --no-hook-env)"
+assert_shims_absent
+case ":$PATH:" in
+  *":$MISE_SYSTEM_SHIMS_DIR:"*) exit 1 ;;
+esac
+eval "$(mise hook-env --force --shell bash)"
+assert_shims_absent
+case ":$PATH:" in
+  *":$MISE_SYSTEM_SHIMS_DIR:"*) exit 1 ;;
+esac
+
+# Fish activation and its subsequent hook honor the same setting.
+assert "fish -c 'mise activate fish | source; mise hook-env --force --shell fish | source; contains -- \"\$MISE_SHIMS_DIR\" \$PATH; echo \$status'" "1"
+
+# Explicit shim-only activation still means what it says.
+eval "$(mise activate bash --shims)"
+assert_shims_present
+
+# An environment override can re-enable normal activation without editing config.
+export MISE_ACTIVATE_SHIMS=true
+eval "$(mise hook-env --force --shell bash)"
+assert_shims_present
+unset MISE_ACTIVATE_SHIMS

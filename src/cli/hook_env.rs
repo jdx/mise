@@ -194,7 +194,8 @@ impl HookEnv {
             .chain(env_watch_files.iter().map(|p| p.as_path().into()))
             .collect();
 
-        let retain_shims = Settings::get().not_found_auto_install || ts.has_lazy_declarations();
+        let retain_shims = Settings::get().activate_shims
+            && (Settings::get().not_found_auto_install || ts.has_lazy_declarations());
         patches.extend(self.build_path_operations(
             &user_paths,
             &tool_paths,

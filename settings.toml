@@ -29,6 +29,32 @@ In that case, using this example again, `/some/other/python` will be after mise'
 env = "MISE_ACTIVATE_AGGRESSIVE"
 type = "Bool"
 
+[activate_shims]
+default = true
+description = "Allow full shell activation to add tool shims to PATH."
+docs = """
+Set to false to keep the user and system tool shim directories out of `PATH` during
+`mise activate` and subsequent shell hooks, even when automatic installation or lazy tools
+would otherwise add them:
+
+```sh
+mise settings set activate_shims false
+```
+
+Restart your shell after changing this setting. For an environment-variable override, set
+`MISE_ACTIVATE_SHIMS=false` before running `mise activate`.
+
+Shims support missing-version auto-installation and first-use installation of lazy tools.
+Disabling them can prevent these commands from being found; use `mise install` or `mise exec`
+explicitly instead. Installed tools still get their real bin directories added to `PATH`.
+
+Configured command wrappers, such as `cargo` through [mr-boxington](https://github.com/jdx/mr-boxington), use a separate
+`command-wrappers/bin` directory and remain active. Explicit `mise activate --shims` also
+continues to add shims regardless of this setting.
+"""
+env = "MISE_ACTIVATE_SHIMS"
+type = "Bool"
+
 [age.identity_files]
 description = "[experimental] List of age identity files to use for decryption."
 env = "MISE_AGE_IDENTITY_FILES"

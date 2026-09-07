@@ -173,11 +173,12 @@ impl Activate {
                 path.to_string_lossy().to_string(),
             ));
         }
-        let shim_path_update = if Settings::get().not_found_auto_install {
-            position_shims_before_path()?
-        } else {
-            remove_shims_from_path()?
-        };
+        let shim_path_update =
+            if Settings::get().activate_shims && Settings::get().not_found_auto_install {
+                position_shims_before_path()?
+            } else {
+                remove_shims_from_path()?
+            };
         if let Some(set_path) = shim_path_update {
             prelude.push(set_path);
         }
