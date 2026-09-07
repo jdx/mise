@@ -4,13 +4,41 @@ inputs:
   api-secret:
     description: "API secret for mise-versions"
     required: true
+  count:
+    description: "Number of tokens to fetch sequentially so the pool can rotate"
+    required: false
+    default: "1"
 outputs:
   token:
-    description: "The GitHub token"
+    description: "The GitHub token (first fetched token)"
     value: ${{ steps.fetch.outputs.token }}
   token-id:
-    description: "Token ID for rate-limit reporting"
+    description: "Token ID for rate-limit reporting (first fetched token)"
     value: ${{ steps.fetch.outputs.token_id }}
+  token_0:
+    description: "Fetched token 0"
+    value: ${{ steps.fetch.outputs.token_0 }}
+  token_1:
+    description: "Fetched token 1"
+    value: ${{ steps.fetch.outputs.token_1 }}
+  token_2:
+    description: "Fetched token 2"
+    value: ${{ steps.fetch.outputs.token_2 }}
+  token_3:
+    description: "Fetched token 3"
+    value: ${{ steps.fetch.outputs.token_3 }}
+  token_4:
+    description: "Fetched token 4"
+    value: ${{ steps.fetch.outputs.token_4 }}
+  token_5:
+    description: "Fetched token 5"
+    value: ${{ steps.fetch.outputs.token_5 }}
+  token_6:
+    description: "Fetched token 6"
+    value: ${{ steps.fetch.outputs.token_6 }}
+  token_7:
+    description: "Fetched token 7"
+    value: ${{ steps.fetch.outputs.token_7 }}
 runs:
   using: "composite"
   steps:
@@ -18,35 +46,54 @@ runs:
       shell: bash
       env:
         API_SECRET: ${{ inputs.api-secret }}
+        TOKEN_COUNT: ${{ inputs.count }}
       run: |
         if [ -z "$API_SECRET" ]; then
           echo "No API secret provided, skipping token fetch"
           exit 0
         fi
-        response=$(curl -sf -H "Authorization: Bearer $API_SECRET" \
-          "https://mise-versions.jdx.dev/api/token" || true)
-        if [ -z "$response" ]; then
-          exit 0
+        if ! [[ "$TOKEN_COUNT" =~ ^[1-8]$ ]]; then
+          echo "count must be an integer from 1 to 8"
+          exit 1
         fi
-        token=$(echo "$response" | jq -r '.token')
-        echo "::add-mask::$token"
-        # Validate token looks like a GitHub token (starts with gh and has reasonable length)
-        if ! [[ "$token" =~ ^gh[a-z]_[A-Za-z0-9_]+$ ]] || [ ${#token} -lt 20 ]; then
-          echo "Invalid or missing token in response, skipping"
-          exit 0
-        fi
-        # Validate both the token and its usable core budget. GitHub returns 200
-        # from /rate_limit even when the token is already exhausted.
-        rate_limit=$(curl -sf -H "Authorization: Bearer $token" \
-          "https://api.github.com/rate_limit" || true)
-        if [ -z "$rate_limit" ]; then
-          echo "Token failed GitHub API validation, skipping"
-          exit 0
-        fi
-        remaining=$(echo "$rate_limit" | jq -r '.resources.core.remaining // 0')
-        if ! [[ "$remaining" =~ ^[0-9]+$ ]] || [ "$remaining" -le 1 ]; then
-          echo "Token has no usable GitHub core rate limit remaining, skipping"
-          exit 0
-        fi
-        echo "token=$token" >> "$GITHUB_OUTPUT"
-        echo "token_id=$(echo "$response" | jq -r '.token_id')" >> "$GITHUB_OUTPUT"
+
+        fetch_one() {
+          local i="$1"
+          local response token rate_limit remaining token_id
+          response=$(curl -sf -H "Authorization: Bearer $API_SECRET" \
+            "https://mise-versions.jdx.dev/api/token" || true)
+          if [ -z "$response" ]; then
+            return 0
+          fi
+          token=$(echo "$response" | jq -r '.token')
+          echo "::add-mask::$token"
+          # Validate token looks like a GitHub token (starts with gh and has reasonable length)
+          if ! [[ "$token" =~ ^gh[a-z]_[A-Za-z0-9_]+$ ]] || [ ${#token} -lt 20 ]; then
+            echo "Invalid or missing token in response, skipping"
+            return 0
+          fi
+          # Validate both the token and its usable core budget. GitHub returns 200
+          # from /rate_limit even when the token is already exhausted.
+          rate_limit=$(curl -sf -H "Authorization: Bearer $token" \
+            "https://api.github.com/rate_limit" || true)
+          if [ -z "$rate_limit" ]; then
+            echo "Token failed GitHub API validation, skipping"
+            return 0
+          fi
+          remaining=$(echo "$rate_limit" | jq -r '.resources.core.remaining // 0')
+          if ! [[ "$remaining" =~ ^[0-9]+$ ]] || [ "$remaining" -le 1 ]; then
+            echo "Token has no usable GitHub core rate limit remaining, skipping"
+            return 0
+          fi
+          token_id=$(echo "$response" | jq -r '.token_id')
+          echo "token_$i=$token" >> "$GITHUB_OUTPUT"
+          if [ "$i" -eq 0 ]; then
+            echo "token=$token" >> "$GITHUB_OUTPUT"
+            echo "token_id=$token_id" >> "$GITHUB_OUTPUT"
+          fi
+        }
+
+        # Fetch sequentially so the pool can rotate its cursor between requests.
+        for i in $(seq 0 $((TOKEN_COUNT - 1))); do
+          fetch_one "$i"
+        done
