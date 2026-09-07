@@ -38,3 +38,7 @@ Refine the existing dark cards and chef branding, adding a short, useful descrip
 ## Defaults and delivery
 
 Use the selected automatic-plus-curated approach and refine the current design. Preserve the Packslip description already added; its prior build passed. Deliver local changes and representative rendered previews for review, with no deployment or external publication.
+
+---
+
+make a pr
