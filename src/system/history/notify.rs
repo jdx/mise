@@ -5,10 +5,13 @@
 
 use std::process::{Command, Stdio};
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "macos")]
+mod macos;
+
+#[cfg(any(target_os = "linux", all(test, target_os = "macos")))]
 const LOGO: &[u8] = include_bytes!("../../../docs/public/apple-touch-icon.png");
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn logo() -> Option<std::path::PathBuf> {
     let path = crate::dirs::CACHE.join("notifications/mise.png");
     match cache_logo(&path) {
@@ -20,7 +23,7 @@ fn logo() -> Option<std::path::PathBuf> {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", all(test, target_os = "macos")))]
 fn cache_logo(path: &std::path::Path) -> eyre::Result<()> {
     if std::fs::read(path).ok().as_deref() != Some(LOGO) {
         if let Some(parent) = path.parent() {
@@ -33,32 +36,29 @@ fn cache_logo(path: &std::path::Path) -> eyre::Result<()> {
 
 /// Shows a notification with `title` and `body`, if a notifier is available.
 pub(crate) fn send(title: &str, body: &str) {
-    let mut command = match notifier(title, body) {
-        Some(command) => command,
-        None => {
-            debug!("history: no desktop notifier on this platform; not notifying: {title}");
-            return;
-        }
-    };
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    match dispatch(command) {
-        Ok(_worker) => debug!("history: notification dispatched: {title}"),
-        Err(err) => debug!("history: could not notify ({title}): {err}"),
+    let title = title.to_owned();
+    let body = body.to_owned();
+    if let Err(err) = dispatch(move || {
+        notifier(&title, &body).ok_or_else(|| std::io::Error::other("desktop notifier unavailable"))
+    }) {
+        debug!("history: could not start notification worker: {err}");
     }
 }
 
 fn dispatch(
-    mut command: Command,
+    prepare: impl FnOnce() -> std::io::Result<Command> + Send + 'static,
 ) -> std::io::Result<std::thread::JoinHandle<std::io::Result<std::process::ExitStatus>>> {
-    // Start the process inside the thread, so a thread-creation failure cannot
-    // strand an unreaped child. Waiting here never blocks the watcher.
+    // Prepare the bundle and reap the child off the watcher thread.
     std::thread::Builder::new()
         .name("mise-notification".into())
         .spawn(move || {
-            let result = command.status();
+            let result = prepare().and_then(|mut command| {
+                command
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+            });
             match &result {
                 Ok(status) if status.success() => debug!("history: notifier completed"),
                 Ok(status) => debug!("history: notifier exited with {status}"),
@@ -92,38 +92,9 @@ fn linux_notification(
 
 #[cfg(target_os = "macos")]
 fn notifier(title: &str, body: &str) -> Option<Command> {
-    if let Some(bin) = crate::file::which_spawnable("terminal-notifier") {
-        let mut command = terminal_notification(&bin, title, body);
-        if let Some(icon) = logo() {
-            // Modern macOS fixes the sender icon to its application bundle;
-            // contentImage displays the logo without impersonating another app.
-            command.arg("-contentImage").arg(icon);
-        }
-        return Some(command);
-    }
-    let bin = crate::file::which_spawnable("osascript")?;
-    let escape = |text: &str| text.replace('\\', "\\\\").replace('"', "\\\"");
-    let mut command = Command::new(bin);
-    command.arg("-e").arg(format!(
-        "display notification \"{}\" with title \"{}\"",
-        escape(body),
-        escape(title)
-    ));
-    Some(command)
-}
-
-#[cfg(target_os = "macos")]
-fn terminal_notification(bin: &std::path::Path, title: &str, body: &str) -> Command {
-    let mut command = Command::new(bin);
-    // terminal-notifier reads values through NSUserDefaults. Escape the first
-    // character so leading brackets/quotes are not parsed as property lists.
-    command.args([
-        "-title",
-        &format!("\\{title}"),
-        "-message",
-        &format!("\\{body}"),
-    ]);
-    command
+    macos::notification(title, body)
+        .map_err(|err| debug!("history: could not prepare notification helper: {err:#}"))
+        .ok()
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -139,11 +110,15 @@ mod tests {
     fn notification_worker_reaps_the_child_and_reports_spawn_errors() {
         let mut command = Command::new("/bin/sh");
         command.args(["-c", "exit 7"]);
-        let status = dispatch(command).unwrap().join().unwrap().unwrap();
+        let status = dispatch(move || Ok(command))
+            .unwrap()
+            .join()
+            .unwrap()
+            .unwrap();
         assert_eq!(status.code(), Some(7));
         let missing = tempfile::tempdir().unwrap().path().join("missing-notifier");
         assert!(
-            dispatch(Command::new(missing))
+            dispatch(move || Ok(Command::new(missing)))
                 .unwrap()
                 .join()
                 .unwrap()
@@ -206,25 +181,6 @@ mod tests {
                 "--",
                 "--title",
                 "body"
-            ]
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn terminal_notification_preserves_literal_text() {
-        let command = terminal_notification(
-            std::path::Path::new("terminal-notifier"),
-            "[mise]",
-            "\"file\"; $(touch unwanted)",
-        );
-        assert_eq!(
-            command.get_args().collect::<Vec<_>>(),
-            [
-                "-title",
-                "\\[mise]",
-                "-message",
-                "\\\"file\"; $(touch unwanted)"
             ]
         );
     }

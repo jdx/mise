@@ -1294,7 +1294,10 @@ type = "Integer"
 default = true
 description = "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync."
 docs = """
-Linux uses `notify-send`, macOS `osascript`; other platforms log the conflict only.
+Linux uses `notify-send`. macOS uses a bundled mise helper app with the mise icon;
+allow notifications for mise when macOS asks on first use. Permission can be
+changed later in System Settings > Notifications > mise. No extra notifier is
+required. Other platforms log the conflict only.
 `mise bootstrap dotfiles status` and `mise doctor` show the same conflicts without notifications.
 """
 env = "MISE_HISTORY_NOTIFY"

@@ -512,25 +512,33 @@ fn notify_conflicts_with(status: &mut SyncStatus, enabled: bool, send: impl FnOn
         let lines: Vec<String> = status
             .conflicts
             .iter()
-            .take(3)
+            .take(1)
             .map(|conflict| {
                 let path = roots
                     .locate(&conflict.branch_path)
                     .path()
                     .map(display_path)
                     .unwrap_or_else(|| conflict.branch_path.clone());
-                format!("{path}: {}", conflict.kind.describe())
+                let mut chars = path.chars().filter(|ch| !ch.is_control());
+                let mut path: String = chars.by_ref().take(80).collect();
+                if chars.next().is_some() {
+                    path.push('…');
+                }
+                path
             })
             .collect();
-        let more = current.len().saturating_sub(3);
+        let more = current.len().saturating_sub(1);
         let body = if more > 0 {
-            format!("{}\n+{more} more", lines.join("\n"))
+            let noun = if more == 1 { "file" } else { "files" };
+            format!("{} and {more} other {noun}", lines.join(""))
         } else {
             lines.join("\n")
         };
         send(
-            "mise: setup sharing paused",
-            &format!("{body}\nInspect with: mise bootstrap dotfiles status"),
+            "mise: dotfile sync paused",
+            &format!(
+                "Conflicting changes in {body}.\nLocal saves still work. For resolution steps, run:\nmise bootstrap dotfiles status"
+            ),
         );
     }
     status.conflict_pause_observed = !current.is_empty();
@@ -872,7 +880,7 @@ mod notification_tests {
         };
         let mut calls = 0;
         notify_conflicts_with(&mut status, true, |title, body| {
-            assert!(title.contains("sharing paused"));
+            assert!(title.contains("dotfile sync paused"));
             assert!(body.contains(".zshrc"));
             calls += 1;
         });
@@ -887,6 +895,24 @@ mod notification_tests {
         status.conflicts.push(conflict("tracked/home/.gitconfig"));
         notify_conflicts_with(&mut status, true, |_, _| calls += 1);
         assert_eq!(calls, 2);
+    }
+
+    #[test]
+    fn notification_keeps_the_action_visible_for_long_or_unusual_paths() {
+        let mut status = SyncStatus {
+            conflicts: vec![
+                conflict(&format!("tracked/home/\n{}", "x".repeat(200))),
+                conflict("tracked/home/.gitconfig"),
+            ],
+            ..Default::default()
+        };
+        notify_conflicts_with(&mut status, true, |_, body| {
+            assert!(body.contains("… and 1 other file"));
+            assert!(body.contains("Local saves still work."));
+            assert!(body.ends_with("mise bootstrap dotfiles status"));
+            assert_eq!(body.lines().count(), 3);
+            assert!(body.chars().count() < 250);
+        });
     }
 
     #[test]

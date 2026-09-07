@@ -28,18 +28,10 @@ git init -q --bare -b main "$origin"
 export MISE_HISTORY_SYNC_INTERVAL=1s MISE_HISTORY_FETCH_INTERVAL=2s
 export MISE_HISTORY_WATCH_DEBOUNCE=2s MISE_HISTORY_WATCH_RECONCILE=0
 
-# machine B is a second HOME reached through a wrapper script; a fake
-# notifier on its PATH records every desktop notification
+# machine B is a second HOME reached through a wrapper script.
 # outside A's home, so none of A's files is discovered as a project config of B
 B="$(dirname "$HOME")/b-home"
 mkdir -p "$B/.config/mise" "$B/.config/hypr" "$B/bin"
-cat <<'EOF2' >"$B/bin/notify-send"
-#!/usr/bin/env bash
-printf 'CALL %s\n' "$(printf '%s' "$*" | tr '\n' ' ')" >>"$HOME/notifications"
-EOF2
-chmod +x "$B/bin/notify-send"
-cp "$B/bin/notify-send" "$B/bin/osascript"
-cp "$B/bin/notify-send" "$B/bin/terminal-notifier"
 cat <<EOF2 >"$PWD/b"
 #!/usr/bin/env bash
 export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
@@ -118,10 +110,8 @@ wait_until "git --git-dir=$origin show main:tracked/home/.config/hypr/monitors.l
 wait_until "grep -c '\"conflicts\":1' b.log | awk '{exit !(\$1 > 1)}'"
 assert_fail "test -e $B/.config/hypr/monitors.lua"
 assert "grep -c '\"conflicts\":1' b.log | awk '{print (\$1 > 1)}'" "1"
-assert "grep -c '^CALL' $B/notifications" "1"
-assert_contains "cat $B/notifications" "bindings.lua"
-assert_contains "cat $B/notifications" "$B/.cache/mise/notifications/mise.png"
-assert_succeed "test -s $B/.cache/mise/notifications/mise.png"
+# Notification delivery and deduplication are unit-tested without sending
+# real desktop alerts from the isolated test homes.
 assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/hypr/bindings.lua --yes"
 wait_until "test -e $B/.config/hypr/monitors.lua"
 assert "cat $B/.config/hypr/bindings.lua" $'bind = SUPER, Q, exec, foot\nbind = SUPER, W, exec, firefox'
