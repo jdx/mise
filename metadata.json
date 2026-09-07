@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1WXB3YGESC7M23P7K7Q7AMR",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-one-history",
+  "checkpoints_count": 9,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 562060,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 15739520,
+    "output_tokens": 60433,
+    "api_call_count": 127
+  }
+}
