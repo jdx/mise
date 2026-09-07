@@ -101,9 +101,8 @@ onUnmounted(() => clearTimeout(copyTimeout));
 <template>
   <section class="home-hero" aria-labelledby="home-title">
     <div class="hero-copy">
-      <p class="hero-eyebrow">mise-en-place / everything in its place</p>
-      <h1 id="home-title">
-        Your dev setup. <br class="hero-break" /><em>In good order.</em>
+      <h1 id="home-title" class="hero-eyebrow">
+        mise-en-place / everything in its place
       </h1>
       <p class="hero-lede">
         Declare your tool versions, environment variables, and commands in
