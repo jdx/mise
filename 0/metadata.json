@@ -1,0 +1,57 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1WPTE10JA8G991SW4KB2NQR",
+  "session_id": "01a07177-9855-71a2-89cd-4a9a37cdbfcb",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T01:13:22.909833Z",
+  "branch": "codex/dotfiles-auto-fixes",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "src/system/history/sync/apply.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "a79c4ba24ea1",
+  "checkpoint_transcript_start": 13762,
+  "transcript_lines_at_start": 13762,
+  "compact_transcript_start": 1759,
+  "token_usage": {
+    "input_tokens": 60637,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2018560,
+    "output_tokens": 6858,
+    "api_call_count": 24
+  },
+  "session_metrics": {
+    "turn_count": 46
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T01:13:20.74113Z",
+    "agent_lines": 519,
+    "agent_removed": 0,
+    "human_added": 207,
+    "human_modified": 62,
+    "human_removed": 0,
+    "total_committed": 788,
+    "total_lines_changed": 791,
+    "agent_percentage": 65.61314791403287,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
