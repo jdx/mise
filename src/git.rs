@@ -762,7 +762,7 @@ impl GitPlumbing {
         if let Some(parent) = self.git_dir.parent() {
             crate::file::create_dir_all(parent)?;
         }
-        let mut cmd = self.base_command();
+        let mut cmd = self.base_command()?;
         cmd.args(["init", "--bare", "--quiet"]).arg(&self.git_dir);
         run_plumbing(cmd, None)?;
         for (key, value) in [
@@ -784,14 +784,14 @@ impl GitPlumbing {
 
     /// Runs the call and returns its stdout bytes.
     pub(crate) fn output(&self, call: PlumbingCall<'_>) -> Result<Vec<u8>> {
-        let cmd = self.command(&call);
+        let cmd = self.command(&call)?;
         run_plumbing(cmd, call.stdin)
     }
 
     /// Runs the call and returns its full output without treating a non-zero
     /// exit as an error, for commands whose status carries meaning.
     pub(crate) fn output_unchecked(&self, call: PlumbingCall<'_>) -> Result<std::process::Output> {
-        let cmd = self.command(&call);
+        let cmd = self.command(&call)?;
         spawn_plumbing(cmd, call.stdin)
     }
 
@@ -802,7 +802,7 @@ impl GitPlumbing {
         &self,
         call: PlumbingCall<'_>,
     ) -> Result<std::process::ExitStatus> {
-        let mut cmd = self.command(&call);
+        let mut cmd = self.command(&call)?;
         cmd.stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit())
             .stdin(std::process::Stdio::null());
@@ -816,8 +816,9 @@ impl GitPlumbing {
         Ok(String::from_utf8_lossy(&out).trim().to_string())
     }
 
-    fn base_command(&self) -> std::process::Command {
-        let git = plumbing_binary().unwrap_or_else(|| Path::new("git"));
+    fn base_command(&self) -> Result<std::process::Command> {
+        let git =
+            plumbing_binary().ok_or_else(|| eyre!("no unattended git executable is available"))?;
         let mut cmd = std::process::Command::new(git);
         sanitize_git_command(&mut cmd);
         let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
@@ -831,11 +832,11 @@ impl GitPlumbing {
             .env("GIT_COMMITTER_EMAIL", "mise@localhost")
             .env("LC_ALL", "C")
             .stdin(std::process::Stdio::null());
-        cmd
+        Ok(cmd)
     }
 
-    fn command(&self, call: &PlumbingCall<'_>) -> std::process::Command {
-        let mut cmd = self.base_command();
+    fn command(&self, call: &PlumbingCall<'_>) -> Result<std::process::Command> {
+        let mut cmd = self.base_command()?;
         let mut git_dir = OsString::from("--git-dir=");
         git_dir.push(&self.git_dir);
         cmd.arg(git_dir);
@@ -862,7 +863,7 @@ impl GitPlumbing {
         if call.stdin.is_some() {
             cmd.stdin(std::process::Stdio::piped());
         }
-        cmd
+        Ok(cmd)
     }
 }
 
@@ -1401,11 +1402,13 @@ mod plumbing_tests {
         let repo = GitPlumbing::new(tmp.path().join("shadow.git"));
         let index = tmp.path().join("scratch-index");
         let work_tree = tmp.path().join("tree");
-        let cmd = repo.command(
-            &PlumbingCall::new(["write-tree"])
-                .work_tree(&work_tree)
-                .index_file(&index),
-        );
+        let cmd = repo
+            .command(
+                &PlumbingCall::new(["write-tree"])
+                    .work_tree(&work_tree)
+                    .index_file(&index),
+            )
+            .unwrap();
         let envs: HashMap<_, _> = cmd
             .get_envs()
             .map(|(k, v)| (k.to_os_string(), v.map(|v| v.to_os_string())))

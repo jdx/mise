@@ -72,6 +72,21 @@ Describe 'dotfiles' {
         Write-Host "  applied as: $(if ($link) { $link } else { 'copy' })"
     }
 
+    It 'keeps history private despite inherited parent permissions' {
+        mise bootstrap dotfiles apply 2>&1 | Out-String | Out-Null
+        $LASTEXITCODE | Should -Be 0
+        $history = Join-Path $env:MISE_STATE_DIR 'history'
+        $acl = Get-Acl -LiteralPath $history
+        $acl.AreAccessRulesProtected | Should -BeTrue
+        $acl.Sddl | Should -Match ';;;OW\)'
+        @($acl.Access).Count | Should -Be 1
+        $probe = Join-Path $history 'private-acl-probe'
+        Set-Content -LiteralPath $probe -Value 'private'
+        $inherited = Get-Acl -LiteralPath $probe
+        @($inherited.Access).Count | Should -Be 1
+        $inherited.Sddl | Should -Match ';;;OW\)'
+    }
+
     It 'unapplies without needing --force' {
         # The regression this guards: a real symlink used to be routed through the content
         # comparison, which rejects a symlink and demands --force.

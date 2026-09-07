@@ -45,6 +45,7 @@ struct Writer {
 type Shared = Arc<Mutex<Writer>>;
 
 static CURRENT: Mutex<Option<Shared>> = Mutex::new(None);
+static INITIALIZING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
@@ -103,6 +104,7 @@ impl OperationScope {
             debug!("history: disabled by settings");
             return Ok(Self(None));
         }
+        let _initializing = INITIALIZING.lock().await;
         if std::env::var_os(ENV_VAR).is_some() {
             debug!("history: attached to the parent mise operation");
             return Ok(Self(None));
@@ -112,7 +114,11 @@ impl OperationScope {
             return Ok(Self(None));
         }
         let tracked = TrackedSet::effective().await?;
-        let writer = Writer::begin(&dirs::STATE, kind, command, tracked)?;
+        let command = command.to_owned();
+        let writer = tokio::task::spawn_blocking(move || {
+            Writer::begin(&dirs::STATE, kind, &command, tracked)
+        })
+        .await??;
         let uuid = writer.pending.checkpoint.uuid.clone();
         debug!("history: recording operation {uuid}");
         let shared = Arc::new(Mutex::new(writer));

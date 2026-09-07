@@ -90,9 +90,74 @@ pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
-    file::create_dir_all(dir)
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW;
+    use windows_sys::Win32::Security::{
+        DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES,
+        SetFileSecurityW,
+    };
+    use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
+
+    if let Some(parent) = dir.parent() {
+        file::create_dir_all(parent)?;
+    }
+    // Protected, inheritable owner-only access. Supplying this at creation
+    // avoids exposing snapshots through a permissive parent ACL, even briefly.
+    let sddl: Vec<u16> = "D:P(A;OICI;FA;;;OW)\0".encode_utf16().collect();
+    let mut descriptor = std::ptr::null_mut();
+    // SAFETY: both pointers are valid for the call; Windows allocates the
+    // descriptor, released with LocalFree below on every path.
+    if unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            1,
+            &mut descriptor,
+            std::ptr::null_mut(),
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let result = (|| -> Result<()> {
+        let mut path: Vec<u16> = dir.as_os_str().encode_wide().collect();
+        if path.contains(&0) {
+            eyre::bail!("history directory contains a NUL character");
+        }
+        path.push(0);
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: descriptor,
+            bInheritHandle: 0,
+        };
+        if !dir.is_dir()
+            // SAFETY: path is NUL-terminated and attributes/descriptor remain live.
+            && unsafe { CreateDirectoryW(path.as_ptr(), &attributes) } == 0
+            && !dir.is_dir()
+        {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        // Also tighten an existing directory instead of trusting inherited ACLs.
+        // SAFETY: path and descriptor are valid until the call returns.
+        if unsafe {
+            SetFileSecurityW(
+                path.as_ptr(),
+                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                descriptor,
+            )
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(())
+    })();
+    // SAFETY: ConvertStringSecurityDescriptorToSecurityDescriptorW allocated it.
+    unsafe {
+        LocalFree(descriptor);
+    }
+    result.wrap_err_with(|| format!("restricting {}", display_path(dir)))
 }
 
 /// This machine's stable identity, created on first use.
