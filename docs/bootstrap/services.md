@@ -47,7 +47,8 @@ One declaration is rendered for the platform's user service manager:
   To avoid a tight failure loop, Linux allows three starts within five
   minutes; macOS spaces repeated launches at least five minutes apart.
   If Linux stops retrying, fix the problem reported by `mise doctor` or
-  the service logs, then reset the unit's failure state and start it again
+  the service logs, then rerun `mise bootstrap` to reset its failure budget
+  and restart it. You can also reset and start it directly
   (`systemctl --user reset-failed dev.mise.<name>.service` followed by
   `systemctl --user start dev.mise.<name>.service`). Ordinary custom
   services retain their existing restart behavior.

@@ -205,6 +205,20 @@ impl Store {
             None => tracked.clone(),
         };
         let tracked = &resolved;
+        if tracked.entries.is_empty()
+            && !draft.has_metadata()
+            && self
+                .repo
+                .as_ref()
+                .map(|repo| repo.ref_oid(HistoryRepo::HISTORY_REF))
+                .transpose()?
+                .flatten()
+                .is_none()
+        {
+            // A service may watch policy before the first enrollment. Do not
+            // manufacture an unrelated empty root before --from-git adoption.
+            return Ok(Outcome::Unchanged);
+        }
         let mut index = store::load_index_in(&self.state_dir)?;
         if let Some(repo) = &self.repo
             && repo.ref_oid(HistoryRepo::HISTORY_REF)?.as_deref()
@@ -1049,6 +1063,30 @@ pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn automatic_capture_without_enrollment_does_not_create_a_root() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        assert!(matches!(
+            store.attempt(&TrackedSet::default(), Draft::new(Trigger::Edit))?,
+            Outcome::Unchanged
+        ));
+        assert!(
+            store
+                .repo()
+                .unwrap()
+                .ref_oid(HistoryRepo::HISTORY_REF)?
+                .is_none()
+        );
+        let mut labeled = Draft::new(Trigger::Agent);
+        labeled.description = Some("explicit operation boundary".into());
+        assert!(matches!(
+            store.attempt(&TrackedSet::default(), labeled)?,
+            Outcome::Created(_)
+        ));
+        Ok(())
+    }
 
     #[test]
     fn unavailable_git_does_not_create_a_parallel_metadata_history() -> Result<()> {

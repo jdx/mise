@@ -1117,7 +1117,22 @@ mod capture_tests {
         let temp = tempfile::tempdir()?;
         let store = Store::open_in(temp.path())?;
         let repo = store.repo().ok_or_else(|| eyre::eyre!("git required"))?;
-        let tracked = TrackedSet::default();
+        let roots = Roots::current();
+        let live = tempfile::Builder::new()
+            .prefix(".mise-lock-test-")
+            .tempdir_in(&roots.home)?;
+        let path = live.path().join("config");
+        std::fs::write(&path, "explicitly enrolled")?;
+        let tracked = crate::system::history::manifest::Manifest {
+            enrollment: vec![crate::system::history::manifest::Enrollment {
+                path: roots.branch_path(&path, None).unwrap(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![],
+            }],
+            ..Default::default()
+        }
+        .tracking()?;
         let operation = crate::system::history::scope::take_operation_lock(&store, &tracked)?;
         capture_now(&store, &tracked);
         assert_eq!(

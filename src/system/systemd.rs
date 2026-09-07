@@ -428,25 +428,14 @@ pub(crate) async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<
                     ])
                 );
             }
-            if req.start {
+            for args in activation_commands(req) {
                 miseprintln!(
                     "{}",
-                    shell_words::join([
-                        "systemctl".to_string(),
-                        "--user".to_string(),
-                        "restart".to_string(),
-                        req.unit.clone(),
-                    ])
-                );
-            } else {
-                miseprintln!(
-                    "{}",
-                    shell_words::join([
-                        "systemctl".to_string(),
-                        "--user".to_string(),
-                        "stop".to_string(),
-                        req.unit.clone(),
-                    ])
+                    shell_words::join(
+                        ["systemctl".to_string(), "--user".to_string()]
+                            .into_iter()
+                            .chain(args)
+                    )
                 );
             }
         }
@@ -474,13 +463,25 @@ pub(crate) async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<
         if !req.wanted_by.is_empty() {
             systemctl(&["enable".to_string(), req.unit.clone()]).await?;
         }
-        if req.start {
-            systemctl(&["restart".to_string(), req.unit.clone()]).await?;
-        } else {
-            systemctl(&["stop".to_string(), req.unit.clone()]).await?;
+        for args in activation_commands(req) {
+            systemctl(&args).await?;
         }
     }
     Ok(())
+}
+
+fn activation_commands(request: &SystemdRequest) -> Vec<Vec<String>> {
+    let mut commands = vec![];
+    // An explicit bootstrap retry starts a new budget after the user fixes
+    // the failure. Automatic manager retries remain bounded.
+    if request.start && request.start_limit.is_some() {
+        commands.push(vec!["reset-failed".into(), request.unit.clone()]);
+    }
+    commands.push(vec![
+        if request.start { "restart" } else { "stop" }.into(),
+        request.unit.clone(),
+    ]);
+    commands
 }
 
 /// Stop, disable, and delete the service unit mise wrote for `name`
@@ -906,6 +907,45 @@ fn unit_operation_error_is_noop(error: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn explicit_builtin_start_resets_its_budget_before_restart() {
+        let mut request = super::SystemdRequest::from_toml(
+            "watch".into(),
+            super::SystemdTomlConfig {
+                exec_start: Some("/bin/true".into()),
+                start: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            super::activation_commands(&request),
+            vec![vec![
+                "restart".to_string(),
+                "dev.mise.watch.service".to_string()
+            ]]
+        );
+        request.start_limit = Some((300, 3));
+        assert_eq!(
+            super::activation_commands(&request),
+            vec![
+                vec![
+                    "reset-failed".to_string(),
+                    "dev.mise.watch.service".to_string()
+                ],
+                vec!["restart".to_string(), "dev.mise.watch.service".to_string()],
+            ]
+        );
+        request.start = false;
+        assert_eq!(
+            super::activation_commands(&request),
+            vec![vec![
+                "stop".to_string(),
+                "dev.mise.watch.service".to_string()
+            ]]
+        );
+    }
+
     #[test]
     fn quoted_executable_home_expands_without_changing_arguments() {
         for quote in ['\'', '"'] {

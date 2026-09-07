@@ -333,7 +333,7 @@ mod tests {
         let store = Store::open_in(temp.path())?;
         let outcome = store.attempt(
             &super::super::tracked::TrackedSet::default(),
-            super::super::checkpoint::Draft::new(store::Trigger::Save),
+            super::super::checkpoint::Draft::new(store::Trigger::Agent),
         )?;
         let super::super::checkpoint::Outcome::Created(entry) = outcome else {
             bail!("test requires an ordinary Git checkpoint");

@@ -306,12 +306,7 @@ pub(crate) async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<
             if req.kickstart {
                 miseprintln!(
                     "{}",
-                    shell_words::join([
-                        "launchctl".to_string(),
-                        "kickstart".to_string(),
-                        "-k".to_string(),
-                        target,
-                    ])
+                    shell_words::join(["launchctl".to_string(), "kickstart".to_string(), target,])
                 );
             }
             continue;
@@ -327,7 +322,10 @@ pub(crate) async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<
         .await?;
         launchctl(&["enable".to_string(), target.clone()]).await?;
         if req.kickstart {
-            launchctl(&["kickstart".to_string(), "-k".to_string(), target]).await?;
+            // bootstrap just loaded the new definition. Do not kill a process
+            // RunAtLoad/KeepAlive already started: a second spawn can wait for
+            // ThrottleInterval, leaving an otherwise healthy service stopped.
+            launchctl(&["kickstart".to_string(), target]).await?;
         }
     }
     Ok(())
