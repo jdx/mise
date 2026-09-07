@@ -35,11 +35,25 @@ pub(crate) struct Upstream {
 }
 
 pub(crate) fn upstream(repo: &HistoryRepo, commit: Option<&str>) -> Result<Upstream> {
+    upstream_with_interaction(repo, commit, false)
+}
+
+pub(crate) fn upstream_with_interaction(
+    repo: &HistoryRepo,
+    commit: Option<&str>,
+    interactive: bool,
+) -> Result<Upstream> {
     let mut files = BTreeMap::new();
+    let encrypted = super::files::encrypted_paths(repo, commit)?;
     if let Some(commit) = commit {
         for entry in repo.ls_tree(commit)? {
             if let Some((mode, oid)) = repo.object_at(commit, &entry.path)? {
-                files.insert(entry.path, (mode, oid));
+                let object = if encrypted.contains(&entry.path) {
+                    super::files::decrypt(repo, &entry.path, &(mode, oid), interactive)?
+                } else {
+                    (mode, oid)
+                };
+                files.insert(entry.path, object);
             }
         }
     }

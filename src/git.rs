@@ -788,6 +788,37 @@ impl GitPlumbing {
         run_plumbing(cmd, call.stdin)
     }
 
+    /// Inspect a blob without buffering its full contents. Reap the reader
+    /// after the prefix so large ordinary files need no encryption-size cap.
+    pub(crate) fn blob_starts_with(&self, oid: &str, prefix: &[u8]) -> Result<bool> {
+        use std::io::Read;
+        use std::process::Stdio;
+        let mut child = self
+            .command(&PlumbingCall::new(["cat-file", "blob", oid]))?
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()?;
+        let mut bytes = Vec::new();
+        // Keep the pipe open until Git has exited: dropping it before kill
+        // can make a large blob emit a spurious broken-pipe error on stderr.
+        let mut output = child
+            .stdout
+            .take()
+            .expect("stdout was piped")
+            .take(prefix.len() as u64);
+        let read = output.read_to_end(&mut bytes);
+        let complete = bytes.len() == prefix.len();
+        if complete || read.is_err() {
+            let _ = child.kill();
+        }
+        let status = child.wait()?;
+        read?;
+        if !complete && !status.success() {
+            eyre::bail!("failed to inspect Git blob {oid}");
+        }
+        Ok(bytes == prefix)
+    }
+
     /// Runs the call and returns its full output without treating a non-zero
     /// exit as an error, for commands whose status carries meaning.
     pub(crate) fn output_unchecked(&self, call: PlumbingCall<'_>) -> Result<std::process::Output> {

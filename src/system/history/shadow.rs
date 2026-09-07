@@ -51,6 +51,7 @@ pub(crate) struct CaptureResult {
 #[derive(Debug)]
 pub(crate) struct TreeEntry {
     pub mode: String,
+    pub oid: String,
     pub size: Option<u64>,
     pub path: String,
 }
@@ -194,8 +195,40 @@ impl HistoryRepo {
         tree
     }
 
+    /// One level of tree from an `ls-tree`-style listing.
     pub(crate) fn mktree(&self, listing: &str) -> Result<String> {
         self.output_str(PlumbingCall::new(["mktree"]).stdin(listing.as_bytes()))
+    }
+
+    /// A tree holding exactly `entries` (`(mode, oid, path)`, paths nested
+    /// as deep as they like), built in a scratch index so the repository's
+    /// own index is never touched. Objects need not exist for gitlinks
+    /// (`160000`), as in any tree git writes.
+    pub(crate) fn write_tree(&self, entries: &[(String, String, String)]) -> Result<String> {
+        if entries.is_empty() {
+            return self.empty_object("tree");
+        }
+        let index = self
+            .dir()
+            .join(format!("mise-index-{}-write-tree", std::process::id()));
+        let _ = std::fs::remove_file(&index);
+        let mut info: Vec<u8> = vec![];
+        for (mode, oid, path) in entries {
+            info.extend_from_slice(format!("{mode} {oid}\t{path}").as_bytes());
+            info.push(0);
+        }
+        let result = (|| -> Result<String> {
+            // index-only operations; git still insists on a work tree
+            self.git.run(
+                PlumbingCall::new(["update-index", "-z", "--index-info"])
+                    .work_tree(self.dir())
+                    .index_file(&index)
+                    .stdin(&info),
+            )?;
+            self.output_str(PlumbingCall::new(["write-tree"]).index_file(&index))
+        })();
+        let _ = std::fs::remove_file(&index);
+        result
     }
 
     /// Writes the wrapper commit for a checkpoint: `snapshot/`, `meta.json`,
@@ -311,13 +344,14 @@ impl HistoryRepo {
                 continue;
             };
             let mut fields = meta.split_whitespace();
-            let (Some(mode), Some(_kind), Some(_oid), Some(size)) =
+            let (Some(mode), Some(_kind), Some(oid), Some(size)) =
                 (fields.next(), fields.next(), fields.next(), fields.next())
             else {
                 continue;
             };
             entries.push(TreeEntry {
                 mode: mode.to_string(),
+                oid: oid.to_string(),
                 size: size.parse().ok(),
                 path: path.to_string(),
             });
@@ -352,6 +386,21 @@ impl HistoryRepo {
         self.git
             .output(PlumbingCall::new(["cat-file", "blob", oid]))
             .wrap_err_with(|| format!("reading {oid}"))
+    }
+
+    pub(crate) fn blob_starts_with(&self, oid: &str, prefix: &[u8]) -> Result<bool> {
+        self.git.blob_starts_with(oid, prefix)
+    }
+
+    pub(crate) fn cat_object_bounded(&self, oid: &str, limit: u64) -> Result<Vec<u8>> {
+        let size: u64 = self
+            .output_str(PlumbingCall::new(["cat-file", "-s", oid]))?
+            .trim()
+            .parse()?;
+        if size > limit {
+            eyre::bail!("object exceeds the encrypted content size limit");
+        }
+        self.cat_object(oid)
     }
 
     pub(crate) fn hash_blob(&self, bytes: &[u8]) -> Result<String> {

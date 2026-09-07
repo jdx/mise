@@ -117,6 +117,11 @@ shared files and machine backups are stored in plaintext. A file excluded from s
 may still be included in machine backups; do not assume it stays on this machine.
 Existing checkpoints are not uploaded unless you select `--include-existing`.
 
+For encrypted machine backups, add `--encrypt-backups` when connecting.
+Keep the decryption identity somewhere safe outside this machine; it is needed
+to restore the backups. See [encrypted backups](/history.html#sharing-across-machines)
+for recipients and recovery. Encrypting backups does not encrypt shared files.
+
 Choose the mode that fits your workflow:
 
 | Mode         | Watcher behavior                                                |

@@ -14,7 +14,7 @@ use toml_edit::{Item, Value};
 use super::SyncMode;
 use super::format::{self, RepoState};
 use super::layout::{Roots, is_configuration};
-use super::network::{MACHINES_PREFIX, PUBLISH_REF, Remote, UPSTREAM_REF};
+use super::network::{MACHINES_PREFIX, PLAIN_PREFIX, PUBLISH_REF, Remote, UPSTREAM_REF};
 use super::run::{self, SyncRequest};
 use super::{backup, privacy, share};
 use crate::file::display_path;
@@ -31,7 +31,37 @@ pub(crate) struct SetOptions {
     pub include_existing: bool,
     pub allow_committed_private: bool,
     pub encrypt_backups: bool,
+    /// `--recipient` arguments: keys, or files holding them.
+    pub recipients: Vec<String>,
     pub yes: bool,
+}
+
+/// What `[history.origin]` says about backups.
+pub(crate) struct BackupConfig {
+    pub encrypt: bool,
+    pub recipients: Vec<String>,
+}
+
+/// How this connection will back up, decided before the disclosure.
+enum BackupPlan {
+    Plain,
+    Encrypted {
+        recipients: Vec<String>,
+        /// No recipient was found anywhere: generate an identity here.
+        generate: Option<PathBuf>,
+    },
+}
+
+/// A recipient as printed: an SSH key is long, so its type and the start
+/// of its material stand for it.
+fn short_recipient(recipient: &str) -> String {
+    let Some((kind, rest)) = recipient.split_once(' ') else {
+        return recipient.to_string();
+    };
+    if rest.chars().count() <= 20 {
+        return recipient.to_string();
+    }
+    format!("{kind} {}…", rest.chars().take(16).collect::<String>())
 }
 
 /// Connects the setup repository.
@@ -99,11 +129,11 @@ async fn set_inner(
     accepted: &mut bool,
     preview_lock: &mut Option<fslock::LockFile>,
 ) -> Result<()> {
-    if opts.encrypt_backups {
-        bail!("encrypted backups are not supported yet; connect without --encrypt-backups");
-    }
     if opts.url.trim().is_empty() {
         bail!("a repository url is required");
+    }
+    if !opts.recipients.is_empty() && !opts.encrypt_backups {
+        bail!("--recipient needs --encrypt-backups");
     }
     let repo = store
         .repo()
@@ -131,6 +161,32 @@ async fn set_inner(
     run::capture_now(store, tracked);
     let shared = share::current(repo, store, tracked)?;
     let walk = tracked.walk()?;
+    // the connection as it was: another repository or branch starts from a
+    // clean slate, and a scheme change on the same one replaces its refs
+    let status_before = run::read_status(state_dir)?;
+    let connected_before = status_before.origin_url.is_some();
+    let same_origin = status_before.origin_url.as_deref() == Some(opts.url.as_str())
+        && status_before.origin_branch.as_deref() == Some(opts.branch.as_str());
+    let backups = if opts.encrypt_backups {
+        let mut recipients: Vec<String> = vec![];
+        for arg in &opts.recipients {
+            recipients.extend(crate::agecrypt::resolve_recipient_arg(arg).await?);
+        }
+        if recipients.is_empty() {
+            recipients = crate::agecrypt::default_recipient_strings().await?;
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        recipients.retain(|recipient| seen.insert(recipient.clone()));
+        let generate = recipients
+            .is_empty()
+            .then(crate::agecrypt::default_identity_file);
+        BackupPlan::Encrypted {
+            recipients,
+            generate,
+        }
+    } else {
+        BackupPlan::Plain
+    };
 
     // committed private content in the branch's history
     if let Some(head) = &upstream {
@@ -241,13 +297,100 @@ async fn set_inner(
     let backed_up = walk
         .files
         .iter()
-        .filter(|(_, (_, policy))| policy.backup)
+        .filter(|(_, (_, policy))| {
+            policy.backup && (!policy.encrypt || !matches!(backups, BackupPlan::Plain))
+        })
         .count();
-    miseprintln!(
-        "Machine backups: {backed_up} of {} captured file(s) are backed up in plain form under refs/mise-history/{}/ — anyone who can read this repository can read every file in these snapshots. The setup branch is always plaintext; use a private repository.",
-        walk.files.len(),
-        machine.id
-    );
+    match &backups {
+        BackupPlan::Plain => miseprintln!(
+            "Machine backups: {backed_up} of {} captured file(s) are backed up in plain form under refs/mise-history/{}/ — anyone who can read this repository can read every file in these snapshots. Setup configuration stays plaintext; selected dotfiles can be encrypted. Use a private repository.",
+            walk.files.len(),
+            machine.id
+        ),
+        BackupPlan::Encrypted {
+            recipients,
+            generate,
+        } => {
+            match generate {
+                None => {
+                    miseprintln!(
+                        "Machine backups: {backed_up} of {} captured file(s) are backed up encrypted (age) under refs/mise-history/{}/ for {} recipient(s):",
+                        walk.files.len(),
+                        machine.id,
+                        recipients.len()
+                    );
+                    for recipient in recipients {
+                        miseprintln!("  {}", short_recipient(recipient));
+                    }
+                }
+                Some(path) => miseprintln!(
+                    "Machine backups: {backed_up} of {} captured file(s) are backed up encrypted (age) under refs/mise-history/{}/. No age identity or SSH public key was found here: an age identity will be generated at {} (mode 0600) and used as the only recipient. Keep it: without it these backups cannot be restored; copy it to every machine that should read them.",
+                    walk.files.len(),
+                    machine.id,
+                    display_path(path)
+                ),
+            }
+            miseprintln!(
+                "File names, descriptions, and content are readable only with one of these identities; the machine name, checkpoint time, and count stay visible. Setup configuration stays plaintext; selected dotfiles can be encrypted. Use a private repository."
+            );
+            if generate.is_none() {
+                let restorable = crate::agecrypt::restorability(recipients).await;
+                if restorable.is_none() {
+                    miseprintln!(
+                        "Hardware identity configured but unverified; restore interactively to unlock it."
+                    );
+                }
+                if recipients
+                    .iter()
+                    .all(|r| r.parse::<age::plugin::Recipient>().is_ok())
+                {
+                    miseprintln!(
+                        "Hardware-only recipients: losing these devices can make backups unrecoverable. Add an independent recovery recipient."
+                    );
+                }
+                if restorable == Some(false) {
+                    miseprintln!(
+                        "Note: none of this machine's identities is among the recipients, so this machine could not restore its own backups."
+                    );
+                }
+            }
+        }
+    }
+    if same_origin && !status_before.uploaded.is_empty() {
+        let previous_plain = status_before
+            .backup_scheme
+            .as_deref()
+            .is_none_or(|scheme| scheme == backup::PLAIN_SCHEME);
+        let changes = match &backups {
+            BackupPlan::Plain => backup::scheme_changes(&status_before, backup::PLAIN_SCHEME),
+            BackupPlan::Encrypted {
+                generate: Some(_), ..
+            } => true,
+            BackupPlan::Encrypted { recipients, .. } => {
+                let planned = backup::BackupEncryption {
+                    recipients: vec![],
+                    strings: recipients.clone(),
+                };
+                backup::scheme_changes(&status_before, &backup::scheme(Some(&planned)))
+            }
+        };
+        if changes {
+            miseprintln!(
+                "This machine's {} existing recovery ref(s) on the repository are replaced: the {} ones are deleted and eligible checkpoints are uploaded again {}.",
+                status_before.uploaded.len(),
+                if previous_plain {
+                    "plaintext"
+                } else {
+                    "previously encrypted"
+                },
+                if matches!(backups, BackupPlan::Plain) {
+                    "IN PLAIN FORM"
+                } else {
+                    "encrypted"
+                }
+            );
+        }
+    }
     miseprintln!(
         "Existing checkpoints: {}",
         if opts.include_existing {
@@ -296,13 +439,33 @@ async fn set_inner(
     // say, so `mise settings set history.sync …` keeps working afterwards
     let mode =
         (opts.mode.as_str() != crate::config::Settings::get().history.sync).then_some(opts.mode);
-    write_config(&opts.url, &opts.branch, mode)?;
+    let backup_config = match backups {
+        BackupPlan::Plain => BackupConfig {
+            encrypt: false,
+            recipients: vec![],
+        },
+        BackupPlan::Encrypted {
+            mut recipients,
+            generate,
+        } => {
+            if let Some(path) = generate {
+                let public = crate::agecrypt::generate_identity_file(&path)?;
+                miseprintln!(
+                    "Generated an age identity at {}; its public key is {public}. Copy the file to every machine that should restore these backups (mise never uploads it).",
+                    display_path(&path)
+                );
+                recipients = vec![public];
+            }
+            BackupConfig {
+                encrypt: true,
+                recipients,
+            }
+        }
+    };
+    write_config(&opts.url, &opts.branch, mode, Some(&backup_config))?;
     // another repository or branch starts from a clean slate: the previous
     // one's per-path state, pending changes, and conflicts would read its
     // absence of a file as a deletion
-    let connected_before = status.origin_url.is_some();
-    let same_origin = status.origin_url.as_deref() == Some(opts.url.as_str())
-        && status.origin_branch.as_deref() == Some(opts.branch.as_str());
     if connected_before && !same_origin {
         reset_sync_state(repo, &previous_machine_refs)?;
         status = run::SyncStatus::default();
@@ -318,6 +481,8 @@ async fn set_inner(
     // is included, not only what changes later
     status.upload_since = if opts.include_existing {
         None
+    } else if same_origin {
+        status.upload_since.clone()
     } else {
         let newest = store
             .list()?
@@ -362,6 +527,15 @@ pub(crate) fn report(outcome: &run::SyncOutcome) {
             "history: removed {} pruned checkpoint(s) from the origin",
             outcome.pruned_remote
         );
+    }
+    if outcome.replaced_remote > 0 {
+        info!(
+            "history: replaced {} recovery ref(s) on the origin (the backup scheme changed)",
+            outcome.replaced_remote
+        );
+    }
+    if let Some(error) = &outcome.backup_error {
+        warn!("history: machine backups skipped: {error}");
     }
     if outcome.pending > 0 {
         info!(
@@ -425,7 +599,14 @@ fn origin_file() -> Result<PathBuf> {
     crate::cli::dotfiles::track::declaration_file(true)
 }
 
-pub(super) fn write_config(url: &str, branch: &str, mode: Option<SyncMode>) -> Result<()> {
+/// Writes `[history.origin]`. `backups` `None` leaves any `encrypt_backups`
+/// and `recipients` keys as they are (a re-run must not undo a choice).
+pub(super) fn write_config(
+    url: &str,
+    branch: &str,
+    mode: Option<SyncMode>,
+    backups: Option<&BackupConfig>,
+) -> Result<()> {
     let global = origin_file()?;
     if let Some(parent) = global.parent() {
         crate::file::create_dir_all(parent)?;
@@ -450,6 +631,24 @@ pub(super) fn write_config(url: &str, branch: &str, mode: Option<SyncMode>) -> R
     origin.set_implicit(false);
     origin.insert("url", Item::Value(Value::from(url)));
     origin.insert("branch", Item::Value(Value::from(branch)));
+    match backups {
+        Some(BackupConfig {
+            encrypt: true,
+            recipients,
+        }) => {
+            origin.insert("encrypt_backups", Item::Value(Value::from(true)));
+            let mut array = toml_edit::Array::new();
+            for recipient in recipients {
+                array.push(recipient.as_str());
+            }
+            origin.insert("recipients", Item::Value(Value::Array(array)));
+        }
+        Some(BackupConfig { encrypt: false, .. }) => {
+            origin.remove("encrypt_backups");
+            origin.remove("recipients");
+        }
+        None => {}
+    }
     let Some(mode) = mode else {
         crate::file::write(&global, doc.to_string())?;
         return Ok(());
@@ -491,6 +690,10 @@ fn reset_sync_state(
         if repo.ref_oid(name)?.is_some() {
             repo.delete_ref(name)?;
         }
+    }
+    // and the decrypted copies of the previous repository's refs
+    for (name, _) in repo.list_refs(PLAIN_PREFIX)? {
+        repo.delete_ref(&name)?;
     }
     Ok(())
 }

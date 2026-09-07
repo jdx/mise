@@ -20,6 +20,8 @@ pub(crate) struct SharedFile {
     pub local: PathBuf,
     pub mode: String,
     pub oid: String,
+    pub encrypt: bool,
+    pub encrypt_explicit: bool,
 }
 
 /// Why a captured file is not shared.
@@ -58,6 +60,15 @@ pub(crate) fn current(
     store: &Store,
     tracked: &TrackedSet,
 ) -> Result<ShareReport> {
+    // Project-only tracking declarations are intentionally ignored. Preserve
+    // that behavior while refusing malformed encryption or mixed policies.
+    if tracked
+        .invalid
+        .iter()
+        .any(|entry| entry.reason.contains("encrypt"))
+    {
+        eyre::bail!("invalid dotfile declarations; correct them before publishing");
+    }
     let mut report = ShareReport::default();
     let Some(latest) = store.list()?.into_iter().last() else {
         return Ok(report);
@@ -67,6 +78,26 @@ pub(crate) fn current(
     };
     report.checkpoint = Some(latest.checkpoint.uuid.clone());
     let walk = tracked.walk()?;
+    for (index, entry) in walk.entries.iter().enumerate() {
+        if entry.kind == EntryKind::Implicit {
+            continue;
+        }
+        for other in walk
+            .entries
+            .iter()
+            .skip(index + 1)
+            .filter(|e| e.kind != EntryKind::Implicit)
+        {
+            if entry.policy.encrypt != other.policy.encrypt
+                && (entry.path.starts_with(&other.path) || other.path.starts_with(&entry.path))
+            {
+                eyre::bail!(
+                    "overlapping dotfile declarations disagree about encryption: {}",
+                    display_path(&entry.path)
+                );
+            }
+        }
+    }
     let roots = Roots::current();
     let private: BTreeMap<PathBuf, String> = walk
         .private
@@ -129,6 +160,8 @@ pub(crate) fn current(
                 local: path.clone(),
                 mode,
                 oid,
+                encrypt: policy.encrypt,
+                encrypt_explicit: policy.explicit.encrypt,
             },
         );
     }

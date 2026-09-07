@@ -20,7 +20,12 @@ Connect a setup repository
   **Default:** `sync`
 - **`--include-existing`** — Upload the checkpoints recorded before now too
 - **`--allow-committed-private`** — Continue although the repository's history holds private content
-- **`--encrypt-backups`** — Encrypt machine recovery refs (not supported yet)
+- **`--encrypt-backups`** — Encrypt this machine's recovery refs with age for its recipients (see --recipient)
+
+  Every backed-up checkpoint becomes one age payload: file names, descriptions, and content are readable only with a recipient's identity. Setup configuration stays plaintext; dotfiles can use `encrypt = true`.
+- **`--recipient <RECIPIENT>`** — A backup recipient (repeatable): an age public key (`age1…`), an SSH public key (`ssh-ed25519 …`), or a path to a `.pub` file or an age identity file
+
+  Default: this machine's own age key (`~/.config/mise/age.txt` or `settings.age.key_file`) and `~/.ssh/id_ed25519.pub` / `id_rsa.pub`. When none exists, an age identity is generated at the key file path.
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
 

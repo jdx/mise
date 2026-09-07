@@ -1,19 +1,33 @@
+//! age encryption shared by two features: encrypted machine backups
+//! (`mise bootstrap dotfiles origin set --encrypt-backups`) and the
+//! experimental `[env]` age directives (`mise set --age-encrypt`, decrypted
+//! when the environment is resolved).
+//!
+//! This module is the stable core: identity discovery (`MISE_AGE_KEY`, the
+//! `age.*` settings, `~/.config/mise/age.txt`, the default SSH keys),
+//! recipient parsing, identity generation, and byte-level encryption.
+//! Nothing here is gated behind `settings.experimental`. The directive layer
+//! in `directive` keeps its own gate and its own wording.
+
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
 use age::ssh;
 use age::{Decryptor, Encryptor, Identity, IdentityFile, Recipient};
-use base64::Engine;
-use eyre::{Result, WrapErr, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 
 use crate::config::Settings;
-use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions};
-use crate::file::{self, replace_path};
+use crate::file::{self, display_path, replace_path};
 use crate::{dirs, env};
 
-const ZSTD_COMPRESSION_LEVEL: i32 = 3;
-const COMPRESSION_THRESHOLD: usize = 1024; // 1KB
+mod directive;
+pub(crate) use directive::{
+    create_age_directive, decrypt_age_directive, load_recipients_from_defaults,
+    load_recipients_from_key_file, load_ssh_recipient_from_path,
+};
+
+pub(crate) const ZSTD_COMPRESSION_LEVEL: i32 = 3;
 
 /// Why an SSH identity mise loaded cannot actually decrypt anything.
 ///
@@ -22,7 +36,7 @@ const COMPRESSION_THRESHOLD: usize = 1024; // 1KB
 /// reports "No matching keys found", which blames the recipient when the real
 /// problem is that the identity could not be read at all.
 #[derive(Debug, PartialEq, Eq)]
-enum UnusableSshIdentity {
+pub(crate) enum UnusableSshIdentity {
     Passphrase,
     EncryptedPem,
     EncryptedCipher(String),
@@ -65,7 +79,7 @@ impl UnusableSshIdentity {
 ///
 /// Only worth saying once decryption has already failed: an unreadable key
 /// sitting beside a working one costs the user nothing.
-fn unusable_identity_hint(unusable: &[(PathBuf, UnusableSshIdentity)]) -> String {
+pub(crate) fn unusable_identity_hint(unusable: &[(PathBuf, UnusableSshIdentity)]) -> String {
     if unusable.is_empty() {
         return String::new();
     }
@@ -73,7 +87,7 @@ fn unusable_identity_hint(unusable: &[(PathBuf, UnusableSshIdentity)]) -> String
     for (path, reason) in unusable {
         hint.push_str(&format!(
             "\nhint: {} {}, so it could not be used",
-            file::display_path(path),
+            display_path(path),
             reason.reason()
         ));
     }
@@ -83,103 +97,180 @@ fn unusable_identity_hint(unusable: &[(PathBuf, UnusableSshIdentity)]) -> String
     hint
 }
 
-pub(crate) async fn create_age_directive(
-    key: String,
-    value: &str,
-    recipients: &[Box<dyn Recipient + Send>],
-) -> Result<EnvDirective> {
-    if recipients.is_empty() {
-        return Err(eyre!(
-            "[experimental] No age recipients provided for encryption"
+/// Every identity this machine can decrypt with, in the order they were
+/// found, plus what is known about the ones that cannot.
+#[derive(Default)]
+pub(crate) struct LoadedIdentities {
+    pub identities: Vec<Box<dyn Identity + Send + Sync>>,
+    pub unusable: Vec<(PathBuf, UnusableSshIdentity)>,
+    /// The public keys of the x25519 identities among them (`age1…`), so a
+    /// caller can tell whether this machine is among a set of recipients.
+    pub x25519_public: Vec<String>,
+    pub plugins: usize,
+}
+
+/// Why `decrypt_bytes` could not produce the plaintext.
+#[derive(Debug)]
+pub(crate) enum DecryptError {
+    /// No identity at all: nothing to try.
+    NoIdentities,
+    /// Identities were tried and none matched.
+    Failed { error: String, hint: String },
+    /// Not an age file, or a damaged one.
+    Corrupt(String),
+}
+
+impl std::fmt::Display for DecryptError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoIdentities => write!(f, "no age identity is available on this machine"),
+            Self::Failed { error, hint } => write!(f, "{error}{hint}"),
+            Self::Corrupt(reason) => write!(f, "{reason}"),
+        }
+    }
+}
+
+impl std::error::Error for DecryptError {}
+
+pub(crate) const MAX_ENCRYPTED_BYTES: u64 = 256 * 1024 * 1024;
+pub(crate) const MAX_PLAINTEXT_BYTES: u64 = 1024 * 1024 * 1024;
+
+pub(crate) fn read_bounded(reader: impl Read, limit: u64) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.take(limit + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > limit {
+        return Err(std::io::Error::other(
+            "encrypted content exceeds the size limit",
         ));
     }
-
-    let encryptor =
-        match Encryptor::with_recipients(recipients.iter().map(|r| r.as_ref() as &dyn Recipient)) {
-            Ok(encryptor) => encryptor,
-            Err(e) => return Err(eyre!("[experimental] Failed to create encryptor: {}", e)),
-        };
-
-    let mut encrypted = Vec::new();
-    let mut writer = encryptor.wrap_output(&mut encrypted)?;
-    writer.write_all(value.as_bytes())?;
-    writer.finish()?;
-
-    // Determine format based on size and compression
-    let (encoded, format) = if encrypted.len() > COMPRESSION_THRESHOLD {
-        let compressed = zstd::encode_all(&encrypted[..], ZSTD_COMPRESSION_LEVEL)?;
-        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(&compressed);
-        (encoded, Some(AgeFormat::Zstd))
-    } else {
-        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(&encrypted);
-        (encoded, None) // Use None for raw format (default)
-    };
-
-    Ok(EnvDirective::Age {
-        key,
-        value: encoded,
-        format,
-        options: EnvDirectiveOptions::default(),
-    })
+    Ok(bytes)
 }
 
-pub(crate) async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
-    Settings::get().ensure_experimental("age encryption")?;
-    match directive {
-        EnvDirective::Age { value, format, .. } => {
-            let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
-                .decode(value)
-                .wrap_err("[experimental] Failed to decode base64")?;
-
-            let ciphertext = match format {
-                Some(AgeFormat::Zstd) => zstd::decode_all(&decoded[..])
-                    .wrap_err("[experimental] Failed to decompress zstd")?,
-                Some(AgeFormat::Raw) | None => decoded,
-            };
-
-            let (identities, unusable) = load_all_identities().await?;
-            if identities.is_empty() {
-                return Err(eyre!(
-                    "[experimental] No age identities found for decryption"
-                ));
-            }
-
-            let decryptor = Decryptor::new(&ciphertext[..])?;
-            let mut decrypted = Vec::new();
-
-            let identity_refs: Vec<&dyn Identity> = identities
-                .iter()
-                .map(|i| i.as_ref() as &dyn Identity)
-                .collect();
-
-            match decryptor.decrypt(identity_refs.into_iter()) {
-                Ok(mut reader) => {
-                    reader.read_to_end(&mut decrypted)?;
-                }
-                Err(e) => {
-                    return Err(eyre!(
-                        "[experimental] Failed to decrypt: {e}{}",
-                        unusable_identity_hint(&unusable)
-                    ));
-                }
-            }
-
-            String::from_utf8(decrypted)
-                .wrap_err("[experimental] Decrypted value is not valid UTF-8")
-        }
-        _ => Err(eyre!("[experimental] Not an Age directive")),
+/// zstd-compressed, then age-encrypted for `recipients`.
+pub(crate) fn encrypt_bytes(
+    plaintext: &[u8],
+    recipients: &[Box<dyn Recipient + Send>],
+) -> Result<Vec<u8>> {
+    if recipients.is_empty() {
+        bail!("no age recipients to encrypt for");
     }
+    if plaintext.len() as u64 > MAX_PLAINTEXT_BYTES {
+        bail!("plaintext exceeds the size limit");
+    }
+    let compressed = zstd::encode_all(plaintext, ZSTD_COMPRESSION_LEVEL)?;
+    if compressed.len() as u64 > MAX_ENCRYPTED_BYTES {
+        bail!("compressed payload exceeds the size limit");
+    }
+    let encryptor =
+        Encryptor::with_recipients(recipients.iter().map(|r| r.as_ref() as &dyn Recipient))
+            .map_err(|e| eyre!("creating the age encryptor: {e}"))?;
+    let mut out = Vec::new();
+    let mut writer = encryptor.wrap_output(&mut out)?;
+    writer.write_all(&compressed)?;
+    writer.finish()?;
+    if out.len() as u64 > MAX_ENCRYPTED_BYTES {
+        bail!("encrypted payload exceeds the size limit");
+    }
+    Ok(out)
 }
 
-pub(crate) async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipient + Send>>> {
-    let mut recipients: IndexSet<String> = IndexSet::new();
+/// The inverse of `encrypt_bytes`, with every identity this machine has.
+pub(crate) async fn decrypt_bytes(ciphertext: &[u8]) -> Result<Vec<u8>, DecryptError> {
+    decrypt_bytes_mode(ciphertext, console::user_attended_stderr()).await
+}
 
-    // Try to load from age key file
+pub(crate) async fn decrypt_bytes_mode(
+    ciphertext: &[u8],
+    interactive: bool,
+) -> Result<Vec<u8>, DecryptError> {
+    if ciphertext.len() as u64 > MAX_ENCRYPTED_BYTES {
+        return Err(DecryptError::Corrupt(
+            "encrypted payload exceeds the size limit".into(),
+        ));
+    }
+    let loaded = load_identities(interactive).await;
+    if loaded.identities.is_empty() {
+        if loaded.plugins > 0 {
+            return Err(DecryptError::Failed { error: "hardware identity requires an interactive restore with its age plugin installed".into(), hint: String::new() });
+        }
+        return Err(DecryptError::NoIdentities);
+    }
+    let decryptor = Decryptor::new(ciphertext)
+        .map_err(|e| DecryptError::Corrupt(format!("not an age file: {e}")))?;
+    let refs: Vec<&dyn Identity> = loaded
+        .identities
+        .iter()
+        .map(|i| i.as_ref() as &dyn Identity)
+        .collect();
+    let mut reader = decryptor
+        .decrypt(refs.into_iter())
+        .map_err(|e| DecryptError::Failed {
+            error: e.to_string(),
+            hint: unusable_identity_hint(&loaded.unusable),
+        })?;
+    let compressed = read_bounded(&mut reader, MAX_ENCRYPTED_BYTES)
+        .map_err(|e| DecryptError::Corrupt(format!("reading the age payload: {e}")))?;
+    let decoder = zstd::stream::read::Decoder::new(&compressed[..])
+        .map_err(|e| DecryptError::Corrupt(format!("decompressing the payload: {e}")))?;
+    read_bounded(decoder, MAX_PLAINTEXT_BYTES)
+        .map_err(|e| DecryptError::Corrupt(format!("decompressing the payload: {e}")))
+}
+
+/// Where a generated identity goes: `settings.age.key_file`, else the
+/// default `~/.config/mise/age.txt` (whether or not it exists yet).
+pub(crate) fn default_identity_file() -> PathBuf {
+    Settings::get()
+        .age
+        .key_file
+        .clone()
+        .map(replace_path)
+        .unwrap_or_else(|| dirs::CONFIG.join("age.txt"))
+}
+
+/// Generates an x25519 identity into `path` (created private, 0600 on
+/// unix, never overwriting) and returns its public key.
+pub(crate) fn generate_identity_file(path: &Path) -> Result<String> {
+    use age::secrecy::ExposeSecret;
+    if path.exists() {
+        bail!(
+            "{} exists already and is not overwritten",
+            display_path(path)
+        );
+    }
+    if let Some(parent) = path.parent() {
+        file::create_dir_all(parent)?;
+    }
+    let identity = age::x25519::Identity::generate();
+    let public = identity.to_public().to_string();
+    let content = format!(
+        "# created: {}\n# public key: {public}\n{}\n",
+        chrono::Utc::now().to_rfc3339(),
+        identity.to_string().expose_secret()
+    );
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut out = options
+        .open(path)
+        .wrap_err_with(|| format!("creating {}", display_path(path)))?;
+    out.write_all(content.as_bytes())
+        .wrap_err_with(|| format!("writing {}", display_path(path)))?;
+    Ok(public)
+}
+
+/// The recipients this machine's own identities imply: the public key of
+/// every x25519 identity in the key file, and the `.pub` of every default
+/// SSH key. Empty when there is none; not an error.
+pub(crate) async fn default_recipient_strings() -> Result<Vec<String>> {
+    let mut recipients: IndexSet<String> = IndexSet::new();
     if let Some(key_file) = get_default_key_file().await
         && key_file.exists()
     {
         let content = file::read_to_string(&key_file)?;
-        // For age keys, we need to parse them as x25519 identities to get public keys
         for line in content.lines() {
             let line = line.trim();
             if line.starts_with("AGE-SECRET-KEY-")
@@ -189,124 +280,113 @@ pub(crate) async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipi
             }
         }
     }
-
-    // Try to load from SSH private keys
-    let ssh_key_paths = get_default_ssh_key_paths();
-    for path in ssh_key_paths {
+    for path in get_default_ssh_key_paths() {
         if path.exists()
-            && let Ok(recipient) = load_ssh_recipient_from_private_key(&path).await
+            && let Ok(recipient) = ssh_public_key_for_private(&path).await
         {
             recipients.insert(recipient);
         }
     }
-
-    let mut parsed_recipients: Vec<Box<dyn Recipient + Send>> = Vec::new();
-    for recipient_str in recipients {
-        if let Some(recipient) = parse_recipient(&recipient_str)? {
-            parsed_recipients.push(recipient);
-        }
-    }
-
-    if parsed_recipients.is_empty() {
-        return Err(eyre!(
-            "[experimental] No age recipients found. Provide --age-recipient, --age-ssh-recipient, or configure settings.age.key_file"
-        ));
-    }
-
-    Ok(parsed_recipients)
+    Ok(recipients.into_iter().collect())
 }
 
-pub(crate) async fn load_recipients_from_key_file(
-    path: &Path,
-) -> Result<Vec<Box<dyn Recipient + Send>>> {
-    let mut recipients: Vec<Box<dyn Recipient + Send>> = Vec::new();
-
-    if !path.exists() {
-        return Err(eyre!(
-            "[experimental] Age key file not found: {}",
-            path.display()
-        ));
+/// One `--recipient` argument: an age public key, an SSH public key, or a
+/// path to a file holding either (a `.pub` file, or an age identity file
+/// whose secret keys are turned into their public keys).
+pub(crate) async fn resolve_recipient_arg(arg: &str) -> Result<Vec<String>> {
+    let trimmed = arg.trim();
+    if trimmed.starts_with("age1") || trimmed.starts_with("ssh-") {
+        parse_recipient(trimmed)?;
+        return Ok(vec![trimmed.to_string()]);
     }
-
-    let content = file::read_to_string(path)?;
-
-    // Parse age x25519 identities and convert to recipients
+    let path = replace_path(trimmed);
+    if !path.is_file() {
+        bail!(
+            "{arg} is not an age recipient (age1…), an SSH public key (ssh-…), or a readable key file"
+        );
+    }
+    let content = file::read_to_string(&path)?;
+    let mut out = vec![];
     for line in content.lines() {
         let line = line.trim();
-        if line.starts_with("AGE-SECRET-KEY-")
-            && let Ok(identity) = line.parse::<age::x25519::Identity>()
-        {
-            let public_key = identity.to_public();
-            recipients.push(Box::new(public_key));
+        if line.starts_with("ssh-") {
+            // the key type and material only: a `.pub` file's comment is
+            // not part of the recipient
+            let key = line
+                .split_whitespace()
+                .take(2)
+                .collect::<Vec<_>>()
+                .join(" ");
+            parse_recipient(&key).wrap_err_with(|| display_path(&path))?;
+            out.push(key);
+        } else if line.starts_with("age1") {
+            parse_recipient(line).wrap_err_with(|| display_path(&path))?;
+            out.push(line.to_string());
+        } else if line.starts_with("AGE-SECRET-KEY-") {
+            let identity = line
+                .parse::<age::x25519::Identity>()
+                .map_err(|e| eyre!("{}: {e}", display_path(&path)))?;
+            out.push(identity.to_public().to_string());
         }
     }
-
-    if recipients.is_empty() {
-        return Err(eyre!(
-            "[experimental] No valid age identities found in {}",
-            path.display()
-        ));
+    if out.is_empty() {
+        bail!(
+            "{} holds no age identity, age recipient, or SSH public key",
+            display_path(&path)
+        );
     }
-
-    Ok(recipients)
+    Ok(out)
 }
 
+/// `age1…` or `ssh-…`; `None` for anything else.
 pub(crate) fn parse_recipient(recipient_str: &str) -> Result<Option<Box<dyn Recipient + Send>>> {
-    let trimmed = recipient_str.trim();
+    parse_recipient_mode(recipient_str, true)
+}
 
-    if trimmed.starts_with("age1") {
+pub(crate) fn parse_recipient_mode(
+    recipient_str: &str,
+    interactive: bool,
+) -> Result<Option<Box<dyn Recipient + Send>>> {
+    let trimmed = recipient_str.trim();
+    if trimmed.starts_with("age1tag1") {
+        return trimmed
+            .parse::<age::tag::Recipient>()
+            .map(|r| Some(Box::new(r) as Box<dyn Recipient + Send>))
+            .map_err(|e| eyre!("invalid tagged age recipient: {e}"));
+    }
+    if trimmed.starts_with("age1") && trimmed.parse::<age::plugin::Recipient>().is_err() {
         match trimmed.parse::<age::x25519::Recipient>() {
             Ok(r) => Ok(Some(Box::new(r))),
-            Err(e) => Err(eyre!("[experimental] Invalid age recipient: {}", e)),
+            Err(e) => Err(eyre!("invalid age recipient {trimmed:?}: {e}")),
         }
     } else if trimmed.starts_with("ssh-") {
-        // SSH recipient parsing - the age crate will validate it
+        // the age crate validates the key material
         match trimmed.parse::<ssh::Recipient>() {
             Ok(r) => Ok(Some(Box::new(r))),
-            Err(e) => Err(eyre!("[experimental] Invalid SSH recipient: {:?}", e)),
+            Err(e) => Err(eyre!("invalid SSH recipient: {e:?}")),
         }
+    } else if let Ok(recipient) = trimmed.parse::<age::plugin::Recipient>() {
+        if !interactive {
+            return Err(eyre!(
+                "plugin-dependent age recipients require interactive synchronization; use a native age, SSH, or tagged public recipient for background encryption"
+            ));
+        }
+        let plugin = age::plugin::RecipientPluginV1::new(
+            recipient.plugin(),
+            std::slice::from_ref(&recipient),
+            &[],
+            age::NoCallbacks,
+        )
+        .map_err(|e| eyre!("age recipient plugin is unavailable: {e}"))?;
+        Ok(Some(Box::new(plugin)))
     } else {
         Ok(None)
     }
 }
 
-pub(crate) async fn load_ssh_recipient_from_path(path: &Path) -> Result<Box<dyn Recipient + Send>> {
-    let content = file::read_to_string(path)?;
-    let trimmed = content.trim();
-
-    // Check if it's a public key
-    if trimmed.starts_with("ssh-") {
-        match trimmed.parse::<ssh::Recipient>() {
-            Ok(r) => return Ok(Box::new(r)),
-            Err(e) => {
-                return Err(eyre!(
-                    "[experimental] Invalid SSH public key at {}: {:?}",
-                    path.display(),
-                    e
-                ));
-            }
-        }
-    }
-
-    // Try to load as private key and derive public
-    if path.extension().and_then(|s| s.to_str()) == Some("pub") {
-        Err(eyre!(
-            "[experimental] Invalid SSH public key at {}",
-            path.display()
-        ))
-    } else {
-        load_ssh_recipient_from_private_key(path)
-            .await
-            .and_then(|s| {
-                parse_recipient(&s)?
-                    .ok_or_else(|| eyre!("[experimental] Failed to parse SSH recipient"))
-            })
-    }
-}
-
-async fn load_ssh_recipient_from_private_key(path: &Path) -> Result<String> {
-    // For SSH keys, we can't easily derive the public key from the private key using the age crate
-    // So we'll try to read the corresponding .pub file
+/// The public key beside an SSH private key: age cannot derive it, so the
+/// `.pub` file must exist.
+pub(crate) async fn ssh_public_key_for_private(path: &Path) -> Result<String> {
     let pub_path = path.with_extension("pub");
     if pub_path.exists() {
         let content = file::read_to_string(&pub_path)?;
@@ -315,108 +395,215 @@ async fn load_ssh_recipient_from_private_key(path: &Path) -> Result<String> {
             return Ok(trimmed.to_string());
         }
     }
-
-    Err(eyre!(
-        "[experimental] Could not find public key for SSH private key at {}. Expected {}.pub",
-        path.display(),
-        path.display()
-    ))
+    bail!(
+        "no public key for the SSH private key at {}; expected {}",
+        display_path(path),
+        display_path(&pub_path)
+    )
 }
 
-type LoadedIdentities = (
-    Vec<Box<dyn Identity + Send + Sync>>,
-    Vec<(PathBuf, UnusableSshIdentity)>,
-);
+/// Every identity this machine has: `MISE_AGE_KEY`, the identity files
+/// named by the settings and the default `age.txt`, and the SSH keys named
+/// by the settings and the default `~/.ssh/id_ed25519` / `id_rsa`.
+pub(crate) async fn load_all_identities() -> LoadedIdentities {
+    load_identities(false).await
+}
 
-async fn load_all_identities() -> Result<LoadedIdentities> {
-    // Get identity files first
+async fn load_identities(interactive: bool) -> LoadedIdentities {
     let identity_files = get_all_identity_files().await;
     let ssh_identity_files = get_all_ssh_identity_files();
+    let mut loaded = LoadedIdentities::default();
+    let mut plugin_sources = Vec::new();
 
-    // Now process identities without holding them across await points
-    let mut identities: Vec<Box<dyn Identity + Send + Sync>> = Vec::new();
-    let mut unusable: Vec<(PathBuf, UnusableSshIdentity)> = Vec::new();
-
-    // Check MISE_AGE_KEY environment variable
     if let Ok(age_key) = env::var("MISE_AGE_KEY")
         && !age_key.is_empty()
     {
-        // First try to parse as a raw age secret key
+        plugin_sources.push(age_key.clone());
+        let age_key = software_identity_text(&age_key);
+        // raw secret keys first
         for line in age_key.lines() {
             let line = line.trim();
             if line.starts_with("AGE-SECRET-KEY-")
                 && let Ok(identity) = line.parse::<age::x25519::Identity>()
             {
-                identities.push(Box::new(identity));
+                loaded.x25519_public.push(identity.to_public().to_string());
+                loaded.identities.push(Box::new(identity));
             }
         }
-
-        // If no keys were found, try parsing as an identity file
-        if identities.is_empty()
+        // else the whole value as an identity file
+        if loaded.identities.is_empty()
             && let Ok(identity_file) = IdentityFile::from_buffer(age_key.as_bytes())
             && let Ok(mut file_identities) = identity_file.into_identities()
         {
-            identities.append(&mut file_identities);
+            loaded.identities.append(&mut file_identities);
         }
     }
 
-    // Load from identity files
     for path in identity_files {
-        if path.exists() {
-            match file::read_to_string(&path) {
-                Ok(content) => {
-                    if let Ok(identity_file) = IdentityFile::from_buffer(content.as_bytes())
-                        && let Ok(mut file_identities) = identity_file.into_identities()
+        if !path.exists() {
+            continue;
+        }
+        match file::read_to_string(&path) {
+            Ok(content) => {
+                plugin_sources.push(content.clone());
+                let content = software_identity_text(&content);
+                if let Ok(identity_file) = IdentityFile::from_buffer(content.as_bytes())
+                    && let Ok(mut file_identities) = identity_file.into_identities()
+                {
+                    loaded.identities.append(&mut file_identities);
+                }
+                for line in content.lines() {
+                    let line = line.trim();
+                    if line.starts_with("AGE-SECRET-KEY-")
+                        && let Ok(identity) = line.parse::<age::x25519::Identity>()
                     {
-                        identities.append(&mut file_identities);
+                        loaded.x25519_public.push(identity.to_public().to_string());
                     }
                 }
-                Err(e) => {
-                    debug!(
-                        "[experimental] Failed to read identity file {:?}: {}",
-                        path, e
-                    );
-                }
+            }
+            Err(e) => {
+                debug!("age: failed to read identity file {:?}: {}", path, e);
             }
         }
     }
 
-    // Load SSH identities
     for path in ssh_identity_files {
-        if path.exists() {
-            match std::fs::File::open(&path) {
-                Ok(file) => {
-                    let mut reader = BufReader::new(file);
-                    match ssh::Identity::from_buffer(&mut reader, Some(path.display().to_string()))
-                    {
-                        Ok(identity) => {
-                            if let Some(reason) = UnusableSshIdentity::classify(&identity) {
-                                // Still keep it: dropping the only identity would
-                                // report "No age identities found" instead, which is
-                                // just as misleading as the message being fixed here.
-                                unusable.push((path.clone(), reason));
-                            }
-                            identities.push(Box::new(identity));
+        if !path.exists() {
+            continue;
+        }
+        match std::fs::File::open(&path) {
+            Ok(file) => {
+                let mut reader = BufReader::new(file);
+                match ssh::Identity::from_buffer(&mut reader, Some(path.display().to_string())) {
+                    Ok(identity) => {
+                        if let Some(reason) = UnusableSshIdentity::classify(&identity) {
+                            // Still keep it: dropping the only identity would
+                            // report "no identities" instead, which is just
+                            // as misleading as the message being fixed here.
+                            loaded.unusable.push((path.clone(), reason));
                         }
-                        Err(e) => {
-                            debug!(
-                                "[experimental] Failed to parse SSH identity from {:?}: {}",
-                                path, e
-                            );
-                        }
+                        loaded.identities.push(Box::new(identity));
+                    }
+                    Err(e) => {
+                        debug!("age: failed to parse SSH identity from {:?}: {}", path, e);
                     }
                 }
-                Err(e) => {
-                    debug!(
-                        "[experimental] Failed to read SSH identity file {:?}: {}",
-                        path, e
-                    );
-                }
+            }
+            Err(e) => {
+                debug!("age: failed to read SSH identity file {:?}: {}", path, e);
             }
         }
     }
 
-    Ok((identities, unusable))
+    // Try software recovery identities before touching hardware.
+    for text in plugin_sources {
+        add_plugin_identities(&text, interactive, &mut loaded);
+    }
+    loaded
+}
+
+fn software_identity_text(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim().starts_with("AGE-PLUGIN-"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn add_plugin_identities(text: &str, interactive: bool, loaded: &mut LoadedIdentities) {
+    for line in text
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("AGE-PLUGIN-"))
+    {
+        loaded.plugins += 1;
+        // Hardware plugins can display native dialogs without asking callbacks.
+        // Never start them during background work or routine diagnostics.
+        if !interactive {
+            continue;
+        }
+        match line.parse::<age::plugin::Identity>() {
+            Ok(identity) => match age::plugin::IdentityPluginV1::new(
+                identity.plugin(),
+                std::slice::from_ref(&identity),
+                HardwareCallbacks,
+            ) {
+                Ok(plugin) => loaded.identities.push(Box::new(plugin)),
+                Err(err) => warn!("age identity plugin unavailable: {err}"),
+            },
+            Err(_) => warn!("invalid age plugin identity"),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct HardwareCallbacks;
+impl age::Callbacks for HardwareCallbacks {
+    fn display_message(&self, message: &str) {
+        eprintln!("{message}");
+    }
+    fn confirm(&self, message: &str, yes: &str, _no: Option<&str>) -> Option<bool> {
+        let answer = demand::Input::new(format!("{message} ({yes}? y/N)"))
+            .run()
+            .ok()?;
+        Some(answer.eq_ignore_ascii_case("y"))
+    }
+    fn request_public_string(&self, description: &str) -> Option<String> {
+        demand::Input::new(description).run().ok()
+    }
+    fn request_passphrase(&self, description: &str) -> Option<age::secrecy::SecretString> {
+        demand::Input::new(description)
+            .password(true)
+            .run()
+            .ok()
+            .map(Into::into)
+    }
+}
+
+/// A software-only probe; never invokes hardware plugins or their dialogs.
+/// None means hardware is configured but cannot be verified noninteractively.
+pub(crate) async fn restorability(recipients: &[String]) -> Option<bool> {
+    let loaded = load_all_identities().await;
+    let software: Vec<_> = recipients
+        .iter()
+        .filter(|r| r.parse::<age::plugin::Recipient>().is_err())
+        .filter_map(|r| parse_recipient(r).ok().flatten())
+        .collect();
+    if !software.is_empty()
+        && let Ok(ciphertext) = encrypt_bytes(b"mise backup identity check", &software)
+        && let Ok(decryptor) = Decryptor::new(&ciphertext[..])
+        && decryptor
+            .decrypt(
+                loaded
+                    .identities
+                    .iter()
+                    .map(|i| i.as_ref() as &dyn Identity),
+            )
+            .is_ok()
+    {
+        return Some(true);
+    }
+    if loaded.plugins > 0 {
+        None
+    } else {
+        Some(false)
+    }
+}
+
+/// Sync's Git reconciliation is synchronous; isolate the identity loader's
+/// runtime rather than nesting a runtime on a Tokio worker.
+pub(crate) fn decrypt_sync(ciphertext: &[u8], interactive: bool) -> Result<Vec<u8>> {
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()?
+                    .block_on(decrypt_bytes_mode(ciphertext, interactive))
+                    .map_err(Into::into)
+            })
+            .join()
+            .map_err(|_| eyre!("age decryption worker failed"))?
+    })
 }
 
 async fn get_default_key_file() -> Option<PathBuf> {
@@ -436,6 +623,16 @@ async fn get_default_key_file() -> Option<PathBuf> {
 }
 
 async fn get_all_identity_files() -> Vec<PathBuf> {
+    identity_paths_age()
+}
+
+pub(crate) fn identity_paths() -> Vec<PathBuf> {
+    let mut paths = identity_paths_age();
+    paths.extend(get_all_ssh_identity_files());
+    paths
+}
+
+fn identity_paths_age() -> Vec<PathBuf> {
     let mut files = Vec::new();
 
     if let Some(ref identity_files) = Settings::get().age.identity_files {
@@ -524,99 +721,232 @@ mod tests {
         let hint = unusable_identity_hint(&[(path.clone(), UnusableSshIdentity::Passphrase)]);
         // Compare against the rendered form: display_path uses the host
         // separator, so a literal "/keys/..." never matches on Windows.
-        assert!(hint.contains(&file::display_path(&path)), "{hint}");
+        assert!(hint.contains(&display_path(&path)), "{hint}");
         assert!(hint.contains("passphrase"), "{hint}");
         assert!(hint.contains("settings.age.key_file"), "{hint}");
-    }
-
-    #[tokio::test]
-    async fn test_age_x25519_round_trip_small() -> Result<()> {
-        let key = age::x25519::Identity::generate();
-        let recipient = key.to_public();
-
-        // Small value should not be compressed
-        let plaintext = "secret value";
-        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
-        let directive =
-            create_age_directive("TEST_VAR".to_string(), plaintext, &recipients).await?;
-
-        if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
-            // Small value should not be compressed (format should be None/Raw)
-            assert!(
-                format.is_none()
-                    || matches!(format, Some(crate::config::env_directive::AgeFormat::Raw))
-            );
-
-            use age::secrecy::ExposeSecret;
-            env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
-            let decrypted =
-                decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
-                    key: "TEST_VAR".to_string(),
-                    value,
-                    format,
-                    options: Default::default(),
-                })
-                .await?;
-            env::remove_var("MISE_AGE_KEY");
-
-            assert_eq!(decrypted, plaintext);
-        } else {
-            panic!("Expected Age directive");
-        }
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_age_x25519_round_trip_large() -> Result<()> {
-        let key = age::x25519::Identity::generate();
-        let recipient = key.to_public();
-
-        // Large value should be compressed (>1KB)
-        let plaintext = "x".repeat(2000);
-        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
-        let directive =
-            create_age_directive("TEST_VAR".to_string(), &plaintext, &recipients).await?;
-
-        if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
-            // Large value should be compressed
-            assert_eq!(format, Some(crate::config::env_directive::AgeFormat::Zstd));
-
-            use age::secrecy::ExposeSecret;
-            env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
-            let decrypted =
-                decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
-                    key: "TEST_VAR".to_string(),
-                    value,
-                    format,
-                    options: Default::default(),
-                })
-                .await?;
-            env::remove_var("MISE_AGE_KEY");
-
-            assert_eq!(decrypted, plaintext);
-        } else {
-            panic!("Expected Age directive");
-        }
-        Ok(())
     }
 
     #[test]
     fn test_parse_recipient() -> Result<()> {
         let age_recipient = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p";
-        let parsed = parse_recipient(age_recipient)?;
-        assert!(parsed.is_some());
-
-        // Note: The SSH recipient parser in the age crate is strict about format
-        // This is a valid format example
+        assert!(parse_recipient(age_recipient)?.is_some());
+        // Current age-plugin-tpm exports native tagged recipients. Encryption
+        // must not look for an age-plugin-tag executable or access the TPM.
+        let tpm_recipient = "age1tag1q096edfp3ty6n36fj5kyq0yuesp7rdcmm7sjswzdcrekh6ash8n3uys987t";
+        let tagged = parse_recipient(tpm_recipient)?.unwrap();
+        assert!(encrypt_bytes(b"TPM public recipient", &[tagged]).is_ok());
         let ssh_recipient =
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJmkfJ8VZq4m5k7tJVts7+nR01fbRvLHLgeQCF6FWYr5";
-        let parsed = parse_recipient(ssh_recipient)?;
-        assert!(parsed.is_some());
-
-        let invalid = "invalid_recipient";
-        let parsed = parse_recipient(invalid)?;
-        assert!(parsed.is_none());
-
+        assert!(parse_recipient(ssh_recipient)?.is_some());
+        assert!(parse_recipient("invalid_recipient")?.is_none());
+        let err = match parse_recipient("age1notakey") {
+            Err(err) => err.to_string(),
+            Ok(_) => panic!("age1notakey was accepted"),
+        };
+        assert!(!err.contains("experimental"), "{err}");
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_encrypt_bytes_round_trips_and_compresses() -> Result<()> {
+        use age::secrecy::ExposeSecret;
+        let key = age::x25519::Identity::generate();
+        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(key.to_public())];
+
+        let small = b"a few bytes".to_vec();
+        let ciphertext = encrypt_bytes(&small, &recipients)?;
+        assert_ne!(ciphertext, small);
+
+        // compressible: the ciphertext ends up shorter than the plaintext
+        let large = "the same line again\n".repeat(5000).into_bytes();
+        let large_ciphertext = encrypt_bytes(&large, &recipients)?;
+        assert!(large_ciphertext.len() < large.len());
+
+        let mut vars = crate::test::EnvVarGuard::new();
+        vars.set("MISE_AGE_KEY", key.to_string().expose_secret());
+        let decrypted = decrypt_bytes(&ciphertext).await;
+        let decrypted_large = decrypt_bytes(&large_ciphertext).await;
+        vars.remove("MISE_AGE_KEY");
+        assert_eq!(decrypted.unwrap(), small);
+        assert_eq!(decrypted_large.unwrap(), large);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_decrypt_bytes_reports_the_wrong_identity() -> Result<()> {
+        use age::secrecy::ExposeSecret;
+        let key = age::x25519::Identity::generate();
+        let other = age::x25519::Identity::generate();
+        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(key.to_public())];
+        let ciphertext = encrypt_bytes(b"payload", &recipients)?;
+
+        let mut vars = crate::test::EnvVarGuard::new();
+        vars.set("MISE_AGE_KEY", other.to_string().expose_secret());
+        let result = decrypt_bytes(&ciphertext).await;
+        let corrupt = decrypt_bytes(b"not an age file at all").await;
+        vars.remove("MISE_AGE_KEY");
+        assert!(
+            matches!(result, Err(DecryptError::Failed { .. })),
+            "{result:?}"
+        );
+        assert!(
+            matches!(corrupt, Err(DecryptError::Corrupt(_))),
+            "{corrupt:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_encrypt_bytes_needs_a_recipient() {
+        let err = encrypt_bytes(b"x", &[]).unwrap_err().to_string();
+        assert!(err.contains("no age recipients"), "{err}");
+        assert!(!err.contains("experimental"), "{err}");
+    }
+
+    #[test]
+    fn test_generate_identity_file_is_private_and_never_overwrites() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("keys").join("age.txt");
+        let public = generate_identity_file(&path)?;
+        assert!(public.starts_with("age1"), "{public}");
+        let content = std::fs::read_to_string(&path)?;
+        assert!(
+            content.contains(&format!("# public key: {public}")),
+            "{content}"
+        );
+        assert!(content.contains("AGE-SECRET-KEY-"), "{content}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path)?.permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        let err = generate_identity_file(&path).unwrap_err().to_string();
+        assert!(err.contains("not overwritten"), "{err}");
+        assert_eq!(std::fs::read_to_string(&path)?, content);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_resolve_recipient_arg_accepts_keys_and_files() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let identity_file = dir.path().join("age.txt");
+        let public = generate_identity_file(&identity_file)?;
+        // an identity file yields its public key, never the secret
+        let resolved = resolve_recipient_arg(identity_file.to_str().unwrap()).await?;
+        assert_eq!(resolved, vec![public.clone()]);
+
+        let ssh =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJmkfJ8VZq4m5k7tJVts7+nR01fbRvLHLgeQCF6FWYr5";
+        let pub_file = dir.path().join("id_ed25519.pub");
+        std::fs::write(&pub_file, format!("{ssh} user@host\n"))?;
+        let resolved = resolve_recipient_arg(pub_file.to_str().unwrap()).await?;
+        assert_eq!(resolved.len(), 1);
+        assert!(resolved[0].starts_with("ssh-ed25519 "), "{resolved:?}");
+
+        assert_eq!(resolve_recipient_arg(&public).await?, vec![public]);
+        let err = resolve_recipient_arg("nothing-like-a-key")
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not an age recipient"), "{err}");
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod limits_tests {
+    use super::*;
+
+    #[test]
+    fn bounded_reader_accepts_limit_and_refuses_next_byte() {
+        assert_eq!(read_bounded(&b"1234"[..], 4).unwrap(), b"1234");
+        assert!(read_bounded(&b"12345"[..], 4).is_err());
+        let compressed = zstd::encode_all(&vec![0u8; 10000][..], 1).unwrap();
+        let decoder = zstd::stream::read::Decoder::new(&compressed[..]).unwrap();
+        assert!(read_bounded(decoder, 100).is_err());
+    }
+}
+
+#[cfg(all(test, unix))]
+mod plugin_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[tokio::test]
+    async fn plugin_protocol_roundtrip_and_software_recovery() {
+        use age::secrecy::ExposeSecret;
+        let tmp = tempfile::tempdir().unwrap();
+        let executable = tmp.path().join("age-plugin-se");
+        std::fs::write(
+            &executable,
+            include_str!("agecrypt/fixtures/age-plugin-se.py"),
+        )
+        .unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut vars = crate::test::EnvVarGuard::new();
+        vars.remove("MISE_TEST_PLUGIN_MODE");
+        let old_path = env::var("PATH").unwrap();
+        vars.set("PATH", format!("{}:{old_path}", tmp.path().display()));
+        let identity = age::plugin::Identity::default_for_plugin("se")
+            .unwrap()
+            .to_string();
+        vars.set("MISE_AGE_KEY", &identity);
+        let recipient = "age1se1qfn44rsw0xvmez3pky46nghmnd5up0jpj97nd39zptlh83a0nja6skde3ak";
+        let refused = parse_recipient_mode(recipient, false).err().unwrap();
+        assert!(
+            refused
+                .to_string()
+                .contains("require interactive synchronization")
+        );
+        let software = age::x25519::Identity::generate();
+        let recipients: Vec<Box<dyn Recipient + Send>> = vec![
+            parse_recipient(recipient).unwrap().unwrap(),
+            Box::new(software.to_public()),
+        ];
+        let ciphertext = encrypt_bytes(b"plugin protocol test", &recipients).unwrap();
+        assert_eq!(restorability(&[recipient.into()]).await, None);
+        let locked = decrypt_bytes_mode(&ciphertext, false).await;
+        assert!(locked.is_err());
+        assert_eq!(
+            decrypt_bytes_mode(&ciphertext, true).await.unwrap(),
+            b"plugin protocol test"
+        );
+        vars.set("MISE_TEST_PLUGIN_MODE", "malformed");
+        assert!(decrypt_bytes_mode(&ciphertext, true).await.is_err());
+        vars.set("MISE_TEST_PLUGIN_MODE", "cancel");
+        assert!(encrypt_bytes(b"cancelled request", &recipients).is_err());
+        let plugin_identity = identity.parse::<age::plugin::Identity>().unwrap();
+        let noninteractive =
+            age::plugin::IdentityPluginV1::new("se", &[plugin_identity], age::NoCallbacks).unwrap();
+        assert!(
+            Decryptor::new(&ciphertext[..])
+                .unwrap()
+                .decrypt(std::iter::once(&noninteractive as &dyn Identity))
+                .is_err()
+        );
+        vars.remove("MISE_TEST_PLUGIN_MODE");
+        std::fs::remove_file(&executable).unwrap();
+        assert!(parse_recipient(recipient).is_err());
+        assert!(decrypt_bytes_mode(&ciphertext, true).await.is_err());
+        vars.set("MISE_AGE_KEY", software.to_string().expose_secret());
+        assert_eq!(
+            decrypt_bytes_mode(&ciphertext, false).await.unwrap(),
+            b"plugin protocol test"
+        );
+        assert_eq!(
+            restorability(&[software.to_public().to_string()]).await,
+            Some(true)
+        );
+        assert_eq!(
+            restorability(&[
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJmkfJ8VZq4m5k7tJVts7+nR01fbRvLHLgeQCF6FWYr5"
+                    .into()
+            ])
+            .await,
+            Some(false)
+        );
     }
 }

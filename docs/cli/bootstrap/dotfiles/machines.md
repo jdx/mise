@@ -13,6 +13,8 @@ This machine first, then every machine whose refs the last
 `mise bootstrap dotfiles sync` fetched. Their checkpoints are addressed as
 `<machine>/<ref>`: `mise bootstrap dotfiles rollback --to laptop/latest --all`
 recovers a machine's backed-up files; their journals are data only.
+Encrypted backups are listed without a key; restoring one needs an
+identity among its recipients.
 
 ## Flags
 - **`-J --json`** — Output in JSON format

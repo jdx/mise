@@ -234,7 +234,13 @@ impl TrackedSet {
                         normalize(&request.source),
                         EntryKind::Source,
                         "source",
-                        Policy::for_mode(FileMode::Track),
+                        Policy {
+                            encrypt: request.policy.encrypt,
+                            share: request.policy.share,
+                            overridden: request.policy.overridden,
+                            explicit: request.policy.explicit,
+                            ..Policy::for_mode(FileMode::Track)
+                        },
                     );
                     source.declared_in = declared_in;
                     set.push(source);
@@ -269,7 +275,13 @@ impl TrackedSet {
                         normalize(&request.source),
                         EntryKind::Source,
                         "source",
-                        Policy::for_mode(FileMode::Track),
+                        Policy {
+                            encrypt: request.policy.encrypt,
+                            share: request.policy.share,
+                            overridden: request.policy.overridden,
+                            explicit: request.policy.explicit,
+                            ..Policy::for_mode(FileMode::Track)
+                        },
                     );
                     source.declared_in = declared_in;
                     set.push(source);
@@ -286,6 +298,15 @@ impl TrackedSet {
             .iter_mut()
             .find(|existing| existing.path == entry.path)
         {
+            if existing.kind != EntryKind::Implicit
+                && entry.kind != EntryKind::Implicit
+                && existing.policy.encrypt != entry.policy.encrypt
+            {
+                self.invalid.push(PathReason {
+                    path: display_path(&entry.path),
+                    reason: "overlapping declarations disagree about encryption".into(),
+                });
+            }
             if rank(entry.kind) > rank(existing.kind) {
                 *existing = entry;
             }
@@ -382,11 +403,14 @@ impl TrackedSet {
                 let Some(target) = resolve_link(&link) else {
                     continue;
                 };
-                if set
-                    .entries
-                    .iter()
-                    .any(|entry| target.starts_with(&entry.path))
-                {
+                if let Some(existing) = set.entry_for(&target) {
+                    if set.entries[owner].policy.encrypt && !existing.policy.encrypt {
+                        eyre::bail!(
+                            "encrypted symlink {} points to a captured plaintext target {}; mark the target encrypted too",
+                            display_path(&link),
+                            display_path(&target)
+                        );
+                    }
                     continue; // already covered
                 }
                 if !target.starts_with(&home) || target == home {
@@ -507,6 +531,7 @@ impl TrackedSet {
                 autosave: entry.policy.autosave,
                 share: entry.policy.share,
                 backup: entry.policy.backup,
+                encrypt: entry.policy.encrypt,
                 state: "live".into(),
                 promotion: None,
                 private: entry.note.clone(),
@@ -522,6 +547,7 @@ impl TrackedSet {
                 autosave: private.policy.autosave,
                 share: private.policy.share,
                 backup: private.policy.backup,
+                encrypt: private.policy.encrypt,
                 state: "live".into(),
                 promotion: None,
                 private: Some(private.reason.clone()),
@@ -847,6 +873,11 @@ pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
     for reserved in ["tracked", "sources", ".mise-history"] {
         dirs.push(config_dir.join(reserved));
     }
+    dirs.extend(
+        crate::agecrypt::identity_paths()
+            .iter()
+            .map(|path| normalize(path)),
+    );
     dirs.sort();
     dirs.dedup();
     dirs

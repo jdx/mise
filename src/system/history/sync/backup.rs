@@ -4,16 +4,118 @@
 //! removed and the record masked. Journal blobs never travel: journals
 //! are data on another machine, never executed. Retention removes only
 //! this machine's remote refs for checkpoints it pruned.
+//!
+//! With `[history.origin] encrypt_backups = true` the wrapper is the
+//! encrypted layout (`encrypted`): one age payload per checkpoint for the
+//! declared recipients. The scheme in use (plaintext, or which recipients)
+//! is recorded in `sync.json`; when it changes, this machine's refs on the
+//! origin are replaced in one transaction with eligible checkpoints under
+//! the new scheme, so a repository never holds a mix by accident.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use eyre::Result;
+use eyre::{Result, bail};
 
+use super::encrypted::{self, BackupHeader};
 use super::network::{MACHINES_PREFIX, PushOutcome, REMOTE_MACHINES_PREFIX, Remote};
 use super::privacy::mask_checkpoint;
+use super::run::SyncStatus;
+use crate::system::history::config::OriginTomlConfig;
 use crate::system::history::shadow::{HistoryRepo, Overlay};
 use crate::system::history::store::{Entry, OperationStatus};
 use crate::system::history::tracked::display_to_tree_path;
+
+/// The recorded scheme of a plaintext connection (and of every connection
+/// recorded before schemes existed).
+pub(crate) const PLAIN_SCHEME: &str = "plain";
+
+/// The recipients this machine's backups are encrypted for.
+pub(crate) struct BackupEncryption {
+    pub recipients: Vec<Box<dyn age::Recipient + Send>>,
+    /// The same recipients as declared, for the scheme fingerprint.
+    pub strings: Vec<String>,
+}
+
+impl std::fmt::Debug for BackupEncryption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BackupEncryption")
+            .field("recipients", &self.strings)
+            .finish()
+    }
+}
+
+impl BackupEncryption {
+    /// `None` for a plaintext connection. An error when encryption is on
+    /// but cannot be done (no recipients, or one that does not parse):
+    /// the caller skips uploads rather than falling back to plaintext.
+    pub(crate) fn resolve(origin: &OriginTomlConfig, interactive: bool) -> Result<Option<Self>> {
+        if !origin.encrypt_backups {
+            return Ok(None);
+        }
+        if origin.recipients.is_empty() {
+            bail!(
+                "encrypted backups are on but [history.origin] names no recipients; `mise bootstrap dotfiles origin set {} --encrypt-backups [--recipient …]` adds them (nothing is uploaded until then)",
+                origin.url
+            );
+        }
+        let mut recipients = vec![];
+        let mut strings = vec![];
+        for declared in &origin.recipients {
+            match crate::agecrypt::parse_recipient_mode(declared, interactive)? {
+                Some(recipient) => {
+                    recipients.push(recipient);
+                    strings.push(declared.trim().to_string());
+                }
+                None => bail!(
+                    "[history.origin] recipient {declared:?} is neither an age public key (age1…) nor an SSH public key (ssh-…)"
+                ),
+            }
+        }
+        Ok(Some(Self {
+            recipients,
+            strings,
+        }))
+    }
+}
+
+/// A fingerprint of how backups are written: `plain`, or `age:` plus a
+/// hash of the recipient set (order and repeats do not matter).
+pub(crate) fn scheme(encryption: Option<&BackupEncryption>) -> String {
+    match encryption {
+        None => PLAIN_SCHEME.to_string(),
+        Some(encryption) => {
+            let mut recipients: Vec<&str> = encryption.strings.iter().map(String::as_str).collect();
+            recipients.sort_unstable();
+            recipients.dedup();
+            format!(
+                "age:{}",
+                crate::hash::hash_sha256_to_str(&recipients.join("\n"))
+            )
+        }
+    }
+}
+
+/// Whether `scheme` differs from the one the refs on the origin were
+/// written under (a status without one is plaintext: the only scheme
+/// there was).
+pub(crate) fn scheme_changes(status: &SyncStatus, scheme: &str) -> bool {
+    status.backup_scheme.as_deref().unwrap_or(PLAIN_SCHEME) != scheme
+}
+
+/// Records `scheme`; when it changed, forgets what was uploaded so every
+/// eligible checkpoint is uploaded again. Returns whether it changed.
+#[cfg(test)]
+pub(crate) fn reconcile_scheme(status: &mut SyncStatus, scheme: &str) -> bool {
+    if !scheme_changes(status, scheme) {
+        status
+            .backup_scheme
+            .get_or_insert_with(|| scheme.to_string());
+        return false;
+    }
+    status.uploaded.clear();
+    status.backup_scheme = Some(scheme.to_string());
+    true
+}
 
 /// Whether a checkpoint may leave the machine at all: it has content and
 /// at least one entry with `backup = true`.
@@ -42,9 +144,28 @@ fn excluded_paths(entry: &Entry) -> BTreeSet<String> {
         .collect()
 }
 
-/// A wrapper commit holding only what may be backed up.
-pub(crate) fn filtered_commit(repo: &HistoryRepo, entry: &Entry) -> Result<String> {
-    let excluded = excluded_paths(entry);
+/// A wrapper commit holding only what may be backed up: the plaintext
+/// layout, or the encrypted one for `encryption`.
+pub(crate) fn wrapper_commit(
+    repo: &HistoryRepo,
+    entry: &Entry,
+    encryption: Option<&BackupEncryption>,
+    encrypted_paths: &BTreeSet<String>,
+) -> Result<String> {
+    let mut excluded = excluded_paths(entry);
+    if encryption.is_none() {
+        excluded.extend(encrypted_paths.iter().cloned());
+        excluded.extend(
+            entry
+                .checkpoint
+                .tree
+                .coverage
+                .entries
+                .iter()
+                .filter(|c| c.encrypt)
+                .map(|c| c.path.clone()),
+        );
+    }
     let snapshot = match &entry.checkpoint.tree.snapshot {
         Some(snapshot) if excluded.is_empty() => Some(snapshot.clone()),
         Some(snapshot) => {
@@ -59,10 +180,40 @@ pub(crate) fn filtered_commit(repo: &HistoryRepo, entry: &Entry) -> Result<Strin
         }
         None => None,
     };
-    let masked = mask_checkpoint(&entry.checkpoint, &excluded);
-    // a commit of its own: the local checkpoint ref keeps naming the full
-    // wrapper, private and unbacked files included
-    repo.write_checkpoint_commit(snapshot.as_deref(), &masked, &BTreeMap::new())
+    let mut masked = mask_checkpoint(&entry.checkpoint, &excluded);
+    masked.tree.snapshot = snapshot.clone();
+    if encryption.is_none()
+        && (!encrypted_paths.is_empty()
+            || entry
+                .checkpoint
+                .tree
+                .coverage
+                .entries
+                .iter()
+                .any(|coverage| coverage.encrypt))
+    {
+        // Descriptions, labels, and operation notes can contain text derived
+        // from protected files. Plaintext backups must not disclose it.
+        masked.description = "checkpoint (encrypted files omitted)".into();
+        masked.summary = masked.description.clone();
+        masked.labels.clear();
+        masked.task = None;
+        masked.operation = None;
+    }
+    match encryption {
+        // a commit of its own: the local checkpoint ref keeps naming the
+        // full wrapper, private and unbacked files included
+        None => repo.write_checkpoint_commit(snapshot.as_deref(), &masked, &BTreeMap::new()),
+        Some(encryption) => {
+            let ciphertext =
+                encrypted::build(repo, snapshot.as_deref(), &masked, &encryption.recipients)?;
+            encrypted::write_commit(
+                repo,
+                &BackupHeader::new(&masked, encryption.recipients.len()),
+                &ciphertext,
+            )
+        }
+    }
 }
 
 pub(crate) fn remote_ref(machine_id: &str, uuid: &str) -> String {
@@ -88,6 +239,8 @@ pub(crate) fn upload(
     entries: &[Entry],
     machine_id: &str,
     uploaded: &mut BTreeSet<String>,
+    encryption: Option<&BackupEncryption>,
+    encrypted_paths: &BTreeSet<String>,
 ) -> Result<usize> {
     let mut count = 0;
     for entry in entries {
@@ -99,7 +252,9 @@ pub(crate) fn upload(
             uploaded.insert(uuid.clone());
             continue;
         }
-        let commit = filtered_commit(repo, entry)?;
+        let commit = wrapper_commit(repo, entry, encryption, encrypted_paths)?;
+        // Scheme changes use `replace`'s complete transaction. Ordinary
+        // uploads must not overwrite a backup published since our fetch.
         let refspec = format!("{commit}:{}", remote_ref(machine_id, uuid));
         match remote.push(&[refspec], None)? {
             PushOutcome::Done => {
@@ -114,6 +269,49 @@ pub(crate) fn upload(
         }
     }
     Ok(count)
+}
+
+/// Prepare every replacement before touching the remote. Status is committed
+/// only after the atomic push, so a crash can safely repeat the transaction.
+pub(crate) fn replace(
+    remote: &Remote<'_>,
+    repo: &HistoryRepo,
+    entries: &[Entry],
+    machine_id: &str,
+    status: &mut SyncStatus,
+    encryption: Option<&BackupEncryption>,
+    encrypted_paths: &BTreeSet<String>,
+) -> Result<(usize, usize)> {
+    let old_refs = remote_refs(remote, machine_id)?;
+    let old: BTreeSet<&str> = old_refs.iter().map(String::as_str).collect();
+    let mut refs = BTreeSet::new();
+    let mut uploaded = BTreeSet::new();
+    let mut refspecs = Vec::new();
+    for entry in entries.iter().filter(|entry| eligible(entry)) {
+        let uuid = &entry.checkpoint.uuid;
+        let name = remote_ref(machine_id, uuid);
+        let newly_eligible = status
+            .upload_since
+            .as_deref()
+            .is_none_or(|since| entry.checkpoint.created_at.as_str() >= since);
+        if !newly_eligible && !status.uploaded.contains(uuid) && !old.contains(name.as_str()) {
+            continue;
+        }
+        let commit = wrapper_commit(repo, entry, encryption, encrypted_paths)?;
+        refspecs.push(format!("+{commit}:{name}"));
+        refs.insert(name);
+        uploaded.insert(uuid.clone());
+    }
+    refspecs.extend(
+        old_refs
+            .iter()
+            .filter(|name| !refs.contains(*name))
+            .map(|name| format!(":{name}")),
+    );
+    remote.push_atomic(&refspecs)?;
+    status.backup_scheme = Some(scheme(encryption));
+    status.uploaded = uploaded;
+    Ok((status.uploaded.len(), old_refs.len()))
 }
 
 /// Removes this machine's remote refs for checkpoints no longer retained
@@ -146,7 +344,8 @@ pub(crate) fn prune_remote(
     Ok(stale.len())
 }
 
-/// Every one of this machine's remote refs, for `origin --purge`.
+/// Every one of this machine's remote refs, for `origin --purge` and for
+/// replacing them after a scheme change.
 pub(crate) fn remote_refs(remote: &Remote<'_>, machine_id: &str) -> Result<Vec<String>> {
     let prefix = format!("{REMOTE_MACHINES_PREFIX}{machine_id}/");
     Ok(remote
@@ -158,7 +357,7 @@ pub(crate) fn remote_refs(remote: &Remote<'_>, machine_id: &str) -> Result<Vec<S
 }
 
 #[cfg(test)]
-mod tests {
+mod upload_tests {
     use std::process::Command;
 
     use super::*;
@@ -209,6 +408,7 @@ mod tests {
             autosave: true,
             share: true,
             backup: true,
+            encrypt: false,
             state: "live".into(),
             promotion: None,
             private: None,
@@ -238,7 +438,16 @@ mod tests {
             .unwrap();
         let mut uploaded = BTreeSet::new();
         assert_eq!(
-            upload(&remote, &repo, &[entry], "m", &mut uploaded).unwrap(),
+            upload(
+                &remote,
+                &repo,
+                &[entry],
+                "m",
+                &mut uploaded,
+                None,
+                &BTreeSet::new()
+            )
+            .unwrap(),
             0
         );
         assert_eq!(uploaded, BTreeSet::from(["u1".to_string()]));
@@ -262,7 +471,9 @@ mod tests {
                 &repo,
                 std::slice::from_ref(&entry),
                 "m",
-                &mut uploaded
+                &mut uploaded,
+                None,
+                &BTreeSet::new()
             )
             .unwrap(),
             1
@@ -272,7 +483,16 @@ mod tests {
         uploaded.clear();
         remote.fetch("main").unwrap();
         assert_eq!(
-            upload(&remote, &repo, &[entry], "m", &mut uploaded).unwrap(),
+            upload(
+                &remote,
+                &repo,
+                &[entry],
+                "m",
+                &mut uploaded,
+                None,
+                &BTreeSet::new()
+            )
+            .unwrap(),
             0
         );
         assert_eq!(uploaded, BTreeSet::from(["u1".to_string()]));
@@ -301,7 +521,9 @@ mod tests {
                 &repo,
                 std::slice::from_ref(&entry),
                 "m",
-                &mut uploaded
+                &mut uploaded,
+                None,
+                &BTreeSet::new()
             )
             .unwrap(),
             0
@@ -312,5 +534,86 @@ mod tests {
             .output()
             .unwrap();
         assert!(String::from_utf8_lossy(&output.stdout).starts_with(&other.commit));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn encryption(recipients: &[&str]) -> BackupEncryption {
+        BackupEncryption {
+            recipients: vec![],
+            strings: recipients.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn origin(encrypt: bool, recipients: &[&str]) -> OriginTomlConfig {
+        OriginTomlConfig {
+            url: "file:///origin.git".into(),
+            branch: "main".into(),
+            encrypt_backups: encrypt,
+            recipients: recipients.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn scheme_ignores_order_and_repeats() {
+        assert_eq!(scheme(None), PLAIN_SCHEME);
+        let a = scheme(Some(&encryption(&["age1a", "age1b"])));
+        let b = scheme(Some(&encryption(&["age1b", "age1a", "age1a"])));
+        assert_eq!(a, b);
+        assert!(a.starts_with("age:"), "{a}");
+        assert_ne!(a, scheme(Some(&encryption(&["age1a"]))));
+    }
+
+    #[test]
+    fn reconcile_scheme_forgets_uploads_only_on_a_change() {
+        let mut status = SyncStatus::default();
+        status.uploaded.insert("u1".into());
+        // an old status without a scheme is plaintext: no change, no re-upload
+        assert!(!reconcile_scheme(&mut status, PLAIN_SCHEME));
+        assert_eq!(status.uploaded.len(), 1);
+        assert_eq!(status.backup_scheme.as_deref(), Some(PLAIN_SCHEME));
+
+        let age = scheme(Some(&encryption(&["age1a"])));
+        assert!(reconcile_scheme(&mut status, &age));
+        assert!(status.uploaded.is_empty());
+        assert_eq!(status.backup_scheme.as_deref(), Some(age.as_str()));
+
+        status.uploaded.insert("u1".into());
+        assert!(!reconcile_scheme(&mut status, &age));
+        assert_eq!(status.uploaded.len(), 1);
+
+        assert!(reconcile_scheme(&mut status, PLAIN_SCHEME));
+        assert!(status.uploaded.is_empty());
+    }
+
+    #[test]
+    fn resolve_refuses_encryption_without_usable_recipients() {
+        assert!(
+            BackupEncryption::resolve(&origin(false, &[]), false)
+                .unwrap()
+                .is_none()
+        );
+        let err = BackupEncryption::resolve(&origin(true, &[]), false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("names no recipients"), "{err}");
+        assert!(!err.contains("experimental"), "{err}");
+        let err = BackupEncryption::resolve(&origin(true, &["not-a-key"]), false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("neither an age public key"), "{err}");
+        let resolved = BackupEncryption::resolve(
+            &origin(
+                true,
+                &["age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"],
+            ),
+            false,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(resolved.recipients.len(), 1);
     }
 }

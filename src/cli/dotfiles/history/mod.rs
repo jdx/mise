@@ -84,8 +84,9 @@ pub(crate) fn resolve(spec: &str, entries: &[Entry], path: Option<&str>) -> Resu
 }
 
 /// Resolves a reference that may name another machine's checkpoint
-/// (`<machine>/<ref>`, from the recovery refs the last sync fetched).
-pub(crate) fn resolve_with_store(
+/// (`<machine>/<ref>`, from the recovery refs the last sync fetched; an
+/// encrypted one is decrypted with this machine's identities).
+pub(crate) async fn resolve_with_store(
     store: &Store,
     spec: &str,
     entries: &[Entry],
@@ -98,8 +99,8 @@ pub(crate) fn resolve_with_store(
         let repo = store
             .repo()
             .ok_or_else(|| eyre::eyre!("other machines' checkpoints require git"))?;
-        let (_, machine_entries) = crate::system::history::sync::machines::entries(repo, machine)?;
-        return resolve(reference, &machine_entries, path);
+        return crate::system::history::sync::machines::resolve(repo, machine, reference, path)
+            .await;
     }
     resolve(spec, entries, path)
 }

@@ -1716,6 +1716,8 @@ This machine first, then every machine whose refs the last
 `mise bootstrap dotfiles sync` fetched. Their checkpoints are addressed as
 `<machine>/<ref>`: `mise bootstrap dotfiles rollback \-\-to laptop/latest \-\-all`
 recovers a machine's backed\-up files; their journals are data only.
+Encrypted backups are listed without a key; restoring one needs an
+identity among its recipients.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles machines [OPTIONS]
 .PP
@@ -1735,11 +1737,11 @@ Experimental: enable with `mise settings experimental=true`.
 `set <url>` connects one repository that holds the shared setup branch
 and this machine's recovery refs. Before anything leaves the machine it
 prints exactly what will happen: the sync mode, what is shared per
-stream, what is not and why, what is backed up (in plain form), names
-that look like secrets, private content already committed upstream,
-and how an existing repository would be adopted. The declaration goes
-to `[history.origin]` in the global config; the mode to
-`settings.history.sync`.
+stream, what is not and why, what is backed up (in plain form, or
+encrypted with `\-\-encrypt\-backups`), names that look like secrets,
+private content already committed upstream, and how an existing
+repository would be adopted. The declaration goes to `[history.origin]`
+in the global config; the mode to `settings.history.sync`.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles origin [OPTIONS] [COMMAND]
 .PP
@@ -1787,7 +1789,14 @@ Upload the checkpoints recorded before now too
 Continue although the repository's history holds private content
 .TP
 \fB\-\-encrypt\-backups\fR
-Encrypt machine recovery refs (not supported yet)
+Encrypt this machine's recovery refs with age for its recipients (see \-\-recipient)
+
+Every backed\-up checkpoint becomes one age payload: file names, descriptions, and content are readable only with a recipient's identity. Setup configuration stays plaintext; dotfiles can use `encrypt = true`.
+.TP
+\fB\-\-recipient\fR \fI<RECIPIENT>\fR
+A backup recipient (repeatable): an age public key (`age1…`), an SSH public key (`ssh\-ed25519 …`), or a path to a `.pub` file or an age identity file
+
+Default: this machine's own age key (`~/.config/mise/age.txt` or `settings.age.key_file`) and `~/.ssh/id_ed25519.pub` / `id_rsa.pub`. When none exists, an age identity is generated at the key file path.
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt

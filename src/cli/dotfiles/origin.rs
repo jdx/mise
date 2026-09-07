@@ -10,11 +10,11 @@ use crate::system::history::sync::origin;
 /// `set <url>` connects one repository that holds the shared setup branch
 /// and this machine's recovery refs. Before anything leaves the machine it
 /// prints exactly what will happen: the sync mode, what is shared per
-/// stream, what is not and why, what is backed up (in plain form), names
-/// that look like secrets, private content already committed upstream,
-/// and how an existing repository would be adopted. The declaration goes
-/// to `[history.origin]` in the global config; the mode to
-/// `settings.history.sync`.
+/// stream, what is not and why, what is backed up (in plain form, or
+/// encrypted with `--encrypt-backups`), names that look like secrets,
+/// private content already committed upstream, and how an existing
+/// repository would be adopted. The declaration goes to `[history.origin]`
+/// in the global config; the mode to `settings.history.sync`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesOrigin {
@@ -65,9 +65,21 @@ pub(crate) struct DotfilesOriginSet {
     #[usage(long)]
     allow_committed_private: bool,
 
-    /// Encrypt machine recovery refs (not supported yet)
+    /// Encrypt this machine's recovery refs with age for its recipients (see --recipient)
+    ///
+    /// Every backed-up checkpoint becomes one age payload: file names,
+    /// descriptions, and content are readable only with a recipient's
+    /// identity. Setup configuration stays plaintext; dotfiles can use `encrypt = true`.
     #[usage(long)]
     encrypt_backups: bool,
+
+    /// A backup recipient (repeatable): an age public key (`age1…`), an SSH public key (`ssh-ed25519 …`), or a path to a `.pub` file or an age identity file
+    ///
+    /// Default: this machine's own age key (`~/.config/mise/age.txt` or
+    /// `settings.age.key_file`) and `~/.ssh/id_ed25519.pub` / `id_rsa.pub`.
+    /// When none exists, an age identity is generated at the key file path.
+    #[usage(long, value_name = "RECIPIENT", requires = "encrypt_backups")]
+    recipient: Vec<String>,
 
     /// Skip the confirmation prompt
     #[usage(long, short)]
@@ -90,11 +102,19 @@ impl DotfilesOrigin {
                 match crate::system::history::config::origin()? {
                     Some((path, origin)) => {
                         miseprintln!(
-                            "{} (branch {}) declared in {}; mode {}",
+                            "{} (branch {}) declared in {}; mode {}; machine backups {}",
                             origin.url,
                             origin.branch,
                             crate::file::display_path(&path),
-                            SyncMode::current()?.as_str()
+                            SyncMode::current()?.as_str(),
+                            if origin.encrypt_backups {
+                                format!(
+                                    "encrypted (age) for {} recipient(s)",
+                                    origin.recipients.len()
+                                )
+                            } else {
+                                "plaintext".to_string()
+                            }
                         );
                     }
                     None => miseprintln!(
@@ -128,6 +148,7 @@ impl DotfilesOriginSet {
                 include_existing: self.include_existing,
                 allow_committed_private: self.allow_committed_private,
                 encrypt_backups: self.encrypt_backups,
+                recipients: self.recipient.clone(),
                 yes: self.yes,
             },
         )
@@ -140,6 +161,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise bootstrap dotfiles origin set https://github.com/you/setup.git</bold>
     $ <bold>mise bootstrap dotfiles origin set git@github.com:you/setup.git --name laptop --sync manual</bold>
+    $ <bold>mise bootstrap dotfiles origin set git@github.com:you/setup.git --encrypt-backups</bold>
+    $ <bold>mise bootstrap dotfiles origin set git@github.com:you/setup.git --encrypt-backups --recipient age1… --recipient ~/.ssh/id_ed25519.pub</bold>
     $ <bold>mise bootstrap dotfiles origin</bold>              # what is connected
     $ <bold>mise bootstrap dotfiles origin --remove</bold>
 "#

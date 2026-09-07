@@ -92,6 +92,13 @@ struct DotfilesDiagnosis {
     sync_failing_for_secs: Option<u64>,
     /// Failed syncs in a row, since the last success.
     sync_failures: u32,
+    /// This machine's recovery refs are encrypted.
+    backups_encrypted: bool,
+    /// Uploads are being skipped (encryption on without usable recipients).
+    backups_error: Option<String>,
+    /// Whether an identity here could restore this machine's own encrypted
+    /// backups (`None` when they are not encrypted).
+    backups_restorable: Option<bool>,
 }
 
 /// How long syncs have been failing: since the current run of failures
@@ -758,6 +765,9 @@ impl Doctor {
             sync_error: None,
             sync_failing_for_secs: None,
             sync_failures: 0,
+            backups_encrypted: false,
+            backups_error: None,
+            backups_restorable: None,
         };
         if let Some(reason) = unavailable {
             self.errors.push(format!(
@@ -798,7 +808,7 @@ impl Doctor {
         }
         // the setup repository, read from what the last sync persisted:
         // nothing is fetched, applied, or asked here
-        if let Ok(Some(_)) = crate::system::history::config::origin() {
+        if let Ok(origin) = crate::system::history::sync::run::origin() {
             use crate::system::history::sync::{apply, run};
             let status = match run::read_status(&state_dir) {
                 Ok(status) => status,
@@ -809,6 +819,28 @@ impl Doctor {
                     run::SyncStatus::default()
                 }
             };
+            if origin.encrypt_backups {
+                diagnosis.backups_encrypted = true;
+                if let Some(error) = &status.backup_error {
+                    diagnosis.backups_error = Some(error.clone());
+                    self.warnings.push(format!(
+                        "dotfiles: machine backups are not being uploaded ({error}).\n     Local checkpoints continue; nothing from this machine is recoverable from the repository until recipients are configured.\n     Inspect with: mise bootstrap dotfiles status"
+                    ));
+                }
+                // can this machine read what it uploads? decided from the
+                // identities here, without touching the network
+                let restorable = crate::agecrypt::restorability(&origin.recipients).await;
+                diagnosis.backups_restorable = restorable;
+                if restorable.is_none() {
+                    self.warnings.push("dotfiles: hardware backup identity configured but unverified; restore interactively to unlock it".into());
+                }
+                if restorable == Some(false) && !origin.recipients.is_empty() {
+                    self.warnings.push(
+                        "dotfiles: machine backups are encrypted, but no age identity on this machine can decrypt them: this machine could not restore its own backups.\n     Put an identity among the recipients in ~/.config/mise/age.txt, settings.age.key_file, or MISE_AGE_KEY, or add this machine's key with: mise bootstrap dotfiles origin set <url> --encrypt-backups --recipient <key>"
+                            .to_string(),
+                    );
+                }
+            }
             if let Some(error) = &status.validation_error {
                 diagnosis.sync_error = Some(error.clone());
                 self.errors.push(format!("dotfiles: incoming setup is invalid: {error}. Correct the setup repository and sync again."));
@@ -909,6 +941,19 @@ impl Doctor {
                 }
                 None => {}
             }
+        }
+        if diagnosis.backups_encrypted {
+            lines.push(format!(
+                "machine backups encrypted (age){}",
+                match diagnosis.backups_restorable {
+                    Some(true) => "; an identity here can restore them",
+                    Some(false) => "; NO identity here can restore them",
+                    None => "",
+                }
+            ));
+        }
+        if let Some(error) = &diagnosis.backups_error {
+            lines.push(format!("machine backups skipped: {error}"));
         }
         info::section("dotfiles", lines.join("\n"))?;
         Ok(())

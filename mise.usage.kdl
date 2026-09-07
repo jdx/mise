@@ -804,6 +804,8 @@ This machine first, then every machine whose refs the last
 `mise bootstrap dotfiles sync` fetched. Their checkpoints are addressed as
 `<machine>/<ref>`: `mise bootstrap dotfiles rollback --to laptop/latest --all`
 recovers a machine's backed-up files; their journals are data only.
+Encrypted backups are listed without a key; restoring one needs an
+identity among its recipients.
 """#
             flag "-J --json" help="Output in JSON format"
             flag "-h --help" help="Print help" action=help builtin=#true
@@ -817,13 +819,13 @@ Experimental: enable with `mise settings experimental=true`.
 `set <url>` connects one repository that holds the shared setup branch
 and this machine's recovery refs. Before anything leaves the machine it
 prints exactly what will happen: the sync mode, what is shared per
-stream, what is not and why, what is backed up (in plain form), names
-that look like secrets, private content already committed upstream,
-and how an existing repository would be adopted. The declaration goes
-to `[history.origin]` in the global config; the mode to
-`settings.history.sync`.
+stream, what is not and why, what is backed up (in plain form, or
+encrypted with `--encrypt-backups`), names that look like secrets,
+private content already committed upstream, and how an existing
+repository would be adopted. The declaration goes to `[history.origin]`
+in the global config; the mode to `settings.history.sync`.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles origin set https://github.com/you/setup.git\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin set git@github.com:you/setup.git --name laptop --sync manual\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin\u{1b}[22m              # what is connected\n    $ \u{1b}[1mmise bootstrap dotfiles origin --remove\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles origin set https://github.com/you/setup.git\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin set git@github.com:you/setup.git --name laptop --sync manual\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin set git@github.com:you/setup.git --encrypt-backups\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin set git@github.com:you/setup.git --encrypt-backups --recipient age1… --recipient ~/.ssh/id_ed25519.pub\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin\u{1b}[22m              # what is connected\n    $ \u{1b}[1mmise bootstrap dotfiles origin --remove\u{1b}[22m\n"
             flag --remove help="Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)" effect=destructive
             flag --purge help="Delete this machine's recovery refs from the origin, then disconnect" effect=destructive
             flag "-y --yes" help="Skip the confirmation prompt"
@@ -840,7 +842,21 @@ to `[history.origin]` in the global config; the mode to
                 }
                 flag --include-existing help="Upload the checkpoints recorded before now too"
                 flag --allow-committed-private help="Continue although the repository's history holds private content"
-                flag --encrypt-backups help="Encrypt machine recovery refs (not supported yet)"
+                flag --encrypt-backups help="Encrypt this machine's recovery refs with age for its recipients (see --recipient)" {
+                    long_help #"""
+Encrypt this machine's recovery refs with age for its recipients (see --recipient)
+
+Every backed-up checkpoint becomes one age payload: file names, descriptions, and content are readable only with a recipient's identity. Setup configuration stays plaintext; dotfiles can use `encrypt = true`.
+"""#
+                }
+                flag --recipient help="A backup recipient (repeatable): an age public key (`age1…`), an SSH public key (`ssh-ed25519 …`), or a path to a `.pub` file or an age identity file" var=#true requires=--encrypt-backups {
+                    long_help #"""
+A backup recipient (repeatable): an age public key (`age1…`), an SSH public key (`ssh-ed25519 …`), or a path to a `.pub` file or an age identity file
+
+Default: this machine's own age key (`~/.config/mise/age.txt` or `settings.age.key_file`) and `~/.ssh/id_ed25519.pub` / `id_rsa.pub`. When none exists, an age identity is generated at the key file path.
+"""#
+                    arg <RECIPIENT>
+                }
                 flag "-y --yes" help="Skip the confirmation prompt"
                 flag "-h --help" help="Print help" action=help builtin=#true
                 arg <URL> help="The repository url (any git url; a private repository is recommended)"

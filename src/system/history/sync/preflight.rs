@@ -101,12 +101,6 @@ pub(super) fn prospective(
         let parsed = MiseToml::for_history_preflight(&body, &path)?;
         if let Some(history) = parsed.history_config() {
             excludes.extend(history.exclude);
-            if history.origin.is_some_and(|origin| origin.encrypt_backups) {
-                bail!(
-                    "encrypted backups are not supported yet ({})",
-                    path.display()
-                );
-            }
         }
         files.insert(
             path,

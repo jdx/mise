@@ -15,6 +15,10 @@ pub(crate) const PUBLISH_REF: &str = "refs/setup/publish";
 pub(crate) const MACHINES_PREFIX: &str = "refs/machines/";
 /// Where machine recovery refs live on the remote.
 pub(crate) const REMOTE_MACHINES_PREFIX: &str = "refs/mise-history/";
+/// Local only, never pushed or fetched: the decrypted form of an encrypted
+/// recovery ref, `refs/machines-plain/<machine-id>/<remote commit>`, so a
+/// backup is decrypted once and its objects survive `gc`.
+pub(crate) const PLAIN_PREFIX: &str = "refs/machines-plain/";
 
 /// Authentication belongs in a credential helper or SSH agent, never in
 /// persisted connection URLs or the errors recorded in history health.
@@ -165,6 +169,23 @@ impl<'a> Remote<'a> {
         bail!("pushing to {}: {stderr}", self.url)
     }
 
+    /// Replace a machine's recovery namespace as one transaction.
+    pub(crate) fn push_atomic(&self, refspecs: &[String]) -> Result<()> {
+        if refspecs.is_empty() {
+            return Ok(());
+        }
+        let mut args = vec!["push", "--quiet", "--atomic", self.url.as_str()];
+        args.extend(refspecs.iter().map(String::as_str));
+        let output = self.repo.network(args)?;
+        if !output.status.success() {
+            bail!(
+                "atomic backup replacement failed; existing refs were not partially replaced: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        Ok(())
+    }
+
     /// Deletes remote refs (`:refs/...`).
     pub(crate) fn delete(&self, refs: &[String]) -> Result<()> {
         if refs.is_empty() {
@@ -218,5 +239,48 @@ impl<'a> Remote<'a> {
                 Some((oid.to_string(), name.to_string()))
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod atomic_tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_atomic_push_preserves_existing_refs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let destination = tmp.path().join("origin.git");
+        assert!(
+            std::process::Command::new("git")
+                .args(["init", "--bare", "--quiet"])
+                .arg(&destination)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let repo = HistoryRepo::open_or_init_in(&tmp.path().join("local"))
+            .unwrap()
+            .unwrap();
+        let remote_url = destination.to_str().unwrap();
+        let remote = Remote::new(&repo, remote_url);
+        let tree = repo.empty_object("tree").unwrap();
+        let old = repo.commit_tree(&tree, vec![], "old").unwrap();
+        let new = repo.commit_tree(&tree, vec![], "new").unwrap();
+        let name = "refs/mise-history/machine/checkpoint";
+        assert!(matches!(
+            remote.push(&[format!("{old}:{name}")], None).unwrap(),
+            PushOutcome::Done
+        ));
+        assert!(
+            std::process::Command::new("git")
+                .arg("--git-dir")
+                .arg(&destination)
+                .args(["config", "receive.advertiseAtomic", "false"])
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(remote.push_atomic(&[format!("+{new}:{name}")]).is_err());
+        assert!(remote.ls_remote().unwrap().contains(&(old, name.into())));
     }
 }
