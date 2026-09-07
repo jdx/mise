@@ -36,12 +36,77 @@ pub(crate) struct Onboarding {
 }
 
 pub(crate) struct Outcome {
+    /// Incoming configuration staged privately for the ordinary bootstrap
+    /// preview. The caller owns its lifetime; live configuration is untouched.
+    pub preview_config: Option<tempfile::TempDir>,
     /// The repository can be reached without this session's borrowed
     /// GitHub access.
     pub durable_access: bool,
     /// The shared configuration was not written: it waits for a decision
     /// (a differing configuration is here already), so no bootstrap ran.
     pub configuration_held: bool,
+}
+
+/// Snapshot only the state needed for planning while its writers are locked.
+/// All fetches, reconciliation, and preview status writes then target this
+/// private store, so cancellation never needs to roll back live bookkeeping.
+fn preview_store(store: &Store) -> Result<(tempfile::TempDir, Store)> {
+    let _sync = run::lock(store)?;
+    let _capture = store.lock()?;
+    let temp = tempfile::tempdir()?;
+    hstore::ensure_store_dir_in(temp.path())?;
+    std::fs::copy(
+        hstore::machine_file_in(store.state_dir()),
+        hstore::machine_file_in(temp.path()),
+    )?;
+    let preview = Store::open_in(temp.path())?;
+    let source = store
+        .repo()
+        .ok_or_else(|| eyre::eyre!("preview requires git"))?;
+    let destination = preview
+        .repo()
+        .ok_or_else(|| eyre::eyre!("preview requires git"))?;
+    let url = url::Url::from_file_path(source.dir())
+        .map_err(|_| eyre::eyre!("cannot address the local history repository"))?;
+    let copied = destination.network(["fetch", "--no-tags", url.as_str(), "+refs/*:refs/*"])?;
+    if !copied.status.success() {
+        bail!("could not snapshot the local history repository for preview");
+    }
+    run::write_status(temp.path(), &run::read_status(store.state_dir())?)?;
+    // Reopen to rebuild checkpoint and promotion indexes from the copied refs.
+    let preview = Store::open_in(temp.path())?;
+    Ok((temp, preview))
+}
+
+fn preview_configuration(store: &Store) -> Result<tempfile::TempDir> {
+    let temp = tempfile::tempdir()?;
+    let repo = store
+        .repo()
+        .ok_or_else(|| eyre::eyre!("preview requires git"))?;
+    let head = repo
+        .ref_oid(UPSTREAM_REF)?
+        .ok_or_else(|| eyre::eyre!("setup preview has no fetched branch"))?;
+    for entry in repo.ls_tree(&head)? {
+        if super::layout::is_configuration(&entry.path)
+            && super::layout::is_safe_branch_path(&entry.path)
+        {
+            let Some((mode, oid)) = repo.object_at(&head, &entry.path)? else {
+                bail!("configuration disappeared from preview commit");
+            };
+            crate::system::history::replay::write_path(
+                repo,
+                &temp.path().join(&entry.path),
+                &mode,
+                &oid,
+            )?;
+        }
+    }
+    // Machine-local inputs are not published, but affect the real bootstrap.
+    let local = global_config_dir().join("config.local.toml");
+    if local.is_file() {
+        std::fs::copy(local, temp.path().join("config.local.toml"))?;
+    }
+    Ok(temp)
 }
 
 /// `mise bootstrap --from-git <url>`: `Some` when the repository is
@@ -166,7 +231,8 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         );
     }
 
-    // what is pending, then the plan
+    // Preview in an isolated store, never in the live sync state.
+    let (_preview_dir, planning_store) = preview_store(store)?;
     let tracked = TrackedSet::effective().await?;
     let mut request = SyncRequest::new(true);
     request.origin = Some(OriginTomlConfig {
@@ -174,47 +240,34 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         branch: onboarding.branch.clone(),
         encrypt_backups: false,
     });
-    request.capture = !onboarding.dry_run;
-    request.dry_run = onboarding.dry_run;
-    // a dry run records what is pending only for the plan below and puts
-    // everything back afterwards: the previous sync state, and no fetched
-    // branch on a machine that was not connected
-    let recorded = run::status_path(state_dir);
-    let recorded_before = onboarding
-        .dry_run
-        .then(|| std::fs::read(&recorded).ok())
-        .flatten();
-    let connected_before = {
-        let status = run::read_status(state_dir)?;
-        status.origin_url.is_some() && !status.disconnected
-    };
-    let synced = run::sync(store, &tracked, &request)?;
+    request.capture = false;
+    request.dry_run = true;
+    // Pending decisions belong only to this preview store.
+    run::sync(&planning_store, &tracked, &request)?;
     let mut preview = ApplyRequest::automatic();
     preview.automatic = false;
     preview.dry_run = true;
     preview.plan_only = true;
-    let previewed = apply::apply(store, &tracked, &preview).await;
+    apply::apply(&planning_store, &tracked, &preview).await?;
     if onboarding.dry_run {
-        match recorded_before {
-            Some(bytes) => crate::file::write(&recorded, bytes)?,
-            None => {
-                let _ = std::fs::remove_file(&recorded);
-            }
-        }
-        if !connected_before && let Some(repo) = store.repo() {
-            repo.delete_ref(UPSTREAM_REF)?;
-        }
-        previewed?;
+        let preview_config = Some(preview_configuration(&planning_store)?);
         miseprintln!("Dry run: nothing was changed.");
         return Ok(Outcome {
+            preview_config,
             durable_access: true,
             configuration_held: false,
         });
     }
-    previewed?;
     if !super::origin::confirmed(onboarding.yes, "Set this machine up from the repository?")? {
         bail!("not set up");
     }
+
+    // Recompute after confirmation against current local files and remote
+    // refs; never apply a stale preview or restore over a watcher's new state.
+    refuse_other_connection(store, &onboarding.origin, &onboarding.branch)?;
+    request.capture = true;
+    request.dry_run = false;
+    let synced = run::sync(store, &tracked, &request)?;
 
     // the connection: declared machine-locally, recorded for the watcher
     let newest = store
@@ -273,6 +326,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         );
     }
     Ok(Outcome {
+        preview_config: None,
         durable_access,
         configuration_held,
     })

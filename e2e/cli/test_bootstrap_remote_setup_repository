@@ -48,16 +48,22 @@ git init -q --bare -b main "$origin"
 mkdir -p ~/.config/hypr
 echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
 assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+
+[bootstrap.repos]
+"~/preview-only-repo" = { url = "https://example.invalid/preview-only.git" }
+EOF
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --name laptop --yes"
 assert_contains "git --git-dir=$origin ls-tree -r --name-only main" "tracked/home/.config/hypr/bindings.lua"
 
 # ---- a dry run on a fresh host previews and leaves no trace
-out="$(mise bootstrap remote --experimental --host fresh --from-git "file://$origin" --remote-mise "$binary" --only dotfiles --dry-run 2>&1)"
+out="$(mise bootstrap remote --experimental --host fresh --from-git "file://$origin" --remote-mise "$binary" --only repos --dry-run 2>&1)"
 export out
 assert_contains 'printf "%s\n" "$out"' "is a mise setup repository"
 assert_contains 'printf "%s\n" "$out"' "bindings.lua"
 assert_contains 'printf "%s\n" "$out"' "Dry run: nothing was changed"
-assert_contains 'printf "%s\n" "$out"' "once the configuration exists there"
+assert_contains 'printf "%s\n" "$out"' "git clone https://example.invalid/preview-only.git"
+assert_fail "test -e remotes/fresh/preview-only-repo"
 assert_contains "cat '$SSH_LOG'" '--repository-dry-run'
 assert_not_contains "cat '$SSH_LOG'" '/.config/mise bootstrap'
 assert_fail "test -e remotes/fresh/.config/mise/config.toml"

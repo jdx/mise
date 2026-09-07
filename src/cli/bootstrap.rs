@@ -1883,6 +1883,10 @@ impl Bootstrap {
                 system::history::sync::onboard::from_git(url, self.yes, self.dry_run).await?
         {
             if self.dry_run {
+                if let Some(preview) = outcome.preview_config.as_ref() {
+                    self.run_child_bootstrap(preview.path().to_path_buf())
+                        .await?;
+                }
                 return Ok(());
             }
             // the configuration that arrived is what to bootstrap from; one
@@ -1970,19 +1974,28 @@ impl Bootstrap {
             &crate::env::ARGS.read().unwrap(),
         ));
         if self.from_git.is_some() {
-            let config_dir = crate::env::MISE_CONFIG_DIR.as_path();
-            let config_dir = if config_dir.is_absolute() {
-                config_dir.to_path_buf()
+            if self.dry_run {
+                command.env("MISE_CONFIG_DIR", &checkout);
+                let name = crate::env::MISE_GLOBAL_CONFIG_FILE
+                    .as_deref()
+                    .and_then(Path::file_name)
+                    .unwrap_or(std::ffi::OsStr::new("config.toml"));
+                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(name));
             } else {
-                std::env::current_dir()?.join(config_dir)
-            };
-            command.env("MISE_CONFIG_DIR", config_dir);
+                let config_dir = crate::env::MISE_CONFIG_DIR.as_path();
+                let config_dir = if config_dir.is_absolute() {
+                    config_dir.to_path_buf()
+                } else {
+                    std::env::current_dir()?.join(config_dir)
+                };
+                command.env("MISE_CONFIG_DIR", config_dir);
 
-            if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
-                .as_deref()
-                .and_then(Path::file_name)
-            {
-                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
+                if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
+                    .as_deref()
+                    .and_then(Path::file_name)
+                {
+                    command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
+                }
             }
         }
 

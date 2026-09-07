@@ -53,6 +53,8 @@ pub(crate) struct Ssh {
     #[usage(long, hide = true)]
     repository_dry_run: bool,
     #[usage(long, hide = true)]
+    repository_preview_directory: Option<PathBuf>,
+    #[usage(long, hide = true)]
     global_config_directory: bool,
     /// Command to execute after --; omit for an interactive shell
     #[usage(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -91,7 +93,6 @@ impl Ssh {
                     bail!("cannot set up from a setup repository: {reason}");
                 }
                 let fetch_from = bundle.to_string_lossy().into_owned();
-                onboard::probe(&store, &fetch_from, &branch)?;
                 let outcome = onboard::run(
                     &store,
                     &onboard::Onboarding {
@@ -103,6 +104,19 @@ impl Ssh {
                     },
                 )
                 .await?;
+                if let Some(directory) = &self.repository_preview_directory {
+                    if !self.repository_dry_run {
+                        bail!("a repository preview directory requires a dry run");
+                    }
+                    let preview = outcome
+                        .preview_config
+                        .as_ref()
+                        .ok_or_else(|| eyre::eyre!("missing setup configuration preview"))?;
+                    // The remote runner supplies a new directory inside its
+                    // private staging area; never overwrite an existing tree.
+                    std::fs::create_dir(directory)?;
+                    crate::file::copy_dir_all_preserve_symlinks(preview.path(), directory)?;
+                }
                 if !self.repository_dry_run
                     && (outcome.configuration_held
                         || !crate::system::history::sync::run::read_status(store.state_dir())?

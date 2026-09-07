@@ -22,3 +22,24 @@ mkdir -p "$broken/history"
 printf 'not a repository\n' >"$broken/history/repo.git"
 assert_fail "MISE_STATE_DIR=$broken mise bootstrap --from-git file://$origin --yes" 'history is unavailable'
 assert_fail 'test -d ~/.config/mise/.git'
+
+# Preview and refusal cannot alter an existing connection's bookkeeping.
+status="$MISE_STATE_DIR/history/sync.json"
+cp "$status" "$PWD/sync-before.json"
+refs="$(git --git-dir="$MISE_STATE_DIR/history/repo.git" for-each-ref --format='%(refname) %(objectname)')"
+assert_succeed "mise bootstrap --from-git file://$origin --dry-run --only dotfiles"
+assert_succeed "cmp '$status' '$PWD/sync-before.json'"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git for-each-ref --format='%(refname) %(objectname)'" "$refs"
+assert_fail "MISE_YES=0 mise bootstrap --from-git file://$origin --only dotfiles </dev/null" 'not set up'
+assert_succeed "cmp '$status' '$PWD/sync-before.json'"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git for-each-ref --format='%(refname) %(objectname)'" "$refs"
+
+# A validation failure after fetching also leaves the old state untouched.
+git clone -q "$origin" damaged
+printf '[broken\n' >damaged/config.toml
+git -C damaged add config.toml
+git -C damaged -c user.name=test -c user.email=test@example.com commit -qm invalid
+git -C damaged push -q
+assert_fail "mise bootstrap --from-git file://$origin --dry-run --only dotfiles"
+assert_succeed "cmp '$status' '$PWD/sync-before.json'"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git for-each-ref --format='%(refname) %(objectname)'" "$refs"
