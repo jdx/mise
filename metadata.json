@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1Y9EKD8W9P1994QP51R8DD1",
   "strategy": "manual-commit",
   "branch": "codex/activate-shims-opt-out",
-  "checkpoints_count": 1,
+  "checkpoints_count": 3,
   "files_touched": [
     "docs/dev-tools/shims.md",
     "e2e/cli/test_command_wrappers",
@@ -20,13 +20,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 2176,
+    "input_tokens": 47525,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 461824,
-    "output_tokens": 890,
-    "api_call_count": 4
+    "cache_read_tokens": 4275584,
+    "output_tokens": 8262,
+    "api_call_count": 49
   }
 }
