@@ -33,7 +33,7 @@ Describe 'mise activate pwsh pipeline input' {
         $output = @('alpha', 'beta') | mise run read-stdin -pipelineInput value 2>&1 | Out-String
 
         $LASTEXITCODE | Should -BeExactly 0
-        $output | Should -Match '(?m)^\uFEFF?alpha\r?\nbeta\r?$'
+        $output | Should -Match '(?m)^alpha\r?\nbeta\r?$'
         $output | Should -Match '(?m)^-pipelineInput\|value\r?$'
         $output | Should -Not -Match 'cannot be bound to any parameters'
     }

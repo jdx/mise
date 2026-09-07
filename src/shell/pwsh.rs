@@ -38,7 +38,7 @@ impl Shell for Pwsh {
 
                 $previous_out_encoding = $OutputEncoding
                 $previous_console_out_encoding = [Console]::OutputEncoding
-                $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8
+                $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 
                 function _reset_output_encoding {{
                     $OutputEncoding = $previous_out_encoding
