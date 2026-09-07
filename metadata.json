@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1Y8KCTB28E5YNWBVX0M30SG",
   "strategy": "manual-commit",
   "branch": "codex/dotfiles-git-acceptance",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "e2e/cli/test_bootstrap_from_git_dumb_http"
   ],
@@ -20,6 +20,13 @@
       "transcript": "/1/full.jsonl",
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
+      "prompt": ""
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
       "prompt": ""
     }
   ],
