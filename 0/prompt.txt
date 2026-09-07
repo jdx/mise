@@ -1,0 +1,19 @@
+investigate [https://github.com/jdx/mise/discussions/12921](https://github.com/jdx/mise/discussions/12921)
+
+---
+
+make a pr, post a reply
+
+---
+
+i'm wondering if this is the right fix, does this fit our model
+
+---
+
+1. Runtime resolution may reuse an already-installed tool from a disabled backend.
+
+i don't think so
+
+---
+
+ok edit your comment and the pr
