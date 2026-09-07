@@ -211,11 +211,11 @@ fn refuse_other_connection(store: &Store, origin: &str, branch: &str) -> Result<
 /// Fetches the branch into the store and says what the repository is. A
 /// format this mise does not understand is an error; an ordinary
 /// repository leaves nothing behind.
-pub(crate) fn probe(store: &Store, fetch_from: &str, branch: &str) -> Result<RepoState> {
+fn probe(store: &Store, fetch_from: &str, branch: &str) -> Result<RepoState> {
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("probing a setup repository requires git"))?;
-    Remote::new(repo, fetch_from).fetch(branch)?;
+    Remote::new(repo, fetch_from).fetch_tip(branch)?;
     let upstream = repo.ref_oid(UPSTREAM_REF)?;
     let state = format::detect(repo, upstream.as_deref())?;
     state.check()?;
@@ -291,6 +291,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     // Recompute after confirmation against current local files and remote
     // refs; never apply a stale preview or restore over a watcher's new state.
     refuse_other_connection(store, &onboarding.origin, &onboarding.branch)?;
+    seed_confirmed_fetch(store, &planning_store)?;
     request.capture = true;
     request.dry_run = false;
     run::sync(store, &tracked, &request)?;
@@ -342,6 +343,27 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     })
 }
 
+/// Reuse the fully fetched preview after consent, without touching local HEAD
+/// or importing preview decisions. The following normal remote fetch still
+/// discovers newer commits and recomputes against current local state.
+fn seed_confirmed_fetch(store: &Store, preview: &Store) -> Result<()> {
+    let _sync = run::lock(store)?;
+    let source = preview
+        .repo()
+        .ok_or_else(|| eyre::eyre!("preview requires git"))?;
+    let destination = store
+        .repo()
+        .ok_or_else(|| eyre::eyre!("setup requires git"))?;
+    let url = url::Url::from_file_path(source.dir())
+        .map_err(|_| eyre::eyre!("cannot address the preview repository"))?;
+    let refspec = format!("+{UPSTREAM_REF}:{UPSTREAM_REF}");
+    let copied = destination.network(["fetch", "--no-tags", "--", url.as_str(), &refspec])?;
+    if !copied.status.success() {
+        bail!("could not reuse the fetched setup preview");
+    }
+    Ok(())
+}
+
 /// Whether this host reaches the repository on its own: with the
 /// session's GitHub relay (its `url.<relay>.insteadOf` rewrites travel as
 /// `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`) taken out of the environment.
@@ -384,6 +406,29 @@ async fn durable_access(url: &str, branch: &str) -> bool {
 mod preview_tests {
     use super::*;
     use crate::system::history::tracked::TrackedEntry;
+
+    #[test]
+    fn confirmed_fetch_reuses_objects_without_replacing_local_head_or_status() -> Result<()> {
+        use crate::system::history::shadow::HistoryRepo;
+        let temp = tempfile::tempdir()?;
+        let local = Store::open_in(&temp.path().join("local"))?;
+        let preview = Store::open_in(&temp.path().join("preview"))?;
+        let source = preview.repo().unwrap();
+        let destination = local.repo().unwrap();
+        let tree = source.empty_object("tree")?;
+        let first = source.commit_tree(&tree, vec![], "first")?;
+        let second = source.commit_tree(&tree, vec![&first], "second")?;
+        source.update_ref(UPSTREAM_REF, &second, None)?;
+        let local_tree = destination.empty_object("tree")?;
+        let head = destination.commit_tree(&local_tree, vec![], "local")?;
+        destination.update_ref(HistoryRepo::HISTORY_REF, &head, None)?;
+        seed_confirmed_fetch(&local, &preview)?;
+        assert_eq!(destination.ref_oid(HistoryRepo::HISTORY_REF)?, Some(head));
+        assert_eq!(destination.rev_list(UPSTREAM_REF, 10)?, vec![second, first]);
+        assert!(run::read_status(local.state_dir())?.origin_url.is_none());
+        assert!(!destination.dir().join("shallow").exists());
+        Ok(())
+    }
 
     #[test]
     fn preview_does_not_decrypt_encrypted_files_outside_configuration() -> Result<()> {

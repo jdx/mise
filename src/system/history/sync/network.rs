@@ -54,6 +54,36 @@ mod tests {
     use super::{HistoryRepo, PushOutcome, Remote, UPSTREAM_REF, validate_url};
 
     #[test]
+    fn disposable_tip_probe_is_shallow_but_ordinary_fetch_keeps_ancestry() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = HistoryRepo::open_or_init_in(&temp.path().join("source"))
+            .unwrap()
+            .unwrap();
+        let tree = source.empty_object("tree").unwrap();
+        let first = source.commit_tree(&tree, vec![], "first").unwrap();
+        let second = source.commit_tree(&tree, vec![&first], "second").unwrap();
+        source.update_ref("refs/heads/main", &second, None).unwrap();
+        let url = url::Url::from_file_path(source.dir()).unwrap();
+        let probe = HistoryRepo::open_or_init_in(&temp.path().join("probe"))
+            .unwrap()
+            .unwrap();
+        Remote::new(&probe, url.as_str()).fetch_tip("main").unwrap();
+        assert_eq!(
+            probe.rev_list(UPSTREAM_REF, 10).unwrap(),
+            vec![second.clone()]
+        );
+        let full = HistoryRepo::open_or_init_in(&temp.path().join("full"))
+            .unwrap()
+            .unwrap();
+        Remote::new(&full, url.as_str()).fetch("main").unwrap();
+        assert_eq!(
+            full.rev_list(UPSTREAM_REF, 10).unwrap(),
+            vec![second, first]
+        );
+        assert!(!full.dir().join("shallow").exists());
+    }
+
+    #[test]
     fn ordinary_push_preserves_ancestry_and_rejects_divergence() {
         if crate::git::plumbing_binary().is_none() {
             return;
@@ -149,15 +179,28 @@ impl<'a> Remote<'a> {
     /// Fetches only the ordinary setup branch into a remote-tracking ref.
     /// A missing branch returns false without changing the previous ref.
     pub(crate) fn fetch(&self, branch: &str) -> Result<bool> {
+        self.fetch_with_depth(branch, false)
+    }
+
+    /// Format detection only, in a disposable repository never synchronized.
+    pub(crate) fn fetch_tip(&self, branch: &str) -> Result<bool> {
+        // Bundles do not support shallow fetches, but are already local.
+        let local = url::Url::parse(&self.url)
+            .ok()
+            .and_then(|url| url.to_file_path().ok())
+            .unwrap_or_else(|| std::path::PathBuf::from(&self.url));
+        self.fetch_with_depth(branch, !local.is_file())
+    }
+
+    fn fetch_with_depth(&self, branch: &str, shallow: bool) -> Result<bool> {
         validate_url(&self.url)?;
-        let output = self.repo.network([
-            "fetch",
-            "--quiet",
-            "--no-tags",
-            "--",
-            &self.url,
-            &format!("+refs/heads/{branch}:{UPSTREAM_REF}"),
-        ])?;
+        let refspec = format!("+refs/heads/{branch}:{UPSTREAM_REF}");
+        let mut args = vec!["fetch", "--quiet", "--no-tags"];
+        if shallow {
+            args.push("--depth=1");
+        }
+        args.extend(["--", &self.url, &refspec]);
+        let output = self.repo.network(args)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             if stderr.contains("couldn't find remote ref")
