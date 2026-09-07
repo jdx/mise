@@ -4,13 +4,13 @@ description: "Declare dotfiles in [dotfiles] to manage complete files and direct
 
 # Dotfiles
 
-For an introduction, read [Dotfiles that save themselves](https://jdx.dev/posts/2026-09-07-dotfiles-that-save-themselves/).
-
 `[dotfiles]` declares how each of your configuration files is managed. The
 recommended way to adopt a file you already edit in place is to **track** it:
 the file stays where it is, nothing is copied or linked, and
 [history](/history.html) saves a checkpoint of it right away and after every
 change it sees.
+
+For an introduction, read [Dotfiles that save themselves](https://jdx.dev/posts/2026-09-07-dotfiles-that-save-themselves/).
 
 ```sh
 mise bootstrap dotfiles track ~/.zshrc ~/.config/hypr
