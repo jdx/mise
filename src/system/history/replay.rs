@@ -108,6 +108,9 @@ struct Target {
 
 pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
     ensure_enabled()?;
+    if req.all && !req.paths.is_empty() {
+        bail!("choose explicit paths or `--all`, not both");
+    }
     if req.paths.is_empty() && !(req.to.is_some() && req.all) {
         bail!(
             "name the paths to roll back, or `--to <ref> --all` for everything the checkpoint covers"

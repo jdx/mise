@@ -1298,7 +1298,7 @@ type = "Bool"
 
 [history.fetch_interval]
 default = "15m"
-description = "How often the history watcher fetches the origin branch."
+description = "How often the history watcher fetches the origin branch. Values below one second use one second; use history.sync = 'manual' to disable automatic synchronization."
 env = "MISE_HISTORY_FETCH_INTERVAL"
 type = "Duration"
 

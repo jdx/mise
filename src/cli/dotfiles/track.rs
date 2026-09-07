@@ -115,7 +115,7 @@ impl DotfilesTrack {
             }
             declared.push((target_key, target));
         }
-        if !self.yes && console::user_attended() {
+        if !self.yes && console::user_attended_stderr() {
             let list = declared
                 .iter()
                 .map(|(key, _)| key.as_str())

@@ -10,6 +10,12 @@ use crate::system::history::shadow::HistoryRepo;
 /// The fetched setup branch head.
 pub(crate) const UPSTREAM_REF: &str = "refs/remotes/origin/setup";
 
+/// A Git transport failed, as distinct from an invalid local configuration,
+/// encryption policy, or reconciliation plan.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub(crate) struct NetworkError(pub String);
+
 /// Authentication belongs in a credential helper or SSH agent, never in
 /// persisted connection URLs or the errors recorded in history health.
 pub(crate) fn validate_url(value: &str) -> Result<()> {
@@ -160,7 +166,7 @@ impl<'a> Remote<'a> {
                 // an empty repository, or a branch not yet created
                 return Ok(false);
             }
-            bail!("fetching {}: {}", self.url, stderr.trim());
+            return Err(NetworkError(format!("fetching {}: {}", self.url, stderr.trim())).into());
         }
         Ok(true)
     }
@@ -202,7 +208,7 @@ impl<'a> Remote<'a> {
         {
             return Ok(PushOutcome::Rejected(stderr));
         }
-        bail!("pushing to {}: {stderr}", self.url)
+        Err(NetworkError(format!("pushing to {}: {stderr}", self.url)).into())
     }
 
     /// The branch the repository's `HEAD` points at, when it says.
@@ -212,11 +218,12 @@ impl<'a> Remote<'a> {
             self.repo
                 .network(["ls-remote", "--quiet", "--symref", "--", &self.url, "HEAD"])?;
         if !output.status.success() {
-            bail!(
+            return Err(NetworkError(format!(
                 "listing {}: {}",
                 self.url,
                 String::from_utf8_lossy(&output.stderr).trim()
-            );
+            ))
+            .into());
         }
         Ok(String::from_utf8_lossy(&output.stdout)
             .lines()
@@ -237,11 +244,12 @@ impl<'a> Remote<'a> {
             .repo
             .network(["ls-remote", "--quiet", "--", &self.url])?;
         if !output.status.success() {
-            bail!(
+            return Err(NetworkError(format!(
                 "listing {}: {}",
                 self.url,
                 String::from_utf8_lossy(&output.stderr).trim()
-            );
+            ))
+            .into());
         }
         Ok(String::from_utf8_lossy(&output.stdout)
             .lines()

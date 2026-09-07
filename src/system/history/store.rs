@@ -81,6 +81,13 @@ pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
         std::fs::DirBuilder::new()
             .mode(0o700)
             .create(dir)
+            .or_else(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists && dir.is_dir() {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            })
             .wrap_err_with(|| format!("creating {}", display_path(dir)))?;
     }
     let mode = std::fs::metadata(dir)?.permissions().mode() & 0o777;
@@ -953,4 +960,27 @@ pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
     }
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod private_directory_tests {
+    #[test]
+    fn concurrent_creation_preserves_private_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("history");
+        let barrier = std::sync::Barrier::new(16);
+        std::thread::scope(|scope| {
+            for _ in 0..16 {
+                scope.spawn(|| {
+                    barrier.wait();
+                    super::create_private_dir(&path).unwrap();
+                });
+            }
+        });
+        assert_eq!(
+            std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
 }

@@ -37,7 +37,7 @@ int main(int argc, const char *argv[]) {
         NSString *title = [NSString stringWithUTF8String:argv[1]];
         NSString *body = [NSString stringWithUTF8String:argv[2]];
         if (title == nil || body == nil) return 2;
-        MiseNotificationDelegate *delegate = [MiseNotificationDelegate new];
+        __attribute__((objc_precise_lifetime)) MiseNotificationDelegate *delegate = [MiseNotificationDelegate new];
         center.delegate = delegate;
         dispatch_semaphore_t done = dispatch_semaphore_create(0);
         __block int result = 4;

@@ -42,7 +42,7 @@ impl DotfilesUntrack {
                 .iter()
                 .find(|req| req.target == target && req.mode == FileMode::Track)
             {
-                Some(req) if req.mode == FileMode::Track => {
+                Some(req) => {
                     let declared_in = &req.origin.config;
                     if crate::config::is_system_config(declared_in)
                         || !crate::config::is_global_config(declared_in)
@@ -73,11 +73,6 @@ impl DotfilesUntrack {
                         touched.push(declared_in.clone());
                     }
                 }
-                Some(req) => bail!(
-                    "{target_raw} is managed by a `{}` entry, not tracked; use `mise bootstrap dotfiles unapply` or edit {}",
-                    req.mode.name(),
-                    display_path(&req.origin.config)
-                ),
                 None => {
                     // A child of an explicitly tracked directory: exclude it.
                     let Some(owner) = tracked.entry_for(&path) else {

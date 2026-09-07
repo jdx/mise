@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+mise use -g tombi@0.9.22
+tombi_lint='mise x tombi@0.9.22 -- tombi lint --offline --no-cache --error-on-warnings --quiet'
+cat >"$HOME/tombi.toml" <<TOML
+[schema]
+enabled = true
+strict = true
+[[schemas]]
+path = "file://$ROOT/schema/mise.json"
+include = ["services-valid.toml", "services-invalid.toml"]
+TOML
+cat >services-valid.toml <<'TOML'
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+[bootstrap.services.worker]
+scope = "user"
+command = "worker --foreground"
+description = "background worker"
+restart = "on-failure"
+state = "running"
+enabled = true
+requires_tools = true
+working_directory = "~/work"
+environment = { LOG_LEVEL = "info" }
+[bootstrap.services.web]
+scope = "system"
+state = "stopped"
+masked = false
+on_change = "reload_or_restart"
+TOML
+assert_succeed "$tombi_lint services-valid.toml"
+printf '[bootstrap.services.worker]\nscope = "invalid"\n' >services-invalid.toml
+assert_fail "$tombi_lint services-invalid.toml"
+printf '[bootstrap.services.worker]\nrestart = "invalid"\n' >services-invalid.toml
+assert_fail "$tombi_lint services-invalid.toml"

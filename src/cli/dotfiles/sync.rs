@@ -28,7 +28,7 @@ impl DotfilesSync {
     pub(crate) async fn run(self) -> Result<()> {
         match self.sync().await {
             Ok(()) => Ok(()),
-            Err(err) if self.best_effort => {
+            Err(err) if self.best_effort && is_network_failure(&err) => {
                 warn!("history sync: {err:#}");
                 Ok(())
             }
@@ -47,5 +47,28 @@ impl DotfilesSync {
         let outcome = run::sync(&store, &tracked, &SyncRequest::new(self.fetch_only))?;
         crate::system::history::sync::origin::report(&outcome);
         Ok(())
+    }
+}
+
+fn is_network_failure(error: &eyre::Report) -> bool {
+    error
+        .downcast_ref::<crate::system::history::sync::network::NetworkError>()
+        .is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn best_effort_does_not_hide_policy_or_configuration_errors() {
+        assert!(!is_network_failure(&eyre::eyre!(
+            "invalid encryption policy"
+        )));
+        assert!(!is_network_failure(&eyre::eyre!("history is disabled")));
+        let transport = eyre::Report::new(crate::system::history::sync::network::NetworkError(
+            "origin unavailable".into(),
+        ));
+        assert!(is_network_failure(&transport.wrap_err("synchronizing")));
     }
 }

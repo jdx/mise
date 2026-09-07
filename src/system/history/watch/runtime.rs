@@ -658,7 +658,8 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                             }
                         }
                         Ok(false) => {
-                            capture.out.emit("disabled", "history was disabled; stopping", json!({}));
+                            stop_disabled(&mut capture, &state.tracked).await;
+                            debouncer.stop();
                             return Ok(0);
                         }
                         Err(err) => capture.out.emit(
@@ -890,7 +891,8 @@ impl SyncPlan {
     }
 
     /// A fresh plan: the first fetch soon, no publication pending.
-    fn new(config: SyncConfig, now: Instant) -> Self {
+    fn new(mut config: SyncConfig, now: Instant) -> Self {
+        config.fetch_every = config.fetch_every.max(Duration::from_secs(1));
         Self {
             next_publish: None,
             next_fetch: config
@@ -908,7 +910,8 @@ impl SyncPlan {
     /// first one, and a shorter interval brings a deadline forward, never
     /// back. A reload that changes nothing changes nothing here, so a
     /// reconcile tick or an edit elsewhere never postpones what is due.
-    fn reconfigure(&mut self, fresh: SyncConfig, now: Instant) {
+    fn reconfigure(&mut self, mut fresh: SyncConfig, now: Instant) {
+        fresh.fetch_every = fresh.fetch_every.max(Duration::from_secs(1));
         if fresh == self.config {
             return;
         }
@@ -975,7 +978,8 @@ impl SyncPlan {
 
     fn succeeded(&mut self, now: Instant) {
         self.backoff = self.backoff_floor();
-        self.next_publish = None;
+        // start_sync consumed the old deadline. A new one belongs to a
+        // checkpoint saved while that synchronization was in flight.
         self.next_fetch = self
             .config
             .automatic
@@ -2034,6 +2038,28 @@ mod sync_plan_tests {
         assert_eq!(plan.next_publish, publish);
         assert_eq!(plan.next_fetch, fetch);
         assert_eq!(plan.backoff, backoff);
+    }
+
+    #[test]
+    fn zero_fetch_interval_cannot_spin_or_disable_failure_backoff() {
+        let now = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 0), now);
+        assert_eq!(plan.next_fetch, Some(now + secs(1)));
+        assert_eq!(plan.failed(now), secs(1));
+        assert_eq!(plan.failed(now + secs(1)), secs(2));
+        plan.reconfigure(config(SyncMode::Sync, 300, 0), now);
+        plan.succeeded(now);
+        assert_eq!(plan.next_fetch, Some(now + secs(1)));
+    }
+
+    #[test]
+    fn sync_completion_preserves_saves_made_in_flight() {
+        let now = Instant::now();
+        let mut plan = SyncPlan::new(config(SyncMode::Sync, 300, 900), now);
+        plan.next_publish = None; // consumed by start_sync
+        plan.saved(now + secs(1));
+        plan.succeeded(now + secs(2));
+        assert_eq!(plan.next_publish, Some(now + secs(301)));
     }
 
     #[test]

@@ -27,5 +27,9 @@ assert 'mise bootstrap dotfiles history --json | jq length' "$count"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" 'native shell configuration'
 assert "git --git-dir='$repo' rev-list --count HEAD" "$((commits + 1))"
 
+# A path selection must not silently broaden into a whole-checkpoint restore.
+assert_fail 'mise bootstrap dotfiles rollback ~/.native --to latest --all --yes' 'choose explicit paths or'
+assert_succeed 'cmp ~/.native captured'
+
 # A network option is not a repository URL, including on initial discovery.
 assert_fail "mise bootstrap --from-git=--upload-pack=invalid --yes 2>&1"
