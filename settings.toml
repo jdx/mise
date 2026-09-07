@@ -48,13 +48,9 @@ Shims support missing-version auto-installation and first-use installation of la
 Disabling them can prevent these commands from being found; use `mise install` or `mise exec`
 explicitly instead. Installed tools still get their real bin directories added to `PATH`.
 
-Configured command wrappers, such as `cargo` through mr-boxington, use a separate
+Configured command wrappers, such as `cargo` through [mr-boxington](https://github.com/jdx/mr-boxington), use a separate
 `command-wrappers/bin` directory and remain active. Explicit `mise activate --shims` also
 continues to add shims regardless of this setting.
-
-Unexpected command resolution with shims enabled should be reported with a concrete command,
-the expected and actual executable, and `mise doctor` output so the underlying problem can
-be fixed.
 """
 env = "MISE_ACTIVATE_SHIMS"
 type = "Bool"
