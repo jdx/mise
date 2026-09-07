@@ -446,7 +446,7 @@ assert_contains_text "$ignored_out" "mise trust"
 # --json gets the hint too: it goes to stderr, so stdout stays parseable
 json_out="$(MISE_IGNORED_CONFIG_PATHS="$PWD/mise.toml" mise dotfiles status --json 2>&1 >/dev/null)"
 assert_contains_text "$json_out" "are not trusted"
-assert_json "MISE_IGNORED_CONFIG_PATHS=\"$PWD/mise.toml\" mise dotfiles status --json 2>/dev/null" '{"files":[],"edits":[]}'
+assert_json "MISE_IGNORED_CONFIG_PATHS=\"$PWD/mise.toml\" mise dotfiles status --json 2>/dev/null | jq -c 'del(.history)'" '{"files":[],"edits":[]}'
 # an ignored config with no [dotfiles] of its own doesn't produce the hint
 cat <<EOF >mise.toml
 [tools]

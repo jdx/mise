@@ -58,7 +58,7 @@ impl DotfilesPaths {
                     ..Default::default()
                 };
                 set.push(TrackedEntry {
-                    path: crate::system::history::tracked::normalize(path),
+                    path: crate::system::history::tracked::normalize_target(path),
                     mode: "track".into(),
                     policy: Policy::for_mode(FileMode::Track),
                     variant: None,

@@ -30,6 +30,7 @@ pub(crate) struct HistoryTomlConfig {
 
 /// Public recipients shared by every encrypted dotfile.
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct FileEncryptionConfig {
     #[serde(default)]
     pub recipients: Vec<String>,

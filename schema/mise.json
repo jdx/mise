@@ -4126,7 +4126,7 @@
               "encrypt": {
                 "type": "boolean",
                 "default": false,
-                "description": "encrypt this file or external source when sharing; local files and history stay plaintext"
+                "description": "encrypt tracked file contents before storing them in Git; the live file remains plaintext"
               },
               "source": {
                 "type": "string",

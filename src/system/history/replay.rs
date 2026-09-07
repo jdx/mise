@@ -161,6 +161,7 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
                     );
                     continue;
                 };
+                refuse_unusable(&entry)?;
                 by_id
                     .entry(entry.id)
                     .or_insert_with(|| Target {

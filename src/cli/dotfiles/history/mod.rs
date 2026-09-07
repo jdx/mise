@@ -15,8 +15,8 @@ pub(crate) mod show;
 /// Browse the checkpoints of your dotfiles
 ///
 /// Every save, every mutating bootstrap command, and the watcher record a
-/// checkpoint of the tracked files: the global mise config directory, the
-/// dotfiles root, and every `[dotfiles]` entry. A checkpoint holds files,
+/// checkpoint of explicitly enrolled `[dotfiles]` entries with `mode = "track"`.
+/// Configuration and deployment sources are not implicitly enrolled. A checkpoint holds files,
 /// never package or service state: restoring one restores files. Without a
 /// subcommand this lists them, newest first.
 #[derive(Debug, usage_rs::Args)]

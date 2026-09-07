@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use serde::{Deserialize, Serialize};
 
 use crate::system::history::shadow::HistoryRepo;
@@ -31,7 +31,12 @@ pub(crate) type SyncState = BTreeMap<String, SyncRecord>;
 /// Read the current operational state, not historical versions.
 pub(crate) fn load(repo: &HistoryRepo) -> Result<SyncState> {
     match std::fs::read(path(repo)) {
-        Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+        Ok(bytes) => serde_json::from_slice(&bytes).wrap_err_with(|| {
+            format!(
+                "cannot read synchronization bookkeeping at {}; preserve this file and repair its JSON before retrying (it may contain unapplied reconciliation state)",
+                path(repo).display()
+            )
+        }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(SyncState::new()),
         Err(error) => Err(error.into()),
     }

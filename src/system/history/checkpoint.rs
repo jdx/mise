@@ -660,6 +660,11 @@ impl Store {
             }
         }
         for (uuid, commit) in commits {
+            // Annotation commits remain in Git ancestry, but are not new file
+            // checkpoints and must not move `latest` in the history browser.
+            if repo.read_annotation(&commit)?.is_some() {
+                continue;
+            }
             let mut checkpoint = repo.read_meta(&commit)?;
             if let Some(annotations) = annotations.get(&commit) {
                 for annotation in annotations {

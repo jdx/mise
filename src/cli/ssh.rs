@@ -67,6 +67,9 @@ impl Ssh {
     }
 
     async fn run_inner(self) -> Result<()> {
+        if self.repository_preview_directory.is_some() && !self.repository_dry_run {
+            bail!("a repository preview directory requires a dry run");
+        }
         if self.global_config_directory {
             println!(
                 "{}",
@@ -104,9 +107,6 @@ impl Ssh {
                 )
                 .await?;
                 if let Some(directory) = &self.repository_preview_directory {
-                    if !self.repository_dry_run {
-                        bail!("a repository preview directory requires a dry run");
-                    }
                     let preview = outcome
                         .preview_config
                         .as_ref()

@@ -927,7 +927,7 @@ fn build_dotfiles_layer(
     let mut entries = DotfilesLayerEntries::default();
 
     for req in requests {
-        if req.mode != FileMode::Content && !req.source.exists() {
+        if !matches!(req.mode, FileMode::Content | FileMode::Track) && !req.source.exists() {
             bail!(
                 "[dotfiles].\"{}\": source does not exist: {}",
                 req.target_raw,

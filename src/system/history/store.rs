@@ -361,6 +361,20 @@ impl Checkpoint {
             task: self.task.clone(),
             labels: self.labels.clone(),
             pinned: self.pinned,
+            omitted: self
+                .tree
+                .coverage
+                .omitted
+                .iter()
+                .filter_map(|item| portable(&item.path))
+                .collect(),
+            incomplete: self
+                .tree
+                .coverage
+                .incomplete
+                .iter()
+                .filter_map(|item| portable(&item.path))
+                .collect(),
             operation: self.operation.as_ref().map(|op| CommitOperation {
                 kind: op.kind,
                 status: op.status,
@@ -410,6 +424,10 @@ pub(crate) struct CommitRecord {
     pub task: Option<String>,
     pub labels: Vec<String>,
     pub pinned: bool,
+    /// Portable paths that this commit could not capture, not known absences.
+    pub omitted: Vec<String>,
+    /// Portable directory prefixes whose inventory was incomplete.
+    pub incomplete: Vec<String>,
     pub operation: Option<CommitOperation>,
 }
 

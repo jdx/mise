@@ -714,11 +714,6 @@ impl<'a> PlumbingCall<'a> {
         self
     }
 
-    pub(crate) fn cwd(mut self, path: &'a Path) -> Self {
-        self.cwd = Some(path);
-        self
-    }
-
     pub(crate) fn stdin(mut self, bytes: &'a [u8]) -> Self {
         self.stdin = Some(bytes);
         self

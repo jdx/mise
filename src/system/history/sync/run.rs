@@ -298,10 +298,8 @@ pub(crate) fn sync(
                 .entries
                 .iter()
                 .filter(|entry| entry.policy.encrypt)
-                .map(|entry| {
-                    crate::system::history::tracked::display_to_tree_path(&entry.display())
-                })
-                .collect();
+                .map(|entry| entry.tree_path(&entry.path))
+                .collect::<Result<_>>()?;
             super::files::audit_history(repo, &head, &protected)?;
         }
         let mut plans;

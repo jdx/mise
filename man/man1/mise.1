@@ -1583,8 +1583,8 @@ A glob such as `~/.config/hypr/plugins/**`
 Browse the checkpoints of your dotfiles
 
 Every save, every mutating bootstrap command, and the watcher record a
-checkpoint of the tracked files: the global mise config directory, the
-dotfiles root, and every `[dotfiles]` entry. A checkpoint holds files,
+checkpoint of explicitly enrolled `[dotfiles]` entries with `mode = "track"`.
+Configuration and deployment sources are not implicitly enrolled. A checkpoint holds files,
 never package or service state: restoring one restores files. Without a
 subcommand this lists them, newest first.
 .PP
@@ -1861,7 +1861,7 @@ Print help
 .PP
 .TP
 \fB<PATH>\fR
-Paths must cover the complete pending setup; partial pulls are rejected
+Partial pulls are unsupported; omit PATH and apply the complete setup
 .SH "MISE BOOTSTRAP DOTFILES ROLLBACK"
 Return files to the version a checkpoint holds
 

@@ -13,6 +13,9 @@ pub(crate) const UPSTREAM_REF: &str = "refs/remotes/origin/setup";
 /// Authentication belongs in a credential helper or SSH agent, never in
 /// persisted connection URLs or the errors recorded in history health.
 pub(crate) fn validate_url(value: &str) -> Result<()> {
+    if value.trim().is_empty() || value.trim_start().starts_with('-') {
+        bail!("setup repository URL must be nonempty and must not start with '-'");
+    }
     let http_like = value
         .trim_start()
         .get(..5)
@@ -88,6 +91,22 @@ mod tests {
     }
 
     #[test]
+    fn option_like_urls_are_rejected_at_every_entry_point() {
+        let tmp = tempfile::tempdir().unwrap();
+        let Some(repo) = HistoryRepo::open_or_init_in(tmp.path()).unwrap() else {
+            return;
+        };
+        for value in ["", "--upload-pack=bad", "  --upload-pack=bad"] {
+            assert!(validate_url(value).is_err());
+            let remote = Remote::new(&repo, value);
+            assert!(remote.fetch("main").is_err());
+            assert!(remote.push(&[], None).is_err());
+            assert!(remote.symbolic_head().is_err());
+            assert!(remote.ls_remote().is_err());
+        }
+    }
+
+    #[test]
     fn malformed_http_remotes_fail_without_echoing_credentials() {
         for value in [
             "https://secret@example.com:bad/repo",
@@ -129,6 +148,7 @@ impl<'a> Remote<'a> {
             "fetch",
             "--quiet",
             "--no-tags",
+            "--",
             &self.url,
             &format!("+refs/heads/{branch}:{UPSTREAM_REF}"),
         ])?;
@@ -168,6 +188,7 @@ impl<'a> Remote<'a> {
         if refspecs.iter().any(|refspec| refspec.starts_with('+')) {
             bail!("forced publication is not supported");
         }
+        args.push("--".into());
         args.push(self.url.clone());
         args.extend(refspecs.iter().cloned());
         let output = self.repo.network(args.iter().map(String::as_str))?;
@@ -184,12 +205,12 @@ impl<'a> Remote<'a> {
         bail!("pushing to {}: {stderr}", self.url)
     }
 
-    /// The remote's refs: `(oid, name)`.
     /// The branch the repository's `HEAD` points at, when it says.
     pub(crate) fn symbolic_head(&self) -> Result<Option<String>> {
-        let output = self
-            .repo
-            .network(["ls-remote", "--quiet", "--symref", &self.url, "HEAD"])?;
+        validate_url(&self.url)?;
+        let output =
+            self.repo
+                .network(["ls-remote", "--quiet", "--symref", "--", &self.url, "HEAD"])?;
         if !output.status.success() {
             bail!(
                 "listing {}: {}",
@@ -209,8 +230,12 @@ impl<'a> Remote<'a> {
             }))
     }
 
+    /// The remote's refs: `(oid, name)`.
     pub(crate) fn ls_remote(&self) -> Result<Vec<(String, String)>> {
-        let output = self.repo.network(["ls-remote", "--quiet", &self.url])?;
+        validate_url(&self.url)?;
+        let output = self
+            .repo
+            .network(["ls-remote", "--quiet", "--", &self.url])?;
         if !output.status.success() {
             bail!(
                 "listing {}: {}",

@@ -141,6 +141,7 @@ pub(crate) fn run(store: &Store, entry: &Entry, command: &str) -> Result<Option<
     // a descendant that outlived the shell and kept the pipe is not the
     // shell's answer: the output is waited for a moment, not forever
     let Ok(output) = receiver.recv_timeout(OUTPUT_GRACE) else {
+        kill_tree(child.id());
         bail!("a process it started kept its output open");
     };
     if !status.success() {

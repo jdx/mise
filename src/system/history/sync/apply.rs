@@ -92,6 +92,9 @@ pub(crate) async fn apply(
     tracked: &TrackedSet,
     req: &ApplyRequest,
 ) -> Result<ApplyOutcome> {
+    if !req.paths.is_empty() {
+        bail!("partial pulls are not supported: apply the complete setup without PATH arguments");
+    }
     let _sync_lock = run::lock(store)?;
     let repo = store
         .repo()
@@ -117,11 +120,6 @@ pub(crate) async fn apply(
         !req.automatic && console::user_attended_stderr(),
     )?;
     let roots = Roots::current();
-    let filter: BTreeSet<PathBuf> = req
-        .paths
-        .iter()
-        .map(|path| normalize_target(path))
-        .collect();
     let take_remote: BTreeSet<PathBuf> = req
         .take_remote
         .iter()
@@ -293,11 +291,6 @@ pub(crate) async fn apply(
         else {
             continue;
         };
-        if !filter.is_empty() && !filter.iter().any(|f| path.starts_with(f)) {
-            bail!(
-                "partial pulls are not supported: apply the complete setup without PATH arguments"
-            );
-        }
         let group = if pending.configuration || pending.branch_path.starts_with("sources/") {
             "configuration".to_string()
         } else {

@@ -606,7 +606,10 @@ mod tests {
         let record = repo.read_meta(&commit).unwrap();
         assert_eq!(record.description, "ordinary Git save");
         assert_eq!(record.tree.coverage.entries.len(), 1);
-        assert_eq!(record.tree.coverage.entries[0].path, "~/.zshrc");
+        assert_eq!(
+            record.tree.coverage.entries[0].path,
+            crate::file::display_path(crate::dirs::HOME.join(".zshrc"))
+        );
         assert_eq!(record.tree.roots.len(), 1);
         assert_eq!(record.tree.roots[0].files, 1);
         assert!(record.operation.is_none());

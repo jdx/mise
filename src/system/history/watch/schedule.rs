@@ -195,7 +195,7 @@ impl Schedule {
                 .last_seen_epoch_secs
                 .or(record.last_change_epoch_secs)
                 .map(ago);
-            if record.pending_changes > 0 {
+            if record.pending_changes > 0 || record.last_change_epoch_secs.is_some() {
                 schedule.changes = record.pending_changes;
                 schedule.pending_since =
                     Some(record.pending_since_epoch_secs.map(ago).unwrap_or(now));
@@ -392,6 +392,21 @@ mod tests {
             base: secs(2),
             max: secs(24 * 3600),
         }
+    }
+
+    #[test]
+    fn marked_pending_survives_restart_without_new_events() {
+        let start = Instant::now();
+        let path = PathBuf::from("state.json");
+        let mut schedule = Schedule::new(limits());
+        schedule.note(path.clone(), start);
+        schedule.paths.get_mut(&path).unwrap().interval = secs(16);
+        schedule.saved(&path, start + secs(2));
+        schedule.mark_pending(path.clone(), start + secs(3));
+        let persisted = schedule.persist(start + secs(3), 103);
+        let mut restarted = Schedule::new(limits());
+        restarted.restore(&persisted, start + secs(4), 104);
+        assert!(restarted.get(&path).unwrap().pending());
     }
 
     #[test]

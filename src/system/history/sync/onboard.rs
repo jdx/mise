@@ -10,7 +10,7 @@
 //! for the watcher. An ordinary repository (no marker) is left to the
 //! ordinary `--from-git`.
 
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use eyre::{Result, bail};
 
@@ -329,7 +329,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
             String::new()
         }
     );
-    let durable_access = durable_access(&onboarding.origin, &onboarding.branch);
+    let durable_access = durable_access(&onboarding.origin, &onboarding.branch).await;
     if !durable_access {
         warn!(
             "setup complete, but ongoing synchronization needs credentials on this host: the borrowed GitHub access ends with this session. Run `mise x gh -- gh auth login` and `mise x gh -- gh auth setup-git` here, or connect an SSH url with `mise bootstrap dotfiles origin set <url>`"
@@ -346,21 +346,25 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
 /// session's GitHub relay (its `url.<relay>.insteadOf` rewrites travel as
 /// `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`) taken out of the environment.
 /// Without a relay, whatever works now keeps working.
-fn durable_access(url: &str, branch: &str) -> bool {
+async fn durable_access(url: &str, branch: &str) -> bool {
     if std::env::var_os("MISE_GITHUB_RELAY_SOCKET").is_none() {
         return true;
     }
     let Some(git) = crate::file::which_spawnable("git") else {
         return true;
     };
-    let mut command = Command::new(git);
+    if super::network::validate_url(url).is_err() {
+        return false;
+    }
+    let mut command = tokio::process::Command::new(git);
     command
-        .args(["ls-remote", "--exit-code", "--heads", url, branch])
+        .args(["ls-remote", "--exit-code", "--heads", "--", url, branch])
         .env("GIT_TERMINAL_PROMPT", "0")
         .env_remove("MISE_GITHUB_RELAY_SOCKET")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
     for (key, _) in std::env::vars_os() {
         let name = key.to_string_lossy();
         if name == "GIT_CONFIG_COUNT"
@@ -370,7 +374,10 @@ fn durable_access(url: &str, branch: &str) -> bool {
             command.env_remove(&key);
         }
     }
-    command.status().is_ok_and(|status| status.success())
+    matches!(
+        tokio::time::timeout(std::time::Duration::from_secs(20), command.status()).await,
+        Ok(Ok(status)) if status.success()
+    )
 }
 
 #[cfg(test)]

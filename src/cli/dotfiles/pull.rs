@@ -27,7 +27,7 @@ use crate::system::history::sync::apply::{self, ApplyRequest};
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesPull {
-    /// Paths must cover the complete pending setup; partial pulls are rejected
+    /// Partial pulls are unsupported; omit PATH and apply the complete setup
     #[usage(value_name = "PATH")]
     paths: Vec<PathBuf>,
 
@@ -80,7 +80,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise bootstrap dotfiles pull --dry-run</bold>
     $ <bold>mise bootstrap dotfiles pull --yes</bold>
-    $ <bold>mise bootstrap dotfiles pull ~/.config/hypr</bold>
     $ <bold>mise bootstrap dotfiles pull --take-remote ~/.zshrc</bold>
     $ <bold>mise bootstrap dotfiles pull --keep-local ~/.zshrc</bold>
 "#

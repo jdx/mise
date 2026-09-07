@@ -738,8 +738,8 @@ better tracked with `--no-autosave` and saved explicitly.
 Browse the checkpoints of your dotfiles
 
 Every save, every mutating bootstrap command, and the watcher record a
-checkpoint of the tracked files: the global mise config directory, the
-dotfiles root, and every `[dotfiles]` entry. A checkpoint holds files,
+checkpoint of explicitly enrolled `[dotfiles]` entries with `mode = "track"`.
+Configuration and deployment sources are not implicitly enrolled. A checkpoint holds files,
 never package or service state: restoring one restores files. Without a
 subcommand this lists them, newest first.
 """#
@@ -837,7 +837,7 @@ every reachable commit; unrelated histories are never replaced.
 The connection is written to machine-local `[history.origin]` configuration;
 the mode is `settings.history.sync`.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles origin set https://github.com/you/setup.git\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin set git@github.com:you/setup.git --name laptop --sync manual\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin\u{1b}[22m              # what is connected\n    $ \u{1b}[1mmise bootstrap dotfiles origin --remove\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles origin set https://github.com/you/setup.git\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin set git@github.com:you/setup.git --sync manual\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin\u{1b}[22m              # what is connected\n    $ \u{1b}[1mmise bootstrap dotfiles origin --remove\u{1b}[22m\n"
             flag --remove help="Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)" effect=destructive
             flag "-h --help" help="Print help" action=help builtin=#true
             cmd set help="Connect a setup repository" effect=write {
@@ -896,7 +896,7 @@ own; this command writes what is pending right now and decides
 conflicts. When an incoming configuration declares more tracked files,
 their shared versions follow in the same run.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --keep-local ~/.zshrc\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --keep-local ~/.zshrc\u{1b}[22m\n"
             flag "-n --dry-run" help="Show the plan without changing anything"
             flag "-y --yes" help="Pull without prompting"
             flag --take-remote help="Resolve a conflict with the repository's version" var=#true {
@@ -906,7 +906,7 @@ their shared versions follow in the same run.
                 arg <PATH>
             }
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg "[PATH]…" help="Paths must cover the complete pending setup; partial pulls are rejected" required=#false var=#true
+            arg "[PATH]…" help="Partial pulls are unsupported; omit PATH and apply the complete setup" required=#false var=#true
         }
         cmd rollback help="Return files to the version a checkpoint holds" effect=destructive {
             long_help #"""

@@ -4,7 +4,7 @@
 //! The files are the commit tree itself, not a snapshot wrapper. Boundary
 //! metadata is recorded in a commit-message trailer, never a recovery tree.
 //!
-//! Files are added with `git add -f` under a scratch index from literal
+//! Files are captured as raw blobs under a scratch index from literal
 //! pathspecs mise's own walker produced: the root's `.gitignore` is bypassed
 //! on purpose (an ignored file is often exactly the secret a rollback must
 //! restore), git never indexes a `.git` component so the user's own
@@ -358,40 +358,46 @@ impl HistoryRepo {
     }
 
     /// Adds a root's files under a scratch index and returns the tree id.
-    fn tree_for_root(&self, root: &CaptureRoot, warnings: &mut Vec<String>) -> Result<String> {
-        let index = self
-            .dir()
-            .join(format!("mise-index-{}-{}", std::process::id(), root.label));
-        let _ = std::fs::remove_file(&index);
-        let mut pathspecs: Vec<u8> = vec![];
+    fn tree_for_root(&self, root: &CaptureRoot, _warnings: &mut Vec<String>) -> Result<String> {
+        let mut overlays = vec![];
         for rel in &root.files {
-            pathspecs.extend_from_slice(b":(literal)");
-            pathspecs.extend_from_slice(path_bytes(rel).as_ref());
-            pathspecs.push(0);
+            let live = root.path.join(rel);
+            let meta = std::fs::symlink_metadata(&live)?;
+            let (mode, oid) = if meta.file_type().is_symlink() {
+                (
+                    "120000",
+                    self.hash_blob(path_bytes(&std::fs::read_link(&live)?).as_ref())?,
+                )
+            } else if meta.is_dir() {
+                ("160000", crate::git::Git::new(&live).current_sha()?)
+            } else if meta.is_file() {
+                #[cfg(unix)]
+                let executable = {
+                    use std::os::unix::fs::PermissionsExt;
+                    meta.permissions().mode() & 0o100 != 0
+                };
+                #[cfg(not(unix))]
+                let executable = false;
+                let bytes = crate::agecrypt::read_bounded(
+                    std::fs::File::open(&live)?,
+                    crate::agecrypt::MAX_PLAINTEXT_BYTES,
+                )?;
+                (
+                    if executable { "100755" } else { "100644" },
+                    self.hash_blob(&bytes)?,
+                )
+            } else {
+                bail!("cannot capture non-file {}", display_path(&live));
+            };
+            overlays.push(Overlay {
+                path: rel
+                    .to_str()
+                    .ok_or_else(|| eyre::eyre!("non-UTF-8 tracked path"))?
+                    .replace('\\', "/"),
+                object: Some((mode.into(), oid)),
+            });
         }
-        let add = PlumbingCall::new([
-            "add",
-            "-f",
-            "--ignore-errors",
-            "--pathspec-from-file=-",
-            "--pathspec-file-nul",
-        ])
-        .work_tree(&root.path)
-        .cwd(&root.path)
-        .index_file(&index)
-        .stdin(&pathspecs);
-        // `--ignore-errors` keeps adding past unreadable files but still exits
-        // non-zero, so the status is advisory here and the tree is what counts.
-        let output = self.git.output_unchecked(add)?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            for line in stderr.lines().filter(|line| !line.trim().is_empty()) {
-                warnings.push(format!("{}: {line}", root.label));
-            }
-        }
-        let tree = self.output_str(PlumbingCall::new(["write-tree"]).index_file(&index));
-        let _ = std::fs::remove_file(&index);
-        tree
+        self.compose(&self.empty_object("tree")?, &overlays)
     }
 
     /// One level of tree from an `ls-tree`-style listing.
@@ -551,6 +557,13 @@ impl HistoryRepo {
             record.task = metadata.task;
             record.labels = metadata.labels;
             record.pinned = metadata.pinned;
+            let missing = |path: String| super::store::PathReason {
+                path: super::tracked::tree_path_to_display(&path),
+                reason: "not captured in this commit".into(),
+            };
+            record.tree.coverage.omitted = metadata.omitted.into_iter().map(missing).collect();
+            record.tree.coverage.incomplete =
+                metadata.incomplete.into_iter().map(missing).collect();
             record.operation = metadata.operation.map(|op| op.localize()).transpose()?;
         }
         record.tree.snapshot = Some(self.output_tree_of(commit)?);
@@ -625,6 +638,10 @@ impl HistoryRepo {
                     .find(|prior| prior.path == entry.path && prior.variant == entry.variant)
                     .map_or_else(|| "saved".into(), |prior| prior.state.clone());
             }
+            coverage.omitted.append(&mut record.tree.coverage.omitted);
+            coverage
+                .incomplete
+                .append(&mut record.tree.coverage.incomplete);
             record.tree.coverage = coverage;
             let mut roots: BTreeMap<String, RootRecord> = BTreeMap::new();
             let layout = super::sync::layout::Roots::current();
@@ -1446,6 +1463,74 @@ mod tests {
             .into_iter()
             .map(|entry| entry.path)
             .collect()
+    }
+
+    #[test]
+    fn omitted_capture_paths_survive_rebuilding_from_git() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let manifest = super::super::manifest::Manifest {
+            enrollment: vec![super::super::manifest::Enrollment {
+                path: "home/.native".into(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![],
+            }],
+            ..Default::default()
+        };
+        let tree = manifest
+            .write(&repo, &repo.empty_object("tree").unwrap())
+            .unwrap();
+        let tracked = manifest.tracking().unwrap();
+        let mut checkpoint =
+            crate::system::history::checkpoint::test_checkpoint("omitted", Some(&tree));
+        checkpoint.tree.coverage = tracked.coverage(&super::super::tracked::Walk {
+            entries: tracked.entries.clone(),
+            ..Default::default()
+        });
+        checkpoint
+            .tree
+            .coverage
+            .omitted
+            .push(super::super::store::PathReason {
+                path: crate::file::display_path(crate::dirs::HOME.join(".native/large")),
+                reason: "size limit".into(),
+            });
+        checkpoint
+            .tree
+            .coverage
+            .incomplete
+            .push(super::super::store::PathReason {
+                path: crate::file::display_path(crate::dirs::HOME.join(".native/unreadable")),
+                reason: "scan limit".into(),
+            });
+        let commit = repo
+            .write_checkpoint(Some(&tree), &checkpoint, &BTreeMap::new())
+            .unwrap();
+        let rebuilt = repo.read_meta(&commit).unwrap();
+        assert_eq!(rebuilt.tree.coverage.omitted[0].path, "~/.native/large");
+        assert_eq!(
+            rebuilt.tree.coverage.incomplete[0].path,
+            "~/.native/unreadable"
+        );
+    }
+
+    #[test]
+    fn capture_ignores_attributes_and_preserves_raw_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        std::fs::create_dir(&home).unwrap();
+        std::fs::write(home.join(".gitattributes"), "* text eol=lf\n").unwrap();
+        std::fs::write(home.join("native"), b"a\r\nb\r\n").unwrap();
+        let Some(repo) = HistoryRepo::open_or_init_in(&tmp.path().join("store")).unwrap() else {
+            return;
+        };
+        let captured = repo.capture(&[root("home", &home, &["native"])]).unwrap();
+        let (_, oid) = repo
+            .object_at(&captured.tree, "home/native")
+            .unwrap()
+            .unwrap();
+        assert_eq!(repo.cat_object(&oid).unwrap(), b"a\r\nb\r\n");
     }
 
     #[test]

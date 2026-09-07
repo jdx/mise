@@ -324,8 +324,11 @@ pub(crate) fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
 /// when the prior enrollment exists in Git rather than local configuration.
 pub(crate) fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     let mut composed: IndexMap<PathBuf, Vec<FileRequest>> = IndexMap::new();
+    let trusted_roots = global_composed_roots(config);
     for config_files in config.bootstrap_config_maps() {
-        for request in files_from_config_files(config_files) {
+        for request in
+            files_from_config_files_with_tracking_roots(config_files, Some(&trusted_roots))
+        {
             let siblings = composed.entry(request.target.clone()).or_default();
             if let Some(existing) = siblings
                 .iter_mut()
@@ -355,22 +358,7 @@ pub(crate) fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequ
             siblings.push(request);
         }
     }
-    let mut composed = composed.into_values().flatten().collect::<Vec<_>>();
-    // tracking is enrolled from the system and global layers (and the roots
-    // they compose) only, so no project configuration can enroll files
-    let trusted_roots = global_composed_roots(config);
-    composed.retain(|request| {
-        if request.mode != FileMode::Track || track_layer_allowed(&request.origin, &trusted_roots) {
-            return true;
-        }
-        record_invalid(
-            &request.target_raw,
-            &request.origin.config,
-            "tracking is enrolled from the global configuration only (ignored: project config)",
-        );
-        false
-    });
-    Ok(composed)
+    Ok(composed.into_values().flatten().collect())
 }
 
 /// Whether a declaration comes from the system or global layers (or a root
@@ -640,6 +628,13 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
 /// used by OCI builds, which intentionally scope config to project files by
 /// default instead of blindly inheriting global dotfiles.
 pub(crate) fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
+    files_from_config_files_with_tracking_roots(config_files, None)
+}
+
+fn files_from_config_files_with_tracking_roots(
+    config_files: &ConfigMap,
+    tracking_roots: Option<&[PathBuf]>,
+) -> Vec<FileRequest> {
     // keyed by the *expanded* target so "~/.gitconfig" in one config and
     // its absolute spelling in another are one entry, not two
     let mut merged: IndexMap<(PathBuf, bool), FileRequest> = IndexMap::new();
@@ -656,6 +651,16 @@ pub(crate) fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileReque
             continue;
         };
         for (target_raw, value) in dotfiles.0 {
+            if tracking_roots.is_some_and(|roots| !track_layer_allowed(&origin, roots))
+                && value.get("mode").and_then(toml::Value::as_str) == Some("track")
+            {
+                record_invalid(
+                    &target_raw,
+                    &origin.config,
+                    "tracking is enrolled from the global configuration only (ignored: project config)",
+                );
+                continue;
+            }
             if value.as_table().is_some_and(|t| {
                 t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
                     && ["content", "block", "line", "template"]

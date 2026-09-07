@@ -120,7 +120,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise bootstrap dotfiles origin set https://github.com/you/setup.git</bold>
-    $ <bold>mise bootstrap dotfiles origin set git@github.com:you/setup.git --name laptop --sync manual</bold>
+    $ <bold>mise bootstrap dotfiles origin set git@github.com:you/setup.git --sync manual</bold>
     $ <bold>mise bootstrap dotfiles origin</bold>              # what is connected
     $ <bold>mise bootstrap dotfiles origin --remove</bold>
 "#

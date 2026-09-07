@@ -1,7 +1,7 @@
 //! The experimental `[env]` age directives: `mise set --age-encrypt` writes
 //! them and environment resolution decrypts them. Everything here stays
 //! behind `settings.experimental` (the gate is in `decrypt_age_directive`
-//! and in `mise set`); the encryption of machine backups in the parent
+//! and in `mise set`); the encryption of tracked files in the parent
 //! module does not go through this layer.
 //!
 //! The envelope is age, then zstd above a size threshold, then unpadded

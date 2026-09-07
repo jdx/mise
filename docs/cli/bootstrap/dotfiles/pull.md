@@ -27,7 +27,7 @@ conflicts. When an incoming configuration declares more tracked files,
 their shared versions follow in the same run.
 
 ## Arguments
-- **`[PATH]…`** — Paths must cover the complete pending setup; partial pulls are rejected
+- **`[PATH]…`** — Partial pulls are unsupported; omit PATH and apply the complete setup
 
 ## Flags
 - **`-n --dry-run`** — Show the plan without changing anything
@@ -41,7 +41,6 @@ Examples:
 ```
 mise bootstrap dotfiles pull --dry-run
 mise bootstrap dotfiles pull --yes
-mise bootstrap dotfiles pull ~/.config/hypr
 mise bootstrap dotfiles pull --take-remote ~/.zshrc
 mise bootstrap dotfiles pull --keep-local ~/.zshrc
 ```

@@ -148,10 +148,14 @@ impl DotfilesSave {
 
 /// Whether the newest checkpoint holds `path`.
 fn previously_captured(store: &Store, entries: &[Entry], path: &Path) -> Result<bool> {
-    let (Some(repo), Some(newest)) = (store.repo(), entries.last()) else {
+    let Some(repo) = store.repo() else {
         return Ok(false);
     };
-    let Some(snapshot) = &newest.checkpoint.tree.snapshot else {
+    let Some(snapshot) = entries
+        .iter()
+        .rev()
+        .find_map(|entry| entry.checkpoint.tree.snapshot.as_ref())
+    else {
         return Ok(false);
     };
     let tree_path = display_to_tree_path(&display_path(path));

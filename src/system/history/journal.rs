@@ -218,7 +218,14 @@ impl PathSnapshot {
     pub(crate) fn capture_with(state_dir: &Path, path: &Path, capture: Capture) -> Self {
         let metadata = match std::fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Self::Missing,
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+            {
+                return Self::Missing;
+            }
             Err(err) => {
                 return Self::Unrecorded {
                     kind: "unknown".into(),
@@ -380,7 +387,14 @@ impl PathState {
     pub(crate) fn observe(path: &Path) -> Self {
         let metadata = match std::fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Self::Missing,
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+            {
+                return Self::Missing;
+            }
             Err(err) => {
                 return Self::Other {
                     kind: format!("unreadable: {err}"),
@@ -560,6 +574,19 @@ pub(crate) fn note(message: impl Into<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn children_under_a_file_are_known_absences() {
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        std::fs::write(&parent, "protected parent").unwrap();
+        let child = parent.join("child");
+        assert!(matches!(
+            PathSnapshot::capture_with(tmp.path(), &child, Capture::Full),
+            PathSnapshot::Missing
+        ));
+        assert_eq!(PathState::observe(&child), PathState::Missing);
+    }
 
     #[test]
     fn blobs_inline_small_and_store_large_content() {

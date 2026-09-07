@@ -29,7 +29,7 @@ Examples:
 
 ```
 mise bootstrap dotfiles origin set https://github.com/you/setup.git
-mise bootstrap dotfiles origin set git@github.com:you/setup.git --name laptop --sync manual
+mise bootstrap dotfiles origin set git@github.com:you/setup.git --sync manual
 mise bootstrap dotfiles origin              # what is connected
 mise bootstrap dotfiles origin --remove
 ```

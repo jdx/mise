@@ -59,7 +59,9 @@ pub(crate) fn detect(repo: &HistoryRepo, upstream: Option<&str>) -> Result<RepoS
         return Ok(RepoState::Empty);
     };
     match repo.object_at(commit, MARKER_PATH)? {
-        Some((_, oid)) => Ok(RepoState::Marked(parse_marker(&repo.cat_object(&oid)?)?)),
+        Some((_, oid)) => Ok(RepoState::Marked(parse_marker(
+            &repo.cat_object_bounded(&oid, 64 * 1024)?,
+        )?)),
         None => Ok(RepoState::Unmarked),
     }
 }

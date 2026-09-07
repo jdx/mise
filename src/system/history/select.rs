@@ -24,7 +24,7 @@ impl Variant {
     /// `macos`, `linux-arm64`, `macos+work`, `work`, or `default`.
     pub(crate) fn name(&self) -> String {
         let mut parts = vec![];
-        if let Some(os) = self.os.first() {
+        for os in &self.os {
             parts.push(os.replace('/', "-"));
         }
         let mut name = parts.join("-");
@@ -175,6 +175,10 @@ mod tests {
 
     #[test]
     fn stream_names() {
+        assert_ne!(
+            v(&["macos", "linux"], None, false).name(),
+            v(&["macos", "windows"], None, false).name()
+        );
         assert_eq!(v(&["macos"], None, false).name(), "macos");
         assert_eq!(
             v(&["linux/arm64"], Some("work"), false).name(),

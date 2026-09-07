@@ -387,6 +387,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ 
 ignored = [
   "aws-lc-rs",
   "built",
+  "cc", # Used by build.rs for the macOS notification helper.
   "cfg_aliases",
   "openssl",
   "phf_codegen",
