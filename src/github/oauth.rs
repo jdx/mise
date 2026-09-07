@@ -573,7 +573,7 @@ fn lock_cache(path: &Path) -> Result<fslock::LockFile> {
 
 pub(crate) fn log_refresh_error(err: &eyre::Report) {
     if err.downcast_ref::<RefreshRejected>().is_some() {
-        warn!("{err}");
+        warn_once!("{err}");
     } else {
         debug!("failed to refresh GitHub OAuth token: {err:#}");
     }
