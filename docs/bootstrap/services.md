@@ -44,6 +44,13 @@ One declaration is rendered for the platform's user service manager:
   `mise bootstrap dotfiles watch` through a durable mise executable with
   `restart = "on-failure"` and a low priority. A builtin implies
   `scope = "user"`; `command` cannot be combined with it.
+  To avoid a tight failure loop, Linux allows three starts within five
+  minutes; macOS spaces repeated launches at least five minutes apart.
+  If Linux stops retrying, fix the problem reported by `mise doctor` or
+  the service logs, then reset the unit's failure state and start it again
+  (`systemctl --user reset-failed dev.mise.<name>.service` followed by
+  `systemctl --user start dev.mise.<name>.service`). Ordinary custom
+  services retain their existing restart behavior.
 - `description`: shown by the service manager.
 - `restart`: `"on-failure"` (default), `"always"`, or `"never"`. On Linux this
   is `Restart=`; on macOS `KeepAlive` (`{ SuccessfulExit = false }` for

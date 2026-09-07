@@ -94,6 +94,9 @@ pub(crate) struct SystemdRequest {
     pub after: Vec<String>,
     pub wants: Vec<String>,
     pub requires: Vec<String>,
+    /// Internal restart budget for mise-owned builtins; ordinary declarations
+    /// retain the service manager's defaults.
+    pub start_limit: Option<(u32, u32)>,
     pub exec_start: Option<String>,
     pub service_type: Option<String>,
     pub remain_after_exit: Option<bool>,
@@ -242,6 +245,7 @@ impl SystemdRequest {
             after: config.after,
             wants: config.wants,
             requires: config.requires,
+            start_limit: None,
             exec_start,
             service_type: config.service_type,
             remain_after_exit: config.remain_after_exit,
@@ -540,6 +544,11 @@ pub(crate) fn render_unit(request: &SystemdRequest) -> String {
     }
     if !request.requires.is_empty() {
         out.push_str(&format!("Requires={}\n", request.requires.join(" ")));
+    }
+    if let Some((seconds, burst)) = request.start_limit {
+        out.push_str(&format!(
+            "StartLimitIntervalSec={seconds}\nStartLimitBurst={burst}\n"
+        ));
     }
     match request.kind {
         SystemdUnitKind::Service => render_service(request, &mut out),

@@ -182,7 +182,11 @@ impl UserServiceRequest {
             wanted_by: (!self.enabled).then(Vec::new),
             ..Default::default()
         };
-        SystemdRequest::from_toml(self.name.clone(), config)
+        let mut request = SystemdRequest::from_toml(self.name.clone(), config)?;
+        if self.builtin.as_deref() == Some("history-watch") {
+            request.start_limit = Some((300, 3));
+        }
+        Ok(request)
     }
 
     pub(crate) fn launchd_request(&self) -> Result<LaunchdRequest> {
@@ -205,6 +209,7 @@ impl UserServiceRequest {
             keep_alive_on_failure: self.enabled
                 && self.start()
                 && self.restart == ServiceRestart::OnFailure,
+            throttle_interval: (self.builtin.as_deref() == Some("history-watch")).then_some(300),
             environment: self.environment.clone(),
             working_directory: self.working_directory.clone(),
             kickstart: self.start(),
@@ -749,6 +754,10 @@ mod tests {
         assert_eq!(request.nice, Some(10));
         assert!(request.description.is_some());
         assert!(request.unresolved.is_none());
+        let unit = systemd::render_unit(&request.systemd_request().unwrap());
+        assert!(unit.contains("StartLimitIntervalSec=300\nStartLimitBurst=3\n"));
+        let agent = request.launchd_request().unwrap();
+        assert_eq!(agent.throttle_interval, Some(300));
 
         let staged = UserServiceRequest::from_toml_with_executable(
             "agent".to_string(),
@@ -793,6 +802,7 @@ mod tests {
         assert!(unit.contains("agent --serve\n"));
         assert!(unit.contains("Restart=always\n"));
         assert!(unit.contains("RestartSec=5s\n"));
+        assert!(!unit.contains("StartLimit"));
         assert!(unit.contains("Environment=\"RUST_LOG=info\"\n"));
         assert!(unit.contains("WorkingDirectory="));
         assert!(unit.contains("WantedBy=default.target\n"));
@@ -816,6 +826,7 @@ mod tests {
         assert!(agent.kickstart);
         assert!(!agent.keep_alive);
         assert!(agent.keep_alive_on_failure);
+        assert_eq!(agent.throttle_interval, None);
         let plist = String::from_utf8(launchd::render_plist(&agent).unwrap()).unwrap();
         assert!(plist.contains("<key>SuccessfulExit</key>"));
         assert!(plist.contains("<key>RUST_LOG</key>"));
