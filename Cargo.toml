@@ -102,7 +102,9 @@ usage_rs = { package = "usage-rs", version = "6.8", features = [
   "validation",
 ] }
 usage-cli = "6.8"
-color-eyre = "0.6"
+color-eyre = { version = "0.6", default-features = false, features = [
+  "track-caller",
+] }
 color-print = "0.3"
 comfy-table = "8"
 confique = { version = "0.4", default-features = false }
@@ -124,7 +126,13 @@ futures-util = "0.3"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
 fslock = "0.2"
-gix = { version = "<1", features = ["worktree-mutation"] }
+gix = { version = "<1", default-features = false, features = [
+  "max-performance-safe",
+  "worktree-mutation",
+  "sha1",
+  "interrupt",
+  "auto-chain-error",
+] }
 glob = "0.3"
 globwalk = "0.9"
 globset = "0.4"
