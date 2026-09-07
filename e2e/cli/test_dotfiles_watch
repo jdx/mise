@@ -57,7 +57,7 @@ echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
 assert_succeed "mise bootstrap dotfiles watch --once"
 assert "$count" "2"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].trigger'" "edit"
-assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua, mise/config.toml"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua"
 
 # the foreground watcher saves an edit once the file is quiet
 mise bootstrap dotfiles watch --json >watch.log 2>&1 &
@@ -85,7 +85,7 @@ assert_contains "cat watch.log" '"event":"captured"'
 assert_succeed "mise bootstrap dotfiles exclude '~/.config/hypr/bindings.lua'"
 wait_for_count 4
 assert_contains "cat watch.log" '"event":"replan"'
-assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited mise/config.toml; removed hypr/bindings.lua"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "removed hypr/bindings.lua"
 echo 'bind = SUPER, W' >~/.config/hypr/bindings.lua
 echo 'monitor=DP-4' >~/.config/hypr/monitors.lua
 wait_for_count 5
@@ -102,8 +102,8 @@ assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-3"
 assert "$count" "$((n + 2))"
 
 # a description command names the checkpoints the watcher saves from what it
-# is told: the changed paths that are not private and a diff of the files
-# that are backed up; the checkpoint is saved before it runs
+# is told: changed tracked paths and their diffs; the checkpoint is saved
+# before the description command runs
 cat <<'EOF' >"$PWD/describe"
 #!/usr/bin/env bash
 input="$(cat)"
