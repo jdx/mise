@@ -241,6 +241,9 @@ Show what history tracks and under which policies
 \fBbootstrap dotfiles pull\fR
 Pull incoming shared changes into the live files
 .TP
+\fBbootstrap dotfiles recover\fR
+Recover an interrupted dotfile operation
+.TP
 \fBbootstrap dotfiles rollback\fR
 Return files to the version a checkpoint holds
 .TP
@@ -1862,6 +1865,32 @@ Print help
 .TP
 \fB<PATH>\fR
 Partial pulls are unsupported; omit PATH and apply the complete setup
+.SH "MISE BOOTSTRAP DOTFILES RECOVER"
+Recover an interrupted dotfile operation
+
+Retries safe recovery without overwriting later edits. If recovery cannot
+determine what is safe, inspect the listed files first. `\-\-keep\-current`
+explicitly accepts their live contents and discards only the selected
+operation's temporary recovery copies; it does not erase Git history.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles recover [OPTIONS] [<OPERATION>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-keep\-current\fR
+Accept live files instead of restoring temporary recovery copies
+.TP
+\fB\-y, \-\-yes\fR
+Confirm discarding the selected operation's temporary recovery copies
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<OPERATION>\fR
+Pending operation identifier or an unambiguous prefix
 .SH "MISE BOOTSTRAP DOTFILES ROLLBACK"
 Return files to the version a checkpoint holds
 

@@ -908,6 +908,20 @@ their shared versions follow in the same run.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[PATH]…" help="Partial pulls are unsupported; omit PATH and apply the complete setup" required=#false var=#true
         }
+        cmd recover help="Recover an interrupted dotfile operation" effect=destructive {
+            long_help #"""
+Recover an interrupted dotfile operation
+
+Retries safe recovery without overwriting later edits. If recovery cannot
+determine what is safe, inspect the listed files first. `--keep-current`
+explicitly accepts their live contents and discards only the selected
+operation's temporary recovery copies; it does not erase Git history.
+"""#
+            flag --keep-current help="Accept live files instead of restoring temporary recovery copies"
+            flag "-y --yes" help="Confirm discarding the selected operation's temporary recovery copies"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[OPERATION]" help="Pending operation identifier or an unambiguous prefix" required=#false
+        }
         cmd rollback help="Return files to the version a checkpoint holds" effect=destructive {
             long_help #"""
 Return files to the version a checkpoint holds

@@ -167,7 +167,7 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
     }
     if report.pending_operations > 0 {
         miseprintln!(
-            "  {} operation(s) did not finish; `mise bootstrap dotfiles history --pending` lists them.",
+            "  {} operation(s) did not finish; `mise bootstrap dotfiles history --pending` lists them; `mise bootstrap dotfiles recover` retries safe recovery.",
             report.pending_operations
         );
     }

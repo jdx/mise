@@ -1035,6 +1035,7 @@ mod tests {
     fn operation_descriptions_name_the_kind() {
         let mut draft = Draft::new(Trigger::Bootstrap);
         draft.operation = Some(Operation {
+            id: "test-operation".into(),
             kind: store::OperationKind::Bootstrap,
             status: store::OperationStatus::Completed,
             command: "bootstrap".into(),

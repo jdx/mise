@@ -165,6 +165,14 @@ copies exist only to complete or safely recover interrupted writes, and are
 deleted afterwards. Unresolved recovery is never expired; concurrent edits are
 preserved and reported for action.
 
+Run `mise bootstrap dotfiles recover` to retry interrupted writes safely. If
+later edits prevent recovery, inspect the reported paths first. You can then
+explicitly accept the live files with
+`mise bootstrap dotfiles recover <operation> --keep-current`. After confirmation,
+this discards only that operation's temporary recovery copies; it does not
+change the live files or erase committed history. Ordinary retries keep both
+the later edits and recovery copies when they cannot proceed safely.
+
 ## Capturing an external command
 
 ```sh

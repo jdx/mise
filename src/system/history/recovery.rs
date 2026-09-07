@@ -54,7 +54,7 @@ fn recover_entries(
     }
     if !failures.is_empty() {
         bail!(
-            "interrupted file recovery needs attention; temporary recovery data was retained. {}",
+            "interrupted file recovery needs attention; temporary recovery data was retained. {}. Run `mise bootstrap dotfiles recover` to retry, or inspect the files and use `recover <operation> --keep-current` to explicitly accept their current contents",
             failures.join("; ")
         );
     }
@@ -276,8 +276,28 @@ fn restore(state_dir: &Path, path: &Path, snapshot: &PathSnapshot) -> Result<()>
 /// Delete only this completed operation's sidecars, preserving any still
 /// referenced by an unresolved operation. Caller holds the operation lock.
 pub(crate) fn discard(state_dir: &Path, journal: &[JournalEntry]) -> Result<()> {
+    discard_except(state_dir, journal, None)
+}
+
+/// The selected pending record remains durable until its cleanup succeeds.
+pub(crate) fn discard_pending(
+    state_dir: &Path,
+    journal: &[JournalEntry],
+    uuid: &str,
+) -> Result<()> {
+    discard_except(state_dir, journal, Some(uuid))
+}
+
+fn discard_except(
+    state_dir: &Path,
+    journal: &[JournalEntry],
+    completed: Option<&str>,
+) -> Result<()> {
     let mut candidates = sidecars(journal);
     for (_, pending) in super::store::list_pending_in(state_dir)? {
+        if completed == Some(pending.checkpoint.uuid.as_str()) {
+            continue;
+        }
         if let Some(operation) = pending.checkpoint.operation {
             for retained in sidecars(&operation.journal) {
                 candidates.remove(&retained);

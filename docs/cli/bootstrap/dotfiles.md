@@ -27,6 +27,7 @@ Manage dotfiles from `[dotfiles]`
 - [`mise bootstrap dotfiles origin [--remove] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/origin.html)
 - [`mise bootstrap dotfiles paths [FLAGS]`](/cli/bootstrap/dotfiles/paths.html)
 - [`mise bootstrap dotfiles pull [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/pull.html)
+- [`mise bootstrap dotfiles recover [--keep-current] [-y --yes] [OPERATION]`](/cli/bootstrap/dotfiles/recover.html)
 - [`mise bootstrap dotfiles rollback [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/rollback.html)
 - [`mise bootstrap dotfiles save [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/save.html)
 - [`mise bootstrap dotfiles status [-J --json] [--missing] [TARGET]…`](/cli/bootstrap/dotfiles/status.html)

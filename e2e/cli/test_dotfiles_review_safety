@@ -33,3 +33,9 @@ assert_succeed 'cmp ~/.native captured'
 
 # A network option is not a repository URL, including on initial discovery.
 assert_fail "mise bootstrap --from-git=--upload-pack=invalid --yes 2>&1"
+
+# Recovery is an explicit bootstrap command; an idle store remains unchanged.
+head=$(git --git-dir="$repo" rev-parse HEAD)
+assert_contains 'mise bootstrap dotfiles recover --help' '--keep-current'
+assert_succeed 'mise bootstrap dotfiles recover'
+assert "git --git-dir='$repo' rev-parse HEAD" "$head"

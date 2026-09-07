@@ -126,6 +126,9 @@ export const commands: { [key: string]: Command } = {
           pull: {
             hide: false,
           },
+          recover: {
+            hide: false,
+          },
           rollback: {
             hide: false,
           },

@@ -10,7 +10,7 @@
 //! processes spawned by hooks attach to the parent's operation instead of
 //! opening their own.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -355,6 +355,7 @@ impl Writer {
             },
         )?;
         let operation = Operation {
+            id: uuid.clone(),
             kind,
             status: OperationStatus::Pending,
             command,
@@ -627,6 +628,18 @@ fn take_operation_lock_with_wait(
     tracked: &TrackedSet,
     wait: std::time::Duration,
 ) -> Result<fslock::LockFile> {
+    let lock = acquire_operation_lock(store, wait)?;
+    recover_stale(store, tracked)?;
+    Ok(lock)
+}
+
+/// Recovery must be able to acquire the operation lock without first retrying
+/// the very transaction whose concurrent edits require an explicit decision.
+pub(crate) fn recovery_lock(store: &Store) -> Result<fslock::LockFile> {
+    acquire_operation_lock(store, std::time::Duration::ZERO)
+}
+
+fn acquire_operation_lock(store: &Store, wait: std::time::Duration) -> Result<fslock::LockFile> {
     let state_dir = store.state_dir();
     let path = store::operation_lock_in(state_dir);
     // a running operation (the watcher applying incoming changes, say) is
@@ -660,7 +673,6 @@ fn take_operation_lock_with_wait(
         }
         std::thread::sleep(OPERATION_LOCK_POLL);
     };
-    recover_stale(store, tracked)?;
     Ok(lock)
 }
 
@@ -673,32 +685,88 @@ const OPERATION_LOCK_POLL: std::time::Duration = std::time::Duration::from_milli
 /// still running is not stale, and closing it would leave two checkpoints
 /// with one reserved id.
 pub(crate) fn recover_stale(store: &Store, tracked: &TrackedSet) -> Result<()> {
+    recover_records(store, tracked, store::list_pending_in(store.state_dir())?)
+}
+
+/// Retry a single operation under the caller's recovery lock. Accepting live
+/// files is deliberately separate from ordinary automatic recovery.
+pub(crate) fn recover_operation(
+    store: &Store,
+    tracked: &TrackedSet,
+    uuid: &str,
+    keep_current: bool,
+) -> Result<()> {
+    let mut pending = store::list_pending_in(store.state_dir())?
+        .into_iter()
+        .filter(|(_, record)| record.checkpoint.uuid == uuid)
+        .collect::<Vec<_>>();
+    if pending.is_empty() {
+        bail!("no pending operation {uuid}");
+    }
+    if keep_current {
+        for (_, record) in &mut pending {
+            record.recovery = store::RecoveryState::Finished;
+            if let Some(operation) = &mut record.checkpoint.operation {
+                operation.status = OperationStatus::Failed;
+                operation.finished_at = Some(store::now_rfc3339());
+                operation.error =
+                    Some("current live files explicitly accepted during recovery".into());
+            }
+            store::write_pending_in(store.state_dir(), record)?;
+        }
+    }
+    recover_records(store, tracked, pending)
+}
+
+fn recover_records(
+    store: &Store,
+    tracked: &TrackedSet,
+    pending: Vec<(PathBuf, Pending)>,
+) -> Result<()> {
     let state_dir = store.state_dir();
-    let pending = store::list_pending_in(state_dir)?;
     if pending.is_empty() {
         store::remove_marker_in(state_dir);
         return Ok(());
     }
+    // An outcome commit may have reached Git before its derived index was
+    // written. Rebuild before deciding whether recovery must record it.
+    let index = store.rebuild_index()?;
     let _store_lock = store.lock()?;
-    let index = store::load_index_in(state_dir)?;
+    let mut recorded_operations = BTreeSet::new();
+    for entry in &index.entries {
+        if let Some(operation) = store::read_meta_cache_in(state_dir, &entry.uuid)?
+            .and_then(|checkpoint| checkpoint.operation)
+        {
+            recorded_operations.insert(operation.id);
+        }
+    }
     for (path, mut record) in pending {
         let interrupted = record
             .checkpoint
             .operation
             .as_ref()
             .is_some_and(|operation| operation.status == OperationStatus::Pending);
-        recover_pending(state_dir, &mut record)?;
-        if index.by_uuid(&record.checkpoint.uuid).is_some() {
+        if record
+            .checkpoint
+            .operation
+            .as_ref()
+            .is_some_and(|op| recorded_operations.contains(&op.id))
+        {
             warn!(
                 "history: dropping a stale pending record for checkpoint {}, which was recorded",
                 record.checkpoint.uuid
             );
-            let _ = std::fs::remove_file(&path);
             if let Some(operation) = &record.checkpoint.operation {
-                super::recovery::discard(state_dir, &operation.journal)?;
+                super::recovery::discard_pending(
+                    state_dir,
+                    &operation.journal,
+                    &record.checkpoint.uuid,
+                )?;
             }
+            std::fs::remove_file(&path)?;
             continue;
         }
+        recover_pending(state_dir, &mut record)?;
         warn!(
             "history: recovering interrupted operation {}",
             record.checkpoint.uuid
@@ -740,10 +808,14 @@ pub(crate) fn recover_stale(store: &Store, tracked: &TrackedSet) -> Result<()> {
         };
         match captured {
             Ok(_) => {
-                let _ = std::fs::remove_file(&path);
                 if let Some(operation) = &record.checkpoint.operation {
-                    super::recovery::discard(state_dir, &operation.journal)?;
+                    super::recovery::discard_pending(
+                        state_dir,
+                        &operation.journal,
+                        &record.checkpoint.uuid,
+                    )?;
                 }
+                std::fs::remove_file(&path)?;
             }
             Err(err) => warn!(
                 "history: could not close operation {}; keeping {} for the next run: {err:#}",
@@ -752,7 +824,9 @@ pub(crate) fn recover_stale(store: &Store, tracked: &TrackedSet) -> Result<()> {
             ),
         }
     }
-    store::remove_marker_in(state_dir);
+    if store::list_pending_in(state_dir)?.is_empty() {
+        store::remove_marker_in(state_dir);
+    }
     Ok(())
 }
 
@@ -795,6 +869,107 @@ fn outcome_trigger(kind: OperationKind) -> Trigger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::system::history::shadow::HistoryRepo;
+
+    #[test]
+    fn accepting_current_files_preserves_edits_and_other_pending_operations() -> Result<()> {
+        use super::super::journal::{Capture, PathSnapshot, PathState};
+
+        let temp = tempfile::tempdir()?;
+        let live = temp.path().join("untracked");
+        std::fs::write(&live, vec![b'x'; 70_000])?;
+        let writer = Writer::begin(
+            temp.path(),
+            OperationKind::Bootstrap,
+            "bootstrap",
+            TrackedSet::default(),
+            std::time::Duration::ZERO,
+        )?;
+        let mut pending = writer.pending.clone();
+        let prior = PathSnapshot::capture_with(temp.path(), &live, Capture::Full);
+        std::fs::write(&live, "operation contents")?;
+        pending.checkpoint.operation.as_mut().unwrap().journal = vec![
+            JournalEntry::PathChanged {
+                part: "files".into(),
+                item: "untracked".into(),
+                path: live.clone(),
+                prior,
+            },
+            JournalEntry::Committed {
+                seq: 0,
+                after: PathState::observe(&live),
+            },
+        ];
+        store::write_pending_in(temp.path(), &pending)?;
+        drop(writer);
+        std::fs::write(&live, "later user edit")?;
+        let store = Store::open_in(temp.path())?;
+        assert!(recover_stale(&store, &TrackedSet::default()).is_err());
+        assert_eq!(std::fs::read_to_string(&live)?, "later user edit");
+        assert_eq!(store::list_pending_in(temp.path())?.len(), 1);
+
+        let mut other = pending.clone();
+        other.checkpoint.uuid = uuid::Uuid::new_v4().to_string();
+        other.checkpoint.operation.as_mut().unwrap().id = other.checkpoint.uuid.clone();
+        other.checkpoint.operation.as_mut().unwrap().journal.clear();
+        store::write_pending_in(temp.path(), &other)?;
+        recover_operation(
+            &store,
+            &TrackedSet::default(),
+            &pending.checkpoint.uuid,
+            true,
+        )?;
+        assert_eq!(std::fs::read_to_string(&live)?, "later user edit");
+        let remaining = store::list_pending_in(temp.path())?;
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].1.checkpoint.uuid, other.checkpoint.uuid);
+        assert_eq!(
+            std::fs::read_dir(super::super::journal::blobs_dir_in(temp.path()))?.count(),
+            0
+        );
+        assert!(
+            store
+                .repo()
+                .unwrap()
+                .ref_oid(HistoryRepo::HISTORY_REF)?
+                .is_none()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn committed_outcome_is_not_repeated_after_pending_cleanup_crashes() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let mut writer = Writer::begin(
+            temp.path(),
+            OperationKind::Capture,
+            "capture",
+            TrackedSet::default(),
+            std::time::Duration::ZERO,
+        )?;
+        let pending = writer.pending.clone();
+        writer.finish(None, None, true)?;
+        let head = writer
+            .store
+            .repo()
+            .unwrap()
+            .ref_oid(HistoryRepo::HISTORY_REF)?;
+        let before = writer.store.list()?;
+        // Simulate a crash after committing the outcome, before removing its
+        // pending record. Lose the derived index too: only Git is authoritative.
+        store::write_pending_in(temp.path(), &pending)?;
+        std::fs::remove_file(store::index_dir_in(temp.path()).join("checkpoints.json"))?;
+        drop(writer);
+        let store = Store::open_in(temp.path())?;
+        recover_stale(&store, &TrackedSet::default())?;
+        assert!(store::list_pending_in(temp.path())?.is_empty());
+        assert_eq!(
+            store.repo().unwrap().ref_oid(HistoryRepo::HISTORY_REF)?,
+            head
+        );
+        assert_eq!(store.list()?.len(), before.len());
+        Ok(())
+    }
 
     #[test]
     fn unenrolled_bootstrap_keeps_recovery_private_without_creating_history() -> Result<()> {

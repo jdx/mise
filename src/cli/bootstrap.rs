@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use super::dotfiles::{
     DotfilesAdd, DotfilesApply, DotfilesCapture, DotfilesDiff, DotfilesEdit, DotfilesExclude,
-    DotfilesHistory, DotfilesInclude, DotfilesOrigin, DotfilesPaths, DotfilesPull,
+    DotfilesHistory, DotfilesInclude, DotfilesOrigin, DotfilesPaths, DotfilesPull, DotfilesRecover,
     DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesSync, DotfilesTrack, DotfilesUnapply,
     DotfilesUndo, DotfilesUntrack, DotfilesWatch,
 };
@@ -850,6 +850,7 @@ enum BootstrapDotfilesCommands {
     Origin(DotfilesOrigin),
     Paths(DotfilesPaths),
     Pull(DotfilesPull),
+    Recover(DotfilesRecover),
     Rollback(DotfilesRollback),
     Save(DotfilesSave),
     Status(BootstrapDotfilesStatus),
@@ -4173,6 +4174,7 @@ impl BootstrapDotfiles {
             BootstrapDotfilesCommands::Watch(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Origin(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Pull(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Recover(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Sync(cmd) => cmd.run().await,
         }
     }

@@ -383,6 +383,7 @@ impl Checkpoint {
                 .filter_map(|item| portable(&item.path))
                 .collect(),
             operation: self.operation.as_ref().map(|op| CommitOperation {
+                id: op.id.clone(),
                 kind: op.kind,
                 status: op.status,
                 before: op.before.clone(),
@@ -441,6 +442,9 @@ pub(crate) struct CommitRecord {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CommitOperation {
+    /// Stable identity reserved before the operation starts, independent of
+    /// the outcome commit's object id and this machine's numeric index.
+    pub id: String,
     pub kind: OperationKind,
     pub status: OperationStatus,
     pub before: Option<String>,
@@ -463,6 +467,7 @@ impl CommitOperation {
                 .ok_or_else(|| eyre!("invalid operation path: {path}"))
         };
         Ok(Operation {
+            id: self.id,
             kind: self.kind,
             status: self.status,
             command: self.kind.as_str().into(),
@@ -625,6 +630,7 @@ impl Changes {
 /// The outcome half of an operation pair.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Operation {
+    pub id: String,
     pub kind: OperationKind,
     pub status: OperationStatus,
     /// The mise command line without `argv[0]`, e.g. `bootstrap --yes`.
