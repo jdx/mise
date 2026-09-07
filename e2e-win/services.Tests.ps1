@@ -72,7 +72,7 @@ command = "powershell.exe -NoProfile -Command Start-Sleep 300"
         do {
             $json = mise bootstrap services status --json | Out-String
             $LASTEXITCODE | Should -Be 0
-            $status = ($json | ConvertFrom-Json)[0]
+            $status = @($json | ConvertFrom-Json)[0]
             if ($status.current -eq 'running') { break }
             Start-Sleep -Milliseconds 200
         } while ((Get-Date) -lt $deadline)
@@ -87,7 +87,7 @@ state = "absent"
 "@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
         $json = mise bootstrap services status --json | Out-String
         $LASTEXITCODE | Should -Be 0
-        $status = ($json | ConvertFrom-Json)[0]
+        $status = @($json | ConvertFrom-Json)[0]
         $status.action | Should -Be 'remove'
         mise bootstrap services apply --yes 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0
