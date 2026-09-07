@@ -1,5 +1,9 @@
-edit the pr for jdx/blog for [https://deploy-preview-99--jdxcode.netlify.app/posts/2026-09-07-dotfiles-that-save-themselves/](https://deploy-preview-99--jdxcode.netlify.app/posts/2026-09-07-dotfiles-that-save-themselves/)
+1. **State availability and prerequisites.** Which mise version includes this? Is it experimental? The post should answer those before the first tutorial command. The opening complaint about needing Git authentication also deserves a clearer resolution: local bootstrap still requires it; the relay addresses remote provisioning.
 
----
+assume that [https://github.com/jdx/mise/pull/12919#discussion\_r3950901813](https://github.com/jdx/mise/pull/12919#discussion_r3950901813) has been released and mise 2026.9.2 is out
 
-critique it
+
+
+1. **Remove speculative asides that interrupt the explanation.** “I may change that functionality…” and “I may tweak this behavior…” make the workflow sound unsettled without helping readers use it. Your candid voice works better when describing the actual tradeoff: automatic sync can stall on conflicts, and you rely on notifications to notice.
+
+i added that on purpose to help the user understand what isn't complete/decided, how could i explain it better?
