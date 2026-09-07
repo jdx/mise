@@ -1,0 +1,61 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1WM7FG3Z3F6CDMYRZFW8VJ9",
+  "session_id": "01a07932-63c9-7472-9e8f-c4f728db8691",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T00:27:58.333242Z",
+  "branch": "codex/install-resolving-progress",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_install_resolve_progress",
+    "src/cli/install.rs",
+    "src/cli/upgrade.rs",
+    "src/http.rs",
+    "src/toolset/builder.rs",
+    "src/toolset/mod.rs",
+    "src/toolset/tool_request_set.rs",
+    "src/toolset/toolset_install.rs",
+    "src/ui/install_progress.rs",
+    "src/ui/mod.rs",
+    "src/ui/resolve_progress.rs",
+    "src/ui/text_install_progress.rs",
+    "src/ui/tty_install_progress.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "e74e3a9de09e",
+  "checkpoint_transcript_start": 278,
+  "transcript_lines_at_start": 278,
+  "compact_transcript_start": 39,
+  "token_usage": {
+    "input_tokens": 20411,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2508032,
+    "output_tokens": 6644,
+    "api_call_count": 20
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T00:27:58.282653Z",
+    "agent_lines": 2683,
+    "agent_removed": 90,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2683,
+    "total_lines_changed": 2773,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
