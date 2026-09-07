@@ -11,8 +11,9 @@ use serde_json::{Value, json};
 
 use super::dotfiles::{
     DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesExclude, DotfilesHistory,
-    DotfilesInclude, DotfilesPaths, DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesTrack,
-    DotfilesUnapply, DotfilesUndo, DotfilesUntrack, DotfilesWatch,
+    DotfilesInclude, DotfilesMachines, DotfilesOrigin, DotfilesPaths, DotfilesPull,
+    DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesSync, DotfilesTrack, DotfilesUnapply,
+    DotfilesUndo, DotfilesUntrack, DotfilesWatch,
 };
 use super::install::Install;
 use super::plugins::install::install_plugin;
@@ -845,10 +846,14 @@ enum BootstrapDotfilesCommands {
     Exclude(DotfilesExclude),
     History(DotfilesHistory),
     Include(DotfilesInclude),
+    Machines(DotfilesMachines),
+    Origin(DotfilesOrigin),
     Paths(DotfilesPaths),
+    Pull(DotfilesPull),
     Rollback(DotfilesRollback),
     Save(DotfilesSave),
     Status(BootstrapDotfilesStatus),
+    Sync(DotfilesSync),
     Track(DotfilesTrack),
     Unapply(DotfilesUnapply),
     Undo(DotfilesUndo),
@@ -1310,6 +1315,16 @@ impl Bootstrap {
         generation.refresh_tracked().await;
         let error = result.as_ref().err().map(|err| format!("{err:#}"));
         generation.finish(error, result.as_ref().ok().cloned());
+        // a complete run applied the declarations that arrived through
+        // sync; a declined, partial, or dry run did not
+        if let Ok(summary) = &result
+            && !self.dry_run
+            && !is_declined(summary)
+            && self.only.is_empty()
+            && self.skip.is_empty()
+        {
+            system::history::sync::run::bootstrap_completed();
+        }
         result.map(|_| ())
     }
 
@@ -2289,10 +2304,16 @@ fn is_mise_config_target(path: &std::path::Path) -> bool {
                 .is_some_and(|parent| parent.ends_with(".config/mise/conf.d")))
 }
 
+const DECLINED: &str = "dotfiles apply declined";
+
 fn declined() -> Summary {
     Summary {
-        message: Some("dotfiles apply declined".into()),
+        message: Some(DECLINED.into()),
     }
+}
+
+fn is_declined(summary: &Summary) -> bool {
+    summary.message.as_deref() == Some(DECLINED)
 }
 
 impl Commands {
@@ -4118,6 +4139,10 @@ impl BootstrapDotfiles {
             BootstrapDotfilesCommands::Undo(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Untrack(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Watch(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Machines(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Origin(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Pull(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Sync(cmd) => cmd.run().await,
         }
     }
 }

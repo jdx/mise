@@ -1,0 +1,330 @@
+#!/usr/bin/env bash
+# `mise bootstrap dotfiles origin set`, `sync`, `apply`, and `machines`: two machines
+# (two isolated HOMEs) share one setup through a bare file:// repository
+# without any manual git work; conflicts are surfaced and decided per path.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+origin="$PWD/origin.git"
+git init -q --bare "$origin"
+
+# machine B is a second HOME reached through a wrapper script (functions are
+# not visible inside assert subshells)
+B="$PWD/b-home"
+mkdir -p "$B/.config/mise" "$B/.config/hypr"
+cat <<EOF >"$PWD/b"
+#!/usr/bin/env bash
+export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
+  MISE_STATE_DIR="$B/.local/state/mise" MISE_DATA_DIR="$B/.local/share/mise" \\
+  MISE_CACHE_DIR="$B/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$B"
+cd "\$HOME" && exec mise "\$@"
+EOF
+chmod +x "$PWD/b"
+b="$PWD/b"
+
+# ---- machine A: track a directory and connect the origin
+mkdir -p ~/.config/hypr
+echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
+echo 'token = "s3cret"' >"$MISE_CONFIG_DIR/github_tokens.toml"
+printf '[env]\nPRIVATE = "1"\n' >"$MISE_CONFIG_DIR/config.local.toml"
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+assert_contains "mise bootstrap dotfiles status" "Setup repository: none"
+assert_fail "mise bootstrap dotfiles sync 2>&1" "no setup repository is connected"
+
+# the disclosure says what happens; --yes confirms; the first publication
+# creates the branch with the marker
+mise bootstrap dotfiles origin set "file://$origin" --name laptop --include-existing --yes >"$PWD/connect.log" 2>&1
+assert_contains "cat $PWD/connect.log" "The repository is empty"
+assert_contains "cat $PWD/connect.log" "Sync mode sync:"
+assert_contains "cat $PWD/connect.log" "credential store (private unless explicitly overridden)"
+assert_contains "cat $PWD/connect.log" "machine-local configuration (private unless explicitly overridden)"
+assert_contains "cat $PWD/connect.log" "published"
+assert "git --git-dir=$origin ls-tree -r --name-only main | LC_ALL=C sort | tr '\n' ' '" ".mise-history/format.toml config.toml tracked/home/.config/hypr/bindings.lua "
+assert "git --git-dir=$origin show main:.mise-history/format.toml | grep -c 'format = 1'" "1"
+assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" 'url = "file://'
+assert_contains "cat $MISE_CONFIG_DIR/config.local.toml" 'sync = "sync"'
+assert_contains "mise bootstrap dotfiles status" "mode sync, machine laptop"
+assert "git --git-dir=$origin for-each-ref --format='%(refname)' refs/mise-history | grep -c ." "2"
+# private files never reach the branch or the machine refs
+assert_not_contains "git --git-dir=$origin ls-tree -r --name-only main" "github_tokens"
+assert_not_contains "git --git-dir=$origin ls-tree -r --name-only main" "config.local.toml"
+for ref in $(git --git-dir="$origin" for-each-ref --format='%(refname)' refs/mise-history); do
+  assert_not_contains "git --git-dir=$origin ls-tree -r --name-only $ref" "github_tokens"
+done
+# the local checkpoints still hold the private file: the backup is a filtered copy
+store="$MISE_STATE_DIR/history/repo.git"
+assert_contains "for ref in \$(git --git-dir=$store for-each-ref --format='%(refname)' refs/checkpoints); do git --git-dir=$store ls-tree -r --name-only \$ref; done" "github_tokens"
+# repeating a sync changes nothing
+assert_contains "mise bootstrap dotfiles sync 2>&1" "nothing new to publish"
+assert_contains "mise bootstrap dotfiles origin 2>&1" "mode sync"
+
+# ---- machine B: connect, adopt the differing config, apply the rest
+# An existing identical file must establish a baseline without a publication.
+echo 'bind = SUPER, Q, exec, kitty' >"$B/.config/hypr/bindings.lua"
+printf '[env]\nFROM_B = "yes"\n[dotfiles]\n"~/.config/hypr" = { mode = "track" }\n' >"$B/.config/mise/config.toml"
+printf '[env]\nKEPT = "b"\n' >"$B/.config/mise/config.local.toml"
+assert_succeed "$b bootstrap dotfiles origin set file://$origin --name desktop --yes"
+# the checkpoint holding B's state at connection is backed up, not only later ones
+assert "git --git-dir=$origin for-each-ref --format='%(refname)' refs/mise-history | grep -c ." "4"
+assert_contains "$b bootstrap dotfiles status" "needs adoption"
+# The identical file needs no application; only the config needs adoption.
+assert_not_contains "$b bootstrap dotfiles status" "incoming change(s) pending"
+assert_contains "$b bootstrap dotfiles pull --dry-run 2>&1" "sync paused"
+assert_fail "$b bootstrap dotfiles pull --take-remote ~/.config/hypr/bindings.lua --yes 2>&1" "is not a conflict"
+assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/mise/config.toml --yes"
+assert "cat $B/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
+# the declarations that arrived are applied by a bootstrap, not by pull: said until one ran
+assert_contains "$b bootstrap dotfiles status" "declarations changed: run"
+assert_contains "cat $B/.config/mise/config.toml" '"~/.config/hypr" = { mode = "track" }'
+assert_contains "cat $B/.config/mise/config.local.toml" 'KEPT = "b"'
+assert "$b bootstrap dotfiles history --json | jq -r '.[0].trigger, .[1].trigger'" $'apply\napply-before'
+assert_contains "$b bootstrap dotfiles machines" "laptop"
+assert_contains "$b bootstrap dotfiles machines" "desktop (this machine)"
+
+# ---- a round trip: B edits, A applies
+echo 'bind = SUPER, Q, exec, alacritty' >"$B/.config/hypr/bindings.lua"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "published"
+assert_contains "mise bootstrap dotfiles sync 2>&1" "incoming change(s) pending"
+assert_succeed "mise bootstrap dotfiles pull --yes"
+assert "cat ~/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, alacritty"
+assert_contains "mise bootstrap dotfiles sync 2>&1" "nothing new to publish"
+
+# A pending incoming version must not overwrite an edit saved after planning.
+echo remote >"$B/.config/hypr/stale.lua"
+assert_succeed "$b bootstrap dotfiles sync && mise bootstrap dotfiles sync"
+echo saved-later >~/.config/hypr/stale.lua
+assert_succeed "mise bootstrap dotfiles save ~/.config/hypr/stale.lua"
+assert_fail "mise bootstrap dotfiles pull --yes 2>&1" "sync paused"
+assert "cat ~/.config/hypr/stale.lua" "saved-later"
+assert_succeed "mise bootstrap dotfiles pull --keep-local ~/.config/hypr/stale.lua --yes && mise bootstrap dotfiles sync"
+assert_succeed "$b bootstrap dotfiles sync && $b bootstrap dotfiles pull --yes"
+
+# Multiple conflicts are resolved incrementally without applying or
+# publishing unrelated files. A later edit invalidates an earlier choice.
+echo base >~/.config/hypr/conflict-a.lua
+echo base >~/.config/hypr/conflict-b.lua
+assert_succeed "mise bootstrap dotfiles sync && $b bootstrap dotfiles sync && $b bootstrap dotfiles pull --yes"
+echo remote >~/.config/hypr/conflict-a.lua
+echo remote >~/.config/hypr/conflict-b.lua
+assert_succeed "mise bootstrap dotfiles sync"
+echo local >"$B/.config/hypr/conflict-a.lua"
+echo local >"$B/.config/hypr/conflict-b.lua"
+assert_succeed "$b bootstrap dotfiles sync"
+barrier_head="$(git --git-dir="$origin" rev-parse main)"
+assert_contains "$b bootstrap dotfiles pull --keep-local $B/.config/hypr/conflict-a.lua --yes 2>&1" "sync paused"
+assert "cat $B/.config/hypr/conflict-b.lua" "local"
+assert "git --git-dir=$origin rev-parse main" "$barrier_head"
+echo newer-local >"$B/.config/hypr/conflict-a.lua"
+assert_succeed "$b bootstrap dotfiles save"
+assert_contains "$b bootstrap dotfiles pull --take-remote $B/.config/hypr/conflict-b.lua --yes 2>&1" "sync paused"
+assert "cat $B/.config/hypr/conflict-b.lua" "local"
+assert_succeed "$b bootstrap dotfiles pull --keep-local $B/.config/hypr/conflict-a.lua --yes"
+assert "cat $B/.config/hypr/conflict-b.lua" "remote"
+assert_succeed "$b bootstrap dotfiles sync && mise bootstrap dotfiles sync && mise bootstrap dotfiles pull --yes"
+assert "cat ~/.config/hypr/conflict-a.lua" "newer-local"
+
+# ---- both edit different lines: whoever syncs second publishes the merge, and
+# the merge is written on both machines (never left only upstream)
+printf 'bind = SUPER, Q, exec, alacritty\n# from A\n' >~/.config/hypr/bindings.lua
+printf '# from B\nbind = SUPER, Q, exec, alacritty\n' >"$B/.config/hypr/bindings.lua"
+assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "published"
+assert_contains "$b bootstrap dotfiles status" "incoming change(s) pending"
+assert_succeed "$b bootstrap dotfiles pull --yes"
+assert "cat $B/.config/hypr/bindings.lua" $'# from B\nbind = SUPER, Q, exec, alacritty\n# from A'
+assert_succeed "mise bootstrap dotfiles sync && mise bootstrap dotfiles pull --yes"
+assert "cat ~/.config/hypr/bindings.lua" $'# from B\nbind = SUPER, Q, exec, alacritty\n# from A'
+assert_contains "$b bootstrap dotfiles sync 2>&1" "nothing new to publish"
+
+# ---- both edit the same line: a conflict decided with --keep-local
+echo 'bind = SUPER, Q, exec, foot' >~/.config/hypr/bindings.lua
+assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
+echo 'bind = SUPER, Q, exec, wezterm' >"$B/.config/hypr/bindings.lua"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "conflict(s) need a decision"
+assert_contains "$b bootstrap dotfiles status" "both sides changed the same lines"
+assert "cat $B/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, wezterm"
+# doctor names the conflict; sharing the whole setup pauses
+assert_contains "$b doctor 2>&1 || true" "bindings.lua has a sync conflict"
+assert_contains "$b doctor 2>&1 || true" "Sharing is paused for the entire setup"
+assert "$b doctor --json 2>/dev/null | jq -r '.dotfiles.sync_conflicts | length'" "1"
+assert "cat $B/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, wezterm"
+before_conflict="$(git --git-dir="$origin" rev-parse main)"
+echo '# waits for the conflict' >"$B/.config/hypr/paused.lua"
+assert_succeed "$b bootstrap dotfiles sync"
+assert "git --git-dir=$origin rev-parse main" "$before_conflict"
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "sync paused"
+assert_not_contains "git --git-dir=$origin ls-tree -r --name-only main" "paused.lua"
+assert_succeed "$b bootstrap dotfiles pull --keep-local $B/.config/hypr/bindings.lua --yes"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "published"
+assert "git --git-dir=$origin show main:tracked/home/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, wezterm"
+assert_contains "git --git-dir=$origin ls-tree -r --name-only main" "paused.lua"
+assert_succeed "mise bootstrap dotfiles sync && mise bootstrap dotfiles pull --yes"
+assert "cat ~/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, wezterm"
+
+# ---- a manual git commit and README survive publication
+clone="$PWD/clone"
+git clone -q -b main "file://$origin" "$clone"
+echo '# my setup' >"$clone/README.md"
+git -C "$clone" add README.md
+git -C "$clone" -c user.name=t -c user.email=t@t commit -q -m 'add readme'
+git -C "$clone" push -q origin main
+echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
+assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
+assert "git --git-dir=$origin show main:README.md" "# my setup"
+assert "git --git-dir=$origin log --format=%s main | grep -c 'add readme'" "1"
+
+# ---- another machine's checkpoint recovers files here; the README the clone
+# committed stays in git, never written into the configuration directory
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles rollback --to laptop/latest --all --dry-run" "monitors.lua"
+# a directory where the repository has a file is never replaced
+mkdir -p "$B/.config/hypr/monitors.lua"
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "sync paused"
+assert_succeed "test -d $B/.config/hypr/monitors.lua"
+rmdir "$B/.config/hypr/monitors.lua"
+assert_succeed "$b bootstrap dotfiles pull --yes"
+assert "cat $B/.config/hypr/monitors.lua" "monitor=DP-1"
+assert_fail "test -e $B/.config/mise/README.md"
+
+# ---- a deletion kept over an upstream change is published as a deletion
+echo 'monitor=DP-3' >~/.config/hypr/monitors.lua
+assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
+rm "$B/.config/hypr/monitors.lua"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "conflict(s) need a decision"
+assert_contains "$b bootstrap dotfiles status" "deleted here, changed upstream"
+assert_succeed "$b bootstrap dotfiles pull --keep-local $B/.config/hypr/monitors.lua --yes"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "published"
+assert_fail "git --git-dir=$origin show main:tracked/home/.config/hypr/monitors.lua"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "nothing new to publish"
+echo 'monitor=DP-1' >"$B/.config/hypr/monitors.lua"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "published"
+assert_succeed "mise bootstrap dotfiles sync && mise bootstrap dotfiles pull --yes"
+assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
+
+# ---- a manual-save file: an unsaved local edit holds the incoming version
+# until it is saved or discarded; a platform variant stream reaches the
+# machine that selects it
+case "$(uname -s)" in
+  Darwin) this_os=macos ;;
+  *) this_os=linux ;;
+esac
+mkdir -p ~/.config/app
+echo '{"n":1}' >~/.config/app/state.json
+echo 'export A=1' >~/.zshrc
+assert_succeed "mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave"
+assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $this_os"
+assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
+assert "git --git-dir=$origin ls-tree -r --name-only main | grep -c 'tracked/home@$this_os/.zshrc'" "1"
+# the declarations arrive with the configuration; what they select follows
+assert_succeed "$b bootstrap dotfiles sync && $b bootstrap dotfiles pull --yes && $b bootstrap dotfiles sync && $b bootstrap dotfiles pull --yes"
+assert "cat $B/.zshrc" "export A=1"
+assert "cat $B/.config/app/state.json" '{"n":1}'
+echo '{"n":2}' >"$B/.config/app/state.json" # edited on B, not saved
+echo '{"n":3}' >~/.config/app/state.json
+assert_succeed "mise bootstrap dotfiles save ~/.config/app/state.json"
+assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "conflict(s) need a decision"
+assert_contains "$b bootstrap dotfiles status" "unsaved edits: save or discard them first"
+assert "cat $B/.config/app/state.json" '{"n":2}'
+# saved on B, it is an ordinary conflict, decided like any other
+assert_succeed "$b bootstrap dotfiles save $B/.config/app/state.json"
+assert_contains "$b bootstrap dotfiles sync 2>&1" "conflict(s) need a decision"
+assert_contains "$b bootstrap dotfiles status" "both sides changed the same lines"
+assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/app/state.json --yes"
+assert "cat $B/.config/app/state.json" '{"n":3}'
+assert_contains "$b bootstrap dotfiles sync 2>&1" "nothing new to publish"
+
+# ---- another platform's stream is never applied here; a branch that
+# vanished is an error, not an upstream that deleted everything
+git clone -q -b main "file://$origin" "$PWD/clone2"
+mkdir -p "$PWD/clone2/tracked/home@macos/.config/hypr"
+echo 'monitor=Retina' >"$PWD/clone2/tracked/home@macos/.config/hypr/monitors.lua"
+git -C "$PWD/clone2" add -A
+git -C "$PWD/clone2" -c user.name=t -c user.email=t@t commit -q -m 'a mac stream'
+git -C "$PWD/clone2" push -q origin main
+assert_succeed "mise bootstrap dotfiles sync"
+assert_not_contains "mise bootstrap dotfiles status" "incoming change(s) pending"
+assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
+git --git-dir="$origin" branch -m main renamed
+assert_fail "mise bootstrap dotfiles sync 2>&1" "is not at"
+assert_not_contains "mise bootstrap dotfiles status" "incoming change(s) pending"
+git --git-dir="$origin" branch -m renamed main
+assert_succeed "mise bootstrap dotfiles sync"
+assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
+
+# ---- fetch-only publishes nothing; disconnecting keeps local history
+assert_succeed "MISE_GLOBAL_CONFIG_FILE=$MISE_CONFIG_DIR/config.local.toml mise settings set history.sync fetch-only"
+echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
+assert_contains "mise bootstrap dotfiles sync 2>&1" "nothing new to publish"
+assert "git --git-dir=$origin show main:tracked/home/.config/hypr/monitors.lua" "monitor=DP-1"
+assert_succeed "mise bootstrap dotfiles origin --remove"
+assert_contains "mise bootstrap dotfiles status" "Setup repository: none"
+assert "mise bootstrap dotfiles history --json -n 0 | jq length | awk '{print (\$1 > 3)}'" "1"
+
+# ---- another repository starts from a clean slate: nothing the previous one
+# knew is read as a deletion; the local files are published to it
+origin2="$PWD/origin2.git"
+git init -q --bare -b main "$origin2"
+assert_succeed "MISE_GLOBAL_CONFIG_FILE=$MISE_CONFIG_DIR/config.local.toml mise settings set history.sync sync"
+assert_contains "mise bootstrap dotfiles origin set file://$origin2 --name laptop --yes 2>&1" "previous one's sync state is discarded"
+assert "git --git-dir=$origin2 show main:tracked/home/.config/hypr/monitors.lua" "monitor=DP-2"
+assert_not_contains "mise bootstrap dotfiles status" "incoming change(s) pending"
+assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-2"
+
+# Previewing another origin without confirming must preserve the connected
+# origin, fetched upstream, sync decisions, and machine recovery refs.
+git --git-dir="$store" for-each-ref refs/setup refs/machines >"$PWD/refs-before"
+cp "$MISE_STATE_DIR/history/sync.json" "$PWD/status-before"
+cp "$MISE_CONFIG_DIR/config.toml" "$PWD/config-before"
+assert_fail "MISE_YES=0 mise bootstrap dotfiles origin set file://$origin --name declined </dev/null >$PWD/declined.log 2>&1"
+assert_contains "cat $PWD/declined.log" "not connected"
+git --git-dir="$store" for-each-ref refs/setup refs/machines >"$PWD/refs-after"
+assert_succeed "diff $PWD/refs-before $PWD/refs-after"
+assert_succeed "diff $PWD/status-before $MISE_STATE_DIR/history/sync.json"
+assert_succeed "diff $PWD/config-before $MISE_CONFIG_DIR/config.toml"
+
+# A cleanup failure must retain the primary refusal and still attempt the
+# remaining ref restorations, including the connected upstream.
+REAL_PREVIEW_GIT="$(command -v git)"
+export REAL_PREVIEW_GIT
+export PREVIEW_FAIL_ONCE="$PWD/fail-cleanup-once"
+export PREVIEW_CLEANUP_LOG="$PWD/cleanup-commands"
+mkdir -p "$PWD/preview-git"
+cat >"$PWD/preview-git/git" <<'EOF'
+#!/usr/bin/env bash
+case " $* " in
+  *' update-ref '*)
+    printf '%s\n' "$*" >>"$PREVIEW_CLEANUP_LOG"
+    if test -f "$PREVIEW_FAIL_ONCE"; then
+      rm "$PREVIEW_FAIL_ONCE"
+      echo 'injected preview cleanup failure' >&2
+      exit 1
+    fi
+    ;;
+esac
+exec "$REAL_PREVIEW_GIT" "$@"
+EOF
+chmod +x "$PWD/preview-git/git"
+touch "$PREVIEW_FAIL_ONCE"
+upstream_before="$(git --git-dir="$store" rev-parse refs/setup/upstream)"
+assert_fail "PATH=$PWD/preview-git:\$PATH MISE_YES=0 mise bootstrap dotfiles origin set file://$origin --name declined </dev/null >$PWD/cleanup-failed.log 2>&1"
+assert_contains "cat $PWD/cleanup-failed.log" 'not connected'
+assert_contains "cat $PWD/cleanup-failed.log" 'injected preview cleanup failure'
+assert_contains "cat $PWD/cleanup-failed.log" 'could not completely restore'
+assert_succeed "test \$(wc -l <$PREVIEW_CLEANUP_LOG) -gt 1"
+assert "git --git-dir=$store rev-parse refs/setup/upstream" "$upstream_before"
+
+# A base-stream file without a declaration on this machine is neither
+# installed nor published as a deletion on the next sync.
+git clone -q "$origin2" "$PWD/foreign-setup"
+mkdir -p "$PWD/foreign-setup/tracked/home"
+echo foreign >"$PWD/foreign-setup/tracked/home/.foreign-only"
+git -C "$PWD/foreign-setup" add .
+git -C "$PWD/foreign-setup" commit -qm 'file owned by another setup'
+git -C "$PWD/foreign-setup" push -q origin main
+assert_succeed "mise bootstrap dotfiles sync"
+assert_succeed "mise bootstrap dotfiles pull --yes"
+assert_fail "test -e $HOME/.foreign-only"
+assert_succeed "mise bootstrap dotfiles sync"
+assert "git --git-dir=$origin2 show main:tracked/home/.foreign-only" "foreign"

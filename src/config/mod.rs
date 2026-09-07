@@ -2812,21 +2812,45 @@ pub(crate) fn system_config_files() -> IndexSet<PathBuf> {
 /// Config files in a global/system config dir, lowest precedence first: `conf.d`,
 /// then `config.toml`/`mise.toml`, then the `.local` variants.
 fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
+    config_files_with_incoming(dir, &Default::default())
+}
+
+/// Discover the configuration that would exist after an incoming batch,
+/// using the same precedence and environment selection as live discovery.
+pub(crate) fn config_files_with_incoming(
+    dir: &Path,
+    incoming: &std::collections::BTreeSet<PathBuf>,
+) -> IndexSet<PathBuf> {
     let mut files = IndexSet::new();
-    for p in file::ls(&dir.join("conf.d")).unwrap_or_default() {
+    let conf_dir = dir.join("conf.d");
+    let conf_files: std::collections::BTreeSet<PathBuf> = file::ls(&conf_dir)
+        .unwrap_or_default()
+        .into_iter()
+        .chain(
+            incoming
+                .iter()
+                .filter(|p| p.parent() == Some(&conf_dir))
+                .cloned(),
+        )
+        .collect();
+    for p in &conf_files {
         if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string())
             && !file_name.starts_with(".")
             && file_name.ends_with(".toml")
-            && (!env::env_conf_d() || !is_environment_conf_d_file(&p))
+            && (!env::env_conf_d() || !is_environment_conf_d_file(p))
         {
-            warn_on_dotted_conf_d_file(&p);
-            files.insert(p);
+            warn_on_dotted_conf_d_file(p);
+            files.insert(p.clone());
         }
     }
     files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
         if env::env_conf_d() {
-            files.extend(conf_d_environment_files(dir, environment, false));
+            files.extend(conf_d_environment_candidates(
+                &conf_files,
+                environment,
+                false,
+            ));
         }
         files.extend([
             dir.join(format!("config.{environment}.toml")),
@@ -2836,26 +2860,48 @@ fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
     files.extend([dir.join("config.local.toml"), dir.join("mise.local.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
         if env::env_conf_d() {
-            files.extend(conf_d_environment_files(dir, environment, true));
+            files.extend(conf_d_environment_candidates(
+                &conf_files,
+                environment,
+                true,
+            ));
         }
         files.extend([
             dir.join(format!("config.{environment}.local.toml")),
             dir.join(format!("mise.{environment}.local.toml")),
         ]);
     }
-    files.into_iter().filter(|p| p.is_file()).collect()
+    files
+        .into_iter()
+        .filter(|p| p.is_file() || incoming.contains(p))
+        .collect()
 }
 
 fn conf_d_environment_files(dir: &Path, environment: &str, local: bool) -> Vec<PathBuf> {
-    file::ls(&dir.join("conf.d"))
-        .unwrap_or_default()
-        .into_iter()
+    conf_d_environment_candidates(
+        &file::ls(&dir.join("conf.d"))
+            .unwrap_or_default()
+            .into_iter()
+            .collect(),
+        environment,
+        local,
+    )
+}
+
+fn conf_d_environment_candidates(
+    candidates: &std::collections::BTreeSet<PathBuf>,
+    environment: &str,
+    local: bool,
+) -> Vec<PathBuf> {
+    candidates
+        .iter()
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| !name.starts_with('.'))
                 && conf_d_file_environment(path) == Some((environment, local))
         })
+        .cloned()
         .collect()
 }
 
@@ -2868,6 +2914,29 @@ pub(crate) fn global_config_path() -> PathBuf {
     first_config_file(&files)
         .cloned()
         .or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
+        .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
+}
+
+/// The shared global config file: where declarations meant for every
+/// machine go. `MISE_GLOBAL_CONFIG_FILE`, else the global TOML file that
+/// already exists (`mise.toml` when that is what the user keeps), else
+/// `config.toml`. An explicitly selected global file is honored even when
+/// it is `.local.toml`; implicit selection prefers a shared file.
+pub(crate) fn global_shared_config_path() -> PathBuf {
+    let local = |path: &PathBuf| {
+        path.file_name()
+            .is_some_and(|name| name.to_string_lossy().ends_with(".local.toml"))
+    };
+    // an explicit global file is the one mise loads: declarations go there
+    // (writing TOML into a file that is not TOML fails, rather than landing
+    // in a file that is never read)
+    if let Some(path) = env::MISE_GLOBAL_CONFIG_FILE.clone() {
+        return path;
+    }
+    let files = global_config_files();
+    first_config_file(&files)
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml") && !local(path))
+        .cloned()
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
 

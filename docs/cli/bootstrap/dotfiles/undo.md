@@ -5,7 +5,7 @@
 - **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/dotfiles/undo.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/undo.rs)
 
-Reverse a rollback or undo
+Reverse a rollback, undo, or pull
 
 Restores exactly the paths that operation changed from the protective
 checkpoint it took, leaving everything else as it is now. Without a

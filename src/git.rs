@@ -816,6 +816,40 @@ impl GitPlumbing {
         Ok(String::from_utf8_lossy(&out).trim().to_string())
     }
 
+    /// Runs a network command (`fetch`, `push`, `ls-remote`) against this
+    /// repository with the user's normal git configuration: credential
+    /// helpers, ssh settings, and URL rewrites apply, while hooks, filters,
+    /// and aliases still cannot act on mise's repository because only
+    /// plumbing runs here. Prompts are disabled when nobody is attending.
+    pub(crate) fn network_output(&self, call: PlumbingCall<'_>) -> Result<std::process::Output> {
+        let git =
+            plumbing_binary().ok_or_else(|| eyre!("no unattended git executable is available"))?;
+        let mut cmd = std::process::Command::new(git);
+        sanitize_git_command(&mut cmd);
+        if !console::user_attended_stderr() {
+            cmd.env("GIT_TERMINAL_PROMPT", "0");
+        }
+        cmd.env("GIT_OPTIONAL_LOCKS", "0")
+            .env("LC_ALL", "C")
+            .stdin(std::process::Stdio::null());
+        let mut git_dir = OsString::from("--git-dir=");
+        git_dir.push(&self.git_dir);
+        cmd.arg(git_dir);
+        // A private empty directory is an unambiguous hooks path on every
+        // platform, unlike Unix null-device spellings on native Windows.
+        let hooks = tempfile::tempdir()?;
+        let mut hooks_config = OsString::from("core.hooksPath=");
+        hooks_config.push(hooks.path());
+        cmd.arg("-c")
+            .arg(hooks_config)
+            .args(["-c", "advice.fetchShowForcedUpdates=false"]);
+        cmd.args(&call.args);
+        if let Some(cwd) = call.cwd {
+            cmd.current_dir(cwd);
+        }
+        spawn_plumbing(cmd, None)
+    }
+
     fn base_command(&self) -> Result<std::process::Command> {
         let git =
             plumbing_binary().ok_or_else(|| eyre!("no unattended git executable is available"))?;
@@ -1464,5 +1498,33 @@ mod plumbing_tests {
             ]))
             .unwrap();
         assert!(!global.status.success() || global.stdout.is_empty());
+    }
+
+    #[test]
+    fn network_commands_override_hooks_with_a_private_directory() {
+        if plumbing_binary().is_none() {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let repo = GitPlumbing::new(temp.path().join("network.git"));
+        repo.init_bare().unwrap();
+        repo.run(PlumbingCall::new([
+            "config",
+            "core.hooksPath",
+            "untrusted-hooks",
+        ]))
+        .unwrap();
+        let out = repo
+            .network_output(PlumbingCall::new(["config", "--get", "core.hooksPath"]))
+            .unwrap();
+        assert!(out.status.success());
+        let hooks = String::from_utf8(out.stdout).unwrap();
+        let hooks = Path::new(hooks.trim());
+        assert!(hooks.is_absolute());
+        assert_ne!(hooks, Path::new("/dev/null"));
+        assert!(
+            !hooks.exists(),
+            "temporary hooks directory was not cleaned up"
+        );
     }
 }

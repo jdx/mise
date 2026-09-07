@@ -1126,6 +1126,11 @@
               "description": "Record experimental configuration history: a checkpoint of the tracked files before and after every mutating bootstrap command, and on every explicit save. Requires experimental = true.",
               "type": "boolean"
             },
+            "fetch_interval": {
+              "default": "15m",
+              "description": "How often the history watcher fetches the setup repository and other machines' recovery refs.",
+              "type": "string"
+            },
             "keep": {
               "type": "object",
               "unevaluatedProperties": false,
@@ -1142,6 +1147,17 @@
                   "minimum": 0
                 }
               }
+            },
+            "sync": {
+              "default": "sync",
+              "description": "How a connected setup repository is used: `sync` publishes, fetches, and queues nonconflicting incoming changes for application; `fetch-only` only downloads; `manual` publishes and fetches but never applies by itself. `mise bootstrap dotfiles pull` writes queued changes.",
+              "type": "string",
+              "enum": ["sync", "fetch-only", "manual"]
+            },
+            "sync_interval": {
+              "default": "5m",
+              "description": "How soon after a save the history watcher publishes to the setup repository, at most this often.",
+              "type": "string"
             },
             "watch": {
               "type": "object",

@@ -136,7 +136,8 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
     }
     let targets = match &req.to {
         Some(reference) => {
-            let entry = crate::cli::dotfiles::history::resolve(
+            let entry = crate::cli::dotfiles::history::resolve_with_store(
+                &store,
                 reference,
                 &entries,
                 (paths.len() == 1)
@@ -256,24 +257,29 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
             .rev()
             .find(|entry| {
                 entry.checkpoint.operation.as_ref().is_some_and(|op| {
-                    matches!(op.kind, OperationKind::Rollback | OperationKind::Undo)
-                        && op.status != OperationStatus::Pending
+                    matches!(
+                        op.kind,
+                        OperationKind::Rollback | OperationKind::Undo | OperationKind::Apply
+                    ) && op.status != OperationStatus::Pending
                         && op.before.is_some()
                         && !op.affected.is_empty()
                 }) && !undone.contains(&entry.checkpoint.uuid)
             })
             .cloned()
-            .ok_or_else(|| eyre::eyre!("nothing to undo: no rollback or undo is left"))?,
+            .ok_or_else(|| eyre::eyre!("nothing to undo: no rollback, undo, or pull is left"))?,
     };
     let Some(op) = operation.checkpoint.operation.clone() else {
         bail!("checkpoint {} is not an operation", operation.id);
     };
     // an operation records the paths it changed (`affected`) only when it
-    // writes them itself; a bootstrap or a dotfiles apply journals its
-    // changes instead and is not reversed here
-    if !matches!(op.kind, OperationKind::Rollback | OperationKind::Undo) {
+    // writes them itself (a rollback, an undo, a pull); a bootstrap or a
+    // dotfiles apply journals its changes instead and is not reversed here
+    if !matches!(
+        op.kind,
+        OperationKind::Rollback | OperationKind::Undo | OperationKind::Apply
+    ) {
         bail!(
-            "checkpoint {} is a {} operation; only rollback and undo can be undone",
+            "checkpoint {} is a {} operation; only rollback, undo, and pull can be undone",
             operation.id,
             op.kind.as_str()
         );
@@ -1595,7 +1601,36 @@ fn restore_dir_modes(step: &Step, _created: &[(PathBuf, u32)]) {
     }
 }
 
-fn remove(path: &Path) -> Result<()> {
+/// Puts an object at a path outside a rollback plan (an incoming shared
+/// change): no recorded permission bits, an existing file keeps its own.
+pub(crate) fn write_path(repo: &HistoryRepo, path: &Path, mode: &str, oid: &str) -> Result<()> {
+    write_path_with_mode(repo, path, mode, oid, None)
+}
+
+/// Restores a transaction preimage without temporarily widening its permissions.
+pub(crate) fn write_path_with_mode(
+    repo: &HistoryRepo,
+    path: &Path,
+    mode: &str,
+    oid: &str,
+    bits: Option<u32>,
+) -> Result<()> {
+    let step = Step {
+        path: path.to_path_buf(),
+        tree_path: display_to_tree_path(&display_path(path)),
+        action: Action::Write {
+            mode: mode.to_string(),
+            oid: oid.to_string(),
+        },
+        from: String::new(),
+        to: String::new(),
+        bits,
+        dir_bits: vec![],
+    };
+    write_object(repo, &step, mode, oid)
+}
+
+pub(crate) fn remove(path: &Path) -> Result<()> {
     if path.is_symlink() || path.is_file() {
         std::fs::remove_file(path)?;
     } else if path.is_dir() {
@@ -1606,7 +1641,7 @@ fn remove(path: &Path) -> Result<()> {
 
 /// Runs the reload commands whose glob matches a touched path, each once,
 /// best-effort.
-fn run_reload(reload: &IndexMap<String, String>, touched: &[PathBuf]) {
+pub(crate) fn run_reload(reload: &IndexMap<String, String>, touched: &[PathBuf]) {
     let mut commands: Vec<&String> = vec![];
     for (glob, command) in reload {
         // touched paths are normalized (a symlinked `$HOME` resolved), so

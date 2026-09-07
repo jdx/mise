@@ -19,6 +19,79 @@ pub(crate) struct HistoryReport {
     pub unavailable: Option<String>,
     /// What the watcher last persisted, if anything.
     pub health: Option<crate::system::history::health::Health>,
+    /// The setup repository, when one is connected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync: Option<SyncReport>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct SyncReport {
+    pub origin: String,
+    pub branch: String,
+    pub mode: String,
+    pub machine: String,
+    pub last_publish: Option<String>,
+    pub last_fetch: Option<String>,
+    pub last_apply: Option<String>,
+    pub pending_upload: usize,
+    pub pending_applications: Vec<String>,
+    pub conflicts: Vec<(String, String)>,
+    pub declarations_changed: bool,
+    pub last_error: Option<String>,
+    pub application_failure: Option<String>,
+    pub validation_error: Option<String>,
+}
+
+pub(crate) fn sync_report(
+    store: &crate::system::history::checkpoint::Store,
+    entries: &[crate::system::history::store::Entry],
+) -> Result<Option<SyncReport>> {
+    use crate::system::history::sync::{SyncMode, apply, backup, run};
+    let Some((_, origin)) = crate::system::history::config::origin()? else {
+        return Ok(None);
+    };
+    let status = run::read_status(store.state_dir())?;
+    let roots = crate::system::history::sync::layout::Roots::current();
+    let pending_upload = if SyncMode::current()?.publishes() {
+        entries
+            .iter()
+            .filter(|entry| backup::eligible(entry))
+            .filter(|entry| {
+                status
+                    .upload_since
+                    .as_deref()
+                    .is_none_or(|since| entry.checkpoint.created_at.as_str() >= since)
+            })
+            .filter(|entry| !status.uploaded.contains(&entry.checkpoint.uuid))
+            .count()
+    } else {
+        0
+    };
+    Ok(Some(SyncReport {
+        origin: origin.url,
+        branch: origin.branch,
+        mode: SyncMode::current()?.as_str().to_string(),
+        machine: store.machine().name.clone(),
+        last_publish: status.last_publish.clone(),
+        last_fetch: status.last_fetch.clone(),
+        last_apply: status.last_apply.clone(),
+        pending_upload,
+        pending_applications: status
+            .pending_applications
+            .iter()
+            .filter_map(|pending| {
+                roots
+                    .locate(&pending.branch_path)
+                    .path()
+                    .map(crate::file::display_path)
+            })
+            .collect(),
+        conflicts: apply::describe_conflicts(&status.conflicts),
+        declarations_changed: status.declarations_changed,
+        last_error: status.last_error.clone(),
+        application_failure: status.application_failure.clone(),
+        validation_error: status.validation_error.clone(),
+    }))
 }
 
 #[derive(Serialize)]
@@ -41,6 +114,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
             latest: None,
             pending_operations: 0,
             health: None,
+            sync: None,
             watcher: super::capture_health::watcher().await?,
             unavailable: Some("dotfile tracking requires experimental = true".into()),
         });
@@ -68,6 +142,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         watcher: super::capture_health::watcher().await?,
         unavailable: store.unavailable().map(str::to_string),
         health: crate::system::history::health::read(store.state_dir()),
+        sync: sync_report(&store, &entries)?,
     })
 }
 
@@ -112,6 +187,56 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
         report.watcher.as_str(),
         super::capture_health::advice(report.watcher)
     );
+    match &report.sync {
+        None => miseprintln!(
+            "Setup repository: none (`mise bootstrap dotfiles origin set <url>` shares this setup and backs it up)."
+        ),
+        Some(sync) => {
+            miseprintln!(
+                "Setup repository: {} (branch {}, mode {}, machine {}).",
+                sync.origin,
+                sync.branch,
+                sync.mode,
+                sync.machine
+            );
+            let when = |at: &Option<String>| {
+                at.as_deref()
+                    .map(local_time)
+                    .unwrap_or_else(|| "never".into())
+            };
+            miseprintln!(
+                "  last publish {}, last fetch {}, last pull {}; {} checkpoint(s) pending upload.",
+                when(&sync.last_publish),
+                when(&sync.last_fetch),
+                when(&sync.last_apply),
+                sync.pending_upload
+            );
+            if !sync.pending_applications.is_empty() {
+                miseprintln!(
+                    "  {} incoming change(s) pending: `mise bootstrap dotfiles pull` ({})",
+                    sync.pending_applications.len(),
+                    sync.pending_applications.join(", ")
+                );
+            }
+            for (path, reason) in &sync.conflicts {
+                miseprintln!(
+                    "  sync paused: {path}: {reason}; sharing is paused for the entire setup; local history continues (`mise bootstrap dotfiles pull --take-remote|--keep-local {path}`)"
+                );
+            }
+            if sync.declarations_changed {
+                miseprintln!("  declarations changed: run `mise bootstrap` (dry-run available)");
+            }
+            if let Some(error) = &sync.last_error {
+                miseprintln!("  last error: {error}");
+            }
+            if let Some(error) = &sync.application_failure {
+                miseprintln!("  sync paused: {error}");
+            }
+            if let Some(error) = &sync.validation_error {
+                miseprintln!("  incoming setup is invalid: {error}");
+            }
+        }
+    }
     if let Some(health) = &report.health {
         use crate::system::history::health::age_secs;
         use crate::system::history::watch::runtime::humantime;

@@ -539,6 +539,103 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
                     == config.bootstrap_tera_ctx(&second.origin.config))
 }
 
+/// Incoming configuration must fail preflight rather than silently dropping
+/// malformed declarations and applying the rest of the setup.
+pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
+    for (path, config) in config_files {
+        let Some(dotfiles) = config.dotfiles_config() else {
+            continue;
+        };
+        for (target, value) in dotfiles.0 {
+            let Some(entry) = file_entry_from_toml(&target, value.clone()) else {
+                // Managed line/block edits are handled by the edit engine,
+                // not by this whole-file declaration parser.
+                if value.as_table().is_some_and(|table| {
+                    ["block", "line", "template", "comment"]
+                        .iter()
+                        .any(|key| table.contains_key(*key))
+                }) {
+                    continue;
+                }
+                bail!("invalid dotfile declaration {target} in {}", path.display());
+            };
+            if let Some(table) = value.as_table() {
+                for key in table.keys() {
+                    if !matches!(
+                        key.as_str(),
+                        "source"
+                            | "content"
+                            | "mode"
+                            | "exclude"
+                            | "manifest"
+                            | "autosave"
+                            | "share"
+                            | "backup"
+                            | "variants"
+                            | "enabled"
+                    ) {
+                        bail!(
+                            "unknown dotfile key {key:?} for {target} in {}",
+                            path.display()
+                        );
+                    }
+                }
+            }
+            if resolve_target_arg(&target).is_relative() {
+                bail!("dotfile target must be absolute or start with ~/: {target}");
+            }
+            if let FileTomlEntry::Table {
+                source,
+                content,
+                mode,
+                manifest,
+                exclude,
+                ..
+            } = entry
+            {
+                if content.is_some() && (mode.is_some() || exclude.is_some() || manifest.is_some())
+                {
+                    bail!(
+                        "dotfile {target}: inline content does not support mode, exclude, or manifest"
+                    );
+                }
+                let mode = match mode.as_deref() {
+                    Some(value) => FileMode::parse(value).ok_or_else(|| {
+                        eyre::eyre!("unknown dotfile mode {value:?} for {target}")
+                    })?,
+                    None => default_mode(),
+                };
+                if mode == FileMode::Track
+                    && (source.is_some()
+                        || content.is_some()
+                        || manifest.is_some()
+                        || exclude.is_some())
+                {
+                    bail!(
+                        "tracked file {target} cannot declare source, content, manifest, or exclude"
+                    );
+                }
+                if source.is_some() && content.is_some() {
+                    bail!("dotfile {target} cannot declare both source and content");
+                }
+                if mode != FileMode::Track && source.is_none() && content.is_none() {
+                    implied_source(&resolve_target_arg(&target))?;
+                }
+                if let Some(manifest) = manifest
+                    && (FileManifest::parse(&manifest).is_none()
+                        || !matches!(mode, FileMode::Copy | FileMode::SymlinkEach))
+                {
+                    bail!("invalid manifest {manifest:?} for dotfile {target}");
+                }
+                for pattern in exclude.into_iter().flatten() {
+                    glob::Pattern::new(&pattern)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Aggregate `[dotfiles]` across a specific set of config files. This is
 /// used by OCI builds, which intentionally scope config to project files by
 /// default instead of blindly inheriting global dotfiles.

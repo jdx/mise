@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# Discover new variant streams and required sources before applying any
+# incoming config or publishing otherwise clean local changes.
+require_cmd git
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+B="$(dirname "$HOME")/b-home"
+mkdir -p "$B/.config/mise"
+printf '[env]\nB_ONLY = "yes"\n' >"$B/.config/mise/config.toml"
+cat <<EOF >"$PWD/b"
+#!/usr/bin/env bash
+export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
+  MISE_STATE_DIR="$B/.local/state/mise" MISE_DATA_DIR="$B/.local/share/mise" \\
+  MISE_CACHE_DIR="$B/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$B"
+cd "\$HOME" && exec mise "\$@"
+EOF
+chmod +x "$PWD/b"
+b="$PWD/b"
+echo initial >~/.zshrc
+assert_succeed "mise bootstrap dotfiles track ~/.zshrc"
+assert_fail "mise bootstrap dotfiles origin set https://user:secret@example.invalid/setup.git --yes 2>&1" "must not contain credentials"
+assert_not_contains "mise bootstrap dotfiles origin set https://user:secret@example.invalid/setup.git --yes 2>&1 || true" "user:secret"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
+assert_succeed "$b bootstrap dotfiles origin set file://$origin --yes"
+assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/mise/config.toml --yes"
+assert "cat $B/.zshrc" "initial"
+
+case "$(uname -s)" in
+  Darwin) platform=macos ;;
+  *) platform=linux ;;
+esac
+echo incoming >~/.platform.conf
+echo local-untracked >"$B/.platform.conf"
+assert_succeed "mise bootstrap dotfiles track ~/.platform.conf --os $platform"
+echo incoming-zsh >~/.zshrc
+assert_succeed "mise bootstrap dotfiles sync"
+before="$(cat "$B/.config/mise/config.toml")"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" ".platform.conf"
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "sync paused"
+assert "cat $B/.platform.conf" "local-untracked"
+assert "cat $B/.zshrc" "initial"
+assert "cat $B/.config/mise/config.toml" "$before"
+assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.platform.conf --yes"
+assert "cat $B/.platform.conf" "incoming"
+assert "cat $B/.zshrc" "incoming-zsh"
+
+# A template declaration must not land before its missing source is fixed.
+cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+
+[dotfiles."~/.rendered"]
+mode = "template"
+source = "templates/required.tera"
+EOF
+assert_succeed "mise bootstrap dotfiles sync"
+before="$(cat "$B/.config/mise/config.toml")"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" "missing required source"
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "sync paused"
+assert "cat $B/.config/mise/config.toml" "$before"
+mkdir -p "$MISE_CONFIG_DIR/templates"
+echo 'name = {{ env.USER }}' >"$MISE_CONFIG_DIR/templates/required.tera"
+assert_succeed "mise bootstrap dotfiles sync"
+assert_succeed "$b bootstrap dotfiles sync"
+assert_succeed "$b bootstrap dotfiles pull --yes"
+assert_contains "cat $B/.config/mise/config.toml" "required.tera"
+assert "cat $B/.config/mise/templates/required.tera" 'name = {{ env.USER }}'
+assert_fail "test -e $B/.rendered"
+
+# A config edited directly in Git must also pass typed declaration validation.
+git clone -q "$origin" editor
+cp editor/config.toml valid-config.toml
+before="$(cat "$B/.config/mise/config.toml")"
+cat <<'EOF' >>editor/config.toml
+
+[dotfiles."~/.invalid"]
+mode = "typo"
+EOF
+git -C editor add config.toml
+git -C editor -c user.name=test -c user.email=test@example.com commit -qm invalid
+git -C editor push -q origin main
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" "unknown dotfile mode"
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "sync paused"
+assert "cat $B/.config/mise/config.toml" "$before"
+
+# Lossy parser warnings must be rejected before any incoming file is written.
+cp valid-config.toml editor/config.toml
+cat <<'EOF' >>editor/config.toml
+
+[dotfiles."~/.invalid"]
+content = "inline"
+mode = "copy"
+EOF
+git -C editor add config.toml
+git -C editor -c user.name=test -c user.email=test@example.com commit -qm invalid-inline
+git -C editor push -q origin main
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" "inline content does not support"
+assert "cat $B/.config/mise/config.toml" "$before"
+
+# A misspelled sharing policy must not silently fall back to share=true.
+cp valid-config.toml editor/config.toml
+cat <<'EOF' >>editor/config.toml
+
+[dotfiles."~/.private"]
+source = "private-config"
+shrae = false
+EOF
+git -C editor add config.toml
+git -C editor -c user.name=test -c user.email=test@example.com commit -qm misspelled-sharing-policy
+git -C editor push -q origin main
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" 'unknown dotfile key "shrae"'
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "sync paused"
+assert "cat $B/.config/mise/config.toml" "$before"
+
+# An explicit global file must not hide invalid incoming conf.d bodies.
+cp valid-config.toml editor/config.toml
+mkdir -p editor/conf.d
+cat <<'EOF' >editor/conf.d/invalid.toml
+[dotfiles."~/.invalid"]
+mode = "typo"
+EOF
+git -C editor add config.toml conf.d/invalid.toml
+git -C editor -c user.name=test -c user.email=test@example.com commit -qm invalid-conf-d
+git -C editor push -q origin main
+explicit_config="$B/.config/mise/config.toml"
+if [[ -f "$B/.config/mise/config.local.toml" ]]; then
+  explicit_config="$B/.config/mise/config.local.toml"
+fi
+assert_succeed "MISE_GLOBAL_CONFIG_FILE=$explicit_config $b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" "unknown dotfile mode"
+assert_fail "test -e $B/.config/mise/conf.d/invalid.toml"
+
+# Explicit local global-config overrides are also the write destination.
+override="$PWD/config.local.toml"
+echo '' >"$override"
+assert_succeed "MISE_GLOBAL_CONFIG_FILE=$override mise bootstrap dotfiles exclude '~/.noise'"
+assert_contains "cat $override" "~/.noise"
+
+# Damaged status must block sync/pull rather than discard decisions or backups.
+git -C editor rm -q conf.d/invalid.toml
+printf '\n[history.origin]\nurl = "https://example.invalid/other.git"\n' >>editor/config.toml
+git -C editor add config.toml
+git -C editor -c user.name=test -c user.email=test@example.com commit -qm shared-origin
+git -C editor push -q origin main
+assert_succeed "$b bootstrap dotfiles sync"
+assert_contains "$b bootstrap dotfiles status" 'history.origin is machine-local'
+assert_not_contains "cat $B/.config/mise/config.toml" 'example.invalid/other.git'
+
+state_file="$B/.local/state/mise/history/sync.json"
+assert_succeed "test -f $state_file"
+printf '{"resolutions": broken' >"$state_file"
+assert_fail "$b bootstrap dotfiles sync 2>&1" "invalid sync state"
+assert_fail "$b bootstrap dotfiles pull --yes 2>&1" "invalid sync state"
+assert_contains "$b doctor 2>&1 || true" "invalid sync state"
+assert "cat $state_file" '{"resolutions": broken'
