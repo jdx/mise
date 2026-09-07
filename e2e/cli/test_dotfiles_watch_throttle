@@ -136,7 +136,8 @@ wait_until "grep -q 'configuration changed' watch.log"
 wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health.throttled | length') -eq 0 ]]"
 assert_not_contains "cat $MISE_STATE_DIR/history/watch-schedule.json" "state.json"
 echo 'monitor=DP-9' >~/.config/hypr/monitors.lua
-wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
+wait_until "mise bootstrap dotfiles history diff --path ~/.config/hypr/monitors.lua --exit-code"
+assert "$snapshot_of latest .config/hypr/monitors.lua" "monitor=DP-9"
 assert_not_contains "mise bootstrap dotfiles history show latest --files" "state.json"
 assert_succeed "mise bootstrap dotfiles include '~/.config/hypr/state.json'"
 wait_until "[[ \$($throttled) -ge 2 ]]"
@@ -180,7 +181,7 @@ EOF
 wait_until "grep -q 'configuration changed' watch.log"
 mise bootstrap dotfiles apply --yes >apply.log 2>&1 &
 applying=$!
-sleep 1
+wait_until 'test -s ~/applying'
 echo 'monitor=DP-3' >~/.config/hypr/monitors.lua
 wait_until "grep -q '\"event\":\"deferred\"' watch.log"
 wait "$applying" || true

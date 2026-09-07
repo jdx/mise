@@ -21,6 +21,25 @@ wait_until() {
   return 1
 }
 
+# The live watcher can own the synchronization lock when a manual pull
+# starts. Retry only that documented transient error, never a failed apply.
+without_sync_contention() {
+  for _ in $(seq 1 30); do
+    if "$@" >manual-command.log 2>&1; then
+      cat manual-command.log
+      return 0
+    fi
+    if ! grep -q 'another setup sync or pull is running' manual-command.log; then
+      cat manual-command.log >&2
+      return 1
+    fi
+    sleep 1
+  done
+  cat manual-command.log >&2
+  return 1
+}
+export -f without_sync_contention
+
 origin="$PWD/origin.git"
 git init -q --bare -b main "$origin"
 
@@ -110,7 +129,7 @@ assert_fail "test -e $B/.config/hypr/monitors.lua"
 assert "grep -c '\"conflicts\":1' b.log | awk '{print (\$1 > 1)}'" "1"
 # Notification delivery and deduplication are unit-tested without sending
 # real desktop alerts from the isolated test homes.
-assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/hypr/bindings.lua --yes"
+assert_succeed "without_sync_contention $b bootstrap dotfiles pull --take-remote $B/.config/hypr/bindings.lua --yes"
 wait_until "test -e $B/.config/hypr/monitors.lua"
 assert "cat $B/.config/hypr/bindings.lua" $'bind = SUPER, Q, exec, foot\nbind = SUPER, W, exec, firefox'
 assert_not_contains "$b bootstrap dotfiles status 2>&1" "both sides changed"
@@ -133,10 +152,11 @@ MISE_HISTORY_SYNC=fetch-only $b bootstrap dotfiles watch --json >b.log 2>&1 &
 b_watcher=$!
 echo '# only on B' >>"$B/.config/hypr/monitors.lua"
 echo 'bind = SUPER, E, exec, thunar' >>~/.config/hypr/bindings.lua
-wait_until "grep '\"event\":\"synced\"' b.log | grep -q '\"pending\":1'"
+# The pending count also includes repository metadata, not only live files.
+wait_until "grep '\"event\":\"synced\"' b.log | jq -e 'select(.pending > 0)'"
 assert_not_contains "cat $B/.config/hypr/bindings.lua" "thunar"
 assert_not_contains "git --git-dir=$origin show main:home/.config/hypr/monitors.lua" "only on B"
-assert_succeed "MISE_HISTORY_SYNC=fetch-only $b bootstrap dotfiles pull --yes"
+assert_succeed "MISE_HISTORY_SYNC=fetch-only without_sync_contention $b bootstrap dotfiles pull --yes"
 assert_contains "cat $B/.config/hypr/bindings.lua" "thunar"
 
 # ---- manual: nothing happens on its own
@@ -148,5 +168,5 @@ wait_until "grep -q '\"event\":\"started\"' b.log"
 echo 'bind = SUPER, R, exec, rofi' >>~/.config/hypr/bindings.lua
 wait_until "git --git-dir=$origin show main:home/.config/hypr/bindings.lua | grep -q rofi"
 sleep 3
-assert_fail "grep -q '\"event\":\"sync\"' b.log"
+assert_fail "grep -Eq '\"event\":\"(sync|synced)\"' b.log"
 assert_not_contains "cat $B/.config/hypr/bindings.lua" "rofi"

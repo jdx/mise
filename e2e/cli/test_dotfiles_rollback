@@ -16,6 +16,7 @@ cat <<EOF2 >"$config"
 "~/.config/hypr/**" = "echo reloaded >> $HOME/reloads"
 EOF2
 assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+baseline="$(mise bootstrap dotfiles history --json | jq -r '.[0].uuid')"
 
 # noisy checkpoints of another file never influence which version a path returns to
 for i in 1 2 3; do
@@ -60,9 +61,9 @@ echo extra >~/.config/hypr/extra.conf
 mkdir -p ~/.config/other
 echo other >~/.config/other/file
 assert_succeed "mise bootstrap dotfiles save"
-assert "mise bootstrap dotfiles rollback --to 1 --all --dry-run | grep -c 'extra.conf *delete'" "1"
-assert "mise bootstrap dotfiles rollback --to 1 --all --dry-run | grep -c 'state.json *delete'" "1"
-assert_succeed "mise bootstrap dotfiles rollback --to 1 --all --yes"
+assert "mise bootstrap dotfiles rollback --to $baseline --all --dry-run | grep -c 'extra.conf *delete'" "1"
+assert "mise bootstrap dotfiles rollback --to $baseline --all --dry-run | grep -c 'state.json *delete'" "1"
+assert_succeed "mise bootstrap dotfiles rollback --to $baseline --all --yes"
 assert_fail "test -e ~/.config/hypr/extra.conf"
 assert_fail "test -e ~/.config/hypr/state.json"
 assert "cat ~/.config/hypr/monitors.lua" "monitor=DP-1"
@@ -107,8 +108,8 @@ assert_contains "mise bootstrap dotfiles rollback ~/.config/mise/extra.toml --ye
 assert "cat '$MISE_CONFIG_DIR/extra.toml'" "[settings]"
 
 # a rollback refuses a checkpoint whose run did not finish, and a missing state
-assert_fail "mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua --to 99" "no history checkpoint 99"
-assert_fail "mise bootstrap dotfiles undo 1" "not an operation"
+assert_fail "mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua --to 99" 'no history checkpoint matches "99"'
+assert_fail "mise bootstrap dotfiles undo $baseline" "not an operation"
 
 # no-op: rolling back a path that already matches records nothing
 n="$(eval "$count")"

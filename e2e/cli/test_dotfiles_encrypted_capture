@@ -14,6 +14,7 @@ TOML
 echo first-private-value >~/.private-config
 first_plain=$(git hash-object ~/.private-config)
 assert_succeed "mise bootstrap dotfiles save"
+baseline="$(mise bootstrap dotfiles history --json | jq -r '.[0].uuid')"
 repo="$MISE_STATE_DIR/history/repo.git"
 assert_contains "git --git-dir=$repo show HEAD:home/.private-config | head -1" 'mise-encrypted-file-v1'
 assert_fail "git --git-dir=$repo cat-file -e $first_plain"
@@ -24,7 +25,7 @@ second_plain=$(git hash-object ~/.private-config)
 assert_succeed "mise bootstrap dotfiles history diff --path ~/.private-config"
 assert_fail "git --git-dir=$repo cat-file -e $second_plain"
 
-assert_succeed "mise bootstrap dotfiles rollback ~/.private-config --to 1 --dry-run"
+assert_succeed "mise bootstrap dotfiles rollback ~/.private-config --to $baseline --dry-run"
 assert "cat ~/.private-config" 'second-private-value'
 assert_fail "git --git-dir=$repo cat-file -e $first_plain"
 assert_fail "git --git-dir=$repo cat-file -e $second_plain"
@@ -34,7 +35,7 @@ assert_fail "git --git-dir=$repo cat-file -e $second_plain"
 assert "git --git-dir=$repo rev-list --count HEAD" "2"
 
 # Actual restoration writes native plaintext, but its new commits remain encrypted.
-assert_succeed "mise bootstrap dotfiles rollback ~/.private-config --to 1 --yes"
+assert_succeed "mise bootstrap dotfiles rollback ~/.private-config --to $baseline --yes"
 assert "cat ~/.private-config" 'first-private-value'
 assert_fail "git --git-dir=$repo cat-file -e $first_plain"
 assert_fail "git --git-dir=$repo cat-file -e $second_plain"
