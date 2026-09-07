@@ -14,35 +14,40 @@
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "minItems": 1
         },
         {
-          "type": "object",
-          "properties": {
-            "task": {
-              "type": "string"
-            },
-            "args": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "env": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              }
-            },
-            "optional": {
-              "description": "do not fail when the task name or pattern has no matches",
-              "type": "boolean"
-            }
-          },
-          "required": ["task"],
-          "unevaluatedProperties": false
+          "$ref": "#/$defs/task_dependency_table"
         }
       ]
+    },
+    "task_dependency_table": {
+      "description": "task dependency with args, env, and optional flag",
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "optional": {
+          "description": "do not fail when the task name or pattern has no matches",
+          "type": "boolean"
+        }
+      },
+      "required": ["task"],
+      "unevaluatedProperties": false
     },
     "os_filter_item": {
       "description": "operating system or os/arch pair to install on",
@@ -3272,6 +3277,9 @@
               "items": {
                 "$ref": "#/$defs/task_dependency_item"
               }
+            },
+            {
+              "$ref": "#/$defs/task_dependency_table"
             }
           ]
         },
@@ -3287,6 +3295,9 @@
               "items": {
                 "$ref": "#/$defs/task_dependency_item"
               }
+            },
+            {
+              "$ref": "#/$defs/task_dependency_table"
             }
           ]
         },
@@ -3302,6 +3313,9 @@
                 "$ref": "#/$defs/task_dependency_item"
               },
               "type": "array"
+            },
+            {
+              "$ref": "#/$defs/task_dependency_table"
             }
           ]
         },
