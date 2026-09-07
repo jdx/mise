@@ -71,7 +71,7 @@ struct ServicePlan {
 }
 
 pub(crate) fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
-    compose_declarations(config)?
+    compose_system_declarations(config)?
         .into_iter()
         .map(|(name, (config, origin))| {
             ServiceRequest::from_toml_with_origin(name, config, Some(origin))
@@ -219,10 +219,7 @@ impl ServiceRequest {
     fn desired(&self) -> String {
         format!(
             "{}; {}; {}; on change {}",
-            match self.state {
-                ServiceState::Running => "running",
-                ServiceState::Stopped => "stopped",
-            },
+            self.state.as_str(),
             if self.enabled { "enabled" } else { "disabled" },
             if self.masked { "masked" } else { "unmasked" },
             match self.on_change {
@@ -518,6 +515,8 @@ impl ServiceAction {
                 ServiceChangeAction::None => None,
             },
             ServiceState::Running => Some("start"),
+            // rejected for system services by `compose_system_declarations`
+            ServiceState::Absent => Some("stop"),
         }
     }
 }
@@ -641,7 +640,7 @@ fn describe_current(active_state: &str, unit_file_state: &str, need_daemon_reloa
 fn active_state_matches(desired: ServiceState, current: &str) -> bool {
     match desired {
         ServiceState::Running => matches!(current, "active" | "reloading"),
-        ServiceState::Stopped => current == "inactive",
+        ServiceState::Stopped | ServiceState::Absent => current == "inactive",
     }
 }
 
@@ -700,7 +699,7 @@ mod tests {
                     state: ServiceState::Stopped,
                     enabled: false,
                     masked: true,
-                    on_change: ServiceChangeAction::default(),
+                    ..Default::default()
                 },
             )
             .is_ok()

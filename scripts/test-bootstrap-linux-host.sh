@@ -94,6 +94,11 @@ state = "running"
 enabled = true
 on_change = "restart"
 
+[bootstrap.services.mise-case-user]
+scope = "user"
+command = "/bin/sleep 300"
+description = "mise bootstrap user-service smoke"
+
 [bootstrap.linux.firewall]
 backend = "nftables"
 state = "enabled"
@@ -201,7 +206,14 @@ ssh "${ssh_args[@]}" \
    systemctl is-enabled --quiet mise-case.service
    systemctl is-active --quiet docker.service
    nft list table inet mise_bootstrap | grep -q mise-bootstrap
-   docker compose --project-directory /opt/mise-case --file /opt/mise-case/compose.yaml --project-name mise-bootstrap-smoke ps --status running --quiet | grep -q .'
+   docker compose --project-directory /opt/mise-case --file /opt/mise-case/compose.yaml --project-name mise-bootstrap-smoke ps --status running --quiet | grep -q .
+   if systemctl --user show-environment >/dev/null 2>&1; then
+     test -f "$HOME/.config/systemd/user/dev.mise.mise-case-user.service"
+     systemctl --user is-active --quiet dev.mise.mise-case-user.service
+   else
+     echo "no systemd user manager for root on this host; user-service leg reports only"
+     ! test -e "$HOME/.config/systemd/user/dev.mise.mise-case-user.service"
+   fi'
 
 ssh "${ssh_args[@]}" \
 	'set -eu

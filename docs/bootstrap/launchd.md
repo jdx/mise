@@ -33,21 +33,22 @@ as pipes and redirections need an explicitly invoked shell or a wrapper script.
 
 ## Supported keys
 
-| TOML key                  | launchd key               |
-| ------------------------- | ------------------------- |
-| `program`                 | `ProgramArguments[0]`     |
-| `args`                    | `ProgramArguments[1..]`   |
-| `run_at_load`             | `RunAtLoad`               |
-| `keep_alive`              | `KeepAlive`               |
-| `start_interval`          | `StartInterval`           |
-| `throttle_interval`       | `ThrottleInterval`        |
-| `start_calendar_interval` | `StartCalendarInterval`   |
-| `queue_directories`       | `QueueDirectories`        |
-| `environment`             | `EnvironmentVariables`    |
-| `working_directory`       | `WorkingDirectory`        |
-| `stdout_path`             | `StandardOutPath`         |
-| `stderr_path`             | `StandardErrorPath`       |
-| `kickstart`               | run `launchctl kickstart` |
+| TOML key                  | launchd key                              |
+| ------------------------- | ---------------------------------------- |
+| `program`                 | `ProgramArguments[0]`                    |
+| `args`                    | `ProgramArguments[1..]`                  |
+| `run_at_load`             | `RunAtLoad`                              |
+| `keep_alive`              | `KeepAlive`                              |
+| `keep_alive_on_failure`   | `KeepAlive = { SuccessfulExit = false }` |
+| `start_interval`          | `StartInterval`                          |
+| `throttle_interval`       | `ThrottleInterval`                       |
+| `start_calendar_interval` | `StartCalendarInterval`                  |
+| `queue_directories`       | `QueueDirectories`                       |
+| `environment`             | `EnvironmentVariables`                   |
+| `working_directory`       | `WorkingDirectory`                       |
+| `stdout_path`             | `StandardOutPath`                        |
+| `stderr_path`             | `StandardErrorPath`                      |
+| `kickstart`               | run `launchctl kickstart`                |
 
 `program`, `working_directory`, `stdout_path`, `stderr_path`, and each entry in
 `queue_directories` expand bare `~` and `~/` to the current user's home

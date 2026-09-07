@@ -309,6 +309,9 @@ export const commands: { [key: string]: Command } = {
           apply: {
             hide: false,
           },
+          remove: {
+            hide: false,
+          },
           status: {
             hide: false,
           },

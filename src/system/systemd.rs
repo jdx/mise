@@ -479,6 +479,53 @@ pub(crate) async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<
     Ok(())
 }
 
+/// Stop, disable, and delete the service unit mise wrote for `name`
+/// (`dev.mise.<name>.service`), then reload the user manager. Returns whether
+/// a unit file existed.
+pub(crate) async fn remove_service(name: &str, dry_run: bool) -> Result<bool> {
+    let unit = format!("dev.mise.{name}.service");
+    let path = user_units_dir().join(&unit);
+    if !path.exists() {
+        return Ok(false);
+    }
+    if dry_run {
+        for verb in ["stop", "disable"] {
+            miseprintln!(
+                "{}",
+                shell_words::join([
+                    "systemctl".to_string(),
+                    "--user".to_string(),
+                    verb.to_string(),
+                    unit.clone(),
+                ])
+            );
+        }
+        miseprintln!(
+            "{}",
+            shell_words::join(["rm".to_string(), path.display().to_string()])
+        );
+        miseprintln!(
+            "{}",
+            shell_words::join([
+                "systemctl".to_string(),
+                "--user".to_string(),
+                "daemon-reload".to_string(),
+            ])
+        );
+        return Ok(true);
+    }
+    stop_unit(&unit).await?;
+    disable_unit(&unit).await?;
+    std::fs::remove_file(&path)?;
+    systemctl(&["daemon-reload".to_string()]).await?;
+    Ok(true)
+}
+
+/// The unit file path mise uses for a service named `name`.
+pub(crate) fn service_unit_path(name: &str) -> PathBuf {
+    user_units_dir().join(format!("dev.mise.{name}.service"))
+}
+
 pub(crate) fn render_unit(request: &SystemdRequest) -> String {
     let mut out = String::new();
     out.push_str("[Unit]\n");
@@ -511,13 +558,13 @@ fn render_service(request: &SystemdRequest, out: &mut String) {
         out.push_str(&format!("Type={service_type}\n"));
     }
     if let Some(exec_start) = &request.exec_start {
-        out.push_str(&format!("ExecStart={}\n", expand_path_string(exec_start)));
+        out.push_str(&format!("ExecStart={}\n", expand_exec_string(exec_start)));
     }
     if let Some(remain_after_exit) = request.remain_after_exit {
         out.push_str(&format!("RemainAfterExit={}\n", yes_no(remain_after_exit)));
     }
     if let Some(exec_stop) = &request.exec_stop {
-        out.push_str(&format!("ExecStop={}\n", expand_path_string(exec_stop)));
+        out.push_str(&format!("ExecStop={}\n", expand_exec_string(exec_stop)));
     }
     if let Some(timeout_start_sec) = &request.timeout_start_sec {
         out.push_str(&format!("TimeoutStartSec={timeout_start_sec}\n"));
@@ -659,6 +706,25 @@ fn sibling_unit(request: &SystemdRequest) -> String {
 
 fn sibling_unit_path(request: &SystemdRequest) -> PathBuf {
     user_units_dir().join(sibling_unit(request))
+}
+
+/// Expand the home prefix of a quoted executable without re-tokenizing
+/// systemd's command syntax or changing the arguments that follow it.
+fn expand_exec_string(command: &str) -> String {
+    for quote in ['\'', '"'] {
+        if let Some(rest) = command.strip_prefix(quote)
+            && let Some(rest) = rest.strip_prefix("~/")
+        {
+            // Replace only the home prefix. The executable's existing escapes,
+            // closing quote and all arguments retain systemd's original syntax.
+            let home = crate::dirs::HOME
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .replace(quote, &format!("\\{quote}"));
+            return format!("{quote}{home}/{rest}");
+        }
+    }
+    expand_path_string(command)
 }
 
 fn expand_path_string(path: &str) -> String {
@@ -831,6 +897,32 @@ fn unit_operation_error_is_noop(error: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn quoted_executable_home_expands_without_changing_arguments() {
+        for quote in ['\'', '"'] {
+            let command = format!("{quote}~/.local/my agent{quote} --serve '$VALUE' %i");
+            // This is systemd syntax even when the test runs on Windows:
+            // escape the home prefix, but preserve the command's literal '/'.
+            let home = crate::dirs::HOME
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .replace(quote, &format!("\\{quote}"));
+            assert_eq!(
+                super::expand_exec_string(&command),
+                format!("{quote}{home}/.local/my agent{quote} --serve '$VALUE' %i")
+            );
+            let rest = format!(".local/agent\\{quote}name\\x20bin{quote} --serve %i");
+            assert_eq!(
+                super::expand_exec_string(&format!("{quote}~/{rest}")),
+                format!("{quote}{home}/{rest}")
+            );
+        }
+        assert_eq!(
+            super::expand_exec_string("/bin/echo '~/literal'"),
+            "/bin/echo '~/literal'"
+        );
+    }
+
     use super::*;
 
     #[test]
