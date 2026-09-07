@@ -1,0 +1,5 @@
+link to mr-boxington
+
+
+"If shims cause unexpected command resolution, please report the command, expected and actual
+executable, and `mise doctor` output. The opt-out is available, but the underlying resolution problem should still be investigated and fixed." - remove
