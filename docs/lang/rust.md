@@ -90,10 +90,27 @@ can change which override rustup sees.
 
 ## Share Cargo builds with Mr Boxington
 
-[Mr Boxington](https://mr-boxington.jdx.dev/) (`mbx`) gives every checkout on a machine one shared,
-self-pruning compilation cache. A crate compiled in one worktree can be reused in another, and concurrent Cargo
-commands share a CPU and memory budget instead of oversubscribing the machine. It can also share cached artifacts
-with teammates and CI runners through a cache server, S3, or GitHub Actions.
+[Mr Boxington](https://mr-boxington.jdx.dev/) (`mbx`) is a Rust build cache and scheduler that makes
+compiler work reusable across projects, worktrees, and CI. If you regularly wait for the same dependencies to
+compile in a fresh checkout, or watch several Cargo builds compete for your laptop's resources, mbx is built
+for that workflow.
+
+- **Reuse work across checkouts.** A matching compilation from one project or worktree can satisfy another.
+  New worktrees can start with a warm cache instead of rebuilding every shared dependency.
+- **Keep parallel builds under control.** Terminal builds, editor checks, and coding agents share a CPU and
+  memory budget when routed through mbx. Identical compilations running at the same time share the work too.
+- **Spend less disk on build artifacts.** One shared, self-pruning store reuses compiler outputs across
+  checkouts. Managed target directories can be collected after their checkouts disappear.
+- **Carry the cache into CI.** Share cached artifacts with teammates and CI runners through GitHub Actions,
+  S3, or a compatible cache server. Local use needs no server or daemon to manage.
+
+You keep using `cargo build`, `cargo test`, and `cargo clippy`; Cargo still plans the build, and mbx restores
+matching compiler outputs or runs the compiler when needed. The first build warms the cache, and later builds
+with matching inputs can reuse it.
+
+See mbx's [build-cache explanation](https://mr-boxington.jdx.dev/how-it-works),
+[benchmarks](https://mr-boxington.jdx.dev/benchmarks), and
+[GitHub Actions guide](https://mr-boxington.jdx.dev/github-action) for more.
 
 Enable the `mr_boxington` tool option and install mbx as a separate tool:
 
