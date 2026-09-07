@@ -1,0 +1,9 @@
+investigate [https://github.com/jdx/mise/discussions/12921](https://github.com/jdx/mise/discussions/12921)
+
+---
+
+make a pr, post a reply
+
+---
+
+i'm wondering if this is the right fix, does this fit our model
