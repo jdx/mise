@@ -1,0 +1,1 @@
+i think with the new auto-merge release workflow we don't need to run e2e tests during the actual release
