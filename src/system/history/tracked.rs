@@ -741,6 +741,11 @@ pub(crate) fn normalize(path: &Path) -> PathBuf {
 /// A symlink leaf is tracked as a link, never as its destination.
 pub(crate) fn normalize_target(path: &Path) -> PathBuf {
     let expanded = file::replace_path(path);
+    if !expanded.is_symlink()
+        && let Ok(resolved) = dunce::canonicalize(&expanded)
+    {
+        return lexical(&resolved);
+    }
     let mut tail = Vec::new();
     let mut ancestor = expanded.as_path();
     if let (Some(parent), Some(name)) = (ancestor.parent(), ancestor.file_name()) {

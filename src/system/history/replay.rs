@@ -558,7 +558,7 @@ async fn apply_steps(
             "history: {} path(s) changed after the protective checkpoint; capturing again",
             missing.len()
         );
-        scope.recapture_before()?;
+        scope.recapture_before(&missing)?;
     }
     let mut touched = vec![];
     // deletions deepest first, then writes shallowest first: a directory is

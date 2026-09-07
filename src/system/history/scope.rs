@@ -245,7 +245,7 @@ impl OperationScope {
 
     /// Retakes the protective checkpoint, replacing the earlier one, when
     /// files changed between it and the verified plan.
-    pub(crate) fn recapture_before(&self) -> Result<()> {
+    pub(crate) fn recapture_before(&self, paths: &[PathBuf]) -> Result<()> {
         let Some(shared) = &self.0 else {
             return Ok(());
         };
@@ -256,7 +256,7 @@ impl OperationScope {
         let _store_lock = writer.store.lock()?;
         let previous = writer.before.take();
         let id = writer.store.reserve_id()?;
-        writer.capture_before(id);
+        writer.capture_before(id, paths);
         match (writer.before.is_some(), previous) {
             // Keep the earlier boundary as ordinary history.
             (true, Some(_)) => {}
@@ -432,16 +432,19 @@ impl Writer {
         if (kind != OperationKind::Apply || writer.starting_head.is_some())
             && records_file_history(&writer.store, &writer.tracked, Some(kind))?
         {
-            writer.capture_before(before_id);
+            writer.capture_before(before_id, &[]);
         }
         Ok(writer)
     }
 
     /// The protective checkpoint. A failure is recorded rather than
     /// propagated: the run must go on, and the outcome says what happened.
-    fn capture_before(&mut self, id: u64) {
+    fn capture_before(&mut self, id: u64, paths: &[PathBuf]) {
         let mut draft = Draft::new(before_trigger(self.kind()));
         draft.protective = true;
+        // Restoration must protect the actual selected live files, including
+        // unsaved manual entries, without saving unrelated manual edits.
+        draft.explicit_paths = paths.to_vec();
         // `capture -- command` explicitly saves the tracked interval, including
         // manual-save entries. Ordinary bootstrap boundaries must not save
         // unrelated manual edits merely because an operation ran.

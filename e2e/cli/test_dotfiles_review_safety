@@ -8,6 +8,24 @@ repo="$MISE_STATE_DIR/history/repo.git"
 git --git-dir="$repo" show main:home/.native >captured
 assert_succeed 'cmp ~/.native captured'
 
+# Restoring one manual-save child protects its unsaved live contents without
+# committing another unsaved child from the same enrolled directory.
+mkdir -p ~/manual
+printf 'saved one\n' >~/manual/one
+printf 'saved two\n' >~/manual/two
+assert_succeed 'mise bootstrap dotfiles track ~/manual --no-autosave'
+saved=$(mise bootstrap dotfiles history --json | jq -r '.[0].id')
+printf 'unsaved one\n' >~/manual/one
+printf 'unsaved two\n' >~/manual/two
+assert_succeed "mise bootstrap dotfiles rollback ~/manual/one --to $saved --yes"
+assert 'cat ~/manual/one' 'saved one'
+assert 'cat ~/manual/two' 'unsaved two'
+assert "git --git-dir='$repo' show main:home/manual/two" 'saved two'
+assert_succeed 'mise bootstrap dotfiles undo --yes'
+assert 'cat ~/manual/one' 'unsaved one'
+assert 'cat ~/manual/two' 'unsaved two'
+assert "git --git-dir='$repo' show main:home/manual/two" 'saved two'
+
 # A project cannot override or disable a globally enrolled entry.
 mkdir project
 printf '[dotfiles]\n"~/.native" = { mode = "track", enabled = false }\n' >project/mise.toml

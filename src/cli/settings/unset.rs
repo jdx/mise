@@ -58,23 +58,38 @@ fn remove_from_file(mut key: &str, path: &std::path::Path) -> Result<Option<Stri
         let settings: &mut dyn toml_edit::TableLike =
             if let Some((parent_key, child_key)) = key.split_once('.') {
                 key = child_key;
-                settings
-                    .entry(parent_key)
-                    .or_insert({
-                        let mut t = toml_edit::Table::new();
-                        t.set_implicit(true);
-                        toml_edit::Item::Table(t)
-                    })
+                let Some(parent) = settings.get_mut(parent_key) else {
+                    return Ok(None);
+                };
+                parent
                     .as_table_like_mut()
                     .ok_or_else(|| eyre!("Setting [{parent_key}] is not a table"))?
             } else {
                 settings
             };
-        settings.remove(key);
+        if settings.remove(key).is_none() {
+            return Ok(None);
+        }
         // validate
         let _: SettingsFile = toml::from_str(&config.to_string())?;
 
         return Ok(Some(config.to_string()));
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn absent_setting_does_not_rewrite_unrelated_layers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        for contents in ["[settings]\njobs=2\n", "[settings.history]\nnotify=false\n"] {
+            std::fs::write(&path, contents).unwrap();
+            assert!(remove_from_file("history.sync", &path).unwrap().is_none());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), contents);
+        }
+    }
 }

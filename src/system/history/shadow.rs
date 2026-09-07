@@ -124,6 +124,34 @@ struct EncryptionCacheEntry {
     oid: String,
 }
 
+/// Keep content fingerprints useful for cache lookup without publishing a
+/// dictionary-testable hash of a secret in the disposable cache.
+fn encryption_cache_key(dir: &Path) -> Result<[u8; 32]> {
+    use std::io::Write;
+
+    super::store::create_private_dir(dir)?;
+    let path = dir.join("encryption-cache.key");
+    match std::fs::read(&path) {
+        Ok(bytes) => bytes
+            .try_into()
+            .map_err(|_| eyre::eyre!("invalid encryption cache key: {}", display_path(&path))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let key: [u8; 32] = rand::random();
+            let mut temporary = tempfile::NamedTempFile::new_in(dir)?;
+            temporary.write_all(&key)?;
+            temporary.as_file().sync_all()?;
+            match temporary.persist_noclobber(&path) {
+                Ok(_) => Ok(key),
+                Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    encryption_cache_key(dir)
+                }
+                Err(error) => Err(error.error.into()),
+            }
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
 impl HistoryRepo {
     pub(crate) const HISTORY_REF: &'static str = "refs/heads/main";
     const RECORD_TRAILER: &'static str = "Mise-History: ";
@@ -202,6 +230,7 @@ impl HistoryRepo {
         normalized.dedup();
         let scheme = crate::hash::hash_sha256_to_str(&normalized.join("\n"));
         let cache_path = self.dir().parent().unwrap().join("index/encryption.json");
+        let cache_key = encryption_cache_key(self.dir().parent().unwrap())?;
         let mut cache: BTreeMap<String, EncryptionCacheEntry> = std::fs::read(&cache_path)
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -252,7 +281,7 @@ impl HistoryRepo {
                         .ok_or_else(|| eyre::eyre!("non-UTF-8 tracked path"))?
                         .replace('\\', "/")
                 );
-                let fingerprint = blake3::hash(&bytes).to_hex().to_string();
+                let fingerprint = blake3::keyed_hash(&cache_key, &bytes).to_hex().to_string();
                 let cached = cache.get(&path).filter(|entry| {
                     entry.fingerprint == fingerprint && entry.mode == mode && entry.scheme == scheme
                 });
@@ -316,8 +345,13 @@ impl HistoryRepo {
                 bytes: root.bytes,
             })
             .collect();
-        crate::file::create_dir_all(cache_path.parent().unwrap())?;
-        crate::file::write_atomic(&cache_path, serde_json::to_vec(&cache)?)?;
+        super::store::create_private_dir(cache_path.parent().unwrap())?;
+        // NamedTempFile starts private, including when replacing an older cache
+        // with broader permissions. Never expose fingerprints during the write.
+        let mut temporary = tempfile::NamedTempFile::new_in(cache_path.parent().unwrap())?;
+        serde_json::to_writer(temporary.as_file_mut(), &cache)?;
+        temporary.as_file().sync_all()?;
+        temporary.persist(&cache_path)?;
         Ok(captured)
     }
 
@@ -1636,6 +1670,32 @@ mod tests {
     }
 
     #[test]
+    fn encryption_cache_keys_are_private_stable_and_store_specific() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let key = encryption_cache_key(first.path()).unwrap();
+        assert_eq!(key, encryption_cache_key(first.path()).unwrap());
+        let other = encryption_cache_key(second.path()).unwrap();
+        assert_ne!(key, other);
+        assert_ne!(
+            blake3::keyed_hash(&key, b"guessable-secret"),
+            blake3::keyed_hash(&other, b"guessable-secret")
+        );
+        let path = first.path().join("encryption-cache.key");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        std::fs::write(&path, b"broken").unwrap();
+        assert!(encryption_cache_key(first.path()).is_err());
+        assert_eq!(std::fs::read(path).unwrap(), b"broken");
+    }
+
+    #[test]
     fn encrypted_capture_never_stores_plaintext_objects_and_reuses_ciphertext() {
         if crate::git::plumbing_binary().is_none() {
             return;
@@ -1660,6 +1720,17 @@ mod tests {
         let first = repo.capture_tracked(&walk, &recipients, false).unwrap();
         let second = repo.capture_tracked(&walk, &recipients, false).unwrap();
         assert_eq!(first.tree, second.tree);
+        let cache_path = repo.dir().parent().unwrap().join("index/encryption.json");
+        let cache = std::fs::read_to_string(&cache_path).unwrap();
+        assert!(!cache.contains(&blake3::hash(plaintext).to_hex().to_string()));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(cache_path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
         let (_, encrypted) = repo.object_at(&first.tree, "home/secret").unwrap().unwrap();
         assert!(
             repo.cat_object(&encrypted)
