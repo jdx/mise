@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Y8KCTB28E5YNWBVX0M30SG",
+  "session_id": "01a07c7d-a02a-76e3-8510-0c2732851713",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T15:43:14.834439Z",
+  "branch": "codex/dotfiles-git-acceptance",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_bootstrap_from_git_dumb_http"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "86ec1f093bb6",
+  "checkpoint_transcript_start": 256,
+  "transcript_lines_at_start": 256,
+  "compact_transcript_start": 34,
+  "token_usage": {
+    "input_tokens": 9687,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 876416,
+    "output_tokens": 3133,
+    "api_call_count": 7
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T15:43:14.790008Z",
+    "agent_lines": 36,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 36,
+    "total_lines_changed": 36,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 60,
+      "user_lines_removed": 6,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "e2e-win/activate_pipeline.Tests.ps1": 36,
+        "src/shell/pwsh.rs": 24
+      },
+      "user_removed_per_file": {
+        "src/shell/pwsh.rs": 6
+      }
+    }
+  ]
+}
