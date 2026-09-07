@@ -123,12 +123,13 @@ printf '%s\n' "$input" >>"$HOME/describe-input"
 printf 'agent: %s\n' "$(printf '%s' "$input" | jq -r '(.added + .modified + .removed) | join(",")')"
 EOF
 chmod +x "$PWD/describe"
+replans="$(grep -c 'configuration changed; watching' watch.log || true)"
 cat <<EOF >>"$MISE_CONFIG_DIR/config.toml"
 
 [settings]
 history.describe_command = "$PWD/describe"
 EOF
-wait_until "grep -q 'configuration changed' watch.log"
+wait_until "[[ \$(grep -c 'configuration changed; watching' watch.log) -gt $replans ]]"
 echo 'token = "s3cret"' >"$MISE_CONFIG_DIR/github_tokens.toml"
 echo 'monitor=DP-4' >~/.config/hypr/monitors.lua
 wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description_source == \"command\" and (.[0].description | test(\"^agent: .*monitors.lua\"))'"

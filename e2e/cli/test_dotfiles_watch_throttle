@@ -131,8 +131,9 @@ wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health
 
 # excluding the churning file while it is throttled takes it out of the
 # schedule at once: no later capture holds it or carries its old version
+replans="$(grep -c 'configuration changed; watching' watch.log || true)"
 assert_succeed "mise bootstrap dotfiles exclude '~/.config/hypr/state.json'"
-wait_until "grep -q 'configuration changed' watch.log"
+wait_until "[[ \$(grep -c 'configuration changed; watching' watch.log) -gt $replans ]]"
 wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health.throttled | length') -eq 0 ]]"
 assert_not_contains "cat $MISE_STATE_DIR/history/watch-schedule.json" "state.json"
 echo 'monitor=DP-9' >~/.config/hypr/monitors.lua
@@ -173,12 +174,13 @@ wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | t
 # case the watcher correctly finds nothing more to commit.
 # The operation is an apply whose pre-dotfiles hook holds the operation lock
 # for a while
+replans="$(grep -c 'configuration changed; watching' watch.log || true)"
 cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
 
 [bootstrap.hooks.pre-dotfiles]
 run = "date +%s%N >>$HOME/applying && sleep 4"
 EOF
-wait_until "grep -q 'configuration changed' watch.log"
+wait_until "[[ \$(grep -c 'configuration changed; watching' watch.log) -gt $replans ]]"
 mise bootstrap dotfiles apply --yes >apply.log 2>&1 &
 applying=$!
 wait_until 'test -s ~/applying'
