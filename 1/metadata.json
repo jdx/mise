@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Y8KCTB28E5YNWBVX0M30SG",
+  "session_id": "01a07c7d-f26d-7142-8334-a0532b50c6cd",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T15:43:15.059936Z",
+  "branch": "codex/dotfiles-git-acceptance",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "bff852fb04e7",
+  "checkpoint_transcript_start": 151,
+  "transcript_lines_at_start": 151,
+  "compact_transcript_start": 20,
+  "token_usage": {
+    "input_tokens": 18769,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2180224,
+    "output_tokens": 6202,
+    "api_call_count": 28
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
