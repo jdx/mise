@@ -496,6 +496,10 @@ pub(crate) struct Operation {
     /// recreates these explicitly.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub directories: Vec<String>,
+    /// Modes of directories removed by this operation, including empty ones
+    /// which cannot be represented by a Git snapshot tree.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub directory_modes: BTreeMap<String, u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     /// The file changes the operation made, with their preimages.

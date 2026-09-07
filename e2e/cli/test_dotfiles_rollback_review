@@ -25,10 +25,16 @@ assert_succeed "mise bootstrap dotfiles rollback ~/.config/review/file ~/.config
 assert "cat ~/.config/review/file" "current"
 
 mkdir ~/.config/review/empty
+chmod 700 ~/.config/review/empty
 assert_succeed "mise bootstrap dotfiles rollback ~/.config/review/empty --yes"
 assert_fail "test -d ~/.config/review/empty"
 assert_succeed "mise bootstrap dotfiles undo --yes"
 assert_succeed "test -d ~/.config/review/empty"
+if [[ $(uname) == Darwin ]]; then
+  assert "stat -f %Lp ~/.config/review/empty" "700"
+else
+  assert "stat -c %a ~/.config/review/empty" "700"
+fi
 
 # Cleanup must retain contents that no checkpoint can restore.
 before="$(mise bootstrap dotfiles history --json | jq -r '.[0].id')"

@@ -206,6 +206,7 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
             sources,
             undoes: None,
             restore_dirs: BTreeSet::new(),
+            restore_modes: BTreeMap::new(),
             dry_run: req.dry_run,
             yes: req.yes,
             force: req.force,
@@ -342,6 +343,7 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
             sources,
             undoes: Some(operation.checkpoint.uuid.clone()),
             restore_dirs,
+            restore_modes: op.directory_modes.clone(),
             dry_run: req.dry_run,
             yes: req.yes,
             // the protective checkpoint is authoritative: whatever the
@@ -376,6 +378,7 @@ struct Execution {
     /// Directories to recreate after the plan is applied (an empty directory
     /// an operation replaced leaves no trace in a snapshot).
     restore_dirs: BTreeSet<PathBuf>,
+    restore_modes: BTreeMap<String, u32>,
     dry_run: bool,
     yes: bool,
     force: bool,
@@ -574,6 +577,7 @@ async fn apply_steps(
             if !step.path.is_dir() || step.path.is_symlink() {
                 continue;
             }
+            let bits = directory_mode(&step.path)?;
             let pending =
                 journal::begin_changes("history", &display_path(&step.path), [step.path.clone()])?;
             let removed = match std::fs::remove_dir(&step.path) {
@@ -599,6 +603,9 @@ async fn apply_steps(
                 let affected = display_path(&step.path);
                 scope.with_operation(|op| {
                     op.affected.push(affected.clone());
+                    if let Some(bits) = bits {
+                        op.directory_modes.insert(affected.clone(), bits);
+                    }
                     op.directories.push(affected);
                 });
                 touched.push(step.path.clone());
@@ -651,11 +658,24 @@ async fn apply_steps(
         // recorded before anything is touched: a write that fails halfway
         // (the old file removed, the new one not written) is still undone
         let affected = display_path(&step.path);
+        let directory_modes = if was_directory {
+            std::iter::once(&step.path)
+                .chain(empty_dirs.iter())
+                .map(|dir| Ok((display_path(dir), directory_mode(dir)?)))
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            vec![]
+        };
         scope.with_operation(|op| {
             op.affected.push(affected.clone());
             if was_directory {
                 op.directories.push(affected.clone());
                 op.directories.extend(empty_dirs.iter().map(display_path));
+                for (dir, bits) in &directory_modes {
+                    if let Some(bits) = bits {
+                        op.directory_modes.insert(dir.clone(), *bits);
+                    }
+                }
             }
         });
         let pending =
@@ -678,7 +698,32 @@ async fn apply_steps(
                 display_path(dir)
             );
         }
-        file::create_dir_all(dir)?;
+        if let Some(parent) = dir.parent() {
+            file::create_dir_all(parent)?;
+        }
+        let bits = exec.restore_modes.get(&display_path(dir));
+        let builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        let builder = {
+            let mut builder = builder;
+            if let Some(bits) = bits {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(*bits);
+            }
+            builder
+        };
+        #[cfg(not(unix))]
+        if bits.is_some() {
+            debug!("history: recorded directory mode is not restored on this platform");
+        }
+        // Fail if another process created an occupant; do not chmod or
+        // traverse an object that was not created by this operation.
+        builder.create(dir)?;
+        #[cfg(unix)]
+        if let Some(bits) = bits {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(*bits))?;
+        }
         if !touched.contains(dir) {
             touched.push(dir.clone());
             let affected = display_path(dir);
@@ -773,6 +818,20 @@ fn live_bits(path: &Path, default: u32) -> Option<u32> {
 #[cfg(not(unix))]
 fn live_bits(_path: &Path, _default: u32) -> Option<u32> {
     None
+}
+
+fn directory_mode(path: &Path) -> Result<Option<u32>> {
+    let meta = std::fs::symlink_metadata(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        Ok(meta.is_dir().then(|| meta.permissions().mode() & 0o777))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = meta;
+        Ok(None)
+    }
 }
 
 fn current_object(repo: &HistoryRepo, path: &Path) -> Result<Option<(String, String)>> {

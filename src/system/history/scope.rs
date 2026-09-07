@@ -305,6 +305,7 @@ impl Writer {
             affected: vec![],
             sources: vec![],
             directories: vec![],
+            directory_modes: Default::default(),
             message: None,
             journal: vec![],
         };
