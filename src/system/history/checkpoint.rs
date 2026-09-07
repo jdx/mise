@@ -213,7 +213,16 @@ impl Store {
                 })
         });
         let uuid = draft.uuid.clone().unwrap_or_else(store::new_uuid);
-        let mut walk = tracked.walk()?;
+        let (mut walk, walk_error) = match tracked.walk() {
+            Ok(walk) => (walk, None),
+            Err(err) if draft.operation.is_some() => {
+                // Keep the operation journal even when its outcome cannot be
+                // captured. Never substitute a partial or empty snapshot.
+                warn!("history: snapshot failed: {err:#}");
+                (Default::default(), Some(format!("{err:#}")))
+            }
+            Err(err) => return Err(err),
+        };
         for warning in &walk.warnings {
             warn!("history: {warning}");
         }
@@ -261,8 +270,9 @@ impl Store {
             None => None,
         };
         let mut promotion = None;
-        let (snapshot, roots, available, reason) = match &self.repo {
-            Some(repo) => match repo.capture(&walk.roots) {
+        let (snapshot, roots, available, reason) = match (&self.repo, walk_error) {
+            (_, Some(reason)) => (None, vec![], false, Some(reason)),
+            (Some(repo), None) => match repo.capture(&walk.roots) {
                 Ok(result) => {
                     for warning in &result.warnings {
                         warn!("history: {warning}");
@@ -301,7 +311,7 @@ impl Store {
                     (None, vec![], false, Some(format!("{err:#}")))
                 }
             },
-            None => (None, vec![], false, self.unavailable.clone()),
+            (None, None) => (None, vec![], false, self.unavailable.clone()),
         };
         for (index, entry) in walk.entries.iter().enumerate() {
             if entry.policy.autosave {
@@ -354,7 +364,9 @@ impl Store {
         };
         // the same bytes under other permissions is a change the tree diff
         // does not show: a path-scoped `latest` and `--path` must see it
-        if let Some((previous_checkpoint, _)) = &previous_tree {
+        if snapshot.is_some()
+            && let Some((previous_checkpoint, _)) = &previous_tree
+        {
             let previous_modes = &previous_checkpoint.tree.modes;
             let mode_only: BTreeSet<&String> = modes
                 .keys()

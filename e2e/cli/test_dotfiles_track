@@ -310,4 +310,11 @@ if [[ $(uname -s) == Linux ]]; then
   assert_fail "mise bootstrap dotfiles save 2>&1" "non-UTF-8 filename"
   assert "mise bootstrap dotfiles history --json | jq -r '.[0].uuid'" "$before_raw"
   [[ $(<"$raw_path") == secret ]]
+  # A mutating operation still closes its journal with unavailable contents;
+  # it must not strand a permanently pending outcome or invent an empty tree.
+  assert_succeed "mise bootstrap dotfiles apply --yes"
+  assert "mise bootstrap dotfiles history show latest --json | jq -r '.tree.available'" "false"
+  assert "mise bootstrap dotfiles history show latest --json | jq -r '.tree.snapshot'" "null"
+  assert_contains "mise bootstrap dotfiles history show latest --json | jq -r '.tree.reason'" "non-UTF-8 filename"
+  assert "find $MISE_STATE_DIR/history/index/pending -name '*.json' | wc -l | tr -d ' '" "0"
 fi

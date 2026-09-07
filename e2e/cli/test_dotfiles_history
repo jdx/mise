@@ -186,3 +186,10 @@ tree="$(mise bootstrap dotfiles history show latest --json | jq -r .tree.snapsho
 assert_contains "git --git-dir='$repo' ls-tree -r --name-only '$tree'" "home/.local/other/file"
 assert_not_contains "git --git-dir='$repo' ls-tree -r --name-only '$tree'" "state/mise"
 assert_not_contains "git --git-dir='$repo' ls-tree -r --name-only '$tree'" "share/mise"
+
+# Unusable git is a save failure, so update scripts can opt into warning only.
+mkdir -p "$PWD/broken-git"
+printf '#!/bin/sh\nexit 1\n' >"$PWD/broken-git/git"
+chmod +x "$PWD/broken-git/git"
+assert_fail "PATH=$PWD/broken-git:\$PATH mise bootstrap dotfiles save"
+assert_succeed "PATH=$PWD/broken-git:\$PATH mise bootstrap dotfiles save --best-effort"

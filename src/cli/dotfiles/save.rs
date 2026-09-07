@@ -74,9 +74,6 @@ impl DotfilesSave {
             bail!("history is disabled (history.enabled = false)");
         }
         let (store, tracked, entries) = super::history::open().await?;
-        if let Some(reason) = store.unavailable() {
-            bail!("cannot save: {reason}");
-        }
         if !self.paths.is_empty() {
             let walk = tracked.walk()?;
             for path in &self.paths {
@@ -127,6 +124,9 @@ impl DotfilesSave {
         tracked: &crate::system::history::tracked::TrackedSet,
         draft: Draft,
     ) -> Result<()> {
+        if let Some(reason) = store.unavailable() {
+            bail!("cannot save: {reason}");
+        }
         // a save is a write: it waits for no running operation, refuses to
         // interleave with one, and closes one that died
         let _operation = crate::system::history::scope::take_operation_lock(store, tracked)?;
