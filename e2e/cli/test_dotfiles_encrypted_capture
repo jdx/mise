@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# Capture and read-only history inspection must not store secret plaintext.
+require_cmd git
+
+export MISE_AGE_KEY="AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8"
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[history.encryption]
+recipients = ["age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"]
+[dotfiles]
+"~/.private-config" = { mode = "track", encrypt = true }
+TOML
+echo first-private-value >~/.private-config
+first_plain=$(git hash-object ~/.private-config)
+assert_succeed "mise bootstrap dotfiles save"
+repo="$MISE_STATE_DIR/history/repo.git"
+assert_contains "git --git-dir=$repo show HEAD:home/.private-config | head -1" 'mise-encrypted-file-v1'
+assert_fail "git --git-dir=$repo cat-file -e $first_plain"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:config/config.toml"
+
+echo second-private-value >~/.private-config
+second_plain=$(git hash-object ~/.private-config)
+assert_succeed "mise bootstrap dotfiles history diff --path ~/.private-config"
+assert_fail "git --git-dir=$repo cat-file -e $second_plain"
+
+assert_succeed "mise bootstrap dotfiles rollback ~/.private-config --to 1 --dry-run"
+assert "cat ~/.private-config" 'second-private-value'
+assert_fail "git --git-dir=$repo cat-file -e $first_plain"
+assert_fail "git --git-dir=$repo cat-file -e $second_plain"
+assert "git --git-dir=$repo for-each-ref --format='%(refname)' refs/mise-decrypted-files refs/mise-history refs/machines" ""
+assert_succeed "mise bootstrap dotfiles save"
+assert_fail "git --git-dir=$repo cat-file -e $second_plain"
+assert "git --git-dir=$repo rev-list --count HEAD" "2"
+
+# Actual restoration writes native plaintext, but its new commits remain encrypted.
+assert_succeed "mise bootstrap dotfiles rollback ~/.private-config --to 1 --yes"
+assert "cat ~/.private-config" 'first-private-value'
+assert_fail "git --git-dir=$repo cat-file -e $first_plain"
+assert_fail "git --git-dir=$repo cat-file -e $second_plain"
+assert_contains "git --git-dir=$repo show HEAD:home/.private-config | head -1" 'mise-encrypted-file-v1'
+assert_succeed "mise bootstrap dotfiles undo --yes"
+assert "cat ~/.private-config" 'second-private-value'
+assert_fail "git --git-dir=$repo cat-file -e $first_plain"
+assert_fail "git --git-dir=$repo cat-file -e $second_plain"
+
+# The ordinary repository carries recipients independently of mise config.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.private-config" = { mode = "track", encrypt = true }
+TOML
+echo manifest-recipient-value >~/.private-config
+manifest_plain=$(git hash-object ~/.private-config)
+assert_succeed "mise bootstrap dotfiles save"
+assert_contains "git --git-dir=$repo show HEAD:home/.private-config | head -1" 'mise-encrypted-file-v1'
+assert_fail "git --git-dir=$repo cat-file -e $manifest_plain"

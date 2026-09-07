@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# `[bootstrap.services]` with `scope = "user"`: one declaration rendered for the
+# platform's user service manager, validated before anything is written, and
+# reported as unknown (never written) when that manager is unavailable.
+# shellcheck disable=SC2016
+
+cat <<'EOF' >mise.toml
+[bootstrap.services.agent]
+scope = "user"
+command = "~/.local/bin/agent --serve"
+description = "My agent"
+restart = "always"
+environment = { RUST_LOG = "info" }
+working_directory = "~"
+
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+
+[bootstrap.services.later]
+scope = "user"
+command = "node server.js"
+requires_tools = true
+state = "stopped"
+enabled = false
+
+[bootstrap.services.gone]
+scope = "user"
+command = "x"
+state = "absent"
+EOF
+
+# every user service is listed by the services, aggregate status, and plan
+# commands with its desired state
+assert_contains "mise bootstrap services status" "user-service:agent"
+assert_contains "mise bootstrap services status" "user-service:mise-history"
+assert_contains "mise bootstrap services status" "stopped (not at login)"
+assert_contains "mise bootstrap services status" "absent"
+assert_contains "mise bootstrap status" "user-service"
+assert_contains "mise bootstrap plan" "user-service:later"
+
+# the rendered definition is inspectable before anything is installed, and a
+# builtin runs through the mise that installed it
+assert "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"agent\") | .restart'" "always"
+assert "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"later\") | .requires_tools'" "true"
+assert "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .builtin'" "history-watch"
+assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .command'" "bootstrap dotfiles watch"
+if [[ "$(uname -s)" == "Linux" ]]; then
+  assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"agent\") | .definition'" "Restart=always"
+  assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"agent\") | .definition'" 'Environment="RUST_LOG=info"'
+  assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .definition'" "Nice=10"
+  assert_contains "mise bootstrap status --json | jq -r '.user_services[] | select(.name == \"mise-history\") | .path'" "/.config/systemd/user/dev.mise.mise-history.service"
+fi
+
+# without a user service manager (this container has none) nothing is written:
+# status reports unknown, apply and the full bootstrap skip with a follow-up
+if ! mise bootstrap services status --json | jq -e 'all(.action != "unknown")' >/dev/null; then
+  assert_contains "mise bootstrap services status --json" '"action": "unknown"'
+  assert_fail "mise bootstrap services status --missing"
+  assert_contains "MISE_EXPERIMENTAL=0 mise bootstrap services apply --dry-run --yes 2>&1" "skipped"
+  assert_contains "mise bootstrap --only services --dry-run --yes 2>&1" "skipped"
+  assert_fail "test -e $HOME/.config/systemd/user/dev.mise.agent.service"
+  assert_fail "test -e $HOME/Library/LaunchAgents/dev.mise.agent.plist"
+  assert_fail "mise bootstrap services remove agent" "cannot remove user service 'agent'"
+fi
+
+# validation happens before any change: a system-scope entry cannot carry
+# user-only fields, a user service needs a command or a builtin, and names
+# shared with the platform-specific tables are rejected
+cat <<'EOF' >mise.toml
+[bootstrap.services.docker]
+command = "dockerd"
+EOF
+assert_fail "mise bootstrap services status" 'sets command, which only applies to `scope = "user"` services'
+cat <<'EOF' >mise.toml
+[bootstrap.services.docker]
+state = "absent"
+EOF
+assert_fail "mise bootstrap plan" 'sets state = "absent", which only applies to'
+cat <<'EOF' >mise.toml
+[bootstrap.services.agent]
+scope = "user"
+EOF
+assert_fail "mise bootstrap services status" 'must set `command` or `builtin`'
+cat <<'EOF' >mise.toml
+[bootstrap.services.agent]
+builtin = "history-watch"
+command = "x"
+EOF
+assert_fail "mise bootstrap services status" 'sets both `builtin` and `command`'
+cat <<'EOF' >mise.toml
+[bootstrap.services.agent]
+builtin = "nope"
+EOF
+assert_fail "mise bootstrap services status" "unknown builtin 'nope'; available: history-watch"
+cat <<'EOF' >mise.toml
+[bootstrap.services.agent]
+scope = "user"
+command = "agent"
+masked = true
+EOF
+assert_fail "mise bootstrap services status" "cannot be masked"
+cat <<'EOF' >mise.toml
+[bootstrap.services.agent]
+scope = "user"
+command = "agent"
+
+[bootstrap.linux.systemd.units.agent]
+exec_start = "agent"
+EOF
+assert_fail "mise bootstrap services status" "also declared in [bootstrap.linux.systemd.units]"
+cat <<'EOF' >mise.toml
+[bootstrap.services.agent]
+scope = "user"
+command = "agent"
+
+[bootstrap.macos.launchd.agents.agent]
+program = "agent"
+EOF
+assert_fail "mise bootstrap services status" "also declared in [bootstrap.macos.launchd.agents]"
+
+# managed-file notifications apply to system services only
+cat <<EOF >mise.toml
+[bootstrap.services.agent]
+scope = "user"
+command = "agent"
+
+[bootstrap.files."$PWD/notify"]
+content = "x"
+notify = ["agent"]
+EOF
+assert_fail "mise bootstrap plan" "notifies user-scope bootstrap service 'agent'"
+
+# a name is never guessed: the removal of an undeclared service is explicit
+cat <<'EOF' >mise.toml
+[tools]
+EOF
+assert_fail "mise bootstrap services remove 'bad name'" "must contain only letters"
+
+# the effective scope follows `builtin`, and skipping the services part skips
+# user services too
+cat <<'EOF' >mise.toml
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+EOF
+assert_not_contains "mise bootstrap --skip services --dry-run --yes 2>&1" "user services"
+assert_contains "mise bootstrap status --json | jq -r '.user_services[0].scope'" "user"
+assert_contains "mise bootstrap services status --json | jq -r '.[0].id.kind'" "user-service"
+
+# on macOS the LaunchAgent is really installed, started, and removed
+if [[ "$(uname -s)" == "Darwin" ]] && mise bootstrap services status --json | jq -e 'all(.action != "unknown")' >/dev/null; then
+  cat <<'TOML' >mise.toml
+[bootstrap.services.mise-e2e-sleep]
+scope = "user"
+command = "/bin/sleep 300"
+TOML
+  assert_succeed "mise bootstrap services apply --yes"
+  assert "test -f $HOME/Library/LaunchAgents/dev.mise.mise-e2e-sleep.plist && echo yes" "yes"
+  assert "mise bootstrap services status --json | jq -r '.[0] | \"\\(.current) \\(.action)\"'" "running noop"
+  assert_contains "mise bootstrap status --json | jq -r '.user_services[0].definition'" "SuccessfulExit"
+  assert_succeed "mise bootstrap services status --missing"
+  cat <<'TOML' >mise.toml
+[bootstrap.services.mise-e2e-sleep]
+scope = "user"
+command = "/bin/sleep 300"
+state = "absent"
+TOML
+  assert "mise bootstrap services status --json | jq -r '.[0] | \"\\(.current) \\(.action)\"'" "installed remove"
+  assert_succeed "mise bootstrap services apply --yes"
+  assert_fail "test -e $HOME/Library/LaunchAgents/dev.mise.mise-e2e-sleep.plist"
+  assert "mise bootstrap services status --json | jq -r '.[0] | \"\\(.current) \\(.action)\"'" "absent noop"
+  # an undeclared leftover is removed once, explicitly
+  cat <<'TOML' >mise.toml
+[bootstrap.services.mise-e2e-sleep]
+scope = "user"
+command = "/bin/sleep 300"
+TOML
+  assert_succeed "mise bootstrap services apply --yes"
+  echo "[tools]" >mise.toml
+  assert_contains "mise bootstrap services remove mise-e2e-sleep 2>&1" "removed its LaunchAgent"
+  assert_fail "test -e $HOME/Library/LaunchAgents/dev.mise.mise-e2e-sleep.plist"
+  assert_contains "mise bootstrap services remove mise-e2e-sleep 2>&1" "no LaunchAgent installed"
+fi

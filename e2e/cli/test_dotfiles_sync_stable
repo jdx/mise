@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Sharing works without experimental opt-in.
+export MISE_EXPERIMENTAL=0
+git init -q --bare -b main "$PWD/origin.git"
+echo original >"$HOME/.native"
+assert_succeed "mise bootstrap dotfiles track ~/.native --no-autosave"
+assert_succeed "mise bootstrap dotfiles origin set file://$PWD/origin.git --sync manual --yes"
+assert_succeed "mise bootstrap dotfiles sync"
+assert_succeed "mise bootstrap dotfiles machines"
+assert_succeed "mise bootstrap dotfiles pull --yes"
+assert_succeed "mise bootstrap dotfiles watch --once"
+assert_not_contains "mise doctor 2>&1 || true" 'tracking is experimental and disabled'
