@@ -86,12 +86,18 @@ fn preview_configuration(store: &Store) -> Result<tempfile::TempDir> {
     let head = repo
         .ref_oid(UPSTREAM_REF)?
         .ok_or_else(|| eyre::eyre!("setup preview has no fetched branch"))?;
+    let encrypted = super::files::encrypted_paths(repo, Some(&head))?;
     for entry in repo.ls_tree(&head)? {
         if super::layout::is_configuration(&entry.path)
             && super::layout::is_safe_branch_path(&entry.path)
         {
             let Some((mode, oid)) = repo.object_at(&head, &entry.path)? else {
                 bail!("configuration disappeared from preview commit");
+            };
+            let (mode, oid) = if encrypted.contains(&entry.path) {
+                super::files::decrypt(repo, &entry.path, &(mode, oid), true)?
+            } else {
+                (mode, oid)
             };
             crate::system::history::replay::write_path(
                 repo,
