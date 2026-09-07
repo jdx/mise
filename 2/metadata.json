@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Y9EKD8W9P1994QP51R8DD1",
+  "session_id": "01a07c90-6dd9-7043-80a3-98da710414f6",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T15:58:07.798152Z",
+  "branch": "codex/activate-shims-opt-out",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dev-tools/shims.md",
+    "e2e/cli/test_command_wrappers",
+    "e2e/shell/test_shims_activation_conditional",
+    "schema/mise.json",
+    "settings.toml",
+    "src/cli/activate.rs",
+    "src/cli/hook_env.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "37c4eddb4228",
+  "checkpoint_transcript_start": 147,
+  "transcript_lines_at_start": 147,
+  "compact_transcript_start": 18,
+  "token_usage": {
+    "input_tokens": 4090,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 76928,
+    "output_tokens": 4836,
+    "api_call_count": 1
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T15:58:07.751432Z",
+    "agent_lines": 101,
+    "agent_removed": 6,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 101,
+    "total_lines_changed": 107,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
