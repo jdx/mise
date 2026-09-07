@@ -288,7 +288,9 @@ jobs:
           if-no-files-found: error
   e2e-linux:
     needs: [gate, build-tarball-linux]
-    if: needs.gate.outputs.build == 'true'
+    # The auto-merge-enabled release PR already tests this exact release
+    # candidate. Do not repeat the full suite when its tag is published.
+    if: needs.gate.outputs.build == 'true' && !startsWith(github.ref, 'refs/tags/v')
     name: e2e-linux-${{matrix.tranche}}
     runs-on: ubuntu-latest
     #container: ghcr.io/jdx/mise:github-actions
@@ -411,19 +413,25 @@ jobs:
             "${{ needs.build-tarball-linux.result }}" \
             "${{ needs.build-tarball-macos.result }}" \
             "${{ needs.build-tarball-windows.result }}" \
-            "${{ needs.e2e-linux.result }}" \
             "${{ needs.rpm.result }}" \
             "${{ needs.deb.result }}"; do
             if [ "$result" != "success" ]; then
               failed="true"
             fi
           done
+          expected_e2e=success
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            expected_e2e=skipped
+          fi
+          if [ "${{ needs.e2e-linux.result }}" != "$expected_e2e" ]; then
+            failed="true"
+          fi
           if [ -n "$failed" ]; then
             echo "::error::One or more required jobs did not succeed:"
             echo "  build-tarball-linux: ${{ needs.build-tarball-linux.result }}"
             echo "  build-tarball-macos: ${{ needs.build-tarball-macos.result }}"
             echo "  build-tarball-windows: ${{ needs.build-tarball-windows.result }}"
-            echo "  e2e-linux: ${{ needs.e2e-linux.result }}"
+            echo "  e2e-linux: ${{ needs.e2e-linux.result }} (expected $expected_e2e)"
             echo "  rpm: ${{ needs.rpm.result }}"
             echo "  deb: ${{ needs.deb.result }}"
             exit 1
