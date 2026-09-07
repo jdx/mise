@@ -266,7 +266,7 @@ Track a file or directory in place
 Remove dotfiles applied from `[dotfiles]`
 .TP
 \fBbootstrap dotfiles undo\fR
-Reverse a rollback, undo, or pull
+Reverse the tracked\-file changes from an operation
 .TP
 \fBbootstrap dotfiles untrack\fR
 Stop tracking a file or directory
@@ -2099,11 +2099,13 @@ mise bootstrap dotfiles unapply \-\-dry\-run
 mise bootstrap dotfiles unapply \-\-force \-\-yes
 .RE
 .SH "MISE BOOTSTRAP DOTFILES UNDO"
-Reverse a rollback, undo, or pull
+Reverse the tracked\-file changes from an operation
 
 Restores exactly the paths that operation changed from the protective
 checkpoint it took, leaving everything else as it is now. Without a
 reference, the newest operation not yet undone is reversed.
+Bootstrap, captured commands, rollback, undo, and pull are supported.
+Package installations, service state, and untracked files are not reversed.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles undo [OPTIONS] [<REF>]
 .PP

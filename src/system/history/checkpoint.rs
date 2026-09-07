@@ -24,6 +24,8 @@ use super::tracked::{TrackedEntry, TrackedSet, tree_path_to_display};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 
+mod preimages;
+
 /// The most paths a computed description names before `+N more`.
 const DESCRIPTION_PATHS: usize = 6;
 const DESCRIPTION_MAX: usize = 200;
@@ -484,7 +486,57 @@ impl Store {
             ),
             None => (summary.clone(), DescriptionSource::Computed),
         };
-        let mut checkpoint = Checkpoint {
+        let mut operation = draft.operation.clone();
+        if let Some(operation) = &mut operation
+            && matches!(
+                operation.kind,
+                store::OperationKind::Bootstrap | store::OperationKind::Capture
+            )
+        {
+            let mut affected: BTreeSet<String> = changes
+                .added
+                .iter()
+                .chain(&changes.modified)
+                .chain(&changes.removed)
+                .cloned()
+                .collect();
+            // Display summaries are capped; the recovery contract is not.
+            if changes.truncated
+                && let (Some(repo), Some(tree)) = (&self.repo, &snapshot)
+            {
+                affected.extend(
+                    repo.changes(previous_tree.as_ref().map(|(_, tree)| tree.as_str()), tree)?
+                        .into_iter()
+                        .filter(|change| !change.path.starts_with(".mise-history/"))
+                        .map(|change| tree_path_to_display(&change.path)),
+                );
+            }
+            operation.affected.clear();
+            for path in affected {
+                let local = crate::file::replace_path(&path);
+                // Enrollment changes are not file deletions. Nor can a newly
+                // enrolled file acquire a fictional, absent before version.
+                let previously_tracked = previous_tree.as_ref().is_some_and(|(record, _)| {
+                    record
+                        .tree
+                        .coverage
+                        .entries
+                        .iter()
+                        .any(|entry| under_entry(&path, &entry.path))
+                });
+                if previously_tracked
+                    && tracked.would_retain(&local)?
+                    && (operation.kind == store::OperationKind::Capture
+                        || draft
+                            .explicit_paths
+                            .iter()
+                            .any(|selected| local.starts_with(selected)))
+                {
+                    operation.affected.push(path);
+                }
+            }
+        }
+        let checkpoint = Checkpoint {
             schema_version: store::SCHEMA_VERSION,
             uuid,
             machine: self.machine.clone(),
@@ -506,8 +558,25 @@ impl Store {
                 modes,
             },
             changes,
-            operation: draft.operation.clone(),
+            operation,
         };
+        let entry = self.commit_record_locked(checkpoint, index, reserved_id)?;
+        if available
+            && snapshot.is_some()
+            && let Some(repo) = &self.repo
+        {
+            super::enrollment::confirm(&self.state_dir, repo, tracked)?;
+        }
+        Ok(Outcome::Created(entry))
+    }
+
+    /// Append one ordinary record while the store lock is held.
+    fn commit_record_locked(
+        &self,
+        mut checkpoint: Checkpoint,
+        mut index: Index,
+        reserved_id: Option<u64>,
+    ) -> Result<Box<Entry>> {
         let id = reserved_id.unwrap_or_else(|| {
             let id = index.next_id.max(1);
             index.next_id = id + 1;
@@ -515,7 +584,7 @@ impl Store {
         });
         let commit = match &self.repo {
             Some(repo) => repo
-                .write_checkpoint(snapshot.as_deref(), &checkpoint)
+                .write_checkpoint(checkpoint.tree.snapshot.as_deref(), &checkpoint)
                 .wrap_err("writing the checkpoint")?,
             None => String::new(),
         };
@@ -534,22 +603,16 @@ impl Store {
             index.next_id = id + 1;
         }
         store::write_index_in(&self.state_dir, &index)?;
-        if available
-            && snapshot.is_some()
-            && let Some(repo) = &self.repo
-        {
-            super::enrollment::confirm(&self.state_dir, repo, tracked)?;
-        }
         debug!(
             "history: recorded checkpoint {id} ({}): {}",
             checkpoint.trigger.as_str(),
             checkpoint.description
         );
-        Ok(Outcome::Created(Box::new(Entry {
+        Ok(Box::new(Entry {
             id,
             commit,
             checkpoint,
-        })))
+        }))
     }
 
     /// Carries the draft's held paths forward from the previous checkpoint:

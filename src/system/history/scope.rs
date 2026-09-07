@@ -502,6 +502,33 @@ impl Writer {
         self.operation_mut().journal.push(entry);
         self.write_pending()
             .map_err(|err| eyre::eyre!("could not persist the operation journal: {err:#}"))?;
+        if self.kind() == OperationKind::Bootstrap
+            && let Some((_, before)) = &self.before
+            && let JournalEntry::PathChanged { path, prior, .. } =
+                &self.operation().journal[seq as usize]
+        {
+            match self.store.protect_manual_preimage(
+                before,
+                &self.tracked,
+                path,
+                prior,
+                &self.operation().journal[..seq as usize],
+            ) {
+                Ok(Some(entry)) => {
+                    self.operation_mut().before = Some(entry.checkpoint.uuid.clone());
+                    self.before = Some((entry.id, entry.checkpoint.uuid));
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    warn!(
+                        "history: cannot preserve the operation's manual-file preimage: {err:#}; historical undo will be unavailable"
+                    );
+                    self.before = None;
+                    self.operation_mut().before = None;
+                }
+            }
+            self.write_pending()?;
+        }
         Ok(seq)
     }
 

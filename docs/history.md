@@ -128,7 +128,7 @@ promotion history.
 mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua        # its most recent saved version that differs from disk
 mise bootstrap dotfiles rollback ~/.zshrc --to 42                    # that checkpoint's version
 mise bootstrap dotfiles rollback --to latest~3 --all --dry-run       # everything the checkpoint covers
-mise bootstrap dotfiles undo                                         # reverse the newest rollback, undo, or pull
+mise bootstrap dotfiles undo                                         # reverse the newest tracked-file operation
 ```
 
 A rollback is planned first: for every selected path, `write` when the
@@ -171,6 +171,11 @@ copies exist only to complete or safely recover interrupted writes, and are
 deleted afterwards. Unresolved recovery is never expired; concurrent edits are
 preserved and reported for action.
 
+When bootstrap changes a tracked file with `autosave = false`, its actual
+pre-operation contents are saved in the ordinary before history. Unrelated
+manual edits stay unsaved. Repeated writes within the operation preserve the
+first preimage, and encrypted preimages are encrypted before entering Git.
+
 Ordinary bootstrap deployments warn and continue if a temporary preimage cannot
 be captured, for example for an oversized destination. Such a write cannot be
 automatically recovered after interruption. History-driven pull, rollback, and
@@ -210,9 +215,10 @@ The operation lock keeps the watcher and other history writers from inserting
 checkpoints into the pair. Concurrent changes by editors or other programs are
 still part of the observed interval. An abruptly terminated wrapper leaves a
 pending operational record for recovery by the next history mutation. Capture does
-not journal external writes individually, so it does not support selective
-`undo`: use `history show` to find its **Before** checkpoint, then
-`rollback <path> --to <before-ref>` to restore selected files. Package changes,
+not journal external writes individually: `undo` restores the tracked-file
+changes observed over the whole interval, including concurrent edits. To restore
+selected files instead, use `history show` to find its **Before** checkpoint, then
+`rollback <path> --to <before-ref>`. Package changes,
 service restarts, and files outside the tracked set are not restored.
 
 ## Automatic saves

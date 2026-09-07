@@ -2,11 +2,13 @@ use eyre::Result;
 
 use crate::system::history::replay::{self, UndoRequest};
 
-/// Reverse a rollback, undo, or pull
+/// Reverse the tracked-file changes from an operation
 ///
 /// Restores exactly the paths that operation changed from the protective
 /// checkpoint it took, leaving everything else as it is now. Without a
 /// reference, the newest operation not yet undone is reversed.
+/// Bootstrap, captured commands, rollback, undo, and pull are supported.
+/// Package installations, service state, and untracked files are not reversed.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct DotfilesUndo {

@@ -118,7 +118,7 @@ fn validate_destination(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read_blob(state_dir: &Path, blob: &Blob) -> Result<Vec<u8>> {
+pub(super) fn read_blob(state_dir: &Path, blob: &Blob) -> Result<Vec<u8>> {
     use base64::Engine;
     if blob.sha256.len() != 64 || !blob.sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
         bail!("invalid recovery content identifier");

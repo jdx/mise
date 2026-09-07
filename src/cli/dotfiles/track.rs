@@ -365,6 +365,22 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
     if let Some(reason) = store.unavailable() {
         bail!("dotfiles: cannot save the baseline: {reason}");
     }
+    // A capture wrapper owns the operation lock until this child exits. It
+    // reloads enrollment and explicitly saves all current tracked files in
+    // its outcome (including manual entries), or during interruption recovery.
+    if let Some(parent) = std::env::var_os(crate::system::history::scope::ENV_VAR)
+        && crate::system::history::store::read_marker_in(&crate::dirs::STATE)?.is_some_and(
+            |marker| {
+                marker.kind == crate::system::history::store::OperationKind::Capture
+                    && parent == std::ffi::OsStr::new(&marker.uuid)
+            },
+        )
+    {
+        info!(
+            "dotfiles: enrolled; the enclosing capture will save the baseline when the command finishes"
+        );
+        return Ok(());
+    }
     let names = declared
         .iter()
         .map(|(key, _)| key.as_str())

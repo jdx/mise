@@ -5,11 +5,13 @@
 - **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/dotfiles/undo.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/undo.rs)
 
-Reverse a rollback, undo, or pull
+Reverse the tracked-file changes from an operation
 
 Restores exactly the paths that operation changed from the protective
 checkpoint it took, leaving everything else as it is now. Without a
 reference, the newest operation not yet undone is reversed.
+Bootstrap, captured commands, rollback, undo, and pull are supported.
+Package installations, service state, and untracked files are not reversed.
 
 ## Arguments
 - **`[REF]`** — The operation's checkpoint: numeric ID, `latest`, `latest~N`, or `commit:<sha>`

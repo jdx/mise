@@ -262,27 +262,33 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
                 entry.checkpoint.operation.as_ref().is_some_and(|op| {
                     matches!(
                         op.kind,
-                        OperationKind::Rollback | OperationKind::Undo | OperationKind::Apply
+                        OperationKind::Rollback
+                            | OperationKind::Undo
+                            | OperationKind::Apply
+                            | OperationKind::Bootstrap
+                            | OperationKind::Capture
                     ) && op.status != OperationStatus::Pending
                         && op.before.is_some()
                         && !op.affected.is_empty()
                 }) && !undone.contains(&entry.checkpoint.uuid)
             })
             .cloned()
-            .ok_or_else(|| eyre::eyre!("nothing to undo: no rollback, undo, or pull is left"))?,
+            .ok_or_else(|| eyre::eyre!("nothing to undo: no tracked-file operation is left"))?,
     };
     let Some(op) = operation.checkpoint.operation.clone() else {
         bail!("checkpoint {} is not an operation", operation.id);
     };
-    // an operation records the paths it changed (`affected`) only when it
-    // writes them itself (a rollback, an undo, a pull); a bootstrap or a
-    // dotfiles apply journals its changes instead and is not reversed here
+    // Undo restores tracked files only, never package or service state.
     if !matches!(
         op.kind,
-        OperationKind::Rollback | OperationKind::Undo | OperationKind::Apply
+        OperationKind::Rollback
+            | OperationKind::Undo
+            | OperationKind::Apply
+            | OperationKind::Bootstrap
+            | OperationKind::Capture
     ) {
         bail!(
-            "checkpoint {} is a {} operation; only rollback, undo, and pull can be undone",
+            "checkpoint {} is a {} operation without tracked-file undo support",
             operation.id,
             op.kind.as_str()
         );
