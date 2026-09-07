@@ -576,7 +576,7 @@ rmdir same-dir-target/extra-empty
 chmod 755 same-dir-source
 chmod 700 same-dir-target
 assert_fail "mise dotfiles apply --yes"
-chmod --reference=same-dir-source same-dir-target
+chmod 755 same-dir-target
 ln -s first same-dir-source/link
 ln -s second same-dir-target/link
 assert_fail "mise dotfiles apply --yes"
