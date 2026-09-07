@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1X03CP86N91824YAVN1TPCE",
+  "strategy": "manual-commit",
+  "branch": "codex/rust-mr-boxington",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/cli/use.md",
+    "docs/lang/rust.md",
+    "e2e/cli/test_use_tool_option",
+    "e2e/core/test_rust_mr_boxington",
+    "mise.usage.kdl",
+    "src/cli/exec.rs",
+    "src/cli/use.rs",
+    "src/config/command_wrapper.rs",
+    "src/config/mod.rs",
+    "src/shims.rs",
+    "src/toolset/tool_version_options.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 61164,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 439296,
+    "output_tokens": 2278,
+    "api_call_count": 10
+  }
+}

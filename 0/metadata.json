@@ -1,0 +1,57 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1X03CP86N91824YAVN1TPCE",
+  "session_id": "01a079ff-e21b-7091-9237-5ce9e627fbd3",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-07T03:55:27.25721Z",
+  "branch": "codex/rust-mr-boxington",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/cli/use.md",
+    "docs/lang/rust.md",
+    "e2e/cli/test_use_tool_option",
+    "e2e/core/test_rust_mr_boxington",
+    "mise.usage.kdl",
+    "src/cli/exec.rs",
+    "src/cli/use.rs",
+    "src/config/command_wrapper.rs",
+    "src/config/mod.rs",
+    "src/shims.rs",
+    "src/toolset/tool_version_options.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ef53380f58c9",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 61164,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 439296,
+    "output_tokens": 2278,
+    "api_call_count": 10
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-07T03:55:27.235462Z",
+    "agent_lines": 411,
+    "agent_removed": 47,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 411,
+    "total_lines_changed": 458,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
