@@ -409,6 +409,11 @@ impl TrackedSet {
         let mut home_bytes = 0;
         let mut fs_bytes = 0;
         for path in walk.files.keys() {
+            if path.to_str().is_none() {
+                eyre::bail!(
+                    "history cannot represent a non-UTF-8 filename; refusing to change its bytes"
+                );
+            }
             let size = std::fs::symlink_metadata(path)
                 .map(|m| m.len())
                 .unwrap_or(0);

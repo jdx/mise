@@ -297,3 +297,17 @@ assert_succeed "mise bootstrap dotfiles track ~/.config/nested"
 assert_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "160000"
 assert_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "~/.config/nested/outer.txt"
 assert_not_contains "mise bootstrap dotfiles history show latest --files | sed -n '/^Files:/,\$p'" "inner.txt"
+
+# Reject unsupported filename bytes before saving a partial checkpoint.
+if [[ $(uname -s) == Linux ]]; then
+  mkdir -p ~/.raw-names
+  echo ordinary >~/.raw-names/ordinary
+  assert_succeed "mise bootstrap dotfiles track ~/.raw-names"
+  before_raw="$(mise bootstrap dotfiles history --json | jq -r '.[0].uuid')"
+  raw_path="$HOME/.raw-names/"$'\xff'
+  echo secret >"$raw_path"
+  echo changed >~/.raw-names/ordinary
+  assert_fail "mise bootstrap dotfiles save 2>&1" "non-UTF-8 filename"
+  assert "mise bootstrap dotfiles history --json | jq -r '.[0].uuid'" "$before_raw"
+  [[ $(<"$raw_path") == secret ]]
+fi

@@ -292,7 +292,9 @@ impl HistoryRepo {
             if record.is_empty() {
                 continue;
             }
-            let record = String::from_utf8_lossy(record);
+            let record = std::str::from_utf8(record).wrap_err(
+                "history cannot represent a non-UTF-8 filename; refusing to change its bytes",
+            )?;
             let Some((meta, path)) = record.split_once('\t') else {
                 continue;
             };
@@ -447,7 +449,7 @@ impl HistoryRepo {
             };
             changes.push(Change {
                 status,
-                path: String::from_utf8_lossy(path).to_string(),
+                path: std::str::from_utf8(path).wrap_err("history cannot represent a non-UTF-8 filename; refusing to change its bytes")?.to_string(),
             });
         }
         Ok(changes)
