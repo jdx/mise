@@ -175,6 +175,14 @@ pub(crate) fn invalid_declarations() -> Vec<InvalidDeclaration> {
         .clone()
 }
 
+/// A configuration reload must not retain failures from a previous version.
+pub(crate) fn clear_invalid_declarations() {
+    INVALID_DECLARATIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+}
+
 /// one `[dotfiles]` whole-file entry as written in mise.toml
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -3150,6 +3158,23 @@ fn link_path(source: &Path, target: &Path, allow_windows_symlink: bool) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn configuration_reload_discards_old_declaration_diagnostics() {
+        let target = "~/.mise-diagnostic-reset-test";
+        record_invalid(target, Path::new("diagnostic-reset.toml"), "invalid mode");
+        assert!(
+            invalid_declarations()
+                .iter()
+                .any(|item| item.target == target)
+        );
+        clear_invalid_declarations();
+        assert!(
+            !invalid_declarations()
+                .iter()
+                .any(|item| item.target == target)
+        );
+    }
 
     #[test]
     fn test_file_mode_parse() {

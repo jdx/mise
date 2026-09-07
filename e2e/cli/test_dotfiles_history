@@ -136,7 +136,9 @@ assert "$count" "4"
 
 # recording can be turned off, and save then fails instead of pretending
 assert_fail "MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles save" "history is disabled"
-assert_succeed "MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles save --best-effort"
+assert_fail "MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles save --best-effort"
+assert_fail "mise bootstrap dotfiles save --best-effort --trigger typo"
+assert_fail "mise bootstrap dotfiles save --best-effort ~/.never-tracked"
 echo nine >"$MISE_CONFIG_DIR/dotfiles/copied"
 assert_succeed "MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles apply --yes"
 assert "$count" "4"

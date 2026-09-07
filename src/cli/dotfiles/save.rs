@@ -44,7 +44,16 @@ pub(crate) struct DotfilesSave {
 impl DotfilesSave {
     pub(crate) async fn run(self) -> Result<()> {
         crate::system::history::ensure_experimental()?;
-        match self.save().await {
+        self.save().await
+    }
+
+    fn save_checkpoint(
+        &self,
+        store: &Store,
+        tracked: &crate::system::history::tracked::TrackedSet,
+        draft: Draft,
+    ) -> Result<()> {
+        match self.capture(store, tracked, draft) {
             Ok(()) => Ok(()),
             Err(err) if self.best_effort => {
                 warn!("history save: {err:#}");
@@ -109,10 +118,19 @@ impl DotfilesSave {
         });
         draft.task = self.task.clone();
         draft.labels = self.label.clone();
+        self.save_checkpoint(&store, &tracked, draft)
+    }
+
+    fn capture(
+        &self,
+        store: &Store,
+        tracked: &crate::system::history::tracked::TrackedSet,
+        draft: Draft,
+    ) -> Result<()> {
         // a save is a write: it waits for no running operation, refuses to
         // interleave with one, and closes one that died
-        let _operation = crate::system::history::scope::take_operation_lock(&store, &tracked)?;
-        match store.attempt(&tracked, draft)? {
+        let _operation = crate::system::history::scope::take_operation_lock(store, tracked)?;
+        match store.attempt(tracked, draft)? {
             Outcome::Created(entry) => {
                 info!(
                     "history: saved checkpoint {}: {}",
