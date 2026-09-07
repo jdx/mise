@@ -36,6 +36,18 @@ wait_until() {
   return 1
 }
 
+# With no enrollment the service still watches policy changes, but creates
+# no file-history commits or implicit config enrollment.
+mkdir -p "$MISE_CONFIG_DIR"
+mise bootstrap dotfiles watch --json >watch.log 2>&1 &
+empty_watcher=$!
+trap 'kill "$empty_watcher" 2>/dev/null || true; wait "$empty_watcher" 2>/dev/null || true' EXIT
+wait_until "grep -q '\"event\":\"started\"' watch.log"
+kill -TERM "$empty_watcher"
+wait "$empty_watcher"
+trap - EXIT
+assert "$count" "0"
+
 mkdir -p ~/.config/hypr
 echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
 assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
@@ -141,7 +153,6 @@ assert_succeed "mise bootstrap dotfiles history diff --path ~/.config/hypr/monit
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua"
 assert_contains "mise bootstrap dotfiles status" "declared but not running"
 
-# the watcher is a no-op when history is disabled, and fails clearly when
-# nothing can be watched
+# The watcher is a no-op when history is disabled.
 assert_contains "MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles watch --json" '"event":"disabled"'
 assert_succeed "MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles watch"
