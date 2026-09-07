@@ -44,12 +44,11 @@ pub(crate) fn upstream_with_interaction(
     interactive: bool,
 ) -> Result<Upstream> {
     let mut files = BTreeMap::new();
+    let encrypted = super::files::encrypted_paths(repo, commit)?;
     if let Some(commit) = commit {
         for entry in repo.ls_tree(commit)? {
             if let Some((mode, oid)) = repo.object_at(commit, &entry.path)? {
-                let object = if !entry.path.starts_with(".mise-history/")
-                    && !super::layout::is_repository_metadata(&entry.path)
-                {
+                let object = if encrypted.contains(&entry.path) {
                     super::files::decrypt(repo, &entry.path, &(mode, oid), interactive)?
                 } else {
                     (mode, oid)

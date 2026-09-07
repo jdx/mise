@@ -128,6 +128,7 @@ pub(crate) async fn apply(
     // Store choices without publishing or applying any part of the setup.
     let mut sync_state = state::load(repo)?;
     let shared = super::share::current(repo, store, tracked)?.objects();
+    let encrypted = super::files::encrypted_paths(repo, status.upstream_commit.as_deref())?;
     for conflict in &status.conflicts {
         let Some(local) = roots
             .locate(&conflict.branch_path)
@@ -149,6 +150,9 @@ pub(crate) async fn apply(
                 Some(head) => repo
                     .object_at(head, &conflict.branch_path)?
                     .map(|object| {
+                        if !encrypted.contains(&conflict.branch_path) {
+                            return Ok(object);
+                        }
                         super::files::decrypt(
                             repo,
                             &conflict.branch_path,

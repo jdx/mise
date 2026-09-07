@@ -10,6 +10,68 @@ use crate::{agecrypt, system::history::shadow::HistoryRepo};
 
 const MAGIC: &[u8] = b"mise-encrypted-file-v1\n";
 const CACHE: &str = "refs/mise-decrypted-files/";
+const INDEX: &str = ".mise-history/encrypted-files.json";
+
+#[derive(Serialize, Deserialize)]
+struct EncryptionIndex {
+    version: u32,
+    paths: BTreeSet<String>,
+}
+
+pub(crate) fn encrypted_paths(
+    repo: &HistoryRepo,
+    commit: Option<&str>,
+) -> Result<BTreeSet<String>> {
+    let Some(commit) = commit else {
+        return Ok(BTreeSet::new());
+    };
+    let Some((mode, oid)) = repo.object_at(commit, INDEX)? else {
+        return Ok(BTreeSet::new());
+    };
+    if mode != "100644" {
+        bail!("invalid encrypted-file index mode");
+    }
+    let index: EncryptionIndex =
+        serde_json::from_slice(&repo.cat_object_bounded(&oid, 16 * 1024 * 1024)?)?;
+    if index.version != 1
+        || index
+            .paths
+            .iter()
+            .any(|path| !layout::is_safe_branch_path(path) || control_file(path))
+    {
+        bail!("invalid encrypted-file index");
+    }
+    for path in &index.paths {
+        if repo.object_at(commit, path)?.is_none() {
+            bail!("encrypted file index names a missing file: {path}");
+        }
+    }
+    Ok(index.paths)
+}
+
+fn write_index(
+    repo: &HistoryRepo,
+    upstream: Option<&str>,
+    paths: BTreeSet<String>,
+    out: &mut BTreeMap<String, Option<Object>>,
+) -> Result<()> {
+    let object = if paths.is_empty() {
+        None
+    } else {
+        Some((
+            "100644".into(),
+            repo.hash_blob(&serde_json::to_vec(&EncryptionIndex { version: 1, paths })?)?,
+        ))
+    };
+    let previous = upstream
+        .map(|head| repo.object_at(head, INDEX))
+        .transpose()?
+        .flatten();
+    if previous != object {
+        out.insert(INDEX.into(), object);
+    }
+    Ok(())
+}
 
 #[derive(Serialize, Deserialize)]
 struct Envelope {
@@ -77,9 +139,8 @@ pub(crate) fn decrypt(
     object: &Object,
     interactive: bool,
 ) -> Result<Object> {
-    let Some(outer) = envelope(repo, object, agecrypt::MAX_ENCRYPTED_BYTES)? else {
-        return Ok(object.clone());
-    };
+    let outer = envelope(repo, object, agecrypt::MAX_ENCRYPTED_BYTES)?
+        .ok_or_else(|| eyre::eyre!("missing encrypted file envelope: {path}"))?;
     if control_file(path) {
         bail!("setup configuration itself cannot be encrypted: {path}");
     }
@@ -151,15 +212,14 @@ pub(crate) fn publication(
     let mut existing = BTreeMap::new();
     let mut protected = BTreeSet::new();
     if let Some(commit) = upstream {
-        for item in repo.ls_tree(commit)? {
-            if control_file(&item.path) || item.path.starts_with(".mise-history/") {
-                continue;
-            }
-            let object = (item.mode, item.oid);
-            if let Some(envelope) = envelope(repo, &object, agecrypt::MAX_ENCRYPTED_BYTES)? {
-                protected.insert(item.path.clone());
-                existing.insert(item.path, (object, envelope));
-            }
+        for path in encrypted_paths(repo, Some(commit))? {
+            let object = repo
+                .object_at(commit, &path)?
+                .ok_or_else(|| eyre::eyre!("encrypted file index names a missing file: {path}"))?;
+            let envelope = envelope(repo, &object, agecrypt::MAX_ENCRYPTED_BYTES)?
+                .ok_or_else(|| eyre::eyre!("missing encrypted file envelope: {path}"))?;
+            protected.insert(path.clone());
+            existing.insert(path, (object, envelope));
         }
     }
     for (path, file) in &shared.files {
@@ -178,6 +238,9 @@ pub(crate) fn publication(
         }
     }
     if protected.is_empty() {
+        if !existing.is_empty() {
+            write_index(repo, upstream, BTreeSet::new(), &mut out)?;
+        }
         return Ok(out);
     }
     let strings = crate::system::history::config::file_recipients()?;
@@ -207,16 +270,16 @@ pub(crate) fn publication(
                 .ok_or_else(|| eyre::eyre!("invalid encrypted-file recipient"))
         })
         .collect::<Result<_>>()?;
-    for path in protected {
-        let previous = existing.get(&path);
-        let current = if let Some(change) = changes.get(&path) {
+    for path in &protected {
+        let previous = existing.get(path);
+        let current = if let Some(change) = changes.get(path) {
             change.clone()
         } else if let Some((object, _)) = previous {
-            Some(decrypt(repo, &path, object, interactive)?)
+            Some(decrypt(repo, path, object, interactive)?)
         } else {
             shared
                 .files
-                .get(&path)
+                .get(path)
                 .map(|file| (file.mode.clone(), file.oid.clone()))
         };
         let Some(current) = current else {
@@ -224,16 +287,29 @@ pub(crate) fn publication(
         };
         if let Some((object, envelope)) = previous
             && envelope.scheme == scheme
-            && decrypt(repo, &path, object, interactive)? == current
+            && decrypt(repo, path, object, interactive)? == current
         {
-            out.remove(&path);
+            out.remove(path);
         } else {
             out.insert(
                 path.clone(),
-                Some(encrypt(repo, &path, &current, &scheme, &recipients)?),
+                Some(encrypt(repo, path, &current, &scheme, &recipients)?),
             );
         }
     }
+    let mut indexed: BTreeSet<_> = existing
+        .keys()
+        .filter(|path| protected.contains(*path))
+        .cloned()
+        .collect();
+    for (path, object) in &out {
+        if protected.contains(path) && object.is_some() {
+            indexed.insert(path.clone());
+        } else {
+            indexed.remove(path);
+        }
+    }
+    write_index(repo, upstream, indexed, &mut out)?;
     if out
         .iter()
         .any(|(p, o)| !p.starts_with(".mise-history/") && o.is_some())
@@ -248,6 +324,18 @@ pub(crate) fn publication(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn plaintext_magic_is_not_an_encryption_declaration() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let oid = repo.hash_blob(MAGIC).unwrap();
+        let tree = repo
+            .write_tree(&[("100644".into(), oid.clone(), "tracked/home/literal".into())])
+            .unwrap();
+        let upstream = super::super::reconcile::upstream(&repo, Some(&tree)).unwrap();
+        assert_eq!(upstream.files["tracked/home/literal"].1, oid);
+        assert!(encrypted_paths(&repo, Some(&tree)).unwrap().is_empty());
+    }
     use super::*;
 
     #[test]
@@ -272,15 +360,19 @@ mod tests {
 
     #[test]
     fn envelope_preserves_modes_and_binds_path_and_scheme() {
+        use age::secrecy::ExposeSecret;
         let tmp = tempfile::tempdir().unwrap();
         let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
         let key = age::x25519::Identity::generate();
+        let mut environment = crate::test::EnvVarGuard::new();
+        environment.set("MISE_AGE_KEY", key.to_string().expose_secret());
         let recipients: Vec<Box<dyn age::Recipient + Send>> = vec![Box::new(key.to_public())];
         for mode in ["100644", "100755", "120000"] {
             let object = (mode.into(), repo.hash_blob(b"private contents").unwrap());
             let encrypted =
                 encrypt(&repo, "tracked/home/secret", &object, "scheme", &recipients).unwrap();
             assert_eq!(encrypted.0, "100644");
+            repo.delete_ref(&format!("{CACHE}{}", encrypted.1)).unwrap();
             let wire = repo.cat_object(&encrypted.1).unwrap();
             assert!(!wire.windows(16).any(|w| w == b"private contents"));
             assert_eq!(

@@ -201,7 +201,6 @@ pub(crate) async fn load_ssh_recipient_from_path(path: &Path) -> Result<Box<dyn 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::env;
 
     #[tokio::test]
     async fn test_age_x25519_round_trip_small() -> Result<()> {
@@ -219,7 +218,8 @@ mod tests {
             assert!(format.is_none() || matches!(format, Some(AgeFormat::Raw)));
 
             use age::secrecy::ExposeSecret;
-            env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
+            let mut environment = crate::test::EnvVarGuard::new();
+            environment.set("MISE_AGE_KEY", key.to_string().expose_secret());
             let decrypted = decrypt_age_directive(&EnvDirective::Age {
                 key: "TEST_VAR".to_string(),
                 value,
@@ -227,7 +227,6 @@ mod tests {
                 options: Default::default(),
             })
             .await?;
-            env::remove_var("MISE_AGE_KEY");
 
             assert_eq!(decrypted, plaintext);
         } else {
@@ -252,7 +251,8 @@ mod tests {
             assert_eq!(format, Some(AgeFormat::Zstd));
 
             use age::secrecy::ExposeSecret;
-            env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
+            let mut environment = crate::test::EnvVarGuard::new();
+            environment.set("MISE_AGE_KEY", key.to_string().expose_secret());
             let decrypted = decrypt_age_directive(&EnvDirective::Age {
                 key: "TEST_VAR".to_string(),
                 value,
@@ -260,7 +260,6 @@ mod tests {
                 options: Default::default(),
             })
             .await?;
-            env::remove_var("MISE_AGE_KEY");
 
             assert_eq!(decrypted, plaintext);
         } else {
