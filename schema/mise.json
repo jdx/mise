@@ -4212,8 +4212,12 @@
                 "required": ["line"],
                 "properties": {
                   "content": false,
+                  "mode": false,
+                  "exclude": false,
                   "source": false,
-                  "block": false
+                  "block": false,
+                  "template": false,
+                  "comment": false
                 }
               },
               {

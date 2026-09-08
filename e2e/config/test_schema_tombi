@@ -283,9 +283,15 @@ TOML
   assert_fail "$TOMBI_LINT mise-bad-dotfiles.toml"
 done
 
-# Line edits cannot also declare a block or source, and edit placement only
-# applies to exact-line edits.
-for conflicting_field in 'block = "managed block"' 'source = "dotfiles/snippet"'; do
+# Line edits cannot also declare whole-file or block-only fields, and edit
+# placement only applies to exact-line edits.
+for conflicting_field in \
+  'block = "managed block"' \
+  'source = "dotfiles/snippet"' \
+  'mode = "copy"' \
+  'exclude = ["*.tmp"]' \
+  'template = "tera"' \
+  'comment = "#"'; do
   cat >"$HOME/workdir/mise-bad-dotfiles-position.toml" <<TOML
 [dotfiles]
 "~/.invalid/partial" = { line = "managed line", $conflicting_field, position = "prepend" }
