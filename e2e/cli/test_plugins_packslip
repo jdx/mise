@@ -15,10 +15,11 @@ done
 port=$(cat server-state/port)
 export MISE_URL_REPLACEMENTS="{\"https://api.github.com\":\"http://127.0.0.1:$port\",\"https://github.com\":\"http://127.0.0.1:$port\"}"
 
+export GIT_INVOKED_LOG="$PWD/git-invoked"
 mkdir no-git
 cat >no-git/git <<'EOF'
 #!/usr/bin/env bash
-echo invoked >> "$PWD/git-invoked"
+echo invoked >> "$GIT_INVOKED_LOG"
 exit 1
 EOF
 chmod +x no-git/git
