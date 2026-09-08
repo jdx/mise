@@ -60,7 +60,8 @@ mise bootstrap dotfiles status
 ```
 
 mise uses a systemd user service on Linux, a LaunchAgent on macOS, or a
-Scheduled Task on Windows. The full `mise bootstrap` also installs it.
+Scheduled Task on Windows. On these platforms, the full `mise bootstrap`
+also installs the watcher as a user service, without requiring root.
 See [user services](/bootstrap/services.html#user-services) if it fails to start.
 
 Ordinary edits are saved after the file has been quiet for two seconds by
@@ -270,10 +271,13 @@ Each push includes all accumulated commits, including intermediate saves
 made in manual mode. Files waiting for a manual save or a delayed watcher
 save contribute their last saved contents.
 
-When incoming changes update tools, services, or template sources, run
-`mise bootstrap` to apply that configuration. `pull` restores shared file
-contents; `mise bootstrap dotfiles apply` creates files from the sources,
-templates, and edits in your `[dotfiles]` configuration.
+`pull` applies the complete incoming file set, including configuration and
+its shared sources together; partial pulls are not supported. It does not
+install tools or services, or render templates. When those declarations or
+their sources change, run `mise bootstrap` to deploy them. If only dotfile
+deployment is needed, use `mise bootstrap dotfiles apply` to create files
+from the sources, templates, and edits in `[dotfiles]`. A separate `apply`
+is not needed merely to restore shared tracked-file contents.
 
 A conflict or an unsaved edit can pause pushing and applying incoming
 changes for all tracked files. Local saves and fetching continue. If a
@@ -340,8 +344,13 @@ mise x gh -- gh auth setup-git --hostname github.com
 
 The helper is written to `~/.gitconfig`. Keeping `gh` installed globally
 keeps it available to the background watcher. If Git authentication already
-works in the service's environment, you can use it as-is. SSH remotes need
-an accessible agent or an unencrypted key in that environment.
+works in the service's environment, you can use it as-is. For SSH remotes,
+prefer a passphrase-protected key loaded into an SSH agent that the service
+can access. If unattended syncing needs a key without a passphrase, use a
+dedicated deploy key scoped to this repository, grant write access only
+when pushing is needed, and restrict the private-key file to your user
+(for example, mode `0600` on Unix or an equivalent Windows ACL). Do not
+reuse an unrestricted personal key.
 
 ### How shared history is stored
 

@@ -144,8 +144,9 @@ preflight prevents a missing input from leaving a partially provisioned host.
 3. Built-in managers install missing [`[bootstrap.packages]`](/bootstrap/packages/).
 4. `mise bootstrap files apply` converges
    [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html).
-5. `mise bootstrap services apply` converges existing systemd system units from
-   [`[bootstrap.services]`](/bootstrap/services.html).
+5. [`[bootstrap.services]`](/bootstrap/services.html) converges existing Linux
+   systemd system units and user services on Linux, macOS, and Windows.
+   User services with `requires_tools = true` wait until after tool installation.
 6. `mise bootstrap firewall apply` converges host firewall policy and rules from
    [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html).
 7. `mise bootstrap compose apply` converges
@@ -165,7 +166,8 @@ preflight prevents a missing input from leaving a partially provisioned host.
     as configured.
 14. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
 15. `mise install` installs missing `[tools]`.
-16. Plugin package managers apply after their host tools are available.
+16. Plugin package managers apply after their host tools are available, followed
+    by user services with `requires_tools = true`.
 17. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
 18. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
@@ -298,7 +300,7 @@ want to check one part without installing anything.
 | [`[bootstrap.secrets]`](/bootstrap/secrets.html)                        | Names of secret inputs consumed by managed file templates                   |
 | [`[bootstrap.users]`, `[bootstrap.groups]`](/bootstrap/accounts.html)   | Linux service accounts and groups                                           |
 | [`[bootstrap.files]`, `[bootstrap.directories]`](/bootstrap/files.html) | Managed system paths, content, ownership, and permissions                   |
-| [`[bootstrap.services]`](/bootstrap/services.html)                      | User services on all platforms, and existing Linux system services          |
+| [`[bootstrap.services]`](/bootstrap/services.html)                      | User services on Linux, macOS, and Windows; existing Linux system services  |
 | [`[bootstrap.compose]`](/bootstrap/compose.html)                        | Docker Compose project lifecycle                                            |
 | [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html)               | Package manager plugins                                                     |
 | [`[bootstrap.packages]`](/bootstrap/packages/)                          | OS packages from apk, apt, dnf, pacman, brew, flatpak, mas, or winget       |
