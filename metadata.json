@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZHF934GA1ZGNZAB7H4FG9T",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-dotfiles-readability",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dotfiles.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 322391,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 9691904,
+    "output_tokens": 48465,
+    "api_call_count": 82
+  }
+}
