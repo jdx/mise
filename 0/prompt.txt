@@ -1,0 +1,9 @@
+remove the agents.md changes
+
+---
+
+are there other dotfile-related docs we should improve?
+
+---
+
+do all of them in this pr

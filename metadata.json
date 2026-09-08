@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZH6G4V7XEVS3C5PGT4G9F5",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-dotfiles-readability",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/.vitepress/sidebar.ts",
+    "docs/bootstrap.md",
+    "docs/bootstrap/services.md",
+    "docs/bootstrap/setup.md",
+    "docs/history.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 252085,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 7399296,
+    "output_tokens": 45788,
+    "api_call_count": 63
+  }
+}
