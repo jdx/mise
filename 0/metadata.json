@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZBDCDB00GHSZZ86NK8QWKV",
+  "session_id": "01a07e82-a2c5-78a1-bf56-00d2e89f59b2",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-08T01:51:38.770133Z",
+  "branch": "codex/fix-macos-notification-dispatch",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/history.md",
+    "settings.toml"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "42785da2c02f",
+  "checkpoint_transcript_start": 1587,
+  "transcript_lines_at_start": 1587,
+  "compact_transcript_start": 228,
+  "token_usage": {
+    "input_tokens": 2005,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 354176,
+    "output_tokens": 1085,
+    "api_call_count": 3
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-08T01:51:38.53177Z",
+    "agent_lines": 7,
+    "agent_removed": 9,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 7,
+    "total_lines_changed": 16,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
