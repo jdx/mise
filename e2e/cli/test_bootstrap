@@ -256,7 +256,7 @@ assert_succeed "mise bootstrap --dry-run"
 # optional packages are visible but do not count as missing or run unattended
 cat <<EOF >mise.toml
 [bootstrap.packages]
-"brew:__mise_optional_e2e__" = { optional = true }
+"brew:__mise_optional_e2e__" = { state = "optional" }
 EOF
 assert_contains "mise bootstrap packages status" "optional"
 assert_succeed "mise bootstrap packages status --missing"

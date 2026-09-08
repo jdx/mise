@@ -912,11 +912,15 @@ impl MiseToml {
             .is_none_or(|bootstrap| !bootstrap.packages.contains_key(spec));
         if is_missing
             && let Some(PackageTomlConfig::Options(options)) = fallback
-            && (!options.os.is_empty() || options.adopt.is_some() || options.optional)
+            && (!options.os.is_empty()
+                || options.adopt.is_some()
+                || options.state == crate::system::PackageDesiredStateTomlConfig::Optional)
         {
             let mut options = options.clone();
             options.version = version.to_string();
-            options.state = crate::system::PackageDesiredStateTomlConfig::Present;
+            if options.state == crate::system::PackageDesiredStateTomlConfig::Absent {
+                options.state = crate::system::PackageDesiredStateTomlConfig::Present;
+            }
             self.bootstrap
                 .get_or_insert_with(Default::default)
                 .packages
@@ -949,8 +953,8 @@ impl MiseToml {
             if let Some(adopt) = options.adopt {
                 value.insert("adopt", Value::from(adopt));
             }
-            if options.optional {
-                value.insert("optional", Value::from(true));
+            if options.state == crate::system::PackageDesiredStateTomlConfig::Optional {
+                value.insert("state", Value::from("optional"));
             }
             packages.insert(spec, Item::Value(Value::InlineTable(value)));
             return Ok(());
@@ -3373,7 +3377,7 @@ mod tests {
         "apt:curl" = "8.5.0-2"
         "brew:postgresql@17" = "latest"
         "brew-cask:1password" = { version = "latest", os = "macos", adopt = true }
-        "brew-cask:ghostty" = { os = "macos", optional = true }
+        "brew-cask:ghostty" = { os = "macos", state = "optional" }
         "brew-cask:font-example" = { os = ["linux", "macos"] }
         "future-manager:whatever" = "latest"
 
@@ -3406,7 +3410,8 @@ mod tests {
         ));
         assert!(matches!(
             system.packages.get("brew-cask:ghostty"),
-            Some(crate::system::PackageTomlConfig::Options(options)) if options.optional
+            Some(crate::system::PackageTomlConfig::Options(options))
+                if options.state == crate::system::PackageDesiredStateTomlConfig::Optional
         ));
         assert_eq!(
             system.packages.get("apt:curl").unwrap().version(),
@@ -3731,7 +3736,6 @@ mod tests {
                         version: "1.0.0".to_string(),
                         os: vec![],
                         adopt: None,
-                        optional: false,
                         state: crate::system::PackageDesiredStateTomlConfig::Present,
                     });
                 cf.update_bootstrap_package_with_fallback(

@@ -4509,15 +4509,10 @@
                     "type": "boolean",
                     "description": "adopt an existing identical brew-cask app artifact instead of replacing it"
                   },
-                  "optional": {
-                    "type": "boolean",
-                    "description": "offer this package during interactive bootstrap without requiring it on every machine",
-                    "default": false
-                  },
                   "state": {
                     "type": "string",
-                    "description": "desired package state; only pacman currently supports absent",
-                    "enum": ["present", "absent"],
+                    "description": "desired package state; optional packages may be absent, and only pacman currently supports absent",
+                    "enum": ["present", "optional", "absent"],
                     "default": "present"
                   }
                 },

@@ -158,9 +158,6 @@ pub(crate) struct PackageOptionsTomlConfig {
     /// Adopt an identical existing cask artifact instead of replacing it.
     #[serde(default)]
     pub adopt: Option<bool>,
-    /// Allow this package to be absent unless it is selected during bootstrap.
-    #[serde(default)]
-    pub optional: bool,
     #[serde(default)]
     pub state: PackageDesiredStateTomlConfig,
 }
@@ -170,6 +167,7 @@ pub(crate) struct PackageOptionsTomlConfig {
 pub(crate) enum PackageDesiredStateTomlConfig {
     #[default]
     Present,
+    Optional,
     Absent,
 }
 
@@ -188,18 +186,12 @@ impl PackageTomlConfig {
         }
     }
 
-    fn optional(&self) -> bool {
-        matches!(self, Self::Options(options) if options.optional)
-    }
-
     fn desired(&self) -> packages::PackageDesiredState {
         match self {
             Self::Version(_) => packages::PackageDesiredState::Present,
             Self::Options(options) => match options.state {
-                PackageDesiredStateTomlConfig::Present if options.optional => {
-                    packages::PackageDesiredState::Optional
-                }
                 PackageDesiredStateTomlConfig::Present => packages::PackageDesiredState::Present,
+                PackageDesiredStateTomlConfig::Optional => packages::PackageDesiredState::Optional,
                 PackageDesiredStateTomlConfig::Absent => packages::PackageDesiredState::Absent,
             },
         }
@@ -640,12 +632,6 @@ fn package_requests_from_config_files(
     for (spec, package) in merged {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
-            continue;
-        }
-        if package.optional() && package.desired() == packages::PackageDesiredState::Absent {
-            warn!(
-                "[bootstrap.packages]: optional = true cannot be combined with state = \"absent\" for '{spec}'; skipping it"
-            );
             continue;
         }
         match parse_spec(&spec) {
@@ -1893,7 +1879,7 @@ mod tests {
         let config = r#"
             [bootstrap.packages]
             "brew:required" = "latest"
-            "brew:optional" = { optional = true }
+            "brew:optional" = { state = "optional" }
         "#;
         let (_dir, config_files) = config_map_from_toml(&[("config.toml", config)])?;
         let brew = packages_from_config_files(&config_files)
