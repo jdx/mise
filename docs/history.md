@@ -433,9 +433,10 @@ silent; a later pause can notify again after recovery. Set
 never hold up history or sync.
 
 On macOS, allow notifications for mise when prompted; change this later in
-System Settings → Notifications → mise. Builds without notification support warn
-when a setup repository is connected. Notification failures never block sync.
-Alerts point to `mise bootstrap dotfiles status` for resolution steps.
+System Settings → Notifications → mise. Unofficial builds, such as Homebrew,
+warn when connecting a setup repository because notifications are unavailable.
+Notification failures never block sync. Alerts point to
+`mise bootstrap dotfiles status` for resolution steps.
 
 **Applying.** `mise bootstrap dotfiles pull` writes pending changes as one recoverable
 transaction (a protective checkpoint first, each file journaled, reload

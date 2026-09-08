@@ -1306,9 +1306,9 @@ type = "Duration"
 default = true
 description = "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync."
 docs = """
-On macOS, allow notifications for mise when prompted. Builds without notification
-support warn when a setup repository is connected. Unsupported platforms log the
-conflict only.
+On macOS, allow notifications for mise when prompted. Unofficial builds, such as
+Homebrew, warn when connecting a setup repository because notifications are
+unavailable. Unsupported platforms log the conflict only.
 `mise bootstrap dotfiles status` and `mise doctor` show the same conflicts without notifications.
 """
 env = "MISE_HISTORY_NOTIFY"

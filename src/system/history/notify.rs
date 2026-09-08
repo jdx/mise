@@ -50,7 +50,7 @@ pub(crate) fn send(title: &str, body: &str) {
 pub(crate) fn warn_if_release_signing_unavailable() {
     if crate::config::Settings::get().history.notify && !macos::release_signed() {
         warn!(
-            "this source-built mise cannot show macOS desktop notifications for setup conflicts because its embedded helper is not Developer ID signed; `mise bootstrap dotfiles status` and `mise doctor` still report conflicts"
+            "macOS desktop notifications are unavailable in unofficial builds such as Homebrew; `mise bootstrap dotfiles status` and `mise doctor` still report setup conflicts"
         );
     }
 }
