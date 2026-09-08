@@ -1,0 +1,5 @@
+backends = ["github:mongodb/kingfisher"]
+bins = ["kingfisher"]
+description = "Secret scanner with live validation and blast radius analysis"
+test = { cmd = "kingfisher --version", expected = "kingfisher {{version}}" }
+version_order = "semver"

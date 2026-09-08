@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Descriptions live in ordinary ancestry and survive a clone without Git notes.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+echo native >~/.native
+assert_succeed "mise bootstrap dotfiles track ~/.native"
+original=$(mise bootstrap dotfiles history show latest --json | jq -r .uuid)
+repo="$MISE_STATE_DIR/history/repo.git"
+tree=$(git --git-dir="$repo" rev-parse 'main^{tree}')
+assert_succeed "mise bootstrap dotfiles history describe $original 'configure native shell'"
+assert "mise bootstrap dotfiles history show $original --json | jq -r .description" 'configure native shell'
+assert "git --git-dir=$repo rev-parse main^{tree}" "$tree"
+assert "git --git-dir=$repo for-each-ref --format='%(refname)' refs/notes/" ''
+assert_succeed "git --git-dir=$repo merge-base --is-ancestor $original main"
+
+origin="$PWD/setup.git"
+git init -q --bare -b main "$origin"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
+assert "git --git-dir=$origin rev-parse main" "$(git --git-dir="$repo" rev-parse main)"
+second="$(dirname "$HOME")/annotation-machine"
+mkdir -p "$second/.local/state/mise/history"
+git clone -q --bare "$origin" "$second/.local/state/mise/history/repo.git"
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export second
+export -f b
+assert "b bootstrap dotfiles history show $original --json | jq -r .description" 'configure native shell'
+assert "git --git-dir=$second/.local/state/mise/history/repo.git for-each-ref --format='%(refname)' refs/notes/" ''

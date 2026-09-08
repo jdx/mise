@@ -744,12 +744,31 @@ a:hover > div + .card-link::after {
 .hero-copy {
   min-width: 0;
 }
-.hero-eyebrow {
-  margin: 0 0 24px;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.75rem;
+.hero-title {
+  margin: 0;
   color: var(--vp-c-brand-1);
-  line-height: 1.7;
+  font-size: clamp(2.5rem, 4.5vw, 3.75rem);
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  line-height: 1.1;
+}
+.hero-meaning {
+  margin: 12px 0 0;
+  color: var(--vp-c-text-1);
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+}
+.hero-pronunciation {
+  margin: 16px 0 0;
+  color: var(--vp-c-text-2);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.hero-pronunciation strong {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
 }
 .hero-lede {
   max-width: 42ch;
@@ -1039,9 +1058,6 @@ a:hover > div + .card-link::after {
   .home-hero {
     padding: 40px 24px;
     gap: 32px;
-  }
-  .hero-eyebrow {
-    margin-bottom: 20px;
   }
   .hero-lede {
     font-size: 1rem;

@@ -162,7 +162,8 @@ same part names and can be repeated or comma-separated, for example
 exclusive.
 
 Use `mise bootstrap --update` to refresh system package manager metadata
-before installing packages (apk: `--update-cache`, apt: `apt-get update`) and
+before installing packages (apk: `--update-cache`, apt: `apt-get update`,
+winget: `winget source update`) and
 update declared repositories. Check the [repo update rules](/bootstrap/repos.html)
 for clean-worktree and fast-forward requirements.
 
@@ -265,27 +266,27 @@ want to check one part without installing anything.
 
 ## What goes where
 
-| Config                                                                  | Use for                                                       |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------- |
-| [`[bootstrap.secrets]`](/bootstrap/secrets.html)                        | Names of secret inputs consumed by managed file templates     |
-| [`[bootstrap.users]`, `[bootstrap.groups]`](/bootstrap/accounts.html)   | Linux service accounts and groups                             |
-| [`[bootstrap.files]`, `[bootstrap.directories]`](/bootstrap/files.html) | Managed system paths, content, ownership, and permissions     |
-| [`[bootstrap.services]`](/bootstrap/services.html)                      | Existing Linux systemd system units and file-change handlers  |
-| [`[bootstrap.compose]`](/bootstrap/compose.html)                        | Docker Compose project lifecycle                              |
-| [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html)               | Package manager plugins                                       |
-| [`[bootstrap.packages]`](/bootstrap/packages/)                          | OS packages from apk, apt, dnf, pacman, brew, flatpak, or mas |
-| [`[bootstrap.repos]`](/bootstrap/repos.html)                            | Git repos cloned before dotfiles are applied                  |
-| [`[dotfiles]`](/dotfiles.html)                                          | Whole-file dotfiles and small managed edits to existing files |
-| [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)              | mise activation snippets in shell startup files               |
-| [`[bootstrap.macos.*]`](/bootstrap/macos-defaults.html)                 | Curated macOS preferences for Dock/Finder/keyboard/trackpad   |
-| [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html)          | macOS user preferences written through `defaults write`       |
-| [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)           | macOS user LaunchAgents written and loaded with `launchctl`   |
-| [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)            | Linux systemd user services managed with `systemctl --user`   |
-| [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html)                | Linux host firewall policy and managed rules                  |
-| [`[bootstrap.user]`](/bootstrap/user.html)                              | Current-user settings such as `login_shell`                   |
-| `[bootstrap.hooks]`                                                     | Commands that run at named bootstrap phases                   |
-| `[tools]`                                                               | Versioned dev tools managed by mise                           |
-| `[tasks.bootstrap]`                                                     | Anything custom that should run after tools are installed     |
+| Config                                                                  | Use for                                                               |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| [`[bootstrap.secrets]`](/bootstrap/secrets.html)                        | Names of secret inputs consumed by managed file templates             |
+| [`[bootstrap.users]`, `[bootstrap.groups]`](/bootstrap/accounts.html)   | Linux service accounts and groups                                     |
+| [`[bootstrap.files]`, `[bootstrap.directories]`](/bootstrap/files.html) | Managed system paths, content, ownership, and permissions             |
+| [`[bootstrap.services]`](/bootstrap/services.html)                      | Existing Linux systemd system units and file-change handlers          |
+| [`[bootstrap.compose]`](/bootstrap/compose.html)                        | Docker Compose project lifecycle                                      |
+| [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html)               | Package manager plugins                                               |
+| [`[bootstrap.packages]`](/bootstrap/packages/)                          | OS packages from apk, apt, dnf, pacman, brew, flatpak, mas, or winget |
+| [`[bootstrap.repos]`](/bootstrap/repos.html)                            | Git repos cloned before dotfiles are applied                          |
+| [`[dotfiles]`](/dotfiles.html)                                          | Whole-file dotfiles and small managed edits to existing files         |
+| [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)              | mise activation snippets in shell startup files                       |
+| [`[bootstrap.macos.*]`](/bootstrap/macos-defaults.html)                 | Curated macOS preferences for Dock/Finder/keyboard/trackpad           |
+| [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html)          | macOS user preferences written through `defaults write`               |
+| [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)           | macOS user LaunchAgents written and loaded with `launchctl`           |
+| [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)            | Linux systemd user services managed with `systemctl --user`           |
+| [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html)                | Linux host firewall policy and managed rules                          |
+| [`[bootstrap.user]`](/bootstrap/user.html)                              | Current-user settings such as `login_shell`                           |
+| `[bootstrap.hooks]`                                                     | Commands that run at named bootstrap phases                           |
+| `[tools]`                                                               | Versioned dev tools managed by mise                                   |
+| `[tasks.bootstrap]`                                                     | Anything custom that should run after tools are installed             |
 
 Use declarative sections when mise can inspect and converge the state. Use
 `[tasks.bootstrap]` for imperative setup that does not fit those sections,
@@ -343,7 +344,7 @@ mise bootstrap --yes
 ### Add a package
 
 ```sh
-mise bootstrap packages use apk:zlib-dev apt:libssl-dev
+mise bootstrap packages use apk:zlib-dev apt:libssl-dev winget:BurntSushi.ripgrep.MSVC
 ```
 
 This writes `[bootstrap.packages]` and installs what is missing.

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# Validate required template inputs even when configuration is not tracked.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+echo template >~/.template
+echo base >~/.other
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.template" = { mode = "track" }
+"~/.other" = { mode = "track" }
+"~/.rendered" = { mode = "template", source = "~/.template" }
+TOML
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
+second="$(dirname "$HOME")/second"
+mkdir -p "$second/.config/mise" "$second/.local/state/mise/history"
+git clone -q --bare "$origin" "$second/.local/state/mise/history/repo.git"
+cp "$MISE_CONFIG_DIR/config.toml" "$second/.config/mise/config.toml"
+echo template >"$second/.template"
+echo base >"$second/.other"
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export second
+export -f b
+assert_succeed "b bootstrap dotfiles origin set file://$origin --sync manual --yes"
+mv ~/.template ~/.template-removed-for-test
+echo incoming >~/.other
+assert_succeed 'mise bootstrap dotfiles save'
+assert_succeed 'mise bootstrap dotfiles sync'
+published=$(git --git-dir="$origin" rev-parse main)
+assert_succeed 'b bootstrap dotfiles sync --fetch-only'
+assert_contains 'b bootstrap dotfiles status' 'required source'
+assert_fail 'b bootstrap dotfiles pull --yes' 'paused'
+assert "cat $second/.other" 'base'
+assert "cat $second/.template" 'template'
+assert "git --git-dir=$origin rev-parse main" "$published"
+assert_fail "git --git-dir=$origin cat-file -e main:config/config.toml"
