@@ -20,7 +20,7 @@ permissions: {}
 
 jobs:
   trusted:
-    if: ${{ github.actor == 'jdx' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'jdx')) }}
+    if: ${{ (github.actor == 'jdx' || github.actor == 'mise-en-dev') && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.user.login == 'jdx' || github.event.pull_request.user.login == 'mise-en-dev'))) }}
     permissions:
       contents: read
     uses: ./.github/workflows/test-impl.yml
@@ -32,7 +32,7 @@ jobs:
       MISE_VERSIONS_API_SECRET: ${{ secrets.MISE_VERSIONS_API_SECRET }}
 
   untrusted:
-    if: ${{ github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx')) }}
+    if: ${{ (github.actor != 'jdx' && github.actor != 'mise-en-dev') || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev'))) }}
     permissions:
       contents: read
     uses: ./.github/workflows/test-impl.yml
