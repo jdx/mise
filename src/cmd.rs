@@ -120,6 +120,7 @@ pub(crate) struct CmdLineRunner<'a> {
     pass_signals: bool,
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
+    stderr_as_stdout: bool,
     observe_stdout: Option<OutputObserver<'a>>,
     observe_stderr: Option<OutputObserver<'a>>,
     timeout: Option<Duration>,
@@ -569,6 +570,7 @@ impl<'a> CmdLineRunner<'a> {
             pass_signals: false,
             on_stdout: None,
             on_stderr: None,
+            stderr_as_stdout: false,
             observe_stdout: None,
             observe_stderr: None,
             timeout: None,
@@ -656,6 +658,11 @@ impl<'a> CmdLineRunner<'a> {
 
     pub(crate) fn with_on_stderr<F: Fn(String) + Send + 'a>(mut self, on_stderr: F) -> Self {
         self.on_stderr = Some(Box::new(on_stderr));
+        self
+    }
+
+    pub(crate) fn stderr_as_stdout(mut self) -> Self {
+        self.stderr_as_stdout = true;
         self
     }
 
@@ -950,7 +957,15 @@ impl<'a> CmdLineRunner<'a> {
                 }
                 ChildProcessOutput::Stderr(line) => {
                     let line = self.redactor.redact(&line);
-                    self.on_stderr(line);
+                    if self.stderr_as_stdout
+                        && self.on_stderr.is_none()
+                        && let Some(output) = &mut failure_output
+                    {
+                        self.on_stderr(line.clone());
+                        output.push(line);
+                    } else {
+                        self.on_stderr(line);
+                    }
                 }
                 ChildProcessOutput::ExitStatus(s) => {
                     status = Some(s);
@@ -1135,7 +1150,15 @@ impl<'a> CmdLineRunner<'a> {
                         }
                         ChildProcessOutput::Stderr(line) => {
                             let line = self.redactor.redact(&line);
-                            self.on_stderr(line);
+                            if self.stderr_as_stdout
+                                && self.on_stderr.is_none()
+                                && let Some(output) = &mut failure_output
+                            {
+                                self.on_stderr(line.clone());
+                                output.push(line);
+                            } else {
+                                self.on_stderr(line);
+                            }
                         }
                         ChildProcessOutput::ExitStatus(_) => {}
                         #[cfg(not(any(test, windows)))]
@@ -1183,7 +1206,15 @@ impl<'a> CmdLineRunner<'a> {
                 }
                 ChildProcessOutput::Stderr(line) => {
                     let line = self.redactor.redact(&line);
-                    self.on_stderr(line);
+                    if self.stderr_as_stdout
+                        && self.on_stderr.is_none()
+                        && let Some(output) = &mut failure_output
+                    {
+                        self.on_stderr(line.clone());
+                        output.push(line);
+                    } else {
+                        self.on_stderr(line);
+                    }
                 }
                 ChildProcessOutput::ExitStatus(_) => {}
                 #[cfg(not(any(test, windows)))]
@@ -1789,6 +1820,20 @@ impl<'a> CmdLineRunner<'a> {
             on_stderr(line);
             return;
         }
+        if self.stderr_as_stdout {
+            if let Some(pr) = self
+                .pr
+                .or(self.pr_arc.as_ref().map(|arc| arc.as_ref().as_ref()))
+            {
+                if !line.trim().is_empty() {
+                    pr.set_process_output(line);
+                }
+            } else {
+                let mut stdout = std::io::stdout().lock();
+                let _ = writeln!(stdout, "{line}");
+            }
+            return;
+        }
         match self
             .pr
             .or(self.pr_arc.as_ref().map(|arc| arc.as_ref().as_ref()))
@@ -2024,12 +2069,74 @@ mod tests {
     #[derive(Debug, Default)]
     struct RecordingReport {
         lines: Mutex<Vec<String>>,
+        messages: Mutex<Vec<String>>,
     }
 
     impl SingleReport for RecordingReport {
         fn println(&self, message: String) {
             self.lines.lock().unwrap().push(message);
         }
+
+        fn set_message(&self, message: String) {
+            self.messages.lock().unwrap().push(message);
+        }
+    }
+
+    #[test]
+    fn test_stderr_as_stdout_routes_through_process_output() {
+        let report = RecordingReport::default();
+        super::CmdLineRunner::new("sh")
+            .args(["-c", "printf 'version banner\\n' >&2"])
+            .with_pr(&report)
+            .stderr_as_stdout()
+            .execute()
+            .unwrap();
+
+        assert!(report.lines.lock().unwrap().is_empty());
+        assert_eq!(
+            *report.messages.lock().unwrap(),
+            vec!["version banner".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_stderr_as_stdout_replays_hidden_output_on_failure() {
+        let report = RecordingReport::default();
+        drop(
+            super::CmdLineRunner::new("sh")
+                .args(["-c", "printf 'verification failed\\n' >&2; exit 1"])
+                .with_pr(&report)
+                .stderr_as_stdout()
+                .execute()
+                .unwrap_err(),
+        );
+
+        assert_eq!(
+            *report.lines.lock().unwrap(),
+            vec!["verification failed".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_stderr_callback_is_not_replayed_on_failure() {
+        let report = RecordingReport::default();
+        let callback_lines = Arc::new(Mutex::new(Vec::new()));
+        let callback_lines_ref = Arc::clone(&callback_lines);
+        drop(
+            super::CmdLineRunner::new("sh")
+                .args(["-c", "printf 'callback failure\n' >&2; exit 1"])
+                .with_pr(&report)
+                .stderr_as_stdout()
+                .with_on_stderr(move |line| callback_lines_ref.lock().unwrap().push(line))
+                .execute()
+                .unwrap_err(),
+        );
+
+        assert!(report.lines.lock().unwrap().is_empty());
+        assert_eq!(
+            *callback_lines.lock().unwrap(),
+            vec!["callback failure".to_string()]
+        );
     }
 
     #[test]

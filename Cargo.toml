@@ -36,6 +36,7 @@ include = [
   "/zipsign.pub",
   "/src/**/*.rs",
   "/src/system/history/notify/macos.m",
+  "/src/system/history/notify/macos.plist",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
   "/src/system/packages/brew/cask_shim.rb",

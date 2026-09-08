@@ -997,8 +997,8 @@ mod tests {
         assert_eq!(split_shell_command("bash -c").unwrap(), sv(&["bash", "-c"]));
         assert_eq!(split_shell_command("sh -c").unwrap(), sv(&["sh", "-c"]));
         assert_eq!(
-            split_shell_command("sh -c -o errexit").unwrap(),
-            sv(&["sh", "-c", "-o", "errexit"])
+            split_shell_command("sh -o errexit -c").unwrap(),
+            sv(&["sh", "-o", "errexit", "-c"])
         );
     }
 

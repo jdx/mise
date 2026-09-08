@@ -61,7 +61,7 @@ impl InstallInto {
         let install_ctx = InstallContext {
             config: config.clone(),
             ts: ts.clone(),
-            pr: mpr.add(&tv.style()),
+            pr: mpr.add(&tv.style()).into(),
             force: true,
             dry_run: false,
             locked: false, // install-into doesn't support locked mode

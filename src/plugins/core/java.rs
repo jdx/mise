@@ -188,6 +188,10 @@ impl JavaPlugin {
     fn test_java(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         CmdLineRunner::new(self.java_bin(tv))
             .with_pr(pr)
+            // `java -version` writes its normal version banner to stderr. Treat
+            // it as ordinary process output so an interactive install can fold
+            // it into the tool's progress row instead of printing three lines.
+            .stderr_as_stdout()
             .env("JAVA_HOME", tv.install_path())
             .env_values(tv.install_env())
             .arg("-version")

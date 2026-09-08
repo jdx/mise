@@ -438,7 +438,7 @@ logins:
 
     #[test]
     fn test_credential_command_shell_preserves_sh_host_arg() {
-        let shell = shell_words::split("sh -c -o errexit").unwrap();
+        let shell = shell_words::split("sh -o errexit -c").unwrap();
         let (program, args) =
             credential_command_shell_from(&shell, "echo token-for-$1", "ghe.example.com").unwrap();
 
@@ -446,9 +446,9 @@ logins:
         assert_eq!(
             args,
             vec![
-                "-c",
                 "-o",
                 "errexit",
+                "-c",
                 "echo token-for-$1",
                 "mise-credential-helper",
                 "ghe.example.com"
