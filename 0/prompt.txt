@@ -1,13 +1,1 @@
-i feel your docs might have too much detail
-
----
-
-what should we do when the user combines absent and optional, also should absent and optional be the same?
-
----
-
-should state be optional?
-
----
-
 ok change it to that
