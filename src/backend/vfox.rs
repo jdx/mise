@@ -103,16 +103,13 @@ fn remove_env_var(env: &mut indexmap::IndexMap<String, String>, key: &str) {
 
 fn normalize_install_log(line: &str) -> String {
     if let Some(raw_url) = line.strip_prefix("Downloading ") {
-        let artifact = Url::parse(raw_url)
-            .ok()
-            .and_then(|url| {
-                url.path_segments()
-                    .and_then(|mut segments| segments.next_back())
-                    .filter(|name| !name.is_empty())
-                    .map(str::to_string)
-            })
-            .unwrap_or_else(|| raw_url.to_string());
-        format!("download {artifact}")
+        let artifact = Url::parse(raw_url).ok().and_then(|url| {
+            url.path_segments()
+                .and_then(|mut segments| segments.next_back())
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+        });
+        artifact.map_or_else(|| "download".to_string(), |name| format!("download {name}"))
     } else if line.starts_with("Verifying ") && line.ends_with(" checksum") {
         "checksum".to_string()
     } else if line.starts_with("Verify ") && line.ends_with(" attestation") {
@@ -846,6 +843,10 @@ mod test {
         assert_eq!(
             normalize_install_log("Downloading https://example.com/releases/tool.tar.gz"),
             "download tool.tar.gz"
+        );
+        assert_eq!(
+            normalize_install_log("Downloading https://example.com/?token=secret"),
+            "download"
         );
         assert_eq!(
             normalize_install_log("Verifying \"/tmp/tool.tar.gz\" checksum"),
