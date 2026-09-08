@@ -1306,12 +1306,10 @@ type = "Duration"
 default = true
 description = "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync."
 docs = """
-Linux uses `notify-send`. Official macOS release binaries use a bundled,
-Developer ID-signed mise helper app with the mise icon; allow notifications for
-mise when macOS asks on first use. Permission can be changed later in System
-Settings > Notifications > mise. No extra notifier is required. Source builds
-without a Developer ID-signed helper cannot show desktop notifications and warn
-when a setup repository is connected. Other platforms log the conflict only.
+Linux uses `notify-send`. On macOS, allow notifications for mise when asked;
+change that later in System Settings → Notifications → mise. Builds without
+notification support warn when a setup repository is connected. Other platforms
+log the conflict only.
 `mise bootstrap dotfiles status` and `mise doctor` show the same conflicts without notifications.
 """
 env = "MISE_HISTORY_NOTIFY"
