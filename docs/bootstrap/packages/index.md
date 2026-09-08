@@ -42,6 +42,7 @@ aliases as `[tools]` (`linux`, `macos`, `windows`, `linux/x64`,
 "brew-cask:1password" = { os = "macos" }
 "brew-cask:font-jetbrains-mono" = { os = ["linux", "macos"] }
 "pacman:libreoffice-fresh" = { state = "absent" }
+"winget:BurntSushi.ripgrep.MSVC" = { os = "windows" }
 ```
 
 `pacman` entries may set `state = "absent"` to declaratively remove a package.
@@ -81,6 +82,7 @@ for host-owned state such as editor extensions and other applications' plugins.
 | `flatpak`      | Linux with the `flatpak` CLI on `PATH` (system scope)          | [Flatpak](/bootstrap/packages/flatpak.html)         |
 | `flatpak-user` | Linux with the `flatpak` CLI on `PATH` (user scope)            | [Flatpak](/bootstrap/packages/flatpak.html)         |
 | `mas`          | macOS with the `mas` CLI on `PATH`                             | [mas](/bootstrap/packages/mas.html)                 |
+| `winget`       | Windows with the `winget` CLI on `PATH`                        | [WinGet](/bootstrap/packages/winget.html)           |
 | plugin         | Declared by the plugin                                         | [Package plugins](/bootstrap/packages/plugins.html) |
 
 ## Semantics
@@ -102,8 +104,9 @@ for host-owned state such as editor extensions and other applications' plugins.
   `brew-cask` works on macOS and supports font-only casks without lifecycle
   hooks or structured flight steps on Linux;
   `flatpak` and `flatpak-user` work on Linux when the `flatpak` CLI is on
-  `PATH`; `mas` works on macOS when the `mas` CLI is on `PATH`. Status commands
-  still list unavailable managers so nothing is silently hidden.
+  `PATH`; `mas` works on macOS when the `mas` CLI is on `PATH`; `winget` works
+  on Windows when the `winget` CLI is on `PATH`. Status commands still list
+  unavailable managers so nothing is silently hidden.
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` prints a one-time hint when packages are
   missing. Explicit `packages apply`, `packages use`, and the full
@@ -125,6 +128,7 @@ mise bootstrap packages apply --update
 
 mise bootstrap packages use apt:curl
 mise bootstrap packages use -g brew:ffmpeg
+mise bootstrap packages use winget:BurntSushi.ripgrep.MSVC
 ```
 
 `apply` without package arguments reads the active configuration. An explicit
@@ -184,6 +188,7 @@ ownership state.
 ```sh
 mise bootstrap packages upgrade --manager apt --dry-run
 mise bootstrap packages upgrade --manager apt
+mise bootstrap packages upgrade --manager winget
 ```
 
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
@@ -196,7 +201,8 @@ yet are skipped — that's `mise bootstrap packages apply`'s job. For brew,
 this pours the formula's current bottle and replaces the old keg; for
 brew-cask, this installs the current cask artifact; for flatpak and flatpak-user,
 this updates the configured applications and runtimes in their respective
-scopes; for mas, this runs `mas upgrade`.
+scopes; for mas, this runs `mas upgrade`; for winget, this runs an exact-ID
+`winget upgrade` for each configured installed package.
 
 `mise doctor` also reports configured system packages and warns when any are
 missing.
