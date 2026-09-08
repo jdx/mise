@@ -10,6 +10,9 @@ alias ll='ls -l'
 alias la='ls -la'
 ''' }
 "~/hosts/dev" = { line = "127.0.0.1 dev.local" }
+"~/prepend.conf/first" = { line = "managed first", position = "prepend" }
+"~/bom-existing.conf/existing" = { line = "already there", position = "prepend" }
+"~/bom-only.conf/append" = { line = "appended" }
 "~/init.lua/mise" = { block = "require('mise')" }
 "~/rendered.conf/sum" = { block = "sum = {{ 1 + 1 }}", template = "tera" }
 "~/execd.conf/execd" = { block = '{{ exec(command="touch $HOME/exec-ran") }}ok', template = "tera" }
@@ -33,6 +36,9 @@ assert_fail "cat ~/exec-ran"
 
 # line edits append to existing files without touching other content
 echo "preexisting content" >~/hosts
+printf 'untouched first\r\nuntouched last\r\n' >~/prepend.conf
+printf '\357\273\277already there\n' >~/bom-existing.conf
+printf '\357\273\277' >~/bom-only.conf
 
 assert_succeed "mise dotfiles apply --yes"
 
@@ -46,6 +52,13 @@ assert_contains "cat ~/.zshrc" "alias la='ls -la'"
 # line was appended, existing content kept
 assert "head -1 ~/hosts" "preexisting content"
 assert_contains "cat ~/hosts" "127.0.0.1 dev.local"
+# prepending preserves every existing byte, including CRLF line endings
+printf 'managed first\r\nuntouched first\r\nuntouched last\r\n' >expected-prepend.conf
+assert_succeed "cmp expected-prepend.conf ~/prepend.conf"
+# a BOM is not part of the first logical line and remains at byte zero
+printf '\357\273\277appended\n' >expected-bom.conf
+assert_succeed "cmp expected-bom.conf ~/bom-only.conf"
+assert "grep -c 'already there' ~/bom-existing.conf" "1"
 # comment prefix inferred from extension
 assert_contains "cat ~/init.lua" "-- >>> mise:mise >>>"
 # template rendered
@@ -67,6 +80,7 @@ assert_contains "mise dotfiles apply --yes 2>&1" "all edits are applied"
 assert_contains "mise bootstrap dotfiles diff ~/rendered.conf/sum 2>&1" "all edits are applied"
 assert_not_contains "mise bootstrap dotfiles diff ~/rendered.conf/sum 2>&1" "(if changed)"
 assert "grep -c 'dev.local' ~/hosts" "1"
+assert "grep -c 'managed first' ~/prepend.conf" "1"
 assert "grep -c 'mise:activate >>>' ~/.zshrc" "1"
 
 # content changes are detected and replace only the block, preserving
@@ -203,6 +217,20 @@ cat <<'EOF' >mise.toml
 EOF
 assert_succeed "mise dotfiles status"
 assert_contains "mise dotfiles status 2>&1" "line may not contain a newline"
+
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/x.conf/position" = { line = "x", position = "middle" }
+EOF
+assert_succeed "mise dotfiles status"
+assert_contains "mise dotfiles status 2>&1" "unknown line position"
+
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/x.conf/position" = { block = "x", position = "prepend" }
+EOF
+assert_succeed "mise dotfiles status"
+assert_contains "mise dotfiles status 2>&1" "position is only valid with line"
 
 cat <<'EOF' >mise.toml
 [dotfiles]

@@ -229,7 +229,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -272,6 +272,7 @@ for other_field in \
   'exclude = ["*.tmp"]' \
   'block = "managed block"' \
   'line = "managed line"' \
+  'position = "prepend"' \
   'template = "tera"' \
   'comment = "#"'; do
   cat >"$HOME/workdir/mise-bad-dotfiles.toml" <<TOML
@@ -281,6 +282,30 @@ TOML
 
   assert_fail "$TOMBI_LINT mise-bad-dotfiles.toml"
 done
+
+# Line edits cannot also declare whole-file or block-only fields, and edit
+# placement only applies to exact-line edits.
+for conflicting_field in \
+  'block = "managed block"' \
+  'source = "dotfiles/snippet"' \
+  'mode = "copy"' \
+  'exclude = ["*.tmp"]' \
+  'template = "tera"' \
+  'comment = "#"'; do
+  cat >"$HOME/workdir/mise-bad-dotfiles-position.toml" <<TOML
+[dotfiles]
+"~/.invalid/partial" = { line = "managed line", $conflicting_field, position = "prepend" }
+TOML
+
+  assert_fail "$TOMBI_LINT mise-bad-dotfiles-position.toml"
+done
+
+cat >"$HOME/workdir/mise-bad-dotfiles-position.toml" <<'TOML'
+[dotfiles]
+"~/.invalid/partial" = { block = "managed block", position = "prepend" }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-dotfiles-position.toml"
 
 cat >"$HOME/workdir/mise-bad-env-default.toml" <<'TOML'
 [env]

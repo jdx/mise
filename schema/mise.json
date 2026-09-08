@@ -4173,7 +4173,20 @@
               },
               "line": {
                 "type": "string",
-                "description": "exact line to ensure exists (appended if absent)"
+                "description": "exact line to ensure exists"
+              },
+              "position": {
+                "type": "string",
+                "default": "append",
+                "description": "where to insert a missing line",
+                "anyOf": [
+                  {
+                    "enum": ["append", "prepend"]
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
               },
               "comment": {
                 "type": "string",
@@ -4190,13 +4203,28 @@
                   "exclude": false,
                   "block": false,
                   "line": false,
+                  "position": false,
+                  "template": false,
+                  "comment": false
+                }
+              },
+              {
+                "required": ["line"],
+                "properties": {
+                  "content": false,
+                  "mode": false,
+                  "exclude": false,
+                  "source": false,
+                  "block": false,
                   "template": false,
                   "comment": false
                 }
               },
               {
                 "properties": {
-                  "content": false
+                  "content": false,
+                  "line": false,
+                  "position": false
                 }
               }
             ],

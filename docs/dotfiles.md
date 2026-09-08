@@ -322,6 +322,7 @@ alias ll='ls -l'
 alias la='ls -la'
 ''' }
 "/etc/hosts/dev" = { line = "127.0.0.1 dev.local" }
+"/etc/zshrc/zdotdir" = { line = 'ZDOTDIR=$HOME/.config/zsh/', position = "prepend" }
 "~/.gitconfig/identity" = { source = "snippets/git-identity.tmpl", template = "tera" }
 ```
 
@@ -349,10 +350,11 @@ be overridden with `comment = "..."`. Files that can't hold line comments
 at all (strict JSON, XML) aren't a fit for blocks — use a whole-file entry
 instead.
 
-A `line` ensures an exact line exists somewhere in the file, appending it at
-the end if absent. It never modifies or removes other lines, which is what
-makes it safely idempotent. The value must be a single line; use a block for
-multi-line content.
+A `line` ensures an exact line exists somewhere in the file. A missing line is
+appended by default; set `position = "prepend"` to put it at the beginning
+instead. An existing exact match is left wherever it is. Applying a line edit
+preserves all other bytes, including the file's existing line endings. The
+value must be a single line; use a block for multi-line content.
 
 ## Semantics
 
@@ -388,7 +390,7 @@ the target file's content without `--force` — that is the declared intent of
 those modes. Existing symlinks can be repointed; inspect the diff before changing which source a target uses.
 
 Edit entries never need `--force`: a block owns only what's between its
-markers, and a line only ever appends. Two cases are refused with an error
+markers, and a line only inserts when its exact content is absent. Two cases are refused with an error
 instead of guessed at: corrupted markers and targets that are symlinks. An
 edit through a symlink would modify whatever the link points at, often a
 `[dotfiles]` source, so point the edit at the real file instead.
