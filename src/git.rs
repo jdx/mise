@@ -26,7 +26,7 @@ macro_rules! git_cmd {
     ( $dir:expr $(, $arg:expr )* $(,)? ) => {
         {
             let safe = format!("safe.directory={}", $dir.display());
-            sanitize_git_env(cmd!("git", "-C", $dir, "-c", safe, "-c", "core.autocrlf=false" $(, $arg)*))
+            sanitize_git_env(cmd!("git", "-c", github_credential_config(), "-C", $dir, "-c", safe, "-c", "core.autocrlf=false" $(, $arg)*))
         }
     }
 }
@@ -204,7 +204,8 @@ impl Git {
             && std::env::var_os("MISE_GITHUB_RELAY_SOCKET").is_none()
         {
             debug!("cloning {} to {} with gix", url, self.dir.display());
-            let mut prepare_clone = gix::prepare_clone(url, &self.dir)?;
+            let mut prepare_clone = gix::prepare_clone(url, &self.dir)?
+                .with_in_memory_config_overrides([github_credential_config()]);
 
             if let Some(branch) = named_branch {
                 prepare_clone = prepare_clone.with_ref_name(Some(branch))?;
@@ -236,6 +237,8 @@ impl Git {
 
         let mut cmd = sanitize_git_cmd_runner(
             CmdLineRunner::new("git")
+                .arg("-c")
+                .arg(github_credential_config())
                 .arg("clone")
                 .arg("-q")
                 .arg("-o")
@@ -498,6 +501,18 @@ fn path_from_git_bytes(path: &[u8]) -> Result<PathBuf> {
             .wrap_err("Git returned a non-UTF-8 path")?
             .into())
     }
+}
+
+/// Command-local configuration: mise does not write credentials or the helper
+/// into repository configuration. Existing Git helpers retain their own policy.
+/// Git invokes the helper only when authentication is needed. The helper also
+/// validates the protocol and host before resolving any credentials.
+fn github_credential_config() -> String {
+    let executable = crate::env::MISE_BIN.to_string_lossy();
+    #[cfg(windows)]
+    let executable = executable.replace('\\', "/");
+    let executable = shell_escape::unix::escape(executable.into());
+    format!("credential.https://github.com.helper=!{executable} git-credential")
 }
 
 fn get_git_version() -> Result<String> {
@@ -863,6 +878,7 @@ impl GitPlumbing {
         if !console::user_attended_stderr() {
             cmd.env("GIT_TERMINAL_PROMPT", "0");
         }
+        cmd.args(["-c", &github_credential_config()]);
         cmd.env("GIT_OPTIONAL_LOCKS", "0")
             .env("LC_ALL", "C")
             .stdin(std::process::Stdio::null());
