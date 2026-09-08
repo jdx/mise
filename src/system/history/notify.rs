@@ -1,7 +1,8 @@
 //! Optional desktop notifications for sync conflicts that newly need a
 //! decision (`settings.history.notify`, on by default). Best effort: the
-//! notifier runs and is reaped on a worker thread, a missing desktop or tool is a
-//! debug line, and nothing here ever holds up a capture or a sync.
+//! notifier is prepared before it is dispatched, then runs and is reaped on a
+//! worker thread. A missing desktop or tool is a debug line, and delivery never
+//! holds up a capture or a sync.
 
 use std::process::{Command, Stdio};
 
@@ -36,36 +37,73 @@ fn cache_logo(path: &std::path::Path) -> eyre::Result<()> {
 
 /// Shows a notification with `title` and `body`, if a notifier is available.
 pub(crate) fn send(title: &str, body: &str) {
-    let title = title.to_owned();
-    let body = body.to_owned();
-    if let Err(err) = dispatch(move || {
-        notifier(&title, &body).ok_or_else(|| std::io::Error::other("desktop notifier unavailable"))
-    }) {
-        debug!("history: could not start notification worker: {err}");
+    let Some(command) = notifier(title, body) else {
+        debug!("history: desktop notifier unavailable");
+        return;
+    };
+    if let Err(err) = dispatch(command) {
+        debug!("history: could not dispatch notification: {err}");
     }
 }
 
+#[cfg(target_os = "macos")]
+pub(crate) fn warn_if_release_signing_unavailable() {
+    if crate::config::Settings::get().history.notify && !macos::release_signed() {
+        warn!(
+            "macOS desktop notifications are unavailable in unofficial builds such as Homebrew; `mise bootstrap dotfiles status` and `mise doctor` still report setup conflicts"
+        );
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn warn_if_release_signing_unavailable() {}
+
 fn dispatch(
-    prepare: impl FnOnce() -> std::io::Result<Command> + Send + 'static,
+    mut command: Command,
 ) -> std::io::Result<std::thread::JoinHandle<std::io::Result<std::process::ExitStatus>>> {
-    // Prepare the bundle and reap the child off the watcher thread.
-    std::thread::Builder::new()
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let (started_tx, started_rx) = std::sync::mpsc::sync_channel(0);
+    let worker = std::thread::Builder::new()
         .name("mise-notification".into())
         .spawn(move || {
-            let result = prepare().and_then(|mut command| {
-                command
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()
-            });
+            // A short-lived `mise bootstrap dotfiles sync` may exit as soon as
+            // dispatch returns. Confirm that the helper process exists first;
+            // it can finish independently if this worker then goes away.
+            let mut child = match command.spawn() {
+                Ok(child) => {
+                    let _ = started_tx.send(Ok(()));
+                    child
+                }
+                Err(err) => {
+                    let notice = std::io::Error::new(err.kind(), err.to_string());
+                    let _ = started_tx.send(Err(notice));
+                    return Err(err);
+                }
+            };
+            let result = child.wait();
             match &result {
                 Ok(status) if status.success() => debug!("history: notifier completed"),
                 Ok(status) => debug!("history: notifier exited with {status}"),
                 Err(err) => debug!("history: could not run notifier: {err}"),
             }
             result
-        })
+        })?;
+    match started_rx.recv() {
+        Ok(Ok(())) => Ok(worker),
+        Ok(Err(err)) => {
+            let _ = worker.join();
+            Err(err)
+        }
+        Err(err) => {
+            let _ = worker.join();
+            Err(std::io::Error::other(format!(
+                "notification worker stopped before starting the helper: {err}"
+            )))
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -110,20 +148,10 @@ mod tests {
     fn notification_worker_reaps_the_child_and_reports_spawn_errors() {
         let mut command = Command::new("/bin/sh");
         command.args(["-c", "exit 7"]);
-        let status = dispatch(move || Ok(command))
-            .unwrap()
-            .join()
-            .unwrap()
-            .unwrap();
+        let status = dispatch(command).unwrap().join().unwrap().unwrap();
         assert_eq!(status.code(), Some(7));
         let missing = tempfile::tempdir().unwrap().path().join("missing-notifier");
-        assert!(
-            dispatch(move || Ok(Command::new(missing)))
-                .unwrap()
-                .join()
-                .unwrap()
-                .is_err()
-        );
+        assert!(dispatch(Command::new(missing)).is_err());
     }
 
     #[test]

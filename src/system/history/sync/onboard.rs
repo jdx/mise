@@ -303,6 +303,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         status.disconnected = false;
     })?;
     super::origin::write_config(&onboarding.origin, &onboarding.branch, None)?;
+    crate::system::history::notify::warn_if_release_signing_unavailable();
 
     let applied = apply::apply(store, &tracked, &ApplyRequest::automatic()).await?;
     // a conflict (a file that exists here and differs) is not pending: it

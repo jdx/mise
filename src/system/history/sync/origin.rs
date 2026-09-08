@@ -99,6 +99,7 @@ async fn set_inner(
     // disclosure
     miseprintln!("Setup repository: {} (branch {})", opts.url, opts.branch);
     miseprintln!("Sync mode {}", opts.mode.disclosure());
+    crate::system::history::notify::warn_if_release_signing_unavailable();
     match &repo_state {
         RepoState::Empty => miseprintln!(
             "The repository is empty: the first publication creates `{}` with the mise marker.",
