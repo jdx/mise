@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZHNJ6TZAVZP2Z5NNEETH7K",
+  "strategy": "manual-commit",
+  "branch": "codex/github-git-credentials",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_bootstrap_remote_git"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 670880,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 41190144,
+    "output_tokens": 85354,
+    "api_call_count": 619
+  }
+}
