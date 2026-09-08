@@ -1,13 +1,1 @@
-1.
-
-###  
-
-**@jdx** I'm considering swapping out chezmoi for mise... One thing I'd really like to see that neither does currently is handling partials... Two examples:  &#x20;
-
-1. KDE configuration there are certain things I'd want in my dotfiles as far as the KDE configs are concerned however KDE uses these files to track window state so saving the entire file to my dotfiles is a lot of unnecessary churn
-
-2) /etc/zshrc I want to prepend one line and one line only `ZDOTDIR=$HOME/.config/zsh/` if the line is in the file we are Gucci, otherwise add it and leave the rest of the file alone.
-
----
-
-what are you doing?
+ok make a pr, tell me what to respond to the user in discord
