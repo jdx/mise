@@ -512,7 +512,7 @@ fn path_from_git_bytes(path: &[u8]) -> Result<PathBuf> {
 /// into repository configuration. Existing Git helpers retain their own policy.
 /// Git invokes the helper only when authentication is needed. The helper also
 /// validates the protocol and host before resolving any credentials.
-fn github_credential_config(host: &str) -> String {
+pub(crate) fn github_credential_config(host: &str) -> String {
     let executable = crate::env::MISE_BIN.to_string_lossy();
     #[cfg(windows)]
     let executable = executable.replace('\\', "/");
