@@ -41,6 +41,12 @@ assert_contains "cat '$plugin/.mise-packslip-plugin.json'" '"version": "0.1.0-de
 
 # Reinstall and pinned update use the signed payload, without invoking Git.
 mise plugins install --force vfox:bfs "$source_url"
+mise plugins install --force vfox:bfs "$source_url" &
+first_install=$!
+mise plugins install --force vfox:bfs "$source_url" &
+second_install=$!
+wait "$first_install"
+wait "$second_install"
 mise plugins update bfs
 cp "$plugin/.mise-packslip-plugin.json" before.json
 

@@ -312,7 +312,10 @@ impl Plugin for VfoxPlugin {
         let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
         let pr = mpr.add_with_options(&prefix, dry_run);
         if !dry_run {
-            let plugin_lock = lock_file::get(&self.plugin_path, force)?;
+            // Force requests reinstallation, but staged replacements still
+            // need exclusive access to their destination and backup.
+            let skip_lock = force && !self.get_repo_url(config)?.starts_with("packslip:");
+            let plugin_lock = lock_file::get(&self.plugin_path, skip_lock)?;
             self.install(config, pr.as_ref()).await?;
             let plugin_type =
                 PluginType::from_plugin_path(&self.plugin_path).unwrap_or(PluginType::Vfox);
