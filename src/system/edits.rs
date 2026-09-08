@@ -909,7 +909,11 @@ pub(crate) fn plan_unapply<'a>(
                 continue;
             }
         };
-        let lines = text.lines().collect::<Vec<_>>();
+        let lines = text
+            .strip_prefix('\u{feff}')
+            .unwrap_or(&text)
+            .lines()
+            .collect::<Vec<_>>();
         match &req.op {
             EditOp::Block { comment, .. } => match find_block(&lines, &req.id, comment) {
                 Ok(Some(_)) => todo.push(UnapplyPlan { req, text }),
@@ -1081,10 +1085,16 @@ fn text_lines(text: &str) -> Vec<TextLine<'_>> {
     let mut offset = 0;
     text.split_inclusive('\n')
         .map(|raw| {
-            let start = offset;
+            let mut start = offset;
             offset += raw.len();
             let content = raw.strip_suffix('\n').unwrap_or(raw);
-            let content = content.strip_suffix('\r').unwrap_or(content);
+            let mut content = content.strip_suffix('\r').unwrap_or(content);
+            if start == 0 {
+                if let Some(without_bom) = content.strip_prefix('\u{feff}') {
+                    start += '\u{feff}'.len_utf8();
+                    content = without_bom;
+                }
+            }
             TextLine {
                 content,
                 start,
