@@ -775,7 +775,9 @@ impl PIPXBackend {
             let ctx = InstallContext {
                 config: config.clone(),
                 ts: ts.clone(),
-                pr: MultiProgressReport::get().add(&format!("reinstalling {}", tv.style())),
+                pr: MultiProgressReport::get()
+                    .add(&format!("reinstalling {}", tv.style()))
+                    .into(),
                 force: true,
                 dry_run: false,
                 locked: false,
