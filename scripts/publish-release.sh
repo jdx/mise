@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-# This script runs after the GitHub release is successfully created
-# It updates the VERSION file and publishes to R2
+# This script runs only after the GitHub release is public. It updates the
+# mutable latest files, including VERSION, while publishing the release to R2.
 
 BASE_DIR="$(pwd)"
 MISE_VERSION=$(./scripts/get-version.sh)

@@ -86,4 +86,4 @@ curl -L -o "$TMP_FILE" "https://github.com/jdx/mise/archive/refs/tags/$MISE_VERS
 gpg --detach-sign -u 8B81C9D17413A06D <"$TMP_FILE" >"$RELEASE_DIR/$MISE_VERSION/$MISE_VERSION.tar.gz.sig"
 rm "$TMP_FILE"
 
-# Publishing is now done after GitHub release is created
+# CDN publishing is done after the GitHub release is public.

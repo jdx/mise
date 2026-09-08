@@ -520,6 +520,26 @@ jobs:
       - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
       - run: which mise && mise -v && mise i
       - run: mise x -- scripts/release.sh
+      # Keep the mutable CDN files available until the GitHub release is
+      # public. Publishing it here would advance VERSION while the release is
+      # still a draft, so mise-action could resolve a version whose GitHub
+      # assets return 404.
+      - name: Stage latest CDN files
+        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cdn-latest
+          path: |
+            releases/mise-latest-*
+            !releases/mise-latest-*.tar.gz
+            !releases/mise-latest-*.tar.xz
+            !releases/mise-latest-*.tar.zst
+            !releases/mise-latest-*.zip
+            releases/SHASUMS*
+            releases/install.sh*
+            artifacts/mise.run
+          if-no-files-found: error
+          retention-days: 1
       - name: Stage release assets for attestation
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -587,13 +607,6 @@ jobs:
           EXISTING_DRAFT: ${{ steps.check-release.outputs.draft }}
           EXISTING_RELEASE_ID: ${{ steps.check-release.outputs.release-id }}
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
-      - name: Publish Release Assets to CDN
-        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
-        run: mise x -- scripts/publish-release.sh
-        env:
-          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
-          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
 
   # !cancelled() replaces the implicit success() gate. Tag publishes skip
   # e2e-linux; release still runs via !cancelled(), but without a status
@@ -744,6 +757,49 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
           RELEASE_ID: ${{ needs.release.outputs.release-id }}
+
+  publish-cdn:
+    needs:
+      - release
+      - publish-release
+    if: ${{ !cancelled() && needs.release.outputs.created == 'true' && needs.publish-release.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Download versioned release files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-assets
+          path: releases/${{ github.ref_name }}
+      - name: Download latest CDN files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: cdn-latest
+          path: .
+      - name: Download RPM repository
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rpm
+          path: artifacts/rpm
+      - name: Download Debian repository
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: deb
+          path: artifacts/deb
+      - name: Use the mise binary from this release
+        run: |
+          mkdir -p "$HOME/mise"
+          tar -xzf "releases/$GITHUB_REF_NAME/mise-$GITHUB_REF_NAME-linux-x64.tar.gz" -C "$HOME/mise" --strip-components=1
+          echo "$HOME/mise/bin" >> "$GITHUB_PATH"
+      - name: Publish release assets to CDN
+        run: mise x -- scripts/publish-release.sh
+        env:
+          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
 
   # Finish a draft that already has build assets (no tarball rebuild). Used
   # when attest/packslip/publish were skipped — e.g. v2026.9.2 after tag e2e
