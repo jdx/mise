@@ -1,0 +1,13 @@
+make a pr, post a reply
+
+---
+
+<environment_context>
+  <current_date>2026-09-08</current_date>
+  <timezone>America/Chicago</timezone>
+  <filesystem><workspace_roots><root>/Users/jdx/.codex/worktrees/3abd/mise</root><root>/Users/jdx/.codex/visualizations/2026/09/08/01a07f22-e373-7413-af3c-02f6215b1e19</root></workspace_roots><permission_profile type="disabled"><file_system type="unrestricted" /></permission_profile></filesystem>
+</environment_context>
+
+---
+
+i feel your docs might have too much detail
