@@ -52,6 +52,16 @@ static UNAVAILABLE_HTTP_HOSTS: Lazy<Mutex<HashMap<String, String>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 type RetryStateHandle = Arc<Mutex<RetryState>>;
 
+/// The parts of a request that stay fixed across retry attempts.
+struct RetryableRequest<'a> {
+    method: Method,
+    url: Url,
+    headers: &'a HeaderMap,
+    verb_label: &'a str,
+    retries: i64,
+    error_for_status: bool,
+}
+
 #[derive(Debug)]
 struct UnavailableHttpHost {
     origin: String,
@@ -600,9 +610,21 @@ impl Client {
     }
 
     pub(crate) async fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {
+        ensure!(!Settings::get().offline(), "offline mode is enabled");
         let url = url.into_url()?;
-        let resp = self.get_async(url.clone()).await?;
-        Ok(resp.bytes().await?)
+        let headers = host_auth_headers(&url)?;
+        self.send_with_retries(
+            RetryableRequest {
+                method: Method::GET,
+                url,
+                headers: &headers,
+                verb_label: "GET",
+                retries: Settings::get().http_retries(),
+                error_for_status: true,
+            },
+            |resp| async move { Ok(resp.bytes().await?) },
+        )
+        .await
     }
 
     pub(crate) async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
@@ -730,10 +752,8 @@ impl Client {
         T: serde::de::DeserializeOwned,
     {
         let url = url.into_url()?;
-        let resp = self.get_async(url).await?;
-        let headers = resp.headers().clone();
-        let json = resp.json().await?;
-        Ok((json, headers))
+        let headers = host_auth_headers(&url)?;
+        self.json_headers_with_headers(url, &headers).await
     }
 
     pub(crate) async fn json_headers_with_headers<T, U: IntoUrl>(
@@ -744,11 +764,23 @@ impl Client {
     where
         T: serde::de::DeserializeOwned,
     {
+        ensure!(!Settings::get().offline(), "offline mode is enabled");
         let url = url.into_url()?;
-        let resp = self.get_async_with_headers(url, headers).await?;
-        let headers = resp.headers().clone();
-        let json = resp.json().await?;
-        Ok((json, headers))
+        self.send_with_retries(
+            RetryableRequest {
+                method: Method::GET,
+                url,
+                headers,
+                verb_label: "GET",
+                retries: Settings::get().http_retries(),
+                error_for_status: true,
+            },
+            |resp| async move {
+                let headers = resp.headers().clone();
+                Ok((resp.json().await?, headers))
+            },
+        )
+        .await
     }
 
     pub(crate) async fn json<T, U: IntoUrl>(&self, url: U) -> Result<T>
@@ -1157,13 +1189,16 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
     ) -> Result<Response> {
-        self.send_with_https_fallback_with_retries(
-            method,
-            url,
-            headers,
-            verb_label,
-            Settings::get().http_retries(),
-            true,
+        self.send_with_retries(
+            RetryableRequest {
+                method,
+                url,
+                headers,
+                verb_label,
+                retries: Settings::get().http_retries(),
+                error_for_status: true,
+            },
+            |resp| async move { Ok(resp) },
         )
         .await
     }
@@ -1175,30 +1210,45 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
     ) -> Result<Response> {
-        self.send_with_https_fallback_with_retries(
-            method,
-            url,
-            headers,
-            verb_label,
-            Settings::get().http_retries(),
-            false,
+        self.send_with_retries(
+            RetryableRequest {
+                method,
+                url,
+                headers,
+                verb_label,
+                retries: Settings::get().http_retries(),
+                error_for_status: false,
+            },
+            |resp| async move { Ok(resp) },
         )
         .await
     }
 
-    async fn send_with_https_fallback_with_retries(
-        &self,
-        method: Method,
-        url: Url,
-        headers: &HeaderMap,
-        verb_label: &str,
-        retries: i64,
-        error_for_status: bool,
-    ) -> Result<Response> {
+    /// Send with retries, turning the response into `T` inside the retried unit.
+    ///
+    /// reqwest resolves a request as soon as the response headers arrive, so a
+    /// retry that stops there leaves body streaming unprotected: a connection
+    /// dropped mid-body surfaces as `error decoding response body` and fails
+    /// outright, even though [`is_transient`] already classifies
+    /// `reqwest::Error::is_body()` as retryable.
+    async fn send_with_retries<T, F, Fut>(&self, req: RetryableRequest<'_>, read: F) -> Result<T>
+    where
+        F: Fn(Response) -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        let RetryableRequest {
+            method,
+            url,
+            headers,
+            verb_label,
+            retries,
+            error_for_status,
+        } = req;
         let retry_state = Arc::new(Mutex::new(RetryState {
             headers: headers.clone(),
             use_netrc: true,
         }));
+        let read = &read;
         retry_async_with_retries(verb_label, &url, retries, || async {
             let (headers, use_netrc) = {
                 let state = retry_state.lock().unwrap();
@@ -1210,14 +1260,16 @@ impl Client {
             } else {
                 options.allow_error_status()
             };
-            self.send_once_with_https_fallback_with_retry_headers(
-                method.clone(),
-                url.clone(),
-                &headers,
-                verb_label,
-                options,
-            )
-            .await
+            let resp = self
+                .send_once_with_https_fallback_with_retry_headers(
+                    method.clone(),
+                    url.clone(),
+                    &headers,
+                    verb_label,
+                    options,
+                )
+                .await?;
+            read(resp).await
         })
         .await
     }
@@ -1538,18 +1590,20 @@ impl TextRequest<'_> {
         // Merge GitHub headers with any extra headers provided
         let mut headers = host_auth_headers(&url)?;
         headers.extend(self.extra_headers.clone());
-        let resp = self
+        let text = self
             .client
-            .send_with_https_fallback_with_retries(
-                Method::GET,
-                url.clone(),
-                &headers,
-                "GET",
-                self.retries,
-                true,
+            .send_with_retries(
+                RetryableRequest {
+                    method: Method::GET,
+                    url: url.clone(),
+                    headers: &headers,
+                    verb_label: "GET",
+                    retries: self.retries,
+                    error_for_status: true,
+                },
+                |resp| async move { Ok(resp.text().await?) },
             )
             .await?;
-        let text = resp.text().await?;
         if text.starts_with("<!DOCTYPE html>") {
             if url.scheme() == "http" {
                 // try with https since http may be blocked
@@ -2688,6 +2742,29 @@ mod tests {
     fn ok_response() -> &'static str {
         "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
     }
+    // Declares 21 bytes of JSON and sends 13 before closing. reqwest surfaces
+    // that as `error decoding response body`, the exact shape GitHub's
+    // `/releases?page=2` produces for repos with thousands of releases.
+    fn truncated_json_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 200 OK\r\n",
+            "Content-Type: application/json\r\n",
+            "Content-Length: 21\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            "[{\"tag_name\":"
+        )
+    }
+    fn json_array_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 200 OK\r\n",
+            "Content-Type: application/json\r\n",
+            "Content-Length: 21\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            "[{\"tag_name\":\"v1.0\"}]"
+        )
+    }
     fn truncated_download_response() -> &'static str {
         concat!(
             "HTTP/1.1 200 OK\r\n",
@@ -3353,6 +3430,24 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert!(resp.status().is_success());
         // Should have served 3 connections: two 502s + one 200.
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_json_retries_when_body_drops_mid_stream() {
+        // reqwest resolves a request as soon as the headers land, so a retry that
+        // stops there never covers body streaming. `is_transient` already calls
+        // `reqwest::Error::is_body()` retryable; this asserts the retry boundary
+        // actually reaches it.
+        let _guard = set_test_http_retries(1);
+        let (port, count) =
+            spawn_canned_server(vec![truncated_json_response(), json_array_response()]).await;
+        let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let (releases, _headers): (Vec<serde_json::Value>, _) =
+            client.json_headers(url).await.unwrap();
+        assert_eq!(releases.len(), 1);
+        // Two connections: the truncated body, then the complete one.
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -4146,6 +4241,20 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert!(format!("{err:?}").contains("502"));
         // Should stop after the initial request plus the single overridden retry.
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_json_headers_respects_offline_mode() {
+        let _guard = set_test_offline();
+        let (port, count) = spawn_canned_server(vec![json_array_response()]).await;
+        let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let err = client
+            .json_headers::<Vec<serde_json::Value>, _>(url)
+            .await
+            .unwrap_err();
+        assert_eq!(err.to_string(), "offline mode is enabled");
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[tokio::test(flavor = "current_thread")]
