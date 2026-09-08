@@ -432,10 +432,13 @@ silent; a later pause can notify again after recovery. Set
 `settings.history.notify = false` to opt out. Missing or failing notifiers
 never hold up history or sync.
 
-Linux and macOS notifications use the mise logo. On macOS, allow notifications
-for mise when asked on first use; you can change that permission in System
-Settings > Notifications > mise. The helper is included in mise: no compiler,
-extra notifier, or logo download is needed. Denied permissions never block sync.
+Linux and macOS notifications use the mise logo. Official macOS release binaries
+include a Developer ID-signed helper; allow notifications for mise when asked on
+first use, and change that permission later in System Settings > Notifications >
+mise. No compiler, extra notifier, or logo download is needed. Source builds
+without a Developer ID-signed helper warn when a setup repository is connected
+and do not show desktop notifications. Denied or unavailable notifications never
+block sync.
 Alerts name the conflicting file, explain that local saves still work, and
 point to `mise bootstrap dotfiles status` for resolution steps.
 

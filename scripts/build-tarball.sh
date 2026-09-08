@@ -88,6 +88,10 @@ if [[ $os == "macos" ]]; then
 	# legacy rebase/bind opcodes on every launch. Measurably faster startup for
 	# a binary this large. macOS 11 (EOL since 2023) cannot run these binaries.
 	export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-12.0}
+	# The notification helper is embedded as a complete signed app. Local builds
+	# use an ad-hoc identity; release builds use the same Developer ID certificate
+	# as the outer mise binary so macOS can validate it after extraction.
+	export MISE_NOTIFICATION_SIGN_IDENTITY="Developer ID Application: Jeffrey Dickey (4993Y37DX6)"
 fi
 
 if [[ -n "${MISE_BOLT:-}" ]] && [[ -z "${MISE_PGO:-}" ]]; then
@@ -153,7 +157,7 @@ if [[ $os == "macos" ]]; then
 	# --options runtime and --timestamp are what the notary service requires;
 	# without them a submission comes back Invalid.
 	codesign -f --options runtime --timestamp --prefix dev.jdx. \
-		-s "Developer ID Application: Jeffrey Dickey (4993Y37DX6)" mise/bin/mise
+		-s "$MISE_NOTIFICATION_SIGN_IDENTITY" mise/bin/mise
 fi
 
 if [[ $os == "windows" ]]; then

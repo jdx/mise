@@ -7,26 +7,31 @@ use std::process::Command;
 
 use eyre::{Result, bail};
 
-const HELPER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mise-notify"));
-const ICON: &[u8] = include_bytes!("../../../../docs/public/android-chrome-512x512.png");
-const INFO: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>dev.jdx.mise.notifications</string>
-<key>CFBundleName</key><string>mise</string>
-<key>CFBundleDisplayName</key><string>mise</string>
-<key>CFBundleExecutable</key><string>mise-notify</string>
-<key>CFBundleIconFile</key><string>mise.icns</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>1</string>
-<key>LSUIElement</key><true/>
-<key>LSMinimumSystemVersion</key><string>10.14</string>
-</dict></plist>"#;
+const HELPER: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/mise-notify.app/Contents/MacOS/mise-notify"
+));
+const INFO: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/mise-notify.app/Contents/Info.plist"
+));
+const ICON: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/mise-notify.app/Contents/Resources/mise.icns"
+));
+const CODE_RESOURCES: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/mise-notify.app/Contents/_CodeSignature/CodeResources"
+));
+
+pub(super) fn release_signed() -> bool {
+    env!("MISE_NOTIFICATION_RELEASE_SIGNED") == "1"
+}
 
 fn app_path(root: &Path) -> PathBuf {
     // A versioned directory permits safe replacement without modifying a
     // running helper. The bundle identifier remains stable across versions.
-    let fingerprint = crate::hash::hash_to_str(&(HELPER, ICON, INFO));
+    let fingerprint = crate::hash::hash_to_str(&(HELPER, INFO, ICON, CODE_RESOURCES));
     root.join(fingerprint).join("mise.app")
 }
 
@@ -38,9 +43,13 @@ fn complete(app: &Path) -> bool {
     executable(app).is_file()
         && app.join("Contents/Info.plist").is_file()
         && app.join("Contents/Resources/mise.icns").is_file()
+        && app.join("Contents/_CodeSignature/CodeResources").is_file()
 }
 
 pub(super) fn notification(title: &str, body: &str) -> Result<Command> {
+    if !release_signed() {
+        bail!("the embedded notification helper is not Developer ID signed");
+    }
     let app = ensure_app(&crate::dirs::DATA.join("notifications"))?;
     Ok(notification_command(&app, title, body))
 }
@@ -58,7 +67,9 @@ fn ensure_app(root: &Path) -> Result<PathBuf> {
     }
     crate::file::create_dir_all(root)?;
     let mut lock = fslock::LockFile::open(&root.join("install.lock"))?;
-    lock.lock()?;
+    if !lock.try_lock()? {
+        bail!("another process is installing the mise notification helper");
+    }
     if complete(&app) {
         return Ok(app);
     }
@@ -67,31 +78,15 @@ fn ensure_app(root: &Path) -> Result<PathBuf> {
     let contents = staged.join("Contents");
     std::fs::create_dir_all(contents.join("MacOS"))?;
     std::fs::create_dir_all(contents.join("Resources"))?;
+    std::fs::create_dir_all(contents.join("_CodeSignature"))?;
     std::fs::write(executable(&staged), HELPER)?;
     std::fs::set_permissions(executable(&staged), std::fs::Permissions::from_mode(0o755))?;
     std::fs::write(contents.join("Info.plist"), INFO)?;
-    // ICNS container with one lossless 512x512 PNG representation (ic09).
-    let mut icon = Vec::with_capacity(ICON.len() + 16);
-    icon.extend_from_slice(b"icns");
-    icon.extend_from_slice(&u32::try_from(ICON.len() + 16)?.to_be_bytes());
-    icon.extend_from_slice(b"ic09");
-    icon.extend_from_slice(&u32::try_from(ICON.len() + 8)?.to_be_bytes());
-    icon.extend_from_slice(ICON);
-    std::fs::write(contents.join("Resources/mise.icns"), icon)?;
-    // Ad-hoc sign this mise-owned bundle, never another installed app.
-    let signed = Command::new("/usr/bin/codesign")
-        .args([
-            "--force",
-            "--sign",
-            "-",
-            "--identifier",
-            "dev.jdx.mise.notifications",
-        ])
-        .arg(&staged)
-        .output()?;
-    if !signed.status.success() {
-        bail!("could not sign the mise notification helper");
-    }
+    std::fs::write(contents.join("Resources/mise.icns"), ICON)?;
+    std::fs::write(
+        contents.join("_CodeSignature/CodeResources"),
+        CODE_RESOURCES,
+    )?;
     std::fs::create_dir_all(app.parent().unwrap())?;
     if app.symlink_metadata().is_ok() {
         // Preserve an incomplete installation for inspection, rather than
