@@ -3702,7 +3702,7 @@ global_only = true
 type = "String"
 
 [unix_default_inline_shell_args]
-default = "sh -c -o errexit"
+default = "sh -o errexit -c"
 description = "Default shell arguments for Unix to be used for inline commands. For example, `sh -c` for sh."
 env = "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS"
 global_only = true
