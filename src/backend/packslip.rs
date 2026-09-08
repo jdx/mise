@@ -1007,175 +1007,41 @@ impl PackslipBackend {
     }
 }
 
-#[async_trait]
-impl Backend for PackslipBackend {
-    fn get_type(&self) -> BackendType {
-        BackendType::Packslip
-    }
+/// Verified signer evidence whose pin is committed only after installation.
+pub(crate) struct PendingPin {
+    project: String,
+    scheme: String,
+    key_id: String,
+    issuer: Option<String>,
+    attested_by: String,
+    provenance: bool,
+    logged: bool,
+}
 
-    fn ba(&self) -> &Arc<BackendArg> {
-        &self.ba
+impl PendingPin {
+    pub(crate) fn record(self) -> Result<()> {
+        packslip_pins::record(
+            &self.project,
+            Observed {
+                scheme: &self.scheme,
+                key_id: &self.key_id,
+                issuer: self.issuer.as_deref(),
+                attested_by: &self.attested_by,
+                provenance: self.provenance,
+                logged: self.logged,
+            },
+        )?;
+        Ok(())
     }
+}
 
-    async fn security_info(&self) -> Vec<SecurityFeature> {
-        vec![SecurityFeature::Packslip]
-    }
-
-    /// A packslip version is semver, and the specification ranks releases
-    /// by semver precedence, never by the order a release list gives.
-    fn version_order(&self, _opts: &ToolVersionOptions) -> Result<VersionOrder> {
-        Ok(VersionOrder::Semver)
-    }
-
-    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
-        &[
-            "pubkey",
-            "identity",
-            "identity_prefix",
-            "list_identity_prefix",
-            "issuer",
-            "allow_unlogged",
-            "trust",
-        ]
-    }
-
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        self.policy_versions(&opts).await
-    }
-
-    async fn list_remote_versions_with_info_and_options(
-        &self,
-        config: &Arc<Config>,
-        listing_opts: &ToolVersionOptions,
-        selection_opts: &ToolVersionOptions,
-        _refresh: bool,
-        has_local_version_listing_override: bool,
-    ) -> Result<Vec<VersionInfo>> {
-        // A cached accepted-version set cannot reflect changed stamper trust,
-        // new withdrawals, expired lists, or a list that disappeared, so online
-        // this always rereads policy. Offline that reading cannot happen at all
-        // — it means asking GitHub and every stamper — so the cache is all there
-        // is, and it is served the way every other backend serves it. Installing
-        // rechecks regardless.
-        let cache = self
-            .remote_version_cache_for(config, listing_opts, has_local_version_listing_override)
-            .await?;
-        let mut cache = cache.lock().await;
-        let versions = if Settings::get().offline() {
-            crate::backend::cached_remote_versions_offline(&self.ba, &cache)
-        } else {
-            // Written back so that a later offline command has something to
-            // serve. Like the shared path, the cache holds the prerelease
-            // superset and the filter below is applied on the way out.
-            let versions = self.policy_versions(selection_opts).await?;
-            if versions.is_empty() {
-                cache.clear()?;
-            } else if let Err(err) = cache.write(&versions) {
-                debug!(
-                    "could not cache the accepted versions of {}: {err:#}",
-                    self.ba
-                );
-            }
-            versions
-        };
-        Ok(crate::backend::filter_cached_prereleases(
-            versions,
-            self.include_prereleases(selection_opts),
-        ))
-    }
-
-    async fn latest_version_with_selection_options(
-        &self,
-        config: &Arc<Config>,
-        query: Option<String>,
-        selection_opts: &ToolVersionOptions,
-        before_date: Option<jiff::Timestamp>,
-        refresh: bool,
-    ) -> Result<Option<String>> {
-        let before =
-            crate::backend::effective_latest_before_date(self, selection_opts, before_date)?;
-        let query = query.as_deref().unwrap_or("latest");
-        if query != "latest" {
-            return self
-                .latest_version_for_query_with_selection_options(
-                    config,
-                    query,
-                    selection_opts,
-                    before,
-                    refresh,
-                )
-                .await;
-        }
-        if Settings::get().offline() {
-            // Policy lives on the network — the vendor's list, every stamper's,
-            // and the manifest itself — so offline there is nothing to consult
-            // and nothing to recommend. Take the newest the cache knows of;
-            // installing it will recheck policy, or fail for want of a network.
-            let versions = self
-                .list_remote_versions_with_info_with_selection_options(
-                    config,
-                    selection_opts,
-                    refresh,
-                )
-                .await?;
-            let candidates = latest_candidates(
-                versions,
-                None,
-                self.include_prereleases(selection_opts),
-                self.version_order(selection_opts)?,
-            );
-            return Ok(candidates.into_iter().next());
-        }
-        // Read policy directly: a cached version list must not hide new yanks,
-        // changed stampers, or a missing previously accepted signed list.
-        let project = self.project()?;
-        let opts = PackslipOptions::new(selection_opts);
-        let pin = pin(&project, &opts)?;
-        let recommendation = self.recommendation(&project, &opts, &pin).await?;
-        let versions = self.vendor_versions(selection_opts).await?;
-        let stamps = crate::packslip_stamps::fetch(&project, selection_opts).await?;
-        let candidates = latest_candidates(
-            versions,
-            recommendation.as_deref(),
-            self.include_prereleases(selection_opts),
-            self.version_order(selection_opts)?,
-        );
-        if let Some(preferred) = &recommendation
-            && !candidates.iter().any(|v| v == preferred)
-        {
-            warn!(
-                "packslip:{project}: skipping recommended {preferred}: absent, withdrawn, or excluded prerelease"
-            );
-        }
-        first_eligible(candidates, |version| {
-            let project = &project;
-            let opts = &opts;
-            let pin = &pin;
-            let stamps = stamps.as_ref();
-            async move {
-                if let Some(reason) = self
-                    .candidate_exclusion(project, &version, opts, pin, before, stamps)
-                    .await?
-                {
-                    warn!("packslip:{project}: skipping {version}: {reason}");
-                    return Ok(false);
-                }
-                Ok(true)
-            }
-        })
-        .await
-    }
-
-    async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
-        4
-    }
-
-    async fn install_version_(
+impl PackslipBackend {
+    pub(crate) async fn install_payload(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,
-    ) -> Result<ToolVersion> {
+        vfox_plugin: bool,
+    ) -> Result<(ToolVersion, PendingPin)> {
         let project = self.project()?;
         let raw_opts = tv.request.options();
         let opts = PackslipOptions::new(&raw_opts);
@@ -1345,6 +1211,9 @@ impl Backend for PackslipBackend {
             opts.variant().as_deref(),
         )?
         .clone();
+        if vfox_plugin {
+            crate::plugins::packslip::validate_artifact(&artifact)?;
+        }
         let mut commands = BTreeMap::new();
         if let Some(req) = &artifact.requires {
             for bin in &req.bin {
@@ -1423,6 +1292,9 @@ impl Backend for PackslipBackend {
         // The statement names every executable by path, so nothing here may
         // rename one: a tidied platform suffix would put the file somewhere the
         // statement does not point, and `link_bins` would not find it.
+        if vfox_plugin {
+            crate::plugins::packslip::validate_archive(&file_path)?;
+        }
         install_artifact(
             &tv,
             &file_path,
@@ -1430,23 +1302,202 @@ impl Backend for PackslipBackend {
             ArchiveLayout::Declared,
             Some(ctx.pr.as_ref()),
         )?;
+        if vfox_plugin {
+            crate::plugins::packslip::validate_layout(&tv.install_path())?;
+        }
         Self::link_bins(&tv, &artifact)?;
         file::write(
             tv.install_path().join(STATEMENT_FILE),
             serde_json::to_vec_pretty(&statement)?,
         )?;
         // Completions and CLI specs the vendor keeps outside the artifact.
-        crate::packslip::fetch_files(&tv, &statement, Some(&artifact), ctx.pr.as_ref()).await?;
-        // The pin records what was installed, so a release that failed to
-        // unpack or link leaves no mark; the check above is what refuses.
-        // A pin that cannot be written must not leave its artifact behind
-        // either: `always_keep_install` would preserve an install whose
-        // signer was never recorded, and the next release — from any signer
-        // at all — would then set the project's first pin with that one
-        // still in place.
-        if let Err(err) = packslip_pins::record(&project, observed) {
+        if !vfox_plugin {
+            crate::packslip::fetch_files(&tv, &statement, Some(&artifact), ctx.pr.as_ref()).await?;
+        }
+        Ok((
+            tv,
+            PendingPin {
+                project,
+                scheme: observed.scheme.to_owned(),
+                key_id: observed.key_id.to_owned(),
+                issuer: observed.issuer.map(str::to_owned),
+                attested_by: observed.attested_by.to_owned(),
+                provenance: observed.provenance,
+                logged: observed.logged,
+            },
+        ))
+    }
+}
+
+#[async_trait]
+impl Backend for PackslipBackend {
+    fn get_type(&self) -> BackendType {
+        BackendType::Packslip
+    }
+
+    fn ba(&self) -> &Arc<BackendArg> {
+        &self.ba
+    }
+
+    async fn security_info(&self) -> Vec<SecurityFeature> {
+        vec![SecurityFeature::Packslip]
+    }
+
+    /// A packslip version is semver, and the specification ranks releases
+    /// by semver precedence, never by the order a release list gives.
+    fn version_order(&self, _opts: &ToolVersionOptions) -> Result<VersionOrder> {
+        Ok(VersionOrder::Semver)
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &[
+            "pubkey",
+            "identity",
+            "identity_prefix",
+            "list_identity_prefix",
+            "issuer",
+            "allow_unlogged",
+            "trust",
+        ]
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        self.policy_versions(&opts).await
+    }
+
+    async fn list_remote_versions_with_info_and_options(
+        &self,
+        config: &Arc<Config>,
+        listing_opts: &ToolVersionOptions,
+        selection_opts: &ToolVersionOptions,
+        _refresh: bool,
+        has_local_version_listing_override: bool,
+    ) -> Result<Vec<VersionInfo>> {
+        // A cached accepted-version set cannot reflect changed stamper trust,
+        // new withdrawals, expired lists, or a list that disappeared, so online
+        // this always rereads policy. Offline that reading cannot happen at all
+        // — it means asking GitHub and every stamper — so the cache is all there
+        // is, and it is served the way every other backend serves it. Installing
+        // rechecks regardless.
+        let cache = self
+            .remote_version_cache_for(config, listing_opts, has_local_version_listing_override)
+            .await?;
+        let mut cache = cache.lock().await;
+        let versions = if Settings::get().offline() {
+            crate::backend::cached_remote_versions_offline(&self.ba, &cache)
+        } else {
+            // Written back so that a later offline command has something to
+            // serve. Like the shared path, the cache holds the prerelease
+            // superset and the filter below is applied on the way out.
+            let versions = self.policy_versions(selection_opts).await?;
+            if versions.is_empty() {
+                cache.clear()?;
+            } else if let Err(err) = cache.write(&versions) {
+                debug!(
+                    "could not cache the accepted versions of {}: {err:#}",
+                    self.ba
+                );
+            }
+            versions
+        };
+        Ok(crate::backend::filter_cached_prereleases(
+            versions,
+            self.include_prereleases(selection_opts),
+        ))
+    }
+
+    async fn latest_version_with_selection_options(
+        &self,
+        config: &Arc<Config>,
+        query: Option<String>,
+        selection_opts: &ToolVersionOptions,
+        before_date: Option<jiff::Timestamp>,
+        refresh: bool,
+    ) -> Result<Option<String>> {
+        let before =
+            crate::backend::effective_latest_before_date(self, selection_opts, before_date)?;
+        let query = query.as_deref().unwrap_or("latest");
+        if query != "latest" {
+            return self
+                .latest_version_for_query_with_selection_options(
+                    config,
+                    query,
+                    selection_opts,
+                    before,
+                    refresh,
+                )
+                .await;
+        }
+        if Settings::get().offline() {
+            // Policy lives on the network — the vendor's list, every stamper's,
+            // and the manifest itself — so offline there is nothing to consult
+            // and nothing to recommend. Take the newest the cache knows of;
+            // installing it will recheck policy, or fail for want of a network.
+            let versions = self
+                .list_remote_versions_with_info_with_selection_options(
+                    config,
+                    selection_opts,
+                    refresh,
+                )
+                .await?;
+            let candidates = latest_candidates(
+                versions,
+                None,
+                self.include_prereleases(selection_opts),
+                self.version_order(selection_opts)?,
+            );
+            return Ok(candidates.into_iter().next());
+        }
+        // Read policy directly: a cached version list must not hide new yanks,
+        // changed stampers, or a missing previously accepted signed list.
+        let project = self.project()?;
+        let opts = PackslipOptions::new(selection_opts);
+        let pin = pin(&project, &opts)?;
+        let recommendation = self.recommendation(&project, &opts, &pin).await?;
+        let versions = self.vendor_versions(selection_opts).await?;
+        let stamps = crate::packslip_stamps::fetch(&project, selection_opts).await?;
+        let candidates = latest_candidates(
+            versions,
+            recommendation.as_deref(),
+            self.include_prereleases(selection_opts),
+            self.version_order(selection_opts)?,
+        );
+        if let Some(preferred) = &recommendation
+            && !candidates.iter().any(|v| v == preferred)
+        {
+            warn!(
+                "packslip:{project}: skipping recommended {preferred}: absent, withdrawn, or excluded prerelease"
+            );
+        }
+        first_eligible(candidates, |version| {
+            let project = &project;
+            let opts = &opts;
+            let pin = &pin;
+            let stamps = stamps.as_ref();
+            async move {
+                if let Some(reason) = self
+                    .candidate_exclusion(project, &version, opts, pin, before, stamps)
+                    .await?
+                {
+                    warn!("packslip:{project}: skipping {version}: {reason}");
+                    return Ok(false);
+                }
+                Ok(true)
+            }
+        })
+        .await
+    }
+
+    async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
+        4
+    }
+
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let (tv, pin) = self.install_payload(ctx, tv, false).await?;
+        if let Err(error) = pin.record() {
             let _ = file::remove_all(tv.install_path());
-            return Err(err);
+            return Err(error);
         }
         Ok(tv)
     }

@@ -660,7 +660,9 @@ impl Config {
 
     pub(crate) fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
         if let Some(url) = self.repo_urls.get(plugin_name)
-            && (Path::new(url).is_absolute() || url.starts_with("file://"))
+            && (Path::new(url).is_absolute()
+                || url.starts_with("file://")
+                || url.starts_with("packslip:"))
         {
             return Some(url.clone());
         }
@@ -681,7 +683,10 @@ impl Config {
             .and_then(|k| self.repo_urls.get(k))
         {
             return Some(
-                if Path::new(url).is_absolute() || url.starts_with("file://") {
+                if Path::new(url).is_absolute()
+                    || url.starts_with("file://")
+                    || url.starts_with("packslip:")
+                {
                     url.clone()
                 } else {
                     registry::full_to_url(url)

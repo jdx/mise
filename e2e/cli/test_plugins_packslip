@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export MISE_MINIMUM_RELEASE_AGE=0
+export MISE_DATA_DIR="$PWD/data"
+unset GITHUB_TOKEN GITHUB_API_TOKEN MISE_GITHUB_TOKEN
+mkdir server-state
+python3 "$ROOT/test/fixtures/packslip-vfox/server.py" "$PWD/server-state" &
+server_pid=$!
+trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+for _ in {1..100}; do
+  [[ -f server-state/port ]] && break
+  sleep 0.1
+done
+port=$(cat server-state/port)
+export MISE_URL_REPLACEMENTS="{\"https://api.github.com\":\"http://127.0.0.1:$port\",\"https://github.com\":\"http://127.0.0.1:$port\"}"
+
+export GIT_INVOKED_LOG="$PWD/git-invoked"
+mkdir no-git
+cat >no-git/git <<'EOF'
+#!/usr/bin/env bash
+echo invoked >> "$GIT_INVOKED_LOG"
+exit 1
+EOF
+chmod +x no-git/git
+export PATH="$PWD/no-git:$PATH"
+
+source_url='packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'
+# An external plugin name needs no registry entry.
+mise plugins install vfox:external-bfs "$source_url"
+assert "test -f '$MISE_DATA_DIR/plugins/external-bfs/metadata.lua'"
+mise plugins uninstall external-bfs
+# The registry default still uses the embedded plugin without a download.
+mise plugins install vfox:bfs
+assert_directory_not_exists "$MISE_DATA_DIR/plugins/bfs"
+mise plugins install vfox:bfs "$source_url"
+plugin="$MISE_DATA_DIR/plugins/bfs"
+assert "test -f '$plugin/metadata.lua'"
+assert_directory_not_exists "$plugin/.git"
+assert_contains "mise plugins ls --urls" "packslip:github.com/mise-plugins/vfox-bfs#0.1.0-dev.2"
+assert_contains "cat '$plugin/.mise-packslip-plugin.json'" '"version": "0.1.0-dev.2"'
+
+# Reinstall and pinned update use the signed payload, without invoking Git.
+mise plugins install --force vfox:bfs "$source_url"
+mise plugins install --force vfox:bfs "$source_url" &
+first_install=$!
+mise plugins install --force vfox:bfs "$source_url" &
+second_install=$!
+wait "$first_install"
+wait "$second_install"
+mise plugins update bfs
+cp "$plugin/.mise-packslip-plugin.json" before.json
+
+# A corrupt download must not remove or replace the working plugin.
+printf yes >server-state/corrupt
+assert_fail "mise plugins update bfs"
+assert "cmp before.json '$plugin/.mise-packslip-plugin.json'"
+assert "test -f '$plugin/metadata.lua'"
+assert_fail "mise plugins install --force vfox:bfs '$source_url'"
+assert "test -f '$plugin/metadata.lua'"
+
+# A signature from the pilot repository cannot authorize a different source.
+assert_fail_contains "mise plugins install vfox:wrong 'packslip:other/plugin#0.1.0-dev.2'" "expected an identity starting with"
+assert_directory_not_exists "$MISE_DATA_DIR/plugins/wrong"
+assert "test ! -e git-invoked"
+mise plugins uninstall bfs
+assert_directory_not_exists "$plugin"
+
+# Configured plugin sources must not be rewritten into Git URLs.
+printf no >server-state/corrupt
+cat >mise.toml <<'EOF'
+[plugins]
+"vfox:bfs" = "packslip:mise-plugins/vfox-bfs#0.1.0-dev.2"
+EOF
+mise plugins install vfox:bfs
+assert "test -f '$plugin/metadata.lua'"
+assert_contains "mise plugins ls --urls" "packslip:github.com/mise-plugins/vfox-bfs#0.1.0-dev.2"
+assert "test ! -e git-invoked"
+
+mise plugins uninstall bfs
+mise plugins install bfs
+assert "test -f '$plugin/metadata.lua'"
+assert "test ! -e git-invoked"

@@ -82,6 +82,42 @@ mise plugins install PLUGIN_NAME HTTPS_ZIP_URL
 mise plugins install vfox-cmake https://github.com/mise-plugins/vfox-cmake/archive/refs/heads/main.zip
 ```
 
+### Install from a signed packslip
+
+A publisher can distribute a vfox plugin for a non-registry tool as a signed,
+portable archive. Select that source explicitly, keeping the plugin release
+separate from tool versions:
+
+```sh
+mise plugins install vfox:PLUGIN_NAME 'packslip:OWNER/REPO#PLUGIN_VERSION'
+```
+
+Or configure it:
+
+```toml
+[plugins]
+"vfox:PLUGIN_NAME" = "packslip:OWNER/REPO#PLUGIN_VERSION"
+```
+
+Omit `#PLUGIN_VERSION` to resolve the latest eligible plugin release through the
+packslip backend. `mise plugins update PLUGIN_NAME` preserves an explicit pin;
+reinstall with another source version to change it. The installed plugin records
+its resolved version, artifact digest, and signer. Reinstalling the same version
+checks those pins again.
+
+This initially supports GitHub repositories publishing `packslip.sigstore.json`
+with a portable `tar.gz` artifact declaring `extensions.mise.plugin = "vfox"`
+and no executables or host requirements. The archive must have `metadata.lua` at
+its root and contain no links, special files, Git metadata, or unsafe paths. Mise
+uses the packslip backend's signature, digest, signer, and release policy checks.
+It verifies and stages replacements before removing the previous plugin.
+
+The [bfs publisher example](https://github.com/mise-plugins/vfox-bfs/releases/tag/v0.1.0)
+demonstrates the format, verified on Linux and macOS. Normal bfs usage continues
+to use its embedded plugin without downloading a plugin release. Packslip is an
+explicit source option; existing registry defaults, Git and ZIP sources remain
+unchanged.
+
 For more information, see:
 
 - [Using Plugins](../../plugin-usage.md) - End-user guide

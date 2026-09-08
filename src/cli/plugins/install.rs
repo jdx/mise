@@ -142,7 +142,22 @@ pub(crate) async fn install_plugin(
     force: bool,
     dry_run: bool,
 ) -> Result<()> {
-    let (plugin_type, name) = PluginType::from_plugin_config(name);
+    let explicit_type = name.contains(':');
+    let (mut plugin_type, name) = PluginType::from_plugin_config(name);
+    let git_url = git_url.or_else(|| {
+        config
+            .get_repo_url(name)
+            .filter(|url| url.starts_with("packslip:"))
+    });
+    if git_url
+        .as_deref()
+        .is_some_and(|url| url.starts_with("packslip:"))
+    {
+        if explicit_type && plugin_type != PluginType::Vfox {
+            bail!("packslip plugin sources require the vfox plugin type");
+        }
+        plugin_type = PluginType::Vfox;
+    }
     let name = name.to_string();
     if plugin_type == PluginType::Package && crate::system::packages::is_builtin_manager_name(&name)
     {
@@ -171,6 +186,14 @@ pub(crate) async fn install_plugin(
 #[ensures(!ret.as_ref().is_ok_and(|(r, _)| r.is_empty()), "plugin name is empty")]
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
     let name = unalias_backend(name);
+    if git_url.is_none()
+        && let Some((kind, short)) = name.split_once(':')
+        && matches!(kind, "vfox" | "vfox-backend" | "package" | "asdf")
+        && !short.is_empty()
+        && !short.contains(['/', ':'])
+    {
+        return Ok((name.to_string(), None));
+    }
     Ok(match git_url {
         Some(url) => match url.contains(':') {
             true => (name.to_string(), Some(url.clone())),
@@ -207,6 +230,14 @@ fn get_name_from_url(url: &str) -> Result<String> {
 mod tests {
     use super::*;
     use pretty_assertions::assert_str_eq;
+
+    #[test]
+    fn typed_plugin_name_uses_configured_source() {
+        assert_eq!(
+            get_name_and_url("vfox:bfs", &None).unwrap(),
+            ("vfox:bfs".to_string(), None)
+        );
+    }
 
     #[test]
     fn test_get_name_from_url() {
