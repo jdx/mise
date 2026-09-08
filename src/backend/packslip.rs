@@ -1007,13 +1007,41 @@ impl PackslipBackend {
     }
 }
 
+/// Verified signer evidence whose pin is committed only after installation.
+pub(crate) struct PendingPin {
+    project: String,
+    scheme: String,
+    key_id: String,
+    issuer: Option<String>,
+    attested_by: String,
+    provenance: bool,
+    logged: bool,
+}
+
+impl PendingPin {
+    pub(crate) fn record(self) -> Result<()> {
+        packslip_pins::record(
+            &self.project,
+            Observed {
+                scheme: &self.scheme,
+                key_id: &self.key_id,
+                issuer: self.issuer.as_deref(),
+                attested_by: &self.attested_by,
+                provenance: self.provenance,
+                logged: self.logged,
+            },
+        )?;
+        Ok(())
+    }
+}
+
 impl PackslipBackend {
     pub(crate) async fn install_payload(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,
         vfox_plugin: bool,
-    ) -> Result<ToolVersion> {
+    ) -> Result<(ToolVersion, PendingPin)> {
         let project = self.project()?;
         let raw_opts = tv.request.options();
         let opts = PackslipOptions::new(&raw_opts);
@@ -1286,18 +1314,18 @@ impl PackslipBackend {
         if !vfox_plugin {
             crate::packslip::fetch_files(&tv, &statement, Some(&artifact), ctx.pr.as_ref()).await?;
         }
-        // The pin records what was installed, so a release that failed to
-        // unpack or link leaves no mark; the check above is what refuses.
-        // A pin that cannot be written must not leave its artifact behind
-        // either: `always_keep_install` would preserve an install whose
-        // signer was never recorded, and the next release — from any signer
-        // at all — would then set the project's first pin with that one
-        // still in place.
-        if let Err(err) = packslip_pins::record(&project, observed) {
-            let _ = file::remove_all(tv.install_path());
-            return Err(err);
-        }
-        Ok(tv)
+        Ok((
+            tv,
+            PendingPin {
+                project,
+                scheme: observed.scheme.to_owned(),
+                key_id: observed.key_id.to_owned(),
+                issuer: observed.issuer.map(str::to_owned),
+                attested_by: observed.attested_by.to_owned(),
+                provenance: observed.provenance,
+                logged: observed.logged,
+            },
+        ))
     }
 }
 
@@ -1466,7 +1494,12 @@ impl Backend for PackslipBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        self.install_payload(ctx, tv, false).await
+        let (tv, pin) = self.install_payload(ctx, tv, false).await?;
+        if let Err(error) = pin.record() {
+            let _ = file::remove_all(tv.install_path());
+            return Err(error);
+        }
+        Ok(tv)
     }
 
     /// `variant` decides which artifact is downloaded, so a lock entry for a

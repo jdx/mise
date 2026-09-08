@@ -111,10 +111,8 @@ its root and contain no links, special files, Git metadata, or unsafe paths. Mis
 uses the packslip backend's signature, digest, signer, and release policy checks.
 It verifies and stages replacements before removing the previous plugin.
 
-The [bfs publisher pilot](https://github.com/mise-plugins/vfox-bfs/pull/1) exercises
-this archive format on Linux and macOS. Its registry entry remains Git-based
-until the publisher ships a release; existing Git and ZIP plugin sources continue
-to work.
+The bfs registry entry uses the signed [v0.1.0 plugin release](https://github.com/mise-plugins/vfox-bfs/releases/tag/v0.1.0),
+verified on Linux and macOS. Existing Git and ZIP plugin sources continue to work.
 
 For more information, see:
 

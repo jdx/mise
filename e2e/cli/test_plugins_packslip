@@ -62,3 +62,8 @@ mise plugins install vfox:bfs
 assert "test -f '$plugin/metadata.lua'"
 assert_contains "mise plugins ls --urls" "packslip:github.com/mise-plugins/vfox-bfs#0.1.0-dev.2"
 assert "test ! -e git-invoked"
+
+mise plugins uninstall bfs
+mise plugins install bfs
+assert "test -f '$plugin/metadata.lua'"
+assert "test ! -e git-invoked"

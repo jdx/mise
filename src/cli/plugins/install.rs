@@ -142,7 +142,22 @@ pub(crate) async fn install_plugin(
     force: bool,
     dry_run: bool,
 ) -> Result<()> {
-    let (plugin_type, name) = PluginType::from_plugin_config(name);
+    let explicit_type = name.contains(':');
+    let (mut plugin_type, name) = PluginType::from_plugin_config(name);
+    let git_url = git_url.or_else(|| {
+        config
+            .get_repo_url(name)
+            .filter(|url| url.starts_with("packslip:"))
+    });
+    if git_url
+        .as_deref()
+        .is_some_and(|url| url.starts_with("packslip:"))
+    {
+        if explicit_type && plugin_type != PluginType::Vfox {
+            bail!("packslip plugin sources require the vfox plugin type");
+        }
+        plugin_type = PluginType::Vfox;
+    }
     let name = name.to_string();
     if plugin_type == PluginType::Package && crate::system::packages::is_builtin_manager_name(&name)
     {
@@ -150,11 +165,7 @@ pub(crate) async fn install_plugin(
     }
     let path = dirs::PLUGINS.join(name.to_kebab_case());
     let plugin = plugin_type.plugin(name.clone());
-    if let Some(url) = git_url.or_else(|| {
-        config
-            .get_repo_url(&name)
-            .filter(|url| url.starts_with("packslip:"))
-    }) {
+    if let Some(url) = git_url {
         plugin.set_remote_url(url);
     }
     if !force && plugin.is_installed() {

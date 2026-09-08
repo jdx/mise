@@ -189,6 +189,10 @@ impl VfoxPlugin {
 
     fn has_repo_url_override(&self) -> bool {
         self.repo_url.lock().unwrap().is_some()
+            || self
+                .full
+                .as_deref()
+                .is_some_and(|full| full.starts_with("vfox:packslip:"))
     }
 }
 

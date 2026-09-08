@@ -127,14 +127,16 @@ pub(crate) async fn install(
     ));
     // Reuse the backend's signed release lists, stamper policy, age policy,
     // signature verification, digest checks, and remembered signer pins.
-    let tv = backend.install_payload(&ctx, tv, true).await?;
+    let (tv, pin) = backend.install_payload(&ctx, tv, true).await?;
     let state = Installed {
         source,
         version: tv.version,
         platforms: tv.lock_platforms,
     };
     file::write(payload.join(STATE_FILE), serde_json::to_vec_pretty(&state)?)?;
-    if let Err(error) = replace(&payload, path, &staging.path().join("previous")) {
+    if let Err(error) = replace(&payload, path, &staging.path().join("previous"), || {
+        pin.record()
+    }) {
         let recovery = staging.keep();
         return Err(error.wrap_err(format!(
             "plugin replacement failed; recovery files retained at {}",
@@ -145,12 +147,24 @@ pub(crate) async fn install(
     Ok(())
 }
 
-fn replace(payload: &Path, destination: &Path, backup: &Path) -> Result<()> {
+fn replace(
+    payload: &Path,
+    destination: &Path,
+    backup: &Path,
+    commit: impl FnOnce() -> Result<()>,
+) -> Result<()> {
     let existed = file::entry_exists(destination);
     if existed {
         file::rename(destination, backup)?;
     }
     if let Err(error) = file::rename(payload, destination) {
+        if existed {
+            file::rename(backup, destination).wrap_err("restoring previous plugin")?;
+        }
+        return Err(error);
+    }
+    if let Err(error) = commit() {
+        file::rename(destination, payload)?;
         if existed {
             file::rename(backup, destination).wrap_err("restoring previous plugin")?;
         }
@@ -204,6 +218,9 @@ pub(crate) fn validate_archive(path: &Path) -> Result<()> {
         );
         let path = entry.path()?;
         for component in path.components() {
+            if component == Component::CurDir {
+                continue;
+            }
             let Component::Normal(name) = component else {
                 bail!("vfox plugin archive contains an unsafe path");
             };
@@ -259,6 +276,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         for (name, link) in [
             ("metadata.lua", false),
+            ("./metadata.lua", false),
             (".git/config", false),
             (STATE_FILE, false),
             ("hooks/link", true),
@@ -284,10 +302,33 @@ mod tests {
             builder.into_inner().unwrap().finish().unwrap();
             assert_eq!(
                 validate_archive(&path).is_ok(),
-                name == "metadata.lua",
+                matches!(name, "metadata.lua" | "./metadata.lua"),
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn failed_pin_restores_previous_plugin() {
+        let temp = tempfile::tempdir().unwrap();
+        let plugin = temp.path().join("plugin");
+        let payload = temp.path().join("payload");
+        std::fs::create_dir(&plugin).unwrap();
+        std::fs::create_dir(&payload).unwrap();
+        std::fs::write(plugin.join("metadata.lua"), "previous").unwrap();
+        std::fs::write(payload.join("metadata.lua"), "new").unwrap();
+        let result = replace(&payload, &plugin, &temp.path().join("backup"), || {
+            assert_eq!(
+                std::fs::read_to_string(plugin.join("metadata.lua")).unwrap(),
+                "new"
+            );
+            eyre::bail!("pin write failed")
+        });
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(plugin.join("metadata.lua")).unwrap(),
+            "previous"
+        );
     }
 
     #[test]
@@ -300,7 +341,8 @@ mod tests {
             replace(
                 &temp.path().join("missing"),
                 &plugin,
-                &temp.path().join("backup")
+                &temp.path().join("backup"),
+                || panic!("must not record a pin before replacement succeeds")
             )
             .is_err()
         );
