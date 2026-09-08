@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Z8M8H89NDKVT9V1ASEBJ64",
+  "session_id": "01a07e79-c794-74b2-a817-2c727e185aa9",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-08T01:02:57.633009Z",
+  "branch": "codex/fix-macos-private-metadata",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/sandboxing.md",
+    "src/sandbox/macos.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "83122bbef15e",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 131230,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4473728,
+    "output_tokens": 16795,
+    "api_call_count": 49
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-08T01:02:57.590166Z",
+    "agent_lines": 31,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 31,
+    "total_lines_changed": 32,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
