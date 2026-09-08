@@ -229,12 +229,39 @@ fn display_plist(value: &plist::Value) -> String {
             .unwrap_or_else(|| format!("{value:?}")),
         plist::Value::Real(value) => value.to_string(),
         plist::Value::String(value) => value.clone(),
-        plist::Value::Array(values) => format!("array ({} items)", values.len()),
-        plist::Value::Dictionary(values) => format!("dictionary ({} entries)", values.len()),
+        plist::Value::Array(values) => plist_to_json(value)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| format!("array ({} items)", values.len())),
+        plist::Value::Dictionary(values) => plist_to_json(value)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| format!("dictionary ({} entries)", values.len())),
         plist::Value::Data(value) => format!("data ({} bytes)", value.len()),
         plist::Value::Date(value) => format!("{value:?}"),
         plist::Value::Uid(value) => format!("{value:?}"),
         _ => format!("{value:?}"),
+    }
+}
+
+fn plist_to_json(value: &plist::Value) -> Option<serde_json::Value> {
+    match value {
+        plist::Value::Boolean(value) => Some((*value).into()),
+        plist::Value::Integer(value) => value
+            .as_signed()
+            .map(Into::into)
+            .or_else(|| value.as_unsigned().map(Into::into)),
+        plist::Value::Real(value) => Some((*value).into()),
+        plist::Value::String(value) => Some(value.clone().into()),
+        plist::Value::Array(values) => values
+            .iter()
+            .map(plist_to_json)
+            .collect::<Option<Vec<_>>>()
+            .map(Into::into),
+        plist::Value::Dictionary(values) => values
+            .iter()
+            .map(|(key, value)| Some((key.clone(), plist_to_json(value)?)))
+            .collect::<Option<serde_json::Map<_, _>>>()
+            .map(Into::into),
+        _ => None,
     }
 }
 
@@ -474,6 +501,19 @@ mod tests {
 
         let nested = DefaultsValue::from_toml(&val("[{ enabled = true, count = 2 }]")).unwrap();
         assert!(nested.matches(&nested.to_plist()));
+    }
+
+    #[test]
+    fn test_display_plist_collections() {
+        let nested = DefaultsValue::from_toml(&val("[{ enabled = true, count = 2 }]")).unwrap();
+        assert_eq!(
+            display_plist(&nested.to_plist()),
+            r#"[{"enabled":true,"count":2}]"#
+        );
+        assert_eq!(
+            display_plist(&plist::Value::Array(vec![plist::Value::Data(vec![1])])),
+            "array (1 items)"
+        );
     }
 
     /// `status()` must not fail when keys don't exist yet — this is the
