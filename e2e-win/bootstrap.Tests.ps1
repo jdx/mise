@@ -1,3 +1,10 @@
+$script:WingetReady = $false
+$wingetCommand = Get-Command winget -ErrorAction Ignore
+if ($wingetCommand) {
+    & $wingetCommand.Source list --id Microsoft.AppInstaller --exact --disable-interactivity *> $null
+    $script:WingetReady = $LASTEXITCODE -eq 0
+}
+
 Describe 'bootstrap' {
     BeforeAll {
         $script:OriginalDir = Get-Location
@@ -68,7 +75,7 @@ config_roots = ["service-root"]
         $out | Should -BeLike '*bootstrap system services are only supported on Linux*'
     }
 
-    It 'reports an installed WinGet package' -Skip:(-not (Get-Command winget -ErrorAction Ignore)) {
+    It 'reports an installed WinGet package' -Skip:(-not $script:WingetReady) {
         @"
 [bootstrap.packages]
 "winget:Microsoft.AppInstaller" = "latest"
@@ -79,7 +86,7 @@ config_roots = ["service-root"]
         $out | Should -BeLike '*winget*Microsoft.AppInstaller*installed*'
     }
 
-    It 'dry-runs WinGet source refresh and an exact package install' -Skip:(-not (Get-Command winget -ErrorAction Ignore)) {
+    It 'dry-runs WinGet source refresh and an exact package install' -Skip:(-not $script:WingetReady) {
         @"
 [bootstrap.packages]
 "winget:Mise.Does.Not.Exist.0123456789" = "latest"
@@ -91,7 +98,7 @@ config_roots = ["service-root"]
         $out | Should -BeLike '*winget install --id Mise.Does.Not.Exist.0123456789 --exact --silent --accept-source-agreements --accept-package-agreements --disable-interactivity*'
     }
 
-    It 'passes WinGet version pins without interpreting them' -Skip:(-not (Get-Command winget -ErrorAction Ignore)) {
+    It 'passes WinGet version pins without interpreting them' -Skip:(-not $script:WingetReady) {
         @"
 [bootstrap.packages]
 "winget:Microsoft.AppInstaller" = "0.0-preview"

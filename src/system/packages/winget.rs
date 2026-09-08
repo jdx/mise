@@ -102,16 +102,19 @@ fn parse_list_rows(output: &str, package_id: &str) -> Vec<String> {
     output
         .lines()
         .filter_map(|line| {
-            let offset = line.rfind(package_id)?;
-            let before = &line[..offset];
-            let after = &line[offset + package_id.len()..];
-            let bounded_before = before.chars().next_back().is_none_or(char::is_whitespace);
-            let bounded_after = after.chars().next().is_none_or(char::is_whitespace);
-            if bounded_before && bounded_after {
-                after.split_whitespace().next().map(str::to_string)
-            } else {
-                None
-            }
+            line.match_indices(package_id)
+                .filter_map(|(offset, _)| {
+                    let before = &line[..offset];
+                    let after = &line[offset + package_id.len()..];
+                    let bounded_before = before.chars().next_back().is_none_or(char::is_whitespace);
+                    let bounded_after = after.chars().next().is_none_or(char::is_whitespace);
+                    if bounded_before && bounded_after {
+                        after.split_whitespace().next().map(str::to_string)
+                    } else {
+                        None
+                    }
+                })
+                .last()
         })
         .collect()
 }
@@ -297,6 +300,12 @@ mod tests {
     #[test]
     fn parses_row_when_name_contains_the_id() {
         let output = "Example.Tool Example.Tool 1.2.3 winget\n";
+        assert_eq!(parse_list_rows(output, "Example.Tool"), vec!["1.2.3"]);
+    }
+
+    #[test]
+    fn parses_id_column_when_source_name_matches_the_id() {
+        let output = "Example Example.Tool 1.2.3 Example.Tool\n";
         assert_eq!(parse_list_rows(output, "Example.Tool"), vec!["1.2.3"]);
     }
 
