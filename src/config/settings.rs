@@ -1042,7 +1042,7 @@ impl Settings {
 
     /// Initialize a Git credential subprocess without reading project settings.
     pub(crate) fn init_git_credential() -> Result<()> {
-        super::miserc::init_without_files();
+        super::miserc::init_global_only()?;
         let mut builder = Self::builder().env();
         // Reuse operator-owned authentication settings, including the OAuth
         // client ID needed to locate cached tokens. Never discover project files.
