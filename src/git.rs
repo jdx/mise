@@ -515,8 +515,8 @@ fn path_from_git_bytes(path: &[u8]) -> Result<PathBuf> {
 pub(crate) fn github_credential_config(host: &str) -> String {
     let executable = crate::env::MISE_BIN.to_string_lossy();
     #[cfg(windows)]
-    let executable = executable.replace('\\', "/");
-    let executable = shell_escape::unix::escape(executable.into());
+    let executable = std::borrow::Cow::Owned(executable.replace('\\', "/"));
+    let executable = shell_escape::unix::escape(executable);
     format!("credential.https://{host}.helper=!{executable} token github --git-credential")
 }
 

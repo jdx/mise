@@ -26,14 +26,19 @@ static MISERC: OnceLock<MisercSettings> = OnceLock::new();
 static INVOCATION_CWD: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 /// Load operator-owned environment selection without discovering project files.
-pub(crate) fn init_global_only() -> Result<()> {
-    let settings = load_miserc_files(vec![
-        dirs::CONFIG.join("miserc.toml"),
+pub(crate) fn init_global_only() {
+    let mut settings = MisercSettings::default();
+    // A broken file must not block credentials or discard another valid layer.
+    for path in [
         env::MISE_SYSTEM_CONFIG_DIR.join("miserc.toml"),
-    ])?;
+        dirs::CONFIG.join("miserc.toml"),
+    ] {
+        if let Ok(layer) = load_miserc_files(vec![path]) {
+            merge_settings(&mut settings, layer);
+        }
+    }
     let _ = MISERC.set(settings);
     let _ = take_tera_accessed_files();
-    Ok(())
 }
 
 /// Initialize miserc settings by loading .miserc.toml files.
