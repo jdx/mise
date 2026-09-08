@@ -844,6 +844,7 @@ impl Cli {
         // Git invokes this exact internal form while holding repository locks.
         // Avoid project configuration, shims, and normal CLI initialization.
         if args.len() == 5 && args[1..4] == ["token", "github", "--git-credential"] {
+            crate::env::ARGS.write().unwrap().clone_from(args);
             Settings::init_git_credential()?;
             return token::git_credential::run(&args[4]);
         }

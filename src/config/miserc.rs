@@ -25,6 +25,11 @@ use crate::tera::{
 static MISERC: OnceLock<MisercSettings> = OnceLock::new();
 static INVOCATION_CWD: OnceLock<Option<PathBuf>> = OnceLock::new();
 
+/// Credential subprocesses must not discover or render project configuration.
+pub(crate) fn init_without_files() {
+    let _ = MISERC.set(MisercSettings::default());
+}
+
 /// Initialize miserc settings by loading .miserc.toml files.
 /// This must be called early in the initialization process, before
 /// MISE_ENV or other early settings are accessed.

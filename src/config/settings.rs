@@ -1042,7 +1042,22 @@ impl Settings {
 
     /// Initialize a Git credential subprocess without reading project settings.
     pub(crate) fn init_git_credential() -> Result<()> {
-        let settings = Self::load_sources_from(None, SettingsLoadPolicy::ENVIRONMENT_ONLY)?;
+        super::miserc::init_without_files();
+        let mut builder = Self::builder().env();
+        // Reuse operator-owned authentication settings, including the OAuth
+        // client ID needed to locate cached tokens. Never discover project files.
+        let paths = super::global_config_files()
+            .into_iter()
+            .rev()
+            .chain(super::system_config_files().into_iter().rev());
+        for path in paths {
+            if let Ok(settings) = Self::parse_settings_file(&path) {
+                let mut layer = SettingsPartial::empty();
+                layer.github = settings.github;
+                builder = builder.preloaded(layer);
+            }
+        }
+        let settings = builder.load()?;
         *BASE_SETTINGS.write().unwrap() = Some(Arc::new(settings));
         Ok(())
     }
