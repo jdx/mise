@@ -27,7 +27,6 @@ pub(crate) mod exec;
 mod external;
 mod fmt;
 mod generate;
-mod git_credential;
 mod github;
 mod global;
 mod hook_env;
@@ -264,8 +263,6 @@ pub(crate) enum Commands {
     Fmt(fmt::Fmt),
     Generate(generate::Generate),
     Github(github::Github),
-    #[usage(hide = true)]
-    GitCredential(git_credential::GitCredential),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
     HookNotFound(hook_not_found::HookNotFound),
@@ -404,7 +401,6 @@ impl Commands {
             Self::Fmt(cmd) => cmd.run(),
             Self::Generate(cmd) => cmd.run().await,
             Self::Github(cmd) => cmd.run().await,
-            Self::GitCredential(cmd) => cmd.run(),
             Self::Global(cmd) => cmd.run().await,
             Self::HookEnv(cmd) => cmd.run().await,
             Self::HookNotFound(cmd) => cmd.run().await,
@@ -917,8 +913,10 @@ impl Cli {
         measure!("settings", { Settings::try_get() })?;
         // Git may hold installation locks while asking for credentials. Do not
         // refresh registries, migrate, or auto-update from its helper process.
-        if let Some(Commands::GitCredential(helper)) = &cli.command {
-            return helper.run();
+        if let Some(Commands::Token(token)) = &cli.command
+            && let Some(result) = token.run_git_credential()
+        {
+            return result;
         }
         let auto_update_command_eligible = !print_version
             && cli

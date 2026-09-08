@@ -512,7 +512,7 @@ fn github_credential_config() -> String {
     #[cfg(windows)]
     let executable = executable.replace('\\', "/");
     let executable = shell_escape::unix::escape(executable.into());
-    format!("credential.https://github.com.helper=!{executable} git-credential")
+    format!("credential.https://github.com.helper=!{executable} token github --git-credential")
 }
 
 fn get_git_version() -> Result<String> {

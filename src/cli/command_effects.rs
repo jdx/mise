@@ -192,7 +192,6 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("generate task-stubs", Write),
     ("generate tool-stub", Write),
     // Removes the mise CLI and every tool, plugin and cache it owns.
-    ("git-credential", Read),
     ("github", Read),
     ("github token", Read),
     // Writes the global config after setting the version.
