@@ -3828,7 +3828,7 @@ impl BootstrapStatus {
             for req in &defaults {
                 report.row(
                     "defaults",
-                    format!("{} {}", req.domain, req.key),
+                    format!("{} {}", req.display_domain(), req.key),
                     "",
                     format!("skipped ({reason})"),
                     false,
@@ -3842,6 +3842,7 @@ impl BootstrapStatus {
                     "entries": defaults.iter().map(|req| {
                         json!({
                             "domain": req.domain,
+                            "current_host": req.current_host,
                             "key": req.key,
                             "value": req.value.to_json(),
                             "state": "skipped",
@@ -3861,13 +3862,14 @@ impl BootstrapStatus {
             };
             report.row(
                 "defaults",
-                format!("{} {}", s.request.domain, s.request.key),
+                format!("{} {}", s.request.display_domain(), s.request.key),
                 current.clone(),
                 state,
                 missing,
             );
             json_entries.push(json!({
                 "domain": s.request.domain,
+                "current_host": s.request.current_host,
                 "key": s.request.key,
                 "value": s.request.value.to_json(),
                 "current": current,
@@ -4783,7 +4785,7 @@ impl BootstrapMacosDefaultsStatus {
                 } else {
                     for req in &defaults {
                         rows.push(vec![
-                            req.domain.clone(),
+                            req.display_domain(),
                             req.key.clone(),
                             req.value.to_string(),
                             "".to_string(),
@@ -4809,6 +4811,7 @@ impl BootstrapMacosDefaultsStatus {
                     if self.json {
                         json_entries.push(json!({
                             "domain": s.request.domain,
+                            "current_host": s.request.current_host,
                             "key": s.request.key,
                             "value": s.request.value.to_json(),
                             "current": current,
@@ -4816,7 +4819,7 @@ impl BootstrapMacosDefaultsStatus {
                         }));
                     } else {
                         rows.push(vec![
-                            s.request.domain.clone(),
+                            s.request.display_domain(),
                             s.request.key.clone(),
                             s.request.value.to_string(),
                             current,

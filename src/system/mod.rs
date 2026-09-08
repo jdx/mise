@@ -307,6 +307,9 @@ pub(crate) struct BootstrapMacosTomlConfig {
     /// instead of failing the whole config.
     #[serde(default)]
     pub defaults: IndexMap<String, toml::Value>,
+    /// The same domain/key/value map, scoped to the current host.
+    #[serde(default)]
+    pub defaults_current_host: IndexMap<String, toml::Value>,
     /// `[bootstrap.macos.launchd.agents.<name>]`: declarative macOS user
     /// LaunchAgents rendered to ~/Library/LaunchAgents.
     #[serde(default)]
@@ -751,13 +754,13 @@ fn merge_package_configs<'a>(
     merged
 }
 
-/// Aggregate `[bootstrap.macos.defaults]` across all loaded config files.
+/// Aggregate macOS defaults across all loaded config files.
 ///
-/// (domain, key) pairs union global -> local; a more local config overrides
-/// the value a global config declared. Unsupported value shapes warn
+/// Within each host scope, (domain, key) pairs union global -> local; a more
+/// local config overrides the value a global config declared. Unsupported value shapes warn
 /// (forward compatibility) and are skipped.
 pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
-    let mut merged: IndexMap<(String, String), toml::Value> = IndexMap::new();
+    let mut merged: IndexMap<(String, String, bool), toml::Value> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
@@ -777,18 +780,42 @@ pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
                 }
             }
             for (key, value) in merge_raw_over_friendly_macos_defaults(friendly, raw) {
-                merged.insert(key, value);
+                merged.insert((key.0, key.1, false), value);
+            }
+            for (domain, entries) in sys.macos.defaults_current_host {
+                match entries {
+                    toml::Value::Table(entries) => {
+                        for (key, value) in entries {
+                            merged.insert((domain.clone(), key, true), value);
+                        }
+                    }
+                    _ => warn!(
+                        "[bootstrap.macos.defaults_current_host]: expected a table of key/value pairs for domain '{domain}'"
+                    ),
+                }
             }
         }
     }
     let mut out = vec![];
-    for ((domain, key), value) in merged {
+    for ((domain, key, current_host), value) in merged {
         match DefaultsValue::from_toml(&value) {
-            Some(value) => out.push(DefaultsRequest { domain, key, value }),
-            None => warn!(
-                "[bootstrap.macos.defaults]: unsupported value type for {domain} {key} \
-                 (expected bool, integer, float, string, array, or table)"
-            ),
+            Some(value) => out.push(DefaultsRequest {
+                domain,
+                key,
+                current_host,
+                value,
+            }),
+            None => {
+                let section = if current_host {
+                    "defaults_current_host"
+                } else {
+                    "defaults"
+                };
+                warn!(
+                    "[bootstrap.macos.{section}]: unsupported value type for {domain} {key} \
+                     (expected bool, integer, float, string, array, or table)"
+                );
+            }
         }
     }
     out
@@ -859,7 +886,12 @@ pub(crate) fn macos_defaults_entry_count(macos: &BootstrapMacosTomlConfig) -> us
             _ => malformed_domains += 1,
         }
     }
-    merge_raw_over_friendly_macos_defaults(friendly, raw).len() + malformed_domains
+    let current_host = macos
+        .defaults_current_host
+        .values()
+        .map(|entries| entries.as_table().map_or(1, |entries| entries.len()))
+        .sum::<usize>();
+    merge_raw_over_friendly_macos_defaults(friendly, raw).len() + malformed_domains + current_host
 }
 
 fn merge_raw_over_friendly_macos_defaults(
@@ -2349,5 +2381,12 @@ mod tests {
         macos.defaults.insert("malformed".into(), tv("true"));
 
         assert_eq!(macos_defaults_entry_count(&macos), 5);
+        macos
+            .defaults_current_host
+            .insert("NSGlobalDomain".into(), tv("{ KeyRepeat = 3 }"));
+        macos
+            .defaults_current_host
+            .insert("malformed".into(), tv("true"));
+        assert_eq!(macos_defaults_entry_count(&macos), 7);
     }
 }

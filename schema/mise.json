@@ -4695,6 +4695,37 @@
                 }
               }
             },
+            "defaults_current_host": {
+              "type": "object",
+              "description": "Current-host macOS user defaults, keyed by preferences domain; equivalent to defaults -currentHost",
+              "additionalProperties": {
+                "type": "object",
+                "description": "defaults keys and their desired values for this domain",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array"
+                    },
+                    {
+                      "type": "object"
+                    }
+                  ],
+                  "description": "Desired typed property-list value"
+                }
+              }
+            },
             "launchd": {
               "type": "object",
               "description": "macOS launchd bootstrap config",

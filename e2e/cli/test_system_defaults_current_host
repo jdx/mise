@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+require_cmd jq
+domain="com.mise.defaults-current-host-test.$$"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF_CONFIG
+[bootstrap.macos.defaults_current_host."$domain"]
+ScopeValue = 1
+GlobalOnly = true
+EOF_CONFIG
+cat >mise.toml <<EOF_CONFIG
+[bootstrap.macos.defaults."$domain"]
+ScopeValue = false
+[bootstrap.macos.defaults_current_host."$domain"]
+ScopeValue = 2
+EOF_CONFIG
+assert_contains 'mise bootstrap macos defaults status' '(current host)'
+if [[ $(uname) != Darwin ]]; then
+  assert_contains 'mise bootstrap macos defaults status' skipped
+  assert_succeed 'mise bootstrap macos defaults apply --yes'
+else
+  trap 'defaults delete "$domain" >/dev/null 2>&1 || true; defaults -currentHost delete "$domain" >/dev/null 2>&1 || true' EXIT
+  assert_contains 'mise bootstrap macos defaults apply --dry-run' "defaults -currentHost write $domain ScopeValue -int 2"
+  assert 'mise bootstrap macos defaults status --json | jq ".macos_defaults.entries | length"' 3
+  assert_succeed 'mise bootstrap macos defaults apply --yes'
+  assert "defaults read '$domain' ScopeValue" 0
+  assert "defaults -currentHost read '$domain' ScopeValue" 2
+  assert "defaults -currentHost read '$domain' GlobalOnly" 1
+  assert_succeed 'mise bootstrap macos defaults status --missing'
+  assert 'mise bootstrap macos defaults status --json | jq "[.macos_defaults.entries[] | select(.current_host)] | length"' 2
+  assert_contains 'mise bootstrap macos defaults apply --yes 2>&1' '3 value(s) already set'
+fi
