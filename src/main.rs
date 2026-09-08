@@ -31,6 +31,7 @@ mod timings;
 
 #[macro_use]
 mod cmd;
+mod inline_command;
 
 mod agecrypt;
 mod aqua;

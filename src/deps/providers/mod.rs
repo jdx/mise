@@ -147,6 +147,7 @@ impl ProviderBase {
 
     fn command(&self, program: &str, args: &[&str], description: String) -> DepsCommand {
         DepsCommand {
+            inline: false,
             program: program.to_string(),
             args: args.iter().map(|arg| arg.to_string()).collect(),
             env: self.config.env.clone(),

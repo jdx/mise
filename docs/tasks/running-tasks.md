@@ -48,9 +48,25 @@ For a precise, validated task interface, define arguments and flags with the
 are forwarded according to how the task is executed:
 
 - If `run` is an array, the arguments are passed only to its last entry.
-- For a regular inline shell command, the arguments are appended to the command text.
+- For a regular inline command, arguments are appended as literal arguments (shell-quoted when a shell is used).
 - A [shebang task](/tasks/toml-tasks#shell-shebang) is executed as a script file, so its interpreter
   exposes the arguments normally—for example, as `$1` and `$@` in Bash.
+
+On Unix, mise can execute simple inline commands such as `node build.js` directly,
+without starting the default `sh`. Shell syntax, quoting, expansion, builtins,
+ambiguous executable lookup, and environments containing `ENV` or `BASH_ENV`
+keep using the shell. Sandboxed and audited tasks also retain their shell.
+Windows execution is unchanged.
+
+:::warning Custom shell wrappers
+An explicit task `shell`, `mise run --shell`, or `unix_default_inline_shell_args`
+setting always forces shell execution, even when it names the default shell.
+A wrapper named `sh` on `PATH` may be bypassed; configure it explicitly if it
+must run.
+:::
+
+The same optimization applies to mise-owned inline hooks, templates,
+dependency commands, installation commands, credentials, and task cache inputs.
 
 Because everything after the task name belongs to the task, mise's own flags have to come
 _before_ it—`mise run --silent build` rather than `mise run build --silent`, which passes

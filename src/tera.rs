@@ -1479,7 +1479,14 @@ pub(crate) fn tera1_exec(
             if let Some(dir) = &dir {
                 expr = expr.dir(dir);
             }
-            Ok(expr.read()?)
+            Ok(crate::inline_command::optimize_expression(
+                expr,
+                command,
+                &env_no_shims,
+                dir.as_deref(),
+                Settings::get().implicit_inline_shell(),
+            )
+            .read()?)
         };
         Ok(json!(
             run_once().map_err(|e| tera1_err(format!("exec command: {e}")))?
@@ -1606,7 +1613,14 @@ pub(crate) fn tera_exec(
                     if let Some(dir) = &dir {
                         expr = expr.dir(dir);
                     }
-                    Ok(expr.read()?)
+                    Ok(crate::inline_command::optimize_expression(
+                        expr,
+                        &command,
+                        &env_no_shims,
+                        dir.as_deref(),
+                        Settings::get().implicit_inline_shell(),
+                    )
+                    .read()?)
                 };
                 let result = if cache.is_some() || cache_duration.is_some() {
                     let cachehash = hash::hash_blake3_to_str(

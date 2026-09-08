@@ -81,6 +81,7 @@ async fn execute(
         .iter()
         .map(|f| f.to_string_lossy().replace(':', "\\:"))
         .join(":");
+    let direct_enabled = shell.is_none() && Settings::get().implicit_inline_shell();
     let mut shell = match shell {
         Some(shell) => crate::path::split_shell_command(shell)?,
         None => Settings::get().default_inline_shell()?,
@@ -129,11 +130,15 @@ async fn execute(
             return Ok(());
         }
     }
-    cmd(program, args)
-        .stdout_to_stderr()
-        // .dir(root)
-        .full_env(env)
-        .run()?;
+    crate::inline_command::optimize_expression(
+        cmd(program, args).full_env(&env),
+        run,
+        &env,
+        None,
+        direct_enabled,
+    )
+    .stdout_to_stderr()
+    .run()?;
     Ok(())
 }
 

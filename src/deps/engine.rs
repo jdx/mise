@@ -1247,6 +1247,12 @@ impl DepsEngine {
             runner = runner.env(k, v);
         }
 
+        if cmd.inline
+            && let Some(body) = cmd.args.last()
+        {
+            runner = runner.optimize_inline(body, &[], Settings::get().implicit_inline_shell());
+        }
+
         // Use raw output for better UX during dependency installation
         if Settings::get().raw {
             runner = runner.raw(true);

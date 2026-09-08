@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+mkdir -p bin
+cat >bin/sh <<'EOF'
+#!/bin/sh
+export INLINE_SHELL_USED=shell
+exec /bin/sh "$@"
+EOF
+cat >bin/probe <<'EOF'
+#!/bin/sh
+printf '%s:%s\n' "${INLINE_SHELL_USED:-direct}" "$1"
+EOF
+chmod +x bin/sh bin/probe
+export PATH="$PWD/bin:$PATH"
+touch watched.txt input.txt
+cat >mise.toml <<'EOF'
+[settings]
+experimental = true
+[env]
+FROM_TEMPLATE = "{{ exec(command='probe template') }}"
+[hooks.enter]
+run = "probe hook"
+[[watch_files]]
+patterns = ["watched.txt"]
+run = "probe watch"
+[deps.local]
+run = "probe deps"
+sources = ["input.txt"]
+outputs = []
+[tasks.cached]
+run = "probe task"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ["probe cache"] }
+EOF
+assert_contains "mise env" "direct:template"
+assert_contains "MISE_TERA_V1=1 mise env" "direct:template"
+assert_contains "mise hook-env 2>&1" "direct:hook"
+eval "$(mise hook-env)"
+sleep 1
+touch watched.txt
+assert_contains "mise hook-env 2>&1" "direct:watch"
+assert_contains "mise deps --only local 2>&1" "direct:deps"
+assert_contains "mise run -q cached" "direct:task"
+cat >>mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", postinstall = "probe tool-postinstall" }
+[hooks.preinstall]
+run = "probe preinstall"
+[hooks.postinstall]
+run = "probe postinstall"
+[bootstrap.hooks.final]
+run = "probe bootstrap"
+EOF
+mise install >install.out 2>&1
+assert_contains "cat install.out" "direct:preinstall"
+assert_contains "cat install.out" "direct:postinstall"
+assert_contains "cat install.out" "direct:tool-postinstall"
+assert_contains "mise bootstrap --yes 2>&1" "direct:bootstrap"
+# A failing PATH sh proves command-input capture itself also skips that shell.
+cat >bin/sh <<'EOF'
+#!/bin/sh
+echo unexpected-inline-shell >&2
+exit 99
+EOF
+assert_contains "mise run -q --force cached" "direct:task"
+
+# Credential helper positional parameters are shell-only, not extra argv.
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN GITHUB_ENTERPRISE_TOKEN GH_ENTERPRISE_TOKEN GITHUB_API_TOKEN MISE_GITHUB_ENTERPRISE_TOKEN
+cat >bin/credential-probe <<'EOF'
+#!/bin/sh
+printf '%s-%s-%s-%s\n' "${INLINE_SHELL_USED:-direct}" "$#" "$MISE_CREDENTIAL_HOST" "$MISE_CREDENTIAL_PROVIDER"
+EOF
+chmod +x bin/credential-probe
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings.github]
+credential_command = "credential-probe"
+EOF
+assert "mise token github inline.example --raw" "direct-0-inline.example-github"
+cat >bin/sh <<'EOF'
+#!/bin/sh
+exec /bin/sh "$@"
+EOF
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings.github]
+credential_command = 'printf token-for-%s "$1"'
+EOF
+assert "mise token github inline.example --raw" "token-for-inline.example"

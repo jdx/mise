@@ -172,6 +172,7 @@ pub(crate) async fn run_phase(
         info!("$ {run}");
         crate::cmd::CmdLineRunner::new(program)
             .cmd_body_args(shell_args, &run)
+            .optimize_inline(&run, &[], Settings::get().implicit_inline_shell())
             .raw(true)
             .execute_async()
             .await?;

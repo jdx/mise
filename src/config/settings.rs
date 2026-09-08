@@ -310,6 +310,7 @@ static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 /// 0 = false, 1 = true, 2 = never loaded (fall back to the env var).
 static LAST_SAFE: AtomicU8 = AtomicU8::new(2);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
+static EXPLICIT_INLINE_SHELL: RwLock<Option<bool>> = RwLock::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 /// Settings files that failed to parse, held until warnings can be printed.
@@ -1330,6 +1331,7 @@ impl Settings {
     }
 
     pub(crate) fn reset(cli_settings: Option<SettingsPartial>) {
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
         *CLI_SETTINGS.lock().unwrap() = cli_settings;
         *BASE_SETTINGS.write().unwrap() = None;
         // Clear caches that depend on settings and environment
@@ -1339,6 +1341,7 @@ impl Settings {
 
     /// Invalidate settings loaded from config files without discarding CLI overrides.
     pub(crate) fn reload() {
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
         *BASE_SETTINGS.write().unwrap() = None;
         crate::config::config_file::config_root::reset();
         crate::toolset::install_state::reset_tools();
@@ -1353,6 +1356,7 @@ impl Settings {
     /// BASE_SETTINGS so the next `Settings::get()` rebuilds with the override
     /// applied.
     pub(crate) fn override_with(updater: impl FnOnce(&mut SettingsPartial)) {
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
         let mut lock = CLI_SETTINGS.lock().unwrap();
         let partial = lock.get_or_insert_with(SettingsPartial::empty);
         updater(partial);
@@ -1600,6 +1604,26 @@ impl Settings {
         let mut shell = split_default_shell_or_fallback(sa, fallback)?;
         self.maybe_no_profile(&mut shell);
         Ok(shell)
+    }
+
+    /// Explicitly selecting even the default value expresses intent to run a
+    /// shell. Cache provenance separately from the resolved string value.
+    pub(crate) fn implicit_inline_shell(&self) -> bool {
+        if cfg!(windows) {
+            return false;
+        }
+        if let Some(explicit) = *EXPLICIT_INLINE_SHELL.read().unwrap() {
+            return !explicit;
+        }
+        let explicit = std::env::var_os("MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS").is_some()
+            || Self::cli_settings_layer()
+                .unix_default_inline_shell_args
+                .is_some()
+            || Self::settings_layers_from(None, SettingsTrustPolicy::AsDiscovered)
+                .iter()
+                .any(|layer| layer.unix_default_inline_shell_args.is_some());
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = Some(explicit);
+        !explicit
     }
 
     pub(crate) fn default_file_shell(&self) -> Result<Vec<String>> {

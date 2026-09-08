@@ -3578,7 +3578,13 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 .env("MISE_PROJECT_ROOT", project_root);
         }
 
-        runner.execute()?;
+        runner
+            .optimize_inline(
+                &rendered_script,
+                &[],
+                Settings::get().implicit_inline_shell(),
+            )
+            .execute()?;
         Ok(())
     }
 

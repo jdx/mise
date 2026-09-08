@@ -441,7 +441,17 @@ async fn check_command(cmd: &str) -> (bool, Option<String>, Option<String>) {
     } else {
         ("sh", vec!["-c", cmd])
     };
-    match run_capture(program, &args).await {
+    let mut command = std::process::Command::new(program);
+    command.args(&args);
+    let command = crate::inline_command::direct_command(
+        &command,
+        true,
+        cmd,
+        &[],
+        crate::config::Settings::get().implicit_inline_shell(),
+    )
+    .unwrap_or(command);
+    match capture_command(command).await {
         Some((true, _)) => (true, None, None),
         _ => (
             false,
@@ -460,11 +470,15 @@ async fn run_capture(
     program: impl AsRef<std::ffi::OsStr>,
     args: &[&str],
 ) -> Option<(bool, String)> {
-    let program = program.as_ref();
-    let fut = tokio::process::Command::new(program)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .output();
+    let mut command = std::process::Command::new(program);
+    command.args(args);
+    capture_command(command).await
+}
+
+async fn capture_command(command: std::process::Command) -> Option<(bool, String)> {
+    let program = command.get_program().to_owned();
+    let mut command = tokio::process::Command::from(command);
+    let fut = command.stdin(std::process::Stdio::null()).output();
     let output = match tokio::time::timeout(std::time::Duration::from_secs(5), fut).await {
         Ok(Ok(output)) => output,
         Ok(Err(_)) => return None,
