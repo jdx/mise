@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZCZ7ZS6F9Z55XGW82YM5FB",
+  "strategy": "manual-commit",
+  "branch": "codex/vfox-packslip-plugins",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/backends/vfox.md",
+    "e2e/cli/test_plugins_packslip",
+    "registry/bfs.toml",
+    "src/backend/packslip.rs",
+    "src/cli/plugins/install.rs",
+    "src/plugins/packslip.rs",
+    "src/plugins/vfox_plugin.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 11677,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 840576,
+    "output_tokens": 731,
+    "api_call_count": 5
+  }
+}

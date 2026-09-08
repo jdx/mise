@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZCZ7ZS6F9Z55XGW82YM5FB",
+  "session_id": "01a07e9c-1bd1-7810-8b30-5df6476265a5",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-08T02:18:51.968021Z",
+  "branch": "codex/vfox-packslip-plugins",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/backends/vfox.md",
+    "e2e/cli/test_plugins_packslip",
+    "registry/bfs.toml",
+    "src/backend/packslip.rs",
+    "src/cli/plugins/install.rs",
+    "src/plugins/packslip.rs",
+    "src/plugins/vfox_plugin.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "e5c9ee5be106",
+  "checkpoint_transcript_start": 1377,
+  "transcript_lines_at_start": 1377,
+  "compact_transcript_start": 214,
+  "token_usage": {
+    "input_tokens": 11677,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 840576,
+    "output_tokens": 731,
+    "api_call_count": 5
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-08T02:18:51.854459Z",
+    "agent_lines": 756,
+    "agent_removed": 175,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 756,
+    "total_lines_changed": 931,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
