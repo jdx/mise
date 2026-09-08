@@ -548,7 +548,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 // Managed line/block edits are handled by the edit engine,
                 // not by this whole-file declaration parser.
                 if value.as_table().is_some_and(|table| {
-                    ["block", "line", "template", "comment"]
+                    ["block", "line", "template", "comment", "position"]
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {

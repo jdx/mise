@@ -18,7 +18,8 @@
 //! `# >>> mise:activate >>>` / `# <<< mise:activate <<<` — which double as
 //! the ownership record: apply replaces only what's between them, so the
 //! design stays stateless like the rest of `[dotfiles]`. A `line` ensures an
-//! exact line exists, appending it if absent.
+//! exact line exists, appending it if absent by default or prepending it when
+//! `position = "prepend"`.
 //!
 //! Entries merge across the config hierarchy as a union keyed by
 //! `(path, id)` — a more local config overrides an edit with the same id,
@@ -67,6 +68,9 @@ pub(crate) struct EditTomlTable {
     /// exact line to ensure exists
     #[serde(default)]
     pub line: Option<String>,
+    /// where to insert a missing line; `"append"` (the default) or `"prepend"`
+    #[serde(default)]
+    pub position: Option<String>,
     /// comment prefix for the markers; inferred from the file extension
     /// when omitted
     #[serde(default)]
@@ -90,7 +94,15 @@ pub(crate) enum EditOp {
     },
     Line {
         line: String,
+        position: LinePosition,
     },
+}
+
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+pub(crate) enum LinePosition {
+    Prepend,
+    #[default]
+    Append,
 }
 
 /// one edit, resolved against the config file that declared it
@@ -219,7 +231,8 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
-                    && !table.contains_key("comment");
+                    && !table.contains_key("comment")
+                    && !table.contains_key("position");
             if is_whole_file_table {
                 return None;
             }
@@ -273,6 +286,7 @@ fn resolve_entry(
             source: None,
             template: None,
             line: None,
+            position: None,
             comment: None,
         },
         EditTomlEntry::Table(table) => table,
@@ -290,6 +304,9 @@ fn resolve_entry(
             )
         }
         (true, None) => {
+            if entry.position.is_some() {
+                bail!("\"{path_raw}\".{id}: position is only valid with line, ignoring entry")
+            }
             let source = match (entry.block, entry.source) {
                 (Some(_), Some(_)) => {
                     bail!(
@@ -336,7 +353,19 @@ fn resolve_entry(
                     "\"{path_raw}\".{id}: line may not contain a newline; use a block for multi-line content, ignoring entry"
                 )
             }
-            EditOp::Line { line: line.clone() }
+            let position = match entry.position.as_deref() {
+                None | Some("append") => LinePosition::Append,
+                Some("prepend") => LinePosition::Prepend,
+                Some(other) => {
+                    bail!(
+                        "\"{path_raw}\".{id}: unknown line position '{other}' (expected \"append\" or \"prepend\"), ignoring entry"
+                    )
+                }
+            };
+            EditOp::Line {
+                line: line.clone(),
+                position,
+            }
         }
     };
     Ok(EditRequest {
@@ -526,11 +555,13 @@ fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
             Ok(None) => Ok(Some(EditCheck::State(FileState::Missing))),
             Ok(Some(_)) => Ok(None),
         },
-        EditOp::Line { line } => Ok(Some(EditCheck::State(if lines.contains(&line.as_str()) {
-            FileState::Applied
-        } else {
-            FileState::Missing
-        }))),
+        EditOp::Line { line, .. } => {
+            Ok(Some(EditCheck::State(if lines.contains(&line.as_str()) {
+                FileState::Applied
+            } else {
+                FileState::Missing
+            })))
+        }
     }
 }
 
@@ -883,7 +914,7 @@ pub(crate) fn plan_unapply<'a>(
                     req.describe_op()
                 )),
             },
-            EditOp::Line { line } if lines.contains(&line.as_str()) => {
+            EditOp::Line { line, .. } if lines.contains(&line.as_str()) => {
                 if !opts.force {
                     problems.push(format!(
                         "  \"{}\" ({}): line edits have no ownership marker; use --force to remove the line",
@@ -1012,10 +1043,14 @@ fn unapply_one(req: &EditRequest) -> Result<()> {
                 ),
             }
         }
-        EditOp::Line { line } => {
-            // Apply appends a missing line, so the last matching occurrence is
-            // the best stateless approximation of the one it added.
-            if let Some(found) = lines.iter().rfind(|candidate| candidate.content == line) {
+        EditOp::Line { line, position } => {
+            // Use the occurrence nearest the configured insertion edge as the
+            // best stateless approximation of the line mise added.
+            let found = match position {
+                LinePosition::Prepend => lines.iter().find(|candidate| candidate.content == line),
+                LinePosition::Append => lines.iter().rfind(|candidate| candidate.content == line),
+            };
+            if let Some(found) = found {
                 found.start..found.end
             } else {
                 return Ok(());
@@ -1096,9 +1131,9 @@ fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
 }
 
 fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Result<String> {
-    let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
     match &req.op {
         EditOp::Block { comment, .. } => {
+            let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
             let id = &req.id;
             let desired = desired.expect("resolved block content");
             let mut block = vec![begin_marker(comment, id)];
@@ -1123,19 +1158,34 @@ fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Resu
                     req.path_raw
                 ),
             }
+            let mut out = lines.join("\n");
+            out.push('\n');
+            Ok(out)
         }
-        EditOp::Line { line } => {
+        EditOp::Line { line, position } => {
             // an earlier entry in the same batch may have just written an
             // identical line (two ids, same text) — stay idempotent against
             // the file's current content, not the state at plan time
-            if !lines.iter().any(|l| l == line) {
-                lines.push(line.clone());
+            let (bom, body) = text
+                .strip_prefix('\u{feff}')
+                .map_or(("", text), |body| ("\u{feff}", body));
+            if body.lines().any(|candidate| candidate == line) {
+                return Ok(text.to_string());
             }
+            let newline = body
+                .find('\n')
+                .filter(|&i| i.checked_sub(1).and_then(|i| body.as_bytes().get(i)) == Some(&b'\r'))
+                .map_or("\n", |_| "\r\n");
+            let out = match position {
+                LinePosition::Prepend if body.is_empty() => format!("{bom}{line}{newline}"),
+                LinePosition::Prepend => format!("{bom}{line}{newline}{body}"),
+                LinePosition::Append if text.is_empty() => format!("{line}{newline}"),
+                LinePosition::Append if text.ends_with('\n') => format!("{text}{line}{newline}"),
+                LinePosition::Append => format!("{text}{newline}{line}{newline}"),
+            };
+            Ok(out)
         }
     }
-    let mut out = lines.join("\n");
-    out.push('\n');
-    Ok(out)
 }
 
 #[cfg(test)]

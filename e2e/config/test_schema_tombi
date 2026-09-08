@@ -272,6 +272,7 @@ for other_field in \
   'exclude = ["*.tmp"]' \
   'block = "managed block"' \
   'line = "managed line"' \
+  'position = "prepend"' \
   'template = "tera"' \
   'comment = "#"'; do
   cat >"$HOME/workdir/mise-bad-dotfiles.toml" <<TOML
