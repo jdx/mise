@@ -240,7 +240,7 @@ taplo = "0.14"
 tempfile = "3"
 tera = "2"
 tera1 = { package = "tera", version = "1" }
-tera-contrib = { version = "0.2", features = [
+tera-contrib = { version = "0.3", features = [
   "base64",
   "date",
   "filesize_format",
