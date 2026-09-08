@@ -555,7 +555,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn test_host_scopes_are_independent() {
-        let domain = format!("com.mise.defaults-test.{}", uuid::Uuid::new_v4());
+        let domain = format!("com.mise.defaults-test.{}", uuid::Uuid::now_v7());
         let any = DefaultsRequest {
             domain: domain.clone(),
             key: "ScopeValue".into(),
