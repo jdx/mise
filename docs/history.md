@@ -363,7 +363,7 @@ use a suffix such as `home@macos/`. These mappings also apply to tracked
 template sources and managed files. Repository files such as a README stay
 in Git rather than being restored as live configuration.
 
-`mise bootstrap --from-git <url>` recognizes this setup repository and
+`mise bootstrap --adopt <url>` recognizes this setup repository and
 fetches it into the history store. It restores the shared configuration
 first, then the tracked files it selects for this machine, and remembers
 the origin. Once conflicts are resolved, it runs bootstrap to install

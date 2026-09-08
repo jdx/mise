@@ -1212,8 +1212,8 @@ repeated or comma\-separated parts and cannot be combined.
 \fB\-\-from\fR \fI<GIT_URL>\fR
 Clone a git repository and bootstrap from its configuration
 .TP
-\fB\-\-from\-git\fR \fI<GIT_URL>\fR
-Clone a git repository into the global mise config directory and bootstrap
+\fB\-\-adopt\fR \fI<GIT_URL|OWNER/REPO>\fR
+Adopt global configuration or shared dotfile history from a Git repository, then bootstrap
 .TP
 \fB\-\-from\-dir\fR \fI<DIR>\fR
 Directory used for the repository cloned by \-\-from
@@ -1254,7 +1254,7 @@ Print help
 .RS 4
 mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
 mise \-E work bootstrap \-\-from git@github.com:example/dotfiles.git \-\-yes
-mise bootstrap \-\-from\-git git@github.com:example/mise\-config.git \-\-yes
+mise bootstrap \-\-adopt git@github.com:example/mise\-config.git \-\-yes
 mise bootstrap \-\-force\-dotfiles   # replace conflicting dotfile targets
 mise bootstrap \-\-skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap \-\-only tools       # run just tool installation
@@ -2881,7 +2881,7 @@ Print help
 Bootstrap one or more machines over OpenSSH
 
 Select inventory hosts by name, tag, or `\-\-all`, or supply ad\-hoc `\-\-host` targets.
-The source is staged on each target and bootstrap runs there. `\-\-from\-git` instead
+The source is staged on each target and bootstrap runs there. `\-\-adopt` instead
 installs persistent global configuration; preview that choice with `\-\-dry\-run`.
 .PP
 \fBUsage:\fR mise bootstrap remote [OPTIONS] [<TARGET>] ...
@@ -2889,8 +2889,8 @@ installs persistent global configuration; preview that choice with `\-\-dry\-run
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-from\-git\fR \fI<GIT_URL|OWNER/REPO>\fR
-Install a Git repository as persistent global configuration on each target
+\fB\-\-adopt\fR \fI<GIT_URL|OWNER/REPO>\fR
+Adopt global configuration or shared dotfile history on each target
 .TP
 \fB\-\-github\-relay\-read\-only\fR
 Borrow read\-only GitHub access for this invocation

@@ -169,7 +169,7 @@ export PATH="$HOME/.local/bin:$PATH"
 mise use -g gh
 mise x gh -- gh auth login --hostname github.com --git-protocol https --web
 mise x gh -- gh auth setup-git --hostname github.com
-mise bootstrap --from-git you/setup
+mise bootstrap --adopt you/setup
 ```
 
 Review the proposed files before confirming. Bootstrap restores the tracked
@@ -190,7 +190,7 @@ Choose `manual` or `fetch-only` here if you want a different mode on this machin
 For setup over SSH, see [remote bootstrap](/bootstrap/remote.html). For a private GitHub repository, borrow read-only access from this machine:
 
 ```sh
-mise bootstrap remote --host devbox --install-mise --from-git you/setup \
+mise bootstrap remote --host devbox --install-mise --adopt you/setup \
   --github-relay-read-only --github-relay-repo you/setup
 ```
 

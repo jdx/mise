@@ -48,11 +48,11 @@ Open a new shell after activation files change.
 
 Choose the command that matches what your repository contains:
 
-| Repository contents                                                      | Command                           | Where the files go                                       |
-| ------------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------------- |
-| A bootstrap project with `mise.toml` and source files                    | `mise bootstrap --from <url>`     | A separate checkout, then targets defined by the project |
-| Global mise configuration such as `config.toml`, `conf.d/`, and `tasks/` | `mise bootstrap --from-git <url>` | Your global mise configuration directory                 |
-| Tracked dotfiles shared through `mise bootstrap dotfiles origin set`     | `mise bootstrap --from-git <url>` | Each tracked file's path on this machine                 |
+| Repository contents                                                      | Command                        | Where the files go                                       |
+| ------------------------------------------------------------------------ | ------------------------------ | -------------------------------------------------------- |
+| A bootstrap project with `mise.toml` and source files                    | `mise bootstrap --from <url>`  | A separate checkout, then targets defined by the project |
+| Global mise configuration such as `config.toml`, `conf.d/`, and `tasks/` | `mise bootstrap --adopt <url>` | Your global mise configuration directory                 |
+| Tracked dotfiles shared through `mise bootstrap dotfiles origin set`     | `mise bootstrap --adopt <url>` | Each tracked file's path on this machine                 |
 
 For a walkthrough of sharing tracked dotfiles, see
 [Set up a machine](/bootstrap/setup.html).
@@ -80,10 +80,10 @@ missing checkout and leaves it uncloned.
 
 ### Global mise configuration
 
-Use `--from-git` when the repository contains your global mise configuration:
+Use `--adopt` when the repository contains your global mise configuration:
 
 ```sh
-mise bootstrap --from-git example/mise-config
+mise bootstrap --adopt example/mise-config
 ```
 
 mise clones it into `$MISE_CONFIG_DIR`, normally `~/.config/mise`, and runs
@@ -102,7 +102,7 @@ A **setup repository** holds the dotfile history you share through
 `mise bootstrap dotfiles origin set`. On another machine, run:
 
 ```sh
-mise bootstrap --from-git you/setup
+mise bootstrap --adopt you/setup
 ```
 
 mise recognizes the repository's `.mise-history/format.toml` marker and:

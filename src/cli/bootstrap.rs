@@ -64,7 +64,7 @@ use crate::ui::table::MiseTable;
     verbatim_doc_comment,
     example(r###"mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
 mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
-mise bootstrap --from-git git@github.com:example/mise-config.git --yes
+mise bootstrap --adopt git@github.com:example/mise-config.git --yes
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap --only tools       # run just tool installation
@@ -87,8 +87,13 @@ pub(crate) struct Bootstrap {
     #[usage(long, value_name = "GIT_URL")]
     from: Option<String>,
 
-    /// Clone a git repository into the global mise config directory and bootstrap
-    #[usage(long, value_name = "GIT_URL", conflicts = "from")]
+    /// Adopt global configuration or shared dotfile history from a Git repository, then bootstrap
+    #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = "from")]
+    adopt: Option<String>,
+
+    // Kept separately from `adopt` so only the legacy spelling emits a warning.
+    /// Deprecated alias for --adopt
+    #[usage(long, hide = true, value_name = "GIT_URL", conflicts = ["from", "adopt"])]
     from_git: Option<String>,
 
     /// Directory used for the repository cloned by --from
@@ -644,13 +649,16 @@ struct BootstrapComposeStatus {
 /// Bootstrap one or more machines over OpenSSH
 ///
 /// Select inventory hosts by name, tag, or `--all`, or supply ad-hoc `--host` targets.
-/// The source is staged on each target and bootstrap runs there. `--from-git` instead
+/// The source is staged on each target and bootstrap runs there. `--adopt` instead
 /// installs persistent global configuration; preview that choice with `--dry-run`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapRemote {
-    /// Install a Git repository as persistent global configuration on each target
+    /// Adopt global configuration or shared dotfile history on each target
     #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = ["source", "copy_link", "copy_links", "exclude"])]
+    adopt: Option<String>,
+    /// Deprecated alias for --adopt
+    #[usage(long, hide = true, value_name = "GIT_URL|OWNER/REPO", conflicts = ["adopt", "source", "copy_link", "copy_links", "exclude"])]
     from_git: Option<String>,
     /// Borrow read-only GitHub access for this invocation
     #[usage(long)]
@@ -1297,10 +1305,11 @@ impl Bootstrap {
     }
 
     pub(crate) async fn run(mut self) -> Result<()> {
-        if self.from.is_some() || self.from_git.is_some() {
+        normalize_adopt_alias(&mut self.adopt, self.from_git.take());
+        if self.from.is_some() || self.adopt.is_some() {
             if self.command.is_some() {
-                let flag = if self.from_git.is_some() {
-                    "--from-git"
+                let flag = if self.adopt.is_some() {
+                    "--adopt"
                 } else {
                     "--from"
                 };
@@ -1854,7 +1863,7 @@ impl Bootstrap {
 
     async fn run_from(&self) -> Result<()> {
         let expanded = self
-            .from_git
+            .adopt
             .as_deref()
             .map(crate::github_relay::expand_repository)
             .transpose()?;
@@ -1957,7 +1966,7 @@ impl Bootstrap {
     }
 
     /// Runs the bootstrap itself as a child process from `checkout` (the
-    /// global configuration directory for `--from-git`), trusted for it.
+    /// global configuration directory for `--adopt`), trusted for it.
     async fn run_child_bootstrap(&self, checkout: PathBuf) -> Result<()> {
         let checkout = dunce::canonicalize(&checkout)?;
         let mut command = Command::new(std::env::current_exe()?);
@@ -1965,7 +1974,7 @@ impl Bootstrap {
             &checkout,
             &crate::env::ARGS.read().unwrap(),
         ));
-        if self.from_git.is_some() {
+        if self.adopt.is_some() {
             if self.dry_run {
                 command.env("MISE_CONFIG_DIR", &checkout);
                 let name = crate::env::MISE_GLOBAL_CONFIG_FILE
@@ -2084,6 +2093,19 @@ impl Bootstrap {
     }
 }
 
+fn normalize_adopt_alias(adopt: &mut Option<String>, from_git: Option<String>) {
+    if let Some(repository) = from_git {
+        // One-month transition approved for this newly introduced spelling.
+        deprecated_at!(
+            "2026.9.0",
+            "2026.10.0",
+            "bootstrap.from-git",
+            "`--from-git` is deprecated. Use `--adopt` instead."
+        );
+        *adopt = Some(repository);
+    }
+}
+
 /// Re-run the original bootstrap invocation from the checkout, preserving
 /// global controls such as `--no-hooks`. Remove only arguments that describe
 /// the parent checkout operation and replace any original working directory.
@@ -2092,10 +2114,11 @@ fn bootstrap_from_child_args(checkout: &Path, args: &[String]) -> Vec<OsString> 
     let mut args = args.iter().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--from" | "--from-git" | "--from-dir" | "--cd" | "-C" => {
+            "--from" | "--adopt" | "--from-git" | "--from-dir" | "--cd" | "-C" => {
                 args.next();
             }
             _ if arg.starts_with("--from=")
+                || arg.starts_with("--adopt=")
                 || arg.starts_with("--from-git=")
                 || arg.starts_with("--from-dir=")
                 || arg.starts_with("--cd=")
@@ -3001,7 +3024,8 @@ impl BootstrapSecrets {
 }
 
 impl BootstrapRemote {
-    async fn run(self) -> Result<()> {
+    async fn run(mut self) -> Result<()> {
+        normalize_adopt_alias(&mut self.adopt, self.from_git.take());
         crate::ui::ctrlc::exit_on_ctrl_c(false);
         let relay = crate::github_relay::Scope::from_flags(
             self.github_relay_read_only,
@@ -3046,7 +3070,7 @@ impl BootstrapRemote {
         }
 
         let overrides = system::remote::RemoteOverrides {
-            from_git: self.from_git.is_some(),
+            from_git: self.adopt.is_some(),
             source: self.source,
             mise_env: self.remote_env,
             copy_links: self.copy_links,
@@ -3088,7 +3112,7 @@ impl BootstrapRemote {
         }
         let mut failures = vec![];
         let repository = self
-            .from_git
+            .adopt
             .as_deref()
             .map(crate::github_relay::expand_repository)
             .transpose()?;
@@ -5044,45 +5068,102 @@ mod tests {
     use crate::system::remote;
 
     #[test]
-    fn remote_from_git_parses_and_conflicts_with_source() {
-        let argv = [
-            "mise",
-            "bootstrap",
-            "remote",
-            "--host",
-            "devbox",
-            "--from-git",
-            "jdx/dotfiles",
-            "--github-relay-read-only",
-            "--github-relay-repo",
-            "jdx/dotfiles",
-        ]
-        .map(OsStr::new);
-        assert!(Cli::parse_from_argv(&argv).is_ok());
-        let conflict = [
-            "mise",
-            "bootstrap",
-            "remote",
-            "--host",
-            "devbox",
-            "--from-git",
-            "jdx/dotfiles",
-            "--source",
-            ".",
-        ]
-        .map(OsStr::new);
-        assert!(Cli::parse_from_argv(&conflict).is_err());
-        for archive_flag in ["--copy-link=link", "--copy-links", "--exclude=pattern"] {
+    fn remote_adopt_parses_and_conflicts_with_source() {
+        for flag in ["--adopt", "--from-git"] {
             let argv = [
                 "mise",
                 "bootstrap",
                 "remote",
-                "--host=devbox",
-                "--from-git=jdx/dotfiles",
-                archive_flag,
+                "--host",
+                "devbox",
+                flag,
+                "jdx/dotfiles",
+                "--github-relay-read-only",
+                "--github-relay-repo",
+                "jdx/dotfiles",
             ]
             .map(OsStr::new);
-            assert!(Cli::parse_from_argv(&argv).is_err(), "{archive_flag}");
+            assert!(Cli::parse_from_argv(&argv).is_ok());
+            let conflict = [
+                "mise",
+                "bootstrap",
+                "remote",
+                "--host",
+                "devbox",
+                flag,
+                "jdx/dotfiles",
+                "--source",
+                ".",
+            ]
+            .map(OsStr::new);
+            assert!(Cli::parse_from_argv(&conflict).is_err());
+            for archive_flag in ["--copy-link=link", "--copy-links", "--exclude=pattern"] {
+                let repository_flag = format!("{flag}=jdx/dotfiles");
+                let argv = [
+                    "mise",
+                    "bootstrap",
+                    "remote",
+                    "--host=devbox",
+                    &repository_flag,
+                    archive_flag,
+                ]
+                .map(OsStr::new);
+                assert!(Cli::parse_from_argv(&argv).is_err(), "{archive_flag}");
+            }
+        }
+    }
+
+    #[test]
+    fn adopt_accepts_both_spellings_locally_and_remotely() {
+        for remote in [false, true] {
+            for flag in ["--adopt", "--from-git"] {
+                for equals in [false, true] {
+                    let mut args = vec!["mise".to_string(), "bootstrap".to_string()];
+                    if remote {
+                        args.extend(["remote", "--host", "devbox"].map(String::from));
+                    }
+                    if equals {
+                        args.push(format!("{flag}=jdx/dotfiles"));
+                    } else {
+                        args.extend([flag, "jdx/dotfiles"].map(String::from));
+                    }
+                    let argv = args.iter().map(OsStr::new).collect::<Vec<_>>();
+                    let cli = Cli::parse_from_argv(&argv).unwrap();
+                    let Some(Commands::Bootstrap(parsed)) = cli.command else {
+                        panic!("expected bootstrap");
+                    };
+                    let (mut adopt, legacy) = if remote {
+                        let Some(super::Commands::Remote(parsed)) = parsed.command else {
+                            panic!("expected remote bootstrap");
+                        };
+                        (parsed.adopt, parsed.from_git)
+                    } else {
+                        (parsed.adopt, parsed.from_git)
+                    };
+                    assert_eq!(legacy.is_some(), flag == "--from-git");
+                    super::normalize_adopt_alias(&mut adopt, legacy);
+                    assert_eq!(adopt.as_deref(), Some("jdx/dotfiles"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bootstrap_reexec_removes_both_adoption_spellings() {
+        for flag in ["--adopt", "--from-git"] {
+            for equals in [false, true] {
+                let mut args = vec!["mise".to_string(), "bootstrap".to_string()];
+                if equals {
+                    args.push(format!("{flag}=jdx/dotfiles"));
+                } else {
+                    args.extend([flag, "jdx/dotfiles"].map(String::from));
+                }
+                args.push("--yes".to_string());
+                assert_eq!(
+                    bootstrap_from_child_args(Path::new("/checkout"), &args),
+                    ["--cd", "/checkout", "bootstrap", "--yes"].map(OsString::from)
+                );
+            }
         }
     }
 
@@ -5155,29 +5236,31 @@ mod tests {
     }
 
     #[test]
-    fn bootstrap_from_git_conflicts_with_project_checkout_options() {
-        for args in [
-            [
-                "mise",
-                "bootstrap",
-                "--from",
-                "project.git",
-                "--from-git",
-                "global.git",
-            ]
-            .as_slice(),
-            [
-                "mise",
-                "bootstrap",
-                "--from-git",
-                "global.git",
-                "--from-dir",
-                "checkout",
-            ]
-            .as_slice(),
-        ] {
-            let argv = args.iter().map(OsStr::new).collect::<Vec<_>>();
-            assert!(Cli::parse_from_argv(&argv).is_err(), "{args:?}");
+    fn bootstrap_adopt_conflicts_with_project_checkout_options() {
+        for flag in ["--adopt", "--from-git"] {
+            for args in [
+                [
+                    "mise",
+                    "bootstrap",
+                    "--from",
+                    "project.git",
+                    flag,
+                    "global.git",
+                ]
+                .as_slice(),
+                [
+                    "mise",
+                    "bootstrap",
+                    flag,
+                    "global.git",
+                    "--from-dir",
+                    "checkout",
+                ]
+                .as_slice(),
+            ] {
+                let argv = args.iter().map(OsStr::new).collect::<Vec<_>>();
+                assert!(Cli::parse_from_argv(&argv).is_err(), "{args:?}");
+            }
         }
     }
 

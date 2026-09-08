@@ -468,7 +468,11 @@ repeated or comma-separated parts and cannot be combined.
     flag --from help="Clone a git repository and bootstrap from its configuration" {
         arg <GIT_URL>
     }
-    flag --from-git help="Clone a git repository into the global mise config directory and bootstrap" conflicts=--from {
+    flag --adopt help="Adopt global configuration or shared dotfile history from a Git repository, then bootstrap" conflicts=--from {
+        arg "<GIT_URL|OWNER/REPO>"
+    }
+    flag --from-git help="Deprecated alias for --adopt" hide=#true {
+        conflicts "--from" "--adopt"
         arg <GIT_URL>
     }
     flag --from-dir help="Directory used for the repository cloned by --from" requires=--from {
@@ -1515,11 +1519,15 @@ Install these plugins before applying packages they manage. Installing a plugin 
 Bootstrap one or more machines over OpenSSH
 
 Select inventory hosts by name, tag, or `--all`, or supply ad-hoc `--host` targets.
-The source is staged on each target and bootstrap runs there. `--from-git` instead
+The source is staged on each target and bootstrap runs there. `--adopt` instead
 installs persistent global configuration; preview that choice with `--dry-run`.
 """#
-        flag --from-git help="Install a Git repository as persistent global configuration on each target" {
+        flag --adopt help="Adopt global configuration or shared dotfile history on each target" {
             conflicts "--source" "--copy-link" "--copy-links" "--exclude"
+            arg "<GIT_URL|OWNER/REPO>"
+        }
+        flag --from-git help="Deprecated alias for --adopt" hide=#true {
+            conflicts "--adopt" "--source" "--copy-link" "--copy-links" "--exclude"
             arg "<GIT_URL|OWNER/REPO>"
         }
         flag --github-relay-read-only help="Borrow read-only GitHub access for this invocation"
@@ -1801,7 +1809,7 @@ shell affects future sessions, not the shell running this command.
     example #"""
 mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
 mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
-mise bootstrap --from-git git@github.com:example/mise-config.git --yes
+mise bootstrap --adopt git@github.com:example/mise-config.git --yes
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap --only tools       # run just tool installation
