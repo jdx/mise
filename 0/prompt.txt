@@ -1,0 +1,21 @@
+make a pr
+
+---
+
+address pr feedback and failing checks until it settles
+
+---
+
+Linux and macOS notifications use the mise logo. Official macOS release binaries
+include a Developer ID-signed helper; allow notifications for mise when asked on
+first use, and change that permission later in System Settings > Notifications >
+mise. No compiler, extra notifier, or logo download is needed. Source builds
+without a Developer ID-signed helper warn when a setup repository is connected
+and do not show desktop notifications. Denied or unavailable notifications never
+block sync.
+
+you put more info than the user needs to know
+
+---
+
+it's still too noisy, they don't need to know about the logo
