@@ -26,6 +26,7 @@ use std::{
 pub(crate) mod asdf_plugin;
 pub(crate) mod core;
 pub(crate) mod mise_plugin_toml;
+pub(crate) mod packslip;
 pub(crate) mod script_manager;
 pub(crate) mod vfox_plugin;
 

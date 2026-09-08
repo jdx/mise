@@ -859,6 +859,12 @@ pub(crate) fn normalize_remote(remote: &str) -> eyre::Result<String> {
 }
 
 pub(crate) fn full_to_url(full: &str) -> String {
+    if let Some(source) = full.strip_prefix("vfox:packslip:") {
+        return format!("packslip:{source}");
+    }
+    if full.starts_with("packslip:") {
+        return full.to_string();
+    }
     if url_like(full) {
         return full.to_string();
     }

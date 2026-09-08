@@ -150,7 +150,11 @@ pub(crate) async fn install_plugin(
     }
     let path = dirs::PLUGINS.join(name.to_kebab_case());
     let plugin = plugin_type.plugin(name.clone());
-    if let Some(url) = git_url {
+    if let Some(url) = git_url.or_else(|| {
+        config
+            .get_repo_url(&name)
+            .filter(|url| url.starts_with("packslip:"))
+    }) {
         plugin.set_remote_url(url);
     }
     if !force && plugin.is_installed() {
@@ -171,6 +175,14 @@ pub(crate) async fn install_plugin(
 #[ensures(!ret.as_ref().is_ok_and(|(r, _)| r.is_empty()), "plugin name is empty")]
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
     let name = unalias_backend(name);
+    if git_url.is_none()
+        && let Some((kind, short)) = name.split_once(':')
+        && matches!(kind, "vfox" | "vfox-backend" | "package" | "asdf")
+        && !short.is_empty()
+        && !short.contains(['/', ':'])
+    {
+        return Ok((name.to_string(), None));
+    }
     Ok(match git_url {
         Some(url) => match url.contains(':') {
             true => (name.to_string(), Some(url.clone())),
@@ -207,6 +219,14 @@ fn get_name_from_url(url: &str) -> Result<String> {
 mod tests {
     use super::*;
     use pretty_assertions::assert_str_eq;
+
+    #[test]
+    fn typed_plugin_name_uses_configured_source() {
+        assert_eq!(
+            get_name_and_url("vfox:bfs", &None).unwrap(),
+            ("vfox:bfs".to_string(), None)
+        );
+    }
 
     #[test]
     fn test_get_name_from_url() {

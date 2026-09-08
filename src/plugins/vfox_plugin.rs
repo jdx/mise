@@ -2,6 +2,7 @@ use crate::config::{Config, Settings};
 use crate::errors::Error::PluginNotInstalled;
 use crate::git::Git;
 use crate::http::HTTP;
+use crate::plugins::packslip;
 use crate::plugins::warn_if_env_plugin_shadows_registry;
 use crate::plugins::{
     Plugin, PluginSource, PluginType, install_git_plugin_source, install_local_plugin_source,
@@ -69,6 +70,9 @@ impl VfoxPlugin {
         if let Some(url) = self.repo_url.lock().unwrap().clone() {
             return Ok(url);
         }
+        if let Some(installed) = packslip::installed(&self.plugin_path)? {
+            return Ok(installed.source.url());
+        }
         if let Some(url) = self.repo().get_remote_url() {
             return Ok(url);
         }
@@ -82,6 +86,9 @@ impl VfoxPlugin {
             .split_once(':')
             .map(|f| f.1)
             .unwrap_or(&self.name);
+        if url.starts_with("packslip:") {
+            return Ok(url.to_string());
+        }
         Ok(vfox_to_url(url)?.to_string())
     }
 
@@ -196,6 +203,9 @@ impl Plugin for VfoxPlugin {
     }
 
     fn get_remote_url(&self) -> eyre::Result<Option<String>> {
+        if let Some(installed) = packslip::installed(&self.plugin_path)? {
+            return Ok(Some(installed.source.url()));
+        }
         let url = self.repo().get_remote_url();
         Ok(url.or(self.repo_url.lock().unwrap().clone()))
     }
@@ -205,6 +215,9 @@ impl Plugin for VfoxPlugin {
     }
 
     fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {
+        if let Some(installed) = packslip::installed(&self.plugin_path)? {
+            return Ok(Some(installed.version));
+        }
         // No git ref for embedded plugins or if plugin_path doesn't exist
         if !self.plugin_path.exists() {
             return Ok(None);
@@ -213,6 +226,9 @@ impl Plugin for VfoxPlugin {
     }
 
     fn current_sha_short(&self) -> eyre::Result<Option<String>> {
+        if packslip::installed(&self.plugin_path)?.is_some() {
+            return Ok(None);
+        }
         // No git sha for embedded plugins or if plugin_path doesn't exist
         if !self.plugin_path.exists() {
             return Ok(None);
@@ -221,6 +237,9 @@ impl Plugin for VfoxPlugin {
     }
 
     fn remote_sha(&self) -> eyre::Result<Option<String>> {
+        if packslip::installed(&self.plugin_path)?.is_some() {
+            return Ok(None);
+        }
         if !self.plugin_path.exists() {
             return Ok(None);
         }
@@ -311,6 +330,20 @@ impl Plugin for VfoxPlugin {
     }
 
     async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
+        if let Some(installed) = packslip::installed(&self.plugin_path)? {
+            if self.plugin_path.is_symlink() {
+                warn!("plugin:{} is a symlink, not updating", self.name);
+                return Ok(());
+            }
+            let _lock = lock_file::get(&self.plugin_path, false)?;
+            return packslip::install(
+                &Config::get().await?,
+                installed.source.with_version(gitref),
+                &self.plugin_path,
+                pr,
+            )
+            .await;
+        }
         // If only embedded (no filesystem plugin), warn that it can't be updated
         if self.is_embedded() && !self.plugin_path.exists() {
             warn!(
@@ -376,6 +409,10 @@ impl Plugin for VfoxPlugin {
     async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
         Settings::ensure_not_safe("installing plugins")?;
         let repository = self.get_repo_url(config)?;
+        if let Some(source) = packslip::Source::parse(&repository)? {
+            // Stage and verify the replacement before touching a working plugin.
+            return packslip::install(config, source, &self.plugin_path, pr).await;
+        }
         let local_source = local_plugin_source_path(&repository);
         if let Some(source) = &local_source {
             validate_local_plugin_source(source, &self.plugin_path)?;
