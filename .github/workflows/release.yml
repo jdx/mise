@@ -673,6 +673,7 @@ jobs:
       - name: Publish the CLI specification and completions
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: gh release upload "$GITHUB_REF_NAME" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
       # `out: .` keeps the bundle beside mise.usage.kdl. The action defaults to
       # writing it under packslip/, and an artifact holding files at two
@@ -793,6 +794,7 @@ jobs:
       - name: Download draft release assets
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
         run: |
           mkdir -p release-assets
@@ -844,6 +846,7 @@ jobs:
       - name: Publish the CLI specification and completions
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
         run: gh release upload "$TAG" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
       - uses: jdx/packslip@a0d434ad57571c62dbd0ab5095b4eff607a71fd3 # v1.1.1
