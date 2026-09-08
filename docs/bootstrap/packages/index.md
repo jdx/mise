@@ -40,7 +40,6 @@ aliases as `[tools]` (`linux`, `macos`, `windows`, `linux/x64`,
 [bootstrap.packages]
 "brew:coreutils" = "latest"
 "brew-cask:1password" = { os = "macos" }
-"brew-cask:ghostty" = { os = "macos", state = "optional" }
 "brew-cask:font-jetbrains-mono" = { os = ["linux", "macos"] }
 "pacman:libreoffice-fresh" = { state = "absent" }
 "winget:BurntSushi.ripgrep.MSVC" = { os = "windows" }
@@ -49,11 +48,7 @@ aliases as `[tools]` (`linux`, `macos`, `windows`, `linux/x64`,
 `pacman` entries may set `state = "absent"` to declaratively remove a package.
 `mise bootstrap packages status --missing` treats an installed package with
 that declaration as drift, and `mise bootstrap packages apply` removes it.
-
-Set `state = "optional"` for packages that should be offered during an interactive
-bootstrap without being required on every machine. Missing optional packages do
-not count as drift, and unattended runs skip them unless `--with-optional` is
-passed. Once installed, they are managed like other configured packages.
+Other built-in managers currently support only the default `state = "present"`.
 
 `brew-cask` entries additionally accept `adopt = true` to adopt an identical
 app already installed at the cask destination. Set `bootstrap.brew.adopt = true`

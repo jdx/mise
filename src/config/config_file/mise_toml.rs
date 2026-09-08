@@ -912,15 +912,11 @@ impl MiseToml {
             .is_none_or(|bootstrap| !bootstrap.packages.contains_key(spec));
         if is_missing
             && let Some(PackageTomlConfig::Options(options)) = fallback
-            && (!options.os.is_empty()
-                || options.adopt.is_some()
-                || options.state == crate::system::PackageDesiredStateTomlConfig::Optional)
+            && (!options.os.is_empty() || !options.env.is_empty() || options.adopt.is_some())
         {
             let mut options = options.clone();
             options.version = version.to_string();
-            if options.state == crate::system::PackageDesiredStateTomlConfig::Absent {
-                options.state = crate::system::PackageDesiredStateTomlConfig::Present;
-            }
+            options.state = crate::system::PackageDesiredStateTomlConfig::Present;
             self.bootstrap
                 .get_or_insert_with(Default::default)
                 .packages
@@ -950,11 +946,13 @@ impl MiseToml {
                 os.extend(options.os);
                 value.insert("os", Value::Array(os));
             }
+            if !options.env.is_empty() {
+                let mut env = Array::new();
+                env.extend(options.env);
+                value.insert("env", Value::Array(env));
+            }
             if let Some(adopt) = options.adopt {
                 value.insert("adopt", Value::from(adopt));
-            }
-            if options.state == crate::system::PackageDesiredStateTomlConfig::Optional {
-                value.insert("state", Value::from("optional"));
             }
             packages.insert(spec, Item::Value(Value::InlineTable(value)));
             return Ok(());
@@ -3376,8 +3374,7 @@ mod tests {
         "apt:libssl-dev" = "latest"
         "apt:curl" = "8.5.0-2"
         "brew:postgresql@17" = "latest"
-        "brew-cask:1password" = { version = "latest", os = "macos", adopt = true }
-        "brew-cask:ghostty" = { os = "macos", state = "optional" }
+        "brew-cask:1password" = { version = "latest", os = "macos", env = "work", adopt = true }
         "brew-cask:font-example" = { os = ["linux", "macos"] }
         "future-manager:whatever" = "latest"
 
@@ -3406,12 +3403,8 @@ mod tests {
         );
         assert!(matches!(
             system.packages.get("brew-cask:1password"),
-            Some(crate::system::PackageTomlConfig::Options(options)) if options.adopt == Some(true)
-        ));
-        assert!(matches!(
-            system.packages.get("brew-cask:ghostty"),
             Some(crate::system::PackageTomlConfig::Options(options))
-                if options.state == crate::system::PackageDesiredStateTomlConfig::Optional
+                if options.adopt == Some(true) && options.env == ["work"]
         ));
         assert_eq!(
             system.packages.get("apt:curl").unwrap().version(),
@@ -3702,7 +3695,7 @@ mod tests {
             &p,
             formatdoc! {r#"
             [bootstrap.packages]
-            "brew:ripgrep" = {{ version = "14.0.0", os = ["macos"] }} # keep me
+            "brew:ripgrep" = {{ version = "14.0.0", os = ["macos"], env = "work" }} # keep me
             "apt:curl" = "8.5.0"
             "pacman:libreoffice-fresh" = {{ state = "absent" }}
 
@@ -3735,6 +3728,7 @@ mod tests {
                     PackageTomlConfig::Options(crate::system::PackageOptionsTomlConfig {
                         version: "1.0.0".to_string(),
                         os: vec![],
+                        env: vec![],
                         adopt: None,
                         state: crate::system::PackageDesiredStateTomlConfig::Present,
                     });
@@ -3749,7 +3743,9 @@ mod tests {
 
         let dump = cf.dump().unwrap();
         assert!(
-            dump.contains(r#""brew:ripgrep" = { version = "latest", os = ["macos"] } # keep me"#),
+            dump.contains(
+                r#""brew:ripgrep" = { version = "latest", os = ["macos"], env = "work" } # keep me"#
+            ),
             "package selectors and comments should survive: {dump}"
         );
         assert!(
@@ -3768,7 +3764,7 @@ mod tests {
         );
         #[cfg(unix)]
         assert!(
-            dump.contains(r#""brew:bat" = { version = "latest", os = ["macos"] }"#),
+            dump.contains(r#""brew:bat" = { version = "latest", os = ["macos"], env = ["work"] }"#),
             "inherited package selectors should be written locally: {dump}"
         );
         #[cfg(unix)]

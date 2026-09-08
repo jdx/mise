@@ -157,7 +157,6 @@ async fn preflight_system_deps_inner(
         dry_run: opts.dry_run,
         update: false,
         yes: matches!(mode, SystemDepsMode::Auto) || opts.yes,
-        with_optional: false,
     };
     if let Err(err) = crate::cli::system::driver::run(
         mgrs,

@@ -4505,14 +4505,31 @@
                       }
                     ]
                   },
+                  "env": {
+                    "description": "mise environments in which this package is enabled",
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "minItems": 1
+                      }
+                    ]
+                  },
                   "adopt": {
                     "type": "boolean",
                     "description": "adopt an existing identical brew-cask app artifact instead of replacing it"
                   },
                   "state": {
                     "type": "string",
-                    "description": "desired package state; optional packages may be absent, and only pacman currently supports absent",
-                    "enum": ["present", "optional", "absent"],
+                    "description": "desired package state; only pacman currently supports absent",
+                    "enum": ["present", "absent"],
                     "default": "present"
                   }
                 },

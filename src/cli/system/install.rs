@@ -52,10 +52,6 @@ pub(crate) struct SystemInstall {
     #[usage(long, short)]
     yes: bool,
 
-    /// Install all optional bootstrap packages without prompting
-    #[usage(long)]
-    with_optional: bool,
-
     /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`, winget: `source update`)
     #[usage(long)]
     update: bool,
@@ -81,7 +77,6 @@ impl SystemInstall {
             dry_run: self.dry_run,
             update: self.update,
             yes: self.yes,
-            with_optional: self.with_optional,
         };
         driver::run(mgrs, Action::Install, &opts).await
     }

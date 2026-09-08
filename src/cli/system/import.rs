@@ -202,9 +202,7 @@ fn imported_package_value(
         Some(PackageTomlConfig::Version(_)) => None,
         None => match configured {
             Some(PackageTomlConfig::Options(options))
-                if !options.os.is_empty()
-                    || options.adopt.is_some()
-                    || options.state == crate::system::PackageDesiredStateTomlConfig::Optional =>
+                if !options.os.is_empty() || !options.env.is_empty() || options.adopt.is_some() =>
             {
                 Some(options)
             }
@@ -221,11 +219,13 @@ fn imported_package_value(
         os.extend(options.os.clone());
         table.insert("os", Value::Array(os));
     }
+    if !options.env.is_empty() {
+        let mut env = Array::new();
+        env.extend(options.env.clone());
+        table.insert("env", Value::Array(env));
+    }
     if let Some(adopt) = options.adopt {
         table.insert("adopt", Value::from(adopt));
-    }
-    if options.state == crate::system::PackageDesiredStateTomlConfig::Optional {
-        table.insert("state", Value::from("optional"));
     }
     Value::InlineTable(table)
 }
@@ -281,17 +281,19 @@ mod tests {
         let inherited = PackageTomlConfig::Options(PackageOptionsTomlConfig {
             version: "1.0.0".to_string(),
             os: vec!["macos".to_string()],
+            env: vec!["work".to_string()],
             adopt: None,
             state: crate::system::PackageDesiredStateTomlConfig::Present,
         });
         assert_eq!(
             imported_package_value(None, Some(&inherited)).to_string(),
-            r#"{ version = "latest", os = ["macos"] }"#
+            r#"{ version = "latest", os = ["macos"], env = ["work"] }"#
         );
 
         let adopted = PackageTomlConfig::Options(PackageOptionsTomlConfig {
             version: "1.0.0".to_string(),
             os: vec![],
+            env: vec![],
             adopt: Some(true),
             state: crate::system::PackageDesiredStateTomlConfig::Present,
         });

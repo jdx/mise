@@ -108,10 +108,6 @@ pub(crate) struct Bootstrap {
     #[usage(long, short = 'y')]
     yes: bool,
 
-    /// Install all optional bootstrap packages without prompting
-    #[usage(long)]
-    with_optional: bool,
-
     /// Skip configured repos with local changes instead of failing
     #[usage(long)]
     skip_dirty: bool,
@@ -1505,7 +1501,6 @@ impl Bootstrap {
                     dry_run: self.dry_run,
                     update: self.update,
                     yes: self.yes,
-                    with_optional: self.with_optional,
                 };
                 driver::run(mgrs, Action::Install, &opts).await?;
             }
@@ -1807,39 +1802,18 @@ impl Bootstrap {
                         dry_run: self.dry_run,
                         update: self.update,
                         yes: self.yes,
-                        with_optional: self.with_optional,
                     },
                 )
                 .await?;
             }
             if self.dry_run {
                 for (name, requests) in system::pending_plugin_packages_from_config(&config) {
-                    let (optional, required): (Vec<_>, Vec<_>) = requests
-                        .iter()
-                        .partition(|request| request.desired == PackageDesiredState::Optional);
-                    let selected = if self.with_optional {
-                        requests.iter().collect::<Vec<_>>()
-                    } else {
-                        required
-                    };
-                    let packages = selected
+                    let packages = requests
                         .iter()
                         .map(ToString::to_string)
                         .collect::<Vec<_>>()
                         .join(", ");
-                    if !packages.is_empty() {
-                        info!("{name}: would install {packages}");
-                    }
-                    if !self.with_optional && !optional.is_empty() {
-                        info!(
-                            "{name}: skipped optional packages {} (use --with-optional to install)",
-                            optional
-                                .iter()
-                                .map(ToString::to_string)
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        );
-                    }
+                    info!("{name}: would install {packages}");
                 }
             }
             if !post_packages_ran {
@@ -3582,7 +3556,6 @@ impl BootstrapStatus {
                                 "requested_version": req.version.clone().unwrap_or_else(|| "latest".to_string()),
                                 "desired_state": match req.desired {
                                     PackageDesiredState::Present => "present",
-                                    PackageDesiredState::Optional => "optional",
                                     PackageDesiredState::Absent => "absent",
                                 },
                                 "state": "skipped",
@@ -3597,45 +3570,38 @@ impl BootstrapStatus {
             for s in statuses {
                 let auto_updates = s.state.auto_updates();
                 let desired_absent = s.request.desired == PackageDesiredState::Absent;
-                let desired_optional = s.request.desired == PackageDesiredState::Optional;
-                let (installed_version, state, reason, missing) =
-                    match (&s.state, desired_absent, desired_optional) {
-                        (PackageState::Missing, true, _) => {
-                            ("".to_string(), "absent", None::<&str>, false)
-                        }
-                        (PackageState::Installed { version }, true, _)
-                        | (PackageState::NeedsRepair { installed: version }, true, _)
-                        | (PackageState::VersionMismatch { installed: version }, true, _) => {
-                            (version.clone(), "unexpectedly installed", None, true)
-                        }
-                        #[cfg(unix)]
-                        (PackageState::InstalledAutoUpdates { version }, true, _) => {
-                            (version.clone(), "unexpectedly installed", None, true)
-                        }
-                        (PackageState::Installed { version }, false, _) => {
-                            (version.clone(), "installed", None::<&str>, false)
-                        }
-                        #[cfg(unix)]
-                        (PackageState::InstalledAutoUpdates { version }, false, _) => {
-                            (version.clone(), "installed", None::<&str>, false)
-                        }
-                        (PackageState::Missing, false, true) => {
-                            ("".to_string(), "optional", None, false)
-                        }
-                        (PackageState::Missing, false, false) => {
-                            ("".to_string(), "missing", None, true)
-                        }
-                        (PackageState::NeedsRepair { installed }, false, _) => {
-                            (installed.clone(), "needs repair", None, true)
-                        }
-                        (PackageState::VersionMismatch { installed }, false, _) => {
-                            (installed.clone(), "version mismatch", None, true)
-                        }
-                        #[cfg(unix)]
-                        (PackageState::Unavailable { reason }, _, _) => {
-                            ("".to_string(), "skipped", Some(reason.as_str()), false)
-                        }
-                    };
+                let (installed_version, state, reason, missing) = match (&s.state, desired_absent) {
+                    (PackageState::Missing, true) => {
+                        ("".to_string(), "absent", None::<&str>, false)
+                    }
+                    (PackageState::Installed { version }, true)
+                    | (PackageState::NeedsRepair { installed: version }, true)
+                    | (PackageState::VersionMismatch { installed: version }, true) => {
+                        (version.clone(), "unexpectedly installed", None, true)
+                    }
+                    #[cfg(unix)]
+                    (PackageState::InstalledAutoUpdates { version }, true) => {
+                        (version.clone(), "unexpectedly installed", None, true)
+                    }
+                    (PackageState::Installed { version }, false) => {
+                        (version.clone(), "installed", None::<&str>, false)
+                    }
+                    #[cfg(unix)]
+                    (PackageState::InstalledAutoUpdates { version }, false) => {
+                        (version.clone(), "installed", None::<&str>, false)
+                    }
+                    (PackageState::Missing, false) => ("".to_string(), "missing", None, true),
+                    (PackageState::NeedsRepair { installed }, false) => {
+                        (installed.clone(), "needs repair", None, true)
+                    }
+                    (PackageState::VersionMismatch { installed }, false) => {
+                        (installed.clone(), "version mismatch", None, true)
+                    }
+                    #[cfg(unix)]
+                    (PackageState::Unavailable { reason }, _) => {
+                        ("".to_string(), "skipped", Some(reason.as_str()), false)
+                    }
+                };
                 report.row(
                     "packages",
                     format!("{name}:{}", s.request),
@@ -3653,11 +3619,7 @@ impl BootstrapStatus {
                 let mut package = json!({
                     "package": s.request.name,
                     "requested_version": s.request.version.clone().unwrap_or_else(|| "latest".to_string()),
-                    "desired_state": match s.request.desired {
-                        PackageDesiredState::Present => "present",
-                        PackageDesiredState::Optional => "optional",
-                        PackageDesiredState::Absent => "absent",
-                    },
+                    "desired_state": if desired_absent { "absent" } else { "present" },
                     "state": state.replace(' ', "_"),
                     "installed_version": installed_version,
                 });

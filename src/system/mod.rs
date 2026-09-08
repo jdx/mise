@@ -155,6 +155,8 @@ pub(crate) struct PackageOptionsTomlConfig {
     pub version: String,
     #[serde(default, deserialize_with = "deserialize_package_os")]
     pub os: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_package_env")]
+    pub env: Vec<String>,
     /// Adopt an identical existing cask artifact instead of replacing it.
     #[serde(default)]
     pub adopt: Option<bool>,
@@ -167,7 +169,6 @@ pub(crate) struct PackageOptionsTomlConfig {
 pub(crate) enum PackageDesiredStateTomlConfig {
     #[default]
     Present,
-    Optional,
     Absent,
 }
 
@@ -191,7 +192,6 @@ impl PackageTomlConfig {
             Self::Version(_) => packages::PackageDesiredState::Present,
             Self::Options(options) => match options.state {
                 PackageDesiredStateTomlConfig::Present => packages::PackageDesiredState::Present,
-                PackageDesiredStateTomlConfig::Optional => packages::PackageDesiredState::Optional,
                 PackageDesiredStateTomlConfig::Absent => packages::PackageDesiredState::Absent,
             },
         }
@@ -206,6 +206,13 @@ impl PackageTomlConfig {
                 .os
                 .iter()
                 .any(|entry| crate::cli::version::os_selector_matches(entry))
+    }
+
+    fn is_env_supported(&self, environments: &[String]) -> bool {
+        let Self::Options(options) = self else {
+            return true;
+        };
+        options.env.is_empty() || options.env.iter().any(|entry| environments.contains(entry))
     }
 }
 
@@ -231,6 +238,29 @@ where
     if values.is_empty() || values.iter().any(|value| value.is_empty()) {
         return Err(serde::de::Error::custom(
             "package os must contain at least one non-empty selector",
+        ));
+    }
+    Ok(values)
+}
+
+fn deserialize_package_env<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    let values = match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(value) => vec![value],
+        OneOrMany::Many(values) => values,
+    };
+    if values.is_empty() || values.iter().any(|value| value.is_empty()) {
+        return Err(serde::de::Error::custom(
+            "package env must contain at least one non-empty selector",
         ));
     }
     Ok(values)
@@ -632,6 +662,10 @@ fn package_requests_from_config_files(
     for (spec, package) in merged {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
+            continue;
+        }
+        if !package.is_env_supported(&crate::env::MISE_ENV_WITH_AUTO) {
+            debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this environment");
             continue;
         }
         match parse_spec(&spec) {
@@ -1873,28 +1907,21 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(unix)]
     #[test]
-    fn test_packages_from_config_files_marks_optional_packages() -> Result<()> {
-        let config = r#"
-            [bootstrap.packages]
-            "brew:required" = "latest"
-            "brew:optional" = { state = "optional" }
-        "#;
-        let (_dir, config_files) = config_map_from_toml(&[("config.toml", config)])?;
-        let brew = packages_from_config_files(&config_files)
-            .into_iter()
-            .find(|packages| packages.manager.name() == "brew")
-            .unwrap();
-        assert_eq!(
-            brew.requests[0].desired,
-            packages::PackageDesiredState::Present
-        );
-        assert_eq!(
-            brew.requests[1].desired,
-            packages::PackageDesiredState::Optional
-        );
-        Ok(())
+    fn package_env_selector_matches_active_environments() {
+        let package = PackageTomlConfig::Options(PackageOptionsTomlConfig {
+            version: "latest".to_string(),
+            os: vec![],
+            env: vec!["desktop".to_string(), "work".to_string()],
+            adopt: None,
+            state: PackageDesiredStateTomlConfig::Present,
+        });
+
+        assert!(package.is_env_supported(&["work".to_string()]));
+        assert!(package.is_env_supported(&["home".to_string(), "desktop".to_string()]));
+        assert!(!package.is_env_supported(&["home".to_string()]));
+        assert!(!package.is_env_supported(&[]));
+        assert!(PackageTomlConfig::Version("latest".to_string()).is_env_supported(&[]));
     }
 
     #[test]

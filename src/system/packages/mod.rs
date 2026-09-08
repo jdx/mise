@@ -46,7 +46,6 @@ pub(crate) struct PackageRequest {
 pub(crate) enum PackageDesiredState {
     #[default]
     Present,
-    Optional,
     Absent,
 }
 

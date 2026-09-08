@@ -87,7 +87,7 @@ jq = "1.8.1"
 1. **Base image layers** (e.g. `debian:bookworm-slim`) — copied through from
    the registry unchanged, so registry dedup kicks in.
 2. **mise binary** at `/usr/local/bin/mise` (skip with `--no-mise`).
-3. **Configured non-optional apt or apk `[bootstrap.packages]`**, if any, installed into the
+3. **Configured apt or apk `[bootstrap.packages]`**, if any, installed into the
    base rootfs and emitted as one package layer.
 4. **One layer per tool**, each rooted at
    `/mise/installs/<plugin>/<version>/`. Annotated with
