@@ -54,6 +54,7 @@ impl SystemStatus {
                                     "requested_version": req.version.clone().unwrap_or_else(|| "latest".to_string()),
                                     "desired_state": match req.desired {
                                         PackageDesiredState::Present => "present",
+                                        PackageDesiredState::Optional => "optional",
                                         PackageDesiredState::Absent => "absent",
                                     },
                                     "state": "skipped",
@@ -79,48 +80,57 @@ impl SystemStatus {
             for s in statuses {
                 let auto_updates = s.state.auto_updates();
                 let desired_absent = s.request.desired == PackageDesiredState::Absent;
-                let (installed_version, state, reason) = match (&s.state, desired_absent) {
-                    (PackageState::Missing, true) => ("".to_string(), "absent", None::<&str>),
-                    (PackageState::Installed { version }, true)
-                    | (PackageState::NeedsRepair { installed: version }, true)
-                    | (PackageState::VersionMismatch { installed: version }, true) => {
-                        any_missing = true;
-                        (version.clone(), "unexpectedly installed", None)
-                    }
-                    #[cfg(unix)]
-                    (PackageState::InstalledAutoUpdates { version }, true) => {
-                        any_missing = true;
-                        (version.clone(), "unexpectedly installed", None)
-                    }
-                    (PackageState::Installed { version }, false) => {
-                        (version.clone(), "installed", None::<&str>)
-                    }
-                    #[cfg(unix)]
-                    (PackageState::InstalledAutoUpdates { version }, false) => {
-                        (version.clone(), "installed", None::<&str>)
-                    }
-                    (PackageState::Missing, false) => {
-                        any_missing = true;
-                        ("".to_string(), "missing", None)
-                    }
-                    (PackageState::NeedsRepair { installed }, false) => {
-                        any_missing = true;
-                        (installed.clone(), "needs repair", None)
-                    }
-                    (PackageState::VersionMismatch { installed }, false) => {
-                        any_missing = true;
-                        (installed.clone(), "version mismatch", None)
-                    }
-                    #[cfg(unix)]
-                    (PackageState::Unavailable { reason }, _) => {
-                        ("".to_string(), "skipped", Some(reason.as_str()))
-                    }
-                };
+                let desired_optional = s.request.desired == PackageDesiredState::Optional;
+                let (installed_version, state, reason) =
+                    match (&s.state, desired_absent, desired_optional) {
+                        (PackageState::Missing, true, _) => {
+                            ("".to_string(), "absent", None::<&str>)
+                        }
+                        (PackageState::Installed { version }, true, _)
+                        | (PackageState::NeedsRepair { installed: version }, true, _)
+                        | (PackageState::VersionMismatch { installed: version }, true, _) => {
+                            any_missing = true;
+                            (version.clone(), "unexpectedly installed", None)
+                        }
+                        #[cfg(unix)]
+                        (PackageState::InstalledAutoUpdates { version }, true, _) => {
+                            any_missing = true;
+                            (version.clone(), "unexpectedly installed", None)
+                        }
+                        (PackageState::Installed { version }, false, _) => {
+                            (version.clone(), "installed", None::<&str>)
+                        }
+                        #[cfg(unix)]
+                        (PackageState::InstalledAutoUpdates { version }, false, _) => {
+                            (version.clone(), "installed", None::<&str>)
+                        }
+                        (PackageState::Missing, false, true) => ("".to_string(), "optional", None),
+                        (PackageState::Missing, false, false) => {
+                            any_missing = true;
+                            ("".to_string(), "missing", None)
+                        }
+                        (PackageState::NeedsRepair { installed }, false, _) => {
+                            any_missing = true;
+                            (installed.clone(), "needs repair", None)
+                        }
+                        (PackageState::VersionMismatch { installed }, false, _) => {
+                            any_missing = true;
+                            (installed.clone(), "version mismatch", None)
+                        }
+                        #[cfg(unix)]
+                        (PackageState::Unavailable { reason }, _, _) => {
+                            ("".to_string(), "skipped", Some(reason.as_str()))
+                        }
+                    };
                 if self.json {
                     let mut package = json!({
                         "package": s.request.name,
                         "requested_version": s.request.version.clone().unwrap_or_else(|| "latest".to_string()),
-                        "desired_state": if desired_absent { "absent" } else { "present" },
+                        "desired_state": match s.request.desired {
+                            PackageDesiredState::Present => "present",
+                            PackageDesiredState::Optional => "optional",
+                            PackageDesiredState::Absent => "absent",
+                        },
                         "state": state.replace(' ', "_"),
                         "installed_version": installed_version,
                     });

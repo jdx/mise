@@ -912,7 +912,7 @@ impl MiseToml {
             .is_none_or(|bootstrap| !bootstrap.packages.contains_key(spec));
         if is_missing
             && let Some(PackageTomlConfig::Options(options)) = fallback
-            && (!options.os.is_empty() || options.adopt.is_some())
+            && (!options.os.is_empty() || options.adopt.is_some() || options.optional)
         {
             let mut options = options.clone();
             options.version = version.to_string();
@@ -948,6 +948,9 @@ impl MiseToml {
             }
             if let Some(adopt) = options.adopt {
                 value.insert("adopt", Value::from(adopt));
+            }
+            if options.optional {
+                value.insert("optional", Value::from(true));
             }
             packages.insert(spec, Item::Value(Value::InlineTable(value)));
             return Ok(());
@@ -3370,6 +3373,7 @@ mod tests {
         "apt:curl" = "8.5.0-2"
         "brew:postgresql@17" = "latest"
         "brew-cask:1password" = { version = "latest", os = "macos", adopt = true }
+        "brew-cask:ghostty" = { os = "macos", optional = true }
         "brew-cask:font-example" = { os = ["linux", "macos"] }
         "future-manager:whatever" = "latest"
 
@@ -3399,6 +3403,10 @@ mod tests {
         assert!(matches!(
             system.packages.get("brew-cask:1password"),
             Some(crate::system::PackageTomlConfig::Options(options)) if options.adopt == Some(true)
+        ));
+        assert!(matches!(
+            system.packages.get("brew-cask:ghostty"),
+            Some(crate::system::PackageTomlConfig::Options(options)) if options.optional
         ));
         assert_eq!(
             system.packages.get("apt:curl").unwrap().version(),
@@ -3723,6 +3731,7 @@ mod tests {
                         version: "1.0.0".to_string(),
                         os: vec![],
                         adopt: None,
+                        optional: false,
                         state: crate::system::PackageDesiredStateTomlConfig::Present,
                     });
                 cf.update_bootstrap_package_with_fallback(

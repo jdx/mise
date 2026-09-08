@@ -661,11 +661,16 @@ fn desired_package(request: &super::packages::PackageRequest) -> String {
     if request.desired == super::packages::PackageDesiredState::Absent {
         return "absent".to_string();
     }
+    let optional = if request.desired == super::packages::PackageDesiredState::Optional {
+        " (optional)"
+    } else {
+        ""
+    };
     request
         .version
         .as_ref()
-        .map(|version| format!("installed ({version})"))
-        .unwrap_or_else(|| "installed (any version)".to_string())
+        .map(|version| format!("installed ({version}){optional}"))
+        .unwrap_or_else(|| format!("installed (any version){optional}"))
 }
 
 fn package_resource_state(
@@ -710,6 +715,11 @@ fn package_resource_state(
         #[cfg(unix)]
         PackageState::InstalledAutoUpdates { version } => {
             (format!("installed ({version})"), ResourceAction::Noop)
+        }
+        PackageState::Missing
+            if request.desired == super::packages::PackageDesiredState::Optional =>
+        {
+            ("absent (optional)".to_string(), ResourceAction::Noop)
         }
         PackageState::Missing if unsupported_pin => (
             "missing (manager cannot install pinned versions)".to_string(),
@@ -908,6 +918,17 @@ mod tests {
 
         assert_eq!(missing_action, ResourceAction::Create);
         assert_eq!(mismatch_action, ResourceAction::Update);
+    }
+
+    #[test]
+    fn missing_optional_package_is_not_a_planned_change() {
+        let mut request = package_request(Some("1.2.3"));
+        request.desired = crate::system::packages::PackageDesiredState::Optional;
+        let (current, action) =
+            package_resource_state(PackageState::Missing, &request, false, false);
+        assert_eq!(current, "absent (optional)");
+        assert_eq!(action, ResourceAction::Noop);
+        assert_eq!(desired_package(&request), "installed (1.2.3) (optional)");
     }
 
     #[test]

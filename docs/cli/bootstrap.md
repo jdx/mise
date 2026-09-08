@@ -38,6 +38,7 @@ repeated or comma-separated parts and cannot be combined.
 - **`--from-dir <DIR>`** — Directory used for the repository cloned by --from
 - **`-n --dry-run`** — Print what would happen without installing anything
 - **`-y --yes`** — Skip confirmation prompts
+- **`--with-optional`** — Install all optional bootstrap packages without prompting
 - **`--skip-dirty`** — Skip configured repos with local changes instead of failing
 - **`--force-dotfiles`** — Overwrite existing files that conflict with whole-file dotfile entries
 - **`--only <ONLY>`** — Run only one or more bootstrap parts

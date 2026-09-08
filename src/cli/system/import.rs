@@ -202,7 +202,7 @@ fn imported_package_value(
         Some(PackageTomlConfig::Version(_)) => None,
         None => match configured {
             Some(PackageTomlConfig::Options(options))
-                if !options.os.is_empty() || options.adopt.is_some() =>
+                if !options.os.is_empty() || options.adopt.is_some() || options.optional =>
             {
                 Some(options)
             }
@@ -221,6 +221,9 @@ fn imported_package_value(
     }
     if let Some(adopt) = options.adopt {
         table.insert("adopt", Value::from(adopt));
+    }
+    if options.optional {
+        table.insert("optional", Value::from(true));
     }
     Value::InlineTable(table)
 }
@@ -277,6 +280,7 @@ mod tests {
             version: "1.0.0".to_string(),
             os: vec!["macos".to_string()],
             adopt: None,
+            optional: false,
             state: crate::system::PackageDesiredStateTomlConfig::Present,
         });
         assert_eq!(
@@ -288,6 +292,7 @@ mod tests {
             version: "1.0.0".to_string(),
             os: vec![],
             adopt: Some(true),
+            optional: false,
             state: crate::system::PackageDesiredStateTomlConfig::Present,
         });
         assert_eq!(

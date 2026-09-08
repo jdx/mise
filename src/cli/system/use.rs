@@ -154,6 +154,7 @@ impl SystemUse {
             dry_run: self.dry_run,
             update: false,
             yes: self.yes,
+            with_optional: false,
         };
         driver::run(mgrs, Action::Install, &opts).await
     }

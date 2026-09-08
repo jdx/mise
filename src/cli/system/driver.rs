@@ -1,6 +1,6 @@
 //! Shared per-manager execution loop for `mise bootstrap packages apply`/`upgrade`/`use`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use eyre::{Result, bail};
 
@@ -36,6 +36,8 @@ pub(crate) struct DriverOpts {
     pub dry_run: bool,
     pub update: bool,
     pub yes: bool,
+    /// Include configured optional packages without prompting.
+    pub with_optional: bool,
 }
 
 fn unavailable_manager_is_error(d: &DriverOpts) -> bool {
@@ -52,6 +54,15 @@ fn unavailable_package_reason<'a>(
     statuses
         .iter()
         .find_map(|status| status.state.unavailable_reason())
+}
+
+fn include_install_target(status: &PackageStatus, include_missing_optional: bool) -> bool {
+    if status.state.is_installed() || status.state.is_unavailable() {
+        return false;
+    }
+    status.request.desired != PackageDesiredState::Optional
+        || !matches!(status.state, PackageState::Missing)
+        || include_missing_optional
 }
 
 /// Run `action` for every manager in `mgrs`, honoring the `--manager` filter,
@@ -113,6 +124,28 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         if let Some(reason) = unavailable_package_reason(d, &statuses) {
             bail!("{reason}");
         }
+        let prompted_optional =
+            if action == Action::Install && !d.with_optional && !d.dry_run && !d.yes {
+                let options = statuses
+                    .iter()
+                    .filter(|status| status.request.desired == PackageDesiredState::Optional)
+                    .filter(|status| matches!(status.state, PackageState::Missing))
+                    .map(|status| format!("{name}:{}", status.request))
+                    .collect::<Vec<_>>();
+                if options.is_empty() {
+                    HashSet::new()
+                } else {
+                    prompt::multiselect(
+                        format!("{name}: optional packages"),
+                        "Select optional packages to install",
+                        options,
+                    )?
+                    .into_iter()
+                    .collect()
+                }
+            } else {
+                HashSet::new()
+            };
         let remove_targets = if action == Action::Install {
             statuses
                 .iter()
@@ -127,9 +160,12 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         };
         let mut targets: Vec<_> = statuses
             .iter()
-            .filter(|status| status.request.desired == PackageDesiredState::Present)
+            .filter(|status| status.request.desired != PackageDesiredState::Absent)
             .filter(|s| match action {
-                Action::Install => !s.state.is_installed() && !s.state.is_unavailable(),
+                Action::Install => include_install_target(
+                    s,
+                    d.with_optional || prompted_optional.contains(&format!("{name}:{}", s.request)),
+                ),
                 // upgrade acts on whatever is present (the manager no-ops
                 // already-current packages); missing packages are skipped
                 // below with a pointer at `install`
@@ -168,11 +204,26 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         }
         let installed = statuses
             .iter()
-            .filter(|status| status.request.desired == PackageDesiredState::Present)
+            .filter(|status| status.request.desired != PackageDesiredState::Absent)
             .filter(|status| status.state.is_installed())
             .count();
         if action == Action::Install && installed > 0 {
             info!("{name}: {installed} package(s) already installed");
+        }
+        if action == Action::Install && !d.with_optional {
+            let skipped = statuses
+                .iter()
+                .filter(|status| status.request.desired == PackageDesiredState::Optional)
+                .filter(|status| matches!(status.state, PackageState::Missing))
+                .filter(|status| !prompted_optional.contains(&format!("{name}:{}", status.request)))
+                .map(|status| status.request.to_string())
+                .collect::<Vec<_>>();
+            if !skipped.is_empty() {
+                info!(
+                    "{name}: skipped optional packages {} (use --with-optional to install)",
+                    skipped.join(", ")
+                );
+            }
         }
         let already_absent = statuses
             .iter()
@@ -294,6 +345,36 @@ mod tests {
     use super::*;
     use crate::system::packages::PackageRequest;
 
+    fn package_status(desired: PackageDesiredState, state: PackageState) -> PackageStatus {
+        PackageStatus {
+            request: PackageRequest {
+                name: "example".to_string(),
+                version: None,
+                tap_url: None,
+                desired,
+            },
+            state,
+        }
+    }
+
+    #[test]
+    fn missing_optional_packages_require_selection() {
+        let status = package_status(PackageDesiredState::Optional, PackageState::Missing);
+        assert!(!include_install_target(&status, false));
+        assert!(include_install_target(&status, true));
+    }
+
+    #[test]
+    fn installed_optional_packages_remain_managed() {
+        let status = package_status(
+            PackageDesiredState::Optional,
+            PackageState::VersionMismatch {
+                installed: "1.0.0".to_string(),
+            },
+        );
+        assert!(include_install_target(&status, false));
+    }
+
     #[test]
     fn explicit_packages_reject_unavailable_entries_but_manager_filters_skip_them() {
         let explicit_opts = DriverOpts {
@@ -303,6 +384,7 @@ mod tests {
             dry_run: false,
             update: false,
             yes: true,
+            with_optional: false,
         };
         let statuses = vec![PackageStatus {
             request: PackageRequest {
@@ -329,6 +411,7 @@ mod tests {
             dry_run: false,
             update: false,
             yes: true,
+            with_optional: false,
         };
         assert!(unavailable_manager_is_error(&manager_opts));
         assert_eq!(unavailable_package_reason(&manager_opts, &statuses), None);

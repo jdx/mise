@@ -180,9 +180,20 @@ fn collect_package_requests(
         if mgr.disabled || mgr.requests.is_empty() {
             continue;
         }
+        let requests = mgr
+            .requests
+            .iter()
+            .filter(|request| {
+                request.desired != crate::system::packages::PackageDesiredState::Optional
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if requests.is_empty() {
+            continue;
+        }
         match mgr.manager.name() {
-            "apk" => apk.extend(mgr.requests.clone()),
-            "apt" => apt.extend(mgr.requests.clone()),
+            "apk" => apk.extend(requests),
+            "apt" => apt.extend(requests),
             other => unsupported.push(other.to_string()),
         }
     }
@@ -858,6 +869,18 @@ mod tests {
         )];
         let (manager, requests) = collect_package_requests(&managers).unwrap().unwrap();
         assert_eq!(manager, OciPackageManager::Apt);
+        assert_eq!(requests, vec![request("curl", None)]);
+    }
+
+    #[test]
+    fn collect_package_requests_skips_optional_packages() {
+        let mut optional = request("desktop", None);
+        optional.desired = crate::system::packages::PackageDesiredState::Optional;
+        let managers = [manager_packages(
+            Arc::new(AptManager::new()),
+            vec![request("curl", None), optional],
+        )];
+        let (_, requests) = collect_package_requests(&managers).unwrap().unwrap();
         assert_eq!(requests, vec![request("curl", None)]);
     }
 

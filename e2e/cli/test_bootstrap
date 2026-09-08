@@ -253,6 +253,16 @@ cat <<EOF >mise.toml
 EOF
 assert_succeed "mise bootstrap --dry-run"
 
+# optional packages are visible but do not count as missing or run unattended
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew:__mise_optional_e2e__" = { optional = true }
+EOF
+assert_contains "mise bootstrap packages status" "optional"
+assert_succeed "mise bootstrap packages status --missing"
+assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1" "skipped optional packages"
+assert_contains "mise bootstrap --dry-run --yes --only packages 2>&1" "skipped optional packages"
+
 # bootstrap prints a final follow-up section for configured parts skipped
 # because they are unavailable on the current platform
 if [[ $(uname) == "Darwin" ]]; then

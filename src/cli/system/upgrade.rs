@@ -72,6 +72,7 @@ impl SystemUpgrade {
             // them silent no-ops), so no separate --update flag
             update: false,
             yes: self.yes,
+            with_optional: false,
         };
         driver::run(mgrs, Action::Upgrade, &opts).await
     }

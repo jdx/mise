@@ -1,7 +1,7 @@
 use std::io::{BufRead, IsTerminal};
 use std::sync::Mutex;
 
-use demand::{Confirm, Dialog, DialogButton};
+use demand::{Confirm, DemandOption, Dialog, DialogButton, MultiSelect};
 
 use crate::env;
 use crate::ui::ctrlc;
@@ -185,6 +185,30 @@ pub(crate) fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<Conf
         *skip_prompt = true;
     }
     Ok(dialog_answer(&answer))
+}
+
+/// Show an unattended-safe multiselect. When either side of the terminal is
+/// unavailable, nothing is selected and no prompt is drawn.
+pub(crate) fn multiselect<S: Into<String>>(
+    title: S,
+    description: &str,
+    options: Vec<String>,
+) -> eyre::Result<Vec<String>> {
+    let _lock = MUTEX.lock().unwrap();
+    ctrlc::show_cursor_after_ctrl_c();
+    if !can_prompt_dialog() {
+        return Ok(vec![]);
+    }
+    let _progress_pause = MultiProgressReport::try_get().map(|report| report.pause_progress());
+    let theme = get_theme();
+    let mut select = MultiSelect::new(title)
+        .description(description)
+        .filterable(true)
+        .theme(&theme);
+    for option in options {
+        select = select.option(DemandOption::new(option));
+    }
+    Ok(select.run().inspect_err(|_| restore_cursor())?)
 }
 
 /// Maps a [`Dialog`] button label to an answer. "All" is a "yes" that also
