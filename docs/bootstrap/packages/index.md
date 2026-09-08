@@ -51,23 +51,10 @@ aliases as `[tools]` (`linux`, `macos`, `windows`, `linux/x64`,
 that declaration as drift, and `mise bootstrap packages apply` removes it.
 Other built-in managers currently support only the default `state = "present"`.
 
-Set `optional = true` for software that mise should offer during an interactive
-bootstrap without requiring on every machine. Missing optional packages are not
-reported as drift by `status --missing`, `bootstrap plan`, `mise doctor`, or the
-system-package hint printed by `mise install`. An attended `mise bootstrap` or
-`mise bootstrap packages apply` shows a multiselect for missing optional packages.
-Unattended runs, `--yes`, and dry runs skip them unless `--with-optional` is passed:
-
-```sh
-mise bootstrap --with-optional --yes
-mise bootstrap packages apply --with-optional --yes
-```
-
-To install only one optional package without a prompt, name it explicitly, for
-example `mise bootstrap packages apply brew-cask:ghostty --yes`. Once installed,
-an optional package remains managed: apply can repair it or enforce a supported
-version pin, upgrade includes it, and prune treats its declaration as in use.
-`optional = true` cannot be combined with `state = "absent"`.
+Set `optional = true` for packages that should be offered during an interactive
+bootstrap without being required on every machine. Missing optional packages do
+not count as drift, and unattended runs skip them unless `--with-optional` is
+passed. Once installed, they are managed like other configured packages.
 
 `brew-cask` entries additionally accept `adopt = true` to adopt an identical
 app already installed at the cask destination. Set `bootstrap.brew.adopt = true`
@@ -154,9 +141,7 @@ mise bootstrap packages use winget:BurntSushi.ripgrep.MSVC
 request such as `mise bootstrap packages apply apt:curl` can install a package
 without recording it. Use `use` when the package should remain declared.
 `--update` refreshes metadata according to the manager; `--yes` skips mise's
-confirmation prompt and optional-package selection but does not provide sudo
-credentials. Pass `--with-optional` to include optional packages in an unattended
-apply.
+confirmation prompt but does not provide sudo credentials.
 
 `mise bootstrap packages use` is `mise use` for system packages: it writes
 `"manager:package" = "version"` entries to `mise.toml` (the local file by
