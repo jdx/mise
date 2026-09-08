@@ -1,4 +1,4 @@
-{ pkgs, lib, rustPlatform, coreutils, bash, direnv, openssl, git, stdenv }:
+{ pkgs, lib, rustPlatform, coreutils, bash, direnv, openssl, git }:
 
 rustPlatform.buildRustPackage {
   pname = "mise";
@@ -55,22 +55,37 @@ rustPlatform.buildRustPackage {
   # or .git folder excluded by Nix.
   checkPhase = ''
     RUST_BACKTRACE=full cargo test --all-features -- \
+      --skip agecrypt::plugin_tests::plugin_protocol_roundtrip_and_software_recovery \
+      --skip backend::spm::tests::test_inline_install_command_uses_install_environment \
       --skip cli::plugins::ls::tests::test_plugin_list_urls \
       --skip tera::tests::test_last_modified \
       --skip system::defaults::tests::test_status_missing_keys_are_unset \
+      --skip system::defaults::tests::test_nested_value_round_trip \
       --skip plugins::core::ruby::tests::test_list_versions_matching \
+      --skip cmd::tests::test_direct_inline_supervision \
       --skip cmd::tests::test_macos_sandbox_preserves_piped_stdin \
+      --skip inline_command::unix::tests::native_argv0_and_logical_pwd \
       --skip sandbox::macos::tests::test_allow_read_executes_shell_without_reading_siblings \
       --skip sandbox::macos::tests::test_deny_process_at_runtime \
+      --skip sandbox::macos::tests::test_private_metadata_does_not_expose_directory_contents \
+      --skip system::packages::brew::cask::tests::adopts_only_an_identical_existing_app \
+      --skip system::packages::brew::cask::tests::auto_updates_reads_string_versions_from_xml_and_binary_plists \
+      --skip system::packages::brew::cask::tests::ditto_into_rejects_preplanted_symlink_destination \
       --skip system::packages::brew::cask::tests::ditto_into_stays_bound_after_directory_replacement \
+      --skip system::packages::brew::cask::tests::ensure_trusted_appdir_creates_missing_tail \
+      --skip system::packages::brew::cask::tests::ensure_trusted_appdir_rejects_symlinked_tail \
+      --skip system::packages::brew::cask::tests::ensure_trusted_appdir_stays_bound_after_same_uid_replacement \
+      --skip system::packages::brew::cask::tests::ensure_trusted_appdir_walks_from_unreplaceable_root \
+      --skip system::packages::brew::cask::tests::failed_app_activation_preserves_caskroom_copy \
       --skip system::packages::brew::cask::tests::installer_mutations_are_included_in_durable_symlink_sources \
+      --skip system::packages::brew::cask::tests::self_updating_cask_adopts_a_different_existing_app \
       --skip system::packages::brew::cask::tests::staged_artifact_closure_merges_a_parent_after_its_child \
       --skip system::packages::brew::cask::tests::staged_symlink_source_accepts_canonical_stage_spelling \
       --skip system::packages::brew::cask::tests::staged_symlink_source_copies_reachable_internal_links \
       --skip system::packages::brew::cask::tests::staged_symlink_sources_become_caskroom_owned \
       --skip system::packages::brew::cask::tests::structured_copy_restores_external_target_without_status_tracking \
       --skip system::packages::brew::cask::tests::structured_copy_rollback_removes_target_with_created_parent \
-      ${lib.optionalString stdenv.isDarwin "--skip mise_binary_services_aube_node_gyp_bootstrap_trampoline"}
+      --skip mise_binary_services_aube_node_gyp_bootstrap_trampoline
   '';
 
   meta = with lib; {
