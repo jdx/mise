@@ -1,0 +1,5 @@
+backends = ["github:QuiiBz/sherif"]
+bins = ["sherif"]
+description = "Opinionated, zero-config linter for TypeScript and JavaScript monorepos"
+test = { cmd = "sherif --version", expected = "sherif {{version}}" }
+version_order = "source"
