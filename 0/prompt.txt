@@ -1,0 +1,74 @@
+remove the agents.md changes
+
+---
+
+are there other dotfile-related docs we should improve?
+
+---
+
+do all of them in this pr
+
+---
+
+rebase, address feedback and failing checks
+
+---
+
+what the hell should we do about this????
+
+
+
+oh shit why do we have --from and --from-git?
+
+10:46 PM
+
+Worked for 16s
+
+They represent different operations, but the names hide the distinction—**both use Git**:
+
+- `--from`: clone a bootstrap project into a separate checkout and run its `mise.toml`.
+- `--from-git`: install your global mise configuration—or detect a shared dotfile-history repo, restore its files, and connect synchronization.
+
+So the real distinction is **“run this setup project” versus “adopt this machine configuration,”** not Git versus something else.
+
+The behavior distinction is useful; the naming is confusing. I’d prefer one `--from` entry point with an explicit mode for ambiguous repositories, rather than asking users to memorize this split.
+
+10:46 PM
+
+super confusing, how did that happen?
+
+10:47 PM
+
+Worked for 55s
+
+It looks like **feature-by-feature growth without a CLI design cleanup**:
+
+1. The original feature cloned a setup project and bootstrapped it—the `--from` workflow. ([August implementation](https://github.com/jdx/mise/commit/49f224045ba8367fef32622c5e8a518e11d9b848))
+2. On September 2, global-config cloning was added as a separate `--from-git` option, leaving `--from` intact. ([PR #12715](https://github.com/jdx/mise/pull/12715))
+3. Later, shared dotfile-history onboarding was added underneath `--from-git`, giving that flag another repository format and behavior. ([Follow-up implementation](https://github.com/jdx/mise/commit/fa892a9c285caad22c5d678bc142c3abf29d366f))
+
+My read: each addition solved its immediate problem, but nobody reconciled the overall interface. We ended up exposing implementation distinctions through names that don’t describe them.
+
+The original conversation checkpoints aren’t available, so I can establish the sequence—not who chose the names or their reasoning. And I should have flagged this design problem while improving the docs, rather than merely explaining around it.
+
+10:48 PM
+
+---
+
+ok do that in this pr, make it a hidden alias
+
+---
+
+this has only been out a few hours so deprecation can be super short
+
+---
+
+also make a pr to jdx/blog if need be
+
+---
+
+i want 1 month for this deprecation
+
+---
+
+don't mention --from-git at all in the docs

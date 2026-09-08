@@ -1,0 +1,86 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZK08A0MMCXCVX1QNB9TJXQ",
+  "session_id": "01a07ef8-ff2b-7582-81c8-dff8f36c48a5",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-08T04:04:16.713864Z",
+  "branch": "codex/docs-dotfiles-readability",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/bootstrap.md",
+    "e2e/cli/test_bootstrap_from",
+    "e2e/cli/test_bootstrap_remote_git",
+    "src/cli/bootstrap.rs",
+    "tasks.toml"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ad017667cbbe",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 466154,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 17754496,
+    "output_tokens": 72379,
+    "api_call_count": 157
+  },
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-08T04:04:16.539146Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 225,
+    "human_modified": 185,
+    "human_removed": 0,
+    "total_committed": 225,
+    "total_lines_changed": 456,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 182,
+      "user_lines_removed": 82,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "docs/bootstrap.md": 12,
+        "docs/bootstrap/remote.md": 6,
+        "docs/bootstrap/setup.md": 2,
+        "docs/history.md": 1,
+        "e2e/cli/test_bootstrap_from": 15,
+        "e2e/cli/test_bootstrap_remote_git": 18,
+        "e2e/cli/test_bootstrap_remote_setup_repository": 4,
+        "e2e/cli/test_dotfiles_bootstrap_from_git": 9,
+        "src/cli/bootstrap.rs": 105,
+        "src/system/history/checkpoint.rs": 1,
+        "src/system/history/scope.rs": 1,
+        "src/system/history/sync/format.rs": 1,
+        "src/system/history/sync/onboard.rs": 5,
+        "src/system/history/sync/origin.rs": 1,
+        "src/system/history/tracked.rs": 1
+      },
+      "user_removed_per_file": {
+        "docs/bootstrap.md": 5,
+        "docs/bootstrap/remote.md": 6,
+        "docs/bootstrap/setup.md": 2,
+        "docs/history.md": 1,
+        "e2e/cli/test_bootstrap_from": 5,
+        "e2e/cli/test_bootstrap_remote_git": 18,
+        "e2e/cli/test_bootstrap_remote_setup_repository": 4,
+        "e2e/cli/test_dotfiles_bootstrap_from_git": 9,
+        "src/cli/bootstrap.rs": 22,
+        "src/system/history/checkpoint.rs": 1,
+        "src/system/history/scope.rs": 1,
+        "src/system/history/sync/format.rs": 1,
+        "src/system/history/sync/onboard.rs": 5,
+        "src/system/history/sync/origin.rs": 1,
+        "src/system/history/tracked.rs": 1
+      }
+    }
+  ]
+}
