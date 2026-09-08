@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZAE2FNHSAYV3R36GHNDS2D",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-line-position",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "e2e/cli/test_dotfiles_unapply",
+    "src/system/edits.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 337685,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 29334016,
+    "output_tokens": 40760,
+    "api_call_count": 224
+  }
+}
