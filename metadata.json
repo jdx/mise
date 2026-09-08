@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M20R2SQPK8HCA3BHJBXYT917",
+  "strategy": "manual-commit",
+  "branch": "codex/optional-bootstrap-packages",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/bootstrap/packages/index.md",
+    "e2e/cli/test_bootstrap",
+    "schema/mise.json",
+    "src/cli/system/import.rs",
+    "src/config/config_file/mise_toml.rs",
+    "src/system/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 37536,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1455488,
+    "output_tokens": 5575,
+    "api_call_count": 19
+  }
+}
