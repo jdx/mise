@@ -138,9 +138,11 @@ For future changes, edit `dotfiles/example.conf` and run `apply` again.
 
 To start from an existing file, run `mise bootstrap dotfiles add <target>`.
 This saves the file under `dotfiles.root` (`~/.dotfiles` by default), adds a
-configuration entry, and applies it. The default mode is `symlink`, so the
-original path becomes a link to the saved source. Use `--no-apply` to review
-the source and configuration before changing the original file.
+configuration entry, and applies it using `dotfiles.default_mode`. That
+setting defaults to `symlink`, which makes the original path a link to the
+saved source. Select another mode with `--mode`, such as `--mode copy` to
+keep a regular file at the target. Use `--no-apply` to review the source
+and configuration before changing the original file.
 
 `apply` also runs as part of [`mise bootstrap`](/bootstrap.html), with the
 configured `pre-dotfiles` and `post-dotfiles` hooks. `mise install` and
