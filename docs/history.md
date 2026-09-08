@@ -432,11 +432,10 @@ silent; a later pause can notify again after recovery. Set
 `settings.history.notify = false` to opt out. Missing or failing notifiers
 never hold up history or sync.
 
-Linux and macOS notifications use the mise logo. On macOS, allow notifications
-for mise when asked; change that later in System Settings → Notifications → mise.
-Builds without notification support warn when a setup repository is connected.
-Notification failures never block sync. Alerts name the conflicting file and
-point to `mise bootstrap dotfiles status` for resolution steps.
+On macOS, allow notifications for mise when prompted; change this later in
+System Settings → Notifications → mise. Builds without notification support warn
+when a setup repository is connected. Notification failures never block sync.
+Alerts point to `mise bootstrap dotfiles status` for resolution steps.
 
 **Applying.** `mise bootstrap dotfiles pull` writes pending changes as one recoverable
 transaction (a protective checkpoint first, each file journaled, reload
