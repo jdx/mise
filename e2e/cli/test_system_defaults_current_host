@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-require_cmd jq
 domain="com.mise.defaults-current-host-test.$$"
 cat >"$MISE_CONFIG_DIR/config.toml" <<EOF_CONFIG
 [bootstrap.macos.defaults_current_host."$domain"]
@@ -17,6 +16,9 @@ if [[ $(uname) != Darwin ]]; then
   assert_contains 'mise bootstrap macos defaults status' skipped
   assert_succeed 'mise bootstrap macos defaults apply --yes'
 else
+  require_cmd jq
+  # Core Foundation writes outside the harness HOME, to the user's preference store.
+  # Remove only this test's preference domain.
   trap 'defaults delete "$domain" >/dev/null 2>&1 || true; defaults -currentHost delete "$domain" >/dev/null 2>&1 || true' EXIT
   assert_contains 'mise bootstrap macos defaults apply --dry-run' "defaults -currentHost write $domain ScopeValue -int 2"
   assert 'mise bootstrap macos defaults status --json | jq ".macos_defaults.entries | length"' 3
