@@ -7,6 +7,16 @@ global_source_repo="$PWD/bootstrap-global-source"
 relative_global_source_repo="$PWD/bootstrap-relative-global-source"
 bare_global_checkout="$PWD/bootstrap-bare-global-checkout"
 
+# Only the canonical spelling is discoverable in help and completions.
+for command in "bootstrap" "bootstrap remote"; do
+  assert_contains "mise $command --help" "--adopt"
+  assert_not_contains "mise $command --help" "--from-git"
+  assert_contains "mise __complete_word__ --shell fish --line 'mise $command --'" "--adopt"
+  assert_not_contains "mise __complete_word__ --shell fish --line 'mise $command --'" "--from-git"
+done
+assert_fail "mise bootstrap --adopt new.git --from-git old.git --dry-run"
+assert_fail "mise bootstrap remote --host devbox --adopt new.git --from-git old.git --dry-run"
+
 mkdir -p "$source_repo"
 git -C "$source_repo" init -q -b main
 git -C "$source_repo" config user.email test@example.com
@@ -41,14 +51,18 @@ echo global >"$global_source_repo/global-profile"
 git -C "$global_source_repo" add .
 git -C "$global_source_repo" commit -qm initial
 
-# --from-git checks out a global config repository directly into the mise
+# --adopt checks out a global config repository directly into the mise
 # config directory, so its config participates in the first bootstrap and
 # remains the global config for later invocations.
-assert_succeed "mise -E work bootstrap --from-git '$global_source_repo' --yes --only dotfiles,task"
+assert_succeed "mise -E work bootstrap --adopt '$global_source_repo' --yes --only dotfiles,task"
 assert "git -C '$MISE_CONFIG_DIR' remote get-url origin" "$global_source_repo"
 assert "cat ~/.bootstrap-from-global" "global"
 assert "cat ~/bootstrap-from-global-task" "global"
 assert_contains "mise -E work config ls" "~/.config/mise/config.work.toml"
+
+# The hidden spelling keeps working during the one-month migration window.
+assert_contains "mise -E work bootstrap --from-git='$global_source_repo' --yes --only dotfiles 2>&1" 'This will be removed in mise 2026.10.0.'
+assert_not_contains "mise -E work bootstrap --adopt='$global_source_repo' --yes --only dotfiles 2>&1" 'deprecated'
 
 mkdir -p "$relative_global_source_repo"
 git -C "$relative_global_source_repo" init -q -b main
@@ -64,14 +78,14 @@ git -C "$relative_global_source_repo" commit -qm initial
 # A relative MISE_GLOBAL_CONFIG_FILE is resolved before the child changes into
 # the checkout and remains the selected global config during re-execution.
 rm -f "$HOME/bootstrap-from-relative-global-task"
-assert_succeed "MISE_GLOBAL_CONFIG_FILE=relative-global/config.toml mise bootstrap --from-git '$relative_global_source_repo' --yes --only task"
+assert_succeed "MISE_GLOBAL_CONFIG_FILE=relative-global/config.toml mise bootstrap --adopt '$relative_global_source_repo' --yes --only task"
 assert "cat ~/bootstrap-from-relative-global-task" "relative-global"
 
 # A relative MISE_CONFIG_DIR is resolved before the child changes into the
 # checkout and remains the config directory during re-execution.
 relative_config_checkout="bootstrap-relative-config-checkout"
 rm -f "$HOME/bootstrap-from-relative-global-task"
-assert_succeed "MISE_CONFIG_DIR='$relative_config_checkout' mise bootstrap --from-git '$relative_global_source_repo' --yes --only task"
+assert_succeed "MISE_CONFIG_DIR='$relative_config_checkout' mise bootstrap --adopt '$relative_global_source_repo' --yes --only task"
 assert "git -C '$relative_config_checkout' remote get-url origin" "$relative_global_source_repo"
 assert "cat ~/bootstrap-from-relative-global-task" "relative-global"
 
@@ -79,7 +93,7 @@ assert "cat ~/bootstrap-from-relative-global-task" "relative-global"
 # rather than silently falling back to the default global config directory.
 mkdir "$bare_global_checkout"
 rm -f "$HOME/bootstrap-from-relative-global-task"
-assert_succeed "cd '$bare_global_checkout' && MISE_GLOBAL_CONFIG_FILE=config.toml mise bootstrap --from-git '$relative_global_source_repo' --yes --only task"
+assert_succeed "cd '$bare_global_checkout' && MISE_GLOBAL_CONFIG_FILE=config.toml mise bootstrap --adopt '$relative_global_source_repo' --yes --only task"
 assert "git -C '$bare_global_checkout' remote get-url origin" "$relative_global_source_repo"
 assert "cat ~/bootstrap-from-relative-global-task" "relative-global"
 

@@ -1,194 +1,215 @@
 ---
-description: "Declare dotfiles in [dotfiles] to manage complete files and directories, or a named block or line in a file shared with other tools."
+description: "Save the history of your configuration files, or use mise to copy, link, and generate them."
 ---
 
 # Dotfiles
 
-`[dotfiles]` declares how each of your configuration files is managed. The
-recommended way to adopt a file you already edit in place is to **track** it:
-the file stays where it is, nothing is copied or linked, and
-[history](/history.html) saves a checkpoint of it right away and after every
-change it sees.
+Dotfiles are configuration files such as `~/.zshrc` and `~/.gitconfig`.
+Keep editing them with your usual editor; mise can save changes in the
+background so you can return to an earlier version. With synchronization
+enabled on your machines, an edit on your laptop can reach your desktop,
+and edits on the desktop flow back.
 
-For an introduction, read [Dotfiles that save themselves](https://jdx.dev/posts/2026-09-07-dotfiles-that-save-themselves/).
+Start by [tracking a file you already use](#tracking-files-in-place). If you
+want mise to copy or link files into place, start with
+[one managed file](#start-with-one-managed-file).
+
+For an introduction to this workflow, read
+[Dotfiles That Save Themselves](https://jdx.dev/posts/2026-09-07-dotfiles-that-save-themselves/).
+
+## Tracking files in place
+
+With Git installed, start saving the history of a file you already have.
+For example, if you use zsh:
 
 ```sh
-mise bootstrap dotfiles track ~/.zshrc ~/.config/hypr
-mise bootstrap                                  # packages, tools, shell activation, …
-mise bootstrap dotfiles status                             # what is protected, and how
+mise bootstrap dotfiles track ~/.zshrc
 ```
+
+mise leaves the file where it is and saves a **checkpoint**, a version you
+can inspect or restore later. It also adds this entry to your global mise
+configuration (`~/.config/mise/config.toml` by default):
 
 ```toml
 [dotfiles]
 "~/.zshrc" = { mode = "track" }
-"~/.config/hypr" = { mode = "track" }
-"~/.config/app/state.json" = { mode = "track", autosave = false }   # saved only on request
-"~/templates" = { mode = "track" }                                # includes new descendants
 ```
 
-Templates, symlinks, copies, inline content, and managed edits are the
-complementary techniques for files mise generates or places for you. They keep
-working as before. Referencing or managing a file does not enroll it:
+### Save edits automatically
+
+Add the watcher service to the same global configuration file:
 
 ```toml
-[dotfiles]
-"~/.gitconfig" = { source = "~/templates/gitconfig.tera", mode = "template" }
-"~/.config/alacritty.toml" = { mode = "copy" }                       # ~/.dotfiles/.config/alacritty.toml
-"~/.config/nvim" = "dotfiles/nvim"                                   # symlink the directory itself
-"~/.local/bin" = { source = "dotfiles/bin", mode = "symlink-each" }  # symlink each file within
-"~/.config/tool.conf" = { content = "enabled = true\n" }              # inline whole-file content
-"~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }      # a managed block in a tracked file
-"~/hosts/dev" = { line = "127.0.0.1 dev.local" }                     # edit one line in ~/hosts
+[bootstrap.services.mise-history]
+builtin = "history-watch"
 ```
 
-Source-managed entries are captured and applied by `mise bootstrap dotfiles add`
-(pass `--no-apply` to only capture them) and applied explicitly with
-`mise bootstrap dotfiles apply` or as part of [`mise bootstrap`](/bootstrap.html).
-They are never applied implicitly by `mise install` or `mise bootstrap packages`.
-The nested apply command runs the configured `pre-dotfiles` and
-`post-dotfiles` bootstrap hooks.
+Install and start it, then check that it is running:
 
-## Command compatibility
-
-> [!WARNING]
-> The top-level `mise dotfiles` command is deprecated and hidden from help. It
-> will begin warning in mise 2027.2.0 and be removed in mise 2028.2.0. Use
-> `mise bootstrap dotfiles` instead.
-
-## Tracking files in place
-
-`mise bootstrap dotfiles track <path>…` writes a `mode = "track"` entry for
-each path (a file or a directory) into the global `config.toml`, saves a
-baseline checkpoint of it immediately, and reports whether anything saves
-later edits automatically. Tracking never infers a source under
-`dotfiles.root`, never moves the file, and never replaces it with a symlink.
-`mise bootstrap dotfiles untrack <path>` removes the declaration and stops
-future captures. The live file stays in place; future commit trees stop
-including it, while its previously committed versions remain in Git.
-
-A track entry takes no `source`, `content`, `exclude`, or `manifest`: a
-declaration combining them is reported by `mise bootstrap dotfiles paths` as invalid and
-never counted as protection, and `track` exits non-zero when the entry it
-wrote is not active.
-
-### Policies
-
-| Field      | Default | Meaning                                                                                                        |
-| ---------- | ------- | -------------------------------------------------------------------------------------------------------------- |
-| `autosave` | `true`  | Commit edits automatically. With `false`, save the path explicitly with `mise bootstrap dotfiles save <path>`. |
-| `encrypt`  | `false` | Encrypt contents before Git stores them, for `[history.encryption].recipients`. Live files stay native.        |
-
-`mise bootstrap dotfiles track <path> --no-autosave` selects manual saving.
-Every tracked file is eligible for origin synchronization. Manual sync delays
-pushing, not committing: the eventual push includes accumulated intermediate
-commits. There are no per-file sharing switches or separate backup policies.
-
-Enrollment accepts exact files and directories, not glob patterns. A directory
-includes new descendants subject to exclusions. Tracking a symlink records
-the link, not its target. Neither the global mise config directory nor
-`dotfiles.root` is implicitly enrolled.
-
-Tracking a path through a symlinked parent directory is rejected, because
-resolving that alias would silently change its destination on another machine.
-Explicitly track the link itself and its real target instead. Aliases in the
-home or mise configuration root are handled by the portable root mapping.
-
-To keep a file out of the origin, do not track it. Untracking or excluding a
-file does not erase versions that are already committed.
-
-### Variants
-
-A tracked file can hold different contents on different machines while
-keeping the same live path. Variants use the same selectors as bootstrap
-packages (`os`, with an optional `/arch`) and mise environments (`profile`):
-
-```toml
-[dotfiles]
-"~/.zshrc" = { mode = "track", variants = [{ os = "macos" }, { os = "linux" }] }
-"~/.gitconfig-work" = { mode = "track", variants = [{ profile = "work" }, { default = true }] }
+```sh
+mise bootstrap services apply
+mise bootstrap dotfiles status
 ```
 
-`mise bootstrap dotfiles track ~/.zshrc --os macos` adds a variant. The most
-specific matching variant wins (`profile` over an arch-qualified `os` over an
-`os` alone); two matching equally are reported as ambiguous and the path is
-left out until fixed. A machine matching no variant does not capture or apply that path unless a
-variant is marked `default = true`. Its commits preserve the other platforms'
-streams without saving this machine's live file into them.
+`status` shows the file as `tracked` and the watcher as running. Edit the
+file normally from now on. The watcher saves changes to local Git history.
+See [automatic saves](/history.html#automatic-saves) for service details.
 
-### Ownership
+To save by hand, skip the service and run
+`mise bootstrap dotfiles save ~/.zshrc` after editing.
 
-Deployment ownership and tracking observation are separate. A tracked directory
-may contain managed files or template sources; observing them does not take
-over their deployment. Explicit tracking and a managed declaration can coexist.
-Genuine conflicts between two deployment declarations are still rejected.
+### Try restoring a change
 
-`mise bootstrap dotfiles track <managed-file>` keeps the deployment declaration
-and writes its tracking entry separately under `conf.d/dotfiles-tracking.toml`.
-Untracking removes the tracking entry without removing the deployment or live file.
+Add an alias to `~/.zshrc` in your editor:
 
-Tracking also coexists with managed edits and shell activation:
-`mise bootstrap mise-shell-activate` can edit a tracked `~/.zshrc`.
+```sh
+alias ll='ls -lah'
+```
 
-`enabled = false` on a later layer switches an inherited declaration off on
-this machine, which is what `untrack` writes for entries declared by the
-system configuration. Tracking is enrolled from the system and global
-configuration only: a `mode = "track"` entry in a project config is ignored
-with a warning, so no project can enroll files in your history.
+Save a checkpoint now so you can try restoring it without waiting for the
+watcher, then inspect the file's history:
 
-`*.local.toml` files and protected credential-file defaults are excluded from
-capture entirely, not retained in a separate private history. Use explicit
-encrypted tracking for credential files that should be committed as ciphertext.
+```sh
+mise bootstrap dotfiles save ~/.zshrc
+mise bootstrap dotfiles history --path ~/.zshrc
+```
 
-`mise bootstrap dotfiles status` reports tracked entries as `tracked` and
-source-managed ones as `applied`, `missing`, `differs`, or `source missing`
-— deployment drift. History and sync state live in `mise bootstrap dotfiles status`.
+If that was your only edit, rolling back removes the new alias. Preview
+the restore, then apply it:
+
+```sh
+mise bootstrap dotfiles rollback ~/.zshrc --dry-run
+mise bootstrap dotfiles rollback ~/.zshrc
+```
+
+Rollback restores the latest saved version that differs from the current
+file. It saves the current contents first, so you can reverse the rollback
+with `mise bootstrap dotfiles undo`. See [rolling back](/history.html#rolling-back)
+to choose a particular checkpoint.
+
+### Share with another machine
+
+History is stored locally in Git until you configure a remote repository,
+called an **origin**. Connect your own repository and enable automatic
+synchronization to share saved edits in both directions. The watcher needs
+Git credentials on each machine. Follow
+[sharing across machines](/history.html#sharing-across-machines) to connect
+the repository, or [set up another machine](/bootstrap/setup.html) to bring
+your configuration to a new computer.
+
+Use a private repository: synchronization sends earlier checkpoints too,
+so temporary edits can become part of the shared history. Configure
+[encryption](/history.html#encrypted-shared-files) before first saving files
+that need it.
 
 ## Start with one managed file
 
-Create `dotfiles/example.conf` next to your `mise.toml`, then add an entry for an unused target:
+mise can also create configuration files from a **source** file that you
+maintain. The **target** is the path where an application reads the configuration.
+
+Create `dotfiles/example.conf` next to your `mise.toml` with this content:
+
+```ini
+enabled = true
+```
+
+Add the following to `mise.toml`. Choose an unused target path for this example:
 
 ```toml
 [dotfiles]
-"~/.config/mise-dotfiles-example.conf" = {
-    source = "dotfiles/example.conf",
-    mode = "copy",
-}
+"~/.config/mise-dotfiles-example.conf" = { source = "dotfiles/example.conf", mode = "copy" }
 ```
 
-Inspect the declaration, preview its application, and then apply it:
+Preview the copy, apply it, and check the result:
 
 ```sh
-mise bootstrap dotfiles status
 mise bootstrap dotfiles apply --dry-run
 mise bootstrap dotfiles apply
-mise bootstrap dotfiles status --missing
+mise bootstrap dotfiles status
 ```
 
-The last command exits successfully only when all selected entries match their sources.
-Editing a copy's target does not update the source: a later apply overwrites it. Use
-[`add` to capture changes](#capturing-changes), or edit the managed source with
-`mise bootstrap dotfiles edit <target>`.
+The target now contains `enabled = true`, and `status` reports it as `applied`.
+For future changes, edit `dotfiles/example.conf` and run `apply` again.
 
-To adopt an existing file as a managed source, use `mise bootstrap dotfiles add <target>`.
-This captures the live file into `dotfiles.root`, writes a declaration, and applies it.
-Start with `--no-apply` when you want to review the captured source and configuration
-first. To keep the file where it is instead, [track it](#tracking-files-in-place).
-The nested apply command runs the configured `pre-dotfiles` and
-`post-dotfiles` bootstrap hooks.
+> [!WARNING]
+> In `copy` mode, applying overwrites changes made directly to the target.
+> Use [`add` to save those changes back to the source](#capturing-changes)
+> before applying again.
+
+To start from an existing file, run `mise bootstrap dotfiles add <target>`.
+This saves the file under `dotfiles.root` (`~/.dotfiles` by default), adds a
+configuration entry, and applies it using `dotfiles.default_mode`. That
+setting defaults to `symlink`, which makes the original path a link to the
+saved source. Select another mode with `--mode`, such as `--mode copy` to
+keep a regular file at the target. Use `--no-apply` to review the source
+and configuration before changing the original file.
+
+`apply` also runs as part of [`mise bootstrap`](/bootstrap.html), with the
+configured `pre-dotfiles` and `post-dotfiles` hooks. `mise install` and
+`mise bootstrap packages` leave dotfiles alone.
+
+To save history for a source or target you manage this way, [track that
+path](#tracking-files-in-place) too.
+
+## Modes
+
+Choose how mise creates a target from its source:
+
+| Mode           | What happens when you apply                                       | Use when                                                              |
+| -------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `symlink`      | Create one link to a file or entire directory; the default.       | Edits through the target should change the source.                    |
+| `symlink-each` | Create directories and link each file within them.                | The target directory also holds files you want mise to leave alone.   |
+| `copy`         | Copy a file or directory, overwriting matching files.             | The application needs a regular file or writes its own configuration. |
+| `template`     | Render a source file with the [template engine](/templates.html). | The output depends on machine-specific variables.                     |
+
+For example, to link a directory:
+
+```toml
+[dotfiles]
+"~/.config/nvim" = { source = "dotfiles/nvim", mode = "symlink" }
+```
+
+`symlink-each` requires a directory source. When you delete or exclude a
+source file, the next apply removes its link. Other files in the target
+directory stay in place. mise records these links under
+`$MISE_STATE_DIR/dotfiles`; keep that directory so later applies can update
+or remove previously created links.
+
+Directory copies keep existing target files when you delete or exclude their
+sources. Review and remove those leftover copies yourself.
+
+### Templates
+
+```toml
+[dotfiles]
+"~/.gitconfig" = { source = "dotfiles/gitconfig.tera", mode = "template" }
+```
+
+Templates can use `env`, `vars`, `exec()`, and the rest of the
+[template context](/templates.html). Applying a template writes its rendered
+content and gives the target the source file's permissions. A later apply
+also repairs changed permissions.
+
+`status`, `diff`, and `apply` render templates to check their output. This
+executes any `exec()` calls in those templates, using your trusted config.
+With `--dry-run`, mise skips rendering dotfile templates and labels them
+`(if changed)`. Other configuration expressions can still run during a dry
+run, so use it with trusted configuration.
+
+See [Windows](#windows) for differences in link behavior on that platform.
 
 ## Whole-file entries
 
-Whole-file entries are keyed by the target path — absolute or starting with
-`~/` — and may point at a source file or directory. If `source` is omitted,
-mise mirrors the home-relative target path under `dotfiles.root`: `~/.zshrc`
-uses `~/.dotfiles/.zshrc`, and `~/.config/foo.toml` uses
-`~/.dotfiles/.config/foo.toml`. Targets outside `$HOME` must specify `source`
-or inline `content`.
+Each entry in `[dotfiles]` uses the target path as its key. Use an absolute
+path or one starting with `~/`. A source can be a file or a directory.
 
-String entries are shorthand for an explicit source with
-`dotfiles.default_mode`. `mise bootstrap dotfiles add` omits an implied source
-and the built-in `symlink` mode, while preserving a mode explicitly selected
-with `--mode`:
+When you omit `source`, mise looks under `dotfiles.root`, which defaults to
+`~/.dotfiles`. It uses the same path relative to your home directory:
+`~/.zshrc` gets its source from `~/.dotfiles/.zshrc`, and
+`~/.config/foo.toml` gets it from `~/.dotfiles/.config/foo.toml`.
+For targets outside your home directory, specify `source` or inline `content`.
+
+These entries use an inferred source and an explicit source, respectively:
 
 ```toml
 [dotfiles]
@@ -196,28 +217,32 @@ with `--mode`:
 "~/.ssh/config" = { source = "ssh/config", mode = "copy" }
 ```
 
-Relative explicit sources resolve against the directory of the config file
-that declares the entry, so a global `~/.config/mise/config.toml` can manage
-dotfiles kept next to it, and a project config can ship machine setup from
-the repo.
+Relative source paths start from the directory containing the configuration
+file. For example, `source = "ssh/config"` in
+`~/.config/mise/config.toml` refers to `~/.config/mise/ssh/config`.
 
-`mise bootstrap dotfiles status --json` includes an `origin` object for every
-entry. It reports the declaring config, its `config_root`, any configuration
-environment encoded by that config filename, and the resolved source path.
-Paths are ordinary strings when they are valid UTF-8. On Unix, a path containing
-non-UTF-8 bytes uses `mise:path-bytes:<base64url>` so provenance remains lossless.
-This makes layered dotfile declarations inspectable without reconstructing
-their precedence by hand.
+You can also write a source as a string, such as
+`"~/.config/nvim" = "dotfiles/nvim"`. This uses `dotfiles.default_mode`.
+When `add` writes an entry, it leaves out the source if it can infer it, and
+leaves out the built-in `symlink` mode. A mode you select with `--mode` is
+always written explicitly.
+
+### Inline content
 
 Use `content` to declare a literal whole file inline instead of keeping a
-separate source file. Inline content is written as a private regular file
-(`0600` on Unix). Use `content` on its own, without `source`, `mode`, `exclude`, `manifest`,
-or the edit options `block`, `line`, `template`, and `comment`:
+separate source file. On Unix, the resulting file has permissions `0600`,
+so only its owner can read and write it:
 
 ```toml
 [dotfiles]
 "~/.config/example.conf" = { content = "enabled = true\n" }
 ```
+
+Use `content` on its own. It cannot be combined with `source`, `mode`,
+`exclude`, `manifest`, or the edit options `block`, `line`, `template`, and
+`comment`.
+
+### Matching multiple source files
 
 Source paths may contain glob wildcards like `*`, `**`, `?`, or `[ab]`.
 When a wildcard source matches multiple paths, the target path must contain
@@ -277,37 +302,6 @@ the previous source. This makes `mise bootstrap -E home` and
 profile are removed, shared paths are repointed, and unmanaged neighbors are
 preserved.
 
-## Modes
-
-| Mode           | Target behavior                                                      | Use when                                                       |
-| -------------- | -------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `symlink`      | One link to a file or entire directory; the default.                 | Edits to the target should edit the source.                    |
-| `symlink-each` | Recreate directories and link individual files.                      | A target directory also contains unmanaged neighbors.          |
-| `copy`         | Copy a file or directory; overwrite matching files.                  | The application needs a regular file or writes its own config. |
-| `template`     | Render a source file through the [template engine](/templates.html). | The output depends on machine-specific variables.              |
-
-`symlink-each` requires a directory source. It records managed links under
-`$MISE_STATE_DIR/dotfiles`, so subsequent applies can remove links for deleted or excluded
-sources without recursively scanning a shared target. Unmanaged neighbors are preserved.
-Keep that state directory when you want mise to reconcile previously applied profiles.
-
-Directory copies are additive and **never pruned**: deleting or excluding a source leaves
-its old copy behind. Review and remove those leftovers yourself. Templates use the source
-file's permissions and repair permission drift when applied. See [Windows](#windows) for
-platform-specific link behavior.
-
-Templates get the same context as other mise templates (`env`, `vars`,
-`exec()`, etc.), which is the main reason to use them: one source file,
-per-machine output.
-
-Detecting whether a template's output has drifted requires rendering it, so
-`mise bootstrap dotfiles status`, `mise bootstrap dotfiles diff`, and a real
-apply evaluate templates — including any `exec()` calls — from your trusted
-config, just like `[env]` templates. Dotfile `--dry-run` skips rendering the dotfile
-templates and lists those entries as `(if changed)`. It does not suppress unrelated
-configuration evaluation, so this is a preview of dotfile writes, not a sandbox for
-untrusted configuration.
-
 ## Edit entries
 
 Edit entries manage one piece of a file: the `mise activate` block in your
@@ -339,9 +333,8 @@ eval "$(mise activate zsh)"
 # <<< mise:activate <<<
 ```
 
-The markers are the ownership record, stored in the file itself, so the
-design stays stateless: applying replaces only what's between them or
-appends the block if absent, and everything else in the file is untouched.
+Applying replaces the content between the markers. If the block is missing,
+mise appends it. Everything else in the file stays as it is.
 
 Ids may contain letters, digits, `_`, `-`, and `.`. The marker comment
 prefix is inferred from the file extension (`#` for shell/config files,
@@ -350,25 +343,24 @@ be overridden with `comment = "..."`. Files that can't hold line comments
 at all (strict JSON, XML) aren't a fit for blocks — use a whole-file entry
 instead.
 
-A `line` ensures an exact line exists somewhere in the file. A missing line is
-appended by default; set `position = "prepend"` to put it at the beginning
-instead. An existing exact match is left wherever it is. Applying a line edit
-preserves all other bytes, including the file's existing line endings. The
-value must be a single line; use a block for multi-line content.
+A `line` inserts the given text if that exact line is missing. By default,
+mise appends it; set `position = "prepend"` to insert it at the beginning.
+Running apply again leaves an existing match wherever it is. Other bytes,
+including line endings, stay unchanged. The value must be a single line;
+use a block for multi-line content.
 
-## Semantics
+## How configuration is applied {#semantics}
 
-- **Declarative and additive** — entries merge across the
-  [config hierarchy](/configuration.html) (global → project). Whole-file
-  entries merge by target path; edit entries merge by `(path, id)`.
-- **Explicit application** — `mise bootstrap dotfiles add` applies the entries
-  it captures unless `--no-apply` is set. Entries not captured by `add` are
-  applied by `mise bootstrap dotfiles apply` or [`mise bootstrap`](/bootstrap.html).
-- **Skip unchanged output** — entries already in their desired state are skipped.
-  Templates may still execute while checking their output, and copy/template entries
-  overwrite changed targets on apply.
-- **Unknown modes and operations are ignored with a warning** so configs
-  using features from newer mise versions still parse.
+- Entries merge across the [config hierarchy](/configuration.html).
+  Whole-file entries merge by target path; edit entries merge by `(path, id)`.
+  Tracking uses only system and global configuration.
+- `mise bootstrap dotfiles add` applies the entries it captures unless you
+  pass `--no-apply`. Use `mise bootstrap dotfiles apply` or
+  [`mise bootstrap`](/bootstrap.html) to apply the rest.
+- Applying skips targets that already match. Templates may still execute
+  while mise checks their output. Copy and template entries overwrite
+  changed targets.
+- mise warns and skips entries with unknown modes or operations.
 
 ## Conflicts
 
@@ -377,28 +369,23 @@ directory where a symlink should go, or a directory where a file should go,
 is an error listing the conflicting paths. Pass
 `mise bootstrap dotfiles apply --force` to replace them.
 
-Real files and directories always require `--force` during a standalone
-symlink apply, even when their visible content and permissions match. Portable
-filesystem APIs cannot compare ownership, ACLs, extended attributes, flags,
-and security labels. `mise bootstrap dotfiles add` avoids that destructive
-comparison by moving each captured real path to its source before creating the
-symlink; cross-filesystem moves fall back to a symlink- and
-permission-preserving copy.
+Replacing a real file or directory with a symlink requires `--force`, even
+when its contents and permissions match the source. To adopt an existing
+file, use `mise bootstrap dotfiles add`: it moves the file to its source
+path before creating the link. When the source is on another filesystem,
+mise copies it while preserving symlinks and permissions.
 
-Content updates in writing modes are not conflicts: a `copy` or `template` entry overwrites
-the target file's content without `--force` — that is the declared intent of
-those modes. Existing symlinks can be repointed; inspect the diff before changing which source a target uses.
+A `copy` or `template` entry overwrites the target's content without
+`--force`. Existing symlinks can also be repointed. Inspect the diff before
+changing which source a target uses.
 
-Edit entries never need `--force`: a block owns only what's between its
-markers, and a line only inserts when its exact content is absent. Two cases are refused with an error
-instead of guessed at: corrupted markers and targets that are symlinks. An
-edit through a symlink would modify whatever the link points at, often a
-`[dotfiles]` source, so point the edit at the real file instead.
+Blocks and lines can be applied without `--force`. mise reports an error
+if a block's markers are corrupted or an edit's target is a symlink.
+For a symlink, point the edit at the real file you want to change.
 
-Removing an entry from config leaves its file, block, or line in place
-because the active config still defines which state belongs to an entry. Run
-`mise bootstrap dotfiles unapply` before removing the entry when you want mise
-to clean up its observable footprint.
+Removing an entry from config leaves its file, block, or line in place.
+To remove them too, run `mise bootstrap dotfiles unapply` before deleting
+the entry from your config.
 
 ## Unapplying
 
@@ -417,16 +404,15 @@ filesystem, and recorded `symlink-each` state to determine what the entry owns:
 - Marker-delimited blocks are removed with their markers. Plain line edits have
   no ownership marker and require `--force`.
 
-Unapply is deliberately conservative because `copy` and `template` entries have
-no apply manifest. In particular, a copied file whose source was deleted can no
-longer be identified inside an additive directory copy. Remove such leftovers
-by hand. Use `--dry-run` to inspect the identifiable removals first; template
-dry-runs do not render or execute template functions.
+If you deleted a source file from a copied directory, unapply cannot
+identify its old copy. Remove that leftover file yourself. Use `--dry-run`
+to preview removals first. Template dry-runs skip rendering and template
+function calls.
 
 ## Commands
 
 ```sh
-mise bootstrap dotfiles status            # shows applied/missing/differs/source missing
+mise bootstrap dotfiles status            # show tracked files and the state of managed files
 mise bootstrap dotfiles status --missing  # exit 1 if anything is out of sync
 mise bootstrap dotfiles diff              # show changes needed to apply
 mise bootstrap dotfiles diff ~/.zshrc     # show changes for one target
@@ -450,21 +436,32 @@ mise bootstrap dotfiles edit --apply ~/.zshrc
 
 mise bootstrap dotfiles save                    # checkpoint the tracked files now
 mise bootstrap dotfiles history                 # browse checkpoints; `history show`, `history diff`
-mise bootstrap dotfiles paths                   # what history tracks, under which policies
+mise bootstrap dotfiles paths                   # list tracked paths and their save settings
 ```
 
 `mise bootstrap dotfiles status` reports each entry as `tracked`, `applied`,
 `missing`, `differs` with a reason, or `source missing`, followed by the
 history state: what is tracked, the latest checkpoint, unfinished
-operations, and whether edits are saved automatically. JSON uses
-`source_missing` for the last state and includes
-[origin information](#whole-file-entries). `--missing` changes the exit status
-when any selected entry is out of sync; it does not filter the displayed list.
+operations, and whether edits are saved automatically.
+
+Use `status --missing` in scripts to exit with status 1 when any selected
+entry is out of sync. It displays the same list as `status`.
 
 Every `apply`, `add`, `unapply`, and `edit --apply` records a pair of
 [history checkpoints](/history.html) — the tracked files before and after the
-change, with a journal of every path it touched — and `mise bootstrap dotfiles history` lists
-them.
+change. mise also records which paths the operation touched. Run
+`mise bootstrap dotfiles history` to browse these checkpoints.
+
+### JSON output
+
+`mise bootstrap dotfiles status --json` uses `source_missing` for the
+`source missing` state. Each entry also includes an `origin` object
+describing where its configuration came from: the config file, its
+`config_root`, any mise environment in the config filename, and the resolved
+source path.
+
+Paths are strings when they are valid UTF-8. On Unix, paths containing
+non-UTF-8 bytes use `mise:path-bytes:<base64url>`.
 
 ## Capturing changes
 
@@ -476,16 +473,126 @@ $EDITOR ~/.config/starship.toml
 mise bootstrap dotfiles add ~/.config/starship.toml
 ```
 
-Use `mise bootstrap dotfiles add --changed` to update every changed regular file
-managed in `copy` mode at once. Directory copies are excluded because reversing
-an additive copy could delete source files intentionally excluded from the live
-tree. Symlinks already edit their source directly, and templates and inline
-content cannot be reverse-rendered, so they are not included. Bulk capture also
-requires the configuration declaring each selected file to be trusted.
+Use `mise bootstrap dotfiles add --changed` to update the sources of all
+changed regular files managed in `copy` mode. Each selected file's
+configuration must be trusted. The command skips directory copies,
+symlinks, templates, and inline content.
 
 For an unmanaged target, `add` creates a `[dotfiles]` entry and seeds the
 source under `dotfiles.root`. For an already-managed target, it updates the
 existing source from the live target.
+
+## Tracking options
+
+### Saving and encryption {#policies}
+
+| Field      | Default | Meaning                                                                                                                   |
+| ---------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `autosave` | `true`  | Let the history watcher save edits automatically. With `false`, save the path with `mise bootstrap dotfiles save <path>`. |
+| `encrypt`  | `false` | Encrypt contents before saving them to Git, using `[history.encryption].recipients`. The file you edit stays unencrypted. |
+
+For a file you want to save manually:
+
+```sh
+mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave
+mise bootstrap dotfiles save ~/.config/app/state.json
+```
+
+The first command saves the initial version. Later edits wait for an
+explicit save. See [saving](/history.html#saving) for how commands that
+modify tracked files save their before and after versions.
+
+Saving and sharing have separate settings. With manual synchronization,
+mise continues making local commits. Your next push sends all accumulated
+commits to the origin. Sharing applies to the entire history; to keep a
+file out of it, leave it untracked. Untracking or excluding a file keeps
+its previously committed versions in history.
+
+### Files, directories, and symlinks
+
+Track exact file or directory paths under your home directory or mise
+configuration directory. Glob patterns are supported by
+[history exclusions](/history.html#explicit-tracking-and-exclusions), but
+cannot be used as tracking entries. Tracking a directory includes files
+added beneath it later, subject to those exclusions.
+
+Start with individual configuration files so you can choose what to save.
+Leave logs, caches, databases, and application session state out of history.
+Credential files and `*.local.toml` files are excluded by default; see
+[encrypted tracking](/history.html#encrypted-shared-files) to save credentials.
+
+Tracking a symlink saves the link itself. Track its target separately to
+save the target's contents. If a parent directory is a symlink, track that
+link and use the real directory path to track files beneath it.
+
+Your home directory and mise configuration directory can themselves be
+symlinks. mise maps these roots to the corresponding directories on each
+machine when sharing history.
+
+Add an explicit tracking entry for each file or directory you want to
+save, including the mise configuration directory or `dotfiles.root`.
+Track entries cannot contain `source`, `content`, `exclude`, or `manifest`.
+`mise bootstrap dotfiles paths` reports such combinations as invalid and
+leaves them out of history. The `track` command exits non-zero if the
+entry it writes is not active.
+
+### Stop tracking a file
+
+```sh
+mise bootstrap dotfiles untrack ~/.zshrc
+```
+
+The file stays in place. Its earlier checkpoints remain in Git, but future
+checkpoints leave it out.
+
+### Different contents on different machines {#variants}
+
+A **variant** lets a tracked file have different contents on different
+machines, using the same path on each one. For example, keep separate
+versions of `~/.zshrc` for macOS and Linux:
+
+```toml
+[dotfiles]
+"~/.zshrc" = { mode = "track", variants = [{ os = "macos" }, { os = "linux" }] }
+```
+
+Add this to your global configuration, or use
+`mise bootstrap dotfiles track ~/.zshrc --os macos` to add one variant.
+The `os` selector accepts an optional `/arch`, as in bootstrap packages.
+Use `profile` to select a [mise environment](/configuration/environments.html):
+
+```toml
+[dotfiles]
+"~/.gitconfig-work" = { mode = "track", variants = [{ profile = "work" }, { default = true }] }
+```
+
+When several variants match, mise scores each one: `profile` adds two
+points, `os` adds one, and an architecture adds one more. The highest
+score wins. A profile-only variant therefore ties with an OS-and-architecture
+variant. If the highest score is tied, mise reports the ambiguity and
+skips the path until you fix it.
+
+When nothing matches, mise uses the variant marked `default = true`.
+Without a default, it skips saving and applying the path on that machine.
+Checkpoints preserve the versions saved by other machines.
+
+### Tracking files that mise also manages {#ownership}
+
+You can save the history of a file that mise copies, links, templates, or
+edits. For example, tracking `~/.zshrc` also saves changes made by a managed
+activation block or `mise bootstrap mise-shell-activate`.
+
+When you track an already-managed file, mise keeps its existing entry and
+adds the tracking entry to `conf.d/dotfiles-tracking.toml`. Untracking
+removes only that tracking entry. A tracked directory can also contain
+managed files or template sources; their copy, link, or template settings
+continue to apply. Conflicting entries that try to create the same target
+are still rejected.
+
+Tracking entries belong in system or global configuration. mise warns and
+ignores `mode = "track"` in project configuration. To turn off an entry
+inherited from another configuration file, set `enabled = false` in a
+later configuration layer. `untrack` does this for system entries.
 
 ## Self-managing mise config
 
@@ -524,3 +631,10 @@ is not available, so entries keep applying either way.
 `mise bootstrap dotfiles status` reads whichever form is on disk.
 
 `symlink-each` still copies files on Windows. Directory symlinks use junctions.
+
+## Command compatibility
+
+> [!WARNING]
+> The top-level `mise dotfiles` command is deprecated and hidden from help. It
+> will begin warning in mise 2027.2.0 and be removed in mise 2028.2.0. Use
+> `mise bootstrap dotfiles` instead.

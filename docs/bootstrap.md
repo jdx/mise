@@ -46,61 +46,88 @@ Open a new shell after activation files change.
 
 ## Starting from a repository
 
-On a new machine, mise can clone the repository containing that configuration
-before it starts:
+Choose the command that matches what your repository contains:
+
+| Repository contents                                                      | Command                        | Where the files go                                       |
+| ------------------------------------------------------------------------ | ------------------------------ | -------------------------------------------------------- |
+| A bootstrap project with `mise.toml` and source files                    | `mise bootstrap --from <url>`  | A separate checkout, then targets defined by the project |
+| Global mise configuration such as `config.toml`, `conf.d/`, and `tasks/` | `mise bootstrap --adopt <url>` | Your global mise configuration directory                 |
+| Tracked dotfiles shared through `mise bootstrap dotfiles origin set`     | `mise bootstrap --adopt <url>` | Each tracked file's path on this machine                 |
+
+For a walkthrough of sharing tracked dotfiles, see
+[Set up a machine](/bootstrap/setup.html).
+
+### A bootstrap project
+
+Use `--from` to clone a project and apply its `mise.toml`:
 
 ```sh
-mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
+mise bootstrap --from git@github.com:example/dotfiles.git
 ```
 
-The checkout defaults to `$MISE_DATA_DIR/bootstrap-repo`; use `--from-dir` to choose
-another location. The explicitly supplied checkout is trusted for this
-invocation, and the active `-E` environments are forwarded to it, so files such
-as `mise.home.toml` and `mise.work.toml` can select different profiles. Existing
-checkouts must have the requested URL as their `origin`. They are reused as-is
-unless `--update` is passed, in which case mise runs a fast-forward-only pull
-before applying the bootstrap configuration. During `--dry-run`, a missing
-checkout is reported but not cloned.
+The checkout defaults to `$MISE_DATA_DIR/bootstrap-repo`. Use `--from-dir`
+to choose another location. mise trusts the repository you supply for this
+invocation, so review it before running the command.
 
-If the repository is the global mise configuration itself, use `--from-git`
-instead:
+To select a mise environment, pass `-E`, for example
+`mise -E work bootstrap --from <url>`. The cloned project then loads the
+matching configuration, such as `mise.work.toml`.
+
+An existing checkout must have the requested URL as its `origin`. mise uses
+the current checkout unless you pass `--update` to pull newer commits first.
+That pull only accepts a fast-forward. With `--dry-run`, mise reports a
+missing checkout and leaves it uncloned.
+
+### Global mise configuration
+
+Use `--adopt` when the repository contains your global mise configuration:
 
 ```sh
-mise -E work bootstrap --from-git example/mise-config --yes
+mise bootstrap --adopt example/mise-config
 ```
 
-This clones the repository into `$MISE_CONFIG_DIR` (normally
-`~/.config/mise`). Files such as `config.toml`, `config.work.toml`, `conf.d/`,
-and `tasks/` are therefore loaded as global configuration during the first
-bootstrap and remain active for future mise invocations. If
-`$MISE_GLOBAL_CONFIG_FILE` selects an individual global config file, the repo
-is cloned into that file's parent directory instead and that file is loaded.
-As with `--from`, an existing non-empty destination must be a git checkout
-whose `origin` exactly matches the requested URL; pass `--update` to
-fast-forward it before bootstrap.
+mise clones it into `$MISE_CONFIG_DIR`, normally `~/.config/mise`, and runs
+bootstrap using that configuration. Files such as `config.toml`,
+`config.work.toml`, `conf.d/`, and `tasks/` stay available to future mise
+commands. Pass `-E work` to select `config.work.toml`.
 
-If the repository is a mise **setup repository** (one connected with
-`mise bootstrap dotfiles origin set`, recognizable by its
-`.mise-history/format.toml`), `--from-git` sets the machine up from it
-instead of cloning it: the branch is fetched into mise's own history store,
-this machine's explicitly enrolled files are written by the same recoverable pull as any other incoming
-change (a file that already exists and differs is held for a decision, never
-overwritten; `--dry-run` shows the plan), the connection is remembered for
-the history watcher, and the ordinary bootstrap then runs from the
-configuration that arrived. The repository's inventory is enough to restore
-tracked files without a global mise config. To recreate tools, services, or
-template deployments too, explicitly track their mise configuration and source
-files before publishing the setup. Merely referencing a source does not track it.
-An unresolved file conflict pauses the whole setup, including the bootstrap
-that would follow it. Nothing is cloned into `$MISE_CONFIG_DIR`, and an
-existing checkout there is not converted. See [history](/history.html) for
-what happens next.
+If you set `$MISE_GLOBAL_CONFIG_FILE`, mise clones into that file's parent
+directory and loads the selected file. An existing non-empty destination
+must be a Git checkout with the requested URL as its `origin`. Pass
+`--update` to fast-forward it before bootstrap.
 
-Setup repositories always fetch and reconcile their latest branch, with or
-without `--update`. That flag is still forwarded to the following bootstrap
-for package metadata and declared repository updates. If the global config
-directory is already a Git checkout, its origin must match the requested
-repository before setup can proceed.
+### Shared dotfile history
+
+A **setup repository** holds the dotfile history you share through
+`mise bootstrap dotfiles origin set`. On another machine, run:
+
+```sh
+mise bootstrap --adopt you/setup
+```
+
+mise recognizes the repository's `.mise-history/format.toml` marker and:
+
+1. Fetches the latest branch into its history store.
+2. Restores the tracked files to their paths on this machine.
+3. Remembers the origin for future synchronization.
+4. Runs bootstrap using the restored mise configuration.
+
+Track the mise configuration and any template sources on the first machine
+before sharing them. They let bootstrap recreate tools and services and
+render templates on the next machine. Tracked files can still be restored
+when the repository contains no global mise configuration.
+
+If an existing file differs, mise asks you to resolve the conflict before
+restoring files or running the remaining bootstrap steps. Use `--dry-run`
+to preview the plan. See [history](/history.html#sharing-across-machines)
+for synchronization and recovery details.
+
+This workflow stores Git history separately from `$MISE_CONFIG_DIR`; it
+leaves any existing checkout there as a checkout. If that directory is a
+Git checkout, its origin must match the requested repository.
+
+Setup repositories always fetch their latest branch. `--update` controls
+the subsequent bootstrap's package metadata and declared repository updates.
 
 ## How it runs
 
@@ -117,8 +144,9 @@ preflight prevents a missing input from leaving a partially provisioned host.
 3. Built-in managers install missing [`[bootstrap.packages]`](/bootstrap/packages/).
 4. `mise bootstrap files apply` converges
    [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html).
-5. `mise bootstrap services apply` converges existing systemd system units from
-   [`[bootstrap.services]`](/bootstrap/services.html).
+5. [`[bootstrap.services]`](/bootstrap/services.html) converges existing Linux
+   systemd system units and user services on Linux, macOS, and Windows.
+   User services with `requires_tools = true` wait until after tool installation.
 6. `mise bootstrap firewall apply` converges host firewall policy and rules from
    [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html).
 7. `mise bootstrap compose apply` converges
@@ -138,7 +166,8 @@ preflight prevents a missing input from leaving a partially provisioned host.
     as configured.
 14. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
 15. `mise install` installs missing `[tools]`.
-16. Plugin package managers apply after their host tools are available.
+16. Plugin package managers apply after their host tools are available, followed
+    by user services with `requires_tools = true`.
 17. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
 18. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
@@ -266,27 +295,27 @@ want to check one part without installing anything.
 
 ## What goes where
 
-| Config                                                                  | Use for                                                               |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| [`[bootstrap.secrets]`](/bootstrap/secrets.html)                        | Names of secret inputs consumed by managed file templates             |
-| [`[bootstrap.users]`, `[bootstrap.groups]`](/bootstrap/accounts.html)   | Linux service accounts and groups                                     |
-| [`[bootstrap.files]`, `[bootstrap.directories]`](/bootstrap/files.html) | Managed system paths, content, ownership, and permissions             |
-| [`[bootstrap.services]`](/bootstrap/services.html)                      | Existing Linux systemd system units and file-change handlers          |
-| [`[bootstrap.compose]`](/bootstrap/compose.html)                        | Docker Compose project lifecycle                                      |
-| [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html)               | Package manager plugins                                               |
-| [`[bootstrap.packages]`](/bootstrap/packages/)                          | OS packages from apk, apt, dnf, pacman, brew, flatpak, mas, or winget |
-| [`[bootstrap.repos]`](/bootstrap/repos.html)                            | Git repos cloned before dotfiles are applied                          |
-| [`[dotfiles]`](/dotfiles.html)                                          | Whole-file dotfiles and small managed edits to existing files         |
-| [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)              | mise activation snippets in shell startup files                       |
-| [`[bootstrap.macos.*]`](/bootstrap/macos-defaults.html)                 | Curated macOS preferences for Dock/Finder/keyboard/trackpad           |
-| [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html)          | macOS user preferences written through `defaults write`               |
-| [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)           | macOS user LaunchAgents written and loaded with `launchctl`           |
-| [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)            | Linux systemd user services managed with `systemctl --user`           |
-| [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html)                | Linux host firewall policy and managed rules                          |
-| [`[bootstrap.user]`](/bootstrap/user.html)                              | Current-user settings such as `login_shell`                           |
-| `[bootstrap.hooks]`                                                     | Commands that run at named bootstrap phases                           |
-| `[tools]`                                                               | Versioned dev tools managed by mise                                   |
-| `[tasks.bootstrap]`                                                     | Anything custom that should run after tools are installed             |
+| Config                                                                  | Use for                                                                     |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [`[bootstrap.secrets]`](/bootstrap/secrets.html)                        | Names of secret inputs consumed by managed file templates                   |
+| [`[bootstrap.users]`, `[bootstrap.groups]`](/bootstrap/accounts.html)   | Linux service accounts and groups                                           |
+| [`[bootstrap.files]`, `[bootstrap.directories]`](/bootstrap/files.html) | Managed system paths, content, ownership, and permissions                   |
+| [`[bootstrap.services]`](/bootstrap/services.html)                      | User services on Linux, macOS, and Windows; existing Linux system services  |
+| [`[bootstrap.compose]`](/bootstrap/compose.html)                        | Docker Compose project lifecycle                                            |
+| [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html)               | Package manager plugins                                                     |
+| [`[bootstrap.packages]`](/bootstrap/packages/)                          | OS packages from apk, apt, dnf, pacman, brew, flatpak, mas, or winget       |
+| [`[bootstrap.repos]`](/bootstrap/repos.html)                            | Git repos cloned before dotfiles are applied                                |
+| [`[dotfiles]`](/dotfiles.html)                                          | Tracking dotfiles, creating files from sources, and editing blocks or lines |
+| [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)              | mise activation snippets in shell startup files                             |
+| [`[bootstrap.macos.*]`](/bootstrap/macos-defaults.html)                 | Curated macOS preferences for Dock/Finder/keyboard/trackpad                 |
+| [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html)          | macOS user preferences written through `defaults write`                     |
+| [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)           | macOS user LaunchAgents written and loaded with `launchctl`                 |
+| [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)            | Linux systemd user services managed with `systemctl --user`                 |
+| [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html)                | Linux host firewall policy and managed rules                                |
+| [`[bootstrap.user]`](/bootstrap/user.html)                              | Current-user settings such as `login_shell`                                 |
+| `[bootstrap.hooks]`                                                     | Commands that run at named bootstrap phases                                 |
+| `[tools]`                                                               | Versioned dev tools managed by mise                                         |
+| `[tasks.bootstrap]`                                                     | Anything custom that should run after tools are installed                   |
 
 Use declarative sections when mise can inspect and converge the state. Use
 `[tasks.bootstrap]` for imperative setup that does not fit those sections,
@@ -330,9 +359,8 @@ The `pre-dotfiles` and `post-dotfiles` phases also wrap
 
 ## Common workflows
 
-The whole path from installing mise to a second machine that shares the
-same setup, with the output each step prints, is
-[Set up a machine](/bootstrap/setup.html).
+For a walkthrough from your first tracked file to a second machine sharing
+its changes, see [Set up a machine](/bootstrap/setup.html).
 
 ### New machine
 
@@ -351,13 +379,20 @@ This writes `[bootstrap.packages]` and installs what is missing.
 
 ### Capture an edited dotfile
 
+For a file you already manage in `copy` mode, save edits back to its source:
+
 ```sh
 $EDITOR ~/.zshrc
 mise bootstrap dotfiles add ~/.zshrc
 ```
 
-`mise bootstrap dotfiles add` stores the live file under `dotfiles.root` and writes an
-explicit `[dotfiles]` entry with `mode`.
+`add` updates the managed source. For a file mise does not yet manage, it
+creates a source under `dotfiles.root`, writes a configuration entry, and
+applies it. See [capturing changes](/dotfiles.html#capturing-changes).
+
+For a file you edit in place and want to save in history, use
+`mise bootstrap dotfiles track ~/.zshrc`, then set up
+[automatic saves](/history.html#automatic-saves).
 
 ### Edit a managed dotfile
 

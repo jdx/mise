@@ -12,14 +12,14 @@ description: "Bootstrap one or more machines over OpenSSH"
 Bootstrap one or more machines over OpenSSH
 
 Select inventory hosts by name, tag, or `--all`, or supply ad-hoc `--host` targets.
-The source is staged on each target and bootstrap runs there. `--from-git` instead
+The source is staged on each target and bootstrap runs there. `--adopt` instead
 installs persistent global configuration; preview that choice with `--dry-run`.
 
 ## Arguments
 - **`[TARGET]…`** — Inventory host names from `[bootstrap.remote.hosts]`
 
 ## Flags
-- **`--from-git <GIT_URL|OWNER/REPO>`** — Install a Git repository as persistent global configuration on each target
+- **`--adopt <GIT_URL|OWNER/REPO>`** — Adopt global configuration or shared dotfile history on each target
 - **`--github-relay-read-only`** — Borrow read-only GitHub access for this invocation
 - **`--github-relay-repo <OWNER/REPO>`** — Approved GitHub repository; repeat for multiple repositories
 - **`--github-relay-all-repos`** — Explicitly authorize all repositories accessible locally
