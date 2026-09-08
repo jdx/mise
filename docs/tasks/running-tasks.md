@@ -58,10 +58,14 @@ ambiguous executable lookup, and environments containing `ENV` or `BASH_ENV`
 keep using the shell. Sandboxed and audited tasks also retain their shell.
 Windows execution is unchanged.
 
+:::warning Custom shell wrappers
 An explicit task `shell`, `mise run --shell`, or `unix_default_inline_shell_args`
 setting always forces shell execution, even when it names the default shell.
 A wrapper named `sh` on `PATH` may be bypassed; configure it explicitly if it
-must run. The same optimization applies to mise-owned inline hooks, templates,
+must run.
+:::
+
+The same optimization applies to mise-owned inline hooks, templates,
 dependency commands, installation commands, credentials, and task cache inputs.
 
 Because everything after the task name belongs to the task, mise's own flags have to come

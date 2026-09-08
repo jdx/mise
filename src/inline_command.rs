@@ -330,7 +330,10 @@ mod unix {
             assert_eq!(direct.get_program(), tool);
             assert_eq!(
                 String::from_utf8(direct.output().unwrap().stdout).unwrap(),
-                format!("{}\nfirst\n$literal space\n", dir.path().display())
+                format!(
+                    "{}\nfirst\n$literal space\n",
+                    std::fs::canonicalize(dir.path()).unwrap().display()
+                )
             );
             assert!(direct_command(&shell, false, "tool", &[], false).is_none());
             shell.env("ENV", "");
