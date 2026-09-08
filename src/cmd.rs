@@ -958,6 +958,7 @@ impl<'a> CmdLineRunner<'a> {
                 ChildProcessOutput::Stderr(line) => {
                     let line = self.redactor.redact(&line);
                     if self.stderr_as_stdout
+                        && self.on_stderr.is_none()
                         && let Some(output) = &mut failure_output
                     {
                         self.on_stderr(line.clone());
@@ -1150,6 +1151,7 @@ impl<'a> CmdLineRunner<'a> {
                         ChildProcessOutput::Stderr(line) => {
                             let line = self.redactor.redact(&line);
                             if self.stderr_as_stdout
+                                && self.on_stderr.is_none()
                                 && let Some(output) = &mut failure_output
                             {
                                 self.on_stderr(line.clone());
@@ -1205,6 +1207,7 @@ impl<'a> CmdLineRunner<'a> {
                 ChildProcessOutput::Stderr(line) => {
                     let line = self.redactor.redact(&line);
                     if self.stderr_as_stdout
+                        && self.on_stderr.is_none()
                         && let Some(output) = &mut failure_output
                     {
                         self.on_stderr(line.clone());
@@ -2082,7 +2085,7 @@ mod tests {
     #[test]
     fn test_stderr_as_stdout_routes_through_process_output() {
         let report = RecordingReport::default();
-        let _ = super::CmdLineRunner::new("sh")
+        super::CmdLineRunner::new("sh")
             .args(["-c", "printf 'version banner\\n' >&2"])
             .with_pr(&report)
             .stderr_as_stdout()
@@ -2099,16 +2102,40 @@ mod tests {
     #[test]
     fn test_stderr_as_stdout_replays_hidden_output_on_failure() {
         let report = RecordingReport::default();
-        let _ = super::CmdLineRunner::new("sh")
-            .args(["-c", "printf 'verification failed\\n' >&2; exit 1"])
-            .with_pr(&report)
-            .stderr_as_stdout()
-            .execute()
-            .unwrap_err();
+        drop(
+            super::CmdLineRunner::new("sh")
+                .args(["-c", "printf 'verification failed\\n' >&2; exit 1"])
+                .with_pr(&report)
+                .stderr_as_stdout()
+                .execute()
+                .unwrap_err(),
+        );
 
         assert_eq!(
             *report.lines.lock().unwrap(),
             vec!["verification failed".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_stderr_callback_is_not_replayed_on_failure() {
+        let report = RecordingReport::default();
+        let callback_lines = Arc::new(Mutex::new(Vec::new()));
+        let callback_lines_ref = Arc::clone(&callback_lines);
+        drop(
+            super::CmdLineRunner::new("sh")
+                .args(["-c", "printf 'callback failure\n' >&2; exit 1"])
+                .with_pr(&report)
+                .stderr_as_stdout()
+                .with_on_stderr(move |line| callback_lines_ref.lock().unwrap().push(line))
+                .execute()
+                .unwrap_err(),
+        );
+
+        assert!(report.lines.lock().unwrap().is_empty());
+        assert_eq!(
+            *callback_lines.lock().unwrap(),
+            vec!["callback failure".to_string()]
         );
     }
 
