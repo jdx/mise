@@ -69,6 +69,7 @@ impl DefaultsValue {
         }
     }
 
+    #[cfg(any(target_os = "macos", test))]
     fn to_plist(&self) -> plist::Value {
         match self {
             Self::Bool(value) => plist::Value::Boolean(*value),
@@ -169,6 +170,11 @@ pub(crate) fn unavailable_reason() -> String {
 
 /// Query the current state of each entry. Side-effect free.
 pub(crate) async fn status(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
+    let requests = requests.to_vec();
+    tokio::task::spawn_blocking(move || status_sync(&requests)).await?
+}
+
+fn status_sync(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
     let mut out = vec![];
     for req in requests {
         let state = match read(&req.domain, &req.key)? {
@@ -205,9 +211,12 @@ pub(crate) async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result
             continue;
         }
         debug!("setting macOS preference {req}");
-        write(&req.domain, &req.key, &req.value)?;
     }
-    Ok(())
+    if dry_run {
+        return Ok(());
+    }
+    let requests = requests.to_vec();
+    tokio::task::spawn_blocking(move || write_all(&requests)).await?
 }
 
 fn display_plist(value: &plist::Value) -> String {
@@ -240,12 +249,12 @@ fn read(_domain: &str, _key: &str) -> Result<Option<plist::Value>> {
 }
 
 #[cfg(target_os = "macos")]
-fn write(domain: &str, key: &str, value: &DefaultsValue) -> Result<()> {
-    macos::write(domain, key, value)
+fn write_all(requests: &[DefaultsRequest]) -> Result<()> {
+    macos::write_all(requests)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn write(_domain: &str, _key: &str, _value: &DefaultsValue) -> Result<()> {
+fn write_all(_requests: &[DefaultsRequest]) -> Result<()> {
     Ok(())
 }
 
@@ -262,6 +271,7 @@ mod macos {
     use core_foundation_sys::propertylist::{
         kCFPropertyListImmutable, kCFPropertyListXMLFormat_v1_0,
     };
+    use indexmap::IndexSet;
 
     use super::*;
 
@@ -297,7 +307,7 @@ mod macos {
         Ok(Some(plist::Value::from_reader_xml(data.bytes())?))
     }
 
-    pub(super) fn write(domain: &str, key: &str, value: &DefaultsValue) -> Result<()> {
+    fn set(domain: &str, key: &str, value: &DefaultsValue) -> Result<()> {
         let mut xml = Vec::new();
         plist::to_writer_xml(&mut xml, &value.to_plist())?;
         let data = CFData::from_buffer(&xml);
@@ -314,6 +324,13 @@ mod macos {
                 kCFPreferencesCurrentUser,
                 kCFPreferencesAnyHost,
             );
+        }
+        Ok(())
+    }
+
+    fn synchronize(domain: &str) -> Result<()> {
+        let (_application, application_id) = application_id(domain);
+        unsafe {
             if CFPreferencesSynchronize(
                 application_id,
                 kCFPreferencesCurrentUser,
@@ -322,6 +339,18 @@ mod macos {
             {
                 eyre::bail!("failed to synchronize macOS preference domain {domain}");
             }
+        }
+        Ok(())
+    }
+
+    pub(super) fn write_all(requests: &[DefaultsRequest]) -> Result<()> {
+        let mut domains = IndexSet::new();
+        for request in requests {
+            set(&request.domain, &request.key, &request.value)?;
+            domains.insert(request.domain.as_str());
+        }
+        for domain in domains {
+            synchronize(domain)?;
         }
         Ok(())
     }
@@ -489,7 +518,12 @@ mod tests {
         ))
         .unwrap();
 
-        write(domain, key, &value).unwrap();
+        write_all(&[DefaultsRequest {
+            domain: domain.into(),
+            key: key.into(),
+            value: value.clone(),
+        }])
+        .unwrap();
         let current = read(domain, key);
         let cleanup = macos::remove(domain, key);
 
