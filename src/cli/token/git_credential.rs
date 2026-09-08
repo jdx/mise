@@ -1,7 +1,7 @@
 use std::io::{BufRead, Write};
 
 /// Supply mise's GitHub token to Git's credential protocol.
-pub(super) fn run(operation: &str) -> eyre::Result<()> {
+pub(crate) fn run(operation: &str) -> eyre::Result<()> {
     if operation != "get" {
         return Ok(());
     }
@@ -19,8 +19,8 @@ pub(super) fn run(operation: &str) -> eyre::Result<()> {
         }
     }
     if protocol == "https"
-        && host == "github.com"
-        && let Some((token, _)) = crate::github::resolve_token_for_git(&host)
+        && matches!(host.as_str(), "github.com" | "github.com:443")
+        && let Some((token, _)) = crate::github::resolve_token_for_git("github.com")
         && !token.is_empty()
         && !token.contains(['\n', '\r', '\0'])
     {

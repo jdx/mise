@@ -1,5 +1,5 @@
 mod forgejo;
-mod git_credential;
+pub(super) mod git_credential;
 pub(crate) mod github;
 mod gitlab;
 

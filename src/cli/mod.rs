@@ -841,6 +841,12 @@ impl Cli {
     }
 
     async fn run_inner(args: &Vec<String>) -> Result<()> {
+        // Git invokes this exact internal form while holding repository locks.
+        // Avoid project configuration, shims, and normal CLI initialization.
+        if args.len() == 5 && args[1..4] == ["token", "github", "--git-credential"] {
+            Settings::init_git_credential()?;
+            return token::git_credential::run(&args[4]);
+        }
         // usage-rs's generated `parse()` intercepts this, but mise never calls
         // `parse()` — it uses `parse_from_argv` after shim/naked-run rewriting.
         // Handle the hidden completion protocol here, before config or tools load.

@@ -760,7 +760,8 @@ fn resolve_token_inner(host: &str, use_git_credentials: bool) -> Option<(String,
     // `resolve_token("api.github.com")` whenever the first call returned
     // `None`, which manifests as extra password-manager prompts.
     let credential_command = &settings.github.credential_command;
-    if !credential_command.is_empty()
+    if use_git_credentials
+        && !credential_command.is_empty()
         && let Some(canonical) = lookup_hosts.first()
         && let Some(token) =
             tokens::get_credential_command_token("github", credential_command, canonical)

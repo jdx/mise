@@ -1040,6 +1040,13 @@ impl Settings {
         layers
     }
 
+    /// Initialize a Git credential subprocess without reading project settings.
+    pub(crate) fn init_git_credential() -> Result<()> {
+        let settings = Self::load_sources_from(None, SettingsLoadPolicy::ENVIRONMENT_ONLY)?;
+        *BASE_SETTINGS.write().unwrap() = Some(Arc::new(settings));
+        Ok(())
+    }
+
     pub(crate) fn try_get() -> Result<Arc<Self>> {
         if let Some(settings) = BASE_SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
