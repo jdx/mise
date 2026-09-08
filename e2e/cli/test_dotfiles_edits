@@ -11,6 +11,8 @@ alias la='ls -la'
 ''' }
 "~/hosts/dev" = { line = "127.0.0.1 dev.local" }
 "~/prepend.conf/first" = { line = "managed first", position = "prepend" }
+"~/bom-existing.conf/existing" = { line = "already there", position = "prepend" }
+"~/bom-only.conf/append" = { line = "appended" }
 "~/init.lua/mise" = { block = "require('mise')" }
 "~/rendered.conf/sum" = { block = "sum = {{ 1 + 1 }}", template = "tera" }
 "~/execd.conf/execd" = { block = '{{ exec(command="touch $HOME/exec-ran") }}ok', template = "tera" }
@@ -35,6 +37,8 @@ assert_fail "cat ~/exec-ran"
 # line edits append to existing files without touching other content
 echo "preexisting content" >~/hosts
 printf 'untouched first\r\nuntouched last\r\n' >~/prepend.conf
+printf '\357\273\277already there\n' >~/bom-existing.conf
+printf '\357\273\277' >~/bom-only.conf
 
 assert_succeed "mise dotfiles apply --yes"
 
@@ -51,6 +55,10 @@ assert_contains "cat ~/hosts" "127.0.0.1 dev.local"
 # prepending preserves every existing byte, including CRLF line endings
 printf 'managed first\r\nuntouched first\r\nuntouched last\r\n' >expected-prepend.conf
 assert_succeed "cmp expected-prepend.conf ~/prepend.conf"
+# a BOM is not part of the first logical line and remains at byte zero
+printf '\357\273\277appended\n' >expected-bom.conf
+assert_succeed "cmp expected-bom.conf ~/bom-only.conf"
+assert "grep -c 'already there' ~/bom-existing.conf" "1"
 # comment prefix inferred from extension
 assert_contains "cat ~/init.lua" "-- >>> mise:mise >>>"
 # template rendered

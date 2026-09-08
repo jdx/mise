@@ -548,20 +548,26 @@ fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
         return Ok(Some(EditCheck::State(FileState::Missing)));
     }
     let text = file::read_to_string(&req.path)?;
-    let lines: Vec<&str> = text.lines().collect();
     match &req.op {
-        EditOp::Block { comment, .. } => match find_block(&lines, &req.id, comment) {
-            Err(reason) => Ok(Some(EditCheck::Blocked(reason))),
-            Ok(None) => Ok(Some(EditCheck::State(FileState::Missing))),
-            Ok(Some(_)) => Ok(None),
-        },
-        EditOp::Line { line, .. } => {
-            Ok(Some(EditCheck::State(if lines.contains(&line.as_str()) {
+        EditOp::Block { comment, .. } => {
+            match find_block(&text.lines().collect::<Vec<_>>(), &req.id, comment) {
+                Err(reason) => Ok(Some(EditCheck::Blocked(reason))),
+                Ok(None) => Ok(Some(EditCheck::State(FileState::Missing))),
+                Ok(Some(_)) => Ok(None),
+            }
+        }
+        EditOp::Line { line, .. } => Ok(Some(EditCheck::State(
+            if text
+                .strip_prefix('\u{feff}')
+                .unwrap_or(&text)
+                .lines()
+                .any(|candidate| candidate == line)
+            {
                 FileState::Applied
             } else {
                 FileState::Missing
-            })))
-        }
+            },
+        ))),
     }
 }
 
@@ -1179,7 +1185,7 @@ fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Resu
             let out = match position {
                 LinePosition::Prepend if body.is_empty() => format!("{bom}{line}{newline}"),
                 LinePosition::Prepend => format!("{bom}{line}{newline}{body}"),
-                LinePosition::Append if text.is_empty() => format!("{line}{newline}"),
+                LinePosition::Append if body.is_empty() => format!("{bom}{line}{newline}"),
                 LinePosition::Append if text.ends_with('\n') => format!("{text}{line}{newline}"),
                 LinePosition::Append => format!("{text}{newline}{line}{newline}"),
             };

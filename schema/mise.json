@@ -4209,8 +4209,16 @@
                 }
               },
               {
+                "required": ["line"],
                 "properties": {
                   "content": false
+                }
+              },
+              {
+                "properties": {
+                  "content": false,
+                  "line": false,
+                  "position": false
                 }
               }
             ],
