@@ -109,11 +109,22 @@ pub(crate) fn get_credential_command_token(
     {
         command = c;
     }
-    let result = command
+    command
         .env("PATH", &path_without_shims)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("MISE_CREDENTIAL_HOST", host)
-        .env("MISE_CREDENTIAL_PROVIDER", provider)
+        .env("MISE_CREDENTIAL_PROVIDER", provider);
+    // The helper's $0/$1 belong to sh, not to a directly executed program.
+    if let Some(direct) = crate::inline_command::direct_command(
+        &command,
+        true,
+        cmd,
+        &[],
+        Settings::get().implicit_inline_shell(),
+    ) {
+        command = direct;
+    }
+    let result = command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

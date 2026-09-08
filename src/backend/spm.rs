@@ -385,6 +385,11 @@ impl SPMBackend {
                     .list_paths(&ctx.config)
                     .await,
             )?
+            .optimize_inline(
+                install_command,
+                &[],
+                Settings::get().implicit_inline_shell(),
+            )
             .execute()?;
 
         verify_install_command_output(install_command, &tv.install_path().join("bin"))
@@ -1304,6 +1309,53 @@ mod tests {
         ));
         let request = ToolRequest::new(ba, version, ToolSource::Argument).unwrap();
         ToolVersion::new(request, version.to_string())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_inline_install_command_uses_install_environment() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("helpers");
+        std::fs::create_dir(&bin).unwrap();
+        std::fs::write(bin.join("sh"), "#!/bin/sh\nexit 99\n").unwrap();
+        std::fs::set_permissions(bin.join("sh"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        symlink("/bin/cp", bin.join("copy-probe")).unwrap();
+        let mut tv = tool_version("1.2.3");
+        let ba = Arc::new(tv.ba().clone());
+        let mut options = ToolVersionOptions::default();
+        options
+            .core
+            .install_env
+            .insert("PATH".into(), bin.to_string_lossy().as_ref().into());
+        tv.request =
+            ToolRequest::new_with_options(ba.clone(), "1.2.3", options, ToolSource::Argument)
+                .unwrap();
+        tv.install_path = Some(dir.path().join("prefix"));
+        std::fs::create_dir_all(tv.install_path().join("bin")).unwrap();
+        let config = Config::get().await.unwrap();
+        let ctx = InstallContext {
+            config,
+            ts: Arc::new(Default::default()),
+            pr: crate::ui::multi_progress_report::MultiProgressReport::get()
+                .add("inline install")
+                .into(),
+            force: false,
+            dry_run: false,
+            locked: false,
+            before_date: None,
+            dependency_context: Default::default(),
+        };
+        SPMBackend { ba }
+            .run_install_command(
+                &ctx,
+                &tv,
+                dir.path(),
+                "copy-probe /bin/cp prefix/bin/copied",
+            )
+            .await
+            .unwrap();
+        assert!(tv.install_path().join("bin/copied").is_file());
     }
 
     #[test]

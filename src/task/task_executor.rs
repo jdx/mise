@@ -1247,9 +1247,16 @@ impl TaskExecutor {
             file::make_executable(&file)?;
             self.exec_with_text_file_busy_retry(&file, args, ctx).await
         } else {
-            let (program, args, cmd_verbatim) =
+            let (program, shell_args, cmd_verbatim) =
                 self.get_cmd_program_and_args(script, ctx.task, args)?;
-            self.exec_program(&program, &args, cmd_verbatim, ctx).await
+            self.exec_program(
+                &program,
+                &shell_args,
+                cmd_verbatim,
+                Some((script, args)),
+                ctx,
+            )
+            .await
         }
     }
 
@@ -1368,6 +1375,10 @@ impl TaskExecutor {
         Ok((program.to_string(), full_args[1..].to_vec(), false))
     }
 
+    fn implicit_inline_shell(&self, task: &Task) -> bool {
+        task.shell.is_none() && self.shell.is_none() && Settings::get().implicit_inline_shell()
+    }
+
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
         if let Some(shell) = &self.shell {
             let mut shell = crate::path::split_shell_command(shell)?;
@@ -1446,7 +1457,8 @@ impl TaskExecutor {
                 .env_clear()
                 .envs(&filtered_env)
                 .with_timeout(timeout)
-                .with_sandbox(sandbox.clone());
+                .with_sandbox(sandbox.clone())
+                .optimize_inline(command, &[], self.implicit_inline_shell(task));
             runner.apply_sandbox().await?;
             let (stdout_hash, stderr_hash) = runner
                 .execute_hashes_async(COMMAND_INPUT_MAX_OUTPUT_BYTES)
@@ -1492,7 +1504,7 @@ impl TaskExecutor {
     async fn exec(&self, file: &Path, args: &[String], ctx: TaskExecContext<'_>) -> Result<()> {
         if runs_without_a_shell(file) {
             let program = file.display().to_string();
-            return self.exec_program(&program, args, false, ctx).await;
+            return self.exec_program(&program, args, false, None, ctx).await;
         }
         // Resolved once, from the file the user wrote, and then used for both decisions below.
         let shell = file_task_shell(file, ctx.task)?;
@@ -1501,7 +1513,7 @@ impl TaskExecutor {
         let shim = ps1_shim(file, &shell)?;
         let script = shim.as_deref().unwrap_or(file);
         let (program, args) = self.get_file_program_and_args(script, &shell, args)?;
-        self.exec_program(&program, &args, false, ctx).await
+        self.exec_program(&program, &args, false, None, ctx).await
     }
 
     async fn exec_with_text_file_busy_retry(
@@ -1539,6 +1551,7 @@ impl TaskExecutor {
         program: &str,
         args: &[String],
         cmd_verbatim: bool,
+        inline: Option<(&str, &[String])>,
         ctx: TaskExecContext<'_>,
     ) -> Result<()> {
         let TaskExecContext {
@@ -1613,6 +1626,15 @@ impl TaskExecutor {
             .redact(redactions.deref().clone())
             .raw(raw)
             .with_sandbox(sandbox);
+        if let Some((body, forwarded)) = inline {
+            cmd = cmd
+                .current_dir(task_cwd(task, &config).await?)
+                .optimize_inline(
+                    body,
+                    forwarded,
+                    audit.is_none() && self.implicit_inline_shell(task),
+                );
+        }
         if raw && !redactions.is_empty() {
             if task.interactive && !task.raw && !Settings::get().raw {
                 hint!(

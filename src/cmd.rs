@@ -125,6 +125,7 @@ pub(crate) struct CmdLineRunner<'a> {
     observe_stderr: Option<OutputObserver<'a>>,
     timeout: Option<Duration>,
     sandbox: Option<crate::sandbox::SandboxConfig>,
+    inherit_env: bool,
 }
 
 const GUARD_RUNNING: u8 = 0;
@@ -575,6 +576,7 @@ impl<'a> CmdLineRunner<'a> {
             observe_stderr: None,
             timeout: None,
             sandbox: None,
+            inherit_env: true,
         }
     }
 
@@ -683,6 +685,34 @@ impl<'a> CmdLineRunner<'a> {
 
     pub(crate) fn env_clear(mut self) -> Self {
         self.cmd.env_clear();
+        self.inherit_env = false;
+        self
+    }
+
+    /// Must run after environment/cwd configuration and before custom stdio or
+    /// pre-exec setup. Sandboxed commands retain their shell and policy target.
+    pub(crate) fn optimize_inline(
+        mut self,
+        body: &str,
+        forwarded: &[String],
+        enabled: bool,
+    ) -> Self {
+        if self.sandbox.is_none()
+            && let Some(command) = crate::inline_command::direct_command(
+                self.cmd.as_std(),
+                self.inherit_env,
+                body,
+                forwarded,
+                enabled,
+            )
+        {
+            self.cmd = command.into();
+            self.cmd
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            self.inherit_env = false;
+        }
         self
     }
 
@@ -2292,6 +2322,38 @@ mod tests {
         assert_eq!(stderr.lock().unwrap().as_slice(), ["err"]);
         assert_eq!(observed_stdout.lock().unwrap().as_slice(), ["out"]);
         assert_eq!(observed_stderr.lock().unwrap().as_slice(), ["err"]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_direct_inline_supervision() {
+        let runner = || {
+            super::CmdLineRunner::new("missing-shell")
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .args(["-c", "sleep 10"])
+                .optimize_inline("sleep 10", &[], true)
+        };
+        let err = runner()
+            .with_timeout(std::time::Duration::from_millis(20))
+            .execute_async()
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("timed out"), "{err:?}");
+        let err = runner()
+            .execute_async_with_cancel_check(|| true)
+            .await
+            .unwrap_err();
+        assert!(crate::errors::Error::is_task_interrupted_before_start(&err));
+        let output = super::CmdLineRunner::new("missing-shell")
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .optimize_inline("cat", &[], true)
+            .stdin_string("literal input")
+            .read_bounded(1024)
+            .await
+            .unwrap();
+        assert_eq!(output, "literal input");
     }
 
     #[cfg(unix)]

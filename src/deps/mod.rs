@@ -110,6 +110,8 @@ impl FreshnessResult {
 /// A command to execute for dependency management
 #[derive(Debug, Clone)]
 pub(crate) struct DepsCommand {
+    /// True only for commands originating as inline shell text.
+    pub inline: bool,
     /// The program to execute
     pub program: String,
     /// Arguments to pass to the program
@@ -145,6 +147,7 @@ impl DepsCommand {
         args.push(run.to_string());
 
         Ok(Self {
+            inline: true,
             program: program.to_string(),
             args,
             env: config.env.clone(),
@@ -467,6 +470,7 @@ mod tests {
 
     fn command() -> DepsCommand {
         DepsCommand {
+            inline: true,
             program: "sh".to_string(),
             args: vec!["-c".to_string(), "echo first".to_string()],
             env: BTreeMap::from([("MODE".to_string(), "debug".to_string())]),

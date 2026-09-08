@@ -663,6 +663,7 @@ async fn execute(
     let Some(run) = hook.action.run_for_current_platform() else {
         return Ok(());
     };
+    let direct_enabled = shell.is_none() && Settings::get().implicit_inline_shell();
     let mut shell = shell
         .as_ref()
         .map(|shell| crate::path::split_shell_command(shell))
@@ -777,13 +778,14 @@ async fn execute(
         }
     }
 
-    let command = cmd(&shell[0], args).stdout_to_stderr().full_env(env);
-    let command = if matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
-        command.dir(project_root)
-    } else {
-        command
-    };
-    command.run()?;
+    let cwd = matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall).then_some(project_root);
+    let mut command = cmd(&shell[0], args).full_env(&env);
+    if let Some(cwd) = cwd {
+        command = command.dir(cwd);
+    }
+    crate::inline_command::optimize_expression(command, run, &env, cwd, direct_enabled)
+        .stdout_to_stderr()
+        .run()?;
     Ok(())
 }
 
