@@ -4211,7 +4211,9 @@
               {
                 "required": ["line"],
                 "properties": {
-                  "content": false
+                  "content": false,
+                  "source": false,
+                  "block": false
                 }
               },
               {
