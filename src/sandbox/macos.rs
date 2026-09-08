@@ -54,6 +54,9 @@ pub(crate) async fn generate_seatbelt_profile(
         // Seatbelt requires data access to the root vnode for process startup and getcwd.
         // This exposes names directly under `/`, but descendants still obey the read rules.
         rules.push("(allow file-read-data (literal \"/\"))".to_string());
+        // Portable executables may resolve paths through macOS's `/private` hierarchy
+        // during startup (for example, Ruby built with --enable-load-relative).
+        rules.push("(allow file-read-metadata (literal \"/private\"))".to_string());
         for path in SYSTEM_READ_PATHS {
             rules.push(format!("(allow file-read* (subpath \"{path}\"))"));
         }
@@ -244,6 +247,31 @@ mod tests {
             String::from_utf8_lossy(&allowed.stderr)
         );
         assert!(!read(&denied_file).status.success());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_private_metadata_does_not_expose_directory_contents() {
+        let config = SandboxConfig {
+            deny_read: true,
+            ..Default::default()
+        };
+        let profile = generate_seatbelt_profile(&config, None).await;
+        let run = |program: &str, args: &[&str]| {
+            Command::new("sandbox-exec")
+                .args(["-p", &profile, "--", program])
+                .args(args)
+                .output()
+                .unwrap()
+        };
+
+        let metadata = run("/usr/bin/stat", &["-f", "%N", "/private"]);
+        assert!(
+            metadata.status.success(),
+            "sandboxed stat failed: {}",
+            String::from_utf8_lossy(&metadata.stderr)
+        );
+        assert!(!run("/bin/ls", &["/private"]).status.success());
     }
 
     #[tokio::test]
