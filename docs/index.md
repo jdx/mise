@@ -1,6 +1,8 @@
 ---
 layout: home
-title: Home
+title: Dev tools, environments, and tasks
+description: Manage developer tools, environment variables, tasks, packages, and dotfiles in one project configuration with mise.
+socialDescription: Your tools, environments, and workflows. One CLI, every project.
 
 # The custom HomeHero renders the hero. These values supply the llms.txt header.
 hero:

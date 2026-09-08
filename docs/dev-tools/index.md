@@ -1,3 +1,7 @@
+---
+description: "Install developer tools and switch versions automatically for each project."
+---
+
 # Dev Tools
 
 mise installs development tools and selects their versions for each project.

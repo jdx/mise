@@ -127,14 +127,49 @@ pub(crate) fn global_directory() -> PathBuf {
         .to_path_buf()
 }
 
+/// The branch of a transferred bundle whose tree carries the setup
+/// repository marker (`.mise-history/format.toml`); `None` for an ordinary
+/// repository.
+pub(crate) fn history_branch(bundle: &Path, revision: &str) -> Result<Option<String>> {
+    let temporary = tempfile::tempdir()?;
+    let checkout = temporary.path().join("checkout");
+    let mut command = Command::new("git");
+    crate::git::sanitize_git_command(&mut command);
+    let output = command
+        .args(["clone", "--no-checkout", "--"])
+        .arg(bundle)
+        .arg(&checkout)
+        .output()?;
+    if !output.status.success() {
+        bail!("invalid transferred repository bundle");
+    }
+    let marker = format!("{revision}:.mise-history/format.toml");
+    if git(&checkout, &["cat-file", "-e", &marker]).is_err() {
+        return Ok(None);
+    }
+    Ok(Some(git(&checkout, &["symbolic-ref", "--short", "HEAD"])?))
+}
+
+/// Installs the transferred revision as the global configuration checkout.
+/// A dry run runs every check and says what it would do (clone, fast-forward,
+/// adopt) without writing anything persistent.
 pub(crate) fn install(
     bundle: &Path,
     origin: &str,
     revision: &str,
     update: bool,
     yes: bool,
+    dry_run: bool,
 ) -> Result<PathBuf> {
-    install_at(bundle, origin, revision, update, yes, &global_directory())
+    install_at(
+        bundle,
+        origin,
+        revision,
+        update,
+        yes,
+        dry_run,
+        &global_directory(),
+    )
 }
 
 fn install_at(
@@ -143,6 +178,7 @@ fn install_at(
     revision: &str,
     update: bool,
     yes: bool,
+    dry_run: bool,
     destination: &Path,
 ) -> Result<PathBuf> {
     validate_origin(origin)?;
@@ -155,10 +191,19 @@ fn install_at(
     let parent = destination
         .parent()
         .ok_or_else(|| eyre::eyre!("missing parent directory"))?;
-    std::fs::create_dir_all(parent)?;
+    if !dry_run {
+        std::fs::create_dir_all(parent)?;
+    }
     let _lock = crate::lock_file::LockFile::new(destination).lock()?;
-    let temporary = tempfile::tempdir_in(parent)?;
+    // the checkout is renamed into place, so it is staged next to the
+    // destination; a dry run never renames and leaves the parent alone
+    let temporary = if dry_run {
+        tempfile::tempdir()?
+    } else {
+        tempfile::tempdir_in(parent)?
+    };
     let checkout = temporary.path().join("checkout");
+    let shown = crate::file::display_path(destination);
     let mut command = Command::new("git");
     crate::git::sanitize_git_command(&mut command);
     let output = command
@@ -210,6 +255,25 @@ fn install_at(
             if git(destination, &["symbolic-ref", "--short", "HEAD"])? != branch {
                 bail!("global configuration branch differs from the transferred branch");
             }
+            if dry_run {
+                // the bundle holds the history from the checkout's commit on,
+                // so the fast-forward is checked there without fetching into
+                // the destination
+                let head = git(destination, &["rev-parse", "HEAD"])?;
+                if head == revision {
+                    miseprintln!(
+                        "Would keep {shown} at {revision}, already the transferred revision"
+                    );
+                } else if git(&checkout, &["merge-base", "--is-ancestor", &head, revision]).is_ok()
+                {
+                    miseprintln!("Would fast-forward {shown} from {head} to {revision}");
+                } else {
+                    bail!(
+                        "global configuration at {shown} cannot be fast-forwarded to the transferred revision"
+                    );
+                }
+                return Ok(destination.to_path_buf());
+            }
             git(
                 destination,
                 &[
@@ -243,6 +307,10 @@ fn install_at(
                     revision,
                 ],
             )?;
+        } else if dry_run {
+            miseprintln!(
+                "Would keep the existing checkout of {origin} at {shown}; --update fast-forwards it"
+            );
         }
         return Ok(destination.to_path_buf());
     }
@@ -264,6 +332,17 @@ fn install_at(
             {
                 bail!("existing file conflicts with adoption: {entry}");
             }
+        }
+        if dry_run {
+            let new_files = entries
+                .split('\0')
+                .filter(|s| !s.is_empty())
+                .filter(|entry| !destination.join(entry).exists())
+                .count();
+            miseprintln!(
+                "Would adopt {shown} as the global configuration repository ({new_files} new file(s); existing files and local overrides preserved)"
+            );
+            return Ok(destination.to_path_buf());
         }
         eprintln!(
             "Adopt existing global configuration at {} (preserving existing files and local overrides)",
@@ -287,6 +366,8 @@ fn install_at(
             }
         }
         std::fs::rename(checkout.join(".git"), destination.join(".git"))?;
+    } else if dry_run {
+        miseprintln!("Would clone {origin} at {revision} into {shown}");
     } else {
         if destination.exists() {
             std::fs::remove_dir(destination)?;
@@ -329,8 +410,65 @@ mod tests {
             &source.revision,
             update,
             true,
+            false,
             dest,
         )
+    }
+    fn preview_source(source: &Source, dest: &Path, update: bool) -> Result<PathBuf> {
+        install_at(
+            &source.bundle,
+            &source.origin,
+            &source.revision,
+            update,
+            true,
+            true,
+            dest,
+        )
+    }
+    #[tokio::test]
+    async fn dry_run_previews_without_writing() {
+        let repo = repository();
+        let source = Source::fetch(repo.path().to_str().unwrap().into())
+            .await
+            .unwrap();
+        let target = tempfile::tempdir().unwrap();
+        // a fresh destination, its parent missing too: neither is created
+        let dest = target.path().join("missing").join("mise");
+        preview_source(&source, &dest, false).unwrap();
+        assert!(!dest.exists());
+        assert!(!target.path().join("missing").exists());
+        // an existing checkout is inspected, not moved
+        let dest = target.path().join("mise");
+        install_source(&source, &dest, false).unwrap();
+        commit(
+            repo.path(),
+            "config.toml",
+            "[settings]\nexperimental = true\n",
+        );
+        let next = Source::fetch(source.origin.clone()).await.unwrap();
+        preview_source(&next, &dest, false).unwrap();
+        preview_source(&next, &dest, true).unwrap();
+        assert_eq!(git(&dest, &["rev-parse", "HEAD"]).unwrap(), source.revision);
+        // and nothing was fetched into it: the new revision is not there
+        assert!(
+            git(
+                &dest,
+                &["cat-file", "-e", &format!("{}^{{commit}}", next.revision)]
+            )
+            .is_err()
+        );
+        std::fs::write(dest.join("config.toml"), "dirty").unwrap();
+        assert!(preview_source(&next, &dest, true).is_err());
+        // adoption is previewed without writing git metadata; a conflict
+        // still refuses
+        let adopt = tempfile::tempdir().unwrap();
+        std::fs::write(adopt.path().join("config.local.toml"), "private").unwrap();
+        std::fs::write(adopt.path().join("config.toml"), "conflict").unwrap();
+        assert!(preview_source(&source, adopt.path(), false).is_err());
+        std::fs::write(adopt.path().join("config.toml"), "[tools]\n").unwrap();
+        preview_source(&source, adopt.path(), false).unwrap();
+        assert!(!adopt.path().join(".git").exists());
+        assert!(!adopt.path().join(".gitattributes").exists());
     }
     #[tokio::test]
     async fn pinned_install_and_safe_updates() {

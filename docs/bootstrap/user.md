@@ -1,3 +1,8 @@
+---
+description: "Declare and apply your user's login shell."
+socialDescription: "Declare and apply your user's login shell."
+---
+
 # User Login Shell
 
 mise can declare the current user's login shell in `[bootstrap.user]` and

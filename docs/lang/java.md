@@ -1,3 +1,7 @@
+---
+description: "Like sdkman, mise can manage multiple versions of Java on the same system."
+---
+
 # Java
 
 Like `sdkman`, `mise` can manage multiple versions of Java on the same system.

@@ -1,3 +1,7 @@
+---
+description: "mise supports monorepo-style task organization with target path syntax."
+---
+
 # Monorepo Tasks
 
 mise supports monorepo-style task organization with target path syntax. This lets you manage tasks across multiple projects in a single repository, where each project can have its own `mise.toml` with tools, environment variables, and tasks that differ from those of the directory the task is called from.

@@ -1,3 +1,7 @@
+---
+description: "direnv and mise both change the environment when you enter a directory."
+---
+
 # direnv <Badge type="warning" text="deprecated" />
 
 [direnv](https://direnv.net) and mise both change the environment when you enter a

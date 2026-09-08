@@ -1,4 +1,5 @@
 import { socialCard, writeSocialCard } from "./social-images.mjs";
+import { pageDescription } from "./social-descriptions.mjs";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -322,6 +323,7 @@ export default withMermaid(
       ["meta", { property: "og:locale", content: "en_US" }],
       ["meta", { property: "og:image:width", content: "1200" }],
       ["meta", { property: "og:image:height", content: "630" }],
+      ["meta", { property: "og:image:type", content: "image/png" }],
       ["meta", { name: "twitter:card", content: "summary_large_image" }],
       ["meta", { name: "twitter:site", content: "@jdxcode" }],
     ],
@@ -330,13 +332,24 @@ export default withMermaid(
         pageData.relativePath === "index.md"
           ? "Dev tools, environments, and tasks"
           : pageData.title || "mise";
-      const card = socialCard(heading);
+      const card = socialCard(
+        heading,
+        pageData.frontmatter.socialDescription || description,
+      );
       writeSocialCard(siteConfig.outDir, card);
       const image = new URL(card.path, `${siteUrl}/`).toString();
-      const imageAlt = `${heading} — mise docs`;
+      const imageAlt = `${heading} — mise docs. ${card.subtitle}`;
       const url = pageUrl(pageData.relativePath);
 
       return [
+        ...(pageData.relativePath === "404.md"
+          ? [
+              ["meta", { name: "robots", content: "noindex" }] as [
+                string,
+                Record<string, string>,
+              ],
+            ]
+          : []),
         ["meta", { property: "og:url", content: url }],
         ["meta", { property: "og:image", content: image }],
         ["meta", { property: "og:image:alt", content: imageAlt }],
@@ -365,6 +378,12 @@ export default withMermaid(
       ];
     },
     transformPageData(pageData) {
+      const description = pageDescription(
+        pageData.frontmatter,
+        pageData.relativePath,
+      );
+      pageData.description = description;
+      pageData.frontmatter.description = description;
       const canonicalUrl = pageUrl(pageData.relativePath);
 
       pageData.frontmatter.head ??= [];

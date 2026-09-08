@@ -434,6 +434,8 @@ pub(crate) struct MiseToml {
     bootstrap: Option<BootstrapTomlConfig>,
     #[serde(default)]
     dotfiles: Option<DotfilesTomlConfig>,
+    #[serde(default)]
+    history: Option<crate::system::history::config::HistoryTomlConfig>,
     #[serde(default, deserialize_with = "deserialize_vars")]
     vars: EnvList,
     #[serde(default)]
@@ -566,6 +568,15 @@ impl MiseToml {
     pub(crate) fn from_file(path: &Path) -> eyre::Result<Self> {
         let body = file::read_to_string(path)?;
         Self::from_str(&body, path)
+    }
+
+    /// Decode a proposed configuration without trusting, evaluating, or
+    /// activating it. Only static declarations may be inspected on this
+    /// value; normal loading still goes through `from_str` and its trust gate.
+    pub(crate) fn for_history_preflight(body: &str, path: &Path) -> eyre::Result<Self> {
+        let mut parsed: Self = toml::from_str(body)?;
+        parsed.path = path.to_path_buf();
+        Ok(parsed)
     }
 
     pub(crate) fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
@@ -1759,6 +1770,15 @@ impl ConfigFile for MiseToml {
     }
 }
 
+impl MiseToml {
+    /// `[history]` as declared by this file.
+    pub(crate) fn history_config(
+        &self,
+    ) -> Option<crate::system::history::config::HistoryTomlConfig> {
+        self.history.clone()
+    }
+}
+
 fn resolve_plugin_source_path(config_path: &Path, source: String) -> eyre::Result<String> {
     let source_path = Path::new(&source);
     let is_explicit_relative = matches!(
@@ -1929,6 +1949,7 @@ impl Clone for MiseToml {
             oci: self.oci.clone(),
             bootstrap: self.bootstrap.clone(),
             dotfiles: self.dotfiles.clone(),
+            history: self.history.clone(),
             vars: self.vars.clone(),
             monorepo_root: self.monorepo_root,
             experimental_monorepo_root: self.experimental_monorepo_root,

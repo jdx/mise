@@ -1,3 +1,7 @@
+---
+description: "Set up your first tool, environment variable, and task with mise."
+---
+
 # Getting started
 
 By the end of this guide, you'll have a project with a managed tool, an environment

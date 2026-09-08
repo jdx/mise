@@ -1,3 +1,8 @@
+---
+description: "Apply your bootstrap configuration to remote machines over SSH."
+socialDescription: "Apply your bootstrap configuration to remote machines over SSH."
+---
+
 # Remote bootstrap over SSH
 
 `mise bootstrap remote` applies a bootstrap project to one or more machines
@@ -330,16 +335,46 @@ An existing matching checkout is reused unless `--update` requests a safe
 fast-forward. Dirty checkouts, mismatched origins, conflicting files, and source
 files ending in `.local.toml` require manual resolution. A nonempty non-Git
 directory can be adopted after confirmation: existing files and local overrides
-are preserved. With `--from-git`, `--dry-run` only reports the proposed operation;
-it does not fetch the source, open an SSH session, inspect the target, or create
-temporary staging. Dirty checkouts, mismatched origins, and adoption conflicts
-are therefore detected only during a real apply. By contrast, `--source .
---dry-run` connects to and inspects the target without applying persistent
-changes.
+are preserved. With `--from-git`, `--dry-run` previews the whole operation the
+way `--source . --dry-run` does: the revision is fetched locally, the target is
+connected to, mise and the bundle are staged, and the target runs every check
+(dirty checkout, mismatched origin, adoption conflicts, `.local.toml` files) and
+says what it would do: clone, fast-forward, or adopt with the number of new
+files. When a global configuration already exists on the target, the bootstrap
+that follows is previewed with `--dry-run` too. Live configuration is not changed.
+The private staging directory is normally removed afterward; `--keep-staging`
+retains it for debugging. A setup preview can stage decrypted, explicitly tracked
+configuration and configuration-directory inputs needed to inspect bootstrap.
+Treat retained staging as sensitive; unrelated encrypted tracked files are not
+decrypted for this preview.
 
 `--from-git` uses the repository instead of the inventory's archive source and
 copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and
 `--exclude` flags cannot be combined with it.
+
+A **setup repository** (one connected with `mise bootstrap dotfiles origin set`,
+carrying `.mise-history/format.toml`) is set up from rather than checked out:
+the remote host fetches the transferred branch into its own history store,
+writes this machine's explicitly enrolled files with a recoverable pull, and
+records the connection. Explicitly track the mise configuration and template
+sources needed by the bootstrap that follows; references do not enroll them.
+If that configuration declares the history watcher, bootstrap installs it like
+any other user service. A conflict pauses the whole setup before bootstrap runs.
+With `--dry-run` the
+target shows that plan (the files it would write, and any held for a decision),
+records no connection, and keeps no fetched branch:
+
+```sh
+mise bootstrap remote --host devbox --install-mise --from-git jdx/dotfiles \
+  --github-relay-read-only --github-relay-repo jdx/dotfiles --dry-run
+```
+
+The borrowed GitHub access is read-only and ends with the session: the remote
+host can fetch through it but never publish. When the setup succeeded but the
+host cannot reach the repository on its own afterwards, the bootstrap says
+so; give the host credentials of its own for ongoing synchronization
+(`mise x gh -- gh auth login` and `mise x gh -- gh auth setup-git` there, or
+an SSH url through `mise bootstrap dotfiles origin set`).
 
 The relay is separate from this initial transfer. Enable it when bootstrap needs
 additional private GitHub content, authorizing each required repository with a

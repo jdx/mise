@@ -1,3 +1,7 @@
+---
+description: "System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...)."
+---
+
 # Debian and Ubuntu packages (apt)
 
 System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).

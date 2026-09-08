@@ -1,3 +1,7 @@
+---
+description: "This page lists common error messages mise emits, what causes them, and how to fix them."
+---
+
 # Errors
 
 This page lists common error messages mise emits, what causes them, and how to fix them.

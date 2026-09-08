@@ -1,4 +1,5 @@
 ---
+description: "This map is for contributors deciding where a behavior belongs."
 outline: [2, 3]
 ---
 

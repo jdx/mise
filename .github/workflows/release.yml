@@ -13,9 +13,14 @@ on:
         description: "Force release even if one already exists"
         type: boolean
         default: false
+      finish_draft_tag:
+        description: "Attest/packslip/publish for a release tag (draft or published missing packslip). Example: v2026.9.2"
+        type: string
+        required: false
+        default: ""
 
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ inputs.finish_draft_tag || github.ref_name }}
   # A dry run for a superseded release PR head can never satisfy auto-merge,
   # so stop it as soon as the next one starts. Tag runs are never cancelled.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -44,18 +49,37 @@ jobs:
     outputs:
       release-run: ${{ steps.gate.outputs.release-run }}
       build: ${{ steps.gate.outputs.build }}
+      finish-draft: ${{ steps.gate.outputs.finish-draft }}
+      finish-draft-tag: ${{ steps.gate.outputs.finish-draft-tag }}
     steps:
       - id: gate
         env:
           RELEASE_RUN: ${{ github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository) }}
           ARMED: ${{ github.event_name != 'pull_request' || github.event.pull_request.auto_merge != null }}
+          FINISH_DRAFT_TAG: ${{ inputs.finish_draft_tag }}
         run: |
+          if [[ -n "$FINISH_DRAFT_TAG" ]]; then
+            case "$FINISH_DRAFT_TAG" in
+              v[0-9]*) ;;
+              *)
+                echo "::error::finish_draft_tag must look like v2026.9.2, got: $FINISH_DRAFT_TAG"
+                exit 1
+                ;;
+            esac
+            echo "release-run=false" >> "$GITHUB_OUTPUT"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "finish-draft=true" >> "$GITHUB_OUTPUT"
+            echo "finish-draft-tag=$FINISH_DRAFT_TAG" >> "$GITHUB_OUTPUT"
+            echo "finish-draft tag=$FINISH_DRAFT_TAG (skipping build/release)"
+            exit 0
+          fi
           build=false
           if [ "$RELEASE_RUN" = true ] && [ "$ARMED" = true ]; then
             build=true
           fi
           echo "release-run=$RELEASE_RUN" >> "$GITHUB_OUTPUT"
           echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "finish-draft=false" >> "$GITHUB_OUTPUT"
           echo "release-run=$RELEASE_RUN armed=$ARMED build=$build"
   build-tarball-linux:
     needs: [gate]
@@ -288,7 +312,9 @@ jobs:
           if-no-files-found: error
   e2e-linux:
     needs: [gate, build-tarball-linux]
-    if: needs.gate.outputs.build == 'true'
+    # The auto-merge-enabled release PR already tests this exact release
+    # candidate. Do not repeat the full suite when its tag is published.
+    if: needs.gate.outputs.build == 'true' && !startsWith(github.ref, 'refs/tags/v')
     name: e2e-linux-${{matrix.tranche}}
     runs-on: ubuntu-latest
     #container: ghcr.io/jdx/mise:github-actions
@@ -411,19 +437,25 @@ jobs:
             "${{ needs.build-tarball-linux.result }}" \
             "${{ needs.build-tarball-macos.result }}" \
             "${{ needs.build-tarball-windows.result }}" \
-            "${{ needs.e2e-linux.result }}" \
             "${{ needs.rpm.result }}" \
             "${{ needs.deb.result }}"; do
             if [ "$result" != "success" ]; then
               failed="true"
             fi
           done
+          expected_e2e=success
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            expected_e2e=skipped
+          fi
+          if [ "${{ needs.e2e-linux.result }}" != "$expected_e2e" ]; then
+            failed="true"
+          fi
           if [ -n "$failed" ]; then
             echo "::error::One or more required jobs did not succeed:"
             echo "  build-tarball-linux: ${{ needs.build-tarball-linux.result }}"
             echo "  build-tarball-macos: ${{ needs.build-tarball-macos.result }}"
             echo "  build-tarball-windows: ${{ needs.build-tarball-windows.result }}"
-            echo "  e2e-linux: ${{ needs.e2e-linux.result }}"
+            echo "  e2e-linux: ${{ needs.e2e-linux.result }} (expected $expected_e2e)"
             echo "  rpm: ${{ needs.rpm.result }}"
             echo "  deb: ${{ needs.deb.result }}"
             exit 1
@@ -563,9 +595,14 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
 
+  # !cancelled() replaces the implicit success() gate. Tag publishes skip
+  # e2e-linux; release still runs via !cancelled(), but without a status
+  # check here the default success() treats that skipped ancestor as failure
+  # and skips attest/packslip/publish — leaving the GitHub release stuck as a
+  # draft (see v2026.9.2).
   attest-release:
     needs: release
-    if: needs.release.outputs.created == 'true'
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
     permissions:
       attestations: write
@@ -597,7 +634,7 @@ jobs:
     needs:
       - release
       - attest-release
-    if: needs.release.outputs.created == 'true'
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.attest-release.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -681,7 +718,7 @@ jobs:
       - release
       - attest-release
       - packslip
-    if: needs.release.outputs.created == 'true'
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.attest-release.result == 'success' && needs.packslip.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -707,3 +744,166 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
           RELEASE_ID: ${{ needs.release.outputs.release-id }}
+
+  # Finish a draft that already has build assets (no tarball rebuild). Used
+  # when attest/packslip/publish were skipped — e.g. v2026.9.2 after tag e2e
+  # skip tripped the default success() gate. Dispatch:
+  #   gh workflow run release.yml --ref <branch> -f finish_draft_tag=v2026.9.2
+  finish-draft-resolve:
+    needs: [gate]
+    if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      release-id: ${{ steps.resolve.outputs.release-id }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - id: resolve
+        env:
+          TAG: ${{ needs.gate.outputs.finish-draft-tag }}
+        run: |
+          RELEASE="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
+            jq -s -c --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)][0] // empty')"
+          if [[ -z "$RELEASE" || "$RELEASE" == "null" ]]; then
+            echo "::error::No release found for $TAG"
+            exit 1
+          fi
+          RELEASE_ID="$(jq -r '.id' <<< "$RELEASE")"
+          test -n "$RELEASE_ID"
+          DRAFT="$(jq -r '.draft' <<< "$RELEASE")"
+          HAS_PACKSLIP="$(jq -r '[.assets[].name] | any(. == "packslip.sigstore.json")' <<< "$RELEASE")"
+          if [[ "$DRAFT" != "true" && "$HAS_PACKSLIP" == "true" ]]; then
+            echo "::error::Release $TAG is already published with a packslip"
+            exit 1
+          fi
+          echo "release-id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Finishing release $TAG (id=$RELEASE_ID draft=$DRAFT has_packslip=$HAS_PACKSLIP)"
+
+  finish-draft-attest:
+    needs: [gate, finish-draft-resolve]
+    if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-resolve.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Download draft release assets
+        env:
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
+        run: |
+          mkdir -p release-assets
+          gh release download "$TAG" --dir release-assets
+          test -f release-assets/SHASUMS256.txt
+      - name: Attest release artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: release-assets/SHASUMS256.txt
+      - name: Stage release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: finish-draft-assets
+          path: release-assets
+          if-no-files-found: error
+          retention-days: 1
+
+  finish-draft-packslip:
+    needs: [gate, finish-draft-resolve, finish-draft-attest]
+    if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-attest.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      GH_TOKEN: ""
+      GITHUB_TOKEN: ""
+      GITHUB_API_TOKEN: ""
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: finish-draft-assets
+          path: release-assets
+      - name: Generate the CLI specification and completions
+        env:
+          TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
+        run: |
+          mkdir -p bin
+          tar -xzf "release-assets/mise-$TAG-linux-x64.tar.gz" -C bin
+          bin/mise/bin/mise usage > mise.usage.kdl
+          for shell in bash zsh fish powershell; do
+            bin/mise/bin/mise completion "$shell" > "mise.$shell"
+            test -s "mise.$shell"
+            grep -Fq '__complete_word__' "mise.$shell"
+            bin/mise/bin/mise __complete_word__ --shell "$shell" --line 'mise ins' | grep -Fq -- 'install'
+          done
+          bash -n mise.bash
+      - name: Publish the CLI specification and completions
+        env:
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
+        run: gh release upload "$TAG" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
+      - uses: jdx/packslip@a0d434ad57571c62dbd0ab5095b4eff607a71fd3 # v1.1.1
+        with:
+          artifacts: release-assets/mise-*
+          bin: mise
+          tag: ${{ needs.finish-draft-resolve.outputs.tag }}
+          resources: |
+            man@linux=archive:mise/man/man1/mise.1
+            man@darwin=archive:mise/man/man1/mise.1
+            cli-spec/usage=asset:mise.usage.kdl
+            completion/bash=asset:mise.bash
+            completion/zsh=asset:mise.zsh
+            completion/fish=asset:mise.fish
+            completion/powershell=asset:mise.powershell
+          attest: "false"
+          out: "."
+          token: ${{ secrets.MISE_GH_TOKEN }}
+      - name: Stage the packslip for the asset check
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: finish-draft-extras
+          path: |
+            mise.usage.kdl
+            mise.bash
+            mise.zsh
+            mise.fish
+            mise.powershell
+            packslip.sigstore.json
+          if-no-files-found: error
+          retention-days: 1
+
+  finish-draft-publish:
+    needs:
+      [gate, finish-draft-resolve, finish-draft-attest, finish-draft-packslip]
+    if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-packslip.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: finish-draft-assets
+          path: release-assets
+      - name: Download the packslip
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: finish-draft-extras
+          path: release-assets
+      - name: Verify and publish GitHub Release
+        run: |
+          (cd release-assets && sha256sum ./* | sort) > /tmp/expected-assets
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            --jq '.assets[] | select(.digest | startswith("sha256:")) | "\(.digest[7:])  ./\(.name)"' \
+            | sort > /tmp/draft-assets
+          diff -u /tmp/expected-assets /tmp/draft-assets
+          # Idempotent: a recovery run may already have published the release
+          # before packslip/attest were attached.
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false
+        env:
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          RELEASE_ID: ${{ needs.finish-draft-resolve.outputs.release-id }}

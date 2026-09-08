@@ -1,3 +1,7 @@
+---
+description: "These recipes combine tools, environment variables, and tasks for specific workflows."
+---
+
 # Cookbook
 
 These recipes combine tools, environment variables, and tasks for specific

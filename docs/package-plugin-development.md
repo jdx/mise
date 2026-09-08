@@ -1,3 +1,7 @@
+---
+description: "A package plugin is a Lua-based vfox plugin that implements a machine-global manager for [bootstrap.packages]."
+---
+
 # Package Plugin Development
 
 A package plugin is a Lua-based vfox plugin that implements a machine-global

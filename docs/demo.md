@@ -1,3 +1,7 @@
+---
+description: "See mise switch tool versions, load environment variables, and run project tasks."
+---
+
 # Demo
 
 The following demo shows:

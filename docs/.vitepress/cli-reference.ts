@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { pageDescription } from "./social-descriptions.mjs";
 
 export interface Command {
   full_cmd: string[];
@@ -194,6 +195,22 @@ export function replaceCommandIndex(page: string, index: string): string {
   );
 }
 
+export function withCommandDescription(page: string, command: Command): string {
+  const description = pageDescription(
+    {
+      description: command.full_cmd.length
+        ? command.help
+        : "Explore mise commands for managing tools, environments, tasks, and machine setup.",
+    },
+    `CLI command ${command.full_cmd.join(" ") || "index"}`,
+  );
+  const body = page.replace(
+    /^---\r?\ndescription: [^\r\n]*\r?\n---\r?\n\r?\n/,
+    "",
+  );
+  return `---\ndescription: ${JSON.stringify(description)}\n---\n\n${body}`;
+}
+
 function sourcePath(url: string): string {
   const path = url.split("#")[0];
   return resolve(
@@ -205,9 +222,20 @@ function sourcePath(url: string): string {
 
 function main() {
   const root = JSON.parse(
-    execFileSync("usage", ["generate", "json", "--file", "mise.usage.kdl"], {
-      encoding: "utf8",
-    }),
+    execFileSync(
+      "mise",
+      [
+        "x",
+        "usage",
+        "--",
+        "usage",
+        "generate",
+        "json",
+        "--file",
+        "mise.usage.kdl",
+      ],
+      { encoding: "utf8" },
+    ),
   ).cmd as Command;
   const commands = new Map<string, Command>();
   function visit(cmd: Command) {
@@ -274,7 +302,10 @@ function main() {
         "## Global Flags\n\nThese flags provide shared context. A command can define its own flag with the same\nname, so consult that command's page for placement and meaning. Effect labels describe\nthe command's intended operation; configuration evaluation, caches, and required tool\ninstallation can still have side effects. They are not sandbox guarantees.\n",
       );
     }
-    writeFileSync(file, page.trimEnd() + "\n");
+    writeFileSync(
+      file,
+      withCommandDescription(page.trimEnd() + "\n", commands.get(name)!),
+    );
     count++;
   }
   console.log(`Added reference navigation to ${count} CLI pages`);

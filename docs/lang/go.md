@@ -1,3 +1,7 @@
+---
+description: "mise can be used to install and manage multiple versions of go on the same system."
+---
+
 # Go
 
 `mise` can be used to install and manage multiple versions of [go](https://golang.org/) on the same system.

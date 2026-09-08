@@ -68,7 +68,10 @@ run = [
   "mise usage > mise.usage.kdl",
   "mise generate task-docs > tasks.md",
   "rm -rf docs/cli && mkdir -p docs/cli",
-  "usage generate markdown -m --out-dir docs/cli --url-prefix /cli --link-extension .html --html-encode --file mise.usage.kdl --replace-pre-with-code-fences",
+  "mise x usage -- usage generate markdown -m --out-dir docs/cli --url-prefix /cli --link-extension .html --html-encode --file mise.usage.kdl --replace-pre-with-code-fences",
+  # usage-lib renders <SUBCOMMAND> for any command with subcommands. `mise bootstrap`
+  # can run without a subcommand, so normalize the generated markdown.
+  "perl -0pi -e 's/mise (bootstrap( dotfiles (history|origin))?) \\[FLAGS\\] <SUBCOMMAND>/mise $1 [FLAGS] [SUBCOMMAND]/g' docs/cli/bootstrap.md docs/cli/bootstrap/dotfiles.md docs/cli/bootstrap/dotfiles/history.md docs/cli/bootstrap/dotfiles/origin.md docs/cli/index.md",
   "bun test ./docs/.vitepress/cli-reference.test.ts",
   "bun docs/.vitepress/cli-reference.ts",
   "markdownlint --fix docs/cli",
@@ -92,7 +95,7 @@ mise completion powershell > completions/mise.ps1
 description = 'Generate man pages'
 depends = ["render:usage"]
 env = { NO_COLOR = "1" }
-run = "usage generate manpage --file mise.usage.kdl > man/man1/mise.1"
+run = "mise x usage -- usage generate manpage --file mise.usage.kdl > man/man1/mise.1"
 
 ["render:help"]
 description = 'Render help documentation'

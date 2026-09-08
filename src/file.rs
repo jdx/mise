@@ -584,7 +584,7 @@ pub(crate) fn atomic_write_target(path: &Path) -> Result<PathBuf> {
     )
 }
 
-fn persist_atomic(mut temporary: tempfile::NamedTempFile, path: &Path) -> Result<()> {
+pub(crate) fn persist_atomic(mut temporary: tempfile::NamedTempFile, path: &Path) -> Result<()> {
     const RETRIES: u32 = 20;
 
     for attempt in 0..=RETRIES {

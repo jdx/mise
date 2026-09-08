@@ -1,3 +1,8 @@
+---
+description: "Discover releases, verify publishers, and enforce Packslip installation policies."
+socialDescription: "Discover releases, verify publishers, and enforce Packslip installation policies."
+---
+
 # Packslip Verification and Policy
 
 mise uses Packslip's signed metadata to discover releases, verify publishers,

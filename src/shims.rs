@@ -450,7 +450,7 @@ pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
                 .iter()
                 .flat_map(|bin| platform_shim_names(&mise_bin, bin))
                 .collect::<BTreeSet<String>>();
-            match write_bootstrap_shims(&mise_bin, &shims_dir, &shims)? {
+            match write_bootstrap_shims(&mise_bin, &shims_dir, &shims, false)? {
                 None => {}
                 // A shared farm such as `/usr/local/bin` may belong to root. No
                 // command can write a bootstrap shim there for this user, so
@@ -477,6 +477,7 @@ fn write_bootstrap_shims(
     mise_bin: &Path,
     shims_dir: &Path,
     shims: &BTreeSet<String>,
+    _prune_stale_windows_variants: bool,
 ) -> Result<Option<eyre::Report>> {
     if let Err(err) = file::create_dir_all(shims_dir) {
         if is_permission_denied(&err) {
@@ -487,6 +488,11 @@ fn write_bootstrap_shims(
     // Lock failures come from the cache rather than the target farm and must
     // remain visible to the user.
     let _lock = LockFile::new(shims_dir).lock()?;
+
+    #[cfg(windows)]
+    if _prune_stale_windows_variants {
+        remove_stale_windows_shim_variants(shims_dir, shims)?;
+    }
 
     #[cfg(windows)]
     validate_windows_shim_source(mise_bin)?;
@@ -503,6 +509,27 @@ fn write_bootstrap_shims(
         }
     }
     Ok(None)
+}
+
+#[cfg(windows)]
+fn remove_stale_windows_shim_variants(shims_dir: &Path, desired: &BTreeSet<String>) -> Result<()> {
+    let stems = desired
+        .iter()
+        .map(|shim| {
+            Path::new(shim)
+                .with_extension("")
+                .to_string_lossy()
+                .to_string()
+        })
+        .collect::<BTreeSet<_>>();
+    for stem in stems {
+        for variant in [stem.clone(), format!("{stem}.cmd"), format!("{stem}.exe")] {
+            if !desired.contains(&variant) {
+                remove_shim_with_rename_fallback(&shims_dir.join(variant))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -1019,7 +1046,9 @@ pub(crate) fn ensure_command_wrapper_shims(config: &Config, ts: &Toolset) -> Res
         .keys()
         .flat_map(|name| platform_shim_names(&mise_bin, name))
         .collect();
-    if let Some(error) = write_bootstrap_shims(&mise_bin, &dirs::COMMAND_WRAPPERS, &shims)? {
+    if let Some(error) =
+        write_bootstrap_shims(&mise_bin, &dirs::COMMAND_WRAPPERS, &shims, cfg!(windows))?
+    {
         return Err(error);
     }
     Ok(())
@@ -1215,14 +1244,17 @@ fn old_shim_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// Find the `mise-shim.exe` that ships beside `mise_bin`, if there is one.
+/// Find the `mise-shim.exe` that ships beside the real `mise_bin` — following
+/// symlinks/junctions — if there is one.
 ///
 /// Not `#[cfg(windows)]`, unlike the shim code around it: `mise generate task-stubs
 /// --windows-launcher=exe` asks the same question, and on a host where the answer is always `None`
 /// that is the honest answer to report rather than a compile error to route around.
 pub(crate) fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
-    // Look next to the mise binary first
-    if let Some(parent) = mise_bin.parent() {
+    // mise-shim.exe ships beside the real mise.exe, which may sit behind a
+    // symlink or junction (dunce avoids the `\\?\` verbatim prefix)
+    let real_bin = dunce::canonicalize(mise_bin).unwrap_or_else(|_| mise_bin.to_path_buf());
+    if let Some(parent) = real_bin.parent() {
         let candidate = parent.join("mise-shim.exe");
         if candidate.is_file() {
             return Some(candidate);
@@ -1955,6 +1987,23 @@ mod tests {
             old_shim_path(Path::new("foo.cmd")),
             PathBuf::from("foo.cmd.old")
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn command_wrappers_remove_stale_windows_shim_variants() {
+        let dir = tempfile::tempdir().unwrap();
+        for shim in ["cargo", "cargo.cmd", "cargo.exe", "cargo.exe.old"] {
+            fs::write(dir.path().join(shim), "shim").unwrap();
+        }
+
+        let desired = BTreeSet::from(["cargo".to_string(), "cargo.cmd".to_string()]);
+        remove_stale_windows_shim_variants(dir.path(), &desired).unwrap();
+
+        assert!(dir.path().join("cargo").exists());
+        assert!(dir.path().join("cargo.cmd").exists());
+        assert!(!dir.path().join("cargo.exe").exists());
+        assert!(!dir.path().join("cargo.exe.old").exists());
     }
 
     #[cfg(macos)]
@@ -2734,5 +2783,146 @@ mod tests {
             "2026.5.16",
             "symlink"
         ));
+    }
+
+    /// Create a file symlink, or return `false` when the platform refuses
+    /// (e.g. Windows without the symlink privilege) so the caller can skip
+    /// itself. Any other failure panics: swallowing it would silently turn the
+    /// new coverage into a no-op.
+    fn try_symlink_file(target: &Path, link: &Path) -> bool {
+        let result = {
+            #[cfg(unix)]
+            {
+                std::os::unix::fs::symlink(target, link)
+            }
+            #[cfg(windows)]
+            {
+                std::os::windows::fs::symlink_file(target, link)
+            }
+        };
+        match result {
+            Ok(()) => true,
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::Unsupported
+                ) =>
+            {
+                false
+            }
+            Err(err) => panic!("failed to create file symlink: {err}"),
+        }
+    }
+
+    /// A single-link mise layout: the PATH-visible `mise.exe` is a link, and
+    /// `mise-shim.exe` ships only beside the real binary. Returns the linked
+    /// mise and the real shim, or `None` when symlinks cannot be created on
+    /// this host.
+    fn single_link_layout(temp: &Path) -> Option<(PathBuf, PathBuf)> {
+        let real_dir = temp.join("real").join("bin");
+        let links_dir = temp.join("links");
+        fs::create_dir_all(&real_dir).unwrap();
+        fs::create_dir_all(&links_dir).unwrap();
+        let real_mise = real_dir.join("mise.exe");
+        fs::write(&real_mise, "mise").unwrap();
+        let real_shim = real_dir.join("mise-shim.exe");
+        fs::write(&real_shim, "mise-shim").unwrap();
+        let linked_mise = links_dir.join("mise.exe");
+        if !try_symlink_file(&real_mise, &linked_mise) {
+            return None;
+        }
+        Some((linked_mise, real_shim))
+    }
+
+    #[test]
+    fn find_mise_shim_bin_finds_the_shim_beside_the_binary() {
+        let temp = tempfile::tempdir().unwrap();
+        let bin = temp.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("mise.exe"), "mise").unwrap();
+        let shim = bin.join("mise-shim.exe");
+        fs::write(&shim, "mise-shim").unwrap();
+
+        let found = find_mise_shim_bin(&bin.join("mise.exe")).expect("shim beside the binary");
+        assert_eq!(
+            dunce::canonicalize(&found).unwrap(),
+            dunce::canonicalize(&shim).unwrap()
+        );
+    }
+
+    #[test]
+    fn find_mise_shim_bin_follows_a_symlinked_mise_bin() {
+        let temp = tempfile::tempdir().unwrap();
+        let Some((linked_mise, real_shim)) = single_link_layout(temp.path()) else {
+            return;
+        };
+
+        // Regression: the old lookup checked only beside the link and on PATH.
+        let found = find_mise_shim_bin(&linked_mise).expect("shim beside the real binary");
+        assert_eq!(
+            dunce::canonicalize(&found).unwrap(),
+            dunce::canonicalize(&real_shim).unwrap()
+        );
+    }
+
+    #[test]
+    fn find_mise_shim_bin_follows_chained_symlinks() {
+        let temp = tempfile::tempdir().unwrap();
+        let Some((linked_mise, real_shim)) = single_link_layout(temp.path()) else {
+            return;
+        };
+        let redirect_dir = temp.path().join("redirect");
+        fs::create_dir_all(&redirect_dir).unwrap();
+        let redirected = redirect_dir.join("mise.exe");
+        if !try_symlink_file(&linked_mise, &redirected) {
+            return;
+        }
+
+        let found = find_mise_shim_bin(&redirected).expect("shim through two links");
+        assert_eq!(
+            dunce::canonicalize(&found).unwrap(),
+            dunce::canonicalize(&real_shim).unwrap()
+        );
+    }
+
+    #[test]
+    fn find_mise_shim_bin_prefers_the_shim_beside_the_real_binary() {
+        let temp = tempfile::tempdir().unwrap();
+        let Some((linked_mise, real_shim)) = single_link_layout(temp.path()) else {
+            return;
+        };
+        let beside_link = temp.path().join("links").join("mise-shim.exe");
+        fs::write(&beside_link, "another shim").unwrap();
+
+        let found = find_mise_shim_bin(&linked_mise).expect("a shim beside the real binary");
+        assert_eq!(
+            dunce::canonicalize(&found).unwrap(),
+            dunce::canonicalize(&real_shim).unwrap()
+        );
+        assert_ne!(
+            dunce::canonicalize(&found).unwrap(),
+            dunce::canonicalize(&beside_link).unwrap()
+        );
+    }
+
+    #[test]
+    fn find_mise_shim_bin_returns_none_when_no_shim_exists() {
+        let temp = tempfile::tempdir().unwrap();
+        let bin = temp.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let mise = bin.join("mise.exe");
+        fs::write(&mise, "mise").unwrap();
+
+        // A mise-shim.exe on PATH happens in dev environments that build it, so
+        // the assertion is scoped to what this test controls. `file::which` on
+        // Windows matches the extension only, so filter to existing files the
+        // same way the resolver does before deciding to skip.
+        let found = find_mise_shim_bin(&mise);
+        if file::which("mise-shim.exe")
+            .filter(|p| p.is_file())
+            .is_none()
+        {
+            assert_eq!(found, None);
+        }
     }
 }

@@ -1,3 +1,8 @@
+---
+description: "Declare and manage long-running Docker Compose projects."
+socialDescription: "Declare and manage long-running Docker Compose projects."
+---
+
 # Docker Compose projects
 
 `[bootstrap.compose]` declaratively manages long-running Docker Compose

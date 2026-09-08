@@ -196,11 +196,59 @@ Add or update dotfiles in `[dotfiles]`
 \fBbootstrap dotfiles apply\fR
 Apply dotfiles from `[dotfiles]`
 .TP
+\fBbootstrap dotfiles capture\fR
+Record tracked files before and after an external command
+.TP
 \fBbootstrap dotfiles diff\fR
 Show the changes needed to apply dotfiles from `[dotfiles]`
 .TP
 \fBbootstrap dotfiles edit\fR
 Edit a managed dotfile source
+.TP
+\fBbootstrap dotfiles exclude\fR
+Never capture paths matching a glob
+.TP
+\fBbootstrap dotfiles history\fR
+Browse the checkpoints of your dotfiles
+.TP
+\fBbootstrap dotfiles history describe\fR
+Set the description of a checkpoint
+.TP
+\fBbootstrap dotfiles history diff\fR
+Compare checkpoints, or the working tree against one
+.TP
+\fBbootstrap dotfiles history ls\fR
+List checkpoints, newest first
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
+\fBbootstrap dotfiles history show\fR
+Show one checkpoint: what triggered it, what changed, and its journal
+.TP
+\fBbootstrap dotfiles include\fR
+Capture paths matching a glob again
+.TP
+\fBbootstrap dotfiles origin\fR
+Connect or disconnect the setup repository
+.TP
+\fBbootstrap dotfiles origin set\fR
+Connect a setup repository
+.TP
+\fBbootstrap dotfiles paths\fR
+Show what history tracks and under which policies
+.TP
+\fBbootstrap dotfiles pull\fR
+Pull incoming shared changes into the live files
+.TP
+\fBbootstrap dotfiles recover\fR
+Recover an interrupted dotfile operation
+.TP
+\fBbootstrap dotfiles rollback\fR
+Return files to the version a checkpoint holds
+.TP
+\fBbootstrap dotfiles save\fR
+Save a checkpoint of the tracked files now
 .TP
 \fBbootstrap dotfiles status\fR
 Show the status of dotfiles from `[dotfiles]`
@@ -208,8 +256,23 @@ Show the status of dotfiles from `[dotfiles]`
 \fIAliases: \fRls
 .RE
 .TP
+\fBbootstrap dotfiles sync\fR
+Publish, fetch, and record what is pending now
+.TP
+\fBbootstrap dotfiles track\fR
+Track a file or directory in place
+.TP
 \fBbootstrap dotfiles unapply\fR
 Remove dotfiles applied from `[dotfiles]`
+.TP
+\fBbootstrap dotfiles undo\fR
+Reverse the tracked\-file changes from an operation
+.TP
+\fBbootstrap dotfiles untrack\fR
+Stop tracking a file or directory
+.TP
+\fBbootstrap dotfiles watch\fR
+Save tracked files as they change
 .TP
 \fBbootstrap files\fR
 Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
@@ -362,13 +425,16 @@ Inspect bootstrap secret inputs without revealing their values
 Show whether declared bootstrap secret inputs are available
 .TP
 \fBbootstrap services\fR
-Manage Linux system services from `[bootstrap.services]`
+Manage services from `[bootstrap.services]`
 .TP
 \fBbootstrap services apply\fR
-Apply configured Linux system service state
+Apply configured service state (system and user scope)
+.TP
+\fBbootstrap services remove\fR
+Remove an installed user\-scope service, declared or not
 .TP
 \fBbootstrap services status\fR
-Show configured Linux system service state
+Show configured service state (system and user scope)
 .TP
 \fBbootstrap status\fR
 Show the aggregate bootstrap status
@@ -1122,11 +1188,11 @@ Runs these phases in order, when configured and selected:
 
 1. Linux accounts, then package\-manager plugins.
 2. The pre\-packages hook, then packages handled by built\-in managers.
-3. Privileged files/directories, system services, firewall, and Compose projects.
+3. Privileged files/directories, system and user services, firewall, and Compose projects.
 4. Git repositories, then dotfiles, each with its pre/post hooks.
 5. Shell activation, macOS defaults and LaunchAgents, Linux user units, and user settings.
 6. The pre\-tools hook, versioned tools, and post\-tools hook.
-7. Package\-plugin packages, then the post\-packages hook.
+7. Package\-plugin packages, then the post\-packages hook and services requiring tools.
 8. The `bootstrap` task, when defined, then the final hook.
 
 Defaults and user settings also have pre/post hooks. See
@@ -1416,6 +1482,30 @@ mise bootstrap dotfiles apply
 mise bootstrap dotfiles apply \-\-dry\-run
 mise bootstrap dotfiles apply \-\-force \-\-yes
 .RE
+.SH "MISE BOOTSTRAP DOTFILES CAPTURE"
+Record tracked files before and after an external command
+
+Runs the command directly, inheriting its terminal and environment. Keeps
+a linked checkpoint pair, including when the command fails or changes no
+files. Capture failures warn and never replace the command's exit status.
+Only tracked files are recorded: package, service, and other system effects
+are not reversible. Concurrent editor changes are part of the same interval.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles capture [OPTIONS] <COMMAND> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-label\fR \fI<LABEL>\fR
+Describe this operation in history
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<COMMAND>\fR
+Command and arguments to run, after \-\-
 .SH "MISE BOOTSTRAP DOTFILES DIFF"
 Show the changes needed to apply dotfiles from `[dotfiles]`
 .PP
@@ -1472,6 +1562,409 @@ Target to edit
 mise bootstrap dotfiles edit ~/.zshrc
 mise bootstrap dotfiles edit \-\-apply ~/.config/starship.toml
 .RE
+.SH "MISE BOOTSTRAP DOTFILES EXCLUDE"
+Never capture paths matching a glob
+
+Adds the glob to `[history] exclude` in the global config. Use it for
+logs, caches, databases, and constantly rewritten application state; a
+file that genuinely holds configuration but changes constantly is
+better tracked with `\-\-no\-autosave` and saved explicitly.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles exclude [OPTIONS] <GLOB>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<GLOB>\fR
+A glob such as `~/.config/hypr/plugins/**`
+.SH "MISE BOOTSTRAP DOTFILES HISTORY"
+Browse the checkpoints of your dotfiles
+
+Every save, every mutating bootstrap command, and the watcher record a
+checkpoint of explicitly enrolled `[dotfiles]` entries with `mode = "track"`.
+Configuration and deployment sources are not implicitly enrolled. A checkpoint holds files,
+never package or service state: restoring one restores files. Without a
+subcommand this lists them, newest first.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
+Show at most this many checkpoints (0 for all)
+.RS
+\fIDefault: \fR20
+.RE
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Only checkpoints where this path (or something under it) changed
+.TP
+\fB\-\-trigger\fR \fI<TRIGGER>\fR
+Only checkpoints with this trigger (edit, save, bootstrap, …)
+.TP
+\fB\-\-label\fR \fI<LABEL>\fR
+Only checkpoints with this label
+.TP
+\fB\-\-pending\fR
+Only checkpoints recorded by operations that did not finish
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES HISTORY DESCRIBE"
+Set the description of a checkpoint
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history describe [OPTIONS] <REF> <TEXT>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<REF>\fR
+Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`
+.TP
+\fB<TEXT>\fR
+The new description
+.SH "MISE BOOTSTRAP DOTFILES HISTORY DIFF"
+Compare checkpoints, or the working tree against one
+
+Without arguments, shows what changed by hand since the latest
+checkpoint. With one reference, shows what that checkpoint changed
+against the one before it. With two, compares the two states.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history diff [OPTIONS] [<A>] [<B>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-operation\fR
+Compare an operation with its recorded protective checkpoint
+
+With no reference, use the newest operation, ignoring later saves. With one reference, use that operation. Fails if its before checkpoint is unavailable instead of comparing an unrelated preceding save.
+.TP
+\fB\-p, \-\-patch\fR
+Print the full patch instead of a per\-file summary
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Restrict to one path (a file or a directory)
+.TP
+\fB\-\-exit\-code\fR
+Exit 1 when the two sides differ
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<A>\fR
+Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`
+.TP
+\fB<B>\fR
+Compare `A` with this checkpoint instead of its predecessor
+.SH "MISE BOOTSTRAP DOTFILES HISTORY LS"
+List checkpoints, newest first
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-n, \-\-limit\fR \fI<LIMIT>\fR
+Show at most this many checkpoints (0 for all)
+.RS
+\fIDefault: \fR20
+.RE
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Only checkpoints where this path (or something under it) changed
+.TP
+\fB\-\-trigger\fR \fI<TRIGGER>\fR
+Only checkpoints with this trigger (edit, save, bootstrap, …)
+.TP
+\fB\-\-label\fR \fI<LABEL>\fR
+Only checkpoints with this label
+.TP
+\fB\-\-pending\fR
+Only checkpoints recorded by operations that did not finish
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES HISTORY SHOW"
+Show one checkpoint: what triggered it, what changed, and its journal
+.PP
+\fBUsage:\fR mise bootstrap dotfiles history show [OPTIONS] [<REF>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-files\fR
+List every file in the snapshot
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Resolve `latest~N` among the checkpoints where this path changed
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<REF>\fR
+Numeric checkpoint ID, `latest` (the default), `latest~N`, or `commit:<sha>`
+.SH "MISE BOOTSTRAP DOTFILES INCLUDE"
+Capture paths matching a glob again
+
+Removes the glob from `[history] exclude` in the global config.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles include [OPTIONS] <GLOB>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<GLOB>\fR
+The glob as written by `exclude`
+.SH "MISE BOOTSTRAP DOTFILES ORIGIN"
+Connect or disconnect the setup repository
+
+`set <url>` connects the ordinary tracked\-file repository to an origin.
+All committed history becomes eligible for synchronization, including
+intermediate commits made before connecting. Preview the sync mode and
+tracked paths before confirming. Encrypted\-file policy is checked across
+every reachable commit; unrelated histories are never replaced.
+The connection is written to machine\-local `[history.origin]` configuration;
+the mode is `settings.history.sync`.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles origin [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-remove\fR
+Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES ORIGIN SET"
+Connect a setup repository
+.PP
+\fBUsage:\fR mise bootstrap dotfiles origin set [OPTIONS] <URL>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-branch\fR \fI<BRANCH>\fR
+The setup branch
+.RS
+\fIDefault: \fRmain
+.RE
+.TP
+\fB\-\-sync\fR \fI<MODE>\fR
+How the repository is used: sync, fetch\-only, or manual
+
+Prompts when omitted. With \-\-yes, accepts the configured mode (default: sync), including automatic publication and incoming writes. Use \-\-sync manual to keep automatic local history without automatic network activity.
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<URL>\fR
+The repository url (any git url; a private repository is recommended)
+.SH "MISE BOOTSTRAP DOTFILES PATHS"
+Show what history tracks and under which policies
+
+Every entry is listed with the file that declared it, its policies, and
+how many files it currently covers. Declarations that history could not
+honour are listed as invalid, omitted, or incomplete, so a failed
+enrollment is never mistaken for protection.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles paths [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-preview\fR \fI<PATH>\fR
+Show what tracking this path would capture
+.TP
+\fB\-\-noisy\fR
+List the paths the watcher found changing constantly
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES PULL"
+Pull incoming shared changes into the live files
+
+Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
+(`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
+what other machines shared),
+as one recoverable transaction: a protective checkpoint first, every
+file written and journaled one at a time, reload hooks only afterwards,
+and `mise bootstrap dotfiles undo` to reverse it. Configuration and the sources it
+references apply together; an incoming configuration file that does not
+parse, a path with unsaved local edits, staged git changes in your own
+checkout, or a genuine local edit pauses the complete application.
+Conflicts pause both publication and application for the whole setup;
+local history and fetching continue. Decisions are recorded per path
+with `\-\-take\-remote` or `\-\-keep\-local`; sharing resumes only after all
+conflicts are resolved and the plan has been recomputed.
+
+In `sync` mode the watcher pulls conflict\-free setups on its
+own; this command writes what is pending right now and decides
+conflicts. When an incoming configuration declares more tracked files,
+their shared versions follow in the same run.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles pull [OPTIONS] [<PATH>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show the plan without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Pull without prompting
+.TP
+\fB\-\-take\-remote\fR \fI<PATH>\fR
+Resolve a conflict with the repository's version
+.TP
+\fB\-\-keep\-local\fR \fI<PATH>\fR
+Resolve a conflict by keeping this machine's version (published next)
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Partial pulls are unsupported; omit PATH and apply the complete setup
+.SH "MISE BOOTSTRAP DOTFILES RECOVER"
+Recover an interrupted dotfile operation
+
+Retries safe recovery without overwriting later edits. If recovery cannot
+determine what is safe, inspect the listed files first. `\-\-keep\-current`
+explicitly accepts their live contents and discards only the selected
+operation's temporary recovery copies; it does not erase Git history.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles recover [OPTIONS] [<OPERATION>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-keep\-current\fR
+Accept live files instead of restoring temporary recovery copies
+.TP
+\fB\-y, \-\-yes\fR
+Confirm discarding the selected operation's temporary recovery copies
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<OPERATION>\fR
+Pending numeric ID or an unambiguous operation UUID prefix
+.SH "MISE BOOTSTRAP DOTFILES ROLLBACK"
+Return files to the version a checkpoint holds
+
+Without `\-\-to`, each path returns to its most recent saved version that
+differs from what is on disk; unrelated checkpoints never influence the
+choice. With `\-\-to <ref>`, the named checkpoint is the source, and
+`\-\-all` selects everything it covers. The current state is saved in a
+protective checkpoint first, so `mise bootstrap dotfiles undo` can reverse it.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles rollback [OPTIONS] [<PATH>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-to\fR \fI<REF>\fR
+The checkpoint to roll back to: numeric ID, `latest`, `latest~N`, or `commit:<sha>`
+.TP
+\fB\-\-all\fR
+With \-\-to: everything the checkpoint covers
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show the plan without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Apply without prompting
+.TP
+\fB\-\-force\fR
+Replace a path whose type changed (file, symlink, directory)
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Paths to roll back (files or directories)
+.SH "MISE BOOTSTRAP DOTFILES SAVE"
+Save a checkpoint of the tracked files now
+
+Fails when history cannot save or a requested path is not tracked, so a
+script or an agent gets a trustworthy result; a save that finds nothing
+changed succeeds as a no\-op. `\-\-best\-effort` turns save errors into a
+warning for `set \-e` update scripts.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles save [OPTIONS] [<PATH>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-d, \-\-description\fR \fI<TEXT>\fR
+A description for the checkpoint
+.TP
+\fB\-\-trigger\fR \fI<TRIGGER>\fR
+What is saving: save (the default), agent, or update
+.RS
+\fIDefault: \fRsave
+.RE
+.TP
+\fB\-\-task\fR \fI<ID>\fR
+The task an agent is working on
+.TP
+\fB\-\-label\fR \fI<LABEL>\fR
+A label to find the checkpoint by later
+.TP
+\fB\-\-best\-effort\fR
+Warn instead of failing when history cannot save
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Paths to save; every one must be tracked
 .SH "MISE BOOTSTRAP DOTFILES STATUS"
 Show the status of dotfiles from `[dotfiles]`
 
@@ -1506,6 +1999,67 @@ mise bootstrap dotfiles status ~/.zshrc
 mise bootstrap dotfiles status \-\-json
 mise bootstrap dotfiles status \-\-missing # exit 1 if anything is out of sync
 .RE
+.SH "MISE BOOTSTRAP DOTFILES SYNC"
+Publish, fetch, and record what is pending now
+
+Fetches the origin branch and publishes the ordinary local commit history.
+A rejected push fetches again and reconciles without rewriting history.
+Records incoming changes to apply and conflicts to decide.
+Live files are never changed here: `mise bootstrap dotfiles pull` does
+that. In `fetch\-only` mode nothing is published.
+
+The history watcher does this on its own in `sync` and `fetch\-only` mode
+(`settings.history.sync`); this command is for right now.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles sync [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-fetch\-only\fR
+Fetch without publishing
+.TP
+\fB\-\-best\-effort\fR
+Warn instead of failing when the origin is unreachable
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES TRACK"
+Track a file or directory in place
+
+Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
+is, nothing is copied or linked, and history saves a checkpoint of it
+right away. With the history watcher service running, later edits are
+saved automatically; without it, `mise bootstrap dotfiles save` saves them.
+
+`\-\-os` and `\-\-profile` declare a variant: a separate shared stream for
+machines matching that platform or mise environment, so a Mac and a
+Linux box can share the same live path with different contents.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles track [OPTIONS] <PATH> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-os\fR \fI<OS>\fR
+Declare a variant for this platform (macos, linux, linux/arm64, …)
+.TP
+\fB\-\-profile\fR \fI<PROFILE>\fR
+Declare a variant for this mise environment
+.TP
+\fB\-\-no\-autosave\fR
+Save only on `mise bootstrap dotfiles save <path>`, never automatically
+.TP
+\fB\-y, \-\-yes\fR
+Accept without prompting
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Paths to track (absolute or starting with ~/)
 .SH "MISE BOOTSTRAP DOTFILES UNAPPLY"
 Remove dotfiles applied from `[dotfiles]`
 
@@ -1544,6 +2098,95 @@ mise bootstrap dotfiles unapply ~/.zshrc
 mise bootstrap dotfiles unapply \-\-dry\-run
 mise bootstrap dotfiles unapply \-\-force \-\-yes
 .RE
+.SH "MISE BOOTSTRAP DOTFILES UNDO"
+Reverse the tracked\-file changes from an operation
+
+Restores exactly the paths that operation changed from the protective
+checkpoint it took, leaving everything else as it is now. Without a
+reference, the newest operation not yet undone is reversed.
+Bootstrap, captured commands, rollback, undo, and pull are supported.
+Package installations, service state, and untracked files are not reversed.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles undo [OPTIONS] [<REF>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show the plan without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Apply without prompting
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<REF>\fR
+The operation's checkpoint: numeric ID, `latest`, `latest~N`, or `commit:<sha>`
+.SH "MISE BOOTSTRAP DOTFILES UNTRACK"
+Stop tracking a file or directory
+
+Removes the `[dotfiles]` track entry (or switches an inherited one off in
+config.local.toml) and stops future captures. The file itself and its
+existing checkpoints are left exactly as they are.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles untrack [OPTIONS] <PATH> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Paths to stop tracking
+.SH "MISE BOOTSTRAP DOTFILES WATCH"
+Save tracked files as they change
+
+Runs in the foreground: installs filesystem watches for every autosaved
+tracked entry, saves a checkpoint once a changed file has been quiet for
+`history.watch.debounce` (a file that keeps changing never delays the
+others; `history.watch.max_interval` saves it regardless), and
+reconciles the whole set at startup, every `history.watch.reconcile`,
+and when the configuration changes. Manual\-save entries are never
+watched.
+
+With a connected setup repository the watcher also synchronizes per
+`settings.history.sync`: in `sync` mode it publishes within
+`history.sync_interval` after a save, fetches every
+`history.fetch_interval`, and applies incoming changes once the complete setup is conflict\-free;
+in `fetch\-only` mode it only fetches; in `manual` mode it does nothing
+on the network. A failed sync backs off and is retried while saving
+continues. `\-\-once` runs one reconcile and one such synchronization.
+
+The `history\-watch` built\-in service runs this for you:
+
+    [bootstrap.services.mise\-history]
+    builtin = "history\-watch"
+
+Exit codes: 0 when history is disabled or another watcher already runs;
+1 when git is unusable, the store cannot open, or no watch can be
+installed. A capture that fails is retried with backoff and never drops
+the pending changes; one that would overlap another history operation
+is deferred.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles watch [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-once\fR
+Reconcile and synchronize once and exit (for timers and cron)
+.TP
+\fB\-J, \-\-json\fR
+One JSON object per line instead of log lines
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP FILES"
 Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
 
@@ -2486,10 +3129,12 @@ Exit with code 1 if a declared secret input is unavailable
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP SERVICES"
-Manage Linux system services from `[bootstrap.services]`
+Manage services from `[bootstrap.services]`
 
-These are system\-level systemd services. For units in the current user session,
-use `bootstrap linux systemd\-units` instead.
+System\-scope entries (the default) converge existing Linux systemd system
+units. `scope = "user"` entries are services mise defines for the current
+user on every platform: a systemd user unit on Linux, a LaunchAgent on
+macOS, a Scheduled Task on Windows.
 .PP
 \fBUsage:\fR mise bootstrap services [OPTIONS] <COMMAND>
 .PP
@@ -2499,7 +3144,7 @@ use `bootstrap linux systemd\-units` instead.
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP SERVICES APPLY"
-Apply configured Linux system service state
+Apply configured service state (system and user scope)
 .PP
 \fBUsage:\fR mise bootstrap services apply [OPTIONS]
 .PP
@@ -2514,8 +3159,30 @@ Skip the confirmation prompt
 .TP
 \fB\-h, \-\-help\fR
 Print help
+.SH "MISE BOOTSTRAP SERVICES REMOVE"
+Remove an installed user\-scope service, declared or not
+
+Deleting a `scope = "user"` declaration leaves its installed unit, agent,
+or task in place; this removes it once. The next `mise bootstrap`
+recreates it if it is still declared.
+.PP
+\fBUsage:\fR mise bootstrap services remove [OPTIONS] <NAME>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would change without changing anything
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<NAME>\fR
+The installed user\-service name to remove (declared or not)
 .SH "MISE BOOTSTRAP SERVICES STATUS"
-Show configured Linux system service state
+Show configured service state (system and user scope)
 .PP
 \fBUsage:\fR mise bootstrap services status [OPTIONS]
 .PP
@@ -6012,6 +6679,11 @@ Internal session adapter
 \fB\-\-repository\-update\fR
 .TP
 \fB\-\-repository\-yes\fR
+.TP
+\fB\-\-repository\-dry\-run\fR
+Preview the transferred repository's installation without writing it
+.TP
+\fB\-\-repository\-preview\-directory\fR \fI<REPOSITORY_PREVIEW_DIRECTORY>\fR
 .TP
 \fB\-\-global\-config\-directory\fR
 .TP

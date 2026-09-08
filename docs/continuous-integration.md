@@ -1,3 +1,7 @@
+---
+description: "Use the same mise.toml in CI and development so both environments select the same tools."
+---
+
 # Continuous integration
 
 Use the same `mise.toml` in CI and development so both environments select the same tools.

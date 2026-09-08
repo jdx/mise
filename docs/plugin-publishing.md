@@ -1,3 +1,7 @@
+---
+description: "Publish a plugin as a Git repository or release archive, with a tested installation command and documentation for its actual interface."
+---
+
 # Plugin Publishing
 
 Publish a plugin as a Git repository or release archive, with a tested installation command

@@ -1,4 +1,5 @@
 ---
+description: "mise has a specific scope and design taste."
 outline: [2, 3]
 ---
 

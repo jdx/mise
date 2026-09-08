@@ -1,4 +1,5 @@
 ---
+description: "Quick answers about daily commands, shell integration, and configuration."
 outline: [2, 3]
 ---
 

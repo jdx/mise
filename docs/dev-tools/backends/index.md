@@ -1,3 +1,7 @@
+---
+description: "Choose where mise discovers tool versions and how it installs them."
+---
+
 # Backends
 
 A backend tells mise where to find a tool's versions and how to install them.

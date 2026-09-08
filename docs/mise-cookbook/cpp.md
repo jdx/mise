@@ -1,3 +1,7 @@
+---
+description: "Use mise to install build tools and define the configure/build cycle."
+---
+
 # C++ Cookbook
 
 Use mise to install build tools and define the configure/build cycle. A C or C++

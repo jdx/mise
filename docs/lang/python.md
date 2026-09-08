@@ -1,3 +1,7 @@
+---
+description: "Like pyenv, mise can manage multiple versions of Python on the same system."
+---
+
 # Python
 
 Like `pyenv`, `mise` can manage multiple versions of Python on the same system. It can also automatically create virtual environments for your projects and integrates with `uv`.

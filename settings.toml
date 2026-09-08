@@ -29,8 +29,34 @@ In that case, using this example again, `/some/other/python` will be after mise'
 env = "MISE_ACTIVATE_AGGRESSIVE"
 type = "Bool"
 
+[activate_shims]
+default = true
+description = "Allow full shell activation to add tool shims to PATH."
+docs = """
+Set to false to keep the user and system tool shim directories out of `PATH` during
+`mise activate` and subsequent shell hooks, even when automatic installation or lazy tools
+would otherwise add them:
+
+```sh
+mise settings set activate_shims false
+```
+
+Restart your shell after changing this setting. For an environment-variable override, set
+`MISE_ACTIVATE_SHIMS=false` before running `mise activate`.
+
+Shims support missing-version auto-installation and first-use installation of lazy tools.
+Disabling them can prevent these commands from being found; use `mise install` or `mise exec`
+explicitly instead. Installed tools still get their real bin directories added to `PATH`.
+
+Configured command wrappers, such as `cargo` through [mr-boxington](https://github.com/jdx/mr-boxington), use a separate
+`command-wrappers/bin` directory and remain active. Explicit `mise activate --shims` also
+continues to add shims regardless of this setting.
+"""
+env = "MISE_ACTIVATE_SHIMS"
+type = "Bool"
+
 [age.identity_files]
-description = "[experimental] List of age identity files to use for decryption."
+description = "List of age identity files to use for decryption (encrypted shared dotfiles and the experimental `[env]` age directives)."
 env = "MISE_AGE_IDENTITY_FILES"
 optional = true
 parse_env = "list_by_os_path_separator"
@@ -39,13 +65,13 @@ type = "ListPath"
 
 [age.key_file]
 default_docs = "~/.config/mise/age.txt"
-description = "[experimental] Path to the age private key file to use for encryption/decryption."
+description = "Path to the age private key file to use for encryption/decryption: the default recipient and identity for encrypted shared dotfiles and the key for the experimental `[env]` age directives."
 env = "MISE_AGE_KEY_FILE"
 optional = true
 type = "Path"
 
 [age.ssh_identity_files]
-description = "[experimental] List of SSH identity files to use for age decryption."
+description = "List of SSH identity files to use for age decryption (encrypted shared dotfiles and the experimental `[env]` age directives)."
 env = "MISE_AGE_SSH_IDENTITY_FILES"
 optional = true
 parse_env = "list_by_os_path_separator"
@@ -506,7 +532,7 @@ type = "String"
 
 [disable_backends]
 default = []
-description = "Backends to disable for new installs, such as `asdf`, `pipx`, or a vfox-backend plugin name. This does not uninstall or disable tools already installed with those backends."
+description = "Backends to exclude from tool resolution and new installs, such as `asdf`, `pipx`, or a vfox-backend plugin name. Existing installations are left on disk and become available again if the backend is re-enabled."
 env = "MISE_DISABLE_BACKENDS"
 parse_env = "list_by_comma"
 rust_type = "Vec<String>"
@@ -1243,6 +1269,97 @@ description = "Verify OpenPGP signatures for all tools (built-in, no external gp
 env = "MISE_GPG_VERIFY"
 optional = true
 type = "Bool"
+
+[history.describe_command]
+default = ""
+description = "A command that names commits the watcher saves (an agent, say): it gets one JSON object on stdin (uuid, trigger, the computed description, changed tracked paths, and a unified diff of changed unencrypted files, at most 64 KiB) and prints one line of at most 200 characters, which becomes the description. Empty: computed descriptions only."
+docs = """
+The checkpoint is saved before the command runs and keeps its computed description when the
+command fails, prints nothing, or takes longer than 30 seconds. It runs once per checkpoint the
+watcher saved, never per filesystem event or retry, one at a time. Excluded files are not
+captured or named, and encrypted files never have their contents sent.
+"""
+env = "MISE_HISTORY_DESCRIBE_COMMAND"
+type = "String"
+
+[history.enabled]
+default = true
+description = "Record ordinary Git commits for explicitly tracked files around bootstrap operations and on explicit saves."
+docs = """
+With explicit enrollment or existing tracked history, `mise bootstrap` and
+`mise bootstrap <part> apply` record before/after commits. `mise bootstrap dotfiles save`
+explicitly commits tracked changes. Git history lives under `$MISE_STATE_DIR/history/repo.git`;
+`mise bootstrap dotfiles history` lists and compares its file versions. Bootstrap without
+tracking does not start a committed history, and dry runs never record. Set to `false` to
+turn recording off without deleting existing commits.
+"""
+env = "MISE_HISTORY_ENABLED"
+type = "Bool"
+
+[history.fetch_interval]
+default = "15m"
+description = "How often the history watcher fetches the origin branch. Values below one second use one second; use history.sync = 'manual' to disable automatic synchronization."
+env = "MISE_HISTORY_FETCH_INTERVAL"
+type = "Duration"
+
+[history.notify]
+default = true
+description = "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync."
+docs = """
+Linux uses `notify-send`. macOS uses a bundled mise helper app with the mise icon;
+allow notifications for mise when macOS asks on first use. Permission can be
+changed later in System Settings > Notifications > mise. No extra notifier is
+required. Other platforms log the conflict only.
+`mise bootstrap dotfiles status` and `mise doctor` show the same conflicts without notifications.
+"""
+env = "MISE_HISTORY_NOTIFY"
+type = "Bool"
+
+[history.sync]
+default = "sync"
+description = "What the history watcher does with a connected setup repository on its own: `sync` publishes after saves, fetches periodically, and applies incoming changes. Any conflict pauses publication and incoming application for the entire setup; local commits and fetching continue. `fetch-only` only fetches; `manual` does nothing automatically. `mise bootstrap dotfiles sync` and `pull` work on request in every mode."
+docs = """
+Chosen and disclosed by `mise bootstrap dotfiles origin set`. Publication happens at most every
+`history.sync_interval` after a save, fetching every `history.fetch_interval`; failures back
+off (one minute doubling to an hour) and local saves continue meanwhile. Applying never runs
+`mise bootstrap`, installs packages, or renders templates: when incoming configuration
+changes declarations, `mise bootstrap dotfiles status` says to run `mise bootstrap`.
+"""
+enum = ["sync", "fetch-only", "manual"]
+env = "MISE_HISTORY_SYNC"
+type = "String"
+
+[history.sync_interval]
+default = "5m"
+description = "How soon after a save the history watcher publishes to the setup repository, at most this often."
+env = "MISE_HISTORY_SYNC_INTERVAL"
+type = "Duration"
+
+[history.watch.debounce]
+default = "2s"
+description = "How long a changed file must stay quiet before the history watcher saves it (the base autosave interval). A file that keeps changing is stretched on its own and never delays the others."
+env = "MISE_HISTORY_WATCH_DEBOUNCE"
+type = "Duration"
+
+[history.watch.max_interval]
+default = "24h"
+description = "The longest autosave interval the history watcher stretches a constantly changing file to. Sustained churn doubles a file's own interval up to this; a settled file is saved promptly again, and a sustained quiet period resets it."
+docs = """
+Ordinary edits are saved after `history.watch.debounce`. A file that keeps being rewritten is
+still saved periodically, ever more rarely, up to this interval; other files are never delayed
+by it. Constantly rewritten application state, logs, caches, and databases are better excluded
+(`mise bootstrap dotfiles exclude`); a file that genuinely holds configuration but changes
+constantly can be tracked with `autosave = false` and saved explicitly. Nothing is excluded or
+switched to manual saving automatically.
+"""
+env = "MISE_HISTORY_WATCH_MAX_INTERVAL"
+type = "Duration"
+
+[history.watch.reconcile]
+default = "10m"
+description = "How often the history watcher rescans the whole tracked set for changes its watches missed. `0` disables periodic reconciliation (startup and configuration changes still reconcile)."
+env = "MISE_HISTORY_WATCH_RECONCILE"
+type = "Duration"
 
 [hook_env.cache_ttl]
 default = "0s"

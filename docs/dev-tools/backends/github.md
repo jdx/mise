@@ -1,3 +1,7 @@
+---
+description: "Install prebuilt tools directly from GitHub release assets."
+---
+
 # GitHub Backend
 
 You may install GitHub release assets directly using the `github` backend. This backend downloads release assets from GitHub repositories and is ideal for tools that distribute pre-built binaries through GitHub releases.

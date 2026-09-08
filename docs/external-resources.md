@@ -1,3 +1,7 @@
+---
+description: "Articles, videos, and related tools from the mise community."
+---
+
 # External Resources
 
 Articles, videos, and related tools from the mise community. Examples reflect the version

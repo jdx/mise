@@ -1,3 +1,7 @@
+---
+description: "Definitions for the concepts used in the guides and CLI reference."
+---
+
 # Glossary
 
 Definitions for the concepts used in the guides and CLI reference. Follow a term's link for

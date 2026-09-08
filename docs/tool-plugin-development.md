@@ -1,3 +1,7 @@
+---
+description: "A tool plugin manages one versioned tool using Lua lifecycle hooks."
+---
+
 # Tool Plugin Development
 
 A tool plugin manages one versioned tool using Lua lifecycle hooks. Use a

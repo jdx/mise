@@ -1,3 +1,7 @@
+---
+description: "Install Python command-line applications in isolated virtual environments."
+---
+
 # pipx Backend
 
 The `pipx` backend installs Python command-line applications in isolated virtual

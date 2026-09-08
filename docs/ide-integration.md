@@ -1,3 +1,8 @@
+---
+description: "Connect your editor, language server, and debugger to mise-managed tools."
+socialDescription: "Connect your editor, language server, and debugger to mise-managed tools."
+---
+
 # IDE Integration
 
 An editor's terminal, language server, debugger, and extension host can use different

@@ -1,3 +1,7 @@
+---
+description: "Control configuration trust, tool verification, secrets, and command execution."
+---
+
 # Security
 
 mise provides controls for different parts of a development workflow. Choose the control

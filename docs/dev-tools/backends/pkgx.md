@@ -1,3 +1,7 @@
+---
+description: "Install packages from the pkgx pantry without requiring the pkgx CLI."
+---
+
 # pkgx Backend <Badge type="warning" text="experimental" />
 
 The `pkgx` backend installs packages from the [pkgx pantry](https://github.com/pkgxdev/pantry) without shelling out to the `pkgx` CLI. mise resolves pantry metadata, downloads pkgx bottles from `dist.pkgx.dev`, verifies bottle checksums when available, and writes wrapper scripts that set the package runtime environment.

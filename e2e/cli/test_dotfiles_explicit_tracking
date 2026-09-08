@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# Deployment and referencing a source never enroll either path in history.
+require_cmd git
+
+mkdir -p "$MISE_CONFIG_DIR/dotfiles" ~/templates/nested
+echo source >"$MISE_CONFIG_DIR/dotfiles/source"
+echo template >~/templates/nested/gitconfig.tera
+echo native >~/.native
+echo target >~/.link-target
+ln -s "$HOME/.link-target" ~/.observed-link
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.generated" = { mode = "copy", source = "dotfiles/source" }
+TOML
+
+assert "mise bootstrap dotfiles paths --json | jq '.entries | length'" "0"
+assert_succeed "mise bootstrap dotfiles track ~/.native ~/templates ~/.observed-link"
+assert "mise bootstrap dotfiles paths --json | jq '.entries | length'" "3"
+assert "mise bootstrap dotfiles paths --json | jq '[.entries[] | select(.path == \"~/.generated\" or .mode == \"implicit\" or .mode == \"source\" or .mode == \"derived\")] | length'" "0"
+
+echo added >~/templates/nested/new.tera
+echo excluded >~/templates/nested/config.local.toml
+echo excluded >~/templates/nested/credentials.json
+assert_succeed "mise bootstrap dotfiles save"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git rev-list --count refs/heads/main" "2"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git show HEAD:home/.native" "native"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git for-each-ref --format='%(refname)' refs/checkpoints refs/promoted refs/mise-history" ""
+assert_fail "git --git-dir=$MISE_STATE_DIR/history/repo.git cat-file -e HEAD:home/.config/mise/config.toml"
+assert "mise bootstrap dotfiles paths --json | jq '.entries[] | select(.path == \"~/templates\") | .files'" "2"
+assert "cat ~/.link-target" "target"
+assert_succeed "test -L ~/.observed-link"
+assert_fail "test -e ~/.git"
+assert_fail "test -e ~/templates/.git"
+
+# Exact managed outputs and referenced sources can be observed independently.
+echo live-output >~/.generated
+assert_succeed "mise bootstrap dotfiles track ~/.generated $MISE_CONFIG_DIR/dotfiles/source"
+assert "cat ~/.generated" "live-output"
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'mode = "copy"'
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git show HEAD:home/.generated" "live-output"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git show HEAD:config/dotfiles/source" "source"
+assert_succeed "mise bootstrap dotfiles untrack ~/.generated"
+assert "cat ~/.generated" "live-output"
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'mode = "copy"'
+assert_fail "git --git-dir=$MISE_STATE_DIR/history/repo.git cat-file -e HEAD:home/.generated"

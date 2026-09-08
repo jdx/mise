@@ -74,6 +74,51 @@ enum SystemDefaultsDiagnosis {
 }
 
 /// outcome of the `[bootstrap.user].login_shell` doctor check
+#[derive(serde::Serialize)]
+struct DotfilesDiagnosis {
+    tracked: usize,
+    watcher: String,
+    stale: bool,
+    health_age_secs: Option<u64>,
+    unavailable: Option<String>,
+    last_error: Option<String>,
+    degraded: Vec<String>,
+    throttled: Vec<crate::system::history::health::ThrottledPath>,
+    /// Paths held by a sync conflict, with the reason.
+    sync_conflicts: Vec<(String, String)>,
+    /// The last sync error, and how long syncs have been failing when that
+    /// is longer than a few fetch intervals (a transient error is not).
+    sync_error: Option<String>,
+    sync_failing_for_secs: Option<u64>,
+    /// Failed syncs in a row, since the last success.
+    sync_failures: u32,
+}
+
+/// How long syncs have been failing: since the current run of failures
+/// began, or, for a record from before that was kept, since the last
+/// success. `None` when nothing is known.
+fn sync_failure_duration(
+    status: &crate::system::history::sync::run::SyncStatus,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<u64> {
+    let since = status
+        .failing_since
+        .as_deref()
+        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+        .or_else(|| {
+            [&status.last_fetch, &status.last_publish]
+                .into_iter()
+                .flatten()
+                .filter_map(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+                .max()
+        })?;
+    Some(
+        (now - since.with_timezone(&chrono::Utc))
+            .num_seconds()
+            .max(0) as u64,
+    )
+}
+
 enum SystemLoginShellDiagnosis {
     Unavailable {
         reason: String,
@@ -243,6 +288,9 @@ impl Doctor {
 
         if let Some(system_defaults) = self.system_defaults_json(&config).await {
             data.insert("system_defaults".into(), system_defaults);
+        }
+        if let Some(dotfiles) = self.dotfiles_json().await {
+            data.insert("dotfiles".into(), dotfiles);
         }
 
         if let Some(system_login_shell) = self.system_login_shell_json(&config).await {
@@ -503,6 +551,7 @@ impl Doctor {
 
         self.analyze_system_packages(config).await?;
         self.analyze_system_defaults(config).await?;
+        self.analyze_dotfiles().await?;
         self.analyze_system_login_shell(config).await?;
 
         Ok(())
@@ -654,6 +703,205 @@ impl Doctor {
             }
         };
         info::section("system_defaults", line)?;
+        Ok(())
+    }
+
+    /// Dotfiles history health: the watcher, capture failures, and throttled
+    /// files, from the health the watcher persists and the store itself.
+    /// Inspects only: never syncs, applies, or prompts. Returns `None` when
+    /// nothing is tracked and no watcher is declared.
+    async fn check_dotfiles(&mut self) -> Option<DotfilesDiagnosis> {
+        use crate::system::history::health;
+        use crate::system::history::tracked::TrackedSet;
+        if !crate::config::Settings::get().history.enabled {
+            return None;
+        }
+        let tracked = TrackedSet::effective().await.ok()?;
+        let watcher = crate::cli::dotfiles::capture_health::watcher().await.ok()?;
+        let tracks = tracked.entries.len();
+        if tracks == 0 && watcher == crate::cli::dotfiles::capture_health::Watcher::NotDeclared {
+            return None;
+        }
+        let state_dir = crate::system::history::store::state_dir();
+        let unavailable = crate::system::history::checkpoint::Store::open()
+            .map(|store| store.unavailable().map(str::to_string))
+            .unwrap_or_else(|err| Some(format!("{err:#}")));
+        let health = health::read(&state_dir);
+        let running = watcher == crate::cli::dotfiles::capture_health::Watcher::Running;
+        let age = health.as_ref().and_then(health::age_secs);
+        let reconcile = crate::duration::parse_duration(
+            &crate::config::Settings::get().history.watch.reconcile,
+        )
+        .map(|d| d.as_secs())
+        .unwrap_or(600);
+        let stale = running && age.is_some_and(|age| reconcile > 0 && age > reconcile * 2);
+        let mut diagnosis = DotfilesDiagnosis {
+            tracked: tracks,
+            watcher: watcher.as_str().to_string(),
+            stale,
+            health_age_secs: age,
+            unavailable: unavailable.clone(),
+            last_error: None,
+            degraded: vec![],
+            throttled: vec![],
+            sync_conflicts: vec![],
+            sync_error: None,
+            sync_failing_for_secs: None,
+            sync_failures: 0,
+        };
+        if let Some(reason) = unavailable {
+            self.errors.push(format!(
+                "dotfiles: checkpoints cannot be saved ({reason}).\n     Edits are not being protected.\n     Inspect with: mise bootstrap dotfiles status"
+            ));
+        }
+        if watcher == crate::cli::dotfiles::capture_health::Watcher::DeclaredNotRunning {
+            self.warnings.push(
+                "dotfiles: the history watcher is declared but not running.\n     Edits are not saved automatically until it runs; explicit saves still work.\n     Run: mise bootstrap services apply"
+                    .to_string(),
+            );
+        }
+        if let Some(health) = &health {
+            let w = &health.watcher;
+            if let Some(error) = &w.last_error
+                && w.consecutive_failures > 0
+            {
+                diagnosis.last_error = Some(error.clone());
+                if running {
+                    self.errors.push(format!(
+                    "dotfiles: the watcher could not save a checkpoint ({error}; {} consecutive failure(s), last at {}).\n     Edits since then are not protected.\n     Inspect with: mise bootstrap dotfiles status",
+                    w.consecutive_failures,
+                    w.last_error_at.as_deref().unwrap_or("unknown")
+                ));
+                } else {
+                    self.warnings.push(format!(
+                        "dotfiles: the stopped watcher's last capture failed ({error}).\n     This is historical health, not a current capture attempt.\n     Check or save with: mise bootstrap dotfiles save"
+                    ));
+                }
+            }
+            for degraded in w.degraded.iter().filter(|_| running) {
+                diagnosis.degraded.push(degraded.clone());
+                self.warnings.push(format!(
+                    "dotfiles: {degraded}.\n     Changes there are saved by reconciliation only.\n     Inspect with: mise bootstrap dotfiles status"
+                ));
+            }
+            diagnosis.throttled = health.throttled.clone();
+        }
+        // the setup repository, read from what the last sync persisted:
+        // nothing is fetched, applied, or asked here
+        if crate::system::history::sync::run::origin().is_ok() {
+            use crate::system::history::sync::{apply, run};
+            let status = match run::read_status(&state_dir) {
+                Ok(status) => status,
+                Err(err) => {
+                    let message = format!("dotfiles: {err:#}");
+                    diagnosis.sync_error = Some(message.clone());
+                    self.errors.push(message);
+                    run::SyncStatus::default()
+                }
+            };
+            if let Some(error) = &status.validation_error {
+                diagnosis.sync_error = Some(error.clone());
+                self.errors.push(format!("dotfiles: incoming setup is invalid: {error}. Correct the setup repository and sync again."));
+            }
+            if let Some(error) = &status.application_failure {
+                diagnosis.sync_error = Some(error.clone());
+                self.errors.push(format!("dotfiles: {error}"));
+            }
+            for (path, reason) in apply::describe_conflicts(&status.conflicts) {
+                let advice = apply::resolution_advice(&path, &reason);
+                self.warnings.push(format!(
+                    "dotfiles: {path} has a sync conflict ({reason}).\n     Sharing is paused for the entire setup; local history and fetching continue.\n     Last successful application: {}.\n     Resolve with: {advice}",
+                    status.last_apply.as_deref().unwrap_or("never")
+                ));
+                diagnosis.sync_conflicts.push((path, reason));
+            }
+            if let Some(error) = &status.last_error {
+                diagnosis.sync_error = Some(error.clone());
+                diagnosis.sync_failures = status.consecutive_failures;
+                let fetch_interval = crate::duration::parse_duration(
+                    &crate::config::Settings::get().history.fetch_interval,
+                )
+                .map(|d| d.as_secs())
+                .unwrap_or(900);
+                let failing_for = sync_failure_duration(&status, chrono::Utc::now());
+                // a single failed attempt is transient; a repository that has
+                // not answered for a few fetch intervals is a problem
+                if failing_for.is_some_and(|secs| secs > fetch_interval.saturating_mul(3)) {
+                    diagnosis.sync_failing_for_secs = failing_for;
+                    self.warnings.push(format!(
+                        "dotfiles: syncing with the setup repository keeps failing ({error}; {} attempt(s)).\n     Local checkpoints continue; nothing is published or pulled until it succeeds.\n     Inspect with: mise bootstrap dotfiles status",
+                        status.consecutive_failures
+                    ));
+                }
+            }
+        }
+        Some(diagnosis)
+    }
+
+    async fn dotfiles_json(&mut self) -> Option<serde_json::Value> {
+        let diagnosis = self.check_dotfiles().await?;
+        serde_json::to_value(diagnosis).ok()
+    }
+
+    async fn analyze_dotfiles(&mut self) -> eyre::Result<()> {
+        let Some(diagnosis) = self.check_dotfiles().await else {
+            return Ok(());
+        };
+        let mut lines = vec![format!(
+            "{} tracked entr{}, watcher {}",
+            diagnosis.tracked,
+            if diagnosis.tracked == 1 { "y" } else { "ies" },
+            diagnosis.watcher
+        )];
+        if diagnosis.stale {
+            lines.push(format!(
+                "health information is stale (last update {} ago); the watcher may be stuck",
+                crate::system::history::watch::runtime::humantime(std::time::Duration::from_secs(
+                    diagnosis.health_age_secs.unwrap_or(0)
+                ))
+            ));
+        }
+        // informational: throttling protects the history, it does not
+        // compromise it
+        for throttled in &diagnosis.throttled {
+            lines.push(format!(
+                "{} changes constantly: saved every {} ({} unsaved change(s); last saved {}). Not a failure; `mise bootstrap dotfiles exclude` if it is a log, cache, or database",
+                throttled.path,
+                crate::system::history::watch::runtime::humantime(std::time::Duration::from_secs(
+                    throttled.interval_secs
+                )),
+                throttled.pending_changes,
+                throttled.last_saved.as_deref().unwrap_or("never")
+            ));
+        }
+        if !diagnosis.sync_conflicts.is_empty() {
+            lines.push(format!(
+                "{} path(s) held by a sync conflict: {}",
+                diagnosis.sync_conflicts.len(),
+                diagnosis
+                    .sync_conflicts
+                    .iter()
+                    .map(|(path, _)| path.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if let Some(error) = &diagnosis.sync_error {
+            match diagnosis.sync_failing_for_secs {
+                Some(secs) => lines.push(format!(
+                    "sync failing for {} ({} attempt(s)): {error}",
+                    crate::system::history::watch::runtime::humantime(
+                        std::time::Duration::from_secs(secs)
+                    ),
+                    diagnosis.sync_failures
+                )),
+                None if diagnosis.sync_conflicts.is_empty() => {
+                    lines.push(format!("last sync error (transient): {error}"))
+                }
+                None => {}
+            }
+        }
+        info::section("dotfiles", lines.join("\n"))?;
         Ok(())
     }
 
@@ -1331,7 +1579,47 @@ fn install_dir_is_empty(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::install_dir_is_empty;
+    use super::{install_dir_is_empty, sync_failure_duration};
+    use crate::system::history::sync::run::SyncStatus;
+
+    fn ago(now: chrono::DateTime<chrono::Utc>, secs: i64) -> Option<String> {
+        Some((now - chrono::Duration::seconds(secs)).to_rfc3339())
+    }
+
+    #[test]
+    fn a_failure_run_is_measured_from_its_start() {
+        // the fetch is stamped before a publication can fail, so a repository
+        // whose publications keep failing still has a recent fetch
+        let now = chrono::Utc::now();
+        let status = SyncStatus {
+            failing_since: ago(now, 100),
+            last_fetch: ago(now, 10),
+            ..Default::default()
+        };
+        assert_eq!(sync_failure_duration(&status, now), Some(100));
+    }
+
+    #[test]
+    fn an_origin_that_never_worked_still_counts() {
+        let now = chrono::Utc::now();
+        let status = SyncStatus {
+            failing_since: ago(now, 30),
+            ..Default::default()
+        };
+        assert_eq!(sync_failure_duration(&status, now), Some(30));
+    }
+
+    #[test]
+    fn an_older_record_falls_back_to_the_last_success() {
+        let now = chrono::Utc::now();
+        let status = SyncStatus {
+            last_publish: ago(now, 50),
+            last_fetch: ago(now, 80),
+            ..Default::default()
+        };
+        assert_eq!(sync_failure_duration(&status, now), Some(50));
+        assert_eq!(sync_failure_duration(&SyncStatus::default(), now), None);
+    }
 
     #[test]
     fn empty_directory_is_reported() {

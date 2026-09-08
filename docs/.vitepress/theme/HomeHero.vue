@@ -101,9 +101,11 @@ onUnmounted(() => clearTimeout(copyTimeout));
 <template>
   <section class="home-hero" aria-labelledby="home-title">
     <div class="hero-copy">
-      <h1 id="home-title" class="hero-eyebrow">
-        mise-en-place / everything in its place
-      </h1>
+      <h1 id="home-title" class="hero-title">mise-en-place</h1>
+      <p class="hero-meaning">Everything in its place.</p>
+      <p class="hero-pronunciation">
+        mise is pronounced <strong>“meez”</strong>
+      </p>
       <p class="hero-lede">
         Declare your tool versions, environment variables, and commands in
         <code>mise.toml</code>. Use them in your shell, editor, and CI. Add

@@ -1,3 +1,7 @@
+---
+description: "Install Rust command-line tools from crates.io or Git, using binaries or Cargo builds."
+---
+
 # Cargo Backend
 
 The `cargo` backend installs Rust command-line applications from [crates.io](https://crates.io/)

@@ -12,6 +12,39 @@ import {
   wrapTitle,
   writeSocialCard,
 } from "./social-images.mjs";
+import { pageDescription } from "./social-descriptions.mjs";
+
+test("descriptions require a non-empty string even when a subtitle is supplied", () => {
+  for (const description of [undefined, null, "", " \n ", false, 123, [], {}]) {
+    assert.throws(
+      () =>
+        pageDescription(
+          { description, socialDescription: "Subtitle" },
+          "guide.md",
+        ),
+      /frontmatter description: guide.md/,
+    );
+  }
+  assert.equal(
+    pageDescription({ description: "  Custom\nsummary.  " }, "guide.md"),
+    "Custom summary.",
+  );
+});
+
+test("subtitles are escaped, bounded, and invalidate the image URL", () => {
+  const card = socialCard("Packslip", "Signed releases & verified <downloads>");
+  assert.match(card.svg, /&amp;/);
+  assert.match(card.svg, /&lt;downloads&gt;/);
+  assert.notEqual(card.path, socialCard("Packslip", "Another summary").path);
+  for (const description of [
+    "Long description words ".repeat(30),
+    "W".repeat(200),
+  ]) {
+    const rendered = socialCard("Very long heading ".repeat(30), description);
+    assert.ok(rendered.subtitle.length <= 100);
+    assert.ok(wrapTitle(rendered.subtitle, 32).length <= 2);
+  }
+});
 
 test("long headings and command names stay out of the logo column", () => {
   for (const title of [
@@ -57,13 +90,13 @@ test("final long-title layout shrinks, truncates, and stays inside the title col
       /<text x="64" y="([^"]+)" font-size="(\d+)" fill="#f4eee3">([^<]*)<\/text>/g,
     ),
   ];
-  assert.equal(lines.length, 4);
+  assert.equal(lines.length, 3);
   assert.ok(lines.at(-1)[3].endsWith("…"));
   for (const [, y, size, text] of lines) {
     assert.equal(Number(size), 54);
     assert.ok(textWidth(text, Number(size)) <= 720);
     assert.ok(Number(y) - Number(size) > 100);
-    assert.ok(Number(y) < 508);
+    assert.ok(Number(y) <= 320);
   }
 });
 
@@ -75,9 +108,16 @@ test("image URL hashes exactly the emitted PNG", () => {
 
 test("built-page checks reject swapped images and empty alt text", () => {
   const dir = mkdtempSync(join(tmpdir(), "social-validation-"));
-  const first = socialCard("First page");
-  const second = socialCard("Second page");
-  const page = (title, card, alt = title + " — mise docs") => `
+  const first = socialCard("First page", "Description");
+  const second = socialCard("Second page", "Description");
+  const page = (title, card, alt = title + " — mise docs. Description") => `
+    <script type="application/ld+json">${JSON.stringify({ "@type": "WebPage", name: title + " | mise-en-place", description: "Description", url: "https://example.com/page.html" })}</script>
+    <meta name="description" content="Description">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <link rel="canonical" href="https://example.com/page.html">
+    <meta property="og:url" content="https://example.com/page.html">
     <meta property="og:title" content="${title} | mise-en-place">
     <meta name="twitter:title" content="${title} | mise-en-place">
     <meta property="og:description" content="Description">

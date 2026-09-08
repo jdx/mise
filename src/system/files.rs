@@ -35,6 +35,7 @@ use crate::dirs;
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::path::PathExt;
+use crate::system::history::journal::{self, Capture};
 use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
 
@@ -53,6 +54,8 @@ pub(crate) enum FileMode {
     Template,
     /// write literal content declared directly in mise.toml
     Content,
+    /// the live file stays where it is; history protects (and shares) it
+    Track,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +79,7 @@ impl FileMode {
             "symlink-each" => Some(Self::SymlinkEach),
             "copy" => Some(Self::Copy),
             "template" => Some(Self::Template),
+            "track" => Some(Self::Track),
             _ => None,
         }
     }
@@ -87,8 +91,89 @@ impl FileMode {
             Self::Copy => "copy",
             Self::Template => "template",
             Self::Content => "content",
+            Self::Track => "track",
         }
     }
+}
+
+/// How history treats a destination: whether edits are saved automatically,
+/// whether the file's saved version is shared with other machines, and
+/// whether it enters remote backups.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct FilePolicy {
+    pub autosave: bool,
+    pub encrypt: bool,
+    /// Which fields the declaration wrote, so a later layer repeating it
+    /// overrides only what it says and inherits the rest.
+    pub explicit: ExplicitFields,
+}
+
+/// The fields a `[dotfiles]` declaration wrote explicitly.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ExplicitFields {
+    pub autosave: bool,
+    pub encrypt: bool,
+    pub variants: bool,
+    pub enabled: bool,
+}
+
+impl FilePolicy {
+    /// Policy defaults do not enroll a deployment. Only explicit Track
+    /// declarations observe files, regardless of how those files are deployed.
+    pub(crate) fn for_mode(_mode: FileMode) -> Self {
+        Self {
+            autosave: true,
+            encrypt: false,
+            explicit: ExplicitFields::default(),
+        }
+    }
+}
+
+/// A `[dotfiles]` declaration history could not honour, reported instead
+/// of silently ignored so failed enrollment is never mistaken for
+/// protection.
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct InvalidDeclaration {
+    pub target: String,
+    pub config: PathBuf,
+    pub reason: String,
+}
+
+static INVALID_DECLARATIONS: std::sync::Mutex<Vec<InvalidDeclaration>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn record_invalid(target: &str, config: &Path, reason: impl Into<String>) {
+    let reason = reason.into();
+    warn!("[dotfiles].\"{target}\": {reason}, ignoring entry");
+    let mut invalid = INVALID_DECLARATIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if !invalid
+        .iter()
+        .any(|existing| existing.target == target && existing.config == config)
+    {
+        invalid.push(InvalidDeclaration {
+            target: target.to_string(),
+            config: config.to_path_buf(),
+            reason,
+        });
+    }
+}
+
+/// The declarations ignored while loading `[dotfiles]` in this process.
+pub(crate) fn invalid_declarations() -> Vec<InvalidDeclaration> {
+    INVALID_DECLARATIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
+
+/// A configuration reload must not retain failures from a previous version.
+pub(crate) fn clear_invalid_declarations() {
+    INVALID_DECLARATIONS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
 }
 
 /// one `[dotfiles]` whole-file entry as written in mise.toml
@@ -112,7 +197,48 @@ pub(crate) enum FileTomlEntry {
         exclude: Option<Vec<String>>,
         #[serde(default)]
         manifest: Option<String>,
+        /// history: save edits automatically (default true)
+        #[serde(default)]
+        autosave: Option<bool>,
+        #[serde(default)]
+        encrypt: Option<bool>,
+        /// history: platform / profile streams for a tracked file
+        #[serde(default)]
+        variants: Option<Vec<crate::system::history::select::Variant>>,
+        /// `false` disables an inherited declaration on this machine
+        #[serde(default)]
+        enabled: Option<bool>,
     },
+}
+
+impl FileRequest {
+    /// Takes from `later`, a repeat of this declaration from a later layer
+    /// or file, only what it wrote explicitly (`enabled`, the policies, the
+    /// variants); what it left unsaid stays inherited.
+    fn override_from(&mut self, later: FileRequest) {
+        let explicit = later.policy.explicit;
+        if explicit.enabled {
+            self.enabled = later.enabled;
+        }
+        if explicit.autosave {
+            self.policy.autosave = later.policy.autosave;
+        }
+        if explicit.encrypt {
+            self.policy.encrypt = later.policy.encrypt;
+        }
+        if explicit.variants {
+            self.variants = later.variants;
+        }
+        // the later file is the effective declaration
+        self.origin = later.origin;
+        let mine = self.policy.explicit;
+        self.policy.explicit = ExplicitFields {
+            autosave: mine.autosave || explicit.autosave,
+            encrypt: mine.encrypt || explicit.encrypt,
+            variants: mine.variants || explicit.variants,
+            enabled: mine.enabled || explicit.enabled,
+        };
+    }
 }
 
 /// one file entry, resolved against the config file that declared it
@@ -137,6 +263,12 @@ pub(crate) struct FileRequest {
     /// functions like `exec` and `read_file`
     pub base: PathBuf,
     pub origin: ResourceOrigin,
+    /// how history treats the destination
+    pub policy: FilePolicy,
+    /// platform / profile streams of a tracked file
+    pub variants: Vec<crate::system::history::select::Variant>,
+    /// `false` when a later layer disabled the declaration
+    pub enabled: bool,
 }
 
 const SYMLINK_EACH_STATE_VERSION: u8 = 1;
@@ -174,24 +306,47 @@ pub(crate) enum FileState {
     /// target exists but doesn't match — the reason is human-readable
     Differs(String),
     SourceMissing,
+    /// a tracked file: nothing to apply, history protects it where it is
+    Tracked,
 }
 
 /// Aggregate whole-file `[dotfiles]` entries across all loaded config files.
 /// Keys union global -> local; a more local config overrides an entry for the
 /// same target. Malformed entries and unknown modes warn and are skipped.
 pub(crate) fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
+    Ok(composed_files_from_config(config)?
+        .into_iter()
+        .filter(|request| request.enabled)
+        .collect())
+}
+
+/// Keep disabled declarations so explicit tracking removal remains observable
+/// when the prior enrollment exists in Git rather than local configuration.
+pub(crate) fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     let mut composed: IndexMap<PathBuf, Vec<FileRequest>> = IndexMap::new();
+    let trusted_roots = global_composed_roots(config);
     for config_files in config.bootstrap_config_maps() {
-        for request in files_from_config_files(config_files) {
+        for request in
+            files_from_config_files_with_tracking_roots(config_files, Some(&trusted_roots))
+        {
             let siblings = composed.entry(request.target.clone()).or_default();
-            if siblings
-                .iter()
-                .any(|existing| file_requests_match(config, existing, &request))
+            if let Some(existing) = siblings
+                .iter_mut()
+                .find(|existing| file_requests_match(config, existing, &request))
             {
+                // the same declaration from a later layer: what it says
+                // about `enabled`, the policies, and the variants wins, so a
+                // local `enabled = false` overrides what
+                // it inherited instead of being dropped as a duplicate; what
+                // it leaves unsaid stays inherited
+                existing.override_from(request);
                 continue;
             }
             if let Some(existing) = siblings.iter().find(|existing| {
-                existing.mode != FileMode::SymlinkEach || request.mode != FileMode::SymlinkEach
+                existing.mode != FileMode::Track
+                    && request.mode != FileMode::Track
+                    && (existing.mode != FileMode::SymlinkEach
+                        || request.mode != FileMode::SymlinkEach)
             }) {
                 bail!(
                     "conflicting dotfile declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
@@ -203,8 +358,43 @@ pub(crate) fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
             siblings.push(request);
         }
     }
-    let composed = composed.into_values().flatten().collect::<Vec<_>>();
-    Ok(composed)
+    Ok(composed.into_values().flatten().collect())
+}
+
+/// Whether a declaration comes from the system or global layers (or a root
+/// they compose): the only layers history enrolls files from.
+pub(crate) fn declaration_is_global(config: &Config, req: &FileRequest) -> bool {
+    track_layer_allowed(&req.origin, &global_composed_roots(config))
+}
+
+/// Invalid project declarations must not block personal history either.
+pub(crate) fn tracking_config_is_global(config: &Config, path: &Path) -> bool {
+    crate::config::is_global_config(path)
+        || global_composed_roots(config)
+            .iter()
+            .any(|root| path.starts_with(root))
+}
+
+/// Whether a track declaration comes from a layer allowed to enroll files.
+fn track_layer_allowed(origin: &ResourceOrigin, trusted_roots: &[PathBuf]) -> bool {
+    crate::config::is_global_config(&origin.config)
+        || trusted_roots
+            .iter()
+            .any(|root| origin.config_root == *root || origin.config.starts_with(root))
+}
+
+/// The bootstrap config roots composed by system and global configuration.
+fn global_composed_roots(config: &Config) -> Vec<PathBuf> {
+    let mut roots = vec![];
+    for (root, config_files) in config.selected_bootstrap_config_maps() {
+        let declared_globally = config_files
+            .keys()
+            .any(|path| crate::config::is_global_config(path) && !path.starts_with(root));
+        if declared_globally {
+            roots.push(root.to_path_buf());
+        }
+    }
+    roots
 }
 
 /// Validate the complete paths claimed by composed `[dotfiles]` entries.
@@ -217,6 +407,11 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
     let mut symlink_each_identities: HashMap<(&Path, &Path), &FileRequest> = HashMap::new();
 
     for request in requests {
+        // Tracking observes native files; it does not own an apply leaf.
+        // A tracked parent may contain independently managed destinations.
+        if request.mode == FileMode::Track {
+            continue;
+        }
         if request.manifest.is_some() && request.source.exists() && !request.source.is_dir() {
             bail!(
                 "[dotfiles].\"{}\": manifest requires the source to be a directory: {}",
@@ -325,13 +520,132 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
                     == config.bootstrap_tera_ctx(&second.origin.config))
 }
 
+/// Incoming configuration must fail preflight rather than silently dropping
+/// malformed declarations and applying the rest of the setup.
+pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
+    for (path, config) in config_files {
+        let Some(dotfiles) = config.dotfiles_config() else {
+            continue;
+        };
+        for (target, value) in dotfiles.0 {
+            if value.as_table().is_some_and(|t| {
+                t.contains_key("encrypt")
+                    && t.get("encrypt").and_then(toml::Value::as_bool).is_none()
+            }) {
+                bail!("dotfile {target}: encrypt must be a boolean");
+            }
+            if value.as_table().is_some_and(|t| {
+                t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
+                    && ["content", "block", "line", "template"]
+                        .iter()
+                        .any(|key| t.contains_key(*key))
+            }) {
+                bail!(
+                    "encrypted dotfile {target} requires an external source, not inline content or edits"
+                );
+            }
+            let Some(entry) = file_entry_from_toml(&target, value.clone()) else {
+                // Managed line/block edits are handled by the edit engine,
+                // not by this whole-file declaration parser.
+                if value.as_table().is_some_and(|table| {
+                    ["block", "line", "template", "comment"]
+                        .iter()
+                        .any(|key| table.contains_key(*key))
+                }) {
+                    continue;
+                }
+                bail!("invalid dotfile declaration {target} in {}", path.display());
+            };
+            if let Some(table) = value.as_table() {
+                for key in table.keys() {
+                    if !matches!(
+                        key.as_str(),
+                        "source"
+                            | "content"
+                            | "mode"
+                            | "exclude"
+                            | "manifest"
+                            | "autosave"
+                            | "encrypt"
+                            | "variants"
+                            | "enabled"
+                    ) {
+                        bail!(
+                            "unknown dotfile key {key:?} for {target} in {}",
+                            path.display()
+                        );
+                    }
+                }
+            }
+            if resolve_target_arg(&target).is_relative() {
+                bail!("dotfile target must be absolute or start with ~/: {target}");
+            }
+            if let FileTomlEntry::Table {
+                source,
+                content,
+                mode,
+                manifest,
+                exclude,
+                ..
+            } = entry
+            {
+                if content.is_some() && (mode.is_some() || exclude.is_some() || manifest.is_some())
+                {
+                    bail!(
+                        "dotfile {target}: inline content does not support mode, exclude, or manifest"
+                    );
+                }
+                let mode = match mode.as_deref() {
+                    Some(value) => FileMode::parse(value).ok_or_else(|| {
+                        eyre::eyre!("unknown dotfile mode {value:?} for {target}")
+                    })?,
+                    None => default_mode(),
+                };
+                if mode == FileMode::Track
+                    && (source.is_some()
+                        || content.is_some()
+                        || manifest.is_some()
+                        || exclude.is_some())
+                {
+                    bail!(
+                        "tracked file {target} cannot declare source, content, manifest, or exclude"
+                    );
+                }
+                if source.is_some() && content.is_some() {
+                    bail!("dotfile {target} cannot declare both source and content");
+                }
+                if mode != FileMode::Track && source.is_none() && content.is_none() {
+                    implied_source(&resolve_target_arg(&target))?;
+                }
+                if let Some(manifest) = manifest
+                    && (FileManifest::parse(&manifest).is_none()
+                        || !matches!(mode, FileMode::Copy | FileMode::SymlinkEach))
+                {
+                    bail!("invalid manifest {manifest:?} for dotfile {target}");
+                }
+                for pattern in exclude.into_iter().flatten() {
+                    glob::Pattern::new(&pattern)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Aggregate `[dotfiles]` across a specific set of config files. This is
 /// used by OCI builds, which intentionally scope config to project files by
 /// default instead of blindly inheriting global dotfiles.
 pub(crate) fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
+    files_from_config_files_with_tracking_roots(config_files, None)
+}
+
+fn files_from_config_files_with_tracking_roots(
+    config_files: &ConfigMap,
+    tracking_roots: Option<&[PathBuf]>,
+) -> Vec<FileRequest> {
     // keyed by the *expanded* target so "~/.gitconfig" in one config and
     // its absolute spelling in another are one entry, not two
-    let mut merged: IndexMap<PathBuf, FileRequest> = IndexMap::new();
+    let mut merged: IndexMap<(PathBuf, bool), FileRequest> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for (path, cf) in config_files.iter().rev() {
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -345,7 +659,40 @@ pub(crate) fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileReque
             continue;
         };
         for (target_raw, value) in dotfiles.0 {
+            if tracking_roots.is_some_and(|roots| !track_layer_allowed(&origin, roots))
+                && value.get("mode").and_then(toml::Value::as_str) == Some("track")
+            {
+                record_invalid(
+                    &target_raw,
+                    &origin.config,
+                    "tracking is enrolled from the global configuration only (ignored: project config)",
+                );
+                continue;
+            }
+            if value.as_table().is_some_and(|t| {
+                t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
+                    && ["content", "block", "line", "template"]
+                        .iter()
+                        .any(|key| t.contains_key(*key))
+            }) {
+                record_invalid(
+                    &target_raw,
+                    &origin.config,
+                    "encrypted dotfiles require an external source, not inline content or edits",
+                );
+                continue;
+            }
+            let encryption_declared = value
+                .as_table()
+                .is_some_and(|table| table.contains_key("encrypt"));
             let Some(entry) = file_entry_from_toml(&target_raw, value) else {
+                if encryption_declared {
+                    record_invalid(
+                        &target_raw,
+                        &origin.config,
+                        "invalid encryption declaration; encrypt must be a boolean on a whole-file entry",
+                    );
+                }
                 continue;
             };
             merge_file_entry(target_raw, entry, &base, &origin, &mut merged);
@@ -362,6 +709,10 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                 || table.contains_key("mode")
                 || table.contains_key("exclude")
                 || table.contains_key("manifest")
+                || table.contains_key("autosave")
+                || table.contains_key("encrypt")
+                || table.contains_key("variants")
+                || table.contains_key("enabled")
                 || ((table.contains_key("source") || table.contains_key("content"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
@@ -387,18 +738,102 @@ fn merge_file_entry(
     entry: FileTomlEntry,
     base: &Path,
     origin: &ResourceOrigin,
-    merged: &mut IndexMap<PathBuf, FileRequest>,
+    merged: &mut IndexMap<(PathBuf, bool), FileRequest>,
 ) {
-    let (source, content, mode, exclude, manifest) = match entry {
-        FileTomlEntry::Source(source) => (Some(source), None, None, None, None),
-        FileTomlEntry::Table {
-            source,
-            content,
-            mode,
-            exclude,
-            manifest,
-        } => (source, content, mode, exclude, manifest),
+    let (source, content, mode, exclude, manifest, autosave, encrypt, variants, enabled) =
+        match entry {
+            FileTomlEntry::Source(source) => {
+                (Some(source), None, None, None, None, None, None, None, None)
+            }
+            FileTomlEntry::Table {
+                source,
+                content,
+                mode,
+                exclude,
+                manifest,
+                autosave,
+                encrypt,
+                variants,
+                enabled,
+            } => (
+                source, content, mode, exclude, manifest, autosave, encrypt, variants, enabled,
+            ),
+        };
+    if encrypt == Some(true) && content.is_some() {
+        record_invalid(
+            &target_raw,
+            &origin.config,
+            "encrypted dotfiles require an external source; inline content is shared in configuration",
+        );
+        return;
+    }
+    let explicit = ExplicitFields {
+        autosave: autosave.is_some(),
+        encrypt: encrypt.is_some(),
+        variants: variants.is_some(),
+        enabled: enabled.is_some(),
     };
+    let enabled = enabled.unwrap_or(true);
+    let variants = variants.unwrap_or_default();
+    let policy_for = |mode: FileMode| {
+        let defaults = FilePolicy::for_mode(mode);
+        FilePolicy {
+            autosave: autosave.unwrap_or(defaults.autosave),
+            encrypt: encrypt.unwrap_or(false),
+            explicit,
+        }
+    };
+    if mode.as_deref() == Some("track") {
+        if source.is_some() || content.is_some() || manifest.is_some() || exclude.is_some() {
+            record_invalid(
+                &target_raw,
+                &origin.config,
+                "mode = \"track\" leaves the file where it is and takes no source, content, exclude, or manifest",
+            );
+            return;
+        }
+        let target = resolve_target_arg(&target_raw);
+        if target.is_relative() {
+            record_invalid(
+                &target_raw,
+                &origin.config,
+                "target must be absolute or start with ~/",
+            );
+            return;
+        }
+        let request = FileRequest {
+            target_raw,
+            target: target.clone(),
+            source: PathBuf::new(),
+            content: None,
+            mode: FileMode::Track,
+            exclude: vec![],
+            manifest: None,
+            base: base.to_path_buf(),
+            origin: origin.clone(),
+            policy: policy_for(FileMode::Track),
+            variants,
+            enabled,
+        };
+        // a later file of the same directory (`config.local.toml` after
+        // `config.toml`) repeating a track declaration overrides only what
+        // it says
+        match merged.get_mut(&(target.clone(), true)) {
+            Some(existing) if existing.mode == FileMode::Track => existing.override_from(request),
+            _ => {
+                merged.insert((target, true), request);
+            }
+        }
+        return;
+    }
+    if !variants.is_empty() {
+        record_invalid(
+            &target_raw,
+            &origin.config,
+            "variants are only supported with mode = \"track\"",
+        );
+        return;
+    }
     if source.is_some() && content.is_some() {
         warn!(
             "[dotfiles].\"{target_raw}\": source and content are mutually exclusive, ignoring entry"
@@ -459,7 +894,7 @@ fn merge_file_entry(
     }
     if let Some(content) = content {
         merged.insert(
-            target.clone(),
+            (target.clone(), false),
             FileRequest {
                 target_raw,
                 target,
@@ -470,6 +905,9 @@ fn merge_file_entry(
                 manifest: None,
                 base: base.to_path_buf(),
                 origin: origin.clone(),
+                policy: policy_for(FileMode::Content),
+                variants: vec![],
+                enabled,
             },
         );
         return;
@@ -503,8 +941,11 @@ fn merge_file_entry(
         manifest,
         base: base.to_path_buf(),
         origin,
+        policy: policy_for(mode),
+        variants: vec![],
+        enabled,
     }) {
-        merged.insert(req.target.clone(), req);
+        merged.insert((req.target.clone(), false), req);
     }
 }
 
@@ -605,6 +1046,8 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
         manifest,
         base,
         origin,
+        policy,
+        enabled,
         ..
     } = req;
     if !is_glob_pattern(&source) {
@@ -618,6 +1061,9 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             manifest,
             base,
             origin,
+            policy,
+            variants: vec![],
+            enabled,
         }];
     }
 
@@ -666,6 +1112,9 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                 source: Some(matches[0].clone()),
                 ..origin
             },
+            policy,
+            variants: vec![],
+            enabled,
         }];
     }
 
@@ -699,6 +1148,9 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                     source: Some(matched_source.clone()),
                     ..origin.clone()
                 },
+                policy,
+                variants: vec![],
+                enabled,
             })
         })
         .collect()
@@ -836,6 +1288,9 @@ where
 /// every command in a trusted config); only `--dry-run` promises to execute
 /// nothing and therefore skips template checks entirely.
 pub(crate) fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
+    if req.mode == FileMode::Track {
+        return Ok(FileState::Tracked);
+    }
     if req.mode != FileMode::Content && !req.source.exists() {
         return Ok(FileState::SourceMissing);
     }
@@ -852,6 +1307,7 @@ pub(crate) fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
 /// not run more often than necessary)
 fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState> {
     match req.mode {
+        FileMode::Track => Ok(FileState::Tracked),
         FileMode::Symlink => check_symlink(&req.source, &req.target),
         FileMode::SymlinkEach => check_symlink_each(req),
         FileMode::Copy if req.source.is_dir() => check_copy_dir(req),
@@ -948,7 +1404,9 @@ fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
             FileState::Differs(reason) => {
                 differs.get_or_insert(format!("{}: {reason}", target.display_user()));
             }
-            FileState::SourceMissing => unreachable!("walked from source"),
+            FileState::SourceMissing | FileState::Tracked => {
+                unreachable!("walked from source")
+            }
         }
     }
     if let Some(reason) = differs {
@@ -1583,7 +2041,13 @@ pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<boo
     if plan.todo.is_empty() && !has_reconciliation {
         if !opts.dry_run {
             for req in plan.record_symlink_each {
+                let pending = journal::begin_changes(
+                    DOTFILES_PART,
+                    &req.target_raw,
+                    [symlink_each_state_path(req)],
+                )?;
                 save_symlink_each_state(req);
+                journal::commit_changes(pending);
             }
         }
         info!("files: all files are applied");
@@ -1626,19 +2090,45 @@ pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<boo
     }
     for link in &plan.reconciliation.stale_links {
         if link_points_to(&link.source, &link.target) {
+            let item = link.target.display_user().to_string();
+            // parents up to the entry target may be pruned once empty
+            let root = plan
+                .reconciliation
+                .targets
+                .iter()
+                .find(|target| link.target.starts_with(target));
+            let mut paths = vec![(link.target.clone(), Capture::Full)];
+            if let Some(root) = root {
+                paths.extend(
+                    dirs_between(&link.target, root)
+                        .into_iter()
+                        .map(|dir| (dir, Capture::Shallow)),
+                );
+            }
+            let pending = journal::begin_changes_with(DOTFILES_PART, &item, paths)?;
             file::remove_file(&link.target)?;
+            journal::commit_changes(pending);
         }
     }
     for (req, rendered) in &plan.todo {
+        let pending =
+            journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
         apply_one(req, rendered.as_deref())?;
         if req.mode == FileMode::SymlinkEach {
             save_symlink_each_state(req);
         }
+        journal::commit_changes(pending);
         info!("files: {}", describe_applied(req)?);
     }
     for req in plan.record_symlink_each {
         if !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, req)) {
+            let pending = journal::begin_changes(
+                DOTFILES_PART,
+                &req.target_raw,
+                [symlink_each_state_path(req)],
+            )?;
             save_symlink_each_state(req);
+            journal::commit_changes(pending);
         }
     }
     cleanup_reconciled_directories(&plan.reconciliation)?;
@@ -1687,6 +2177,10 @@ pub(crate) fn plan_apply_with_active<'a>(
     let mut conflicts = vec![];
     let mut record_symlink_each = vec![];
     for req in requests {
+        // a tracked file is never written: history captures it as it is
+        if req.mode == FileMode::Track {
+            continue;
+        }
         // report every problem in one pass instead of fix-and-retry — a
         // render or check failure on one entry must not hide the rest
         if req.mode != FileMode::Content && !req.source.exists() {
@@ -1946,10 +2440,31 @@ pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> 
         }
     }
     for plan in todo {
+        let mut paths: Vec<(PathBuf, Capture)> = plan
+            .paths
+            .iter()
+            .map(|path| (path.clone(), Capture::Full))
+            .collect();
+        if plan.clear_symlink_each_state {
+            paths.push((symlink_each_state_path(plan.req), Capture::Full));
+        }
+        if plan.cleanup_empty_dirs {
+            // the upward walk removes directories that end up empty
+            for path in &plan.paths {
+                paths.extend(
+                    dirs_between(path, &plan.req.target)
+                        .into_iter()
+                        .map(|dir| (dir, Capture::Shallow)),
+                );
+            }
+            paths.push((plan.req.target.clone(), Capture::Shallow));
+        }
+        let pending = journal::begin_changes_with(DOTFILES_PART, &plan.req.target_raw, paths)?;
         unapply_one(plan)?;
         if plan.clear_symlink_each_state {
             remove_symlink_each_state(plan.req)?;
         }
+        journal::commit_changes(pending);
     }
     info!(
         "files: unapplied {}",
@@ -2029,6 +2544,15 @@ fn plan_unapply_one<'a>(
                 bail!("source directory is missing, so managed children cannot be identified");
             }
             plan_single_file(req, opts, &mut paths)?;
+        }
+        // a tracked file was never written by mise: stop tracking it with
+        // `mise bootstrap dotfiles untrack`, the file itself stays
+        FileMode::Track => {
+            info!(
+                "files: {} is tracked in place; nothing to remove (use `mise bootstrap dotfiles untrack` to stop tracking it)",
+                req.target.display_user()
+            );
+            return Ok(None);
         }
         FileMode::Content => {
             if !req.target.exists() && !req.target.is_symlink() {
@@ -2294,6 +2818,7 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
                 out.push(req.target.clone());
             }
         }
+        FileMode::Track => {}
     }
     Ok(out)
 }
@@ -2302,6 +2827,7 @@ fn describe(req: &FileRequest) -> Result<String> {
     let src = req.source.display_user();
     let tgt = req.target.display_user();
     Ok(match req.mode {
+        FileMode::Track => format!("track {tgt} in place"),
         FileMode::Symlink => format!("ln -sf {src} {tgt}"),
         FileMode::SymlinkEach => {
             let stale = stale_links(req)?.len();
@@ -2325,6 +2851,7 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
     let src = req.source.display_user();
     let tgt = req.target.display_user();
     Ok(match req.mode {
+        FileMode::Track => format!("tracked {tgt} in place"),
         FileMode::Symlink => format!("created symlink {tgt} -> {src}"),
         FileMode::SymlinkEach => format!(
             "created {} symlink(s) from {src} in {tgt}",
@@ -2338,6 +2865,7 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
 
 fn print_diff(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
     match req.mode {
+        FileMode::Track => {}
         FileMode::Symlink => {
             if req.target.is_symlink() {
                 let dest = std::fs::read_link(&req.target)?;
@@ -2469,6 +2997,9 @@ pub(crate) fn print_diffs(config: &Config, requests: &[FileRequest]) -> Result<(
     let mut changed = false;
     let mut problems = vec![];
     for req in requests {
+        if req.mode == FileMode::Track {
+            continue;
+        }
         if req.mode != FileMode::Content && !req.source.exists() {
             miseprintln!("{}: source missing", req.target_raw);
             changed = true;
@@ -2508,6 +3039,103 @@ pub(crate) fn print_diffs(config: &Config, requests: &[FileRequest]) -> Result<(
         info!("files: all files are applied");
     }
     Ok(())
+}
+
+const DOTFILES_PART: &str = "dotfiles";
+
+/// Every path `apply_one` may create, replace, or remove for `req`, with how
+/// deeply to capture it first: a path that gets replaced is captured whole,
+/// a directory that stays a directory only by existence.
+fn touched_paths(req: &FileRequest) -> Result<Vec<(PathBuf, Capture)>> {
+    let mut paths: IndexMap<PathBuf, Capture> = IndexMap::new();
+    for dir in missing_ancestors(&req.target) {
+        paths.insert(dir, Capture::Shallow);
+    }
+    // a directory that will keep being a directory is never walked; a file
+    // or link in the way of one is replaced and captured whole
+    let dir_capture = |dir: &Path| {
+        if dir.is_dir() {
+            Capture::Shallow
+        } else {
+            Capture::Full
+        }
+    };
+    match req.mode {
+        FileMode::Track => {}
+        FileMode::Symlink | FileMode::Template | FileMode::Content => {
+            paths.insert(req.target.clone(), Capture::Full);
+        }
+        FileMode::Copy => {
+            if req.source.is_dir() {
+                paths.insert(req.target.clone(), dir_capture(&req.target));
+                for (_, target) in walk_source_files(req)? {
+                    // intermediate directories the copy creates on the way
+                    // down; an existing one keeps being a directory
+                    for dir in missing_ancestors(&target) {
+                        paths.entry(dir).or_insert(Capture::Shallow);
+                    }
+                    paths.insert(target, Capture::Full);
+                }
+            } else {
+                paths.insert(req.target.clone(), Capture::Full);
+            }
+        }
+        FileMode::SymlinkEach => {
+            for dir in needed_dirs(req)? {
+                let capture = dir_capture(&dir);
+                paths.insert(dir, capture);
+            }
+            for (_, target) in walk_source_files(req)? {
+                paths.insert(target, Capture::Full);
+            }
+            let stale = stale_links(req)?;
+            for path in &stale {
+                paths.insert(path.clone(), Capture::Full);
+            }
+            // Journal removed parents after their children, so crash recovery
+            // recreates directories (including their modes) before the links.
+            for dir in stale
+                .iter()
+                .flat_map(|path| dirs_between(path, &req.target))
+                .sorted_by_key(|path| std::cmp::Reverse(path.components().count()))
+                .unique()
+            {
+                paths.entry(dir).or_insert(Capture::Shallow);
+            }
+            paths.insert(symlink_each_state_path(req), Capture::Full);
+        }
+    }
+    Ok(paths.into_iter().collect())
+}
+
+/// Directories strictly between `path` and `root`, deepest first: the ones an
+/// upward cleanup may remove once they are empty.
+fn dirs_between(path: &Path, root: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![];
+    let mut dir = path.parent();
+    while let Some(d) = dir {
+        if d == root || !d.starts_with(root) {
+            break;
+        }
+        dirs.push(d.to_path_buf());
+        dir = d.parent();
+    }
+    dirs
+}
+
+/// Ancestors of `path` that do not exist yet, outermost first.
+pub(crate) fn missing_ancestors(path: &Path) -> Vec<PathBuf> {
+    let mut missing = vec![];
+    let mut dir = path.parent();
+    while let Some(d) = dir {
+        if d.exists() || d.as_os_str().is_empty() {
+            break;
+        }
+        missing.push(d.to_path_buf());
+        dir = d.parent();
+    }
+    missing.reverse();
+    missing
 }
 
 fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
@@ -2577,6 +3205,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
             #[cfg(unix)]
             std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
         }
+        FileMode::Track => unreachable!("tracked files are never written"),
         FileMode::Content => {
             remove_existing(&req.target)?;
             file::write(&req.target, req.content.as_deref().expect("inline content"))?;
@@ -2663,6 +3292,83 @@ fn link_path(source: &Path, target: &Path, allow_windows_symlink: bool) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn stale_link_parent_directories_have_recovery_preimages() -> Result<()> {
+        use crate::system::history::journal::{JournalEntry, PathSnapshot, PathState};
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir()?;
+        let root = temp.path().canonicalize()?;
+        let source = root.join("source");
+        let target = root.join("target");
+        std::fs::create_dir_all(&source)?;
+        let nested = target.join("nested");
+        std::fs::create_dir_all(&nested)?;
+        std::fs::set_permissions(&nested, std::fs::Permissions::from_mode(0o700))?;
+        for name in ["a", "b"] {
+            std::os::unix::fs::symlink(source.join("nested").join(name), nested.join(name))?;
+        }
+        let req = link_req(&source, &target, FileMode::SymlinkEach);
+        let state = temp.path().join("recovery");
+        let mut journal = touched_paths(&req)?
+            .into_iter()
+            .map(|(path, capture)| {
+                let prior = PathSnapshot::capture_with(&state, &path, capture);
+                JournalEntry::PathChanged {
+                    part: "dotfiles".into(),
+                    item: "test".into(),
+                    path,
+                    prior,
+                }
+            })
+            .collect::<Vec<_>>();
+        prune_stale_links(&req)?;
+        assert!(!nested.exists());
+        let committed = journal
+            .iter()
+            .enumerate()
+            .filter_map(|(seq, entry)| {
+                let JournalEntry::PathChanged { path, .. } = entry else {
+                    return None;
+                };
+                Some(JournalEntry::Committed {
+                    seq: seq as u32,
+                    after: PathState::observe(path),
+                })
+            })
+            .collect::<Vec<_>>();
+        journal.extend(committed);
+        crate::system::history::recovery::recover(&state, &journal)?;
+        assert_eq!(
+            std::fs::metadata(&nested)?.permissions().mode() & 0o777,
+            0o700
+        );
+        for name in ["a", "b"] {
+            assert_eq!(
+                std::fs::read_link(nested.join(name))?,
+                source.join("nested").join(name)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn configuration_reload_discards_old_declaration_diagnostics() {
+        let target = "~/.mise-diagnostic-reset-test";
+        record_invalid(target, Path::new("diagnostic-reset.toml"), "invalid mode");
+        assert!(
+            invalid_declarations()
+                .iter()
+                .any(|item| item.target == target)
+        );
+        clear_invalid_declarations();
+        assert!(
+            !invalid_declarations()
+                .iter()
+                .any(|item| item.target == target)
+        );
+    }
 
     #[test]
     fn test_file_mode_parse() {
@@ -2822,6 +3528,9 @@ mod tests {
                 environment: vec![],
                 source: Some(source.to_path_buf()),
             },
+            policy: FilePolicy::for_mode(mode),
+            variants: vec![],
+            enabled: true,
         }
     }
 
@@ -2999,6 +3708,46 @@ mod tests {
 
     /// Nested declarations may share directories when their concrete leaves
     /// remain disjoint.
+    #[test]
+    fn tracking_does_not_claim_an_apply_footprint() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::write(&source, "managed")?;
+        for requests in [
+            vec![
+                link_req(&source, &target, FileMode::Track),
+                link_req(&source, &target.join("nested"), FileMode::Copy),
+            ],
+            vec![
+                link_req(&source, &target.join("nested"), FileMode::Copy),
+                link_req(&source, &target, FileMode::Track),
+            ],
+        ] {
+            validate_composed_file_footprints(&requests)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn managed_directory_can_contain_explicitly_tracked_children() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source)?;
+        file::write(source.join("native"), "managed")?;
+        for mode in [FileMode::Copy, FileMode::SymlinkEach] {
+            let requests = vec![
+                link_req(&source, &target, mode),
+                link_req(&source, &target.join("native"), FileMode::Track),
+            ];
+            validate_composed_file_footprints(&requests)?;
+            let reversed = requests.into_iter().rev().collect::<Vec<_>>();
+            validate_composed_file_footprints(&reversed)?;
+        }
+        Ok(())
+    }
+
     #[test]
     fn composed_file_footprints_allow_disjoint_nested_leaves() -> Result<()> {
         let dir = tempfile::tempdir()?;

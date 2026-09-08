@@ -1,3 +1,7 @@
+---
+description: "Find and run project tasks, pass arguments, and control execution."
+---
+
 # Running Tasks
 
 List available tasks with `mise tasks`. To show tasks hidden with `hide=true`, use the `--hidden` option.

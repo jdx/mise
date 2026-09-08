@@ -1,3 +1,7 @@
+---
+description: "mise is maintained by Jeff Dickey with help from the community."
+---
+
 <script setup>
 import { VPTeamMembers } from 'vitepress/theme'
 

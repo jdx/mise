@@ -1,3 +1,7 @@
+---
+description: "Paranoid mode disables automatic and CI trust, binds direct file approvals to configuration content, and rechecks supported provenance during installation."
+---
+
 # Paranoid
 
 Paranoid mode disables automatic and CI trust, binds direct file approvals to configuration content,

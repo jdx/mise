@@ -1,3 +1,8 @@
+---
+description: "Manage development environments with mise, pronounced “meez.”"
+socialDescription: "Manage development environments with mise, pronounced “meez.”"
+---
+
 # About
 
 mise (pronounced “meez”), short for _mise-en-place_, helps you set up and work in development

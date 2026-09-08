@@ -1,3 +1,7 @@
+---
+description: "mise reads encrypted secret files and makes values available as environment variables via env._.file."
+---
+
 # sops <Badge type="warning" text="experimental" />
 
 mise reads encrypted secret files and makes values available as environment variables via `env._.file`.
