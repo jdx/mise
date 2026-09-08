@@ -84,8 +84,9 @@ mise plugins install vfox-cmake https://github.com/mise-plugins/vfox-cmake/archi
 
 ### Install from a signed packslip
 
-A publisher can distribute a vfox plugin as a signed, portable archive. Select
-that source explicitly, keeping the plugin release separate from tool versions:
+A publisher can distribute a vfox plugin for a non-registry tool as a signed,
+portable archive. Select that source explicitly, keeping the plugin release
+separate from tool versions:
 
 ```sh
 mise plugins install vfox:PLUGIN_NAME 'packslip:OWNER/REPO#PLUGIN_VERSION'
@@ -111,8 +112,11 @@ its root and contain no links, special files, Git metadata, or unsafe paths. Mis
 uses the packslip backend's signature, digest, signer, and release policy checks.
 It verifies and stages replacements before removing the previous plugin.
 
-The bfs registry entry uses the signed [v0.1.0 plugin release](https://github.com/mise-plugins/vfox-bfs/releases/tag/v0.1.0),
-verified on Linux and macOS. Existing Git and ZIP plugin sources continue to work.
+The [bfs publisher example](https://github.com/mise-plugins/vfox-bfs/releases/tag/v0.1.0)
+demonstrates the format, verified on Linux and macOS. Normal bfs usage continues
+to use its embedded plugin without downloading a plugin release. Packslip is an
+explicit source option; existing registry defaults, Git and ZIP sources remain
+unchanged.
 
 For more information, see:
 

@@ -25,6 +25,13 @@ chmod +x no-git/git
 export PATH="$PWD/no-git:$PATH"
 
 source_url='packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'
+# An external plugin name needs no registry entry.
+mise plugins install vfox:external-bfs "$source_url"
+assert "test -f '$MISE_DATA_DIR/plugins/external-bfs/metadata.lua'"
+mise plugins uninstall external-bfs
+# The registry default still uses the embedded plugin without a download.
+mise plugins install vfox:bfs
+assert_directory_not_exists "$MISE_DATA_DIR/plugins/bfs"
 mise plugins install vfox:bfs "$source_url"
 plugin="$MISE_DATA_DIR/plugins/bfs"
 assert "test -f '$plugin/metadata.lua'"
