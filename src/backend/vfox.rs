@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, mpsc};
 use std::thread;
 use tokio::sync::RwLock;
+use url::Url;
 use walkdir::WalkDir;
 
 use crate::backend::VersionInfo;
@@ -98,6 +99,29 @@ fn remove_env_var(env: &mut indexmap::IndexMap<String, String>, key: &str) {
     }
     #[cfg(not(windows))]
     env.shift_remove(key);
+}
+
+fn normalize_install_log(line: &str) -> String {
+    if let Some(raw_url) = line.strip_prefix("Downloading ") {
+        let artifact = Url::parse(raw_url)
+            .ok()
+            .and_then(|url| {
+                url.path_segments()
+                    .and_then(|mut segments| segments.next_back())
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| raw_url.to_string());
+        format!("download {artifact}")
+    } else if line.starts_with("Verifying ") && line.ends_with(" checksum") {
+        "checksum".to_string()
+    } else if line.starts_with("Verify ") && line.ends_with(" attestation") {
+        "verify attestation".to_string()
+    } else if line.starts_with("Extracting ") {
+        "extract".to_string()
+    } else {
+        line.to_string()
+    }
 }
 
 fn set_env_var(
@@ -253,8 +277,9 @@ impl Backend for VfoxBackend {
     ) -> eyre::Result<ToolVersion> {
         let mut tv = tv;
         self.ensure_plugin_installed(&ctx.config).await?;
-        let (mut vfox, log_rx) = self.plugin.vfox()?;
-        Self::forward_plugin_logs(log_rx);
+        let (mut vfox, _log_rx) = self.plugin.vfox()?;
+        let pr = Arc::clone(&ctx.pr);
+        vfox.set_log_handler(move |line| pr.set_message(normalize_install_log(&line)));
         let mut cmd_env: indexmap::IndexMap<String, String> = self
             .dependency_env_for_install(ctx, &tv)
             .await?
@@ -815,6 +840,27 @@ fn verified_attestation_to_provenance(att: vfox::VerifiedAttestation) -> Provena
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_normalize_install_log() {
+        assert_eq!(
+            normalize_install_log("Downloading https://example.com/releases/tool.tar.gz"),
+            "download tool.tar.gz"
+        );
+        assert_eq!(
+            normalize_install_log("Verifying \"/tmp/tool.tar.gz\" checksum"),
+            "checksum"
+        );
+        assert_eq!(
+            normalize_install_log("Verify \"/tmp/tool.tar.gz\" attestation"),
+            "verify attestation"
+        );
+        assert_eq!(
+            normalize_install_log("Extracting \"/tmp/tool.tar.gz\" to \"/tools/tool\""),
+            "extract"
+        );
+        assert_eq!(normalize_install_log("plugin message"), "plugin message");
+    }
 
     #[test]
     fn test_add_tool_option_env() {

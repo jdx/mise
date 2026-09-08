@@ -184,7 +184,7 @@ impl InstallDependencyContext {
 pub(crate) struct InstallContext {
     pub config: Arc<Config>,
     pub ts: Arc<Toolset>,
-    pub pr: Box<dyn SingleReport>,
+    pub pr: Arc<dyn SingleReport>,
     pub force: bool,
     pub dry_run: bool,
     /// require lockfile URLs to be present; fail if not

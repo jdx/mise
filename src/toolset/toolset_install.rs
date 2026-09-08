@@ -736,12 +736,12 @@ impl Toolset {
         let ctx = InstallContext {
             config: config.clone(),
             ts: ts.clone(),
-            pr: if let Some(progress) = tool_progress {
+            pr: Arc::from(if let Some(progress) = tool_progress {
                 progress.set_prefix(tv.style());
                 progress.reporter()
             } else {
                 mpr.add_with_options(&tv.style(), opts.dry_run)
-            },
+            }),
             force: opts.force,
             dry_run: opts.dry_run,
             locked: config.invocation_locked_for(tr.source(), opts.locked)
