@@ -1,0 +1,1 @@
+Builds without notification support warn when a setup repository is connected - they won't know what that means, say something like 'unofficial builds like homebrew'
