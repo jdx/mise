@@ -178,7 +178,7 @@ pub(crate) struct Run {
 
     /// Shell to use to run toml tasks
     ///
-    /// Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
+    /// Defaults to `sh -o errexit -c` on unix, and `cmd /c` on Windows
     /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
     /// Or it can be overridden with the `shell` property on a task.
     #[usage(long, short, verbatim_doc_comment)]

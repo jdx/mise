@@ -874,7 +874,7 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
 
 impl Settings {
     const UNIX_DEFAULT_FILE_SHELL_ARGS: &'static str = "sh";
-    const UNIX_DEFAULT_INLINE_SHELL_ARGS: &'static str = "sh -c -o errexit";
+    const UNIX_DEFAULT_INLINE_SHELL_ARGS: &'static str = "sh -o errexit -c";
     const WINDOWS_DEFAULT_FILE_SHELL_ARGS: &'static str = "cmd /c";
     const WINDOWS_DEFAULT_INLINE_SHELL_ARGS: &'static str = "cmd /c";
 
