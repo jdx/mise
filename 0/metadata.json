@@ -1,0 +1,66 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZPSKFEJYX4JYT68WF16W1T",
+  "session_id": "01a07f22-e373-7413-af3c-02f6215b1e19",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-08T05:10:33.131207Z",
+  "branch": "codex/optional-bootstrap-packages",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/bootstrap/packages/index.md",
+    "docs/dev-tools/mise-oci.md",
+    "e2e/cli/test_bootstrap",
+    "schema/mise.json",
+    "src/cli/bootstrap.rs",
+    "src/cli/system/driver.rs",
+    "src/cli/system/import.rs",
+    "src/cli/system/install.rs",
+    "src/cli/system/status.rs",
+    "src/cli/system/upgrade.rs",
+    "src/cli/system/use.rs",
+    "src/config/config_file/mise_toml.rs",
+    "src/oci/packages.rs",
+    "src/system/mod.rs",
+    "src/system/packages/mod.rs",
+    "src/system/resources.rs",
+    "src/toolset/helpers.rs",
+    "src/ui/prompt.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "828f59fc3873",
+  "checkpoint_transcript_start": 312,
+  "transcript_lines_at_start": 312,
+  "compact_transcript_start": 43,
+  "token_usage": {
+    "input_tokens": 134198,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 14412928,
+    "output_tokens": 12812,
+    "api_call_count": 83
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-08T05:10:32.997948Z",
+    "agent_lines": 384,
+    "agent_removed": 86,
+    "human_added": 4,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 388,
+    "total_lines_changed": 474,
+    "agent_percentage": 99.15611814345992,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
