@@ -117,9 +117,27 @@ mod unix {
                     return None;
                 }
                 nix::unistd::access(interpreter, nix::unistd::AccessFlags::X_OK).ok()?;
+                // Nested script interpreters have platform-specific recursion
+                // rules. In particular, executable text may produce ENOEXEC,
+                // which the shell would handle by interpreting the outer script.
+                let mut header = [0; 256];
+                let n = std::fs::File::open(interpreter)
+                    .ok()?
+                    .read(&mut header)
+                    .ok()?;
+                if !native_header(&header[..n]) {
+                    return None;
+                }
                 return Some(candidate);
             }
-            let launchable = [
+            return native_header(head).then_some(candidate);
+        }
+        None
+    }
+
+    fn native_header(head: &[u8]) -> bool {
+        head.len() >= 32
+            && [
                 &b"\x7fELF"[..],
                 &[0xfe, 0xed, 0xfa, 0xce],
                 &[0xfe, 0xed, 0xfa, 0xcf],
@@ -129,10 +147,7 @@ mod unix {
                 &[0xbe, 0xba, 0xfe, 0xca],
             ]
             .iter()
-            .any(|magic| head.starts_with(magic));
-            return (head.len() >= 32 && launchable).then_some(candidate);
-        }
-        None
+            .any(|magic| head.starts_with(magic))
     }
 
     pub(super) fn direct_command(
@@ -339,6 +354,26 @@ mod unix {
             shell.env("ENV", "");
             assert!(direct_command(&shell, false, "tool", &[], true).is_none());
             shell.env_remove("ENV");
+            let interpreter = dir.path().join("interpreter");
+            std::fs::write(&interpreter, "echo not-native\n").unwrap();
+            std::fs::set_permissions(&interpreter, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::write(
+                &tool,
+                format!("#!{}\nprintf fallback\n", interpreter.display()),
+            )
+            .unwrap();
+            assert!(direct_command(&shell, false, "tool", &[], true).is_none());
+            let output = Command::new("/bin/sh")
+                .env_clear()
+                .env("PATH", dir.path())
+                .args(["-c", "tool"])
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            assert_eq!(output.stdout, b"fallback");
+            // Defer even valid nested shebangs, including potential cycles.
+            std::fs::write(&interpreter, "#!/bin/sh\n").unwrap();
+            assert!(direct_command(&shell, false, "tool", &[], true).is_none());
             std::fs::write(&tool, "echo no-shebang\n").unwrap();
             assert!(direct_command(&shell, false, "tool", &[], true).is_none());
             for body in [

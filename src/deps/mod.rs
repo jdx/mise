@@ -174,6 +174,7 @@ impl DepsCommand {
         }
 
         let mut hasher = blake3::Hasher::new();
+        update(&mut hasher, &[u8::from(self.inline)]);
         update(&mut hasher, self.program.as_bytes());
         update(&mut hasher, &(self.args.len() as u64).to_le_bytes());
         for arg in &self.args {
@@ -482,6 +483,9 @@ mod tests {
     #[test]
     fn deps_command_freshness_hash_tracks_execution_inputs() {
         let original = command();
+        let mut changed = original.clone();
+        changed.inline = !original.inline;
+        assert_ne!(original.freshness_hash(), changed.freshness_hash());
         assert_eq!(original.freshness_hash(), command().freshness_hash());
 
         let mut changed = command();
