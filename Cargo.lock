@@ -6303,6 +6303,8 @@ dependencies = [
  "confique",
  "console",
  "contracts",
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
  "ctor",
  "dashmap 6.2.1",
  "demand",
