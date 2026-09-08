@@ -30,7 +30,15 @@ The output _style_ (`prefix`, `interleave`, `keep-order`, …) is independent of
 (`--quiet`/`--silent`, the `quiet`/`silent` settings, or the per-task `quiet`/`silent` fields).
 They combine: e.g. `MISE_TASK_OUTPUT=prefix` with `--quiet` keeps the task-name prefixes while
 suppressing mise's own messages. `--quiet` no longer forces un-prefixed output — use
-`--output quiet` (or `-o interleave`) if you want the old un-prefixed behavior.
+`--output interleave --quiet` if you want the old un-prefixed behavior. To make every task quiet
+without affecting other mise commands, set both `task.output = "interleave"` and
+`task.quiet = true` under `[settings]`.
+
+::: warning Deprecated
+The `quiet` output value is deprecated. Warnings begin in mise `2027.3.0`, and support will be
+removed in `2028.3.0`. Combine `interleave` with the task-scoped or command-line quiet option
+instead.
+:::
 
 Stdin is not connected by default. Set `interactive = true` for a task that needs
 the terminal; it has exclusive terminal access for the duration of the task.

@@ -677,6 +677,7 @@ impl OutputHandler {
     pub(crate) fn quiet(&self, task: Option<&Task>) -> bool {
         self.quiet
             || Settings::get().quiet
+            || Settings::get().task.quiet
             || self.output.is_some_and(|o| o.is_quiet())
             || Settings::get().task.output.is_some_and(|o| o.is_quiet())
             || task.is_some_and(|t| t.quiet)

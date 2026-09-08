@@ -3466,11 +3466,19 @@ docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
 
 This is the output *style* axis. Verbosity is a separate axis controlled by
-`quiet`/`silent` (as settings, `--quiet`/`--silent` flags, or per-task fields),
-so a style can be combined with quietness — e.g. `output = "prefix"` together
-with `quiet = true` keeps the task-name prefixes while suppressing mise's own
-messages. The `quiet` and `silent` *values* below are kept for backwards
-compatibility and bundle a style with that verbosity.
+`task.quiet`/`silent` (as settings, `--quiet`/`--silent` flags, or per-task
+fields), so a style can be combined with quietness — e.g. `output = "prefix"`
+together with `task.quiet = true` keeps the task-name prefixes while suppressing
+mise's own task messages. The `quiet` and `silent` *values* below are kept for
+backwards compatibility and bundle a style with that verbosity.
+
+::: warning Deprecated
+The `quiet` output value is deprecated. Warnings begin in mise `2027.3.0`, and
+support will be removed in `2028.3.0`. For a global task default, use
+`task.output = "interleave"` with `task.quiet = true`. For an individual task,
+use `output = "interleave"` with `quiet = true`. On the command line, use
+`--output interleave --quiet`.
+:::
 """
 enum = [
   { value = "prefix", description = "(default if jobs > 1) print by line with the prefix of the task name" },
@@ -3478,13 +3486,25 @@ enum = [
   { value = "keep-order", description = "stream one task's output live while buffering others, printing in definition order as tasks complete" },
   { value = "replacing", description = "replace stdout each time a line is printed-this uses similar logic as `mise install`" },
   { value = "timed", description = "only show stdout lines that take longer than 1s to complete" },
-  { value = "quiet", description = "legacy: interleave task output and suppress mise's own messages (equivalent to `interleave` + `quiet = true`). Prefer `--quiet`/`quiet = true` to keep your chosen style." },
+  { value = "quiet", description = "deprecated: interleave task output and suppress mise's own messages. Use `interleave` with the appropriate quiet setting or flag." },
   { value = "silent", description = "print nothing from tasks or mise (nulls stdout and stderr)" },
 ]
 env = "MISE_TASK_OUTPUT"
 optional = true
 rust_type = "crate::task::TaskOutput"
 type = "String"
+
+[task.quiet]
+default = false
+description = "Suppress mise's own output while executing tasks."
+docs = """
+Suppress mise's own output while executing tasks without affecting other mise
+commands. Task stdout and stderr remain visible. This setting is independent of
+the `task.output` style, so it can be combined with `prefix`, `interleave`, or
+another output style.
+"""
+env = "MISE_TASK_QUIET"
+type = "Bool"
 
 [task.remote_no_cache]
 description = "Mise will always fetch the latest tasks from the remote, by default the cache is used."

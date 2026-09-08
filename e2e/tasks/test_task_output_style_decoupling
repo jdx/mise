@@ -15,10 +15,11 @@ assert_contains "mise run hello 2>&1" "[hello] hello world"
 # the command-echo header (`[hello] \$ echo ...`) must be suppressed by quiet
 assert_not_contains "mise run hello 2>&1" '$ echo'
 
-# (b) legacy task.output="quiet" value stays un-prefixed (maps to interleave).
+# (b) task.quiet suppresses mise's task messages without changing output style.
 cat <<EOF >mise.toml
 [settings]
-task.output = "quiet"
+task.output = "interleave"
+task.quiet = true
 [tasks.a]
 run = 'echo running a'
 [tasks.d]
@@ -26,6 +27,16 @@ run = 'echo running d'
 EOF
 assert_not_contains "mise run a ::: d 2>&1" "[a] running a"
 assert_contains "mise run a ::: d 2>&1" "running a"
+assert_not_contains "mise run a ::: d 2>&1" '$ echo'
+
+# The legacy task.output="quiet" value remains compatible during deprecation.
+cat <<EOF >mise.toml
+[settings]
+task.output = "quiet"
+[tasks.a]
+run = 'echo running a'
+EOF
+assert "mise run a 2>&1" "running a"
 
 # (c) silent (per-task output value) -> nothing at all.
 cat <<EOF >mise.toml
