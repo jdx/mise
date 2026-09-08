@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# The unreleased backup/local-only model is removed, not silently downgraded.
+require_cmd git
+echo tracked >~/.tracked
+assert_fail 'mise bootstrap dotfiles track ~/.tracked --private'
+assert_fail 'mise bootstrap dotfiles track ~/.tracked --no-share'
+assert_fail 'mise bootstrap dotfiles track ~/.tracked --no-backup'
+assert_fail 'mise bootstrap dotfiles origin set owner/repo --encrypt-backups --yes'
+assert_fail 'mise bootstrap dotfiles origin set owner/repo --include-existing --yes'
+assert_fail 'mise bootstrap dotfiles machines'
+assert_fail 'mise bootstrap dotfiles history purge'
+assert_succeed 'mise bootstrap dotfiles track ~/.tracked'
+repository="$MISE_STATE_DIR/history/repo.git"
+assert "git --git-dir=$repository for-each-ref --format='%(refname)' refs/mise-history refs/machines refs/setup refs/promoted refs/checkpoints" ''
+assert_not_contains 'mise bootstrap dotfiles status' 'backup'

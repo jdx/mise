@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# Manual synchronization publishes exactly the accumulated ordinary commits.
+require_cmd git
+origin="$PWD/ordinary-origin.git"
+git init -q --bare -b main "$origin"
+echo initial >~/.native
+assert_succeed "mise bootstrap dotfiles track ~/.native"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
+repo="$MISE_STATE_DIR/history/repo.git"
+initial=$(git --git-dir="$repo" rev-parse HEAD)
+assert "git --git-dir=$origin rev-parse main" "$initial"
+echo intermediate >~/.native
+assert_succeed "mise bootstrap dotfiles save"
+intermediate=$(git --git-dir="$repo" rev-parse HEAD)
+echo final >~/.native
+assert_succeed "mise bootstrap dotfiles save"
+final=$(git --git-dir="$repo" rev-parse HEAD)
+assert "git --git-dir=$origin rev-parse main" "$initial"
+assert_succeed "mise bootstrap dotfiles sync"
+assert "git --git-dir=$origin rev-parse main" "$final"
+assert "git --git-dir=$origin show $intermediate:home/.native" "intermediate"
+assert "git --git-dir=$origin show main:home/.native" "final"
+assert "git --git-dir=$repo rev-list HEAD" "$(git --git-dir="$origin" rev-list main)"
+assert "git --git-dir=$repo for-each-ref --format='%(refname)' refs/setup refs/mise-history refs/machines" ""
+assert "git --git-dir=$origin for-each-ref --format='%(refname)'" "refs/heads/main"
+assert_fail "git --git-dir=$origin cat-file -e main:config/config.toml"
+assert_succeed "mise bootstrap dotfiles sync"
+assert "git --git-dir=$repo rev-parse HEAD" "$final"
+assert "git --git-dir=$origin rev-parse main" "$final"
+
+# Encryption is already present in those same commits, not added by publishing.
+export MISE_AGE_KEY="AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[history.encryption]
+recipients = ["age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"]
+[dotfiles]
+"~/.native" = { mode = "track" }
+"~/.encrypted-value" = { mode = "track", encrypt = true }
+TOML
+echo private-value >~/.encrypted-value
+plaintext=$(git hash-object ~/.encrypted-value)
+assert_succeed "mise bootstrap dotfiles save"
+encrypted=$(git --git-dir="$repo" rev-parse HEAD)
+assert_fail "git --git-dir=$repo cat-file -e $plaintext"
+assert_succeed "mise bootstrap dotfiles sync"
+assert "git --git-dir=$origin rev-parse main" "$encrypted"
+assert_fail "git --git-dir=$origin cat-file -e $plaintext"
+assert_contains "git --git-dir=$origin show main:home/.encrypted-value | head -1" 'mise-encrypted-file-v1'
+assert_succeed "mise bootstrap dotfiles sync"
+assert "git --git-dir=$repo rev-parse HEAD" "$encrypted"
+assert "git --git-dir=$origin rev-parse main" "$encrypted"

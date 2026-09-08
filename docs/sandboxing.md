@@ -172,7 +172,9 @@ control when `--allow-net` cannot express it.
 
 When reads are restricted, Seatbelt requires data access to the root directory for process startup.
 Sandboxed processes can enumerate names directly under `/`, but cannot read unallowed entries or
-their descendants.
+their descendants. Mise also permits metadata access to `/private` so portable executables can
+resolve paths through macOS's private filesystem hierarchy; this does not permit listing that
+directory or reading its descendants.
 
 ### Windows
 

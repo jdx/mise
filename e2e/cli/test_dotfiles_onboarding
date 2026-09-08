@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Connecting origin publishes the same explicitly tracked ordinary history.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+echo first >~/.shared-config
+echo never-capture >~/.netrc
+assert_contains 'mise bootstrap dotfiles track ~/.shared-config 2>&1' 'automatic capture is inactive'
+echo second >~/.shared-config
+assert_succeed 'mise bootstrap dotfiles save'
+repository="$MISE_STATE_DIR/history/repo.git"
+saved=$(git --git-dir="$repository" rev-parse HEAD)
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
+assert_succeed "git --git-dir=$origin merge-base --is-ancestor $saved main"
+assert "git --git-dir=$origin show main:home/.shared-config" second
+assert_fail "git --git-dir=$origin cat-file -e main:home/.netrc"
+assert_fail "git --git-dir=$origin cat-file -e main:config/config.toml"
+assert "git --git-dir=$origin for-each-ref --format='%(refname)' refs/mise-history" ''
+echo third >~/.shared-config
+assert_succeed 'mise bootstrap dotfiles save'
+assert "git --git-dir=$origin show main:home/.shared-config" second
+assert_succeed 'mise bootstrap dotfiles sync'
+assert "git --git-dir=$origin show main:home/.shared-config" third
+assert_succeed 'mise bootstrap dotfiles untrack ~/.shared-config'
+assert 'cat ~/.shared-config' third
+assert_succeed 'mise bootstrap dotfiles sync'
+assert_fail "git --git-dir=$origin cat-file -e main:home/.shared-config"
+assert "git --git-dir=$origin show $saved:home/.shared-config" second

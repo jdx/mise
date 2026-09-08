@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+require_cmd git
+repository="$MISE_STATE_DIR/history/repo.git"
+mkdir -p "$MISE_CONFIG_DIR/templates" ~/native
+echo original >~/.zshrc
+echo native >~/native/config
+printf '[user]\nname = "{{ vars.name }}"\n' >"$MISE_CONFIG_DIR/templates/gitconfig.tera"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[vars]
+name = "test"
+[dotfiles]
+"~/.gitconfig" = { mode = "template", source = "templates/gitconfig.tera" }
+"~/.zshrc/activate" = { block = 'eval "$(mise activate zsh)"' }
+TOML
+assert_succeed 'mise bootstrap dotfiles track ~/.zshrc ~/native'
+assert_fail 'test -L ~/.zshrc'
+assert_succeed 'mise bootstrap dotfiles apply --yes'
+assert_contains 'cat ~/.zshrc' 'mise activate zsh'
+assert_contains 'cat ~/.gitconfig' 'name = "test"'
+assert "mise bootstrap dotfiles paths --json | jq '[.entries[] | select(.path == \"~/.gitconfig\")] | length'" 0
+assert_succeed 'mise bootstrap dotfiles track ~/.gitconfig'
+assert_contains "git --git-dir=$repository show HEAD:home/.gitconfig" 'name = "test"'
+assert_succeed 'mise bootstrap dotfiles untrack ~/.gitconfig'
+assert_contains 'cat ~/.gitconfig' 'name = "test"'
+assert_contains 'cat "$MISE_CONFIG_DIR/config.toml"' 'mode = "template"'
+assert_fail 'mise bootstrap dotfiles add --mode track ~/.newrc --dry-run'
+assert_succeed 'mise bootstrap dotfiles unapply --yes ~/native'
+assert 'cat ~/native/config' native
+
+# Platform choices stay in one declaration; another platform is not captured.
+case "$(uname -s)" in
+  Darwin) this_os=macos other_os=linux ;;
+  *) this_os=linux other_os=macos ;;
+esac
+assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $this_os"
+assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $other_os"
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.zshrc\") | .variant'" "$this_os"
+assert_contains "git --git-dir=$repository ls-tree -r --name-only HEAD" "home@$this_os/.zshrc"
+
+# Defaults exclude credentials entirely, including explicit enrollment.
+echo synthetic-secret >~/.netrc
+assert_succeed 'mise bootstrap dotfiles track ~/.netrc'
+assert_fail "git --git-dir=$repository cat-file -e HEAD:home/.netrc"
+mkdir -p ~/native/sub
+echo keep >~/native/sub/keep.conf
+echo excluded >~/native/sub/drop.conf
+assert_succeed "mise bootstrap dotfiles exclude '~/native/sub/**'"
+assert_succeed "mise bootstrap dotfiles exclude '!~/native/sub/keep.conf'"
+assert_succeed 'mise bootstrap dotfiles save'
+assert "git --git-dir=$repository show HEAD:home/native/sub/keep.conf" keep
+assert_fail "git --git-dir=$repository cat-file -e HEAD:home/native/sub/drop.conf"
+
+# Symlinks are observed without enrolling targets or traversing them.
+mkdir -p ~/target-dir
+echo outside >~/target-dir/config
+ln -s "$HOME/target-dir" ~/native/link
+assert_succeed 'mise bootstrap dotfiles save'
+assert_contains "git --git-dir=$repository ls-tree HEAD home/native/link" 120000
+assert_fail "git --git-dir=$repository cat-file -e HEAD:home/target-dir/config"
+
+# Project-local declarations cannot enroll global files implicitly.
+mkdir -p ~/project
+printf '[dotfiles]\n"~/.project-file" = { mode = "track" }\n' >~/project/mise.toml
+echo project >~/.project-file
+assert_succeed 'cd ~/project && mise trust -q'
+assert "cd ~/project && mise bootstrap dotfiles paths --json | jq '[.entries[] | select(.path == \"~/.project-file\")] | length'" 0
+assert_succeed 'mise bootstrap dotfiles untrack ~/native'
+assert 'cat ~/native/config' native
+assert_fail "git --git-dir=$repository cat-file -e HEAD:home/native/config"
+
+if [[ $(uname -s) == Linux ]]; then
+  mkdir -p ~/.raw-names
+  echo ordinary >~/.raw-names/ordinary
+  assert_succeed 'mise bootstrap dotfiles track ~/.raw-names'
+  before=$(git --git-dir="$repository" rev-parse HEAD)
+  raw_path="$HOME/.raw-names/"$'\xff'
+  echo untouched >"$raw_path"
+  assert_fail 'mise bootstrap dotfiles save' 'non-UTF-8 filename'
+  assert "git --git-dir=$repository rev-parse HEAD" "$before"
+  [[ $(<"$raw_path") == untouched ]]
+fi

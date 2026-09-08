@@ -450,7 +450,7 @@ pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
                 .iter()
                 .flat_map(|bin| platform_shim_names(&mise_bin, bin))
                 .collect::<BTreeSet<String>>();
-            match write_bootstrap_shims(&mise_bin, &shims_dir, &shims)? {
+            match write_bootstrap_shims(&mise_bin, &shims_dir, &shims, false)? {
                 None => {}
                 // A shared farm such as `/usr/local/bin` may belong to root. No
                 // command can write a bootstrap shim there for this user, so
@@ -477,6 +477,7 @@ fn write_bootstrap_shims(
     mise_bin: &Path,
     shims_dir: &Path,
     shims: &BTreeSet<String>,
+    _prune_stale_windows_variants: bool,
 ) -> Result<Option<eyre::Report>> {
     if let Err(err) = file::create_dir_all(shims_dir) {
         if is_permission_denied(&err) {
@@ -487,6 +488,11 @@ fn write_bootstrap_shims(
     // Lock failures come from the cache rather than the target farm and must
     // remain visible to the user.
     let _lock = LockFile::new(shims_dir).lock()?;
+
+    #[cfg(windows)]
+    if _prune_stale_windows_variants {
+        remove_stale_windows_shim_variants(shims_dir, shims)?;
+    }
 
     #[cfg(windows)]
     validate_windows_shim_source(mise_bin)?;
@@ -503,6 +509,27 @@ fn write_bootstrap_shims(
         }
     }
     Ok(None)
+}
+
+#[cfg(windows)]
+fn remove_stale_windows_shim_variants(shims_dir: &Path, desired: &BTreeSet<String>) -> Result<()> {
+    let stems = desired
+        .iter()
+        .map(|shim| {
+            Path::new(shim)
+                .with_extension("")
+                .to_string_lossy()
+                .to_string()
+        })
+        .collect::<BTreeSet<_>>();
+    for stem in stems {
+        for variant in [stem.clone(), format!("{stem}.cmd"), format!("{stem}.exe")] {
+            if !desired.contains(&variant) {
+                remove_shim_with_rename_fallback(&shims_dir.join(variant))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -1019,7 +1046,9 @@ pub(crate) fn ensure_command_wrapper_shims(config: &Config, ts: &Toolset) -> Res
         .keys()
         .flat_map(|name| platform_shim_names(&mise_bin, name))
         .collect();
-    if let Some(error) = write_bootstrap_shims(&mise_bin, &dirs::COMMAND_WRAPPERS, &shims)? {
+    if let Some(error) =
+        write_bootstrap_shims(&mise_bin, &dirs::COMMAND_WRAPPERS, &shims, cfg!(windows))?
+    {
         return Err(error);
     }
     Ok(())
@@ -1958,6 +1987,23 @@ mod tests {
             old_shim_path(Path::new("foo.cmd")),
             PathBuf::from("foo.cmd.old")
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn command_wrappers_remove_stale_windows_shim_variants() {
+        let dir = tempfile::tempdir().unwrap();
+        for shim in ["cargo", "cargo.cmd", "cargo.exe", "cargo.exe.old"] {
+            fs::write(dir.path().join(shim), "shim").unwrap();
+        }
+
+        let desired = BTreeSet::from(["cargo".to_string(), "cargo.cmd".to_string()]);
+        remove_stale_windows_shim_variants(dir.path(), &desired).unwrap();
+
+        assert!(dir.path().join("cargo").exists());
+        assert!(dir.path().join("cargo.cmd").exists());
+        assert!(!dir.path().join("cargo.exe").exists());
+        assert!(!dir.path().join("cargo.exe.old").exists());
     }
 
     #[cfg(macos)]
