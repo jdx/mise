@@ -178,7 +178,13 @@ export REAL_GIT
 REAL_GIT=$(command -v git)
 cat >fakebin/git <<'EOF'
 #!/bin/sh
-if test "$1" = -c && test "$2" = http.followRedirects=false && test "$3" = clone && test "${BLOCK_FETCH:-}" = 1; then
+is_clone() {
+  while test "${1:-}" = -c; do
+    shift 2
+  done
+  test "${1:-}" = clone
+}
+if is_clone "$@" && test "${BLOCK_FETCH:-}" = 1; then
   echo $$ >"$FAKE_REMOTE_BASE/fetch.pid"
   exec sleep 60
 fi

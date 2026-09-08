@@ -83,6 +83,11 @@ impl Source {
         // No checkout: source templates and hooks are never evaluated locally.
         command
             .env("GIT_ALLOW_PROTOCOL", "https:ssh:file")
+            .args(["-c", &crate::git::github_credential_config("github.com")])
+            .args([
+                "-c",
+                &crate::git::github_credential_config("github.com:443"),
+            ])
             .args(["-c", "http.followRedirects=false"])
             .args(["clone", "--no-checkout", "--no-local", "--"])
             .arg(&origin)

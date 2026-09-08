@@ -31,6 +31,10 @@ pub(crate) struct Github {
     #[usage(default = "github.com")]
     pub(crate) host: String,
 
+    /// Speak Git's credential helper protocol
+    #[usage(long, hide = true)]
+    pub(crate) git_credential: Option<String>,
+
     /// Resolve only via the native GitHub OAuth source (cache,
     /// refresh, or device-code flow), bypassing other token sources
     #[usage(long)]
@@ -54,6 +58,9 @@ pub(crate) struct Github {
 
 impl Github {
     pub(crate) fn run(self) -> eyre::Result<()> {
+        if let Some(operation) = &self.git_credential {
+            return super::git_credential::run(operation);
+        }
         let resolved = if self.oauth {
             Some((
                 github::oauth::token(github::oauth::TokenRequest {

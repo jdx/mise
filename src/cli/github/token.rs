@@ -54,6 +54,7 @@ impl From<Token> for Github {
     fn from(t: Token) -> Self {
         Github {
             host: t.host,
+            git_credential: None,
             oauth: t.oauth,
             refresh: t.refresh,
             raw: t.raw,
