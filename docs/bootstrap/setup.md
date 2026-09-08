@@ -28,8 +28,9 @@ mise bootstrap dotfiles track ~/.zshrc
 On Omarchy with Bash, use `~/.bashrc` instead. Choose a file that already exists;
 the remaining examples use `~/.zshrc`.
 
-Tracking saves a baseline and adds a declaration to `~/.config/mise/config.toml`.
-The file stays in place:
+Tracking saves the file's current contents as a **checkpoint**, a version you
+can restore later. It leaves the file in place and adds this entry to
+`~/.config/mise/config.toml`:
 
 ```toml
 [dotfiles]
@@ -48,24 +49,24 @@ builtin = "history-watch"
 Install the service and check that it is running:
 
 ```sh
-mise bootstrap
+mise bootstrap services apply
 mise bootstrap dotfiles status
 ```
 
-The watcher runs as a systemd user service on Linux or a LaunchAgent on macOS.
-It commits edits to the local Git history. No origin connection is needed.
-The repository is stored separately from your live files.
+The watcher saves edits to local Git history. It runs as a systemd user
+service on Linux, a LaunchAgent on macOS, or a Scheduled Task on Windows.
+The history repository is stored separately from the files you edit.
 
 If you prefer to save manually, skip the service and run
 `mise bootstrap dotfiles save` after editing.
 
 ## Inspect and restore a change
 
-Edit your tracked file, then save a checkpoint explicitly so you can inspect it
+Edit your tracked file, then save a checkpoint now so you can inspect it
 without waiting for the watcher:
 
 ```sh
-mise bootstrap dotfiles save
+mise bootstrap dotfiles save ~/.zshrc
 mise bootstrap dotfiles history --path ~/.zshrc
 ```
 
@@ -81,20 +82,22 @@ To restore the previous version:
 mise bootstrap dotfiles rollback ~/.zshrc
 ```
 
-Review the proposed changes before confirming. Rollback saves a protective
-checkpoint first. To reverse the rollback:
+Rollback selects the latest saved version that differs from the current
+file. Review the proposed changes before confirming. It saves the current
+contents first, so you can reverse the rollback:
 
 ```sh
 mise bootstrap dotfiles undo
 ```
 
 A rollback creates a new commit, preserving the versions you left behind.
-A connected origin receives that commit according to your sync mode.
+If you enable sharing below, the restored version can reach your other machines.
 
 ## Share your setup (optional)
 
-Explicitly track the bootstrap configuration too, so another machine can recreate
-your tools and watcher service. Managing `.zshrc` did not enroll this file:
+To share changes between computers, connect a private Git repository, called
+an **origin**. First, track your mise configuration so the next machine can
+also install your tools and start the watcher:
 
 ```sh
 mise bootstrap dotfiles track ~/.config/mise/config.toml
@@ -112,32 +115,38 @@ The credential helper lets background synchronization authenticate without an
 interactive prompt. You can also use an SSH remote with credentials available
 to the watcher.
 
-Replace `you/setup` with your repository. This example chooses manual sync:
+Before connecting, review your tracked files and their history. Every saved
+version will be shared, including earlier local edits. Deleting a credential
+from a file later leaves it in old commits. For files that need encryption,
+configure [encrypted tracking](/history.html#encrypted-shared-files) before
+their first save and keep private decryption keys outside tracking.
+
+Replace `you/setup` with your repository. This example enables automatic
+sharing:
 
 ```sh
-mise bootstrap dotfiles origin set https://github.com/you/setup.git --sync manual
+mise bootstrap dotfiles origin set https://github.com/you/setup.git --sync sync
 ```
 
-Before confirming, review your tracked files and their history. Connecting an
-origin makes every committed version eligible for synchronization, including
-earlier local saves. There is no separate backup or per-file local-only mode.
+Review the connection preview before confirming. With the watcher running,
+saved edits are pushed within five minutes by default. It checks for changes
+from other machines every fifteen minutes and applies them to your files.
+After you set up a second machine below, edits can travel in both directions.
 
-For encrypted contents in the repository, use `encrypt = true` on an explicitly
-tracked file and configure public recipients before its first capture. Keep
-the decryption identity outside tracking. See [encrypted files](/history.html#encrypted-shared-files).
+### Choose when to sync
 
-Choose the mode that fits your workflow:
+Use `--sync manual` when connecting if you want to decide when to exchange
+changes. You can change the mode later with
+`mise settings set history.sync MODE`:
 
 | Mode         | Watcher behavior                                                |
 | ------------ | --------------------------------------------------------------- |
-| `manual`     | Saves locally; does not use the network automatically.          |
-| `fetch-only` | Fetches remote changes; does not publish or apply them.         |
 | `sync`       | Publishes saved changes, fetches, and applies incoming changes. |
+| `manual`     | Saves locally; waits for you to run the network commands.       |
+| `fetch-only` | Fetches remote changes for you to inspect and apply.            |
 
-Change modes with `mise settings set history.sync MODE`.
-
-Manual mode postpones network publication, not local commits. A later sync
-pushes the accumulated commits unchanged, then you can apply fetched changes:
+In manual mode, mise keeps saving locally. Run these commands to save your
+latest edits, push all accumulated commits, fetch remote changes, and apply them:
 
 ```sh
 mise bootstrap dotfiles save
@@ -145,9 +154,9 @@ mise bootstrap dotfiles sync
 mise bootstrap dotfiles pull
 ```
 
-`sync` exchanges saved changes with the repository; `pull` applies fetched
-changes to your files. Applying changes does not run bootstrap tasks or render
-templates. Run `mise bootstrap` when updated declarations need to be applied.
+These commands also work in automatic mode when you want to sync immediately.
+When a shared change updates tools, services, or template sources, run
+`mise bootstrap` to apply that configuration and render templates.
 
 ## Set up another machine
 
@@ -163,16 +172,20 @@ mise x gh -- gh auth setup-git --hostname github.com
 mise bootstrap --from-git you/setup
 ```
 
-Review the proposed files before confirming. Bootstrap reads enrollment from
-the repository, restores the tracked files, and applies the explicitly tracked
-configuration, including the watcher declaration added earlier. If configuration
-or required template sources were not enrolled, bootstrap reports the missing
-prerequisites rather than silently tracking them.
+Review the proposed files before confirming. Bootstrap restores the tracked
+files and applies the saved mise configuration, including the watcher service.
+If configuration or required template sources are missing from history,
+bootstrap reports which files you need to track and share from the first machine.
 
-If an existing file differs, mise holds it for a decision instead of silently
-overwriting it. Follow the reported conflict instructions. Check this machine's
-sync mode with `mise bootstrap dotfiles status` and choose its mode explicitly
-with `mise settings set history.sync MODE`.
+If an existing file differs, follow the reported conflict instructions before
+setup can continue. Enable automatic sharing on this machine and check its state:
+
+```sh
+mise settings set history.sync sync
+mise bootstrap dotfiles status
+```
+
+Choose `manual` or `fetch-only` here if you want a different mode on this machine.
 
 For setup over SSH, see [remote bootstrap](/bootstrap/remote.html). For a private GitHub repository, borrow read-only access from this machine:
 
@@ -186,10 +199,11 @@ credentials for ongoing synchronization.
 
 ## Resolve a conflict
 
-If two machines change the same lines, mise preserves both versions and pauses
-publication and incoming application for the entire setup. Local commits and
-fetching continue. Desktop notifications are enabled by default; status and
-`mise doctor` report the pause even without a working notifier.
+If two machines change the same lines, mise keeps both versions and pauses
+pushing and applying incoming changes for all tracked files. It continues
+saving locally and fetching updates. Desktop notifications are enabled by
+default on supported Linux and macOS installations. `status` and `mise doctor`
+also report the pause, including on Windows or headless machines.
 
 Inspect the conflict:
 
@@ -218,7 +232,7 @@ Use tracking for files you edit directly. Use a template when you want mise to
 render a file from configuration values.
 
 Add these entries to `~/.config/mise/config.toml`, merging them into any existing
-`[vars]` and `[dotfiles]` tables:
+`[vars]` and `[dotfiles]` tables. Use an unused target path for this example:
 
 ```toml
 [vars]
@@ -226,19 +240,20 @@ email = "you@example.com"
 
 [dotfiles]
 "~/templates" = { mode = "track" }
-"~/.gitconfig" = { source = "~/templates/gitconfig.tera", mode = "template" }
+"~/.config/mise-template-example.ini" = { source = "~/templates/example.ini.tera", mode = "template" }
 ```
 
-Create `~/templates/gitconfig.tera` (create `~/templates` first if needed):
+Create `~/templates/example.ini.tera` (create `~/templates` first if needed):
 
 ```ini
 [user]
     email = {{ vars.email }}
 ```
 
-Run `mise bootstrap` to render `~/.gitconfig`. Edit the template or its variables
-for future changes. The explicitly enrolled template directory is committed and synchronized.
-The rendered file is not tracked unless you explicitly enroll it too.
+Run `mise bootstrap` to render `~/.config/mise-template-example.ini`.
+It will contain the email address from `[vars]`. Edit the template or its variables
+for future changes. Tracking `~/templates` saves and shares those source files.
+To also save the rendered file's history, add a tracking entry for it.
 
 See [dotfiles](/dotfiles.html) for templates and OS-specific variants.
 
@@ -246,7 +261,8 @@ See [dotfiles](/dotfiles.html) for templates and OS-specific variants.
 
 On Omarchy, start with individual configuration files you edit. Inspect a
 directory before tracking it: themes, plugins, backgrounds, and application state
-may not belong in your dotfile history. Nested Git repositories are recorded as Git pointers, not copied recursively.
+may not belong in your dotfile history. For a nested Git repository, history
+records the commit it points to; keep that repository backed up separately.
 
 Before an update, save the current tracked files:
 
@@ -254,7 +270,8 @@ Before an update, save the current tracked files:
 mise bootstrap dotfiles save --best-effort
 ```
 
-This saves dotfiles, not installed packages or the rest of the operating system.
+This saves your tracked dotfiles. Use your operating system's backup tools
+for packages and other system state.
 
 On macOS, you can keep a tracked file separate from its Linux counterpart:
 
@@ -268,6 +285,6 @@ On either platform, check tracking and watcher status with:
 mise bootstrap dotfiles status
 ```
 
-For directory exclusions and capture policies, see [dotfiles](/dotfiles.html).
+For directory exclusions and save options, see [dotfiles](/dotfiles.html).
 For service management and other platforms, see
 [user services](/bootstrap/services.html).

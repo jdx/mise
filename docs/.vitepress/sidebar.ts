@@ -144,7 +144,7 @@ export const sidebar: SidebarItem[] = [
         link: "/bootstrap/files",
       },
       {
-        text: "System Services",
+        text: "Services",
         link: "/bootstrap/services",
       },
       {
@@ -162,6 +162,10 @@ export const sidebar: SidebarItem[] = [
       {
         text: "Dotfiles",
         link: "/dotfiles",
+      },
+      {
+        text: "Dotfiles History",
+        link: "/history",
       },
       {
         text: "Shell Activation",
@@ -182,10 +186,6 @@ export const sidebar: SidebarItem[] = [
       {
         text: "User Login Shell",
         link: "/bootstrap/user",
-      },
-      {
-        text: "Dotfiles history",
-        link: "/history",
       },
     ],
   },
