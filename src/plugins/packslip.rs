@@ -114,7 +114,7 @@ pub(crate) async fn install(
     let ctx = InstallContext {
         config: config.clone(),
         ts: Arc::new(Toolset::new(ToolSource::Argument)),
-        pr: Box::new(QuietReport::new()),
+        pr: Arc::new(QuietReport::new()),
         force: false,
         dry_run: false,
         locked: false,
