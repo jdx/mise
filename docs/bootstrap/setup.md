@@ -10,7 +10,7 @@ Start with one file; add more once you have tried restoring a change.
 
 ## Install mise
 
-You need Git installed. If mise is already installed, skip the first two commands.
+If mise is already installed, skip the first two commands.
 
 ```sh
 curl https://mise.run | sh

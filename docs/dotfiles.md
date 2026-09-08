@@ -19,8 +19,8 @@ For an introduction to this workflow, read
 
 ## Tracking files in place
 
-With Git installed, start saving the history of a file you already have.
-For example, if you use zsh:
+Start saving the history of a file you already have. For example, if you
+use zsh:
 
 ```sh
 mise bootstrap dotfiles track ~/.zshrc
