@@ -275,7 +275,7 @@ pub(crate) fn show_auto_update_hint() {
         hint!(
             "auto_update",
             "keep mise updated automatically with",
-            "mise settings set auto_update true"
+            "mise settings auto_update=true"
         );
     }
 }
