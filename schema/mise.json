@@ -2129,6 +2129,11 @@
                 "silent"
               ]
             },
+            "quiet": {
+              "default": false,
+              "description": "Suppress mise's own output while executing tasks.",
+              "type": "boolean"
+            },
             "remote_no_cache": {
               "description": "Mise will always fetch the latest tasks from the remote, by default the cache is used.",
               "type": "boolean"
