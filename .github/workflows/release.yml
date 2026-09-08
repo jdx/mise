@@ -359,7 +359,7 @@ jobs:
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:a8468e3c31eb2ec25ba1d74cda9960dfe5d309d676c251f8432c74a283704b74
+    container: ghcr.io/jdx/mise:rpm@sha256:ce5434e65d46d9892a2520249d938e7f7ba830cd3a120936f5a564ccc6fbe301
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
