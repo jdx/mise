@@ -26,7 +26,7 @@ macro_rules! git_cmd {
     ( $dir:expr $(, $arg:expr )* $(,)? ) => {
         {
             let safe = format!("safe.directory={}", $dir.display());
-            sanitize_git_env(cmd!("git", "-c", github_credential_config("github.com"), "-c", github_credential_config("github.com:443"), "-C", $dir, "-c", safe, "-c", "core.autocrlf=false" $(, $arg)*))
+            sanitize_git_env(cmd!("git", "-c", $crate::git::github_credential_config("github.com"), "-c", $crate::git::github_credential_config("github.com:443"), "-C", $dir, "-c", safe, "-c", "core.autocrlf=false" $(, $arg)*))
         }
     }
 }
