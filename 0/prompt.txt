@@ -1,0 +1,9 @@
+[https://github.com/jdx/mise/discussions/12952](https://github.com/jdx/mise/discussions/12952)
+
+---
+
+continue
+
+---
+
+the introducitno blog post is probably a good source for improving the docs too [https://jdx.dev/posts/2026-09-07-dotfiles-that-save-themselves/](https://jdx.dev/posts/2026-09-07-dotfiles-that-save-themselves/)
