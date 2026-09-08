@@ -1,0 +1,63 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZCNTTY4GN9APMFJ5V2G6SP",
+  "session_id": "01a07e90-145e-7631-8c1b-e3feca98fb62",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-08T02:13:43.717668Z",
+  "branch": "codex/github-git-credentials",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "e2e/cli/test_git_credential",
+    "src/cli/mod.rs",
+    "src/cli/token/git_credential.rs",
+    "src/cli/token/mod.rs",
+    "src/config/settings.rs",
+    "src/github.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "d91a745e9e37",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 352733,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 21882880,
+    "output_tokens": 56070,
+    "api_call_count": 186
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-08T02:13:43.521857Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 198,
+    "human_modified": 4,
+    "human_removed": 0,
+    "total_committed": 198,
+    "total_lines_changed": 208,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 75,
+      "user_lines_removed": 2,
+      "agent_lines_added": 51,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "src/cli/mod.rs": 15,
+        "src/cli/token/git_credential.rs": 34,
+        "src/cli/token/mod.rs": 8,
+        "src/config/settings.rs": 7,
+        "src/github.rs": 11
+      },
+      "user_removed_per_file": {
+        "src/github.rs": 2
+      }
+    }
+  ]
+}
