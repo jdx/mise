@@ -3,7 +3,7 @@
   "checkpoint_id": "01M1ZAE2FNHSAYV3R36GHNDS2D",
   "strategy": "manual-commit",
   "branch": "codex/dotfiles-line-position",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "e2e/cli/test_dotfiles_unapply",
     "src/system/edits.rs"
@@ -15,13 +15,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 337685,
+    "input_tokens": 438875,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 29334016,
-    "output_tokens": 40760,
-    "api_call_count": 224
+    "cache_read_tokens": 30894208,
+    "output_tokens": 53680,
+    "api_call_count": 249
   }
 }
