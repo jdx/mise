@@ -861,8 +861,8 @@ Output _style_ for this task: `prefix`, `interleave`, `keep-order`, `replacing`,
 compatibility and bundle a style with that verbosity.
 
 ::: warning Deprecated
-The `quiet` output value is deprecated. Warnings begin in mise `2027.3.0`, and support will be
-removed in `2028.3.0`. Use `output = "interleave"` with `quiet = true` instead. For a global task
+The `quiet` output value is deprecated. Warnings begin in mise `2026.9.3`, and support will be
+removed in `2027.9.3`. Use `output = "interleave"` with `quiet = true` instead. For a global task
 default, use `task.output = "interleave"` with `task.quiet = true` under `[settings]`.
 :::
 

@@ -38,8 +38,8 @@ impl TaskOutput {
         match self {
             TaskOutput::Quiet => {
                 deprecated_at!(
-                    "2027.3.0",
-                    "2028.3.0",
+                    "2026.9.3",
+                    "2027.9.3",
                     "task-output-quiet",
                     "The quiet task output mode is deprecated. Use output=\"interleave\" with task.quiet=true or a per-task quiet=true, or use --output interleave --quiet."
                 );

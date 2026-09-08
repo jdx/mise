@@ -3473,8 +3473,8 @@ mise's own task messages. The `quiet` and `silent` *values* below are kept for
 backwards compatibility and bundle a style with that verbosity.
 
 ::: warning Deprecated
-The `quiet` output value is deprecated. Warnings begin in mise `2027.3.0`, and
-support will be removed in `2028.3.0`. For a global task default, use
+The `quiet` output value is deprecated. Warnings begin in mise `2026.9.3`, and
+support will be removed in `2027.9.3`. For a global task default, use
 `task.output = "interleave"` with `task.quiet = true`. For an individual task,
 use `output = "interleave"` with `quiet = true`. On the command line, use
 `--output interleave --quiet`.

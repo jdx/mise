@@ -674,6 +674,7 @@ impl OutputHandler {
             || task.is_some_and(|t| t.output.is_some_and(|o| o.is_silent()))
     }
 
+    /// Return whether mise-generated output should be suppressed for this task.
     pub(crate) fn quiet(&self, task: Option<&Task>) -> bool {
         self.quiet
             || Settings::get().quiet

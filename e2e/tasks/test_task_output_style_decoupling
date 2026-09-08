@@ -36,7 +36,10 @@ task.output = "quiet"
 [tasks.a]
 run = 'echo running a'
 EOF
-assert "mise run a 2>&1" "running a"
+assert_contains "mise run a 2>&1" "running a"
+assert_not_contains "mise run a 2>&1" "[a] running a"
+assert_not_contains "mise run a 2>&1" '$ echo'
+assert_contains "mise run a 2>&1" "deprecated [task-output-quiet]"
 
 # (c) silent (per-task output value) -> nothing at all.
 cat <<EOF >mise.toml

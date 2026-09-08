@@ -35,8 +35,8 @@ without affecting other mise commands, set both `task.output = "interleave"` and
 `task.quiet = true` under `[settings]`.
 
 ::: warning Deprecated
-The `quiet` output value is deprecated. Warnings begin in mise `2027.3.0`, and support will be
-removed in `2028.3.0`. Combine `interleave` with the task-scoped or command-line quiet option
+The `quiet` output value is deprecated. Warnings begin in mise `2026.9.3`, and support will be
+removed in `2027.9.3`. Combine `interleave` with the task-scoped or command-line quiet option
 instead.
 :::
 
