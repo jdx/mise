@@ -25,7 +25,7 @@ by a config file (active) whether or not they are installed.
 - **`-J --json`** — Output in JSON format
 - **`-l --local`** — Only show tool versions currently specified in the local mise.toml
 - **`-m --missing`** — Display missing tool versions
-- **`--all-sources`** — Display all tracked config sources for tools
+- **`-a --all-sources`** — Display all tracked config sources for tools
 - **`--monorepo`** — List tools from every [monorepo].config_roots config root
 
   Uses the active MISE_ENV and requires monorepo_root = true plus explicit

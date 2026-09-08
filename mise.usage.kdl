@@ -3309,7 +3309,7 @@ by a config file (active) whether or not they are installed.
     flag "-p --plugin" hide=#true {
         arg <PLUGIN>
     }
-    flag --all-sources help="Display all tracked config sources for tools" {
+    flag "-a --all-sources" help="Display all tracked config sources for tools" {
         conflicts "--current" "--global" "--local" "--prunable"
     }
     flag --monorepo help="List tools from every [monorepo].config_roots config root" env=MISE_MONOREPO {

@@ -92,7 +92,7 @@ pub(crate) struct Ls {
     tool_flag: Option<BackendArg>,
 
     /// Display all tracked config sources for tools
-    #[usage(long, conflicts = &["current", "global", "local", "prunable"])]
+    #[usage(long, short, conflicts = &["current", "global", "local", "prunable"])]
     all_sources: bool,
 
     /// List tools from every [monorepo].config_roots config root
