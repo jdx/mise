@@ -1,0 +1,30 @@
+|   |
+| - |
+
+When installing `gcloud`, `yarn` and `java` via the default mise registry backends (vfox, vfox + core respectively), logs for downloading/verifying/extracting (which seems vfox specific), and upon install (java prints 3 lines that covers its version etc. - gcloud prints a massive table of default installed components etc.) are mingled in between the "native" mise output for other tools (most of my other tools use aqua).
+
+Would it be possible to better control what is output and what is not? IMO, unless something goes wrong, ideally we wouldn't see the "internal" logs for tool installs?
+
+
+
+this was improved in the most recent release [https://github.com/jdx/mise/discussions/12939](https://github.com/jdx/mise/discussions/12939)
+
+---
+
+post it
+
+---
+
+wait make sure it's improved for their specific tools
+
+---
+
+is it because they're on staderr?
+
+---
+
+i think in java we should reroute it to stdout
+
+gcloud make a suggestion
+
+fix vfox too
