@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZAS287Z0XENSJB1ND1KWKV",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-macos-notification-dispatch",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "Cargo.toml",
+    "build.rs",
+    "docs/history.md",
+    "scripts/build-tarball.sh",
+    "settings.toml",
+    "src/system/history/notify.rs",
+    "src/system/history/notify/macos.plist",
+    "src/system/history/notify/macos.rs",
+    "src/system/history/sync/onboard.rs",
+    "src/system/history/sync/origin.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 306498,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 22652800,
+    "output_tokens": 50345,
+    "api_call_count": 188
+  }
+}
