@@ -1089,11 +1089,11 @@ fn text_lines(text: &str) -> Vec<TextLine<'_>> {
             offset += raw.len();
             let content = raw.strip_suffix('\n').unwrap_or(raw);
             let mut content = content.strip_suffix('\r').unwrap_or(content);
-            if start == 0 {
-                if let Some(without_bom) = content.strip_prefix('\u{feff}') {
-                    start += '\u{feff}'.len_utf8();
-                    content = without_bom;
-                }
+            if start == 0
+                && let Some(without_bom) = content.strip_prefix('\u{feff}')
+            {
+                start += '\u{feff}'.len_utf8();
+                content = without_bom;
             }
             TextLine {
                 content,
