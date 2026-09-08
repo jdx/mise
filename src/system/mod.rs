@@ -745,7 +745,7 @@ pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
             Some(value) => out.push(DefaultsRequest { domain, key, value }),
             None => warn!(
                 "[bootstrap.macos.defaults]: unsupported value type for {domain} {key} \
-                 (expected bool, integer, float, or string)"
+                 (expected bool, integer, float, string, array, or table)"
             ),
         }
     }

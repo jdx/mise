@@ -1,15 +1,11 @@
 //! macOS user defaults (preferences) for the `[bootstrap.macos.defaults]` config section.
 //!
-//! Entries are written with `defaults write <domain> <key> <-type> <value>`
-//! and checked with `defaults read-type`/`defaults read`. Like
-//! `[bootstrap.packages]` they are machine-global, declarative, and only ever
-//! applied when explicitly requested with `mise bootstrap macos defaults apply`
-//! or `mise bootstrap`.
+//! Entries are read and written with Core Foundation's preferences API so
+//! nested property-list values retain their types. Like `[bootstrap.packages]`
+//! they are machine-global, declarative, and only ever applied when explicitly
+//! requested with `mise bootstrap macos defaults apply` or `mise bootstrap`.
 
-use std::process::Stdio;
-use std::sync::LazyLock;
-
-use regex::Regex;
+use indexmap::IndexMap;
 
 use crate::result::Result;
 
@@ -28,15 +24,16 @@ impl std::fmt::Display for DefaultsRequest {
     }
 }
 
-/// The value types `defaults write` can set and mise can verify. Other plist
-/// types (arrays, dicts, dates, data) are not supported — config entries with
-/// those TOML types warn and are skipped.
+/// Property-list values that mise can write and verify. TOML arrays and tables
+/// are converted recursively, preserving the types of nested values.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DefaultsValue {
     Bool(bool),
     Int(i64),
     Float(f64),
     Str(String),
+    Array(Vec<Self>),
+    Dict(IndexMap<String, Self>),
 }
 
 impl DefaultsValue {
@@ -46,17 +43,47 @@ impl DefaultsValue {
             toml::Value::Integer(i) => Some(Self::Int(*i)),
             toml::Value::Float(f) => Some(Self::Float(*f)),
             toml::Value::String(s) => Some(Self::Str(s.clone())),
-            _ => None,
+            toml::Value::Array(values) => values
+                .iter()
+                .map(Self::from_toml)
+                .collect::<Option<Vec<_>>>()
+                .map(Self::Array),
+            toml::Value::Table(values) => values
+                .iter()
+                .map(|(key, value)| Some((key.clone(), Self::from_toml(value)?)))
+                .collect::<Option<IndexMap<_, _>>>()
+                .map(Self::Dict),
+            toml::Value::Datetime(_) => None,
         }
     }
 
-    /// type+value arguments for `defaults write <domain> <key> ...`
-    pub(crate) fn write_args(&self) -> Vec<String> {
+    /// A copy-pasteable `defaults write` suffix for scalar values. The CLI
+    /// cannot safely represent nested typed property-list values.
+    fn write_args(&self) -> Option<Vec<String>> {
         match self {
-            Self::Bool(b) => vec!["-bool".into(), b.to_string()],
-            Self::Int(i) => vec!["-int".into(), i.to_string()],
-            Self::Float(f) => vec!["-float".into(), f.to_string()],
-            Self::Str(s) => vec!["-string".into(), s.clone()],
+            Self::Bool(b) => Some(vec!["-bool".into(), b.to_string()]),
+            Self::Int(i) => Some(vec!["-int".into(), i.to_string()]),
+            Self::Float(f) => Some(vec!["-float".into(), f.to_string()]),
+            Self::Str(s) => Some(vec!["-string".into(), s.clone()]),
+            Self::Array(_) | Self::Dict(_) => None,
+        }
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    fn to_plist(&self) -> plist::Value {
+        match self {
+            Self::Bool(value) => plist::Value::Boolean(*value),
+            Self::Int(value) => plist::Value::Integer((*value).into()),
+            Self::Float(value) => plist::Value::Real(*value),
+            Self::Str(value) => plist::Value::String(value.clone()),
+            Self::Array(values) => plist::Value::Array(values.iter().map(Self::to_plist).collect()),
+            Self::Dict(values) => {
+                let mut dict = plist::Dictionary::new();
+                for (key, value) in values {
+                    dict.insert(key.clone(), value.to_plist());
+                }
+                plist::Value::Dictionary(dict)
+            }
         }
     }
 
@@ -66,22 +93,41 @@ impl DefaultsValue {
             Self::Int(i) => (*i).into(),
             Self::Float(f) => (*f).into(),
             Self::Str(s) => s.clone().into(),
+            Self::Array(values) => values.iter().map(Self::to_json).collect::<Vec<_>>().into(),
+            Self::Dict(values) => values
+                .iter()
+                .map(|(key, value)| (key.clone(), value.to_json()))
+                .collect::<serde_json::Map<_, _>>()
+                .into(),
         }
     }
 
-    /// Does the pair from `defaults read-type` ("boolean", "integer", ...)
-    /// and `defaults read` (raw value; booleans print as 1/0) match this
-    /// value? Types are compared strictly: an integer 1 does not satisfy a
-    /// configured `true` — `mise bootstrap macos defaults apply` converges it to the typed
-    /// value.
-    fn matches(&self, read_type: &str, raw: &str) -> bool {
-        match self {
-            Self::Bool(b) => read_type == "boolean" && raw == if *b { "1" } else { "0" },
-            Self::Int(i) => read_type == "integer" && raw.parse::<i64>() == Ok(*i),
-            Self::Float(f) => {
-                read_type == "float" && raw.parse::<f64>().is_ok_and(|v| (v - f).abs() < 1e-9)
+    fn matches(&self, current: &plist::Value) -> bool {
+        match (self, current) {
+            (Self::Bool(expected), plist::Value::Boolean(current)) => expected == current,
+            (Self::Int(expected), plist::Value::Integer(current)) => {
+                current.as_signed() == Some(*expected)
             }
-            Self::Str(s) => read_type == "string" && raw == s,
+            (Self::Float(expected), plist::Value::Real(current)) => {
+                (current - expected).abs() < 1e-9
+            }
+            (Self::Str(expected), plist::Value::String(current)) => expected == current,
+            (Self::Array(expected), plist::Value::Array(current)) => {
+                expected.len() == current.len()
+                    && expected
+                        .iter()
+                        .zip(current)
+                        .all(|(expected, current)| expected.matches(current))
+            }
+            (Self::Dict(expected), plist::Value::Dictionary(current)) => {
+                expected.len() == current.len()
+                    && expected.iter().all(|(key, expected)| {
+                        current
+                            .get(key)
+                            .is_some_and(|current| expected.matches(current))
+                    })
+            }
+            _ => false,
         }
     }
 }
@@ -93,6 +139,7 @@ impl std::fmt::Display for DefaultsValue {
             Self::Int(i) => write!(f, "{i}"),
             Self::Float(v) => write!(f, "{v}"),
             Self::Str(s) => write!(f, "{s}"),
+            Self::Array(_) | Self::Dict(_) => write!(f, "{}", self.to_json()),
         }
     }
 }
@@ -114,34 +161,30 @@ pub(crate) struct DefaultsStatus {
 }
 
 pub(crate) fn is_available() -> bool {
-    cfg!(target_os = "macos") && crate::file::which("defaults").is_some()
+    cfg!(target_os = "macos")
 }
 
 pub(crate) fn unavailable_reason() -> String {
-    if cfg!(target_os = "macos") {
-        "`defaults` not found".to_string()
-    } else {
-        "only available on macos".to_string()
-    }
+    "only available on macos".to_string()
 }
 
 /// Query the current state of each entry. Side-effect free.
 pub(crate) async fn status(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
+    let requests = requests.to_vec();
+    tokio::task::spawn_blocking(move || status_sync(&requests)).await?
+}
+
+fn status_sync(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
     let mut out = vec![];
     for req in requests {
-        let state = match read(&req.domain, &req.key).await? {
-            Some((read_type, raw)) => {
-                if req.value.matches(&read_type, &raw) {
+        let state = match read(&req.domain, &req.key)? {
+            Some(current) => {
+                if req.value.matches(&current) {
                     DefaultsState::Set
                 } else {
-                    // call out a type mismatch when the raw value alone
-                    // would look identical to the configured one
-                    let current = if raw == req.value.to_string() {
-                        format!("{raw} ({read_type})")
-                    } else {
-                        raw
-                    };
-                    DefaultsState::Differs { current }
+                    DefaultsState::Differs {
+                        current: display_plist(&current),
+                    }
                 }
             }
             None => DefaultsState::Unset,
@@ -157,83 +200,211 @@ pub(crate) async fn status(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsS
 /// Write the given entries (already filtered to unset/differing ones)
 pub(crate) async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result<()> {
     for req in requests {
-        let mut args = vec!["write".to_string(), req.domain.clone(), req.key.clone()];
-        args.extend(req.value.write_args());
-        // shell-quoted so the printed command is copy-pasteable even when a
-        // string value contains spaces
-        let display = shell_words::join(&args);
         if dry_run {
-            miseprintln!("defaults {display}");
+            if let Some(write_args) = req.value.write_args() {
+                let mut args = vec!["write".to_string(), req.domain.clone(), req.key.clone()];
+                args.extend(write_args);
+                miseprintln!("defaults {}", shell_words::join(&args));
+            } else {
+                miseprintln!("macOS preference {req}");
+            }
             continue;
         }
-        debug!("$ defaults {display}");
-        let output = tokio::process::Command::new("defaults")
-            .args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await?;
-        if !output.status.success() {
-            eyre::bail!(
-                "`defaults {display}` failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
-        }
+        debug!("setting macOS preference {req}");
     }
+    if dry_run {
+        return Ok(());
+    }
+    let requests = requests.to_vec();
+    tokio::task::spawn_blocking(move || write_all(&requests)).await?
+}
+
+fn display_plist(value: &plist::Value) -> String {
+    match value {
+        plist::Value::Boolean(value) => value.to_string(),
+        plist::Value::Integer(value) => value
+            .as_signed()
+            .map(|value| value.to_string())
+            .or_else(|| value.as_unsigned().map(|value| value.to_string()))
+            .unwrap_or_else(|| format!("{value:?}")),
+        plist::Value::Real(value) => value.to_string(),
+        plist::Value::String(value) => value.clone(),
+        plist::Value::Array(values) => plist_to_json(value)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| format!("array ({} items)", values.len())),
+        plist::Value::Dictionary(values) => plist_to_json(value)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| format!("dictionary ({} entries)", values.len())),
+        plist::Value::Data(value) => format!("data ({} bytes)", value.len()),
+        plist::Value::Date(value) => format!("{value:?}"),
+        plist::Value::Uid(value) => format!("{value:?}"),
+        _ => format!("{value:?}"),
+    }
+}
+
+fn plist_to_json(value: &plist::Value) -> Option<serde_json::Value> {
+    match value {
+        plist::Value::Boolean(value) => Some((*value).into()),
+        plist::Value::Integer(value) => value
+            .as_signed()
+            .map(Into::into)
+            .or_else(|| value.as_unsigned().map(Into::into)),
+        plist::Value::Real(value) => Some((*value).into()),
+        plist::Value::String(value) => Some(value.clone().into()),
+        plist::Value::Array(values) => values
+            .iter()
+            .map(plist_to_json)
+            .collect::<Option<Vec<_>>>()
+            .map(Into::into),
+        plist::Value::Dictionary(values) => values
+            .iter()
+            .map(|(key, value)| Some((key.clone(), plist_to_json(value)?)))
+            .collect::<Option<serde_json::Map<_, _>>>()
+            .map(Into::into),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn read(domain: &str, key: &str) -> Result<Option<plist::Value>> {
+    macos::read(domain, key)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read(_domain: &str, _key: &str) -> Result<Option<plist::Value>> {
+    Ok(None)
+}
+
+#[cfg(target_os = "macos")]
+fn write_all(requests: &[DefaultsRequest]) -> Result<()> {
+    macos::write_all(requests)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn write_all(_requests: &[DefaultsRequest]) -> Result<()> {
     Ok(())
 }
 
-/// `defaults read-type` + `defaults read` for one key. Returns
-/// `(type, raw value)`, or None when the key (or domain) does not exist —
-/// both commands exit non-zero for that, which is not an error here.
-async fn read(domain: &str, key: &str) -> Result<Option<(String, String)>> {
-    let Some(read_type) = defaults_cmd(&["read-type", domain, key]).await? else {
-        return Ok(None);
+#[cfg(target_os = "macos")]
+mod macos {
+    use core_foundation::base::TCFType;
+    use core_foundation::data::CFData;
+    use core_foundation::propertylist::{CFPropertyList, create_data, create_with_data};
+    use core_foundation::string::CFString;
+    use core_foundation_sys::preferences::{
+        CFPreferencesCopyValue, CFPreferencesSetValue, CFPreferencesSynchronize,
+        kCFPreferencesAnyApplication, kCFPreferencesAnyHost, kCFPreferencesCurrentUser,
     };
-    // "Type is boolean" -> "boolean"
-    let read_type = read_type
-        .strip_prefix("Type is ")
-        .unwrap_or(&read_type)
-        .to_string();
-    let Some(raw) = defaults_cmd(&["read", domain, key]).await? else {
-        return Ok(None);
+    use core_foundation_sys::propertylist::{
+        kCFPropertyListImmutable, kCFPropertyListXMLFormat_v1_0,
     };
-    Ok(Some((read_type, raw)))
-}
+    use indexmap::IndexSet;
 
-async fn defaults_cmd(args: &[&str]) -> Result<Option<String>> {
-    debug!("$ defaults {}", shell_words::join(args));
-    let output = tokio::process::Command::new("defaults")
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await?;
-    if !output.status.success() {
-        // "does not exist" is the expected missing-key/-domain answer;
-        // "could not find key" is the same for `read-type`;
-        // "Domain [...] not found" is the expected answer when the domain does not exist;
-        // any other failure (cfprefsd unavailable, managed domain, ...) must not
-        // masquerade as Unset
-        static MISSING_KEY_RE: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r"(?i)does not exist|could not find key|Domain .* not found").unwrap()
-        });
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if MISSING_KEY_RE.is_match(&stderr) {
+    use super::*;
+
+    fn application_id(
+        domain: &str,
+    ) -> (Option<CFString>, core_foundation_sys::string::CFStringRef) {
+        if matches!(domain, "NSGlobalDomain" | "-g" | "-globalDomain") {
+            (None, unsafe { kCFPreferencesAnyApplication })
+        } else {
+            let domain = CFString::new(domain);
+            let reference = domain.as_concrete_TypeRef();
+            (Some(domain), reference)
+        }
+    }
+
+    pub(super) fn read(domain: &str, key: &str) -> Result<Option<plist::Value>> {
+        let key = CFString::new(key);
+        let (_application, application_id) = application_id(domain);
+        let value = unsafe {
+            CFPreferencesCopyValue(
+                key.as_concrete_TypeRef(),
+                application_id,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost,
+            )
+        };
+        if value.is_null() {
             return Ok(None);
         }
-        eyre::bail!(
-            "`defaults {}` failed: {}",
-            shell_words::join(args),
-            stderr.trim()
-        );
+        let value = unsafe { CFPropertyList::wrap_under_create_rule(value) };
+        let data = create_data(value.as_CFTypeRef(), kCFPropertyListXMLFormat_v1_0)
+            .map_err(|err| eyre::eyre!("failed to serialize macOS preference: {err}"))?;
+        Ok(Some(plist::Value::from_reader_xml(data.bytes())?))
     }
-    // strip only the trailing newline — leading/trailing spaces can be
-    // significant in string values
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(Some(stdout.trim_end_matches(['\r', '\n']).to_string()))
+
+    fn set(domain: &str, key: &str, value: &DefaultsValue) -> Result<()> {
+        let mut xml = Vec::new();
+        plist::to_writer_xml(&mut xml, &value.to_plist())?;
+        let data = CFData::from_buffer(&xml);
+        let (value, _) = create_with_data(data, kCFPropertyListImmutable)
+            .map_err(|err| eyre::eyre!("failed to parse macOS preference: {err}"))?;
+        let value = unsafe { CFPropertyList::wrap_under_create_rule(value) };
+        let key = CFString::new(key);
+        let (_application, application_id) = application_id(domain);
+        unsafe {
+            CFPreferencesSetValue(
+                key.as_concrete_TypeRef(),
+                value.as_CFTypeRef(),
+                application_id,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost,
+            );
+        }
+        Ok(())
+    }
+
+    fn synchronize(domain: &str) -> Result<()> {
+        let (_application, application_id) = application_id(domain);
+        unsafe {
+            if CFPreferencesSynchronize(
+                application_id,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost,
+            ) == 0
+            {
+                eyre::bail!("failed to synchronize macOS preference domain {domain}");
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn write_all(requests: &[DefaultsRequest]) -> Result<()> {
+        let mut domains = IndexSet::new();
+        for request in requests {
+            set(&request.domain, &request.key, &request.value)?;
+            domains.insert(request.domain.as_str());
+        }
+        for domain in domains {
+            synchronize(domain)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(super) fn remove(domain: &str, key: &str) -> Result<()> {
+        let key = CFString::new(key);
+        let (_application, application_id) = application_id(domain);
+        unsafe {
+            CFPreferencesSetValue(
+                key.as_concrete_TypeRef(),
+                std::ptr::null(),
+                application_id,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost,
+            );
+            if CFPreferencesSynchronize(
+                application_id,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost,
+            ) == 0
+            {
+                eyre::bail!("failed to synchronize macOS preference domain {domain}");
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -262,50 +433,91 @@ mod tests {
             DefaultsValue::from_toml(&val(r#""right""#)),
             Some(DefaultsValue::Str("right".into()))
         );
+        assert_eq!(
+            DefaultsValue::from_toml(&val("[1, true]")),
+            Some(DefaultsValue::Array(vec![
+                DefaultsValue::Int(1),
+                DefaultsValue::Bool(true),
+            ]))
+        );
+        assert_eq!(
+            DefaultsValue::from_toml(&val(r#"{ a = 1, nested = { enabled = true } }"#)),
+            Some(DefaultsValue::Dict(IndexMap::from([
+                ("a".into(), DefaultsValue::Int(1)),
+                (
+                    "nested".into(),
+                    DefaultsValue::Dict(IndexMap::from([(
+                        "enabled".into(),
+                        DefaultsValue::Bool(true),
+                    )])),
+                ),
+            ])))
+        );
 
-        // unsupported plist shapes are None -> warned + skipped by the caller
-        assert_eq!(DefaultsValue::from_toml(&val("[1, 2]")), None);
-        assert_eq!(DefaultsValue::from_toml(&val("{ a = 1 }")), None);
+        // Dates and times remain unsupported; this change only adds arrays and tables.
+        assert_eq!(DefaultsValue::from_toml(&val("1979-05-27T07:32:00Z")), None);
     }
 
     #[test]
     fn test_write_args() {
-        assert_eq!(DefaultsValue::Bool(true).write_args(), ["-bool", "true"]);
-        assert_eq!(DefaultsValue::Bool(false).write_args(), ["-bool", "false"]);
-        assert_eq!(DefaultsValue::Int(2).write_args(), ["-int", "2"]);
-        assert_eq!(DefaultsValue::Float(0.5).write_args(), ["-float", "0.5"]);
         assert_eq!(
-            DefaultsValue::Str("left".into()).write_args(),
+            DefaultsValue::Bool(true).write_args().unwrap(),
+            ["-bool", "true"]
+        );
+        assert_eq!(
+            DefaultsValue::Bool(false).write_args().unwrap(),
+            ["-bool", "false"]
+        );
+        assert_eq!(DefaultsValue::Int(2).write_args().unwrap(), ["-int", "2"]);
+        assert_eq!(
+            DefaultsValue::Float(0.5).write_args().unwrap(),
+            ["-float", "0.5"]
+        );
+        assert_eq!(
+            DefaultsValue::Str("left".into()).write_args().unwrap(),
             ["-string", "left"]
         );
+        assert_eq!(DefaultsValue::Array(vec![]).write_args(), None);
     }
 
     #[test]
     fn test_matches() {
-        // booleans read back as 1/0
-        assert!(DefaultsValue::Bool(true).matches("boolean", "1"));
-        assert!(DefaultsValue::Bool(false).matches("boolean", "0"));
-        assert!(!DefaultsValue::Bool(true).matches("boolean", "0"));
+        assert!(DefaultsValue::Bool(true).matches(&plist::Value::Boolean(true)));
+        assert!(DefaultsValue::Bool(false).matches(&plist::Value::Boolean(false)));
+        assert!(!DefaultsValue::Bool(true).matches(&plist::Value::Boolean(false)));
         // strict typing: integer 1 does not satisfy `true`
-        assert!(!DefaultsValue::Bool(true).matches("integer", "1"));
+        assert!(!DefaultsValue::Bool(true).matches(&plist::Value::Integer(1.into())));
 
-        assert!(DefaultsValue::Int(2).matches("integer", "2"));
-        assert!(!DefaultsValue::Int(2).matches("integer", "3"));
-        assert!(!DefaultsValue::Int(2).matches("float", "2"));
+        assert!(DefaultsValue::Int(2).matches(&plist::Value::Integer(2.into())));
+        assert!(!DefaultsValue::Int(2).matches(&plist::Value::Integer(3.into())));
+        assert!(!DefaultsValue::Int(2).matches(&plist::Value::Real(2.0)));
 
-        // `defaults read` may print floats without a fraction
-        assert!(DefaultsValue::Float(48.0).matches("float", "48"));
-        assert!(DefaultsValue::Float(0.5).matches("float", "0.5"));
-        assert!(!DefaultsValue::Float(0.5).matches("float", "0.6"));
+        assert!(DefaultsValue::Float(48.0).matches(&plist::Value::Real(48.0)));
+        assert!(DefaultsValue::Float(0.5).matches(&plist::Value::Real(0.5)));
+        assert!(!DefaultsValue::Float(0.5).matches(&plist::Value::Real(0.6)));
 
-        assert!(DefaultsValue::Str("left".into()).matches("string", "left"));
-        assert!(!DefaultsValue::Str("left".into()).matches("string", "right"));
+        assert!(DefaultsValue::Str("left".into()).matches(&plist::Value::String("left".into())));
+        assert!(!DefaultsValue::Str("left".into()).matches(&plist::Value::String("right".into())));
+
+        let nested = DefaultsValue::from_toml(&val("[{ enabled = true, count = 2 }]")).unwrap();
+        assert!(nested.matches(&nested.to_plist()));
     }
 
-    /// `status()` must not fail when keys don't exist yet — this is
-    /// the expected path on a fresh macOS install. Non-zero exits from
-    /// `defaults read` / `read-type` are treated as "unset" only for known
-    /// missing key/domain errors.
+    #[test]
+    fn test_display_plist_collections() {
+        let nested = DefaultsValue::from_toml(&val("[{ enabled = true, count = 2 }]")).unwrap();
+        assert_eq!(
+            display_plist(&nested.to_plist()),
+            r#"[{"enabled":true,"count":2}]"#
+        );
+        assert_eq!(
+            display_plist(&plist::Value::Array(vec![plist::Value::Data(vec![1])])),
+            "array (1 items)"
+        );
+    }
+
+    /// `status()` must not fail when keys don't exist yet — this is the
+    /// expected path on a fresh macOS install.
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn test_status_missing_keys_are_unset() {
@@ -334,5 +546,28 @@ mod tests {
                 s.state
             );
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_nested_value_round_trip() {
+        let domain = "com.mise.defaults-test";
+        let key = "NestedValue";
+        let value = DefaultsValue::from_toml(&val(
+            r#"[{ name = "Terminal", enabled = true, position = 1, scale = 1.5, metadata = { kind = "file-tile" } }]"#,
+        ))
+        .unwrap();
+
+        write_all(&[DefaultsRequest {
+            domain: domain.into(),
+            key: key.into(),
+            value: value.clone(),
+        }])
+        .unwrap();
+        let current = read(domain, key);
+        let cleanup = macos::remove(domain, key);
+
+        assert_eq!(current.unwrap(), Some(value.to_plist()));
+        cleanup.unwrap();
     }
 }

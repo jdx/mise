@@ -105,18 +105,31 @@ a warning and are ignored.
 ## Raw defaults
 
 Each key under `[bootstrap.macos.defaults]` is a preferences domain. Quote
-domains containing dots. Values map to the matching `defaults write` type:
+domains containing dots. TOML values map to property-list types as follows:
 
-| TOML value | written as         | example                |
-| ---------- | ------------------ | ---------------------- |
-| boolean    | `-bool true/false` | `autohide = true`      |
-| integer    | `-int <n>`         | `tilesize = 48`        |
-| float      | `-float <n>`       | `scale = 1.5`          |
-| string     | `-string <s>`      | `orientation = "left"` |
+| TOML value | property-list type | example                        |
+| ---------- | ------------------ | ------------------------------ |
+| boolean    | boolean            | `autohide = true`              |
+| integer    | integer            | `tilesize = 48`                |
+| float      | real               | `scale = 1.5`                  |
+| string     | string             | `orientation = "left"`         |
+| array      | array              | `favorite-spaces = [1, 2, 3]`  |
+| table      | dictionary         | `options = { enabled = true }` |
 
-Other plist shapes (arrays, dicts, dates, data) are not supported; entries
-using them parse fine but are skipped with a warning, so configs written for
-newer mise versions still work.
+Arrays and tables are converted recursively, so nested values retain their
+types. For example, a Dock entry can be declared as an array of dictionaries:
+
+```toml
+[bootstrap.macos.defaults."com.apple.dock"]
+"persistent-apps" = [
+  { "tile-type" = "file-tile", "tile-data" = { "file-label" = "Terminal" } },
+]
+```
+
+The configured value replaces the entire preference value; arrays and
+dictionaries are not merged element-by-element. TOML dates and times are not
+supported and are skipped with a warning. Binary plist data has no native TOML
+type and is also not supported.
 
 ## Semantics
 
@@ -151,7 +164,7 @@ mise bootstrap macos defaults status            # shows defaults drift
 mise bootstrap macos defaults status --missing  # exit 1 if anything is unset or differs
 
 mise bootstrap macos defaults apply           # writes unset/differing defaults
-mise bootstrap macos defaults apply --dry-run # print the `defaults write` commands
+mise bootstrap macos defaults apply --dry-run # print the planned preference writes
 mise bootstrap macos defaults apply --yes     # skip the confirmation prompt
 ```
 
