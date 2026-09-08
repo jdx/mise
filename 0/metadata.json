@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1ZC2VX9G3X6K13S1KCG4CBV",
+  "session_id": "01a07e82-a2c5-78a1-bf56-00d2e89f59b2",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-08T02:03:22.902683Z",
+  "branch": "codex/vfox-install-progress",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/backend/vfox.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "d43f0d5a6475",
+  "checkpoint_transcript_start": 1726,
+  "transcript_lines_at_start": 1726,
+  "compact_transcript_start": 249,
+  "token_usage": {
+    "input_tokens": 11606,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2827136,
+    "output_tokens": 3327,
+    "api_call_count": 21
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-08T02:03:22.675027Z",
+    "agent_lines": 49,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 49,
+    "total_lines_changed": 51,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
