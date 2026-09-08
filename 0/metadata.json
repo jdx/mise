@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Z9RYPWPVK31207F0R8PXD4",
+  "session_id": "01a07e79-3b1a-7553-b2ea-791d3f67a205",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-08T01:23:00.082049Z",
+  "branch": "codex/java-version-progress-output",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/vfox/src/vfox.rs",
+    "src/backend/pipx.rs",
+    "src/backend/vfox.rs",
+    "src/cli/install_into.rs",
+    "src/install_context.rs",
+    "src/toolset/toolset_install.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "15930ae1ae4c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 230108,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 14035072,
+    "output_tokens": 27994,
+    "api_call_count": 105
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-08T01:22:59.998094Z",
+    "agent_lines": 89,
+    "agent_removed": 8,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 89,
+    "total_lines_changed": 97,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

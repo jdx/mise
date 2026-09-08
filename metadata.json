@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1Z9RYPWPVK31207F0R8PXD4",
+  "strategy": "manual-commit",
+  "branch": "codex/java-version-progress-output",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "crates/vfox/src/vfox.rs",
+    "src/backend/pipx.rs",
+    "src/backend/vfox.rs",
+    "src/cli/install_into.rs",
+    "src/install_context.rs",
+    "src/toolset/toolset_install.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 230108,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 14035072,
+    "output_tokens": 27994,
+    "api_call_count": 105
+  }
+}
