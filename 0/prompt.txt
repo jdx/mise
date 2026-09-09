@@ -1,0 +1,17 @@
+make a pr
+
+---
+
+thoughts on [https://github.com/jdx/mise/discussions/12756#discussioncomment-18352865](https://github.com/jdx/mise/discussions/12756#discussioncomment-18352865)
+
+---
+
+i don't have time to work on this and consider the drawbacks, it needs to stay deprecated, users should not use it at all
+
+---
+
+post a reply to that thread
+
+---
+
+fix the lint ci issue
