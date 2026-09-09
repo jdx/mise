@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2350ZX690YHYF2G7PKDWAK5",
+  "session_id": "01a08614-7f36-7773-9ad7-3919302eb93b",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T13:16:59.415584Z",
+  "branch": "codex/fix-dotfiles-doctor-warning-test",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "e2e/cli/test_dotfiles_watch_throttle"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "9f3687a416b3",
+  "checkpoint_transcript_start": 491,
+  "transcript_lines_at_start": 491,
+  "compact_transcript_start": 69,
+  "token_usage": {
+    "input_tokens": 32108,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2712832,
+    "output_tokens": 1758,
+    "api_call_count": 21
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T13:16:59.326233Z",
+    "agent_lines": 1,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
