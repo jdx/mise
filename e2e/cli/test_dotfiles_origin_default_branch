@@ -16,8 +16,8 @@ assert_succeed "mise bootstrap dotfiles origin --remove"
 # Reconnecting without --branch follows `master`: the repository is never
 # described as empty, and no unrelated `main` is created beside its history.
 connected="$(mise bootstrap dotfiles origin set "file://$origin" --sync manual --yes 2>&1)" || {
-	echo "connecting failed: $connected" >&2
-	exit 1
+  echo "connecting failed: $connected" >&2
+  exit 1
 }
 assert_contains_text "$connected" "branch master"
 assert_not_contains_text "$connected" "repository is empty"
