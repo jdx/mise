@@ -4505,6 +4505,25 @@
                       }
                     ]
                   },
+                  "env": {
+                    "description": "mise environments in which this package is enabled",
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1
+                      }
+                    ]
+                  },
                   "adopt": {
                     "type": "boolean",
                     "description": "adopt an existing identical brew-cask app artifact instead of replacing it"

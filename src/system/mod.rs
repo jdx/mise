@@ -155,6 +155,8 @@ pub(crate) struct PackageOptionsTomlConfig {
     pub version: String,
     #[serde(default, deserialize_with = "deserialize_package_os")]
     pub os: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_package_env")]
+    pub env: Vec<String>,
     /// Adopt an identical existing cask artifact instead of replacing it.
     #[serde(default)]
     pub adopt: Option<bool>,
@@ -205,6 +207,14 @@ impl PackageTomlConfig {
                 .iter()
                 .any(|entry| crate::cli::version::os_selector_matches(entry))
     }
+
+    /// Whether this package is enabled by at least one active mise environment.
+    fn is_env_supported(&self, environments: &[String]) -> bool {
+        let Self::Options(options) = self else {
+            return true;
+        };
+        options.env.is_empty() || options.env.iter().any(|entry| environments.contains(entry))
+    }
 }
 
 fn latest_package_version() -> String {
@@ -229,6 +239,30 @@ where
     if values.is_empty() || values.iter().any(|value| value.is_empty()) {
         return Err(serde::de::Error::custom(
             "package os must contain at least one non-empty selector",
+        ));
+    }
+    Ok(values)
+}
+
+/// Deserialize one or more non-blank mise environment selectors.
+fn deserialize_package_env<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    let values = match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(value) => vec![value],
+        OneOrMany::Many(values) => values,
+    };
+    if values.is_empty() || values.iter().any(|value| value.trim().is_empty()) {
+        return Err(serde::de::Error::custom(
+            "package env must contain at least one non-empty selector",
         ));
     }
     Ok(values)
@@ -444,7 +478,7 @@ pub(crate) fn attach_brew_tap_urls(
 /// all.
 pub(crate) fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
     let brew_taps = brew_taps_from_config(config);
-    packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps)
+    packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps, true)
 }
 
 /// Merge raw `[bootstrap.packages]` declarations inherited by `target` without
@@ -483,7 +517,7 @@ pub(crate) fn pending_plugin_packages_from_config_including_disabled(
         .into_iter()
         .map(|manager| manager.name().to_string())
         .collect::<std::collections::HashSet<_>>();
-    package_requests_from_config_files(&config.config_files, &brew_taps)
+    package_requests_from_config_files(&config.config_files, &brew_taps, true)
         .0
         .into_iter()
         .filter(|(name, _)| declared.contains_key(name) && !installed.contains(name))
@@ -518,11 +552,12 @@ pub(crate) async fn package_requests_for_manager_from_config_and_tracked_config_
     manager: &str,
 ) -> Result<Vec<PackageRequest>> {
     let tracked = config.get_tracked_config_files().await?;
-    let mut requests = package_requests_from_config_files(&config.config_files, &IndexMap::new())
-        .0
-        .shift_remove(manager)
-        .unwrap_or_default();
-    for request in package_requests_from_config_files(&tracked, &IndexMap::new())
+    let mut requests =
+        package_requests_from_config_files(&config.config_files, &IndexMap::new(), false)
+            .0
+            .shift_remove(manager)
+            .unwrap_or_default();
+    for request in package_requests_from_config_files(&tracked, &IndexMap::new(), false)
         .0
         .shift_remove(manager)
         .unwrap_or_default()
@@ -548,7 +583,7 @@ fn packages_from_config_files_and_tracked_config_files(
     merge_manager_packages(
         &mut by_mgr,
         &mut manager_options,
-        packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps),
+        packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps, false),
     );
 
     let mut tracked_brew_taps = current_brew_taps;
@@ -558,7 +593,7 @@ fn packages_from_config_files_and_tracked_config_files(
     merge_manager_packages(
         &mut by_mgr,
         &mut manager_options,
-        packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps),
+        packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps, false),
     );
 
     resolve_managers(by_mgr, manager_options, false)
@@ -603,20 +638,23 @@ fn merge_manager_packages(
 
 /// Aggregate `[bootstrap.packages]` across a specific set of config files.
 pub(crate) fn packages_from_config_files(config_files: &ConfigMap) -> Vec<ManagerPackages> {
-    packages_from_config_files_with_brew_taps(config_files, &IndexMap::new())
+    packages_from_config_files_with_brew_taps(config_files, &IndexMap::new(), true)
 }
 
 fn packages_from_config_files_with_brew_taps(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
+    filter_env: bool,
 ) -> Vec<ManagerPackages> {
-    let (requests, options) = package_requests_from_config_files(config_files, brew_taps);
+    let (requests, options) =
+        package_requests_from_config_files(config_files, brew_taps, filter_env);
     resolve_managers(requests, options, false).expect("non-strict resolve is infallible")
 }
 
 fn package_requests_from_config_files(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
+    filter_env: bool,
 ) -> (
     IndexMap<String, Vec<PackageRequest>>,
     IndexMap<String, ManagerPackageOptions>,
@@ -630,6 +668,10 @@ fn package_requests_from_config_files(
     for (spec, package) in merged {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
+            continue;
+        }
+        if filter_env && !package.is_env_supported(&crate::env::MISE_ENV_WITH_AUTO) {
+            debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this environment");
             continue;
         }
         match parse_spec(&spec) {
@@ -1868,6 +1910,59 @@ mod tests {
             requests,
             vec![("active-os", None), ("active-platform", Some("1"))]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn package_env_selector_matches_active_environments() {
+        let package = PackageTomlConfig::Options(PackageOptionsTomlConfig {
+            version: "latest".to_string(),
+            os: vec![],
+            env: vec!["desktop".to_string(), "work".to_string()],
+            adopt: None,
+            state: PackageDesiredStateTomlConfig::Present,
+        });
+
+        assert!(package.is_env_supported(&["work".to_string()]));
+        assert!(package.is_env_supported(&["home".to_string(), "desktop".to_string()]));
+        assert!(!package.is_env_supported(&["home".to_string()]));
+        assert!(!package.is_env_supported(&[]));
+        assert!(PackageTomlConfig::Version("latest".to_string()).is_env_supported(&[]));
+    }
+
+    #[test]
+    fn package_env_selector_rejects_blank_values() {
+        for config in [r#"env = " ""#, r#"env = ["work", "\t"]"#] {
+            let err = toml::from_str::<PackageOptionsTomlConfig>(config).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("package env must contain at least one non-empty selector"),
+                "{err}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn inactive_env_packages_remain_protected_from_prune() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "config.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:profile-only" = { env = "__mise_inactive_test_env__" }
+            "#,
+        )])?;
+
+        assert!(packages_from_config_files(&config_files).is_empty());
+        let packages = packages_from_config_files_and_tracked_config_files(
+            &config_files,
+            &ConfigMap::default(),
+        )?;
+        let brew = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew")
+            .unwrap();
+        assert_eq!(brew.requests[0].name, "profile-only");
         Ok(())
     }
 
