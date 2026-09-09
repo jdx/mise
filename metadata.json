@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M23FQMY4MT0E3TA1FDM69FV0",
+  "strategy": "manual-commit",
+  "branch": "codex/bump-aube-2.2.13",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Cargo.lock",
+    "mise.lock"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 88888,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 10506496,
+    "output_tokens": 9716,
+    "api_call_count": 78
+  }
+}

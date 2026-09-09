@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M23FQMY4MT0E3TA1FDM69FV0",
+  "session_id": "01a08659-bd41-75f1-87e3-ada99438ae29",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T16:24:07.111202Z",
+  "branch": "codex/bump-aube-2.2.13",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Cargo.lock",
+    "mise.lock"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "2d87f321652a",
+  "checkpoint_transcript_start": 2955,
+  "transcript_lines_at_start": 2955,
+  "compact_transcript_start": 455,
+  "token_usage": {
+    "input_tokens": 88888,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 10506496,
+    "output_tokens": 9716,
+    "api_call_count": 78
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T16:24:06.806969Z",
+    "agent_lines": 56,
+    "agent_removed": 57,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 56,
+    "total_lines_changed": 113,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
