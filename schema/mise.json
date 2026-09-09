@@ -4572,6 +4572,14 @@
               "type": "object",
               "description": "curated Dock preferences that compile into macOS defaults",
               "properties": {
+                "autohide_delay": {
+                  "type": "number",
+                  "description": "delay before showing the Dock"
+                },
+                "autohide_time_modifier": {
+                  "type": "number",
+                  "description": "Dock autohide animation time modifier"
+                },
                 "autohide": {
                   "type": "boolean",
                   "description": "hide and show the Dock automatically"
@@ -4608,6 +4616,14 @@
               "type": "object",
               "description": "curated Finder preferences that compile into macOS defaults",
               "properties": {
+                "sort_folders_first": {
+                  "type": "boolean",
+                  "description": "keep folders first when sorting by name"
+                },
+                "save_new_documents_to_cloud": {
+                  "type": "boolean",
+                  "description": "save new documents to iCloud by default (applies globally to application save dialogs)"
+                },
                 "show_all_files": {
                   "type": "boolean",
                   "description": "show hidden files in Finder"
@@ -4636,6 +4652,14 @@
               "type": "object",
               "description": "curated keyboard preferences that compile into macOS defaults",
               "properties": {
+                "automatic_capitalization": {
+                  "type": "boolean",
+                  "description": "automatically capitalize words"
+                },
+                "automatic_spelling_correction": {
+                  "type": "boolean",
+                  "description": "automatically correct spelling"
+                },
                 "key_repeat": {
                   "type": "integer",
                   "description": "keyboard repeat interval"

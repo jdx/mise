@@ -944,6 +944,10 @@ fn is_bool(value: &toml::Value) -> bool {
     matches!(value, toml::Value::Boolean(_))
 }
 
+fn is_number(value: &toml::Value) -> bool {
+    matches!(value, toml::Value::Integer(_) | toml::Value::Float(_))
+}
+
 fn is_integer(value: &toml::Value) -> bool {
     matches!(value, toml::Value::Integer(_))
 }
@@ -954,6 +958,30 @@ fn merge_dock_defaults(
 ) {
     for (key, value) in entries {
         match key.as_str() {
+            "autohide_delay" => insert_friendly_default(
+                out,
+                "com.apple.dock",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "autohide-delay",
+                    expected: is_number,
+                    expected_type: "number",
+                },
+                value.clone(),
+            ),
+            "autohide_time_modifier" => insert_friendly_default(
+                out,
+                "com.apple.dock",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "autohide-time-modifier",
+                    expected: is_number,
+                    expected_type: "number",
+                },
+                value.clone(),
+            ),
             "autohide" => insert_friendly_default(
                 out,
                 "com.apple.dock",
@@ -1052,6 +1080,30 @@ fn merge_finder_defaults(
 ) {
     for (key, value) in entries {
         match key.as_str() {
+            "sort_folders_first" => insert_friendly_default(
+                out,
+                "com.apple.finder",
+                FriendlyDefaultSpec {
+                    section: "finder",
+                    key,
+                    defaults_key: "_FXSortFoldersFirst",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
+                value.clone(),
+            ),
+            "save_new_documents_to_cloud" => insert_friendly_default(
+                out,
+                "NSGlobalDomain",
+                FriendlyDefaultSpec {
+                    section: "finder",
+                    key,
+                    defaults_key: "NSDocumentSaveNewDocumentsToCloud",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
+                value.clone(),
+            ),
             "show_all_files" => insert_friendly_default(
                 out,
                 "com.apple.finder",
@@ -1140,6 +1192,30 @@ fn merge_keyboard_defaults(
 ) {
     for (key, value) in entries {
         match key.as_str() {
+            "automatic_capitalization" => insert_friendly_default(
+                out,
+                "NSGlobalDomain",
+                FriendlyDefaultSpec {
+                    section: "keyboard",
+                    key,
+                    defaults_key: "NSAutomaticCapitalizationEnabled",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
+                value.clone(),
+            ),
+            "automatic_spelling_correction" => insert_friendly_default(
+                out,
+                "NSGlobalDomain",
+                FriendlyDefaultSpec {
+                    section: "keyboard",
+                    key,
+                    defaults_key: "NSAutomaticSpellingCorrectionEnabled",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
+                value.clone(),
+            ),
             "key_repeat" => insert_friendly_default(
                 out,
                 "NSGlobalDomain",
@@ -2205,6 +2281,119 @@ mod tests {
             )),
             Some(&tv("true"))
         );
+    }
+
+    #[test]
+    fn test_extended_friendly_macos_defaults() {
+        let cases = [
+            (
+                "dock",
+                "autohide_delay",
+                "com.apple.dock",
+                "autohide-delay",
+                "0",
+            ),
+            (
+                "dock",
+                "autohide_delay",
+                "com.apple.dock",
+                "autohide-delay",
+                "0.5",
+            ),
+            (
+                "dock",
+                "autohide_time_modifier",
+                "com.apple.dock",
+                "autohide-time-modifier",
+                "0",
+            ),
+            (
+                "dock",
+                "autohide_time_modifier",
+                "com.apple.dock",
+                "autohide-time-modifier",
+                "0.5",
+            ),
+            (
+                "finder",
+                "sort_folders_first",
+                "com.apple.finder",
+                "_FXSortFoldersFirst",
+                "true",
+            ),
+            (
+                "finder",
+                "sort_folders_first",
+                "com.apple.finder",
+                "_FXSortFoldersFirst",
+                "false",
+            ),
+            (
+                "finder",
+                "save_new_documents_to_cloud",
+                "NSGlobalDomain",
+                "NSDocumentSaveNewDocumentsToCloud",
+                "true",
+            ),
+            (
+                "finder",
+                "save_new_documents_to_cloud",
+                "NSGlobalDomain",
+                "NSDocumentSaveNewDocumentsToCloud",
+                "false",
+            ),
+            (
+                "keyboard",
+                "automatic_capitalization",
+                "NSGlobalDomain",
+                "NSAutomaticCapitalizationEnabled",
+                "true",
+            ),
+            (
+                "keyboard",
+                "automatic_capitalization",
+                "NSGlobalDomain",
+                "NSAutomaticCapitalizationEnabled",
+                "false",
+            ),
+            (
+                "keyboard",
+                "automatic_spelling_correction",
+                "NSGlobalDomain",
+                "NSAutomaticSpellingCorrectionEnabled",
+                "true",
+            ),
+            (
+                "keyboard",
+                "automatic_spelling_correction",
+                "NSGlobalDomain",
+                "NSAutomaticSpellingCorrectionEnabled",
+                "false",
+            ),
+        ];
+        for (section, key, domain, raw, value) in cases {
+            for valid in [true, false] {
+                let mut macos = BootstrapMacosTomlConfig::default();
+                let entries = match section {
+                    "dock" => &mut macos.dock,
+                    "finder" => &mut macos.finder,
+                    "keyboard" => &mut macos.keyboard,
+                    _ => unreachable!(),
+                };
+                entries.insert(
+                    key.into(),
+                    if valid { tv(value) } else { tv(r#""invalid""#) },
+                );
+                let mut out = IndexMap::new();
+                merge_friendly_macos_defaults(&mut out, &macos);
+                if valid {
+                    assert_eq!(out.len(), 1);
+                    assert_eq!(out.get(&(domain.into(), raw.into())), Some(&tv(value)));
+                } else {
+                    assert!(out.is_empty(), "{section}.{key} accepted a string");
+                }
+            }
+        }
     }
 
     #[test]
