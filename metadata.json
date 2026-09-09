@@ -3,7 +3,7 @@
   "checkpoint_id": "01M23GC05E5HD7CZ67P3XJA1R7",
   "strategy": "manual-commit",
   "branch": "codex/packslip-manpaths-followup",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "src/toolset/env_cache.rs"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 16600,
+    "input_tokens": 43360,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 2987648,
-    "output_tokens": 1999,
-    "api_call_count": 16
+    "cache_read_tokens": 7807488,
+    "output_tokens": 5913,
+    "api_call_count": 46
   }
 }
