@@ -789,8 +789,11 @@ impl Upgrade {
         mpr.finish_progress();
         Self::print_summary(&outdated, &successful_versions)?;
 
-        post_install_result?;
-        install_error
+        match (install_error, post_install_result) {
+            (Err(install), Err(post)) => Err(eyre!("{install:#}\n{post:#}")),
+            (Err(install), Ok(())) => Err(install),
+            (Ok(()), post) => post,
+        }
     }
 
     async fn uninstall_old_version(
