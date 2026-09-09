@@ -37,6 +37,7 @@ use crate::file;
 use crate::github;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::packslip_pins::{self, Observed};
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
@@ -769,6 +770,87 @@ impl PackslipBackend {
         })
     }
 
+    /// Fetch and verify the release manifest without downloading its artifact.
+    /// Lock generation uses this to learn artifact URLs and signed digests for
+    /// any target platform, while latest-version selection uses the same policy
+    /// path to decide whether a candidate is eligible.
+    async fn verified_release(
+        &self,
+        project: &str,
+        tv: &ToolVersion,
+        pin: &Pin,
+        opts: &PackslipOptions<'_>,
+        stamp: Option<&crate::packslip_stamps::Stamp>,
+    ) -> Result<(Statement, packslip::Verified)> {
+        use sha2::{Digest, Sha256};
+
+        // With a stamp in hand the manifest is already named, so the vendor is
+        // asked only for withdrawals and its digest pin. Requiring the original
+        // release asset here would refuse a stamped mirror that install accepts.
+        let (url, vendor_digest) = match stamp {
+            Some(stamp) => {
+                if stamp.digest.is_none() {
+                    bail!(
+                        "the stamp for packslip:{project}@{} from {} records no sha256 for {}, so nothing says the manifest is the one that host reviewed",
+                        tv.version,
+                        stamp.host,
+                        stamp.entry.packslip
+                    );
+                }
+                (
+                    stamp.entry.packslip.clone(),
+                    self.vendor_entry(project, tv, pin, opts)
+                        .await?
+                        .and_then(|vendor| vendor.digest),
+                )
+            }
+            None => {
+                let vendor = self.locate_bundle(project, tv, pin, opts).await?;
+                (vendor.url, vendor.digest)
+            }
+        };
+        let text = HTTP_FETCH
+            .get_text_request(&url)
+            .headers(&headers_for(&url)?)
+            .send()
+            .await?;
+        let actual = hex::encode(Sha256::digest(text.as_bytes()));
+        for expected in vendor_digest
+            .iter()
+            .chain(stamp.and_then(|stamp| stamp.digest.as_ref()))
+        {
+            if &actual != expected {
+                bail!(
+                    "packslip:{project}@{}: manifest digest differs from signed list",
+                    tv.version
+                );
+            }
+        }
+        let verified = verify_bundle(&text, pin, !opts.allow_unlogged(), &[])?;
+        if verified.project != project || verified.version != tv.version {
+            bail!(
+                "packslip:{project}@{}: verified manifest project/version differs from discovery",
+                tv.version
+            );
+        }
+        let scheme = verified.scheme.to_string();
+        let attested_by = verified.attested_by.to_string();
+        packslip_pins::check(
+            project,
+            Observed {
+                scheme: &scheme,
+                key_id: &verified.key_id,
+                issuer: verified.issuer.as_deref(),
+                attested_by: &attested_by,
+                provenance: verified.provenance_linked,
+                logged: verified.logged_at.is_some(),
+            },
+        )?;
+        let payload = packslip::sigstore::peek_statement(&text).map_err(|e| eyre!("{e}"))?;
+        let statement: Statement = serde_json::from_slice(&payload)?;
+        Ok((statement, verified))
+    }
+
     async fn recommendation(
         &self,
         project: &str,
@@ -804,7 +886,6 @@ impl PackslipBackend {
         before: Option<jiff::Timestamp>,
         stamps: Option<&crate::packslip_stamps::Stamps>,
     ) -> Result<Option<String>> {
-        use sha2::{Digest, Sha256};
         let request = ToolRequest::new_with_options(
             self.ba.clone(),
             version,
@@ -819,57 +900,9 @@ impl PackslipBackend {
             },
             None => None,
         };
-        // The same reach `install` makes, and for the same reason: with a
-        // stamp in hand the manifest is already named, so the vendor is asked
-        // only for what the vendor decides. Going through `locate_bundle`
-        // would demand the original release asset too, and refuse a version
-        // `install` accepts.
-        let (url, vendor_digest) = match stamp {
-            Some(stamp) => (
-                stamp.entry.packslip.clone(),
-                self.vendor_entry(project, &tv, pin, opts)
-                    .await?
-                    .and_then(|vendor| vendor.digest),
-            ),
-            None => {
-                let vendor = self.locate_bundle(project, &tv, pin, opts).await?;
-                (vendor.url, vendor.digest)
-            }
-        };
-        let url = url.as_str();
-        let text = HTTP_FETCH
-            .get_text_request(url)
-            .headers(&headers_for(url)?)
-            .send()
+        let (statement, verified) = self
+            .verified_release(project, &tv, pin, opts, stamp)
             .await?;
-        let actual = hex::encode(Sha256::digest(text.as_bytes()));
-        for expected in vendor_digest
-            .iter()
-            .chain(stamp.and_then(|s| s.digest.as_ref()))
-        {
-            if &actual != expected {
-                bail!("packslip:{project}@{version}: manifest digest differs from signed list");
-            }
-        }
-        let verified = verify_bundle(&text, pin, !opts.allow_unlogged(), &[])?;
-        if verified.project != project || verified.version != version {
-            bail!(
-                "packslip:{project}@{version}: verified manifest project/version differs from discovery"
-            );
-        }
-        let scheme = verified.scheme.to_string();
-        let attested_by = verified.attested_by.to_string();
-        packslip_pins::check(
-            project,
-            Observed {
-                scheme: &scheme,
-                key_id: &verified.key_id,
-                issuer: verified.issuer.as_deref(),
-                attested_by: &attested_by,
-                provenance: verified.provenance_linked,
-                logged: verified.logged_at.is_some(),
-            },
-        )?;
         // Parse errors are verification errors, not age-policy exclusions.
         if !verified_age_allowed(
             verified.logged_at.as_deref(),
@@ -880,8 +913,6 @@ impl PackslipBackend {
                 "verified release time is after the allowed cutoff".into(),
             ));
         }
-        let payload = packslip::sigstore::peek_statement(&text).map_err(|e| eyre!("{e}"))?;
-        let statement: Statement = serde_json::from_slice(&payload)?;
         let artifact = match select_artifact(
             &statement.predicate.artifacts,
             &HostPlatform::current(),
@@ -1500,6 +1531,64 @@ impl Backend for PackslipBackend {
             return Err(error);
         }
         Ok(tv)
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let project = self.project()?;
+        let raw_opts = tv.request.options();
+        let opts = PackslipOptions::new(&raw_opts);
+        let pin = pin(&project, &opts)?;
+        let stamps = crate::packslip_stamps::fetch(&project, &raw_opts).await?;
+        let stamp = match stamps.as_ref() {
+            Some(stamps) => Some(
+                stamps
+                    .stamp(&tv.version)
+                    .ok_or_else(|| stamps.refusal(&project, &tv.version))?,
+            ),
+            None => None,
+        };
+        let (statement, verified) = self
+            .verified_release(&project, tv, &pin, &opts, stamp)
+            .await?;
+        let before = crate::install_before::resolve_before_date_for_tool(
+            &self.ba,
+            tv.before_date,
+            raw_opts.minimum_release_age(),
+        )?;
+        check_verified_age(
+            verified.logged_at.as_deref(),
+            &verified.published_at,
+            before,
+        )?;
+        let artifact = select_artifact(
+            &statement.predicate.artifacts,
+            &HostPlatform::from_platform(&target.platform),
+            opts.variant().as_deref(),
+        )
+        .wrap_err_with(|| format!("selecting the packslip artifact for {}", target.to_key()))?;
+        let url = artifact
+            .url
+            .clone()
+            .ok_or_else(|| eyre!("the packslip gives no download URL for {}", artifact.name))?;
+        let scheme = verified.scheme.to_string();
+        Ok(PlatformInfo {
+            checksum: statement
+                .digest_of(&artifact.name)
+                .map(|digest| format!("sha256:{digest}")),
+            size: Some(artifact.size),
+            url: Some(url),
+            signer: Some(format!(
+                "{scheme}:{}",
+                packslip_pins::signer_of(&scheme, &verified.key_id)
+            )),
+            attested_by: (verified.attested_by == packslip::Attestor::Repackager)
+                .then(|| "repackager".to_string()),
+            ..Default::default()
+        })
     }
 
     /// `variant` decides which artifact is downloaded, so a lock entry for a
