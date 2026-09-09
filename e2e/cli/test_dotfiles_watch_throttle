@@ -90,7 +90,7 @@ assert_contains "cat watch.log" '"event":"throttled"'
 assert_contains "mise bootstrap dotfiles paths --noisy" "state.json"
 assert_contains "mise bootstrap dotfiles status" "throttled: ~/.config/hypr/state.json changes constantly"
 assert_contains "mise doctor 2>&1 || true" "state.json changes constantly"
-assert "mise doctor --json 2>/dev/null | jq '[.warnings[]? | select(contains(\"state.json changes constantly\"))] | length'" "0"
+assert "set -o pipefail; mise doctor --json 2>/dev/null | jq '[.warnings[]? | select(contains(\"state.json changes constantly\"))] | length'" "0"
 # never excluded, never switched to manual saving
 assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "exclude"
 assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "autosave"

@@ -11,8 +11,12 @@ assert_fail "ls $MISE_DATA_DIR/installs/dummy"
 
 assert "mise use dummy@1.0.0"
 assert_contains "mise ls dummy" "1.0.0"
-assert "mise unuse dummy@1.0.0"
-assert_empty "mise ls dummy"
+# Unuse has already committed its configuration edit before optional pruning.
+# If nobody can answer the prune prompt, finish unuse without removing the install.
+assert "MISE_YES=0 mise unuse dummy@1.0.0"
+assert_empty "cat mise.toml"
+assert_contains "mise ls dummy" "1.0.0"
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 
 assert "mise use dummy@1.0.0"
 mkdir subdir

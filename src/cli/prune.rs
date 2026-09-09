@@ -13,7 +13,7 @@ use crate::toolset::{
 };
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::prompt;
+use crate::ui::prompt::{self, Confirmation};
 use crate::{backend::Backend, config, env, exit};
 use console::style;
 use eyre::Result;
@@ -89,7 +89,14 @@ impl Prune {
             let (to_delete, needed) = prunable_tools_with_sources(&config, tools).await?;
             let has_work = !to_delete.is_empty();
             let explain = self.is_dry_run().then_some(&needed);
-            delete(&config, self.is_dry_run(), to_delete, explain).await?;
+            delete(
+                &config,
+                self.is_dry_run(),
+                to_delete,
+                explain,
+                UnavailableConfirmation::Error,
+            )
+            .await?;
             if self.dry_run_code && has_work {
                 return Err(exit::request(1));
             }
@@ -174,14 +181,30 @@ pub(super) async fn prune(
     dry_run: bool,
 ) -> Result<()> {
     let to_delete = prunable_tools(config, tools).await?;
-    delete(config, dry_run, to_delete, None).await
+    delete(
+        config,
+        dry_run,
+        to_delete,
+        None,
+        UnavailableConfirmation::Decline,
+    )
+    .await
 }
 
+/// How a caller wants to handle a confirmation prompt that nobody can answer.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UnavailableConfirmation {
+    Error,
+    Decline,
+}
+
+/// Confirms and removes the supplied versions according to the caller's prompt policy.
 async fn delete(
     config: &Arc<Config>,
     dry_run: bool,
     to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>,
     explain: Option<&NeededVersions>,
+    unavailable: UnavailableConfirmation,
 ) -> Result<()> {
     let mpr = MultiProgressReport::get();
     if dry_run {
@@ -204,8 +227,17 @@ async fn delete(
         if let Some(needed) = explain {
             explain_removal(&tv, needed);
         }
-        if Settings::get().yes || prompt::confirm_with_all(format!("remove {} ?", tv))?.is_yes() {
+        if Settings::get().yes {
             confirmed.push((p, tv));
+            continue;
+        }
+        match prompt::confirm_with_all(format!("remove {} ?", tv))? {
+            Confirmation::Yes => confirmed.push((p, tv)),
+            Confirmation::No => {}
+            Confirmation::Unavailable if unavailable == UnavailableConfirmation::Decline => {}
+            Confirmation::Unavailable => eyre::bail!(
+                "mise prune requires confirmation but there was nobody to ask; pass --yes to prune non-interactively"
+            ),
         }
     }
 
