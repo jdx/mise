@@ -5,7 +5,6 @@
   "branch": "codex/fix-packslip-lock-urls",
   "checkpoints_count": 2,
   "files_touched": [
-    "e2e/backend/test_registry_min_version",
     "src/backend/packslip.rs"
   ],
   "sessions": [
@@ -14,7 +13,7 @@
       "transcript": "/0/full.jsonl",
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
-      "prompt": "/0/prompt.txt"
+      "prompt": ""
     },
     {
       "metadata": "/1/metadata.json",
@@ -25,11 +24,11 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 124966,
+    "input_tokens": 167314,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 4969984,
-    "output_tokens": 12554,
-    "api_call_count": 56
+    "cache_read_tokens": 5059840,
+    "output_tokens": 12938,
+    "api_call_count": 68
   },
   "combined_attribution": {
     "calculated_at": "2026-09-09T12:30:40.02983Z",
