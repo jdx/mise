@@ -3,7 +3,7 @@
   "checkpoint_id": "01M23DQANNTVX2WHWCSKKFR9H8",
   "strategy": "manual-commit",
   "branch": "codex/packslip-manpages",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "src/packslip.rs"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 81147,
+    "input_tokens": 137354,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 4390016,
-    "output_tokens": 4729,
-    "api_call_count": 36
+    "cache_read_tokens": 5398144,
+    "output_tokens": 7723,
+    "api_call_count": 51
   }
 }
