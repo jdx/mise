@@ -3,38 +3,39 @@
   "checkpoint_id": "01M2374HXEJE6FH5QSQ54GXZZY",
   "session_id": "01a08658-a45e-7723-8173-67f5e65df39f",
   "strategy": "manual-commit",
-  "created_at": "2026-09-09T13:53:52.196861Z",
+  "created_at": "2026-09-09T14:13:11.064146Z",
   "branch": "codex/fix-tool-stub-windows-launcher-os",
   "checkpoints_count": 1,
   "files_touched": [
     "docs/dev-tools/tool-stubs.md",
-    "e2e/generate/test_generate_tool_stub_lock",
     "src/cli/generate/tool_stub.rs"
   ],
   "agent": "Codex",
   "model": "gpt-5.6-sol",
-  "turn_id": "e5217e839a34",
-  "compact_transcript_start": 0,
+  "turn_id": "fa2ef19ec1ef",
+  "checkpoint_transcript_start": 551,
+  "transcript_lines_at_start": 551,
+  "compact_transcript_start": 80,
   "token_usage": {
-    "input_tokens": 160607,
+    "input_tokens": 22993,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 7243520,
-    "output_tokens": 12561,
-    "api_call_count": 70
+    "cache_read_tokens": 2756608,
+    "output_tokens": 2377,
+    "api_call_count": 17
   },
   "session_metrics": {
-    "turn_count": 1
+    "turn_count": 2
   },
   "initial_attribution": {
-    "calculated_at": "2026-09-09T13:53:52.131562Z",
-    "agent_lines": 34,
-    "agent_removed": 5,
-    "human_added": 0,
+    "calculated_at": "2026-09-09T14:13:10.941846Z",
+    "agent_lines": 21,
+    "agent_removed": 8,
+    "human_added": 5,
     "human_modified": 0,
     "human_removed": 0,
-    "total_committed": 34,
-    "total_lines_changed": 39,
-    "agent_percentage": 100,
+    "total_committed": 26,
+    "total_lines_changed": 34,
+    "agent_percentage": 85.29411764705883,
     "metric_version": 2
   },
   "prompt_attributions": [

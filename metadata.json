@@ -6,7 +6,6 @@
   "checkpoints_count": 1,
   "files_touched": [
     "docs/dev-tools/tool-stubs.md",
-    "e2e/generate/test_generate_tool_stub_lock",
     "src/cli/generate/tool_stub.rs"
   ],
   "sessions": [
@@ -19,10 +18,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 160607,
+    "input_tokens": 22993,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 7243520,
-    "output_tokens": 12561,
-    "api_call_count": 70
+    "cache_read_tokens": 2756608,
+    "output_tokens": 2377,
+    "api_call_count": 17
   }
 }
