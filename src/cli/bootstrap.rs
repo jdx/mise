@@ -275,6 +275,7 @@ enum Commands {
     #[usage(name = "__inspect-firewall-plan", hide = true)]
     InspectFirewallPlan(BootstrapInspectFirewallPlan),
     Accounts(BootstrapAccounts),
+    #[usage(hide = true)]
     ConfigRoots(BootstrapConfigRoots),
     Compose(BootstrapCompose),
     Dotfiles(BootstrapDotfiles),
@@ -343,7 +344,7 @@ struct BootstrapPlan {
     prompt_secrets: bool,
 }
 
-/// Show non-composed bootstrap declarations in each selected configuration root
+/// Show non-composed bootstrap declarations in each selected configuration root (deprecated)
 ///
 /// Use this to locate the origin of declarations before composition. For the
 /// combined desired state and its changes, use `bootstrap plan`.

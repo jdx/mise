@@ -4259,8 +4259,9 @@
       "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
         "config_roots": {
+          "deprecated": true,
           "type": "array",
-          "description": "independent config roots whose dotfiles and managed files/directories are composed into bootstrap",
+          "description": "deprecated; bootstrap composition across independent config roots needs more design and will be removed in mise 2027.3.3",
           "items": {
             "type": "string"
           }

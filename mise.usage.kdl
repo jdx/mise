@@ -594,9 +594,9 @@ preview before changing user IDs, memberships, or account state.
             flag "-h --help" help="Print help" action=help builtin=#true
         }
     }
-    cmd config-roots help="Show non-composed bootstrap declarations in each selected configuration root" effect=read {
+    cmd config-roots hide=#true help="Show non-composed bootstrap declarations in each selected configuration root (deprecated)" effect=read {
         long_help #"""
-Show non-composed bootstrap declarations in each selected configuration root
+Show non-composed bootstrap declarations in each selected configuration root (deprecated)
 
 Use this to locate the origin of declarations before composition. For the
 combined desired state and its changes, use `bootstrap plan`.

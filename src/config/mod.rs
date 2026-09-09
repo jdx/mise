@@ -179,6 +179,8 @@ pub(crate) struct Alias {
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 static _REDACTOR: Lazy<Mutex<Redactor>> = Lazy::new(Default::default);
+const BOOTSTRAP_CONFIG_ROOTS_WARN_AT: &str = "2026.9.3";
+const BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT: &str = "2027.3.3";
 const MONOREPO_LOCKFILE_WARN_AT: &str = "2026.12.0";
 const MONOREPO_LOCKFILE_DEFAULT_AT: &str = "2027.6.0";
 
@@ -1747,6 +1749,13 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
     }) else {
         return Ok(vec![]);
     };
+    deprecated_at!(
+        BOOTSTRAP_CONFIG_ROOTS_WARN_AT,
+        BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT,
+        "bootstrap.config_roots",
+        "`[bootstrap].config_roots` in {} is deprecated. Composing bootstrap configuration across independent roots needs more design; move bootstrap declarations into global or system configuration.",
+        display_path(declaring_config)
+    );
     if patterns.is_empty() {
         return Ok(vec![]);
     }

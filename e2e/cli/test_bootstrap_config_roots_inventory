@@ -47,6 +47,9 @@ cat <<'EOF' >bundles/empty/mise.toml
 tiny = "1"
 EOF
 
+assert_contains "MISE_ENV=dev mise bootstrap config-roots --json 2>&1" "deprecated [bootstrap.config_roots]"
+assert_contains "MISE_ENV=dev mise bootstrap config-roots --json 2>&1" "needs more design"
+assert_contains "MISE_ENV=dev mise bootstrap config-roots --json 2>&1" "removed in mise 2027.3.3"
 assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots | length == 3'"
 assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[0].config_root == \"$PWD/bundles/a\"'"
 assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[0].environments == [\"dev\"]'"

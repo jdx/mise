@@ -404,54 +404,6 @@ mise bootstrap dotfiles apply ~/.zshrc
 For symlinked dotfiles, `edit` opens the managed source, so it works with the
 default `symlink` mode.
 
-## Composing configuration roots
-
-`[bootstrap].config_roots` composes declarative resources from independent
-configuration roots into the current bootstrap operation:
-
-```toml
-[bootstrap]
-config_roots = ["bundles/*"]
-```
-
-Entries are relative to the declaring config root and may use single-level `*`
-globs. Each matched directory is loaded with the normal active configuration
-environments. Relative resource sources and template `config_root` values remain
-relative to the config that declared them. Variables declared by a selected root
-are available to that root's dotfile templates without leaking into sibling
-roots.
-
-Composition includes `[dotfiles]`, `[bootstrap.files]`,
-`[bootstrap.directories]`, `[bootstrap.services]`, and `[bootstrap.compose]`.
-Equivalent declarations are deduplicated. Different declarations for the same
-dotfile target, edit `(path, id)`, managed file, managed directory, service, or
-Compose project are errors that identify both declaring configs. Independent
-roots never acquire precedence from their order in `config_roots`.
-Same-target `symlink-each` declarations are the exception: their source trees
-compose when their leaf paths are disjoint, while overlapping leaves or
-file/directory collisions are reported with both declaring configs.
-Directory `copy` and `symlink-each` footprints are also checked against nested
-dotfile declarations. Disjoint leaves may share directories, but two entries
-cannot own the same leaf or place a file where another entry needs a directory.
-
-Other configuration such as tools, tasks, packages, hooks, and repos is not
-collected from these roots. Use their existing explicit workflows when those
-resources need aggregate behavior.
-
-Use `mise bootstrap config-roots` to inspect the active non-composed bootstrap
-declarations before running those workflows:
-
-```sh
-mise bootstrap config-roots
-mise bootstrap config-roots --json
-```
-
-The command reports package, repo, account, and hook declarations separately
-for every matched configuration root. JSON output includes the declaring config
-and its active configuration environment. Counts describe active TOML entries;
-the command does not inspect the host, resolve resource state, or run bootstrap
-hooks.
-
 ## Advanced: self-managing config
 
 You can manage the dotfiles repository and the mise global config as
