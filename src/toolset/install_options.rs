@@ -6,6 +6,8 @@ use crate::toolset::tool_version::ResolveOptions;
 #[derive(Debug, Clone)]
 pub(crate) struct InstallOptions {
     pub reason: String,
+    /// The caller prints its own final installation results.
+    pub hide_success_summary: bool,
     pub force: bool,
     pub jobs: Option<usize>,
     pub raw: bool,
@@ -39,6 +41,7 @@ impl Default for InstallOptions {
             jobs: Some(Settings::get().jobs),
             raw: Settings::get().raw,
             reason: "install".to_string(),
+            hide_success_summary: false,
             force: false,
             missing_args_only: true,
             include_lazy: false,

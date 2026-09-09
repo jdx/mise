@@ -428,6 +428,7 @@ impl Upgrade {
 
         let opts = InstallOptions {
             reason: "upgrade".to_string(),
+            hide_success_summary: true,
             force: false,
             jobs: self.jobs,
             raw: self.raw,
@@ -645,9 +646,9 @@ impl Upgrade {
 
         // Only uninstall old versions of tools that were successfully upgraded
         // and are not needed by any tracked config. Immediate removals are
-        // collected and run as one session below, so each finished removal is
-        // a single permanent line rather than a kept row.
+        // collected and run as one session below, with a summary of removed versions.
         let mut immediate: Vec<ToolVersion> = Vec::new();
+        let mut deferred_count = 0;
         for (o, old_version) in to_remove {
             if successful_versions
                 .iter()
@@ -677,7 +678,8 @@ impl Upgrade {
                                 o.name, old_version
                             );
                         } else {
-                            info!(
+                            deferred_count += 1;
+                            debug!(
                                 "{}@{} will be pruned after {}",
                                 o.name,
                                 old_version,
@@ -688,6 +690,15 @@ impl Upgrade {
                     PruneMode::None => unreachable!(),
                 }
             }
+        }
+
+        if deferred_count > 0 {
+            info!(
+                "{} old version{} will be pruned after {}",
+                deferred_count,
+                if deferred_count == 1 { "" } else { "s" },
+                Settings::get().upgrade.prune_after
+            );
         }
 
         if !immediate.is_empty() {

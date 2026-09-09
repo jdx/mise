@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # An interactive terminal gets the live install region: a header with the
-# install-wide bar, one row per active tool, and the same permanent completion
-# lines the append-only reporter prints. This drives mise through a PTY with CI
+# install-wide bar, one row per active tool, and a final summary naming changed
+# versions. Successful rows disappear. This drives mise through a PTY with CI
 # unset so the animated display is actually chosen.
 export CI=0 MISE_DEBUG=0 MISE_TRACE=0 MISE_LOG_LEVEL=info
 export MISE_FORCE_PROGRESS=0
@@ -70,20 +70,18 @@ for line in plain.splitlines():
     if "0/1" in line and "█" * 24 in line:
         raise AssertionError("bar was full before the install finished:\n" + plain)
 
-# The permanent record matches the append-only reporter: one completion line
-# per tool with its duration, then a summary. The old per-tool "installed"
-# row and the old "[cur/total]" header are gone.
-assert re.search(r"✓ dummy@1\.0\.0\s+\d+(\.\d+)?(ms|s)", plain), plain
+# The summary retains the installed version without a per-tool completion line.
+assert not re.search(r"✓ dummy@1\.0\.0", plain), plain
+assert re.search(r"installed 1 tool in .*: dummy@1\.0\.0", plain), plain
 assert "installed 1 tool in" in plain, plain
 assert "[0/1]" not in plain and "[1/1]" not in plain, plain
 
-# A version that is already installed is reported as such, not as a fresh
-# install. (A bare `mise install` with nothing to do says "all tools are
-# installed" before any reporter exists, so ask for the version explicitly.)
+# Already-installed checks leave no completion rows or progress summary.
 code, raw = run(["mise", "install", "dummy@1.0.0"], env)
 assert code == 0, raw
 plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
-assert "already installed" in plain, plain
+assert "already installed" not in plain, plain
+assert "installed 0 tools" not in plain, plain
 
 # A narrow terminal gets a layout that fits it rather than wrapped lines: the
 # header drops its version and shrinks the bar, rows drop their bar, and the
@@ -92,12 +90,39 @@ assert "already installed" in plain, plain
 code, raw = run(["mise", "install", "--force", "dummy@1.0.0"], env, columns=50)
 assert code == 0, raw
 plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
-assert re.search(r"✓ dummy@1\.0\.0\s+\d+(\.\d+)?(ms|s)", plain), plain
+assert re.search(r"installed 1 tool in .*: dummy@1\.0\.0", plain), plain
 for line in plain.replace("\r", "\n").splitlines():
     assert len(line.rstrip()) <= 50, f"{len(line)} cells at 50 columns: {line!r}\n{plain}"
 assert "█" * 11 not in plain, plain
 # The byline is the last thing the header gives up, and at 50 columns it goes.
 assert "by @jdx" not in plain, plain
+
+# Implicit installation leaves its version summary before the command runs.
+code, raw = run(["mise", "exec", "dummy@1.0.1", "--", "true"], env)
+assert code == 0, raw
+plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
+assert re.search(r"installed 1 tool in .*: dummy@1\.0\.1", plain), plain
+assert "✓ dummy@1.0.1" not in plain, plain
+
+# Failed hooks retain diagnostics and a failure summary, never success rows.
+with open("mise.toml", "w") as config:
+    config.write('[tools]\ndummy = { version = "1.0.2", postinstall = "echo hook-failed >&2; exit 1" }\n')
+code, raw = run(["mise", "install"], env)
+assert code != 0, raw
+plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
+assert "✗ dummy@1.0.2" in plain, plain
+assert "hook-failed" in plain, plain
+assert "1 failed" in plain, plain
+assert "✓ dummy@1.0.2" not in plain, plain
+with open("mise.toml", "w") as config:
+    config.write('[tools]\ndummy = "1.0.0"\n')
+
+# Removal keeps the version that was removed, with no duplicate completion row.
+code, raw = run(["mise", "uninstall", "dummy@1.0.1"], env)
+assert code == 0, raw
+plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", raw)
+assert re.search(r"removed 1 tool in .*: dummy@1\.0\.1", plain), plain
+assert "✓ dummy@1.0.1" not in plain, plain
 
 # An AI agent's terminal is a PTY that records frames instead of redrawing
 # them. It must get the append-only output CI gets, or every tick reprints

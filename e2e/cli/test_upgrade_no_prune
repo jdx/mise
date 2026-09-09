@@ -30,7 +30,8 @@ assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 # The default schedules the old version but leaves its path intact.
 mise uninstall dummy --all
 mise install dummy@1.0.0
-mise upgrade dummy
+mise upgrade dummy >upgrade.log 2>&1
+assert_contains "cat upgrade.log" "1 old version will be pruned after 24h"
 assert_contains "mise ls --installed dummy" "1.1.0"
 assert_contains "mise ls --installed dummy" "1.0.0 (pruned in"
 assert "mise ls --installed dummy -J | jq -r '.[] | select(.version == \"1.0.0\") | .scheduled_for_pruning'" "true"
@@ -104,13 +105,13 @@ mise --version >/dev/null
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 
 # A due receipt remains pending while a config reselects the old version.
-sed -i 's/dummy = "1"/dummy = "1.0.0"/' mise.toml
+sed -i.bak 's/dummy = "1"/dummy = "1.0.0"/' mise.toml
 mise current >/dev/null
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 assert "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
 
 # Once the reference goes away, the next invocation can remove it.
-sed -i 's/dummy = "1.0.0"/dummy = "1.1.0"/' mise.toml
+sed -i.bak 's/dummy = "1.0.0"/dummy = "1.1.0"/' mise.toml
 ln -s ./1.0.0 "$MISE_DATA_DIR/installs/dummy/retired"
 touch "$MISE_DATA_DIR/shims/deferred-prune-orphan"
 chmod +x "$MISE_DATA_DIR/shims/deferred-prune-orphan"
@@ -160,7 +161,7 @@ assert_fail "test -f '$MISE_STATE_DIR/deferred-prune-invocations'"
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 
 timeout 15 mise config ls >/dev/null
-assert "awk 'END { print NR < 10 }' '$MISE_STATE_DIR/deferred-prune-invocations'" "1"
+assert "awk 'END { print (NR < 10) }' '$MISE_STATE_DIR/deferred-prune-invocations'" "1"
 assert_fail "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
 

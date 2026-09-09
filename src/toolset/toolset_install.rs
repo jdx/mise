@@ -326,6 +326,11 @@ impl Toolset {
                 })
                 .flatten()
         });
+        if opts.hide_success_summary
+            && let Some(progress) = &mut install_progress
+        {
+            progress.hide_success_summary();
+        }
         if install_progress.is_none() {
             mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
         }

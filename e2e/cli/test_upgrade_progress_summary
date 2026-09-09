@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
-echo 'dummy 1' >.tool-versions
-mise install dummy@1.0.0 >/dev/null 2>&1 || fail "pre-install of dummy@1.0.0 failed"
+export MISE_DEBUG=0 MISE_TRACE=0 MISE_LOG_LEVEL=info
 
-output="$(MISE_FORCE_PROGRESS=1 mise up dummy 2>&1)"
+printf 'dummy 1\ntiny 1\n' >.tool-versions
+mise install dummy@1.0.0 tiny@1.0.0 >/dev/null 2>&1 || fail "pre-install of dummy@1.0.0 failed"
+
+output="$(MISE_FORCE_PROGRESS=1 mise up 2>&1)"
 summary_line="  dummy 1.0.0 → 1.1.0"
 
 if [[ $output != *"$summary_line"* ]]; then
@@ -14,3 +16,14 @@ after_summary="${output#*"$summary_line"}"
 if grep -q $'\033\\[[0-9;]*J' <<<"$after_summary"; then
   fail "upgrade summary was followed by a terminal clear sequence"
 fi
+
+# Lookup/install sessions leave the richer upgrade summary as the only success
+# record. Deferred pruning is one notice, independent of the tool count.
+printf '%s' "$output" | python3 -c 'import re, sys; print(re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", sys.stdin.read()))' >output.log
+assert_contains 'cat output.log' 'tiny 1.0.0 → 1.1.0'
+assert_contains 'cat output.log' '2 old versions will be pruned after 24h'
+assert_not_contains 'cat output.log' '✓ dummy'
+assert_not_contains 'cat output.log' '✓ tiny'
+assert_not_contains 'cat output.log' 'resolved 2 tools'
+assert_not_contains 'cat output.log' 'installed 2 tools'
+assert_not_contains 'cat output.log' 'dummy@1.0.0 will be pruned'
