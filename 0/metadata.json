@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M231R62G5NGD1863A4B2BJ01",
+  "session_id": "01a08614-7f36-7773-9ad7-3919302eb93b",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T12:19:43.738985Z",
+  "branch": "codex/fix-crates-io-brew-metadata",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Cargo.toml"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "375c5b54cabc",
+  "checkpoint_transcript_start": 83,
+  "transcript_lines_at_start": 83,
+  "compact_transcript_start": 10,
+  "token_usage": {
+    "input_tokens": 37857,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1447168,
+    "output_tokens": 3692,
+    "api_call_count": 24
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T12:19:43.704689Z",
+    "agent_lines": 2,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
