@@ -1,0 +1,5 @@
+should we broaden this pr to leverage gix in all hot paths? or is that too much?
+
+---
+
+address pr feedback until it settles
