@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M23BD45Z29KJZWG1AF2NVFKS",
+  "session_id": "01a08691-ded6-70b2-87d0-3e1f2215cbc3",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T15:08:32.11475Z",
+  "branch": "codex/packslip-manpages",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/.vitepress/sidebar.ts",
+    "docs/dev-tools/packslip-resources.md",
+    "e2e/backend/test_packslip_resources",
+    "src/backend/packslip.rs",
+    "src/packslip.rs",
+    "src/toolset/toolset_env.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "1fa8fae16be2",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 443777,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 14956928,
+    "output_tokens": 34039,
+    "api_call_count": 131
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T15:08:31.985164Z",
+    "agent_lines": 196,
+    "agent_removed": 6,
+    "human_added": 1,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 197,
+    "total_lines_changed": 204,
+    "agent_percentage": 99.01960784313727,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

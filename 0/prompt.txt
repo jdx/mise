@@ -1,0 +1,9 @@
+investigate [https://github.com/jdx/mise/discussions/12971](https://github.com/jdx/mise/discussions/12971)
+
+---
+
+start with a pr to packslip for man pages
+
+---
+
+make a pr for mise to consume these, then post a reply to the user
