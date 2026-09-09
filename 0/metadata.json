@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M231CJG3QZH25J9Q9R29NBCC",
+  "session_id": "01a0860f-08b5-70a3-8076-d50fb6905de9",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T12:13:23.267527Z",
+  "branch": "codex/publish-version-after-release",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/publish-version.yml",
+    ".github/workflows/release.yml",
+    "scripts/publish-release.sh",
+    "scripts/publish-s3.sh",
+    "scripts/publish-version.sh"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "276a0780c8de",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 75222,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1142656,
+    "output_tokens": 10301,
+    "api_call_count": 22
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T12:13:23.241068Z",
+    "agent_lines": 106,
+    "agent_removed": 29,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 106,
+    "total_lines_changed": 135,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
