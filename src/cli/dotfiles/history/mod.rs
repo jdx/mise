@@ -84,10 +84,11 @@ pub(crate) fn resolve(spec: &str, entries: &[Entry], path: Option<&str>) -> Resu
 
 /// The display form of a path argument (`~/…` under `$HOME`).
 pub(crate) fn display_arg(path: &str) -> String {
-    // the link itself, never its destination
-    crate::file::display_path(crate::system::history::tracked::normalize_target(
-        std::path::Path::new(path),
-    ))
+    // Use the checkpoint's portable root mapping. Normalizing the target and
+    // abbreviating against the unnormalized HOME loses root aliases. The tree
+    // conversion also preserves a symlink leaf rather than following it.
+    use crate::system::history::tracked::{display_to_tree_path, tree_path_to_display};
+    tree_path_to_display(&display_to_tree_path(path))
 }
 
 pub(crate) fn local_time(rfc3339: &str) -> String {
