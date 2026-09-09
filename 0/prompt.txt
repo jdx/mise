@@ -1,9 +1,50 @@
-lockfiles are on by defalut? [https://github.com/jdx/mise/discussions/13018#discussion-10783093](https://github.com/jdx/mise/discussions/13018#discussion-10783093)
+PLEASE IMPLEMENT THIS PLAN:
+# Trial full lockfile generation with a December decision gate
 
----
+## Summary
 
-that means it's not on by default
+Add opt-in full lockfile generation through `lockfile_mode = "generate"`, including concurrent generation during installation. Recommend trying it in the docs and Discussion #13018.
 
----
+Keep `"merge"` as the initial default. Make the first December release fail to compile until the maintainer explicitly decides whether to change the default.
 
-see if you can fix this
+Retire `provenance_verified` behavior in both modes.
+
+## Settings, documentation, and rollout
+
+- Add optional `lockfile_mode` with values `"merge"` and `"generate"` and environment override `MISE_LOCKFILE_MODE`. Unset initially resolves to `"merge"`; explicit choices remain authoritative.
+- Preserve `lockfile` read/write/create eligibility. Selecting generation does not itself enable automatic creation.
+- Add a tip near the beginning of the lockfile guide recommending `[settings] lockfile_mode = "generate"` to trial complete generation and reduce cross-platform churn. Explain the dedicated progress bar and how to return to `"merge"`.
+- Generate settings documentation and schema.
+- Add a compile-time release gate at mise `2026.12.0`, checked against the package version. Its failure message must require reviewing trial feedback and either promoting `"generate"` or explicitly postponing the gate.
+- Do not switch defaults based on wall-clock time. The gate schedules a maintainer decision for the first December release.
+- Preserve lockfile formats and explicit format upgrades; switching modes requires no migration.
+
+## Generation and provenance
+
+- Extract a reusable generator from `mise lock`, separating immutable previous state, resolved inputs, candidate output, and publication.
+- Collect complete contributing requests, including task tools and monorepo membership, preserving configuration ownership and request bindings.
+- Use previous files for pinned versions, platform selection, exact reusable artifact metadata, and provenance baselines. Generate fresh entries from current requests so obsolete entries disappear naturally.
+- Preserve tool/platform filter behavior by regenerating selected scope and carrying untouched scope forward.
+- In generation mode, replace incremental install writers with this service and bypass lockfile mutation during shim rebuilding. Retain the legacy pipeline for merge mode.
+- Stop consulting or adding `provenance_verified` everywhere, including additional artifacts. Preserve existing values only as inert metadata for unchanged artifacts.
+- Trust existing recorded provenance regardless of the legacy bit. Verify new provenance cryptographically for every target platform before recording it.
+- Preserve configured provenance requirements, signer checks, downgrade protection, forced verification, paranoid behavior, and checksum-only entries where policy permits. Continue checking downloaded bytes against locked checksums.
+
+## Installation and failure handling
+
+- Start generation as concrete versions become available, overlapping metadata downloads, hashing, and verification with installation.
+- Share artifact downloads and verification results within the invocation. Reconcile actual install outcomes, including source fallback, before publication.
+- Bound concurrency using the jobs setting, prioritize installation, and provide a dedicated `lock` progress bar through the existing progress UI.
+- Reuse unchanged metadata without unnecessary artifact downloads or file rewrites.
+- Distinguish unsupported targets from genuine failures. Skip unsupported targets; required resolution, verification, or installation failures preserve previous files and return an error. Completed installations remain on disk.
+- Await both operations and stage affected files before publication. Detect concurrent config/file changes and retry or return a retryable error. Cancel outstanding work on interruption.
+
+## Validation and delivery
+
+- Test defaults, overrides, mode switching, creation eligibility, and the December gate’s pre-threshold/pass and threshold/fail behavior.
+- Cover Erlang’s macOS/Linux split, repeated-run stability, filtered updates, changed versions/options, task tools, monorepos, and configuration scopes.
+- Verify legacy bits round-trip without influencing trust; new artifacts omit them and receive required verification across platforms.
+- Use controlled download tests to prove overlap, artifact reuse, bounded concurrency, and appropriate progress reporting.
+- Cover failures, cancellation, unsupported targets, and concurrent edits without partial publication.
+- Run focused unit/e2e coverage, required formatting/build/Clippy checks, and documentation validation.
+- Open a review-ready PR against `main`. Reply to Discussion #13018 with the diagnosis, PR link, and trial instructions for a build containing the change. Ask whether generation stops the churn and how performance feels. Include the required AI disclosure in both posts.
