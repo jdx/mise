@@ -19,6 +19,33 @@ export AWS_SECRET_ACCESS_KEY=$CLOUDFLARE_SECRET_ACCESS_KEY
 export AWS_RETRY_MODE=adaptive
 export AWS_MAX_ATTEMPTS=10
 
+# A recovery run can publish a draft without rerunning the original CDN staging
+# step. Do not expose it as latest unless every archive used by installers is
+# already present in R2.
+unix_platforms=(
+	linux-x64
+	linux-x64-musl
+	linux-arm64
+	linux-arm64-musl
+	linux-armv7
+	linux-armv7-musl
+	macos-x64
+	macos-arm64
+)
+for platform in "${unix_platforms[@]}"; do
+	for extension in tar.gz tar.xz tar.zst; do
+		aws s3api head-object \
+			--bucket mise \
+			--key "$TAG/mise-$TAG-$platform.$extension" >/dev/null
+	done
+done
+for platform in windows-arm64 windows-x64; do
+	aws s3api head-object \
+		--bucket mise \
+		--key "$TAG/mise-$TAG-$platform.zip" >/dev/null
+done
+aws s3api head-object --bucket mise --key "$TAG/SHASUMS256.txt" >/dev/null
+
 aws s3 cp "$version_file" s3://mise/VERSION \
 	--cache-control "max-age=86400,s-maxage=86400,public,immutable" \
 	--no-progress \
