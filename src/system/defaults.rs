@@ -9,20 +9,38 @@ use indexmap::IndexMap;
 
 use crate::result::Result;
 
-/// A single `[bootstrap.macos.defaults.<domain>]` entry: `key = value`
+/// The host scope is part of a preference's identity.
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum HostScope {
+    #[default]
+    Any,
+    Current,
+}
+
+pub(super) fn canonical_domain(domain: &str) -> &str {
+    match domain {
+        "-g" | "-globalDomain" => "NSGlobalDomain",
+        domain => domain,
+    }
+}
+
+/// A typed preference and its host scope.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DefaultsRequest {
     /// preferences domain, e.g. "com.apple.dock" or "NSGlobalDomain"
     pub domain: String,
     pub key: String,
     /// Use the current host instead of the any-host preference scope.
-    pub current_host: bool,
+    pub host: HostScope,
     pub value: DefaultsValue,
 }
 
 impl DefaultsRequest {
     pub(crate) fn display_domain(&self) -> String {
-        if self.current_host {
+        if self.host == HostScope::Current {
             format!("{} (current host)", self.domain)
         } else {
             self.domain.clone()
@@ -189,7 +207,7 @@ pub(crate) async fn status(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsS
 fn status_sync(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
     let mut out = vec![];
     for req in requests {
-        let state = match read(&req.domain, &req.key, req.current_host)? {
+        let state = match read(&req.domain, &req.key, req.host)? {
             Some(current) => {
                 if req.value.matches(&current) {
                     DefaultsState::Set
@@ -215,7 +233,7 @@ pub(crate) async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result
         if dry_run {
             if let Some(write_args) = req.value.write_args() {
                 let mut args = vec![];
-                if req.current_host {
+                if req.host == HostScope::Current {
                     args.push("-currentHost".to_string());
                 }
                 args.extend(["write".to_string(), req.domain.clone(), req.key.clone()]);
@@ -282,12 +300,12 @@ fn plist_to_json(value: &plist::Value) -> Option<serde_json::Value> {
 }
 
 #[cfg(target_os = "macos")]
-fn read(domain: &str, key: &str, current_host: bool) -> Result<Option<plist::Value>> {
-    macos::read(domain, key, current_host)
+fn read(domain: &str, key: &str, host: HostScope) -> Result<Option<plist::Value>> {
+    macos::read(domain, key, host)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn read(_domain: &str, _key: &str, _current_host: bool) -> Result<Option<plist::Value>> {
+fn read(_domain: &str, _key: &str, _host: HostScope) -> Result<Option<plist::Value>> {
     Ok(None)
 }
 
@@ -319,12 +337,11 @@ mod macos {
 
     use super::*;
 
-    fn host_id(current_host: bool) -> core_foundation_sys::string::CFStringRef {
+    fn host_id(host: HostScope) -> core_foundation_sys::string::CFStringRef {
         unsafe {
-            if current_host {
-                kCFPreferencesCurrentHost
-            } else {
-                kCFPreferencesAnyHost
+            match host {
+                HostScope::Any => kCFPreferencesAnyHost,
+                HostScope::Current => kCFPreferencesCurrentHost,
             }
         }
     }
@@ -332,7 +349,7 @@ mod macos {
     fn application_id(
         domain: &str,
     ) -> (Option<CFString>, core_foundation_sys::string::CFStringRef) {
-        if matches!(domain, "NSGlobalDomain" | "-g" | "-globalDomain") {
+        if canonical_domain(domain) == "NSGlobalDomain" {
             (None, unsafe { kCFPreferencesAnyApplication })
         } else {
             let domain = CFString::new(domain);
@@ -341,11 +358,7 @@ mod macos {
         }
     }
 
-    pub(super) fn read(
-        domain: &str,
-        key: &str,
-        current_host: bool,
-    ) -> Result<Option<plist::Value>> {
+    pub(super) fn read(domain: &str, key: &str, host: HostScope) -> Result<Option<plist::Value>> {
         let key = CFString::new(key);
         let (_application, application_id) = application_id(domain);
         let value = unsafe {
@@ -353,7 +366,7 @@ mod macos {
                 key.as_concrete_TypeRef(),
                 application_id,
                 kCFPreferencesCurrentUser,
-                host_id(current_host),
+                host_id(host),
             )
         };
         if value.is_null() {
@@ -365,7 +378,7 @@ mod macos {
         Ok(Some(plist::Value::from_reader_xml(data.bytes())?))
     }
 
-    fn set(domain: &str, key: &str, value: &DefaultsValue, current_host: bool) -> Result<()> {
+    fn set(domain: &str, key: &str, value: &DefaultsValue, host: HostScope) -> Result<()> {
         let mut xml = Vec::new();
         plist::to_writer_xml(&mut xml, &value.to_plist())?;
         let data = CFData::from_buffer(&xml);
@@ -380,20 +393,17 @@ mod macos {
                 value.as_CFTypeRef(),
                 application_id,
                 kCFPreferencesCurrentUser,
-                host_id(current_host),
+                host_id(host),
             );
         }
         Ok(())
     }
 
-    fn synchronize(domain: &str, current_host: bool) -> Result<()> {
+    fn synchronize(domain: &str, host: HostScope) -> Result<()> {
         let (_application, application_id) = application_id(domain);
         unsafe {
-            if CFPreferencesSynchronize(
-                application_id,
-                kCFPreferencesCurrentUser,
-                host_id(current_host),
-            ) == 0
+            if CFPreferencesSynchronize(application_id, kCFPreferencesCurrentUser, host_id(host))
+                == 0
             {
                 eyre::bail!("failed to synchronize macOS preference domain {domain}");
             }
@@ -404,22 +414,17 @@ mod macos {
     pub(super) fn write_all(requests: &[DefaultsRequest]) -> Result<()> {
         let mut domains = IndexSet::new();
         for request in requests {
-            set(
-                &request.domain,
-                &request.key,
-                &request.value,
-                request.current_host,
-            )?;
-            domains.insert((request.domain.as_str(), request.current_host));
+            set(&request.domain, &request.key, &request.value, request.host)?;
+            domains.insert((request.domain.as_str(), request.host));
         }
-        for (domain, current_host) in domains {
-            synchronize(domain, current_host)?;
+        for (domain, host) in domains {
+            synchronize(domain, host)?;
         }
         Ok(())
     }
 
     #[cfg(test)]
-    pub(super) fn remove(domain: &str, key: &str, current_host: bool) -> Result<()> {
+    pub(super) fn remove(domain: &str, key: &str, host: HostScope) -> Result<()> {
         let key = CFString::new(key);
         let (_application, application_id) = application_id(domain);
         unsafe {
@@ -428,13 +433,10 @@ mod macos {
                 std::ptr::null(),
                 application_id,
                 kCFPreferencesCurrentUser,
-                host_id(current_host),
+                host_id(host),
             );
-            if CFPreferencesSynchronize(
-                application_id,
-                kCFPreferencesCurrentUser,
-                host_id(current_host),
-            ) == 0
+            if CFPreferencesSynchronize(application_id, kCFPreferencesCurrentUser, host_id(host))
+                == 0
             {
                 eyre::bail!("failed to synchronize macOS preference domain {domain}");
             }
@@ -559,22 +561,22 @@ mod tests {
         let any = DefaultsRequest {
             domain: domain.clone(),
             key: "ScopeValue".into(),
-            current_host: false,
+            host: HostScope::Any,
             value: DefaultsValue::Bool(true),
         };
         let host = DefaultsRequest {
-            current_host: true,
+            host: HostScope::Current,
             value: DefaultsValue::from_toml(&val("{ nested = [1, false] }")).unwrap(),
             ..any.clone()
         };
         write_all(std::slice::from_ref(&any)).unwrap();
         let missing = status_sync(std::slice::from_ref(&host));
         let write = write_all(&[any.clone(), host.clone()]);
-        let any_value = read(&domain, &any.key, false);
-        let host_value = read(&domain, &host.key, true);
+        let any_value = read(&domain, &any.key, HostScope::Any);
+        let host_value = read(&domain, &host.key, HostScope::Current);
         let statuses = status_sync(&[any.clone(), host.clone()]);
-        let cleanup_any = macos::remove(&domain, &any.key, false);
-        let cleanup_host = macos::remove(&domain, &host.key, true);
+        let cleanup_any = macos::remove(&domain, &any.key, HostScope::Any);
+        let cleanup_host = macos::remove(&domain, &host.key, HostScope::Current);
         assert_eq!(missing.unwrap()[0].state, DefaultsState::Unset);
         write.unwrap();
         assert_eq!(any_value.unwrap(), Some(any.value.to_plist()));
@@ -594,14 +596,14 @@ mod tests {
         let reqs = vec![
             // key doesn't exist in a real domain
             DefaultsRequest {
-                current_host: false,
+                host: HostScope::Any,
                 domain: "NSGlobalDomain".into(),
                 key: "_mise_test_nonexistent_key_42".into(),
                 value: DefaultsValue::Bool(true),
             },
             // domain doesn't exist at all
             DefaultsRequest {
-                current_host: false,
+                host: HostScope::Any,
                 domain: "com.mise.nonexistent".into(),
                 key: "TestKey".into(),
                 value: DefaultsValue::Bool(true),
@@ -631,14 +633,14 @@ mod tests {
         .unwrap();
 
         write_all(&[DefaultsRequest {
-            current_host: false,
+            host: HostScope::Any,
             domain: domain.into(),
             key: key.into(),
             value: value.clone(),
         }])
         .unwrap();
-        let current = read(domain, key, false);
-        let cleanup = macos::remove(domain, key, false);
+        let current = read(domain, key, HostScope::Any);
+        let cleanup = macos::remove(domain, key, HostScope::Any);
 
         assert_eq!(current.unwrap(), Some(value.to_plist()));
         cleanup.unwrap();

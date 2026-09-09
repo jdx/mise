@@ -158,21 +158,27 @@ sudo. `sudo defaults` system domains are not supported.
 
 ## Current-host preferences
 
-Use `defaults_current_host` for preferences normally written with
-`defaults -currentHost`:
+Use an explicit entry for preferences normally written with `defaults -currentHost`:
 
 ```toml
-[bootstrap.macos.defaults_current_host.NSGlobalDomain]
-"com.apple.mouse.tapBehavior" = 1
+[[bootstrap.macos.defaults_entries]]
+domain = "NSGlobalDomain"
+key = "com.apple.mouse.tapBehavior"
+host = "current"
+value = 1
 ```
 
-This accepts the same typed values as `defaults`, including arrays and tables.
-Reads, writes, and synchronization use the current host. The two sections can
-manage the same domain and key independently: entries in `defaults` retain their
-any-host scope. Each scope merges global → local by domain and key.
+Entries accept the same typed values as `defaults`, including arrays and tables.
+The optional `host` is `"any"` by default; `"current"` scopes reads, writes, and
+synchronization to the current host. The same domain and key can be managed
+independently in each scope.
+
+Preferences merge global → local by domain, key, and host. Explicit entries
+override shorthand defaults in the same file. The global-domain aliases `-g`
+and `-globalDomain` share the identity of `NSGlobalDomain`.
 
 Status labels current-host domains with `(current host)` and JSON entries include
-`current_host`. Scalar dry-runs include `-currentHost`.
+`host`. Scalar dry-runs include `-currentHost`.
 
 ## Commands
 

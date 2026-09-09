@@ -1,15 +1,25 @@
 #!/usr/bin/env bash
 domain="com.mise.defaults-current-host-test.$$"
 cat >"$MISE_CONFIG_DIR/config.toml" <<EOF_CONFIG
-[bootstrap.macos.defaults_current_host."$domain"]
-ScopeValue = 1
-GlobalOnly = true
+[[bootstrap.macos.defaults_entries]]
+domain = "$domain"
+key = "ScopeValue"
+host = "current"
+value = 1
+[[bootstrap.macos.defaults_entries]]
+domain = "$domain"
+key = "GlobalOnly"
+host = "current"
+value = true
 EOF_CONFIG
 cat >mise.toml <<EOF_CONFIG
 [bootstrap.macos.defaults."$domain"]
 ScopeValue = false
-[bootstrap.macos.defaults_current_host."$domain"]
-ScopeValue = 2
+[[bootstrap.macos.defaults_entries]]
+domain = "$domain"
+key = "ScopeValue"
+host = "current"
+value = 2
 EOF_CONFIG
 assert_contains 'mise bootstrap macos defaults status' '(current host)'
 if [[ $(uname) != Darwin ]]; then
@@ -27,6 +37,61 @@ else
   assert "defaults -currentHost read '$domain' ScopeValue" 2
   assert "defaults -currentHost read '$domain' GlobalOnly" 1
   assert_succeed 'mise bootstrap macos defaults status --missing'
-  assert 'mise bootstrap macos defaults status --json | jq "[.macos_defaults.entries[] | select(.current_host)] | length"' 2
+  assert 'mise bootstrap macos defaults status --json | jq "[.macos_defaults.entries[] | select(.host == \"current\")] | length"' 2
   assert_contains 'mise bootstrap macos defaults apply --yes 2>&1' '3 value(s) already set'
 fi
+
+# Explicit any-host entries override shorthand without wrapping dictionary values.
+cat >mise.toml <<EOF_CONFIG
+[bootstrap.macos.defaults."$domain"]
+Dictionary = { host = "current", value = 1 }
+ScopeValue = false
+[[bootstrap.macos.defaults_entries]]
+domain = "$domain"
+key = "ScopeValue"
+value = 7
+EOF_CONFIG
+assert_contains 'mise bootstrap macos defaults status' 'ScopeValue'
+if [[ $(uname) == Darwin ]]; then
+  assert_contains 'mise bootstrap macos defaults apply --dry-run' "defaults write $domain ScopeValue -int 7"
+  assert 'mise bootstrap macos defaults status --json | jq -r ".macos_defaults.entries[] | select(.key == \"Dictionary\") | .value.host"' current
+fi
+
+cat >mise.toml <<EOF_CONFIG
+[[bootstrap.macos.defaults_entries]]
+domain = "$domain"
+key = "ScopeValue"
+host = "other"
+value = 1
+EOF_CONFIG
+assert_fail 'mise bootstrap macos defaults status' 'unknown variant'
+
+# Global-domain aliases merge across shorthand and explicit entries in both directions.
+for alias in -g -globalDomain; do
+  cat >"$MISE_CONFIG_DIR/config.toml" <<EOF_CONFIG
+[bootstrap.macos.defaults."$alias"]
+"_mise_host_alias_test_$$" = 1
+EOF_CONFIG
+  cat >mise.toml <<EOF_CONFIG
+[[bootstrap.macos.defaults_entries]]
+domain = "NSGlobalDomain"
+key = "_mise_host_alias_test_$$"
+value = 2
+EOF_CONFIG
+  if [[ $(uname) == Darwin ]]; then
+    assert 'mise bootstrap macos defaults status --json | jq -c "[.macos_defaults.entries[].value]"' '[2]'
+  fi
+  cat >"$MISE_CONFIG_DIR/config.toml" <<EOF_CONFIG
+[[bootstrap.macos.defaults_entries]]
+domain = "NSGlobalDomain"
+key = "_mise_host_alias_test_$$"
+value = 1
+EOF_CONFIG
+  cat >mise.toml <<EOF_CONFIG
+[bootstrap.macos.defaults."$alias"]
+"_mise_host_alias_test_$$" = 2
+EOF_CONFIG
+  if [[ $(uname) == Darwin ]]; then
+    assert 'mise bootstrap macos defaults status --json | jq -c "[.macos_defaults.entries[].value]"' '[2]'
+  fi
+done

@@ -3842,7 +3842,7 @@ impl BootstrapStatus {
                     "entries": defaults.iter().map(|req| {
                         json!({
                             "domain": req.domain,
-                            "current_host": req.current_host,
+                            "host": req.host,
                             "key": req.key,
                             "value": req.value.to_json(),
                             "state": "skipped",
@@ -3869,7 +3869,7 @@ impl BootstrapStatus {
             );
             json_entries.push(json!({
                 "domain": s.request.domain,
-                "current_host": s.request.current_host,
+                "host": s.request.host,
                 "key": s.request.key,
                 "value": s.request.value.to_json(),
                 "current": current,
@@ -4811,7 +4811,7 @@ impl BootstrapMacosDefaultsStatus {
                     if self.json {
                         json_entries.push(json!({
                             "domain": s.request.domain,
-                            "current_host": s.request.current_host,
+                            "host": s.request.host,
                             "key": s.request.key,
                             "value": s.request.value.to_json(),
                             "current": current,

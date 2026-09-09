@@ -4695,34 +4695,44 @@
                 }
               }
             },
-            "defaults_current_host": {
-              "type": "object",
-              "description": "Current-host macOS user defaults, keyed by preferences domain; equivalent to defaults -currentHost",
-              "additionalProperties": {
+            "defaults_entries": {
+              "type": "array",
+              "description": "Explicit macOS preferences with a selectable host scope",
+              "items": {
                 "type": "object",
-                "description": "defaults keys and their desired values for this domain",
-                "additionalProperties": {
-                  "anyOf": [
-                    {
-                      "type": "boolean"
-                    },
-                    {
-                      "type": "integer"
-                    },
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "array"
-                    },
-                    {
-                      "type": "object"
-                    }
-                  ],
-                  "description": "Desired typed property-list value"
+                "additionalProperties": false,
+                "required": ["domain", "key", "value"],
+                "properties": {
+                  "domain": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "host": {
+                    "type": "string",
+                    "enum": ["any", "current"],
+                    "default": "any"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array"
+                      },
+                      {
+                        "type": "object"
+                      }
+                    ]
+                  }
                 }
               }
             },
