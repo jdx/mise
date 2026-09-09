@@ -323,6 +323,8 @@ pub(crate) struct BootstrapMacosDefaultsEntry {
     pub key: String,
     #[serde(default)]
     pub host: HostScope,
+    #[serde(default)]
+    pub path: Option<Vec<String>>,
     pub value: toml::Value,
 }
 
@@ -766,11 +768,11 @@ fn merge_package_configs<'a>(
 
 /// Aggregate macOS defaults across all loaded config files.
 ///
-/// Within each host scope, (domain, key) pairs union global -> local; a more
-/// local config overrides the value a global config declared. Unsupported value shapes warn
-/// (forward compatibility) and are skipped.
+/// Within each host scope, (domain, key, path) entries union global -> local;
+/// a more local config overrides the value a global config declared. Unsupported
+/// value shapes warn (forward compatibility) and are skipped.
 pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
-    let mut merged: IndexMap<(String, String, HostScope), toml::Value> = IndexMap::new();
+    let mut merged = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
@@ -791,7 +793,7 @@ pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
             }
             for (key, value) in merge_raw_over_friendly_macos_defaults(friendly, raw) {
                 merged.insert(
-                    (canonical_domain(&key.0).into(), key.1, HostScope::Any),
+                    (canonical_domain(&key.0).into(), key.1, HostScope::Any, None),
                     value,
                 );
             }
@@ -801,6 +803,7 @@ pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
                         canonical_domain(&entry.domain).into(),
                         entry.key,
                         entry.host,
+                        entry.path,
                     ),
                     entry.value,
                 );
@@ -808,12 +811,13 @@ pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
         }
     }
     let mut out = vec![];
-    for ((domain, key, host), value) in merged {
+    for ((domain, key, host, path), value) in merged {
         match DefaultsValue::from_toml(&value) {
             Some(value) => out.push(DefaultsRequest {
                 domain,
                 key,
                 host,
+                path,
                 value,
             }),
             None => {
@@ -896,7 +900,12 @@ pub(crate) fn macos_defaults_entry_count(macos: &BootstrapMacosTomlConfig) -> us
         .into_iter()
         .map(|((domain, key), value)| {
             (
-                (canonical_domain(&domain).to_owned(), key, HostScope::Any),
+                (
+                    canonical_domain(&domain).to_owned(),
+                    key,
+                    HostScope::Any,
+                    None,
+                ),
                 value,
             )
         })
@@ -907,6 +916,7 @@ pub(crate) fn macos_defaults_entry_count(macos: &BootstrapMacosTomlConfig) -> us
                 canonical_domain(&entry.domain).to_owned(),
                 entry.key.clone(),
                 entry.host,
+                entry.path.clone(),
             ),
             entry.value.clone(),
         );
@@ -2594,6 +2604,7 @@ mod tests {
             domain: "NSGlobalDomain".into(),
             key: "KeyRepeat".into(),
             host: HostScope::Current,
+            path: None,
             value: tv("3"),
         });
         assert_eq!(macos_defaults_entry_count(&macos), 6);

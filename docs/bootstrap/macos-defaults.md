@@ -192,6 +192,39 @@ and `-globalDomain` share the identity of `NSGlobalDomain`.
 Status labels current-host domains with `(current host)` and JSON entries include
 `host`. Scalar dry-runs include `-currentHost`.
 
+## Targeted dictionary updates
+
+Add `path` to a defaults entry to manage a nested value in a shared dictionary without
+replacing its siblings. For example, disable one symbolic shortcut while retaining
+its parameters and the other shortcuts:
+
+```toml
+[[bootstrap.macos.defaults_entries]]
+domain = "com.apple.symbolichotkeys"
+key = "AppleSymbolicHotKeys"
+path = ["64", "enabled"]
+value = false
+```
+
+Each `path` component is a literal dictionary key, so dots in a component are not
+separators. The path must contain at least one component. `value` accepts the same
+types as `defaults` and replaces the selected value in full, including when that
+value is an array or dictionary. Array indices are not supported.
+
+Paths work with both `host = "any"` (the default) and `host = "current"`.
+Mise reads the existing plist in the selected host scope,
+applies the patches, and writes the updated value.
+Unselected values retain their types, including data and dates. Missing parent
+dictionaries are created; an existing scalar or array along the path is an error.
+Status compares only the selected value, and dry-run output shows its path.
+
+Declarations with the same domain, key, host, and path merge global → local, with the
+last value winning. Ancestor/descendant patches, or a patch and a whole-value
+declaration for the same preference and host, are rejected before writing.
+All patched values are prepared before the first preference write. As with other
+preferences, applications may change a value concurrently; this is not an atomic
+transaction with those applications.
+
 ## Commands
 
 ```sh

@@ -35,10 +35,24 @@ pub(crate) struct DefaultsRequest {
     pub key: String,
     /// Use the current host instead of the any-host preference scope.
     pub host: HostScope,
+    /// A nonempty dictionary path, or None to replace the whole preference.
+    pub path: Option<Vec<String>>,
     pub value: DefaultsValue,
 }
 
 impl DefaultsRequest {
+    pub(crate) fn display_key(&self) -> String {
+        let mut key = self.key.clone();
+        if let Some(path) = &self.path {
+            for component in path {
+                key.push('[');
+                key.push_str(&serde_json::to_string(component).expect("string serialization"));
+                key.push(']');
+            }
+        }
+        key
+    }
+
     pub(crate) fn display_domain(&self) -> String {
         if self.host == HostScope::Current {
             format!("{} (current host)", self.domain)
@@ -50,7 +64,13 @@ impl DefaultsRequest {
 
 impl std::fmt::Display for DefaultsRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {} = {}", self.display_domain(), self.key, self.value)
+        write!(
+            f,
+            "{} {} = {}",
+            self.display_domain(),
+            self.display_key(),
+            self.value
+        )
     }
 }
 
@@ -200,6 +220,7 @@ pub(crate) fn unavailable_reason() -> String {
 
 /// Query the current state of each entry. Side-effect free.
 pub(crate) async fn status(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
+    validate_requests(requests)?;
     let requests = requests.to_vec();
     tokio::task::spawn_blocking(move || status_sync(&requests)).await?
 }
@@ -207,13 +228,15 @@ pub(crate) async fn status(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsS
 fn status_sync(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
     let mut out = vec![];
     for req in requests {
-        let state = match read(&req.domain, &req.key, req.host)? {
+        let current = read(&req.domain, &req.key, req.host)?;
+        let current = selected_value(current.as_ref(), req)?;
+        let state = match current {
             Some(current) => {
-                if req.value.matches(&current) {
+                if req.value.matches(current) {
                     DefaultsState::Set
                 } else {
                     DefaultsState::Differs {
-                        current: display_plist(&current),
+                        current: display_plist(current),
                     }
                 }
             }
@@ -229,9 +252,10 @@ fn status_sync(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
 
 /// Write the given entries (already filtered to unset/differing ones)
 pub(crate) async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result<()> {
+    validate_requests(requests)?;
     for req in requests {
         if dry_run {
-            if let Some(write_args) = req.value.write_args() {
+            if let Some(write_args) = req.value.write_args().filter(|_| req.path.is_none()) {
                 let mut args = vec![];
                 if req.host == HostScope::Current {
                     args.push("-currentHost".to_string());
@@ -251,6 +275,108 @@ pub(crate) async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result
     }
     let requests = requests.to_vec();
     tokio::task::spawn_blocking(move || write_all(&requests)).await?
+}
+
+/// Reject conflicting ownership before inspecting or writing preferences.
+fn validate_requests(requests: &[DefaultsRequest]) -> Result<()> {
+    for (i, request) in requests.iter().enumerate() {
+        if let Some(path) = &request.path {
+            eyre::ensure!(
+                !path.is_empty(),
+                "defaults patch path must not be empty: {request}"
+            );
+        }
+        for other in &requests[..i] {
+            if canonical_domain(&request.domain) != canonical_domain(&other.domain)
+                || request.key != other.key
+                || request.host != other.host
+            {
+                continue;
+            }
+            let overlaps = match (&request.path, &other.path) {
+                (None, None) => false, // Preserve existing whole-value declarations.
+                (Some(a), Some(b)) => a.starts_with(b) || b.starts_with(a),
+                _ => true,
+            };
+            eyre::ensure!(
+                !overlaps,
+                "overlapping macOS defaults declarations: {other}; {request}"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn selected_value<'a>(
+    mut current: Option<&'a plist::Value>,
+    request: &DefaultsRequest,
+) -> Result<Option<&'a plist::Value>> {
+    if let Some(path) = &request.path {
+        for component in path {
+            current = match current {
+                Some(plist::Value::Dictionary(dict)) => dict.get(component),
+                None => return Ok(None),
+                Some(_) => eyre::bail!("expected dictionary along defaults patch path: {request}"),
+            };
+        }
+    }
+    Ok(current)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn patch_value(current: &mut plist::Value, path: &[String], value: plist::Value) -> Result<()> {
+    let Some((key, rest)) = path.split_first() else {
+        eyre::bail!("defaults patch path must not be empty");
+    };
+    let dict = current
+        .as_dictionary_mut()
+        .ok_or_else(|| eyre::eyre!("expected dictionary along defaults patch path"))?;
+    if rest.is_empty() {
+        dict.insert(key.clone(), value);
+    } else {
+        if !dict.contains_key(key) {
+            dict.insert(
+                key.clone(),
+                plist::Value::Dictionary(plist::Dictionary::new()),
+            );
+        }
+        patch_value(
+            dict.get_mut(key).expect("dictionary entry inserted"),
+            rest,
+            value,
+        )?;
+    }
+    Ok(())
+}
+
+/// Prepare every value before writing, including all patches of the same key.
+#[cfg(any(target_os = "macos", test))]
+fn prepare_writes(
+    requests: &[DefaultsRequest],
+    mut read: impl FnMut(&str, &str, HostScope) -> Result<Option<plist::Value>>,
+) -> Result<IndexMap<(String, String, HostScope), plist::Value>> {
+    validate_requests(requests)?;
+    let mut writes = IndexMap::new();
+    for request in requests {
+        let domain = canonical_domain(&request.domain);
+        let key = (domain.to_string(), request.key.clone(), request.host);
+        if let Some(path) = &request.path {
+            if !writes.contains_key(&key) {
+                let current = read(domain, &request.key, request.host)?
+                    .unwrap_or_else(|| plist::Value::Dictionary(plist::Dictionary::new()));
+                writes.insert(key.clone(), current);
+            }
+            patch_value(
+                writes.get_mut(&key).expect("preference inserted"),
+                path,
+                request.value.to_plist(),
+            )
+            .map_err(|err| eyre::eyre!("{request}: {err}"))?;
+        } else {
+            writes.insert(key, request.value.to_plist());
+        }
+    }
+    Ok(writes)
 }
 
 fn display_plist(value: &plist::Value) -> String {
@@ -378,9 +504,9 @@ mod macos {
         Ok(Some(plist::Value::from_reader_xml(data.bytes())?))
     }
 
-    fn set(domain: &str, key: &str, value: &DefaultsValue, host: HostScope) -> Result<()> {
+    fn set(domain: &str, key: &str, value: &plist::Value, host: HostScope) -> Result<()> {
         let mut xml = Vec::new();
-        plist::to_writer_xml(&mut xml, &value.to_plist())?;
+        plist::to_writer_xml(&mut xml, value)?;
         let data = CFData::from_buffer(&xml);
         let (value, _) = create_with_data(data, kCFPropertyListImmutable)
             .map_err(|err| eyre::eyre!("failed to parse macOS preference: {err}"))?;
@@ -413,9 +539,10 @@ mod macos {
 
     pub(super) fn write_all(requests: &[DefaultsRequest]) -> Result<()> {
         let mut domains = IndexSet::new();
-        for request in requests {
-            set(&request.domain, &request.key, &request.value, request.host)?;
-            domains.insert((request.domain.as_str(), request.host));
+        let writes = prepare_writes(requests, read)?;
+        for ((domain, key, host), value) in &writes {
+            set(domain, key, value, *host)?;
+            domains.insert((domain.as_str(), *host));
         }
         for (domain, host) in domains {
             synchronize(domain, host)?;
@@ -562,6 +689,7 @@ mod tests {
             domain: domain.clone(),
             key: "ScopeValue".into(),
             host: HostScope::Any,
+            path: None,
             value: DefaultsValue::Bool(true),
         };
         let host = DefaultsRequest {
@@ -588,6 +716,201 @@ mod tests {
         cleanup_host.unwrap();
     }
 
+    fn patch(path: &[&str], value: DefaultsValue) -> DefaultsRequest {
+        DefaultsRequest {
+            domain: "com.mise.patch-test".into(),
+            key: "Shortcuts".into(),
+            host: HostScope::Any,
+            path: Some(path.iter().map(|s| s.to_string()).collect()),
+            value,
+        }
+    }
+
+    #[test]
+    fn test_patches_preserve_siblings_and_plist_types() {
+        let mut original = DefaultsValue::from_toml(&val(
+            r#"{ "64" = { enabled = true, parameters = [32, 49, 1048576] }, "65" = { enabled = true } }"#,
+        )).unwrap().to_plist();
+        let dict = original.as_dictionary_mut().unwrap();
+        dict.insert("data".into(), plist::Value::Data(vec![0, 255]));
+        dict.insert(
+            "date".into(),
+            plist::Value::Date(std::time::UNIX_EPOCH.into()),
+        );
+        let requests = [
+            patch(&["64", "enabled"], DefaultsValue::Bool(false)),
+            patch(&["new.key", "enabled"], DefaultsValue::Bool(true)),
+        ];
+        let mut reads = 0;
+        let writes = prepare_writes(&requests, |_, _, _| {
+            reads += 1;
+            Ok(Some(original.clone()))
+        })
+        .unwrap();
+        assert_eq!(reads, 1);
+        let updated = writes.values().next().unwrap();
+        let mut expected = original.clone();
+        let dict = expected.as_dictionary_mut().unwrap();
+        dict.get_mut("64")
+            .unwrap()
+            .as_dictionary_mut()
+            .unwrap()
+            .insert("enabled".into(), plist::Value::Boolean(false));
+        dict.insert(
+            "new.key".into(),
+            DefaultsValue::from_toml(&val("{ enabled = true }"))
+                .unwrap()
+                .to_plist(),
+        );
+        assert_eq!(updated, &expected);
+        for request in &requests {
+            assert!(
+                request
+                    .value
+                    .matches(selected_value(Some(updated), request).unwrap().unwrap())
+            );
+        }
+        let again = prepare_writes(&requests, |_, _, _| Ok(Some(updated.clone()))).unwrap();
+        assert_eq!(again, writes);
+    }
+
+    #[test]
+    fn test_patches_create_missing_dictionaries_but_reject_wrong_types() {
+        let request = patch(&["64", "enabled"], DefaultsValue::Bool(false));
+        let writes = prepare_writes(std::slice::from_ref(&request), |_, _, _| Ok(None)).unwrap();
+        assert_eq!(
+            writes.values().next().unwrap(),
+            &DefaultsValue::from_toml(&val(r#"{ "64" = { enabled = false } }"#,))
+                .unwrap()
+                .to_plist()
+        );
+        assert_eq!(selected_value(None, &request).unwrap(), None);
+        for value in [
+            plist::Value::Boolean(true),
+            DefaultsValue::from_toml(&val(r#"{ "64" = [true] }"#))
+                .unwrap()
+                .to_plist(),
+        ] {
+            assert!(selected_value(Some(&value), &request).is_err());
+            assert!(
+                prepare_writes(std::slice::from_ref(&request), |_, _, _| Ok(Some(
+                    value.clone()
+                )))
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn test_patches_reject_overlapping_ownership() {
+        let request = patch(&["64", "enabled"], DefaultsValue::Bool(false));
+        for path in [
+            None,
+            Some(vec!["64".into()]),
+            request.path.clone(),
+            Some(vec!["64".into(), "enabled".into(), "child".into()]),
+        ] {
+            let other = DefaultsRequest {
+                path,
+                ..request.clone()
+            };
+            assert!(validate_requests(&[request.clone(), other]).is_err());
+        }
+        assert!(validate_requests(&[patch(&[], DefaultsValue::Bool(false))]).is_err());
+        let any = DefaultsRequest {
+            domain: "-g".into(),
+            ..request.clone()
+        };
+        let global = DefaultsRequest {
+            domain: "NSGlobalDomain".into(),
+            path: None,
+            ..request
+        };
+        assert!(validate_requests(&[any, global]).is_err());
+    }
+
+    #[test]
+    fn test_patch_host_scopes_have_independent_ownership_and_reads() {
+        let any = patch(&["enabled"], DefaultsValue::Bool(false));
+        let current = DefaultsRequest {
+            host: HostScope::Current,
+            ..any.clone()
+        };
+        let whole_current = DefaultsRequest {
+            path: None,
+            ..current.clone()
+        };
+        assert!(validate_requests(&[any.clone(), whole_current]).is_ok());
+        let mut scopes = vec![];
+        let writes = prepare_writes(&[any, current], |_, _, host| {
+            scopes.push(host);
+            Ok(Some(
+                DefaultsValue::from_toml(&val(if host == HostScope::Any {
+                    "{ sibling = 1 }"
+                } else {
+                    "{ sibling = 2 }"
+                }))
+                .unwrap()
+                .to_plist(),
+            ))
+        })
+        .unwrap();
+        assert_eq!(scopes, vec![HostScope::Any, HostScope::Current]);
+        for ((_, _, host), value) in writes {
+            let dict = value.as_dictionary().unwrap();
+            assert_eq!(dict.get("enabled"), Some(&plist::Value::Boolean(false)));
+            assert_eq!(
+                dict.get("sibling").unwrap().as_signed_integer(),
+                Some(if host == HostScope::Any { 1 } else { 2 })
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_patch_native_round_trip_and_preflight() {
+        let domain = format!("com.mise.patch-test.{}", uuid::Uuid::now_v7());
+        let original =
+            DefaultsValue::from_toml(&val(r#"{ "64" = { enabled = true }, data = [1, 2] }"#))
+                .unwrap();
+        let whole = DefaultsRequest {
+            domain: domain.clone(),
+            path: None,
+            value: original.clone(),
+            ..patch(&["64"], DefaultsValue::Bool(false))
+        };
+        let request = DefaultsRequest {
+            domain: domain.clone(),
+            ..patch(&["64", "enabled"], DefaultsValue::Bool(false))
+        };
+        write_all(&[whole]).unwrap();
+        let apply = write_all(std::slice::from_ref(&request));
+        let current = read(&domain, &request.key, HostScope::Any);
+        let status = status_sync(std::slice::from_ref(&request));
+        // A later invalid patch must prevent an earlier valid write.
+        let invalid = DefaultsRequest {
+            path: Some(vec!["data".into(), "child".into()]),
+            ..request.clone()
+        };
+        let valid = DefaultsRequest {
+            value: DefaultsValue::Bool(true),
+            ..request.clone()
+        };
+        let failed = write_all(&[valid, invalid]);
+        let after_failed = read(&domain, &request.key, HostScope::Any);
+        let cleanup = macos::remove(&domain, &request.key, HostScope::Any);
+        apply.unwrap();
+        let current = current.unwrap().unwrap();
+        assert_eq!(
+            current.as_dictionary().unwrap().get("data"),
+            original.to_plist().as_dictionary().unwrap().get("data")
+        );
+        assert_eq!(status.unwrap()[0].state, DefaultsState::Set);
+        assert!(failed.is_err());
+        assert_eq!(after_failed.unwrap(), Some(current));
+        cleanup.unwrap();
+    }
+
     /// `status()` must not fail when keys don't exist yet — this is the
     /// expected path on a fresh macOS install.
     #[cfg(target_os = "macos")]
@@ -597,6 +920,7 @@ mod tests {
             // key doesn't exist in a real domain
             DefaultsRequest {
                 host: HostScope::Any,
+                path: None,
                 domain: "NSGlobalDomain".into(),
                 key: "_mise_test_nonexistent_key_42".into(),
                 value: DefaultsValue::Bool(true),
@@ -604,6 +928,7 @@ mod tests {
             // domain doesn't exist at all
             DefaultsRequest {
                 host: HostScope::Any,
+                path: None,
                 domain: "com.mise.nonexistent".into(),
                 key: "TestKey".into(),
                 value: DefaultsValue::Bool(true),
@@ -634,6 +959,7 @@ mod tests {
 
         write_all(&[DefaultsRequest {
             host: HostScope::Any,
+            path: None,
             domain: domain.into(),
             key: key.into(),
             value: value.clone(),
