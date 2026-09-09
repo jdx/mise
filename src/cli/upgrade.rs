@@ -651,7 +651,7 @@ impl Upgrade {
             // and are not needed by any tracked config. Immediate removals are
             // collected and run as one session below, with a summary of removed versions.
             let mut immediate: Vec<ToolVersion> = Vec::new();
-            let mut deferred_count = 0;
+            let mut scheduled_pruning = false;
             for (o, old_version) in to_remove {
                 if successful_versions
                     .iter()
@@ -681,7 +681,7 @@ impl Upgrade {
                                     o.name, old_version
                                 );
                             } else {
-                                deferred_count += 1;
+                                scheduled_pruning = true;
                                 debug!(
                                     "{}@{} will be pruned after {}",
                                     o.name,
@@ -695,12 +695,12 @@ impl Upgrade {
                 }
             }
 
-            if deferred_count > 0 {
-                info!(
-                    "{} old version{} will be pruned after {}",
-                    deferred_count,
-                    if deferred_count == 1 { "" } else { "s" },
-                    Settings::get().upgrade.prune_after
+            if scheduled_pruning {
+                let prune_after = &Settings::get().upgrade.prune_after;
+                hint!(
+                    "upgrade_auto_prune",
+                    "old tool versions are kept for {prune_after} before automatic pruning. Disable this for future upgrades with",
+                    "mise settings set upgrade.auto_prune false"
                 );
             }
 

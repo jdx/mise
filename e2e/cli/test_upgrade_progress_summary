@@ -18,10 +18,11 @@ if grep -q $'\033\\[[0-9;]*J' <<<"$after_summary"; then
 fi
 
 # Lookup/install sessions leave the richer upgrade summary as the only success
-# record. Deferred pruning is one notice, independent of the tool count.
+# record. The one-time pruning hint stays out of captured output.
 printf '%s' "$output" | python3 -c 'import re, sys; print(re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", sys.stdin.read()))' >output.log
 assert_contains 'cat output.log' 'tiny 1.0.0 → 1.1.0'
-assert_contains 'cat output.log' '2 old versions will be pruned after 24h'
+assert_not_contains 'cat output.log' 'will be pruned after'
+assert_not_contains 'cat output.log' 'automatic pruning'
 assert_not_contains 'cat output.log' '✓ dummy'
 assert_not_contains 'cat output.log' '✓ tiny'
 assert_not_contains 'cat output.log' 'resolved 2 tools'

@@ -31,7 +31,7 @@ assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 mise uninstall dummy --all
 mise install dummy@1.0.0
 mise upgrade dummy >upgrade.log 2>&1
-assert_contains "cat upgrade.log" "1 old version will be pruned after 24h"
+assert_not_contains "cat upgrade.log" "will be pruned after"
 assert_contains "mise ls --installed dummy" "1.1.0"
 assert_contains "mise ls --installed dummy" "1.0.0 (pruned in"
 assert "mise ls --installed dummy -J | jq -r '.[] | select(.version == \"1.0.0\") | .scheduled_for_pruning'" "true"
