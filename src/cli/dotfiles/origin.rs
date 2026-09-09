@@ -35,6 +35,10 @@ pub(crate) struct DotfilesOriginSet {
     url: String,
 
     /// The setup branch (default: the repository's own default branch)
+    ///
+    /// Reconnecting a repository this machine already follows keeps that
+    /// connection's branch. A repository with no branches at all takes `main`,
+    /// which the first publication creates.
     #[usage(long, value_name = "BRANCH")]
     branch: Option<String>,
 
