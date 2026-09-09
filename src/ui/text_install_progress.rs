@@ -10,7 +10,10 @@ use super::multi_progress_report::MultiProgressReport;
 use super::progress_report::{ProgressIcon, SingleReport};
 use super::style;
 
-const INTERVAL: Duration = Duration::from_secs(3);
+/// Keep short installs responsive, then reduce log volume for long builds.
+fn snapshot_interval(elapsed: Duration) -> Duration {
+    (elapsed / 10).clamp(Duration::from_secs(3), Duration::from_secs(60))
+}
 pub(super) const BAR_WIDTH: usize = 16;
 
 #[derive(Debug)]
@@ -755,11 +758,14 @@ impl TextInstallProgress {
             state.action.present(),
             tool_noun(total)
         );
+        let started = state.started;
         let state = Arc::new(Mutex::new(state));
         let (stop, rx) = mpsc::channel();
         let shared = state.clone();
         let thread = thread::spawn(move || {
-            while rx.recv_timeout(INTERVAL) == Err(mpsc::RecvTimeoutError::Timeout) {
+            while rx.recv_timeout(snapshot_interval(started.elapsed()))
+                == Err(mpsc::RecvTimeoutError::Timeout)
+            {
                 let render = || {
                     let state = shared.lock().unwrap();
                     // Completed tools have already printed their individual results.
@@ -933,6 +939,16 @@ impl SingleReport for TextToolProgress {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshots_back_off_for_long_installs() {
+        for (elapsed, interval) in [(0, 3), (30, 3), (60, 6), (300, 30), (600, 60), (3600, 60)] {
+            assert_eq!(
+                snapshot_interval(Duration::from_secs(elapsed)),
+                Duration::from_secs(interval)
+            );
+        }
+    }
 
     fn state(started: Instant) -> State {
         let mut state = State::new((0..3).map(|i| (i.to_string(), format!("tool{i}@1"))));
@@ -1428,7 +1444,7 @@ mod tests {
         ))));
         progress.stop();
         assert!(progress.thread.is_none());
-        assert!(start.elapsed() < INTERVAL);
+        assert!(start.elapsed() < snapshot_interval(Duration::ZERO));
     }
 
     #[test]
