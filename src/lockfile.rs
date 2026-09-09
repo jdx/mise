@@ -1,3 +1,5 @@
+pub(crate) mod generate;
+
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::backend::conda::CondaBackend;
@@ -268,26 +270,20 @@ pub(crate) enum GithubAttestationsStatus {
     Unavailable,
 }
 
-fn is_false(value: &bool) -> bool {
-    !*value
-}
-
 fn merge_provenance_state(
     current: Option<ProvenanceType>,
-    current_verified: bool,
+    current_verified: Option<bool>,
     other: Option<ProvenanceType>,
-    other_verified: bool,
-) -> (Option<ProvenanceType>, bool) {
+    other_verified: Option<bool>,
+) -> (Option<ProvenanceType>, Option<bool>) {
     match (current, other) {
-        (Some(current), Some(_)) if current_verified && !other_verified => (Some(current), true),
-        (Some(_), Some(other)) if !current_verified && other_verified => (Some(other), true),
         (Some(current), Some(other)) => (
             Some(current.merge(other)),
-            current_verified && other_verified,
+            current_verified.or(other_verified),
         ),
         (Some(current), None) => (Some(current), current_verified),
         (None, Some(other)) => (Some(other), other_verified),
-        (None, None) => (None, false),
+        (None, None) => (None, current_verified.or(other_verified)),
     }
 }
 
@@ -303,14 +299,14 @@ pub(crate) struct ArtifactInfo {
     pub url_api: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
-    /// Whether `provenance` was cryptographically verified for this artifact.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub provenance_verified: bool,
+    /// Opaque legacy metadata, preserved only to avoid churn with older clients.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance_verified: Option<bool>,
 }
 
 impl ArtifactInfo {
-    pub(crate) fn has_checksum_and_verified_provenance(&self) -> bool {
-        self.checksum.is_some() && self.provenance.is_some() && self.provenance_verified
+    pub(crate) fn has_checksum_and_provenance(&self) -> bool {
+        self.checksum.is_some() && self.provenance.is_some()
     }
 
     fn merge_with(&self, other: &ArtifactInfo) -> ArtifactInfo {
@@ -391,9 +387,9 @@ pub(crate) struct PlatformInfo {
     /// Type of provenance detected or verified (SLSA carries its URL).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
-    /// Whether `provenance` was cryptographically verified for this platform.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub provenance_verified: bool,
+    /// Opaque legacy metadata, preserved only to avoid churn with older clients.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance_verified: Option<bool>,
     /// GitHub attestation probe status when no provenance was verified.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub github_attestations: Option<GithubAttestationsStatus>,
@@ -436,7 +432,7 @@ impl PlatformInfo {
             && self.pkgx_provides.is_none()
             && self.pkgx_runtime_env.is_none()
             && self.provenance.is_none()
-            && !self.provenance_verified
+            && self.provenance_verified.is_none()
             && self.signer.is_none()
             && self.attested_by.is_none()
             && self.additional_artifacts.is_empty()
@@ -458,7 +454,7 @@ impl PlatformInfo {
             url: None,
             url_api: None,
             provenance: None,
-            provenance_verified: false,
+            provenance_verified: None,
             github_attestations: None,
             // The signer describes the release, not the artifact, so it stays.
             signer: self.signer.clone(),
@@ -468,8 +464,8 @@ impl PlatformInfo {
     }
 
     /// True when the lockfile has checksum-backed, successfully verified provenance.
-    pub(crate) fn has_checksum_and_verified_provenance(&self) -> bool {
-        self.checksum.is_some() && self.provenance.is_some() && self.provenance_verified
+    pub(crate) fn has_checksum_and_provenance(&self) -> bool {
+        self.checksum.is_some() && self.provenance.is_some()
     }
 
     /// Merge this PlatformInfo with another, preserving important data.
@@ -684,11 +680,9 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     }
                     _ => None,
                 };
-                let provenance_verified = provenance.is_some()
-                    && matches!(
-                        t.remove("provenance_verified"),
-                        Some(toml::Value::Boolean(true))
-                    );
+                let provenance_verified = t
+                    .remove("provenance_verified")
+                    .and_then(|value| value.as_bool());
                 let github_attestations = if provenance.is_some() {
                     None
                 } else {
@@ -810,8 +804,8 @@ impl From<PlatformInfo> for toml::Value {
                 }
             }
         }
-        if platform_info.provenance_verified {
-            table.insert("provenance_verified".to_string(), true.into());
+        if let Some(value) = platform_info.provenance_verified {
+            table.insert("provenance_verified".to_string(), value.into());
         }
         if let Some(signer) = platform_info.signer {
             table.insert("signer".to_string(), signer.into());
@@ -1079,7 +1073,13 @@ impl Lockfile {
     }
 
     fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let path = path.as_ref();
+        if let Some(prepared) = self.prepare_write(path.as_ref())? {
+            prepared.publish()?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn prepare_write(&self, path: &Path) -> Result<Option<PreparedWrite>> {
         let mut lockfile = toml::Table::new();
 
         if self.lockfile_version > 0 {
@@ -1163,6 +1163,9 @@ impl Lockfile {
             .or_else(|| existing_lockfile_doc_url_from_path(path))
             .unwrap_or_else(|| DEFAULT_LOCKFILE_DOC_URL.to_string());
         let content = format!("{LOCKFILE_HEADER_PREFIX}{doc_url}\n\n{content}");
+        if fs::read(path).ok().as_deref() == Some(content.as_bytes()) {
+            return Ok(None);
+        }
 
         // Resolve the symlink target first, before writing the temp file
         let target = if path.is_symlink() {
@@ -1210,10 +1213,8 @@ impl Lockfile {
         let mut tmp = tempfile::NamedTempFile::with_prefix_in(".mise.lock.", parent)?;
         tmp.as_file_mut().write_all(content.as_bytes())?;
         apply_lockfile_permissions(&tmp, &target)?;
-        persist_lockfile_tmp(tmp, &target)?;
-
-        invalidate_caches();
-        Ok(())
+        tmp.as_file().sync_all()?;
+        Ok(Some(PreparedWrite { tmp, target }))
     }
 
     /// Add or update a conda package in the shared section
@@ -1543,6 +1544,19 @@ impl Lockfile {
     }
 }
 
+pub(crate) struct PreparedWrite {
+    tmp: tempfile::NamedTempFile,
+    target: PathBuf,
+}
+
+impl PreparedWrite {
+    pub(crate) fn publish(self) -> Result<()> {
+        persist_lockfile_tmp(self.tmp, &self.target)?;
+        invalidate_caches();
+        Ok(())
+    }
+}
+
 /// Determines the lockfile path for a given config file path
 /// Returns (lockfile_path, is_local)
 ///
@@ -1685,7 +1699,7 @@ pub(crate) fn migrate_monorepo_lockfiles(
     config: &Config,
     allow_format_upgrade: bool,
 ) -> Result<()> {
-    migrate_monorepo_lockfiles_inner(config, allow_format_upgrade, true, None)
+    migrate_monorepo_lockfiles_inner(config, allow_format_upgrade, true, None, None)
 }
 
 pub(crate) fn monorepo_lockfile_migration_paths(config: &Config) -> Vec<(PathBuf, PathBuf)> {
@@ -1706,8 +1720,15 @@ pub(crate) fn migrate_monorepo_lockfiles_already_locked(
     config: &Config,
     allow_format_upgrade: bool,
     migration_paths: &[(PathBuf, PathBuf)],
+    generated_targets: Option<&BTreeSet<PathBuf>>,
 ) -> Result<()> {
-    migrate_monorepo_lockfiles_inner(config, allow_format_upgrade, false, Some(migration_paths))
+    migrate_monorepo_lockfiles_inner(
+        config,
+        allow_format_upgrade,
+        false,
+        Some(migration_paths),
+        generated_targets,
+    )
 }
 
 fn migrate_monorepo_lockfiles_inner(
@@ -1715,6 +1736,7 @@ fn migrate_monorepo_lockfiles_inner(
     allow_format_upgrade: bool,
     acquire_target_locks: bool,
     migration_paths: Option<&[(PathBuf, PathBuf)]>,
+    generated_targets: Option<&BTreeSet<PathBuf>>,
 ) -> Result<()> {
     if !Settings::get().lockfile_enabled() {
         return Ok(());
@@ -1734,6 +1756,11 @@ fn migrate_monorepo_lockfiles_inner(
     };
     for (source, target) in migration_paths {
         if !source.exists() {
+            continue;
+        }
+        if generated_targets.is_some_and(|targets| targets.contains(target)) {
+            fs::remove_file(source)?;
+            migrated += 1;
             continue;
         }
         let _lock = acquire_target_locks
@@ -2408,7 +2435,7 @@ fn prune_verified_provenance_baselines(
         let verified_here = |tool: &LockfileTool| {
             tool.platforms
                 .get(platform_key)
-                .is_some_and(|info| info.provenance.is_some() && info.provenance_verified)
+                .is_some_and(|info| info.provenance.is_some())
         };
         // The baseline the deferred regression check for `tool` compares against, as
         // `check_provenance_regression` computes it for a not-yet-verified entry.
@@ -2999,6 +3026,13 @@ fn deferred_provenance_resolution_error(
 /// The `info_or_error` field is `Ok(info)` on success or `Err(message)` on failure,
 /// allowing callers to log at the appropriate level. `error_is_fatal` distinguishes
 /// genuine conda solve failures from backends that use errors to skip unsupported targets.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LockResolutionStatus {
+    Optional,
+    Required,
+    Unsupported,
+}
+
 pub(crate) type LockResolutionResult = (
     String,
     String,
@@ -3008,7 +3042,7 @@ pub(crate) type LockResolutionResult = (
     BTreeMap<String, String>,
     BTreeMap<String, CondaPackageInfo>,
     BTreeMap<String, PkgxPackageInfo>,
-    bool,
+    LockResolutionStatus,
 );
 
 /// Resolve lock info for a single tool/platform combination.
@@ -3023,9 +3057,14 @@ pub(crate) async fn resolve_tool_lock_info(
     backend: Option<crate::backend::ABackend>,
 ) -> LockResolutionResult {
     let target = PlatformTarget::new(platform.clone());
-    let error_is_fatal = backend
+    let mut error_is_fatal = if backend
         .as_ref()
-        .is_some_and(|backend| backend.get_type() == BackendType::Conda);
+        .is_some_and(|backend| backend.get_type() == BackendType::Conda)
+    {
+        LockResolutionStatus::Required
+    } else {
+        LockResolutionStatus::Optional
+    };
 
     let (info, options, conda_packages, pkgx_packages) = if let Some(backend) = backend {
         let options = match backend.resolve_lockfile_options(&tv.request, &target) {
@@ -3105,6 +3144,20 @@ pub(crate) async fn resolve_tool_lock_info(
                 };
                 (Ok(info), options, conda_packages, pkgx_packages)
             }
+            Err(e)
+                if matches!(
+                    e.downcast_ref::<crate::errors::Error>(),
+                    Some(crate::errors::Error::UnsupportedTarget(_))
+                ) =>
+            {
+                error_is_fatal = LockResolutionStatus::Unsupported;
+                (
+                    Err(e.to_string()),
+                    options,
+                    BTreeMap::new(),
+                    BTreeMap::new(),
+                )
+            }
             Err(e) => (
                 Err(format!(
                     "failed to resolve {} for {}: {}",
@@ -3129,7 +3182,7 @@ pub(crate) async fn resolve_tool_lock_info(
     (
         ba.short.clone(),
         tv.version.clone(),
-        ba.full(),
+        ba.stored_full(),
         platform,
         info,
         options,
@@ -4431,7 +4484,7 @@ mod tests {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
-            false,
+            crate::lockfile::LockResolutionStatus::Optional,
         );
 
         assert!(!apply_lock_result(&mut lockfile, result).unwrap());
@@ -4461,7 +4514,7 @@ mod tests {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
-            false,
+            crate::lockfile::LockResolutionStatus::Optional,
         );
 
         assert!(!apply_lock_result(&mut lockfile, result).unwrap());
@@ -4991,7 +5044,7 @@ options = { exe = "rg" }
             PlatformInfo {
                 url: Some(format!("https://example.com/repo-{version}.tar.gz")),
                 provenance: Some(ProvenanceType::GithubAttestations),
-                provenance_verified: true,
+                provenance_verified: Some(true),
                 ..Default::default()
             },
         );
@@ -5052,17 +5105,19 @@ options = { exe = "rg" }
         assert!(prune_verified_provenance_baselines(&mut tools, &requested, &platform).is_empty());
         assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.11.0"]);
 
-        // Provenance detected but never cryptographically verified on this platform, as
-        // when another platform's `mise lock` populated the entry: not good enough.
+        // Recorded provenance is authoritative regardless of the legacy bit.
         let mut detected_only = verified_github_tool("0.12.0", &platform);
         detected_only
             .platforms
             .get_mut(&platform)
             .unwrap()
-            .provenance_verified = false;
+            .provenance_verified = None;
         let mut tools = vec![detected_only, verified_github_tool("0.11.0", &platform)];
-        assert!(prune_verified_provenance_baselines(&mut tools, &requested, &platform).is_empty());
-        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0", "0.11.0"]);
+        assert_eq!(
+            prune_verified_provenance_baselines(&mut tools, &requested, &platform),
+            vec!["0.11.0"]
+        );
+        assert_eq!(lockfile_tool_versions(&tools), vec!["0.12.0"]);
 
         // Two option variants of the requested version, only one verified: the other
         // still relies on the baseline for its deferred check.
@@ -6244,7 +6299,7 @@ backend = "conda:jq"
             provenance: Some(ProvenanceType::Slsa {
                 url: Some("https://example.com/tool.intoto.jsonl".to_string()),
             }),
-            provenance_verified: true,
+            provenance_verified: Some(true),
             ..Default::default()
         };
 
@@ -6263,7 +6318,7 @@ backend = "conda:jq"
         );
         let parsed: PlatformInfo = toml_val.try_into().unwrap();
         assert!(parsed.provenance.as_ref().unwrap().is_slsa());
-        assert!(parsed.provenance_verified);
+        assert_eq!(parsed.provenance_verified, Some(true));
         match &parsed.provenance {
             Some(ProvenanceType::Slsa { url }) => {
                 assert_eq!(
@@ -6285,7 +6340,7 @@ backend = "conda:jq"
                     checksum: Some("sha256:rocm".to_string()),
                     url: "https://example.com/tool-rocm.tar.gz".to_string(),
                     provenance: Some(ProvenanceType::GithubAttestations),
-                    provenance_verified: true,
+                    provenance_verified: Some(true),
                     ..Default::default()
                 },
                 ArtifactInfo {
@@ -6430,7 +6485,7 @@ backend = "conda:jq"
             Some(GithubAttestationsStatus::Unavailable)
         );
         assert!(parsed.provenance.is_none());
-        assert!(!parsed.has_checksum_and_verified_provenance());
+        assert!(!parsed.has_checksum_and_provenance());
     }
 
     #[test]
@@ -6443,16 +6498,16 @@ backend = "conda:jq"
         let parsed: PlatformInfo = toml::Value::Table(table.clone()).try_into().unwrap();
         assert!(parsed.provenance.as_ref().unwrap().is_slsa());
         assert!(parsed.github_attestations.is_none());
-        assert!(!parsed.has_checksum_and_verified_provenance());
+        assert!(parsed.has_checksum_and_provenance());
 
         table.insert("provenance_verified".to_string(), true.into());
         let parsed: PlatformInfo = toml::Value::Table(table).try_into().unwrap();
-        assert!(parsed.has_checksum_and_verified_provenance());
+        assert!(parsed.has_checksum_and_provenance());
 
         let serialized: toml::Value = PlatformInfo {
             checksum: Some("sha256:abc123".to_string()),
             provenance: Some(ProvenanceType::GithubAttestations),
-            provenance_verified: true,
+            provenance_verified: Some(true),
             github_attestations: Some(GithubAttestationsStatus::Unavailable),
             ..Default::default()
         }
@@ -6467,19 +6522,19 @@ backend = "conda:jq"
     }
 
     #[test]
-    fn test_detected_cross_platform_provenance_is_not_verified() {
+    fn test_recorded_provenance_trust_ignores_legacy_bit() {
         let detected = PlatformInfo {
             checksum: Some("sha256:detected".to_string()),
             provenance: Some(ProvenanceType::GithubAttestations),
             ..Default::default()
         };
-        assert!(!detected.has_checksum_and_verified_provenance());
+        assert!(detected.has_checksum_and_provenance());
 
         let verified = PlatformInfo {
-            provenance_verified: true,
+            provenance_verified: Some(false),
             ..detected.clone()
         };
-        assert!(verified.has_checksum_and_verified_provenance());
+        assert!(verified.has_checksum_and_provenance());
 
         let detected_artifact = ArtifactInfo {
             checksum: detected.checksum,
@@ -6487,13 +6542,13 @@ backend = "conda:jq"
             provenance: detected.provenance,
             ..Default::default()
         };
-        assert!(!detected_artifact.has_checksum_and_verified_provenance());
+        assert!(detected_artifact.has_checksum_and_provenance());
 
         let verified_artifact = ArtifactInfo {
-            provenance_verified: true,
+            provenance_verified: Some(false),
             ..detected_artifact
         };
-        assert!(verified_artifact.has_checksum_and_verified_provenance());
+        assert!(verified_artifact.has_checksum_and_provenance());
     }
 
     #[test]
@@ -6502,12 +6557,12 @@ backend = "conda:jq"
         let detected = Some(ProvenanceType::Slsa { url: None });
 
         assert_eq!(
-            merge_provenance_state(verified.clone(), true, detected.clone(), false),
-            (verified.clone(), true)
+            merge_provenance_state(verified.clone(), Some(true), detected.clone(), None),
+            (verified.clone(), Some(true))
         );
         assert_eq!(
-            merge_provenance_state(detected, false, verified.clone(), true),
-            (verified, true)
+            merge_provenance_state(detected, None, verified.clone(), Some(true)),
+            (verified, Some(true))
         );
     }
 

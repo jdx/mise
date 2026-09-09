@@ -1077,13 +1077,18 @@ impl AssetMatcher {
             } else {
                 format!("\nNote: filtered by {}", active_filters.join(", "))
             };
-            eyre::eyre!(
+            let message = format!(
                 "No matching asset found for platform {}-{}{}\nAvailable assets:\n{}",
                 os,
                 arch,
                 filter_note,
                 assets.join("\n")
-            )
+            );
+            if active_filters.is_empty() {
+                eyre::Report::new(crate::errors::Error::UnsupportedTarget(message))
+            } else {
+                eyre::eyre!(message)
+            }
         })?;
 
         Ok(MatchedAsset { name: best })

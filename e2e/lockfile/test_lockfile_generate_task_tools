@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE_MODE=generate
+# shellcheck source=e2e/lockfile/test_lockfile_task_tools
+source "${TEST_ROOT}/lockfile/test_lockfile_task_tools"

@@ -819,8 +819,20 @@ impl RubyPlugin {
             hash::ensure_checksum(&tarball_path, hash_str, Some(ctx.pr.as_ref()), "sha256")?;
         }
 
-        // Check lockfile provenance expectation before verification
+        // Locked bytes remain checked even when provenance verification is reused.
         let platform_key = PlatformTarget::from_current().to_key();
+        let locked_info = tv
+            .lock_platforms
+            .get(&platform_key)
+            .filter(|info| info.url.as_deref() == Some(url.as_str()));
+        let reuse_provenance = locked_info.is_some_and(|info| info.has_checksum_and_provenance())
+            && !Settings::get().force_provenance_verify();
+        if let Some((algorithm, expected)) = locked_info
+            .and_then(|info| info.checksum.as_deref())
+            .and_then(|checksum| checksum.split_once(':'))
+        {
+            hash::ensure_checksum(&tarball_path, expected, Some(ctx.pr.as_ref()), algorithm)?;
+        }
         let locked_provenance = tv
             .lock_platforms
             .get_mut(&platform_key)
@@ -828,9 +840,17 @@ impl RubyPlugin {
 
         // Verify GitHub artifact attestations for precompiled binaries
         // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
-        let verified = self
-            .verify_github_artifact_attestations(ctx, &tarball_path, &tv.version)
-            .await?;
+        let verified = if reuse_provenance {
+            if self.detect_precompiled_provenance().is_none() {
+                bail!(
+                    "lockfile requires Ruby provenance but GitHub attestations are disabled or the precompiled source is not a GitHub repository"
+                );
+            }
+            true
+        } else {
+            self.verify_github_artifact_attestations(ctx.pr.as_ref(), &tarball_path, &tv.version)
+                .await?
+        };
 
         // Record provenance only if verification actually succeeded (not skipped)
         if verified {
@@ -879,7 +899,7 @@ impl RubyPlugin {
     /// Returns Err if verification is enabled and fails
     async fn verify_github_artifact_attestations(
         &self,
-        ctx: &InstallContext,
+        pr: &dyn crate::ui::progress_report::SingleReport,
         tarball_path: &std::path::Path,
         version: &str,
     ) -> Result<bool> {
@@ -911,8 +931,7 @@ impl RubyPlugin {
             }
         };
 
-        ctx.pr
-            .set_message("verify GitHub artifact attestations".to_string());
+        pr.set_message("verify GitHub artifact attestations".to_string());
 
         match crate::github::sigstore::verify_attestation(
             tarball_path,
@@ -925,8 +944,7 @@ impl RubyPlugin {
         .await
         {
             Ok(true) => {
-                ctx.pr
-                    .set_message("✓ GitHub artifact attestations verified".to_string());
+                pr.set_message("✓ GitHub artifact attestations verified".to_string());
                 debug!(
                     "GitHub artifact attestations verified successfully for ruby@{}",
                     version
@@ -1182,7 +1200,7 @@ impl Backend for RubyPlugin {
         // Precompiled binary info if enabled
         if self.should_try_precompiled()
             && let Some(platform) = self.precompiled_platform_for_target(target)
-            && let Some((url, checksum)) = {
+            && let Some((url, mut checksum)) = {
                 let locked_build_revision =
                     Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
                 self.resolve_precompiled_url(
@@ -1194,7 +1212,22 @@ impl Backend for RubyPlugin {
             }
         {
             // Detect provenance for precompiled binaries
-            let provenance = self.detect_precompiled_provenance();
+            let mut provenance = self.detect_precompiled_provenance();
+            if provenance.is_some() {
+                let artifact =
+                    crate::lockfile::generate::download_for_verification(&url, &mut checksum)
+                        .await?;
+                if !self
+                    .verify_github_artifact_attestations(
+                        &crate::ui::progress_report::QuietReport::new(),
+                        &artifact.path().join("artifact"),
+                        &tv.version,
+                    )
+                    .await?
+                {
+                    provenance = None;
+                }
+            }
             return Ok(PlatformInfo {
                 url: Some(url),
                 checksum,

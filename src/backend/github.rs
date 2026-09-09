@@ -1001,7 +1001,7 @@ impl Backend for UnifiedGitBackend {
             .await;
 
         match asset {
-            Ok(asset) => {
+            Ok(mut asset) => {
                 let primary_explicit_pattern = opts.asset_pattern_for_target(target).is_some();
                 // Detect provenance availability from release assets and attestation API
                 let mut provenance = if !self.is_gitlab() && !self.is_forgejo() {
@@ -1010,39 +1010,30 @@ impl Backend for UnifiedGitBackend {
                 } else {
                     None
                 };
-                let mut provenance_verified = false;
-
-                // For the current platform, verify provenance cryptographically at lock time.
-                // This ensures the lockfile's provenance entry is backed by actual verification,
-                // not just an API query. Cross-platform entries remain detection-only.
-                if provenance.is_some() && target.is_current() {
+                // Every recorded provenance claim must be verified, including
+                // artifacts for platforms other than the host running mise lock.
+                if provenance.is_some() {
                     match self
                         .verify_provenance_at_lock_time(
                             tv,
                             &opts,
-                            &asset,
+                            &mut asset,
+                            target,
                             AssetVerification::primary(primary_explicit_pattern),
                         )
                         .await
                     {
                         Ok(verified) => {
                             provenance = verified;
-                            provenance_verified = provenance.is_some();
                         }
                         Err(e) => {
-                            // Clear provenance so install-time verification will run.
-                            warn!(
-                                "lock-time provenance verification failed for {}, \
-                                 will be verified at install time: {e}",
-                                self.ba.full()
-                            );
-                            provenance = None;
+                            return Err(e.wrap_err("lock-time provenance verification failed"));
                         }
                     }
                 }
                 let mut additional_artifacts = Vec::new();
                 for pattern in opts.additional_asset_patterns_for_target(target) {
-                    let additional = self
+                    let mut additional = self
                         .resolve_asset_url_for_target_with_pattern(
                             tv,
                             &opts,
@@ -1057,31 +1048,22 @@ impl Backend for UnifiedGitBackend {
                     } else {
                         None
                     };
-                    let mut additional_provenance_verified = false;
-                    if additional_provenance.is_some() && target.is_current() {
+                    if additional_provenance.is_some() {
                         additional_provenance = self
                             .verify_provenance_at_lock_time(
                                 tv,
                                 &opts,
-                                &additional,
+                                &mut additional,
+                                target,
                                 AssetVerification::ADDITIONAL,
                             )
-                            .await
-                            .unwrap_or_else(|e| {
-                                warn!(
-                                    "lock-time provenance verification failed for additional asset {}: {e}",
-                                    additional.name
-                                );
-                                None
-                            });
-                        additional_provenance_verified = additional_provenance.is_some();
+                            .await?;
                     }
                     additional_artifacts.push(ArtifactInfo {
                         checksum: additional.digest,
                         url: additional.url,
                         url_api: (!additional.url_api.is_empty()).then_some(additional.url_api),
                         provenance: additional_provenance,
-                        provenance_verified: additional_provenance_verified,
                         ..Default::default()
                     });
                 }
@@ -1091,13 +1073,20 @@ impl Backend for UnifiedGitBackend {
                     url_api: (!asset.url_api.is_empty()).then_some(asset.url_api),
                     checksum: asset.digest,
                     provenance,
-                    provenance_verified,
                     github_attestations: None,
                     additional_artifacts,
                     ..Default::default()
                 })
             }
             Err(e) => {
+                if Settings::get().generate_lockfiles()
+                    && !matches!(
+                        e.downcast_ref::<crate::errors::Error>(),
+                        Some(crate::errors::Error::UnsupportedTarget(_))
+                    )
+                {
+                    return Err(e);
+                }
                 debug!(
                     "Failed to resolve asset for {} on {}: {}",
                     self.ba.full(),
@@ -1327,7 +1316,8 @@ impl UnifiedGitBackend {
         &self,
         tv: &ToolVersion,
         opts: &GitBackendOptions<'_>,
-        asset: &ReleaseAsset,
+        asset: &mut ReleaseAsset,
+        target: &PlatformTarget,
         verification: AssetVerification,
     ) -> Result<Option<ProvenanceType>> {
         let repo = self.repo();
@@ -1356,6 +1346,18 @@ impl UnifiedGitBackend {
         };
         HTTP.download_file_with_headers(&download_url, &artifact_path, &headers, None)
             .await?;
+
+        if let Some((algorithm, expected)) = asset
+            .digest
+            .as_deref()
+            .and_then(|digest| digest.split_once(':'))
+        {
+            crate::hash::ensure_checksum(&artifact_path, expected, None, algorithm)?;
+        }
+        asset.digest = Some(format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&artifact_path, None)?
+        ));
 
         let settings = Settings::get();
 
@@ -1421,15 +1423,14 @@ impl UnifiedGitBackend {
                 .await?;
 
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
-            let current_platform = PlatformTarget::from_current();
             // Keep provenance aligned with the matching-selected binary, unless
             // `asset_pattern` is set (it selects the binary, ignoring `matching`).
             let (matching, matching_regex) =
-                opts.matching_for_provenance(&current_platform, verification.explicit_pattern);
+                opts.matching_for_provenance(target, verification.explicit_pattern);
             let picker = AssetPicker::with_libc(
-                current_platform.os_name().to_string(),
-                current_platform.arch_name().to_string(),
-                current_platform.qualifier().map(|s| s.to_string()),
+                target.os_name().to_string(),
+                target.arch_name().to_string(),
+                target.qualifier().map(|s| s.to_string()),
             )
             .with_matching(matching.unwrap_or_default())
             .with_matching_regex(matching_regex.unwrap_or_default());
@@ -1653,7 +1654,7 @@ impl UnifiedGitBackend {
         let has_lockfile_integrity = tv
             .lock_platforms
             .get(&platform_key)
-            .is_some_and(PlatformInfo::has_checksum_and_verified_provenance);
+            .is_some_and(PlatformInfo::has_checksum_and_provenance);
         let locked_provenance = tv
             .lock_platforms
             .get(&platform_key)
@@ -1692,7 +1693,6 @@ impl UnifiedGitBackend {
             if provenance_result.is_some() {
                 let platform_info = tv.lock_platforms.entry(platform_key).or_default();
                 platform_info.provenance = provenance_result;
-                platform_info.provenance_verified = true;
                 platform_info.github_attestations = None;
             }
         }
@@ -1731,7 +1731,7 @@ impl UnifiedGitBackend {
             .cloned()
             .unwrap_or_default();
         let lockfile_has_checksum = artifact_info.checksum.is_some();
-        let has_lockfile_integrity = artifact_info.has_checksum_and_verified_provenance();
+        let has_lockfile_integrity = artifact_info.has_checksum_and_provenance();
         artifact_info.url = asset.url.clone();
         artifact_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
         if let Some(digest) = &asset.digest
@@ -1791,7 +1791,6 @@ impl UnifiedGitBackend {
                 .await?;
             if provenance.is_some() {
                 artifact_info.provenance = provenance;
-                artifact_info.provenance_verified = true;
             }
         }
 
@@ -2488,7 +2487,7 @@ impl UnifiedGitBackend {
     /// When skipping full provenance re-verification (lockfile has checksum+provenance),
     /// check that the setting for the recorded provenance type is still enabled.
     /// Disabling a verification setting while the lockfile expects it is a downgrade.
-    fn ensure_provenance_setting_enabled(
+    pub(crate) fn ensure_provenance_setting_enabled(
         &self,
         tv: &ToolVersion,
         platform_key: &str,

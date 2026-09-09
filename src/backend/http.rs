@@ -1154,11 +1154,12 @@ impl Backend for HttpBackend {
         // orchestration reports it as skipped, rather than returning an empty
         // entry that is miscounted as a successful platform (see #7113).
         let Some(url) = self.lock_url_for_target(&opts, tv, target) else {
-            return Err(eyre::eyre!(
+            return Err(crate::errors::Error::UnsupportedTarget(format!(
                 "no URL configured for {} on {}; skipping",
                 self.ba.full(),
                 target.to_key()
-            ));
+            ))
+            .into());
         };
 
         let checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
@@ -1168,6 +1169,13 @@ impl Backend for HttpBackend {
         // url-only entry is still written, but surface it so it isn't a silent
         // drop of checksum verification.
         if checksum.is_none() && opts.checksum_url_for_target(target).is_some() {
+            if Settings::get().generate_lockfiles() {
+                eyre::bail!(
+                    "could not resolve the configured checksum for {} on {}",
+                    self.ba.full(),
+                    target.to_key()
+                );
+            }
             warn!(
                 "could not resolve a checksum for {} on {}; locking the URL without checksum verification",
                 self.ba.full(),

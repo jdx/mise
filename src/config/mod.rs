@@ -3866,7 +3866,20 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
         &changed_install_paths,
         lockfile_update_mode,
     )
-    .await
+    .await?;
+    if Settings::get().generate_lockfiles()
+        && Settings::get().lockfile_enabled()
+        && (!Settings::get().locked
+            || lockfile_update_mode == lockfile::LockfileUpdateMode::AllowLocked)
+    {
+        lockfile::generate::ensure_install_succeeded()?;
+        Box::pin(crate::cli::lock::Lock::generate_after_install(
+            config.clone(),
+            new_versions,
+        ))
+        .await?;
+    }
+    Ok(())
 }
 
 /// Reconcile runtime links and shim farms after versions have been removed.
@@ -3945,6 +3958,9 @@ async fn rebuild_shims_and_runtime_symlinks_for_changes(
                 .wrap_err("failed to rebuild system shims")?;
         }
     });
+    if Settings::get().generate_lockfiles() {
+        return Ok(());
+    }
     lockfile::migrate_monorepo_lockfiles(config, false)?;
     // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes
     // current-platform entries — auto-lock uses this to tell a curated lockfile
