@@ -3182,7 +3182,7 @@ pub(crate) async fn resolve_tool_lock_info(
     (
         ba.short.clone(),
         tv.version.clone(),
-        ba.full(),
+        ba.stored_full(),
         platform,
         info,
         options,

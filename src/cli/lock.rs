@@ -204,6 +204,20 @@ struct PreparedLockfileRollback {
     replacement: Option<crate::file::PreparedAtomicWrite>,
 }
 
+fn verify_generation_snapshots<'a>(
+    snapshots: impl Iterator<Item = (&'a PathBuf, &'a Option<Vec<u8>>)>,
+) -> Result<()> {
+    for (path, content) in snapshots {
+        if read_optional_file(path)? != *content {
+            bail!(
+                "file {} changed during lockfile generation; retry the command",
+                display_path(path)
+            );
+        }
+    }
+    Ok(())
+}
+
 fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
     match fs::read(path) {
         Ok(content) => Ok(Some(content)),
@@ -769,14 +783,7 @@ impl Lock {
         // resolved and bound successfully. This also keeps legacy monorepo
         // lockfiles untouched on failure.
         if !self.dry_run && atomic {
-            for (path, content) in config_snapshots.iter().chain(initial_lockfiles.iter()) {
-                if read_optional_file(path)? != *content {
-                    bail!(
-                        "file {} changed during lockfile generation; retry the command",
-                        display_path(path)
-                    );
-                }
-            }
+            verify_generation_snapshots(config_snapshots.iter().chain(initial_lockfiles.iter()))?;
             let migration_paths = lockfile::monorepo_lockfile_migration_paths(&config);
             let transaction_paths: BTreeSet<PathBuf> = staged_upgrade_writes
                 .iter()
@@ -801,6 +808,9 @@ impl Lock {
                 );
             }
 
+            // Lock acquisition may wait behind another writer. Recheck every input,
+            // including bumped configs and migration sources, under the transaction locks.
+            verify_generation_snapshots(config_snapshots.iter().chain(initial_lockfiles.iter()))?;
             for staged in &staged_upgrade_writes {
                 if read_optional_file(&staged.path)? != staged.original_content {
                     bail!(
@@ -828,6 +838,7 @@ impl Lock {
                 .iter()
                 .map(|staged| staged.lockfile.prepare_write(&staged.path))
                 .collect::<Result<Vec<_>>>()?;
+            verify_generation_snapshots(config_snapshots.iter().chain(initial_lockfiles.iter()))?;
             let commit_result = (|| -> Result<()> {
                 crate::toolset::outdated_info::apply_config_bumps(&config, &deferred_config_bumps)?;
                 for prepared in prepared_writes.into_iter().flatten() {
@@ -1953,6 +1964,21 @@ mod tests {
     use std::fs;
     use std::str::FromStr;
     use std::sync::Arc;
+
+    #[test]
+    fn snapshot_recheck_detects_config_and_migration_edits_after_initial_check() {
+        let dir = tempfile::tempdir().unwrap();
+        for filename in ["mise.toml", "legacy.mise.lock"] {
+            let path = dir.path().join(filename);
+            fs::write(&path, "original").unwrap();
+            let snapshots = BTreeMap::from([(path.clone(), Some(b"original".to_vec()))]);
+            super::verify_generation_snapshots(snapshots.iter()).unwrap();
+            // Simulate a writer completing while publication waits for its lock.
+            fs::write(&path, "concurrent edit").unwrap();
+            assert!(super::verify_generation_snapshots(snapshots.iter()).is_err());
+            assert_eq!(fs::read_to_string(path).unwrap(), "concurrent edit");
+        }
+    }
 
     #[test]
     fn rollback_restores_replaced_files_and_removes_created_files() {

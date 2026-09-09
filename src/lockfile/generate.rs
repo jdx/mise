@@ -623,7 +623,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fresh_resolution_uses_the_same_backend_identity_as_reuse() {
+        crate::backend::load_tools().await.unwrap();
+        let ba = BackendArg::new(
+            "fixture".into(),
+            Some("http:fixture[rename_exe=fixture]".into()),
+        );
+        assert_ne!(ba.full(), ba.stored_full());
+        let request = ToolRequest::new(Arc::new(ba.clone()), "1.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0".into());
+        let result = resolve_tool_lock_info(ba.clone(), tv, Platform::current(), None).await;
+        assert_eq!(result.2, ba.stored_full());
+    }
+
+    #[tokio::test]
     async fn actual_source_fallback_wins_over_reusable_binary_metadata() {
+        crate::backend::load_tools().await.unwrap();
         let (ba, mut actual) = tool();
         let platform = Platform::current();
         actual.lock_platforms.insert(
@@ -652,6 +667,7 @@ mod tests {
 
     #[tokio::test]
     async fn unsupported_target_is_skipped_without_an_empty_entry() {
+        crate::backend::load_tools().await.unwrap();
         let generated = generate(
             &Lockfile::default(),
             &[tool()],
@@ -668,6 +684,7 @@ mod tests {
 
     #[tokio::test]
     async fn unchanged_entries_reuse_metadata_without_network_and_are_stable() {
+        crate::backend::load_tools().await.unwrap();
         let old = previous();
         let platforms = vec![
             Platform::parse("linux-x64").unwrap(),
@@ -685,6 +702,7 @@ mod tests {
 
     #[tokio::test]
     async fn filtered_platform_carries_other_platform_forward() {
+        crate::backend::load_tools().await.unwrap();
         let old = previous();
         let generated = generate(
             &old,
@@ -702,6 +720,7 @@ mod tests {
 
     #[tokio::test]
     async fn fresh_generation_drops_obsolete_tools_but_filter_keeps_them() {
+        crate::backend::load_tools().await.unwrap();
         let old = previous();
         let empty = generate(&old, &[], &[], false, false, 1, &[])
             .await
@@ -736,6 +755,7 @@ mod tests {
 
     #[tokio::test]
     async fn erlang_keeps_distinct_linux_and_macos_options() {
+        crate::backend::load_tools().await.unwrap();
         let ba = BackendArg::new("erlang".into(), Some("core:erlang".into()));
         let request = ToolRequest::new_with_options(
             Arc::new(ba.clone()),
