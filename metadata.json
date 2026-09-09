@@ -3,7 +3,7 @@
   "checkpoint_id": "01M231CJG3QZH25J9Q9R29NBCC",
   "strategy": "manual-commit",
   "branch": "codex/publish-version-after-release",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     ".github/workflows/publish-version.yml",
     ".github/workflows/release.yml",
@@ -18,13 +18,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 75222,
+    "input_tokens": 118704,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 1142656,
-    "output_tokens": 10301,
-    "api_call_count": 22
+    "cache_read_tokens": 1443840,
+    "output_tokens": 12708,
+    "api_call_count": 31
   }
 }
