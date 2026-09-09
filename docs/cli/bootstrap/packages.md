@@ -18,6 +18,7 @@ Manage bootstrap system packages from `[bootstrap.packages]`
 
 - [`mise bootstrap packages apply [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/apply.html)
 - [`mise bootstrap packages brew <SUBCOMMAND>`](/cli/bootstrap/packages/brew.html)
+- [`mise bootstrap packages export <--format <FORMAT>>`](/cli/bootstrap/packages/export.html)
 - [`mise bootstrap packages import [FLAGS]`](/cli/bootstrap/packages/import.html)
 - [`mise bootstrap packages prune [FLAGS]`](/cli/bootstrap/packages/prune.html)
 - [`mise bootstrap packages status [-J --json] [--missing]`](/cli/bootstrap/packages/status.html)

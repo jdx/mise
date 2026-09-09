@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
+  echo 'SKIP: Nix Docker fixture currently targets x86_64 Linux'
+  exit 0
+fi
+if ! command -v docker >/dev/null || ! docker info >/dev/null 2>&1; then
+  echo 'SKIP: Docker is unavailable'
+  exit 0
+fi
+
+image=$(docker build --quiet "$ROOT/test/fixtures/nix-bootstrap")
+container=$(docker create "$image")
+# The Docker daemon may run outside the checkout's filesystem namespace.
+# Copy the binary rather than relying on a host bind mount.
+trap 'docker rm --force "$container" >/dev/null' EXIT
+docker cp "$ROOT/target/debug/mise" "$container:/input/mise"
+docker start --attach "$container"
+test "$(docker wait "$container")" = 0
