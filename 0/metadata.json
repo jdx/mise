@@ -3,37 +3,38 @@
   "checkpoint_id": "01M232C5107ANV8Z98QPSZACXN",
   "session_id": "01a08610-16a0-72c1-970b-078acc2dbc90",
   "strategy": "manual-commit",
-  "created_at": "2026-09-09T12:30:38.346018Z",
+  "created_at": "2026-09-09T13:04:37.951053Z",
   "branch": "codex/fix-packslip-lock-urls",
   "checkpoints_count": 1,
-  "save_step_count": 1,
   "files_touched": [
     "e2e/backend/test_registry_min_version",
     "src/backend/packslip.rs"
   ],
   "agent": "Codex",
   "model": "gpt-5.6-sol",
-  "turn_id": "c35bd6e9f7b5",
-  "compact_transcript_start": 0,
+  "turn_id": "a30345527b95",
+  "checkpoint_transcript_start": 633,
+  "transcript_lines_at_start": 633,
+  "compact_transcript_start": 95,
   "token_usage": {
-    "input_tokens": 180423,
+    "input_tokens": 37123,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 9169408,
-    "output_tokens": 14224,
-    "api_call_count": 78
+    "cache_read_tokens": 2371584,
+    "output_tokens": 3635,
+    "api_call_count": 12
   },
   "session_metrics": {
-    "turn_count": 1
+    "turn_count": 2
   },
   "initial_attribution": {
-    "calculated_at": "2026-09-09T12:30:38.265182Z",
-    "agent_lines": 129,
-    "agent_removed": 53,
+    "calculated_at": "2026-09-09T13:04:37.790615Z",
+    "agent_lines": 33,
+    "agent_removed": 9,
     "human_added": 0,
     "human_modified": 0,
     "human_removed": 0,
-    "total_committed": 129,
-    "total_lines_changed": 182,
+    "total_committed": 33,
+    "total_lines_changed": 42,
     "agent_percentage": 100,
     "metric_version": 2
   },
@@ -44,13 +45,6 @@
       "user_lines_removed": 0,
       "agent_lines_added": 0,
       "agent_lines_removed": 0
-    },
-    {
-      "checkpoint_number": 2,
-      "user_lines_added": 0,
-      "user_lines_removed": 0,
-      "agent_lines_added": 129,
-      "agent_lines_removed": 53
     }
   ]
 }
