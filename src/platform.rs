@@ -84,9 +84,9 @@ impl Platform {
 
         // Validate architecture
         match self.arch.as_str() {
-            "x64" | "arm64" | "arm" | "x86" | "loongarch64" | "riscv64" => {}
+            "x64" | "arm64" | "x86" | "loongarch64" | "riscv64" => {}
             _ => bail!(
-                "Unsupported architecture '{}'. Supported: x64, arm64, arm, x86, loongarch64, riscv64",
+                "Unsupported architecture '{}'. Supported: x64, arm64, x86, loongarch64, riscv64",
                 self.arch
             ),
         }
@@ -412,16 +412,14 @@ mod tests {
     fn test_platform_multiple_parsing() {
         let platform_strings = vec![
             "linux-x64".to_string(),
-            "linux-arm".to_string(),
             "macos-arm64".to_string(),
             "linux-x64".to_string(), // duplicate should be removed
         ];
 
         let platforms = Platform::parse_multiple(&platform_strings).unwrap();
-        assert_eq!(platforms.len(), 3);
-        assert_eq!(platforms[0].to_key(), "linux-arm");
-        assert_eq!(platforms[1].to_key(), "linux-x64");
-        assert_eq!(platforms[2].to_key(), "macos-arm64");
+        assert_eq!(platforms.len(), 2);
+        assert_eq!(platforms[0].to_key(), "linux-x64");
+        assert_eq!(platforms[1].to_key(), "macos-arm64");
     }
 
     #[test]
