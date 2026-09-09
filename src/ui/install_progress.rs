@@ -40,6 +40,10 @@ pub(crate) trait InstallProgress: Send + Sync {
     /// Tools that never reached a worker (blocked by a failed dependency, or
     /// refused before scheduling) and the final summary.
     fn finish(&mut self, failures: Vec<(String, String)>);
+
+    /// The caller prints its own successful results (for example, upgrade).
+    /// Captured output still keeps its complete progress record.
+    fn hide_success_summary(&mut self) {}
 }
 
 /// Pick the renderer for this terminal, or `None` when the existing per-tool
@@ -59,8 +63,7 @@ pub(crate) fn resolution_progress(
 }
 
 /// The same session for `prune`, `uninstall` and `upgrade`'s old versions.
-/// Hundreds of `remove …` rows kept in a live region were what made a large
-/// prune unreadable; here each finished removal is one permanent line.
+/// Interactive removals leave a summary naming the versions removed.
 pub(crate) fn removal_progress(
     mpr: &Arc<MultiProgressReport>,
     tools: impl Iterator<Item = (String, String)>,

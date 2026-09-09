@@ -2,8 +2,8 @@
 //!
 //! The live region is small on purpose: a header with the install-wide bar and
 //! one row per tool that is actually doing something. Finished tools leave the
-//! region as permanent lines above it — the same lines CI gets — so scrollback
-//! is the record and the screen never fills with rows that are done.
+//! region without leaving successful completion lines. A final summary records
+//! changed versions; failures remain visible as soon as they happen.
 //!
 //! Everything shown here comes from the shared [`State`]; clx is only asked to
 //! paint prop strings and animate a spinner.
@@ -16,7 +16,9 @@ use clx::progress::{ProgressJob, ProgressJobBuilder, ProgressJobDoneBehavior, Pr
 use super::install_progress::{InstallProgress, ToolProgress};
 use super::progress_report::{ProgressIcon, SingleReport};
 use super::style;
-use super::text_install_progress::{State, Tool, elapsed, filled_cells, first_line, format_bytes};
+use super::text_install_progress::{
+    Action, Outcome, State, Tool, elapsed, filled_cells, first_line, format_bytes,
+};
 use crate::cli::version::VERSION_PLAIN;
 
 /// Redraw cadence for elapsed times and rates. clx animates the spinner on its
@@ -93,6 +95,7 @@ pub(crate) struct TtyInstallProgress {
     stop: mpsc::Sender<()>,
     thread: Option<JoinHandle<()>>,
     finished: bool,
+    hide_success_summary: bool,
 }
 
 impl TtyInstallProgress {
@@ -143,6 +146,7 @@ impl TtyInstallProgress {
             stop,
             thread: Some(thread),
             finished: false,
+            hide_success_summary: false,
         }
     }
 
@@ -210,7 +214,6 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
     header.progress_current(((progress * OSC_SCALE as f64).round() as usize).min(OSC_SCALE));
     header.prop("version", &version_text(layout.version));
     header.prop("byline", &byline_text(layout.byline));
-    header.prop("bar", &state.bar_only(layout.header_bar));
     let mut status = state.count_label();
     if layout.rate
         && let Some(rate) = state.aggregate_rate(now)
@@ -222,7 +225,10 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
         status.push_str(&format!(" · {queued} queued"));
     }
     status.push_str(&format!(" · {}", elapsed(state.started, now)));
+    // clx may draw between prop updates. Publish the completed count before
+    // the full bar so a frame never pairs 100% with the previous count.
     header.prop("status", &status);
+    header.prop("bar", &state.bar_only(layout.header_bar));
 
     for (index, tool) in state.tools.iter().enumerate() {
         let Some(job) = rows.jobs.get(index).and_then(|j| j.as_ref()) else {
@@ -304,6 +310,10 @@ impl InstallProgress for TtyInstallProgress {
         }
     }
 
+    fn hide_success_summary(&mut self) {
+        self.hide_success_summary = true;
+    }
+
     fn finish(&mut self, failures: Vec<(String, String)>) {
         self.finished = true;
         self.stop();
@@ -328,11 +338,36 @@ impl InstallProgress for TtyInstallProgress {
         } else {
             ProgressIcon::Success
         };
-        self.header
-            .println(&format!("{icon} {}", state.summary_text(now)));
+        if let Some(summary) = final_summary(&state, now, self.hide_success_summary) {
+            self.header.println(&format!("{icon} {summary}"));
+        }
         self.header.progress_current(OSC_SCALE);
         self.header.set_status(ProgressStatus::Done);
     }
+}
+
+/// Preserve actual changes once, without retaining lookup or skipped-tool noise.
+/// Failures always get a summary, including on an interrupted/error path.
+fn final_summary(state: &State, now: Instant, hide_success: bool) -> Option<String> {
+    let failed = state.count(Outcome::Failed) > 0;
+    if !failed && (hide_success || state.action == Action::Resolve) {
+        return None;
+    }
+    let changed: Vec<_> = state
+        .tools
+        .iter()
+        .filter(|tool| tool.outcome == Some(Outcome::Installed))
+        .map(|tool| tool.prefix.as_str())
+        .collect();
+    if !failed && changed.is_empty() {
+        return None;
+    }
+    let mut summary = state.summary_text(now);
+    if state.action != Action::Resolve && !changed.is_empty() {
+        summary.push_str(": ");
+        summary.push_str(&changed.join(", "));
+    }
+    Some(summary)
 }
 
 impl Drop for TtyInstallProgress {
@@ -409,18 +444,21 @@ impl ToolProgress for TtyToolProgress {
     }
 
     fn complete(&self, error: Option<&str>) {
-        let line = {
+        let (line, failed) = {
             let mut state = self.state.lock().unwrap();
             let outcome = state.tools[self.index].outcome_for(error);
             if let Some(error) = error {
                 state.tools[self.index].message = first_line(error);
             }
-            state.finish_tool(self.index, outcome, Instant::now(), Some(columns()))
+            (
+                state.finish_tool(self.index, outcome, Instant::now(), Some(columns())),
+                outcome == Outcome::Failed,
+            )
         };
         let Some(line) = line else {
             return;
         };
-        // The permanent line goes above the live region; the row leaves it.
+        // Completed rows leave the live region; only failures enter scrollback.
         let mut rows = self.rows.lock().unwrap();
         if let Some(child) = rows.children[self.index].take() {
             child.remove();
@@ -429,7 +467,9 @@ impl ToolProgress for TtyToolProgress {
             job.remove();
         }
         drop(rows);
-        self.header.println(&line);
+        if failed {
+            self.header.println(&line);
+        }
     }
 
     fn reporter(&self) -> Box<dyn SingleReport> {
@@ -499,6 +539,60 @@ impl SingleReport for TtyToolProgress {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interactive_summary_records_only_changed_versions() {
+        let mut state = State::new(
+            ["dummy@1.0.0", "tiny@2.0.0"]
+                .into_iter()
+                .map(|tool| (tool.into(), tool.into())),
+        );
+        let now = state.started;
+        state.finish_tool(0, Outcome::Installed, now, None);
+        state.finish_tool(1, Outcome::Skipped, now, None);
+        assert_eq!(
+            final_summary(&state, now, false).unwrap(),
+            "installed 1 tool · 1 already installed in 0ms: dummy@1.0.0"
+        );
+        assert!(final_summary(&state, now, true).is_none());
+        state.action = Action::Remove;
+        assert!(
+            final_summary(&state, now, false)
+                .unwrap()
+                .starts_with("removed 1 tool")
+        );
+        state.action = Action::Resolve;
+        assert!(final_summary(&state, now, false).is_none());
+    }
+
+    #[test]
+    fn interactive_summary_preserves_partial_failure_results() {
+        for action in [Action::Install, Action::Resolve, Action::Remove] {
+            let mut state = State::for_action(
+                action,
+                ["dummy@1.0.0", "tiny@2.0.0"]
+                    .into_iter()
+                    .map(|tool| (tool.into(), tool.into())),
+            );
+            let now = state.started;
+            state.finish_tool(0, Outcome::Installed, now, None);
+            state.finish_tool(1, Outcome::Failed, now, None);
+            let summary = final_summary(&state, now, true).unwrap();
+            assert!(summary.contains("1 failed"));
+            if action != Action::Resolve {
+                assert!(summary.ends_with(": dummy@1.0.0"));
+            }
+        }
+    }
+
+    #[test]
+    fn interactive_summary_omits_sessions_without_changes() {
+        let mut state = State::new(std::iter::once(("dummy".into(), "dummy".into())));
+        let now = state.started;
+        assert!(final_summary(&state, now, false).is_none());
+        state.finish_tool(0, Outcome::Skipped, now, None);
+        assert!(final_summary(&state, now, false).is_none());
+    }
 
     #[test]
     fn a_wide_terminal_shows_everything() {
