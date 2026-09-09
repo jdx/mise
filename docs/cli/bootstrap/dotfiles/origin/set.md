@@ -15,9 +15,7 @@ Connect a setup repository
 - **`<URL>`** — The repository url (any git url; a private repository is recommended)
 
 ## Flags
-- **`--branch <BRANCH>`** — The setup branch
-
-  **Default:** `main`
+- **`--branch <BRANCH>`** — The setup branch (default: the repository's own default branch)
 - **`--sync <MODE>`** — How the repository is used: sync, fetch-only, or manual
 
   Prompts when omitted. With --yes, accepts the configured mode (default: sync), including automatic publication and incoming writes. Use --sync manual to keep automatic local history without automatic network activity.

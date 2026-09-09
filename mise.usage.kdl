@@ -845,7 +845,7 @@ the mode is `settings.history.sync`.
             flag --remove help="Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)" effect=destructive
             flag "-h --help" help="Print help" action=help builtin=#true
             cmd set help="Connect a setup repository" effect=write {
-                flag --branch help="The setup branch" default=main {
+                flag --branch help="The setup branch (default: the repository's own default branch)" {
                     arg <BRANCH>
                 }
                 flag --sync help="How the repository is used: sync, fetch-only, or manual" {

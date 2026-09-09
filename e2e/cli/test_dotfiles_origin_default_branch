@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Connecting takes the repository's own default branch, and never mistakes a
+# missing branch for an empty repository.
+require_cmd git
+
+# A setup repository whose default branch is `master`, not `main`.
+origin="$PWD/master-origin.git"
+git init -q --bare -b master "$origin"
+echo local >~/.native
+assert_succeed "mise bootstrap dotfiles track ~/.native"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --branch master --sync manual --yes"
+assert_succeed "mise bootstrap dotfiles sync"
+assert "git --git-dir=$origin for-each-ref --format='%(refname)' refs/heads" "refs/heads/master"
+assert_succeed "mise bootstrap dotfiles origin --remove"
+
+# Reconnecting without --branch follows `master`: the repository is never
+# described as empty, and no unrelated `main` is created beside its history.
+connected="$(mise bootstrap dotfiles origin set "file://$origin" --sync manual --yes 2>&1)" || {
+	echo "connecting failed: $connected" >&2
+	exit 1
+}
+assert_contains_text "$connected" "branch master"
+assert_not_contains_text "$connected" "repository is empty"
+assert_contains "mise bootstrap dotfiles origin" "branch master"
+assert "git --git-dir=$origin for-each-ref --format='%(refname)' refs/heads" "refs/heads/master"
+
+# An explicitly requested branch the repository does not have is refused, and
+# names the branches it has rather than connecting to a branch that is not there.
+assert_fail "mise bootstrap dotfiles origin set file://$origin --branch main --sync manual --yes" 'no branch `main`'
+assert_contains "mise bootstrap dotfiles origin" "branch master"

@@ -21,10 +21,14 @@ use crate::ui::prompt;
 
 pub(crate) struct SetOptions {
     pub url: String,
-    pub branch: String,
+    /// The branch asked for; `None` takes the repository's own default branch.
+    pub branch: Option<String>,
     pub mode: SyncMode,
     pub yes: bool,
 }
+
+/// Only for a repository that lists no branches at all.
+const DEFAULT_BRANCH: &str = "main";
 
 /// Connects the setup repository.
 pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) -> Result<()> {
@@ -80,8 +84,12 @@ async fn set_inner(
     // This is the disposable preview repository. The connected repository's
     // remote-tracking ref remains untouched unless the connection is confirmed.
     let remote = Remote::new(repo, &opts.url);
-    if !remote.fetch(&opts.branch)? && repo.ref_oid(UPSTREAM_REF)?.is_some() {
-        repo.delete_ref(UPSTREAM_REF)?;
+    let branch = resolve_branch(&remote, opts.branch.as_deref())?;
+    if !remote.fetch(&branch)? {
+        refuse_missing_branch(&remote, &branch, &opts.url)?;
+        if repo.ref_oid(UPSTREAM_REF)?.is_some() {
+            repo.delete_ref(UPSTREAM_REF)?;
+        }
     }
     let upstream = repo.ref_oid(UPSTREAM_REF)?;
     let repo_state = format::detect(repo, upstream.as_deref())?;
@@ -94,16 +102,15 @@ async fn set_inner(
     let status_before = run::read_status(state_dir)?;
     let connected_before = status_before.origin_url.is_some();
     let same_origin = status_before.origin_url.as_deref() == Some(opts.url.as_str())
-        && status_before.origin_branch.as_deref() == Some(opts.branch.as_str());
+        && status_before.origin_branch.as_deref() == Some(branch.as_str());
     miseprintln!("Every committed tracked-file version is eligible for origin synchronization.");
     // disclosure
-    miseprintln!("Setup repository: {} (branch {})", opts.url, opts.branch);
+    miseprintln!("Setup repository: {} (branch {})", opts.url, branch);
     miseprintln!("Sync mode {}", opts.mode.disclosure());
     crate::system::history::notify::warn_if_release_signing_unavailable();
     match &repo_state {
         RepoState::Empty => miseprintln!(
-            "The repository is empty: the first publication creates `{}` with the mise marker.",
-            opts.branch
+            "The repository is empty: the first publication creates `{branch}` with the mise marker."
         ),
         RepoState::Marked(_) => {
             miseprintln!("The repository is a mise setup repository; continuing.")
@@ -183,7 +190,7 @@ async fn set_inner(
     // say, so `mise settings set history.sync …` keeps working afterwards
     let mode =
         (opts.mode.as_str() != crate::config::Settings::get().history.sync).then_some(opts.mode);
-    write_config(&opts.url, &opts.branch, mode)?;
+    write_config(&opts.url, &branch, mode)?;
     // another repository or branch starts from a clean slate: the previous
     // one's per-path state, pending changes, and conflicts would read its
     // absence of a file as a deletion
@@ -195,7 +202,7 @@ async fn set_inner(
         );
     }
     status.origin_url = Some(opts.url.clone());
-    status.origin_branch = Some(opts.branch.clone());
+    status.origin_branch = Some(branch.clone());
     status.disconnected = false;
     status.adopted = repo_state == RepoState::Unmarked || status.adopted;
     run::write_status(state_dir, &status)?;
@@ -216,6 +223,48 @@ async fn set_inner(
     let outcome = run::sync(&store, &tracked, &SyncRequest::new(!opts.mode.publishes()))?;
     report(&outcome);
     Ok(())
+}
+
+/// The setup branch: the one asked for, else the repository's own default
+/// branch. Assuming `main` reads a repository that does not have it as empty,
+/// and publishes an unrelated root branch beside its real history.
+fn resolve_branch(remote: &Remote<'_>, requested: Option<&str>) -> Result<String> {
+    if let Some(branch) = requested {
+        if branch.trim().is_empty() {
+            bail!("a branch name is required");
+        }
+        return Ok(branch.to_string());
+    }
+    // an unreachable repository is reported by the fetch that follows
+    Ok(super::onboard::default_branch(remote)?.unwrap_or_else(|| DEFAULT_BRANCH.to_string()))
+}
+
+/// A missing branch is only an empty repository when the repository has no
+/// branches at all; otherwise connecting would publish an unrelated root
+/// branch beside the history that is already there.
+fn refuse_missing_branch(remote: &Remote<'_>, branch: &str, url: &str) -> Result<()> {
+    let Ok(refs) = remote.ls_remote() else {
+        return Ok(());
+    };
+    let heads: Vec<&str> = refs
+        .iter()
+        .filter_map(|(_, name)| name.strip_prefix("refs/heads/"))
+        .collect();
+    if heads.is_empty() || heads.contains(&branch) {
+        return Ok(());
+    }
+    let mut listed: Vec<&str> = heads.iter().copied().take(10).collect();
+    listed.sort_unstable();
+    let more = heads.len().saturating_sub(listed.len());
+    let suffix = if more > 0 {
+        format!(" (and {more} more)")
+    } else {
+        String::new()
+    };
+    bail!(
+        "{url} has no branch `{branch}`; it has: {}{suffix}. Connect with `--branch <name>`, or push `{branch}` there first.",
+        listed.join(", ")
+    );
 }
 
 pub(crate) fn report(outcome: &run::SyncOutcome) {
@@ -405,4 +454,101 @@ fn remove_locked(state_dir: &std::path::Path, status: &mut run::SyncStatus) -> R
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::system::history::shadow::HistoryRepo;
+
+    /// A bare repository whose only branch is `name`, advertised through
+    /// `HEAD` the way a hosted repository advertises its default branch.
+    fn origin_with_branch(dir: &std::path::Path, name: &str) -> (HistoryRepo, String) {
+        let repo = HistoryRepo::open_or_init_in(dir).unwrap().unwrap();
+        let tree = repo.empty_object("tree").unwrap();
+        let commit = repo.commit_tree(&tree, vec![], "setup").unwrap();
+        repo.update_ref(&format!("refs/heads/{name}"), &commit, None)
+            .unwrap();
+        std::fs::write(repo.dir().join("HEAD"), format!("ref: refs/heads/{name}\n")).unwrap();
+        let url = url::Url::from_file_path(repo.dir()).unwrap().to_string();
+        (repo, url)
+    }
+
+    fn local_repo(dir: &std::path::Path) -> HistoryRepo {
+        HistoryRepo::open_or_init_in(dir).unwrap().unwrap()
+    }
+
+    #[test]
+    fn an_unrequested_branch_follows_the_repository_default() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        for name in ["master", "main", "trunk"] {
+            let (_origin, url) = origin_with_branch(&temp.path().join(name), name);
+            let local = local_repo(&temp.path().join(format!("{name}-local")));
+            let remote = Remote::new(&local, &url);
+            assert_eq!(resolve_branch(&remote, None).unwrap(), name);
+        }
+    }
+
+    #[test]
+    fn a_requested_branch_is_taken_as_given() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let (_origin, url) = origin_with_branch(&temp.path().join("origin"), "master");
+        let local = local_repo(&temp.path().join("local"));
+        let remote = Remote::new(&local, &url);
+        assert_eq!(resolve_branch(&remote, Some("release")).unwrap(), "release");
+        assert!(resolve_branch(&remote, Some("  ")).is_err());
+    }
+
+    #[test]
+    fn a_repository_without_branches_takes_the_default_name() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let empty = local_repo(&temp.path().join("empty"));
+        let url = url::Url::from_file_path(empty.dir()).unwrap().to_string();
+        let local = local_repo(&temp.path().join("local"));
+        let remote = Remote::new(&local, &url);
+        assert_eq!(resolve_branch(&remote, None).unwrap(), DEFAULT_BRANCH);
+    }
+
+    #[test]
+    fn a_missing_branch_is_not_reported_as_an_empty_repository() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let (_origin, url) = origin_with_branch(&temp.path().join("origin"), "master");
+        let local = local_repo(&temp.path().join("local"));
+        let remote = Remote::new(&local, &url);
+        assert!(!remote.fetch("main").unwrap());
+        let error = refuse_missing_branch(&remote, "main", &url)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("no branch `main`"), "{error}");
+        assert!(error.contains("master"), "{error}");
+        // the repository's own default branch connects without complaint
+        assert!(remote.fetch("master").unwrap());
+        assert!(refuse_missing_branch(&remote, "master", &url).is_ok());
+    }
+
+    #[test]
+    fn an_empty_repository_still_reads_as_empty() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let empty = local_repo(&temp.path().join("empty"));
+        let url = url::Url::from_file_path(empty.dir()).unwrap().to_string();
+        let local = local_repo(&temp.path().join("local"));
+        let remote = Remote::new(&local, &url);
+        assert!(!remote.fetch(DEFAULT_BRANCH).unwrap());
+        assert!(refuse_missing_branch(&remote, DEFAULT_BRANCH, &url).is_ok());
+    }
 }
