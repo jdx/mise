@@ -1,5 +1,59 @@
 # Changelog
 
+## [2026.9.4](https://github.com/jdx/mise/compare/v2026.9.3..v2026.9.4) - 2026-09-09
+
+### 🚀 Features
+
+- **(bootstrap)** add package environment selectors by @jdx in [#12956](https://github.com/jdx/mise/pull/12956)
+- **(bootstrap)** add nix packages and nixos export by @jdx in [#13013](https://github.com/jdx/mise/pull/13013)
+- **(packslip)** activate declared man pages by @jdx in [#13012](https://github.com/jdx/mise/pull/13012)
+- **(task)** add task-scoped quiet setting by @jdx in [#12980](https://github.com/jdx/mise/pull/12980)
+
+### 🐛 Bug Fixes
+
+- **(backend)** handle unsupported ARM32 artifacts safely by @jdx in [#13004](https://github.com/jdx/mise/pull/13004)
+- **(bootstrap)** sign hard-linked Mach-O aliases after relocation by @nettlesh in [#12988](https://github.com/jdx/mise/pull/12988)
+- **(bootstrap)** deprecate config root composition by @jdx in [#13010](https://github.com/jdx/mise/pull/13010)
+- **(brew)** include tap metadata shims in crate package by @jdx in [#13001](https://github.com/jdx/mise/pull/13001)
+- **(dotfiles)** resolve history filters through portable roots by @azohra in [#12982](https://github.com/jdx/mise/pull/12982)
+- **(generate)** honor tool stub os for Windows launchers by @jdx in [#13008](https://github.com/jdx/mise/pull/13008)
+- **(install)** install a lazy tool's missing dependencies on first use by @balintant in [#12997](https://github.com/jdx/mise/pull/12997)
+- **(nix)** skip non-sandboxable tests by @laozc in [#12990](https://github.com/jdx/mise/pull/12990)
+- **(packslip)** resolve cross-platform lockfile artifacts by @jdx in [#13002](https://github.com/jdx/mise/pull/13002)
+- **(packslip)** preserve executable extensions on Windows by @jdx in [#13006](https://github.com/jdx/mise/pull/13006)
+- **(packslip)** fall back to musl for old glibc by @jdx in [#13009](https://github.com/jdx/mise/pull/13009)
+- **(packslip)** scope cached man paths by @jdx in [#13016](https://github.com/jdx/mise/pull/13016)
+- **(prune)** fail when confirmation is unavailable by @jdx in [#13003](https://github.com/jdx/mise/pull/13003)
+- release target repo is missing by @eggplants in [#12977](https://github.com/jdx/mise/pull/12977)
+
+### ⚡ Performance
+
+- **(history)** rebuild index metadata with gix by @jdx in [#13011](https://github.com/jdx/mise/pull/13011)
+
+### 🧪 Testing
+
+- **(doctor)** scope dotfiles warning assertion by @jdx in [#13005](https://github.com/jdx/mise/pull/13005)
+
+### 📦️ Dependency Updates
+
+- update fedora:45 docker digest to aacbc26 by @renovate[bot] in [#12959](https://github.com/jdx/mise/pull/12959)
+- update ghcr.io/jdx/mise:rpm docker digest to 1608a6d by @renovate[bot] in [#12962](https://github.com/jdx/mise/pull/12962)
+- update ghcr.io/jdx/mise:deb docker digest to 53e8a56 by @renovate[bot] in [#12961](https://github.com/jdx/mise/pull/12961)
+- update rust crate tera-contrib to 0.3 by @renovate[bot] in [#12964](https://github.com/jdx/mise/pull/12964)
+- update ghcr.io/jdx/mise:alpine docker digest to f36692f by @renovate[bot] in [#12960](https://github.com/jdx/mise/pull/12960)
+- update zizmorcore/zizmor-action action to v0.6.3 by @renovate[bot] in [#12963](https://github.com/jdx/mise/pull/12963)
+- update dependency go to v1.27.1 by @renovate[bot] in [#12986](https://github.com/jdx/mise/pull/12986)
+- update aube to v2.2.13 by @jdx in [#13017](https://github.com/jdx/mise/pull/13017)
+
+### Ci
+
+- **(release)** publish version after release by @jdx in [#13000](https://github.com/jdx/mise/pull/13000)
+- treat mise-en-dev as a trusted actor by @jdx in [#12968](https://github.com/jdx/mise/pull/12968)
+
+### New Contributors
+
+- @balintant made their first contribution in [#12997](https://github.com/jdx/mise/pull/12997)
+
 ## [2026.9.3](https://github.com/jdx/mise/compare/v2026.9.2..v2026.9.3) - 2026-09-08
 
 ### 🚀 Features
