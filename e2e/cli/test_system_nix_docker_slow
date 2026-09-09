@@ -14,6 +14,7 @@ container=$(docker create "$image")
 # The Docker daemon may run outside the checkout's filesystem namespace.
 # Copy the binary rather than relying on a host bind mount.
 trap 'docker rm --force "$container" >/dev/null' EXIT
-docker cp "$ROOT/target/debug/mise" "$container:/input/mise"
+# Release CI runs the packaged binary from PATH without a local debug build.
+docker cp "$(command -v mise)" "$container:/input/mise"
 docker start --attach "$container"
 test "$(docker wait "$container")" = 0
