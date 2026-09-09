@@ -135,6 +135,7 @@ gix = { version = "<1", default-features = false, features = [
   "max-performance-safe",
   "worktree-mutation",
   "sha1",
+  "sha256",
   "interrupt",
   "auto-chain-error",
 ] }

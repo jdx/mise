@@ -1279,12 +1279,16 @@ impl HistoryRepo {
         commit: &str,
         expected: Option<&str>,
     ) -> Result<()> {
-        let zero = "0000000000000000000000000000000000000000";
+        eyre::ensure!(
+            matches!(commit.len(), 40 | 64),
+            "unsupported Git object id: {commit}"
+        );
+        let zero = "0".repeat(commit.len());
         self.git.run(PlumbingCall::new([
             "update-ref",
             name,
             commit,
-            expected.unwrap_or(zero),
+            expected.unwrap_or(&zero),
         ]))
     }
 
@@ -1498,6 +1502,30 @@ pub(crate) fn unavailable_reason() -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sha256_history_can_be_written_and_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("repo.git");
+        let output = std::process::Command::new(crate::git::plumbing_binary().unwrap())
+            .args(["init", "--bare", "--quiet", "--object-format=sha256"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let repo = super::HistoryRepo {
+            git: crate::git::GitPlumbing::new(path),
+            transient: Default::default(),
+        };
+        let tree = repo.empty_object("tree").unwrap();
+        let commit = repo.commit_tree(&tree, vec![], "sha256 history").unwrap();
+        assert_eq!(commit.len(), 64);
+        repo.update_history_head(&commit, None).unwrap();
+        assert_eq!(
+            repo.history_messages().unwrap(),
+            vec![(commit, "sha256 history".into())]
+        );
+    }
+
     #[test]
     fn history_messages_match_git_topological_order() {
         let temp = tempfile::tempdir().unwrap();
