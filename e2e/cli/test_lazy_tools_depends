@@ -39,3 +39,21 @@ assert_directory_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
 mise uninstall --all needs-dummy
 assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 needs-dummy --version" "needs-dummy v1.0.0"
 assert_directory_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
+
+# The dependency preflight requires every configured version of a dependency, so
+# all of them have to be installed, not just the first one that matches.
+mise uninstall --all needs-dummy
+mise uninstall --all dummy
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = [
+  { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] },
+  { version = "2.0.0", lazy = true, lazy_bins = ["dummy"] },
+]
+needs-dummy = { version = "1.0.0", depends = ["dummy"], lazy = true, lazy_bins = ["needs-dummy"] }
+EOF
+
+mise reshim
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 needs-dummy --version" "needs-dummy v1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"

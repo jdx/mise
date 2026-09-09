@@ -98,9 +98,9 @@ impl Toolset {
             let declarations = install_dependency_declarations(&requests[next]);
             next += 1;
             for candidate in &missing {
-                if declarations.matches(candidate.ba())
-                    && !requests.iter().any(|tr| tr.ba().as_ref() == candidate.ba())
-                {
+                // Keyed on the request, not the backend: the preflight requires every
+                // configured version of a dependency, not just the first one.
+                if declarations.matches(candidate.ba()) && !requests.contains(&candidate.request) {
                     requests.push(candidate.request.clone());
                 }
             }
