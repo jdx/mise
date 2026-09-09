@@ -1455,6 +1455,7 @@ impl PackslipBackend {
         // Completions and CLI specs the vendor keeps outside the artifact.
         if !vfox_plugin {
             crate::packslip::fetch_files(&tv, &statement, Some(&artifact), ctx.pr.as_ref()).await?;
+            crate::packslip::install_man_pages(&tv.install_path(), &statement, Some(&artifact))?;
         }
         Ok((
             tv,

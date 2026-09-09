@@ -29,6 +29,7 @@ use crate::ui::progress_report::SingleReport;
 
 /// Resources fetched from outside the artifact live here in the install.
 pub(crate) const RESOURCES_DIR: &str = ".mise-packslip";
+pub(crate) const MANPAGES_DIR: &str = "man";
 
 /// The statement kept beside an install, if the tool came from a packslip.
 pub(crate) fn statement(install_path: &Path) -> Result<Option<Statement>> {
@@ -388,6 +389,75 @@ pub(crate) async fn fetch_files(
         }
     }
     Ok(())
+}
+
+/// Put every usable static man page into the layout `man` expects below one
+/// MANPATH root. Release assets and repository files otherwise land flat or in
+/// arbitrary source-tree paths, while an archive is not required to use a
+/// `share/man/manN` layout.
+pub(crate) fn install_man_pages(
+    install_path: &Path,
+    statement: &Statement,
+    artifact: Option<&Artifact>,
+) -> Result<()> {
+    let root = install_path.join(RESOURCES_DIR).join(MANPAGES_DIR);
+    let mut resources: Vec<_> = selected_resources(statement, artifact)
+        .into_iter()
+        .filter(|resource| resource.kind == "man")
+        .collect();
+    resources.sort_by_key(|resource| match resource.source() {
+        Some(ResourceSource::Archive) => 0,
+        Some(ResourceSource::Asset) => 1,
+        Some(ResourceSource::Repo) => 2,
+        _ => 3,
+    });
+
+    let mut installed = std::collections::BTreeSet::new();
+    for resource in resources {
+        let Some(source) = resource_path(install_path, resource) else {
+            continue;
+        };
+        let Some(name) = source.file_name().and_then(|name| name.to_str()) else {
+            debug!("ignoring a packslip man page without a UTF-8 file name");
+            continue;
+        };
+        let Some(section) = man_section(name) else {
+            warn!(
+                "ignoring packslip man page {name:?}: its file name does not end in a man section"
+            );
+            continue;
+        };
+        let target = root.join(format!("man{section}")).join(name);
+        // The resource order is an ordered fallback list. Once a higher-ranked
+        // source supplied this page, a lower-ranked one must not replace it.
+        if !installed.insert(target.clone()) {
+            continue;
+        }
+        file::create_dir_all(target.parent().unwrap_or(&root))?;
+        file::make_symlink_or_copy(&source, &target)?;
+    }
+    Ok(())
+}
+
+/// Return the leading section identifier encoded in a conventional man-page
+/// file name. Subsections such as `3pm` still live in the `man3` directory.
+fn man_section(name: &str) -> Option<char> {
+    let uncompressed = [".gz", ".bz2", ".xz", ".zst", ".lzma"]
+        .into_iter()
+        .find_map(|suffix| name.strip_suffix(suffix))
+        .unwrap_or(name);
+    let (_, section) = uncompressed.rsplit_once('.')?;
+    section
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric())
+        .then(|| section.chars().next())
+        .flatten()
+}
+
+/// Return the normalized man root when this install contains Packslip pages.
+pub(crate) fn manpath(install_path: &Path) -> Option<PathBuf> {
+    let path = install_path.join(RESOURCES_DIR).join(MANPAGES_DIR);
+    path.is_dir().then_some(path)
 }
 
 /// An executable of the install, by the name the packslip gave it.
@@ -1666,6 +1736,72 @@ mod tests {
             assert_eq!(resource_path(root, r), None, "{r:?}");
         }
         assert!(outside.exists());
+    }
+
+    #[test]
+    fn man_pages_are_normalized_under_one_manpath_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for (rel, contents) in [
+            ("share/docs/t.1", "archive"),
+            (&format!("{RESOURCES_DIR}/repo/docs/t.1"), "repo"),
+            (&format!("{RESOURCES_DIR}/repo/docs/u.5.gz"), "compressed"),
+            (&format!("{RESOURCES_DIR}/repo/docs/u.3pm.gz"), "subsection"),
+            ("share/docs/v.1", "generic"),
+            (&format!("{RESOURCES_DIR}/repo/docs/v.1"), "platform"),
+            (
+                &format!("{RESOURCES_DIR}/repo/docs/README"),
+                "not a man page",
+            ),
+        ] {
+            let path = root.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, contents).unwrap();
+        }
+        let s = statement_with(
+            r#"[
+            {"kind":"man","bin":"t","archive":"share/docs/t.1"},
+            {"kind":"man","bin":"t","repo":"docs/t.1"},
+            {"kind":"man","bin":"u","repo":"docs/u.5.gz"},
+            {"kind":"man","bin":"u","repo":"docs/u.3pm.gz"},
+            {"kind":"man","bin":"u","repo":"docs/README"},
+            {"kind":"man","bin":"u","archive":"share/docs/v.1"},
+            {"kind":"man","bin":"u","os":"linux","arch":"x86_64","repo":"docs/v.1"},
+            {"kind":"skill","name":"t","asset":"t-skill.tar.gz"}
+        ]"#,
+        );
+
+        install_man_pages(root, &s, Some(&s.predicate.artifacts[0])).unwrap();
+
+        let manpath = manpath(root).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(manpath.join("man1/t.1")).unwrap(),
+            "archive",
+            "the shipped page wins over its repository fallback"
+        );
+        assert_eq!(
+            std::fs::read_to_string(manpath.join("man5/u.5.gz")).unwrap(),
+            "compressed"
+        );
+        assert_eq!(
+            std::fs::read_to_string(manpath.join("man3/u.3pm.gz")).unwrap(),
+            "subsection"
+        );
+        assert_eq!(
+            std::fs::read_to_string(manpath.join("man1/v.1")).unwrap(),
+            "platform",
+            "resource selection keeps the most specific matching page"
+        );
+        assert!(!manpath.join("manREADME/README").exists());
+    }
+
+    #[test]
+    fn man_sections_accept_the_names_man_uses() {
+        assert_eq!(man_section("tool.1"), Some('1'));
+        assert_eq!(man_section("tool.3pm.gz"), Some('3'));
+        assert_eq!(man_section("tool.5.xz"), Some('5'));
+        assert_eq!(man_section("README"), None);
+        assert_eq!(man_section("tool.bad-section"), None);
     }
 
     #[test]

@@ -49,7 +49,7 @@ export const sidebar: SidebarItem[] = [
       { text: "mise.lock Lockfile", link: "/dev-tools/mise-lock" },
       { text: "Security", link: "/security" },
       {
-        text: "Packslip Completions and Skills",
+        text: "Packslip Man Pages, Completions, and Skills",
         link: "/dev-tools/packslip-resources",
       },
       {

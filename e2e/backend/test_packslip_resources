@@ -38,6 +38,7 @@ else:
 
 RESOURCES = [
     {"kind": "skill", "name": "probe", "archive": "skill"},
+    {"kind": "man", "bin": "probe", "archive": "docs/probe.1"},
     # An empty shipped script is no completion, and the sources below it
     # are still there to be tried.
     {"kind": "completion", "bin": "probe", "shell": "fish", "archive": "empty.fish"},
@@ -50,6 +51,13 @@ for version in ("1.0.0", "2.0.0"):
     (root / "bin").mkdir(parents=True)
     (root / "skill").mkdir()
     (root / "skill/SKILL.md").write_text("# probe %s\n" % version)
+    (root / "docs").mkdir()
+    (root / "docs/probe.1").write_text("probe %s\n" % version)
+    # `mise link` starts after installation, so mirror the normalized layout
+    # the Packslip installer creates from the resource above.
+    man = root / ".mise-packslip/man/man1"
+    man.mkdir(parents=True)
+    (man / "probe.1").write_text("probe %s\n" % version)
     (root / "empty.fish").write_text("  \n")
     program = root / "bin/probe"
     program.write_text(PROBE)
@@ -113,6 +121,22 @@ for version in 1.0.0 2.0.0 3.0.0; do
   mkdir "project-$version"
   printf '[tools]\n"packslip:test/probe" = "%s"\n' "$version" >"project-$version/mise.toml"
 done
+mkdir project-tools-manpath
+cat >project-tools-manpath/mise.toml <<'EOF_TOOLS_MANPATH'
+[tools]
+"packslip:test/probe" = "1.0.0"
+
+[env]
+MANPATH = { value = "/tools-aware-man:", tools = true }
+EOF_TOOLS_MANPATH
+mkdir project-unset-manpath
+cat >project-unset-manpath/mise.toml <<'EOF_UNSET_MANPATH'
+[tools]
+"packslip:test/probe" = "1.0.0"
+
+[env]
+MANPATH = { value = false, tools = true }
+EOF_UNSET_MANPATH
 
 # A separate usage executable must never be used for these completions.
 cat >"$HOME/bin/usage" <<'EOF_USAGE'
@@ -124,6 +148,29 @@ chmod +x "$HOME/bin/usage"
 export PATH="$HOME/bin:$PATH"
 
 cd project-1.0.0
+
+# The active version's normalized man root leads MANPATH without hiding a
+# caller's entries or the empty component that preserves system defaults.
+existing_manpath="$PWD/existing-man"
+active_manpath="$(mise where packslip:test/probe@1.0.0)/.mise-packslip/man"
+actual_manpath="$(MANPATH="$existing_manpath:" mise x -- env | sed -n 's/^MANPATH=//p')"
+[[ $actual_manpath == "$active_manpath:$existing_manpath:" ]] ||
+  fail "unexpected MANPATH for probe 1.0.0: $actual_manpath"
+actual_manpath="$(env -u MANPATH mise x -- env | sed -n 's/^MANPATH=//p')"
+[[ $actual_manpath == "$active_manpath:" ]] ||
+  fail "MANPATH should retain system defaults: $actual_manpath"
+
+# A tools-aware environment value resolves after the first tool environment
+# pass, but it must not replace the active Packslip man root.
+cd ../project-tools-manpath
+actual_manpath="$(env -u MANPATH mise x -- env | sed -n 's/^MANPATH=//p')"
+[[ $actual_manpath == "$active_manpath:/tools-aware-man:" ]] ||
+  fail "tools-aware MANPATH replaced Packslip pages: $actual_manpath"
+cd ../project-unset-manpath
+if env -u MANPATH mise x -- env | grep -q '^MANPATH='; then
+  fail "a tools-aware MANPATH unset should be honored"
+fi
+cd ../project-1.0.0
 
 # What an interrupted generation leaves is not a completion, and the shells
 # asking at once run the tool once between them rather than once each.
@@ -192,6 +239,10 @@ fi
 
 # A version switch is a different install, with its own cache and skill.
 cd ../project-2.0.0
+active_manpath="$(mise where packslip:test/probe@2.0.0)/.mise-packslip/man"
+actual_manpath="$(MANPATH="$existing_manpath:" mise x -- env | sed -n 's/^MANPATH=//p')"
+[[ $actual_manpath == "$active_manpath:$existing_manpath:" ]] ||
+  fail "unexpected MANPATH for probe 2.0.0: $actual_manpath"
 assert_contains "mise completion fish --tool probe" "version2.0.0"
 mise skills sync --dir ../skills
 assert_contains "cat ../skills/probe/SKILL.md" "# probe 2.0.0"
