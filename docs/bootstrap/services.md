@@ -1,34 +1,55 @@
 ---
-description: "[bootstrap.services] declaratively manages systemd system units and cross-platform user services."
+description: "Run background services for your user, or manage existing Linux system services."
 ---
 
 # Services
 
-`[bootstrap.services]` declares services in two scopes:
+Use `[bootstrap.services]` to run a program in the background and start it
+again when you log in or reboot. Choose the kind of service you need:
 
-- **System services** (the default) manage the lifecycle of existing Linux
-  systemd system units: start, stop, enable, mask, and reload on change.
-- **User services** (`scope = "user"`) are services mise defines for the
-  current user, declared once and installed on every platform: a systemd user
-  unit on Linux, a LaunchAgent on macOS, a Scheduled Task on Windows.
+- [User services](#user-services) run programs as your current user on
+  Linux, macOS, and Windows. The dotfile history watcher is one example.
+- [System services](#system-services) start, stop, and configure existing
+  Linux systemd units. This is the default scope for entries without `builtin`.
 
 ## User services
 
-```toml
-[bootstrap.services.mise-history]        # the built-in history watcher
-builtin = "history-watch"                # implies scope = "user"
+To save edits to your [tracked dotfiles](/dotfiles.html) automatically, add
+this to your global mise configuration:
 
+```toml
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+```
+
+Install the service and check it:
+
+```sh
+mise bootstrap services apply
+mise bootstrap dotfiles status
+```
+
+Once the watcher is running, keep editing your files normally. See
+[automatic saves](/history.html#automatic-saves) for saving behavior and
+[troubleshooting](#troubleshooting-user-services) if it fails to start.
+
+### Run your own program
+
+For a custom service, set `scope = "user"` and supply its command. This
+example assumes you have installed `my-agent` at the given path:
+
+```toml
 [bootstrap.services.my-agent]
 scope = "user"
 command = "~/.local/bin/my-agent --serve"
-description = "My agent"
-restart = "on-failure"                   # "always" | "on-failure" | "never"
-environment = { RUST_LOG = "info" }
-working_directory = "~"
-requires_tools = true                    # converge after [tools] are installed
 ```
 
-One declaration is rendered for the platform's user service manager:
+Run `mise bootstrap services apply`, then `mise bootstrap services status`.
+By default, the service starts at login and restarts after a failure.
+If its program comes from `[tools]`, add `requires_tools = true` and run
+the full `mise bootstrap` to install those tools first.
+
+mise creates a service definition for your platform:
 
 | platform | definition                                                                            | manager            |
 | -------- | ------------------------------------------------------------------------------------- | ------------------ |
@@ -40,60 +61,27 @@ One declaration is rendered for the platform's user service manager:
 
 - `command`: the command line to run. `~` and `~/` are expanded. Required
   unless `builtin` is set.
-- `builtin`: a definition mise supplies. `"history-watch"` runs
-  `mise bootstrap dotfiles watch` through a durable mise executable with
-  `restart = "on-failure"` and a low priority. A builtin implies
-  `scope = "user"`; `command` cannot be combined with it.
-  To avoid a tight failure loop, Linux allows three starts within five
-  minutes; macOS spaces repeated launches at least five minutes apart.
-  If Linux stops retrying, fix the problem reported by `mise doctor` or
-  the service logs, then rerun `mise bootstrap` to reset its failure budget
-  and restart it. You can also reset and start it directly
-  (`systemctl --user reset-failed dev.mise.<name>.service` followed by
-  `systemctl --user start dev.mise.<name>.service`). Ordinary custom
-  services retain their existing restart behavior.
+- `builtin`: a service supplied by mise. `"history-watch"` runs
+  `mise bootstrap dotfiles watch` at low priority. It sets `scope = "user"`
+  and `restart = "on-failure"`. Use it without `command`.
 - `description`: shown by the service manager.
-- `restart`: `"on-failure"` (default), `"always"`, or `"never"`. On Linux this
-  is `Restart=`; on macOS `KeepAlive` (`{ SuccessfulExit = false }` for
-  on-failure). Task Scheduler restarts only failed runs, so on Windows
-  `"always"` and `"on-failure"` both restart up to three times a minute apart
-  after a failure and run again at logon (when `enabled = true`); a clean
-  exit is not restarted. Strict `"always"` semantics are a Linux and macOS
-  feature; a service that must survive a clean exit on Windows should loop
-  inside its own program.
-- `environment` and `working_directory` map directly to the platform
-  definition. On Windows, environment variables are set through `cmd.exe`,
-  so values containing characters it would reinterpret (`%`, `"`, `&`, `|`,
-  `<`, `>`, `^`) are rejected, and so is a `command` containing `%`, `&`,
-  `|`, `<`, `>`, or `^` once `environment` is set (without `environment`
-  the command runs directly). Move such a command into a script, or set the
-  variables inside the program.
+- `restart`: `"on-failure"` (default), `"always"`, or `"never"`. Windows
+  restarts after failures only; see [platform differences](#platform-differences).
+- `environment`: environment variables passed to the program, for example
+  `{ LOG_LEVEL = "info" }`.
+- `working_directory`: the directory where the program runs.
 - `state`: `"running"` (default), `"stopped"` (installed but not running), or
   `"absent"` (the installed definition is removed and stays removed while
   declared so).
-- `enabled`: whether the service starts at login (default `true`). On macOS
-  this is `RunAtLoad`, which launchd also honours when the agent is loaded,
-  so a stopped agent is written without it (it starts at login again once it
-  is set running). launchd reads any `KeepAlive` as run-at-load too, so an
-  agent with `enabled = false` is written without one: it is started once by
-  the apply but neither starts at login nor is restarted after a failure
-  until it is enabled again.
-- `requires_tools`: converge in a second pass after `[tools]` and plugin
-  package managers, so a service that runs a tool starts after it exists. The
-  built-in watcher needs only mise and converges in the services step.
+- `enabled`: whether the service starts at login (default `true`). On macOS,
+  setting this to `false` also disables restarting after a failure.
+- `requires_tools`: install and start the service after `[tools]` and plugin
+  package managers during bootstrap. The built-in watcher starts in the
+  earlier services step because it only needs mise.
 
 Names must contain only letters, numbers, `.`, `_`, or `-`, and must not also
 appear in `[bootstrap.linux.systemd.units]` or
 `[bootstrap.macos.launchd.agents]`: both would write the same definition.
-
-### Durable executable
-
-A builtin is written with an absolute path to the mise that installed it.
-mise uses the running executable unless it lives in a temporary directory or
-in the staging directory of `mise bootstrap remote`, and otherwise a `mise`
-found on `PATH` outside those. When only a staged binary exists the service is
-reported as `unknown: no durable mise executable; install mise on this host
-first` and is never written with a path that will be deleted.
 
 ### Remove and disable
 
@@ -119,9 +107,60 @@ as `unknown` and skipped with a follow-up note; nothing is written.
 
 Fields that only apply to user services (`command`, `builtin`, `description`,
 `restart`, `environment`, `working_directory`, `requires_tools`, and
-`state = "absent"`) are rejected on a system-scope entry, so a missing
-`scope = "user"` cannot silently turn a service definition into a lookup of a
-system unit. Managed-file notifications apply to system services only.
+`state = "absent"`) require user scope. If you see an error about one of these
+fields, check that the entry has `scope = "user"` or `builtin`.
+Managed-file notifications apply to system services only.
+
+### Troubleshooting user services
+
+If the history watcher stops, run `mise doctor` and inspect the service logs.
+On Linux, it allows three starts within five minutes before stopping retries.
+On macOS, repeated launches are spaced at least five minutes apart.
+These limits apply to the built-in watcher.
+
+After fixing the cause on Linux, rerun `mise bootstrap` to reset the limit
+and start the watcher. You can also restart it directly:
+
+```sh
+systemctl --user reset-failed dev.mise.mise-history.service
+systemctl --user start dev.mise.mise-history.service
+```
+
+If you used another service name, replace `mise-history` in those commands.
+
+#### Install mise at a permanent path {#durable-executable}
+
+The watcher needs a mise executable that will still exist after setup ends.
+If status reports `unknown: no durable mise executable; install mise on this
+host first`, install mise on that host and apply the service again. For
+remote bootstrap, use `--install-mise`.
+
+mise writes an absolute executable path into built-in service definitions.
+It uses the running binary unless that binary is in a temporary directory or
+remote staging directory. In that case it looks for a permanent mise binary
+on `PATH`. If it cannot find one, it leaves the service unwritten.
+
+### Platform differences
+
+On Linux, `restart` maps to systemd's `Restart`. On macOS it maps to
+launchd's `KeepAlive`; `"on-failure"` uses `{ SuccessfulExit = false }`.
+
+On Windows, `"always"` and `"on-failure"` both retry failed runs up to three
+times, one minute apart. With `enabled = true`, the service also starts
+again at logon. A successful exit leaves it stopped. If a Windows program
+needs to keep running after completing its work, make it loop internally.
+
+On macOS, `enabled` controls `RunAtLoad`. launchd also treats `KeepAlive` as
+a request to start when loaded. mise omits `RunAtLoad` for a stopped service
+and omits `KeepAlive` when `enabled = false`. A running service with
+`enabled = false` starts once on apply, then stays stopped after an exit
+until you start it again or re-enable it.
+
+On Windows, setting `environment` uses `cmd.exe`. Values containing `%`,
+`"`, `&`, `|`, `<`, `>`, or `^` are rejected. When `environment` is set,
+`command` also rejects `%`, `&`, `|`, `<`, `>`, and `^`. Move such a command
+into a script or set variables in the program. Without `environment`, the
+command runs directly.
 
 ## System services
 

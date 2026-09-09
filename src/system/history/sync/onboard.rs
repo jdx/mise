@@ -1,14 +1,14 @@
 //! Setting a machine up from a history-managed setup repository:
-//! `mise bootstrap --from-git <url>` on a repository that carries the
+//! `mise bootstrap --adopt <url>` on a repository that carries the
 //! `.mise-history/format.toml` marker, locally or on a remote host through
-//! the bundle `mise bootstrap remote --from-git` transfers. The branch is
+//! the bundle `mise bootstrap remote --adopt` transfers. The branch is
 //! fetched into mise's own bare store, never cloned into the configuration
 //! directory; the shared configuration, the sources it references, and this
 //! machine's tracked streams are written by the same recoverable pull as any
 //! other incoming change (a file that differs is held for a decision, never
 //! overwritten); the connection is declared machine-locally and recorded
 //! for the watcher. An ordinary repository (no marker) is left to the
-//! ordinary `--from-git`.
+//! ordinary `--adopt`.
 
 use std::process::Stdio;
 
@@ -133,12 +133,12 @@ fn preview_config_path(
     )
 }
 
-/// `mise bootstrap --from-git <url>`: `Some` when the repository is
+/// `mise bootstrap --adopt <url>`: `Some` when the repository is
 /// history-managed and this machine was set up from it (or would be, on a
 /// dry run); `None` leaves the ordinary clone to the caller.
 pub(crate) async fn from_git(url: &str, yes: bool, dry_run: bool) -> Result<Option<Outcome>> {
     // Detect marked repositories without creating persistent tracking state
-    // for users of the released, ordinary --from-git workflow.
+    // for users of the released, ordinary --adopt workflow.
     let probe_dir = tempfile::tempdir()?;
     let store = Store::open_in(probe_dir.path())?;
     if let Some(reason) = store.unavailable() {

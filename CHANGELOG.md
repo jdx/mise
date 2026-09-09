@@ -1,5 +1,52 @@
 # Changelog
 
+## [2026.9.3](https://github.com/jdx/mise/compare/v2026.9.2..v2026.9.3) - 2026-09-08
+
+### 🚀 Features
+
+- **(bootstrap)** add winget package manager support by @jdx in [#12928](https://github.com/jdx/mise/pull/12928)
+- **(bootstrap)** allow prepending managed dotfile lines by @jdx in [#12941](https://github.com/jdx/mise/pull/12941)
+- **(bootstrap)** support typed plist collections by @jdx in [#12947](https://github.com/jdx/mise/pull/12947)
+- **(bootstrap)** name configuration adoption explicitly by @jdx in [#12953](https://github.com/jdx/mise/pull/12953)
+- **(vfox)** install plugins from signed packslip archives by @jdx in [#12948](https://github.com/jdx/mise/pull/12948)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** handle pacman file advisories for missing packages by @nettlesh in [#12932](https://github.com/jdx/mise/pull/12932)
+- **(bootstrap)** sign macOS notification helper in releases by @jdx in [#12946](https://github.com/jdx/mise/pull/12946)
+- **(config)** make default inline shell portable by @jdx in [#12949](https://github.com/jdx/mise/pull/12949)
+- **(github)** authenticate git operations with mise credentials by @jdx in [#12945](https://github.com/jdx/mise/pull/12945)
+- **(java)** fold version verification into install progress by @jdx in [#12943](https://github.com/jdx/mise/pull/12943)
+- **(sandbox)** allow metadata access to macOS private directory by @jdx in [#12940](https://github.com/jdx/mise/pull/12940)
+- **(version)** use = syntax in auto_update hint by @jdx in [#12957](https://github.com/jdx/mise/pull/12957)
+- **(vfox)** route install phases through progress reporter by @jdx in [#12944](https://github.com/jdx/mise/pull/12944)
+- **(windows)** repair ARM64 project tooling by @jdx in [#12931](https://github.com/jdx/mise/pull/12931)
+
+### 📚 Documentation
+
+- restore prominent homepage name and pronunciation by @jdx in [#12936](https://github.com/jdx/mise/pull/12936)
+- drop the "you need Git installed" prerequisite by @jdx in [#12958](https://github.com/jdx/mise/pull/12958)
+
+### ⚡ Performance
+
+- bypass the shell for simple inline commands by @jdx in [#12950](https://github.com/jdx/mise/pull/12950)
+
+### 🧪 Testing
+
+- **(bootstrap)** cover ordinary dotfile history and recovery by @jdx in [#12919](https://github.com/jdx/mise/pull/12919)
+
+### 📦️ Dependency Updates
+
+- bump mbx to fix cmake compiler transitions by @jdx in [#12951](https://github.com/jdx/mise/pull/12951)
+
+### 📦 Registry
+
+- add cargo-deny, kingfisher, nushell, shellharden, sherif, and tauri-cli by @jrandolf in [#12938](https://github.com/jdx/mise/pull/12938)
+
+### Ci
+
+- **(release)** publish when tag e2e is skipped by @jdx in [#12933](https://github.com/jdx/mise/pull/12933)
+
 ## [2026.9.2](https://github.com/jdx/mise/compare/v2026.9.1..v2026.9.2) - 2026-09-07
 
 ### 🚀 Features

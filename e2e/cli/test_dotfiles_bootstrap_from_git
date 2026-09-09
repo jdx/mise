@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# `mise bootstrap --from-git` on a history-managed setup repository sets a
+# `mise bootstrap --adopt` on a history-managed setup repository sets a
 # fresh machine up from it with one command: the branch goes into mise's own
 # store (no checkout in the configuration directory), the shared configuration,
 # its sources, and this machine's tracked files are written by a recoverable
@@ -47,7 +47,7 @@ preview_home="$(dirname "$HOME")/conflict-preview-home"
 wrapper "$preview_home" "$PWD/conflict-preview"
 mkdir -p "$preview_home/.config/hypr"
 echo local >"$preview_home/.config/hypr/bindings.lua"
-preview="$("$PWD/conflict-preview" bootstrap --from-git "file://$origin" --dry-run 2>&1)"
+preview="$("$PWD/conflict-preview" bootstrap --adopt "file://$origin" --dry-run 2>&1)"
 [[ $preview == *bindings.lua* ]] || fail "preview omits tracked file"
 [[ $preview == *'held: unresolved conflict'* ]] || fail "preview omits conflict"
 [[ $preview == *config.toml* ]] || fail "preview omits enrolled configuration"
@@ -59,7 +59,7 @@ wrapper "$C" "$PWD/c"
 c="$PWD/c"
 assert_directory_not_exists "$C/.local/state/mise/history"
 assert_fail "test -e $C/.config/mise/config.toml"
-out="$($c bootstrap --from-git "file://$origin" --dry-run 2>&1)"
+out="$($c bootstrap --adopt "file://$origin" --dry-run 2>&1)"
 [[ $out == *'is a mise setup repository'* ]] || fail "preview omits repository type"
 [[ $out == *config.toml* ]] || fail "preview omits configuration"
 [[ $out == *'Dry run: nothing was changed'* ]] || fail "preview omits dry-run assurance"
@@ -67,7 +67,7 @@ assert_fail "test -e $C/.config/mise/config.toml"
 # a preview leaves no connection, pending changes, or fetched branch behind
 assert "find $C -name sync.json | wc -l | tr -d ' '" "0"
 assert "find $C -path '*/refs/setup/*' | wc -l | tr -d ' '" "0"
-assert_succeed "$c bootstrap --from-git file://$origin --yes --only dotfiles"
+assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles"
 assert_fail "test -e $C/.config/mise/.git"
 assert "cat $C/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
 assert_contains "cat $C/.config/mise/config.toml" '"~/.config/hypr" = { mode = "track" }'
@@ -78,7 +78,7 @@ assert_contains "cat $C/.config/mise/config.local.toml" 'url = "file://'
 assert_contains "$c bootstrap dotfiles status" "mode sync"
 assert "$c bootstrap dotfiles history --json | jq -r '[.[].trigger] | index(\"apply\") != null'" "true"
 # running it again is a sync, not a second setup
-assert_succeed "$c bootstrap --from-git file://$origin --yes --only dotfiles"
+assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles"
 # C's edits reach A through the usual sync
 echo 'bind = SUPER, Q, exec, foot' >"$C/.config/hypr/bindings.lua"
 assert_contains "$c bootstrap dotfiles sync 2>&1" "published"
@@ -93,8 +93,8 @@ mkdir -p "$D/.config/mise"
 printf '[env]\nD_ONLY = "1"\n' >"$D/.config/mise/config.toml"
 # the differing configuration is held, so nothing is bootstrapped from the
 # old one: the command says what to decide and fails
-assert_fail "$d bootstrap --from-git file://$origin --yes --only dotfiles 2>&1" "need a decision"
-assert_fail "$d bootstrap --from-git file://$origin --yes --only dotfiles 2>&1" "nothing was bootstrapped"
+assert_fail "$d bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" "need a decision"
+assert_fail "$d bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" "nothing was bootstrapped"
 assert "cat $D/.config/mise/config.toml" $'[env]\nD_ONLY = "1"'
 assert_contains "$d bootstrap dotfiles status" "sharing is paused for the entire setup"
 assert_succeed "$d bootstrap dotfiles pull --take-remote $D/.config/mise/config.toml --yes"
@@ -113,7 +113,7 @@ git -C "$seed" push -q "file://$plain" main
 E="$(dirname "$HOME")/e-home"
 wrapper "$E" "$PWD/e"
 e="$PWD/e"
-assert_succeed "MISE_EXPERIMENTAL=0 $e bootstrap --from-git file://$plain --yes --only task"
+assert_succeed "MISE_EXPERIMENTAL=0 $e bootstrap --adopt file://$plain --yes --only task"
 # Ordinary bootstrap may checkpoint configuration, but keeps the ordinary
 # checkout and does not connect it as a shared setup repository.
 assert_succeed "test -d $E/.config/mise/.git"
@@ -130,4 +130,4 @@ git --git-dir="$other" update-ref refs/heads/main "$(git --git-dir="$other" rev-
 F="$(dirname "$HOME")/f-home"
 wrapper "$F" "$PWD/f"
 f="$PWD/f"
-assert_contains "$f bootstrap --from-git file://$other --dry-run 2>&1" "branch setup"
+assert_contains "$f bootstrap --adopt file://$other --dry-run 2>&1" "branch setup"

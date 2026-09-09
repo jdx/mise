@@ -110,7 +110,7 @@ async fn set_inner(
         }
         RepoState::Unmarked => {
             miseprintln!(
-                "The repository already has content without mise enrollment metadata. Connecting does not import its files or replace unrelated history. Synchronization requires compatible Git ancestry; use an empty origin or reconcile the histories explicitly. Ordinary non-tracking `--from`/`--from-git` workflows remain available."
+                "The repository already has content without mise enrollment metadata. Connecting does not import its files or replace unrelated history. Synchronization requires compatible Git ancestry; use an empty origin or reconcile the histories explicitly. Ordinary non-tracking `--from`/`--adopt` workflows remain available."
             );
         }
     }

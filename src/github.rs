@@ -718,6 +718,15 @@ pub(crate) fn token_source_for_token(host: &str, token: &str) -> Option<TokenSou
 /// 6. gh CLI token (from `hosts.yml`)
 /// 7. `git credential fill` (if enabled)
 pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
+    resolve_token_inner(host, true)
+}
+
+/// Git already runs its configured helpers; do not recursively invoke them.
+pub(crate) fn resolve_token_for_git(host: &str) -> Option<(String, TokenSource)> {
+    resolve_token_inner(host, false)
+}
+
+fn resolve_token_inner(host: &str, use_git_credentials: bool) -> Option<(String, TokenSource)> {
     let settings = Settings::get();
 
     if is_github_release_asset_host(host) {
@@ -751,7 +760,8 @@ pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     // `resolve_token("api.github.com")` whenever the first call returned
     // `None`, which manifests as extra password-manager prompts.
     let credential_command = &settings.github.credential_command;
-    if !credential_command.is_empty()
+    if use_git_credentials
+        && !credential_command.is_empty()
         && let Some(canonical) = lookup_hosts.first()
         && let Some(token) =
             tokens::get_credential_command_token("github", credential_command, canonical)
@@ -781,7 +791,7 @@ pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     // 7. git credential fill
-    if settings.github.use_git_credentials {
+    if use_git_credentials && settings.github.use_git_credentials {
         for lookup_host in &lookup_hosts {
             if let Some(token) = tokens::get_git_credential_token("github", lookup_host) {
                 return Some((token, TokenSource::GitCredential));
