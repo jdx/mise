@@ -13,7 +13,7 @@ use crate::config::Config;
 use crate::config::settings::Settings;
 use crate::errors::Error;
 use crate::hooks::{Hooks, InstalledToolInfo};
-use crate::install_context::InstallContext;
+use crate::install_context::{InstallContext, install_dependency_declarations};
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
@@ -84,6 +84,30 @@ impl Toolset {
             .is_some())
     }
 
+    /// A lazy tool's dependencies are commonly lazy themselves, so nothing else
+    /// installs them and the provider alone fails its dependency preflight.
+    async fn lazy_install_requests(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Vec<ToolRequest> {
+        let missing = self.list_missing_versions_for_install(config).await;
+        let mut requests = vec![tv.request.clone()];
+        let mut next = 0;
+        while next < requests.len() {
+            let declarations = install_dependency_declarations(&requests[next]);
+            next += 1;
+            for candidate in &missing {
+                if declarations.matches(candidate.ba())
+                    && !requests.iter().any(|tr| tr.ba().as_ref() == candidate.ba())
+                {
+                    requests.push(candidate.request.clone());
+                }
+            }
+        }
+        requests
+    }
+
     pub(crate) async fn install_missing_lazy_bin(
         &mut self,
         config: &mut Arc<Config>,
@@ -102,8 +126,9 @@ impl Toolset {
             install_dir: install_dir.filter(|dir| dir != *crate::dirs::INSTALLS),
             ..Default::default()
         };
+        let requests = self.lazy_install_requests(config, &tv).await;
         let installed = self
-            .install_all_versions(config, vec![tv.request.clone()], &install_options)
+            .install_all_versions(config, requests, &install_options)
             .await
             .wrap_err_with(|| {
                 install_options.install_dir.as_ref().map_or_else(
