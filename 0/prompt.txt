@@ -1,5 +1,1 @@
-investigate [https://github.com/jdx/mise/discussions/12993](https://github.com/jdx/mise/discussions/12993)
-
----
-
 make a pr, post a reply
