@@ -150,7 +150,7 @@ impl Store {
 
     /// Serializes captures and index writes.
     pub(crate) fn lock(&self) -> Result<fslock::LockFile> {
-        LockFile::new(&store::store_lock_path_in(&self.state_dir))
+        LockFile::at(&store::store_lock_path_in(&self.state_dir))
             .with_callback(|path| {
                 debug!("waiting for the history store lock {}", display_path(path));
             })

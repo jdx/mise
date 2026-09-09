@@ -658,7 +658,7 @@ pub(crate) fn try_operation_lock(
     store: &Store,
     tracked: &TrackedSet,
 ) -> Result<Option<fslock::LockFile>> {
-    let Some(lock) = LockFile::new(&store::operation_lock_in(store.state_dir())).try_lock()? else {
+    let Some(lock) = LockFile::at(&store::operation_lock_in(store.state_dir())).try_lock()? else {
         return Ok(None);
     };
     recover_stale(store, tracked)?;
@@ -689,7 +689,7 @@ fn acquire_operation_lock(store: &Store, wait: std::time::Duration) -> Result<fs
     let deadline = std::time::Instant::now() + wait;
     let mut announced = false;
     let lock = loop {
-        if let Some(lock) = LockFile::new(&path).try_lock()? {
+        if let Some(lock) = LockFile::at(&path).try_lock()? {
             break lock;
         }
         let marker = store::read_marker_in(state_dir)?;
@@ -1077,7 +1077,7 @@ mod tests {
     fn automatic_operation_lock_does_not_wait() {
         let temp = tempfile::tempdir().unwrap();
         let store = Store::open_in(temp.path()).unwrap();
-        let held = LockFile::new(&store::operation_lock_in(temp.path()))
+        let held = LockFile::at(&store::operation_lock_in(temp.path()))
             .try_lock()
             .unwrap()
             .unwrap();

@@ -465,7 +465,7 @@ pub(crate) fn lock(store: &Store) -> Result<fslock::LockFile> {
 }
 
 pub(crate) fn lock_in(state_dir: &Path) -> Result<fslock::LockFile> {
-    crate::lock_file::LockFile::new(&lock_path(state_dir))
+    crate::lock_file::LockFile::at(&lock_path(state_dir))
         .try_lock()?
         .ok_or_else(|| eyre::eyre!("another setup sync or pull is running; retry shortly"))
 }
@@ -488,7 +488,7 @@ pub(crate) fn update_status(
 pub(crate) fn lock_wait(state_dir: &Path, wait: Duration) -> Result<fslock::LockFile> {
     let deadline = Instant::now() + wait;
     loop {
-        if let Some(lock) = crate::lock_file::LockFile::new(&lock_path(state_dir)).try_lock()? {
+        if let Some(lock) = crate::lock_file::LockFile::at(&lock_path(state_dir)).try_lock()? {
             return Ok(lock);
         }
         if Instant::now() >= deadline {
