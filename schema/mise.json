@@ -771,6 +771,11 @@
             "type": "string"
           }
         },
+        "disable_update_warning": {
+          "default": false,
+          "description": "Suppress warnings when a newer mise version is available.",
+          "type": "boolean"
+        },
         "dotfiles": {
           "type": "object",
           "unevaluatedProperties": false,

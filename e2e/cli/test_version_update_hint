@@ -26,3 +26,38 @@ assert_not_contains 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTI
 # self-update available → unchanged advice
 assert_contains 'MISE_SELF_UPDATE_AVAILABLE=true mise version 2>&1' 'mise self-update'
 assert_not_contains 'MISE_SELF_UPDATE_AVAILABLE=true mise version 2>&1' 'self-update is disabled for this install'
+
+# Suppression is independent of self-update availability and packager instructions.
+export MISE_DISABLE_UPDATE_WARNING=true
+assert_not_contains 'MISE_SELF_UPDATE_AVAILABLE=true mise version 2>&1' 'mise WARN'
+assert_not_contains 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml mise --version 2>&1' 'mise WARN'
+assert_contains 'mise version --json' '9999.0.0'
+unset MISE_DISABLE_UPDATE_WARNING
+
+# The setting also works in configuration and both doctor output formats.
+cat >mise.toml <<'TOML'
+[settings]
+disable_update_warning = true
+TOML
+mise trust
+assert_not_contains 'mise version 2>&1' 'mise WARN'
+eval "$(mise activate bash)"
+assert_not_contains 'mise doctor 2>&1' '9999.0.0 available'
+assert_succeed "set -o pipefail; mise doctor --json | jq -e '(.warnings // []) | map(contains(\"9999.0.0 available\")) | any | not'"
+assert_contains 'MISE_DISABLE_UPDATE_WARNING=false mise version 2>&1' '9999.0.0 available'
+
+# Suppressing warnings still permits an explicit self-update. Requesting the
+# current version takes the up-to-date path without downloading anything.
+version="$(mise version | tail -n1 | awk '{print $1}' | sed 's/-DEBUG$//')"
+assert_contains "MISE_SELF_UPDATE_AVAILABLE=true mise self-update $version --no-plugins 2>&1" 'mise is already up to date'
+
+# A package-local instructions file is found next to the actual binary, even
+# when launched through a symlink like node_modules/.bin/mise.
+mkdir -p package/bin package/lib node_modules/.bin
+cp "$(type -P mise)" package/bin/mise
+cat >package/lib/mise-self-update-instructions.toml <<'TOML'
+message = "Update mise using the package manager that installed it (npm, pnpm, or yarn)."
+TOML
+ln -s "$PWD/package/bin/mise" node_modules/.bin/mise
+assert_contains 'MISE_DISABLE_UPDATE_WARNING=false node_modules/.bin/mise version 2>&1' 'npm, pnpm, or yarn'
+assert_fail 'node_modules/.bin/mise self-update --no-plugins' 'npm, pnpm, or yarn'
