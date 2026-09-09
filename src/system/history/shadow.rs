@@ -28,6 +28,21 @@ pub(crate) const MAX_FILES: u64 = 100_000;
 /// An entry with more bytes than this is cut short.
 pub(crate) const MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
+#[cfg(test)]
+thread_local! {
+    static READ_META_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_read_meta_calls() {
+    READ_META_CALLS.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn read_meta_calls() -> usize {
+    READ_META_CALLS.with(std::cell::Cell::get)
+}
+
 /// One top-level root of a snapshot tree and the files to add under it,
 /// relative to `path`.
 #[derive(Clone, Debug)]
@@ -48,7 +63,7 @@ pub(crate) struct CaptureResult {
     pub omitted: Vec<super::store::PathReason>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct TreeEntry {
     pub mode: String,
     pub oid: String,
@@ -544,22 +559,56 @@ impl HistoryRepo {
     }
 
     /// Ordinary ancestry is the source of truth, not per-checkpoint refs.
+    #[cfg(test)]
     pub(crate) fn checkpoint_refs(&self) -> Result<Vec<(String, String)>> {
-        let Some(head) = self.ref_oid(Self::HISTORY_REF)? else {
+        Ok(self
+            .history_messages()?
+            .into_iter()
+            .map(|(commit, _)| (commit.clone(), commit))
+            .collect())
+    }
+
+    /// Every commit and message in ordinary ancestry, newest first.
+    ///
+    /// Reading messages through gix avoids starting a Git process for every
+    /// checkpoint merely to distinguish annotations from file history. Open
+    /// the repository for each walk so objects and refs written by Git are
+    /// always visible.
+    pub(crate) fn history_messages(&self) -> Result<Vec<(String, String)>> {
+        let repo = gix::open_opts(self.dir(), gix::open::Options::isolated())
+            .wrap_err_with(|| format!("opening {} with gix", display_path(self.dir())))?;
+        let Some(mut head) = repo.try_find_reference(Self::HISTORY_REF)? else {
             return Ok(vec![]);
         };
-        self.rev_list(&head, usize::MAX)?
-            .into_iter()
-            .map(|commit| {
-                let record = self.read_meta(&commit)?;
-                Ok((record.uuid, commit))
-            })
-            .collect()
+        let head = head.peel_to_id()?.detach();
+        let commits = gix::traverse::commit::topo::Builder::new(&repo)
+            .with_tips([head])
+            .sorting(gix::traverse::commit::topo::Sorting::TopoOrder)
+            .build()?;
+        let mut messages = vec![];
+        for commit in commits {
+            let commit = commit?;
+            let object = repo.find_commit(commit.id)?;
+            let message = String::from_utf8_lossy(object.message_raw()?.as_ref())
+                .trim()
+                .to_string();
+            messages.push((commit.id.to_string(), message));
+        }
+        Ok(messages)
     }
 
     pub(crate) fn read_meta(&self, commit: &str) -> Result<Checkpoint> {
-        let manifest = super::manifest::Manifest::read(self, commit)?;
-        let message = self.output_str(PlumbingCall::new(["show", "-s", "--format=%B", commit]))?;
+        #[cfg(test)]
+        READ_META_CALLS.with(|count| count.set(count.get() + 1));
+        let repo = gix::open_opts(self.dir(), gix::open::Options::isolated())
+            .wrap_err_with(|| format!("opening {} with gix", display_path(self.dir())))?;
+        let id = gix::ObjectId::from_hex(commit.as_bytes())?;
+        let commit_object = repo.find_commit(id)?;
+        let tree = commit_object.tree()?;
+        let manifest = super::manifest::Manifest::read_gix(&tree)?;
+        let message = String::from_utf8_lossy(commit_object.message_raw()?.as_ref())
+            .trim()
+            .to_string();
         let own_record = message
             .lines()
             .rev()
@@ -590,8 +639,9 @@ impl HistoryRepo {
             changes: Default::default(),
             operation: None,
         };
-        record.created_at =
-            self.output_str(PlumbingCall::new(["show", "-s", "--format=%cI", commit]))?;
+        record.created_at = commit_object
+            .time()?
+            .format(gix::date::time::format::ISO8601_STRICT)?;
         record.description = message
             .lines()
             .next()
@@ -614,11 +664,16 @@ impl HistoryRepo {
                 metadata.incomplete.into_iter().map(missing).collect();
             record.operation = metadata.operation.map(|op| op.localize()).transpose()?;
         }
-        record.tree.snapshot = Some(self.output_tree_of(commit)?);
+        record.tree.snapshot = Some(tree.id().to_string());
         record.changes = Default::default();
-        let parents = self.output_str(PlumbingCall::new(["show", "-s", "--format=%P", commit]))?;
-        record.changes.since = parents.split_whitespace().next().map(str::to_owned);
-        for change in self.changes(parents.split_whitespace().next(), commit)? {
+        let parent = commit_object.parent_ids().next().map(|id| id.detach());
+        record.changes.since = parent.map(|id| id.to_string());
+        let parent_tree = parent
+            .map(|parent| repo.find_commit(parent))
+            .transpose()?
+            .map(|commit| commit.tree())
+            .transpose()?;
+        for change in Self::gix_changes(&repo, parent_tree.as_ref(), &tree)? {
             if change.path.starts_with(".mise-history/") {
                 continue;
             }
@@ -631,17 +686,14 @@ impl HistoryRepo {
         }
         // The commit tree is authoritative even if a normal Git operation
         // reused a message containing metadata from an older commit.
-        record.tree.snapshot = Some(self.output_tree_of(commit)?);
+        record.tree.snapshot = Some(tree.id().to_string());
         record.tree.available = true;
         if let Some(manifest) = manifest {
-            let previous = record
-                .changes
-                .since
-                .as_deref()
-                .map(|parent| super::manifest::Manifest::read(self, parent))
-                .transpose()?
-                .flatten()
-                .unwrap_or_default();
+            let previous = if let Some(tree) = parent_tree.as_ref() {
+                super::manifest::Manifest::read_gix(tree)?.unwrap_or_default()
+            } else {
+                Default::default()
+            };
             for path in manifest
                 .permissions
                 .keys()
@@ -693,7 +745,7 @@ impl HistoryRepo {
             record.tree.coverage = coverage;
             let mut roots: BTreeMap<String, RootRecord> = BTreeMap::new();
             let layout = super::sync::layout::Roots::current();
-            for file in self.ls_tree(commit)? {
+            for file in Self::gix_tree_entries(&repo, &tree)? {
                 if layout.locate(&file.path).path().is_none() {
                     continue;
                 }
@@ -716,6 +768,69 @@ impl HistoryRepo {
             };
         }
         Ok(record)
+    }
+
+    fn gix_tree_entries(repo: &gix::Repository, tree: &gix::Tree<'_>) -> Result<Vec<TreeEntry>> {
+        let mut entries = tree
+            .traverse()
+            .breadthfirst
+            .files()?
+            .into_iter()
+            .filter(|entry| entry.mode.is_no_tree())
+            .map(|entry| {
+                let path = std::str::from_utf8(entry.filepath.as_ref())
+                    .wrap_err("history cannot represent a non-UTF-8 filename; refusing to change its bytes")?
+                    .to_string();
+                let mut mode = [0; 6];
+                let mode = std::str::from_utf8(entry.mode.as_bytes(&mut mode))?.to_string();
+                let size = entry
+                    .mode
+                    .is_blob_or_symlink()
+                    .then(|| repo.find_header(entry.oid).map(|header| header.size()))
+                    .transpose()?;
+                Ok(TreeEntry {
+                    mode,
+                    oid: entry.oid.to_string(),
+                    size,
+                    path,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        entries.sort_by(|left, right| left.path.cmp(&right.path));
+        Ok(entries)
+    }
+
+    fn gix_changes(
+        repo: &gix::Repository,
+        from: Option<&gix::Tree<'_>>,
+        to: &gix::Tree<'_>,
+    ) -> Result<Vec<Change>> {
+        let from = if let Some(tree) = from {
+            Self::gix_tree_entries(repo, tree)?
+        } else {
+            vec![]
+        }
+        .into_iter()
+        .map(|entry| (entry.path, (entry.mode, entry.oid)))
+        .collect::<BTreeMap<_, _>>();
+        let to = Self::gix_tree_entries(repo, to)?
+            .into_iter()
+            .map(|entry| (entry.path, (entry.mode, entry.oid)))
+            .collect::<BTreeMap<_, _>>();
+        let mut changes = vec![];
+        for path in from.keys().chain(to.keys()).collect::<BTreeSet<_>>() {
+            let status = match (from.get(path), to.get(path)) {
+                (None, Some(_)) => 'A',
+                (Some(_), None) => 'D',
+                (Some(left), Some(right)) if left != right => 'M',
+                _ => continue,
+            };
+            changes.push(Change {
+                status,
+                path: path.clone(),
+            });
+        }
+        Ok(changes)
     }
 
     /// Recursive listing of a tree (or a path inside it).
@@ -1237,12 +1352,16 @@ impl HistoryRepo {
         commit: &str,
         expected: Option<&str>,
     ) -> Result<()> {
-        let zero = "0000000000000000000000000000000000000000";
+        eyre::ensure!(
+            matches!(commit.len(), 40 | 64),
+            "unsupported Git object id: {commit}"
+        );
+        let zero = "0".repeat(commit.len());
         self.git.run(PlumbingCall::new([
             "update-ref",
             name,
             commit,
-            expected.unwrap_or(zero),
+            expected.unwrap_or(&zero),
         ]))
     }
 
@@ -1410,11 +1529,18 @@ impl HistoryRepo {
         self.update_history_head(&commit, Some(&head))
     }
 
+    #[cfg(test)]
     pub(crate) fn read_annotation(
         &self,
         commit: &str,
     ) -> Result<Option<(String, super::store::Annotation)>> {
         let message = self.output_str(PlumbingCall::new(["show", "-s", "--format=%B", commit]))?;
+        Self::annotation_from_message(&message)
+    }
+
+    pub(crate) fn annotation_from_message(
+        message: &str,
+    ) -> Result<Option<(String, super::store::Annotation)>> {
         message
             .lines()
             .rev()
@@ -1449,6 +1575,69 @@ pub(crate) fn unavailable_reason() -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sha256_history_can_be_written_and_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("repo.git");
+        let output = std::process::Command::new(crate::git::plumbing_binary().unwrap())
+            .args(["init", "--bare", "--quiet", "--object-format=sha256"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let repo = super::HistoryRepo {
+            git: crate::git::GitPlumbing::new(path),
+            transient: Default::default(),
+        };
+        let tree = repo.empty_object("tree").unwrap();
+        let commit = repo.commit_tree(&tree, vec![], "sha256 history").unwrap();
+        assert_eq!(commit.len(), 64);
+        repo.update_history_head(&commit, None).unwrap();
+        assert_eq!(
+            repo.history_messages().unwrap(),
+            vec![(commit.clone(), "sha256 history".into())]
+        );
+        let checkpoint = repo.read_meta(&commit).unwrap();
+        assert_eq!(checkpoint.uuid, commit);
+        assert_eq!(checkpoint.description, "sha256 history");
+    }
+
+    #[test]
+    fn history_messages_match_git_topological_order() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = super::HistoryRepo::open_or_init_in(temp.path())
+            .unwrap()
+            .unwrap();
+        let tree = repo.empty_object("tree").unwrap();
+        let base = repo.commit_tree(&tree, vec![], "base").unwrap();
+        let first = repo.commit_tree(&tree, vec![&base], "first").unwrap();
+        let second = repo.commit_tree(&tree, vec![&base], "second").unwrap();
+        let merge = repo
+            .commit_tree(&tree, vec![&first, &second], "merge")
+            .unwrap();
+        repo.update_history_head(&merge, None).unwrap();
+
+        let messages = repo.history_messages().unwrap();
+        let commits = messages
+            .iter()
+            .map(|(commit, _)| commit.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(commits, repo.rev_list(&merge, usize::MAX).unwrap());
+        for (commit, message) in messages {
+            let expected = [
+                (&base, "base"),
+                (&first, "first"),
+                (&second, "second"),
+                (&merge, "merge"),
+            ]
+            .into_iter()
+            .find_map(|(expected_commit, expected_message)| {
+                (expected_commit == &commit).then_some(expected_message)
+            });
+            assert_eq!(Some(message.as_str()), expected);
+        }
+    }
+
     #[test]
     fn annotations_are_ordinary_commits_not_parallel_refs() {
         let temp = tempfile::tempdir().unwrap();
@@ -1615,6 +1804,14 @@ mod tests {
             vec!["home/.config/app/a.toml", "home/.gitignore", "home/.zshrc"]
         );
         assert_eq!(result.roots[0].files, 3);
+        let gix = gix::open_opts(repo.dir(), gix::open::Options::isolated()).unwrap();
+        let tree = gix
+            .find_tree(gix::ObjectId::from_hex(result.tree.as_bytes()).unwrap())
+            .unwrap();
+        assert_eq!(
+            HistoryRepo::gix_tree_entries(&gix, &tree).unwrap(),
+            repo.ls_tree(&result.tree).unwrap()
+        );
         // the same content is the same tree
         let again = repo
             .capture(&[root(
@@ -1624,6 +1821,39 @@ mod tests {
             )])
             .unwrap();
         assert_eq!(again.tree, result.tree);
+    }
+
+    #[test]
+    fn gix_tree_entries_report_large_blob_size() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let size = 8 * 1024 * 1024;
+        let oid = repo.hash_blob(&vec![0; size]).unwrap();
+        let tree = repo
+            .compose(
+                &repo.empty_object("tree").unwrap(),
+                &[Overlay {
+                    path: "home/large".into(),
+                    object: Some(("100644".into(), oid.clone())),
+                }],
+            )
+            .unwrap();
+        let gix = gix::open_opts(repo.dir(), gix::open::Options::isolated()).unwrap();
+        let tree = gix
+            .find_tree(gix::ObjectId::from_hex(tree.as_bytes()).unwrap())
+            .unwrap();
+        assert_eq!(
+            HistoryRepo::gix_tree_entries(&gix, &tree).unwrap(),
+            vec![TreeEntry {
+                mode: "100644".into(),
+                oid,
+                size: Some(size as u64),
+                path: "home/large".into(),
+            }]
+        );
     }
 
     #[test]
@@ -1821,6 +2051,17 @@ mod tests {
                     path: "home/.zshrc".into()
                 },
             ]
+        );
+        let gix = gix::open_opts(repo.dir(), gix::open::Options::isolated()).unwrap();
+        let a_tree = gix
+            .find_tree(gix::ObjectId::from_hex(a.tree.as_bytes()).unwrap())
+            .unwrap();
+        let b_tree = gix
+            .find_tree(gix::ObjectId::from_hex(b.tree.as_bytes()).unwrap())
+            .unwrap();
+        assert_eq!(
+            HistoryRepo::gix_changes(&gix, Some(&a_tree), &b_tree).unwrap(),
+            changes
         );
         let initial = repo.changes(None, &a.tree).unwrap();
         assert_eq!(initial.len(), 2);

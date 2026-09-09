@@ -43,6 +43,10 @@ fn meta_cache_dir_in(state_dir: &Path) -> PathBuf {
     index_dir_in(state_dir).join("meta")
 }
 
+fn commit_meta_cache_dir_in(state_dir: &Path) -> PathBuf {
+    index_dir_in(state_dir).join("commits")
+}
+
 pub(crate) fn pending_dir_in(state_dir: &Path) -> PathBuf {
     index_dir_in(state_dir).join("pending")
 }
@@ -67,6 +71,7 @@ pub(crate) fn ensure_store_dir_in(state_dir: &Path) -> Result<()> {
     create_private_dir(&dir)?;
     create_private_dir(&index_dir_in(state_dir))?;
     create_private_dir(&meta_cache_dir_in(state_dir))?;
+    create_private_dir(&commit_meta_cache_dir_in(state_dir))?;
     create_private_dir(&pending_dir_in(state_dir))?;
     Ok(())
 }
@@ -760,6 +765,89 @@ pub(crate) fn read_meta_cache_in(state_dir: &Path, uuid: &str) -> Result<Option<
     Ok(Some(checkpoint))
 }
 
+const COMMIT_META_CACHE_VERSION: u32 = 1;
+
+/// The local context used while deriving display paths and active variants.
+/// A commit cache is reusable only while every input to that derivation is
+/// unchanged. Both configured and resolved roots are retained so changing a
+/// symlinked ancestor invalidates the cache as well.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct CommitMetaContext {
+    version: u32,
+    schema_version: u32,
+    home: PathBuf,
+    config_dir: PathBuf,
+    resolved_home: PathBuf,
+    resolved_config_dir: PathBuf,
+    environments: Vec<String>,
+}
+
+impl CommitMetaContext {
+    fn current() -> Self {
+        let roots = super::sync::layout::Roots::current();
+        Self {
+            version: COMMIT_META_CACHE_VERSION,
+            schema_version: SCHEMA_VERSION,
+            home: crate::dirs::HOME.to_path_buf(),
+            config_dir: super::tracked::global_config_dir(),
+            resolved_home: roots.home,
+            resolved_config_dir: roots.config_dir,
+            environments: super::select::active_environments(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CommitMetaCache {
+    context: CommitMetaContext,
+    commit: String,
+    checkpoint: Checkpoint,
+}
+
+fn commit_meta_cache_path_in(state_dir: &Path, commit: &str) -> PathBuf {
+    commit_meta_cache_dir_in(state_dir).join(format!("{commit}.json"))
+}
+
+/// Reads metadata derived directly from a commit, before annotations.
+pub(crate) fn read_commit_meta_cache_in(
+    state_dir: &Path,
+    commit: &str,
+) -> Result<Option<Checkpoint>> {
+    let path = commit_meta_cache_path_in(state_dir, commit);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let Ok(text) = file::read_to_string(&path) else {
+        return Ok(None);
+    };
+    let Ok(cache) = serde_json::from_str::<CommitMetaCache>(&text) else {
+        return Ok(None);
+    };
+    if cache.context != CommitMetaContext::current()
+        || cache.commit != commit
+        || cache.checkpoint.uuid != commit
+        || cache.checkpoint.schema_version != SCHEMA_VERSION
+    {
+        return Ok(None);
+    }
+    Ok(Some(cache.checkpoint))
+}
+
+pub(crate) fn write_commit_meta_cache_in(
+    state_dir: &Path,
+    commit: &str,
+    checkpoint: &Checkpoint,
+) -> Result<()> {
+    write_json(
+        &commit_meta_cache_path_in(state_dir, commit),
+        &CommitMetaCache {
+            context: CommitMetaContext::current(),
+            commit: commit.to_string(),
+            checkpoint: checkpoint.clone(),
+        },
+    )
+}
+
 pub(crate) fn pending_path_in(state_dir: &Path, uuid: &str) -> PathBuf {
     pending_dir_in(state_dir).join(format!("{uuid}.json"))
 }
@@ -949,6 +1037,40 @@ pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod commit_cache_tests {
+    use super::*;
+
+    #[test]
+    fn commit_metadata_cache_requires_current_context_and_identity() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        ensure_store_dir_in(temp.path())?;
+        let checkpoint = super::super::checkpoint::test_checkpoint("abc123", None);
+        write_commit_meta_cache_in(temp.path(), "abc123", &checkpoint)?;
+        assert_eq!(
+            read_commit_meta_cache_in(temp.path(), "abc123")?
+                .unwrap()
+                .uuid,
+            "abc123"
+        );
+
+        let path = commit_meta_cache_path_in(temp.path(), "abc123");
+        let mut cache: CommitMetaCache = serde_json::from_str(&file::read_to_string(&path)?)?;
+        cache.context.version += 1;
+        write_json(&path, &cache)?;
+        assert!(read_commit_meta_cache_in(temp.path(), "abc123")?.is_none());
+
+        cache.context = CommitMetaContext::current();
+        cache.commit = "different".into();
+        write_json(&path, &cache)?;
+        assert!(read_commit_meta_cache_in(temp.path(), "abc123")?.is_none());
+
+        std::fs::write(&path, [0xff])?;
+        assert!(read_commit_meta_cache_in(temp.path(), "abc123")?.is_none());
+        Ok(())
+    }
 }
 
 #[cfg(all(test, unix))]

@@ -397,18 +397,36 @@ impl Manifest {
         if mode != "100644" {
             bail!("dotfile enrollment metadata must be a regular file");
         }
+        let bytes = repo.cat_object_bounded(&oid, 4 * 1024 * 1024)?;
+        Self::from_bytes(&bytes).map(Some)
+    }
+
+    pub(crate) fn read_gix(tree: &gix::Tree<'_>) -> Result<Option<Self>> {
+        let Some(entry) = tree.lookup_entry_by_path(PATH)? else {
+            return Ok(None);
+        };
+        if entry.mode().value() != 0o100644 {
+            bail!("dotfile enrollment metadata must be a regular file");
+        }
+        if entry.id().header()?.size() > 4 * 1024 * 1024 {
+            bail!("dotfile enrollment metadata is too large");
+        }
+        let object = entry.object()?;
+        Self::from_bytes(&object.data).map(Some)
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self> {
         #[derive(Deserialize)]
         struct FormatHeader {
             format: u64,
         }
-        let bytes = repo.cat_object_bounded(&oid, 4 * 1024 * 1024)?;
-        let header: FormatHeader = serde_json::from_slice(&bytes)?;
+        let header: FormatHeader = serde_json::from_slice(bytes)?;
         if header.format != 1 {
             bail!("unsupported dotfile repository format {}", header.format);
         }
-        let manifest: Self = serde_json::from_slice(&bytes)?;
+        let manifest: Self = serde_json::from_slice(bytes)?;
         manifest.validate()?;
-        Ok(Some(manifest))
+        Ok(manifest)
     }
 
     pub(crate) fn write(&self, repo: &HistoryRepo, tree: &str) -> Result<String> {
@@ -465,6 +483,31 @@ mod tests {
                     .contains(message)
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn gix_reader_rejects_oversized_manifest() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let repo = HistoryRepo::open_or_init_in(temp.path())?.unwrap();
+        let tree = repo.compose(
+            &repo.mktree("")?,
+            &[Overlay {
+                path: PATH.into(),
+                object: Some((
+                    "100644".into(),
+                    repo.hash_blob(&vec![b' '; 4 * 1024 * 1024 + 1])?,
+                )),
+            }],
+        )?;
+        let gix = gix::open_opts(repo.dir(), gix::open::Options::isolated())?;
+        let tree = gix.find_tree(gix::ObjectId::from_hex(tree.as_bytes())?)?;
+        assert!(
+            Manifest::read_gix(&tree)
+                .unwrap_err()
+                .to_string()
+                .contains("too large")
+        );
         Ok(())
     }
 
