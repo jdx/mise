@@ -543,6 +543,7 @@ mod tests {
             Some(""),
         );
         assert_ne!(key1, key5);
+        assert_ne!(key4, key5);
     }
 
     #[test]
