@@ -1,1 +1,1 @@
-we've been improving the output recently, i think i want another change. if an install is taking a very long time we should limit how much output we emit by not refreshing the non-tty ci output so frequently
+make a pr, address pr feedback until it settles
