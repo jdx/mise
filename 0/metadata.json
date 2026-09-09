@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M235Y637GGZ8FRKNHWFGASV4",
+  "session_id": "01a08620-b28a-7f51-804d-04f6db0b0a25",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T13:32:56.729104Z",
+  "branch": "codex/fix-prune-non-interactive",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_dotfiles_watch_throttle"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "c03e40369b4e",
+  "checkpoint_transcript_start": 376,
+  "transcript_lines_at_start": 376,
+  "compact_transcript_start": 53,
+  "token_usage": {
+    "input_tokens": 78466,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 10883328,
+    "output_tokens": 8359,
+    "api_call_count": 56
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T13:32:56.505673Z",
+    "agent_lines": 1,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
