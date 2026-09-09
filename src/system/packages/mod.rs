@@ -18,6 +18,7 @@ pub(crate) mod brew;
 pub(crate) mod dnf;
 pub(crate) mod flatpak;
 pub(crate) mod mas;
+pub(crate) mod nix;
 pub(crate) mod pacman;
 pub(crate) mod plugin;
 pub(crate) mod winget;
@@ -260,6 +261,7 @@ pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(flatpak::FlatpakManager::new()),
         Arc::new(flatpak::FlatpakManager::new_user()),
         Arc::new(mas::MasManager::new()),
+        Arc::new(nix::NixManager),
         Arc::new(pacman::PacmanManager::new()),
         Arc::new(winget::WingetManager::new()),
     ]

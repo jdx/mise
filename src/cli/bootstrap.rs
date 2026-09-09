@@ -19,7 +19,7 @@ use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
 use super::system::driver::{self, Action, DriverOpts};
-use super::system::{import, install, prune, status, upgrade, r#use};
+use super::system::{export, import, install, prune, status, upgrade, r#use};
 use crate::config::{self, Config};
 use crate::dirs;
 use crate::path::PathExt;
@@ -957,6 +957,7 @@ enum BootstrapPackagesCommands {
     Apply(install::SystemInstall),
     #[cfg(unix)]
     Brew(super::system::brew::SystemBrew),
+    Export(export::SystemExport),
     Import(import::SystemImport),
     Prune(prune::SystemPrune),
     Status(status::SystemStatus),
@@ -4284,6 +4285,7 @@ impl BootstrapPackages {
             BootstrapPackagesCommands::Apply(cmd) => cmd.run().await,
             #[cfg(unix)]
             BootstrapPackagesCommands::Brew(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Export(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Import(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Prune(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Status(cmd) => cmd.run().await,

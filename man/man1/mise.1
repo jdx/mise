@@ -361,6 +361,9 @@ Remove Homebrew tap URLs from [bootstrap.brew.taps]
 \fIAliases: \fRremove, rm
 .RE
 .TP
+\fBbootstrap packages export\fR
+Export active Nix bootstrap packages as a NixOS module
+.TP
 \fBbootstrap packages import\fR
 Import installed system packages into `[bootstrap.packages]`
 .TP
@@ -2596,6 +2599,30 @@ Tap name(s), e.g. `owner/repo`
 .RS 4
 mise bootstrap packages brew untap railwaycat/emacsmacport
 .RE
+.SH "MISE BOOTSTRAP PACKAGES EXPORT"
+Export active Nix bootstrap packages as a NixOS module
+
+Writes to stdout without invoking Nix. Import the output into an existing
+NixOS configuration; packages resolve against that configuration's `pkgs`.
+Only shorthand attribute paths are exportable. Explicit flake references
+and package\-version pins cannot be represented by the importing package set.
+.PP
+\fBUsage:\fR mise bootstrap packages export [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-format\fR \fI<FORMAT>\fR
+Output format
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise bootstrap packages export \-\-format nix > packages.nix
+.RE
 .SH "MISE BOOTSTRAP PACKAGES IMPORT"
 Import installed system packages into `[bootstrap.packages]`
 
@@ -2781,6 +2808,9 @@ Write to this config file or directory
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-\-no\-install\fR
+Write the package declarations without checking or installing packages
 .TP
 \fB\-h, \-\-help\fR
 Print help

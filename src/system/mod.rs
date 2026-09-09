@@ -1597,7 +1597,7 @@ fn is_brew_manager(mgr: &str) -> bool {
 }
 
 fn is_opaque_package_manager(mgr: &str) -> bool {
-    is_brew_manager(mgr) || mgr == "mas"
+    is_brew_manager(mgr) || matches!(mgr, "mas" | "nix")
 }
 
 fn normalize_use_spec_package_name<'a>(mgr: &str, name: &'a str) -> eyre::Result<&'a str> {
@@ -1613,10 +1613,28 @@ fn normalize_use_spec_package_name<'a>(mgr: &str, name: &'a str) -> eyre::Result
 }
 
 fn validate_package_name(mgr: &str, name: &str) -> eyre::Result<()> {
+    if mgr == "nix" {
+        packages::nix::Installable::parse(name)?;
+    }
     if mgr == "mas" && !packages::mas::is_adam_id(name) {
         bail!("mas app IDs must be numeric ADAM IDs (e.g. \"mas:497799835\")");
     }
     Ok(())
+}
+
+/// Collect export declarations before manager validation can warn and skip an
+/// invalid entry. Export must either represent the entire selection or fail.
+pub(crate) fn nix_packages_for_export(config: &Config) -> Vec<(String, PackageTomlConfig)> {
+    let environments = &crate::env::MISE_ENV_WITH_AUTO;
+    package_configs_from_config_files(&config.config_files)
+        .into_iter()
+        .filter(|(spec, package)| {
+            spec.starts_with("nix:")
+                && package.is_os_supported()
+                && package.is_env_supported(environments)
+                && package.desired() == packages::PackageDesiredState::Present
+        })
+        .collect()
 }
 
 pub(crate) fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {

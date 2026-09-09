@@ -33,6 +33,7 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
 
   **Aliases:** `--file`
 - **`-y --yes`** — Skip the confirmation prompt
+- **`--no-install`** — Write the package declarations without checking or installing packages
 - **`-h --help`** — Print help
 
 ## Examples

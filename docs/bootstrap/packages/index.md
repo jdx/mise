@@ -81,6 +81,7 @@ for host-owned state such as editor extensions and other applications' plugins.
 | `brew-cask`    | macOS; Linux (font casks) — **no Homebrew required**           | [brew](/bootstrap/packages/brew.html)               |
 | `flatpak`      | Linux with the `flatpak` CLI on `PATH` (system scope)          | [Flatpak](/bootstrap/packages/flatpak.html)         |
 | `flatpak-user` | Linux with the `flatpak` CLI on `PATH` (user scope)            | [Flatpak](/bootstrap/packages/flatpak.html)         |
+| `nix`          | Linux and macOS with the `nix` CLI on `PATH` (user profile)    | [Nix](/bootstrap/packages/nix.html)                 |
 | `mas`          | macOS with the `mas` CLI on `PATH`                             | [mas](/bootstrap/packages/mas.html)                 |
 | `winget`       | Windows with the `winget` CLI on `PATH`                        | [WinGet](/bootstrap/packages/winget.html)           |
 | plugin         | Declared by the plugin                                         | [Package plugins](/bootstrap/packages/plugins.html) |
@@ -268,3 +269,8 @@ fresh machine or container.
 for a convenient CI check without installing anything. Inspect JSON status as
 well when a required manager may be unavailable: skipped declarations are not
 proof that their packages are installed.
+
+Nix declarations can also be [exported as a NixOS module](./nix.md#export-to-nixos)
+with `mise bootstrap packages export --format nix`. Use
+`mise bootstrap packages use --no-install` to write declarations without checking
+or installing packages; this flag works with every package manager.

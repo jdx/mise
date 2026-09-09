@@ -64,6 +64,10 @@ pub(crate) struct SystemUse {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     yes: bool,
+
+    /// Write the package declarations without checking or installing packages
+    #[usage(long)]
+    no_install: bool,
 }
 
 impl SystemUse {
@@ -127,6 +131,10 @@ impl SystemUse {
                     .collect::<Vec<_>>()
                     .join(", ")
             );
+        }
+
+        if self.no_install {
+            return Ok(());
         }
 
         // unlike `mise bootstrap packages apply apt:x`, an unavailable manager is not

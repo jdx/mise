@@ -119,6 +119,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap mise-shell-activate status", Read),
     ("bootstrap packages", Read),
     ("bootstrap packages apply", Destructive),
+    ("bootstrap packages export", Read),
     ("bootstrap packages import", Write),
     // Uninstalls system packages that are no longer declared.
     ("bootstrap packages prune", Destructive),
