@@ -4695,6 +4695,47 @@
                 }
               }
             },
+            "defaults_entries": {
+              "type": "array",
+              "description": "Explicit macOS preferences with a selectable host scope",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["domain", "key", "value"],
+                "properties": {
+                  "domain": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "host": {
+                    "type": "string",
+                    "enum": ["any", "current"],
+                    "default": "any"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array"
+                      },
+                      {
+                        "type": "object"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
             "launchd": {
               "type": "object",
               "description": "macOS launchd bootstrap config",

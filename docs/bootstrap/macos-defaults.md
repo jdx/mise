@@ -154,8 +154,31 @@ type and is also not supported.
   typed value.
 
 User defaults are per-user, so unlike system packages they never involve
-sudo. Host-scoped preferences (`defaults -currentHost`) and `sudo
-defaults` system domains are not supported.
+sudo. `sudo defaults` system domains are not supported.
+
+## Current-host preferences
+
+Use an explicit entry for preferences normally written with `defaults -currentHost`:
+
+```toml
+[[bootstrap.macos.defaults_entries]]
+domain = "NSGlobalDomain"
+key = "com.apple.mouse.tapBehavior"
+host = "current"
+value = 1
+```
+
+Entries accept the same typed values as `defaults`, including arrays and tables.
+The optional `host` is `"any"` by default; `"current"` scopes reads, writes, and
+synchronization to the current host. The same domain and key can be managed
+independently in each scope.
+
+Preferences merge global → local by domain, key, and host. Explicit entries
+override shorthand defaults in the same file. The global-domain aliases `-g`
+and `-globalDomain` share the identity of `NSGlobalDomain`.
+
+Status labels current-host domains with `(current host)` and JSON entries include
+`host`. Scalar dry-runs include `-currentHost`.
 
 ## Commands
 

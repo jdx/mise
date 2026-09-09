@@ -29,7 +29,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 
 use crate::config::{Config, ConfigMap};
-use crate::system::defaults::{DefaultsRequest, DefaultsValue};
+use crate::system::defaults::{DefaultsRequest, DefaultsValue, HostScope, canonical_domain};
 use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
 use crate::system::repos::{RepoRequest, RepoTomlConfig};
@@ -307,10 +307,23 @@ pub(crate) struct BootstrapMacosTomlConfig {
     /// instead of failing the whole config.
     #[serde(default)]
     pub defaults: IndexMap<String, toml::Value>,
+    /// Explicit preferences with a selectable host scope.
+    #[serde(default)]
+    pub defaults_entries: Vec<BootstrapMacosDefaultsEntry>,
     /// `[bootstrap.macos.launchd.agents.<name>]`: declarative macOS user
     /// LaunchAgents rendered to ~/Library/LaunchAgents.
     #[serde(default)]
     pub launchd: BootstrapMacosLaunchdTomlConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BootstrapMacosDefaultsEntry {
+    pub domain: String,
+    pub key: String,
+    #[serde(default)]
+    pub host: HostScope,
+    pub value: toml::Value,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -751,13 +764,13 @@ fn merge_package_configs<'a>(
     merged
 }
 
-/// Aggregate `[bootstrap.macos.defaults]` across all loaded config files.
+/// Aggregate macOS defaults across all loaded config files.
 ///
-/// (domain, key) pairs union global -> local; a more local config overrides
-/// the value a global config declared. Unsupported value shapes warn
+/// Within each host scope, (domain, key) pairs union global -> local; a more
+/// local config overrides the value a global config declared. Unsupported value shapes warn
 /// (forward compatibility) and are skipped.
 pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
-    let mut merged: IndexMap<(String, String), toml::Value> = IndexMap::new();
+    let mut merged: IndexMap<(String, String, HostScope), toml::Value> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
@@ -777,18 +790,38 @@ pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
                 }
             }
             for (key, value) in merge_raw_over_friendly_macos_defaults(friendly, raw) {
-                merged.insert(key, value);
+                merged.insert(
+                    (canonical_domain(&key.0).into(), key.1, HostScope::Any),
+                    value,
+                );
+            }
+            for entry in sys.macos.defaults_entries {
+                merged.insert(
+                    (
+                        canonical_domain(&entry.domain).into(),
+                        entry.key,
+                        entry.host,
+                    ),
+                    entry.value,
+                );
             }
         }
     }
     let mut out = vec![];
-    for ((domain, key), value) in merged {
+    for ((domain, key, host), value) in merged {
         match DefaultsValue::from_toml(&value) {
-            Some(value) => out.push(DefaultsRequest { domain, key, value }),
-            None => warn!(
-                "[bootstrap.macos.defaults]: unsupported value type for {domain} {key} \
-                 (expected bool, integer, float, string, array, or table)"
-            ),
+            Some(value) => out.push(DefaultsRequest {
+                domain,
+                key,
+                host,
+                value,
+            }),
+            None => {
+                warn!(
+                    "[bootstrap.macos.defaults]: unsupported value type for {domain} {key} \
+                     (expected bool, integer, float, string, array, or table)"
+                );
+            }
         }
     }
     out
@@ -859,7 +892,26 @@ pub(crate) fn macos_defaults_entry_count(macos: &BootstrapMacosTomlConfig) -> us
             _ => malformed_domains += 1,
         }
     }
-    merge_raw_over_friendly_macos_defaults(friendly, raw).len() + malformed_domains
+    let mut merged: IndexMap<_, _> = merge_raw_over_friendly_macos_defaults(friendly, raw)
+        .into_iter()
+        .map(|((domain, key), value)| {
+            (
+                (canonical_domain(&domain).to_owned(), key, HostScope::Any),
+                value,
+            )
+        })
+        .collect();
+    for entry in &macos.defaults_entries {
+        merged.insert(
+            (
+                canonical_domain(&entry.domain).to_owned(),
+                entry.key.clone(),
+                entry.host,
+            ),
+            entry.value.clone(),
+        );
+    }
+    merged.len() + malformed_domains
 }
 
 fn merge_raw_over_friendly_macos_defaults(
@@ -2349,5 +2401,12 @@ mod tests {
         macos.defaults.insert("malformed".into(), tv("true"));
 
         assert_eq!(macos_defaults_entry_count(&macos), 5);
+        macos.defaults_entries.push(BootstrapMacosDefaultsEntry {
+            domain: "NSGlobalDomain".into(),
+            key: "KeyRepeat".into(),
+            host: HostScope::Current,
+            value: tv("3"),
+        });
+        assert_eq!(macos_defaults_entry_count(&macos), 6);
     }
 }
