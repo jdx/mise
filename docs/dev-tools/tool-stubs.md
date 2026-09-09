@@ -65,6 +65,7 @@ are passed to the selected backend, while `tool`, `version`, `bin`, `os`,
 - `tool` - Explicit tool name or backend specification (e.g., "python", "github:cli/cli"). If omitted, a top-level or platform-specific URL selects the HTTP backend; otherwise mise uses the stub filename as the tool name.
 - `version` - The version request (defaults to `latest`)
 - `bin` - The binary name to execute within the tool (defaults to the stub filename)
+- `os` - Operating systems on which the stub is available, optionally narrowed by architecture (for example, `["linux", "macos/arm64"]`)
 
 ## HTTP Stubs
 
@@ -340,11 +341,12 @@ beside the stub. Run the stub by name and Windows picks it up through `PATHEXT`:
 .\bin\my-tool.cmd --version
 ```
 
-The launcher is generated whenever the stub could run on Windows — either it lists a
-`[platforms.windows-*]` entry, or it names no platforms at all. A stub that ships only for, say,
-Linux and macOS does not get one, and neither does a stub whose own name already ends in `.cmd`,
-`.bat` or `.exe`. The launcher is written on every platform, not just Windows, so a stub generated on Linux
-and committed to a repository still works for someone who clones it on Windows.
+The launcher is generated whenever the stub could run on Windows. An explicit `os` selector must
+include Windows, and any platform tables must include a `[platforms.windows-*]` entry. A stub that
+declares neither restriction also gets a launcher. A stub limited to Linux and macOS does not get
+one, and neither does a stub whose own name already ends in `.cmd`, `.bat` or `.exe`. The launcher
+is written on every platform, not just Windows, so a stub generated on Linux and committed to a
+repository still works for someone who clones it on Windows.
 
 If a stub later stops shipping for Windows, regenerating it removes the launcher, so it cannot keep
 running against platforms the stub no longer declares. Only a launcher mise generated is removed —

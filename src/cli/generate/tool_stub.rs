@@ -992,6 +992,7 @@ static WINDOWS_LAUNCHER: LazyLock<String> =
 ///
 /// - lists a `[platforms.*]` table with a windows entry → yes
 /// - lists `[platforms.*]` tables but none for windows → no, this tool does not ship for Windows
+/// - lists an `os` selector that excludes Windows → no, regardless of backend support
 /// - lists no platforms at all (`tool = "python"`, or a bare `url`) → yes, nothing was ruled out
 ///
 /// The stub's *name* is judged separately, by [`super::windows_launcher_path`].
@@ -1003,6 +1004,14 @@ fn wants_windows_launcher(stub_content: &str) -> bool {
         // launcher so a Windows user is not silently left without one.
         return true;
     };
+    if let Some(os) = doc.get("os").and_then(|os| os.as_array())
+        && !os.iter().filter_map(|entry| entry.as_str()).any(|entry| {
+            let os = entry.split_once('/').map_or(entry, |(os, _)| os);
+            crate::cli::version::normalize_os(os) == "windows"
+        })
+    {
+        return false;
+    }
     let Some(platforms) = doc.get("platforms").and_then(|p| p.as_table_like()) else {
         return true;
     };
@@ -1071,6 +1080,32 @@ url = "https://example.com/tool-linux.tar.gz"
 
 [platforms.macos-arm64]
 url = "https://example.com/tool-macos.tar.gz"
+"#;
+        assert!(!wants_windows_launcher(stub));
+    }
+
+    #[test]
+    fn a_stub_with_an_os_selector_that_excludes_windows_does_not() {
+        assert!(!wants_windows_launcher(
+            "tool = \"github:jdx/tiny\"\nos = [\"linux\", \"macos/arm64\"]\n"
+        ));
+    }
+
+    #[test]
+    fn a_stub_with_a_windows_os_selector_gets_a_launcher() {
+        for os in ["windows", "win/amd64"] {
+            let stub = format!("tool = \"github:example/tool\"\nos = [\"{os}\"]\n");
+            assert!(wants_windows_launcher(&stub), "{os}");
+        }
+    }
+
+    #[test]
+    fn a_windows_os_selector_does_not_bypass_platform_tables() {
+        let stub = r#"
+os = ["windows"]
+
+[platforms.linux-x64]
+url = "https://example.com/tool-linux.tar.gz"
 "#;
         assert!(!wants_windows_launcher(stub));
     }
