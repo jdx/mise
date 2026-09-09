@@ -1,9 +1,1 @@
-can you test it with packslip 1.2.0?
-
----
-
-post a link to this on the discussion
-
----
-
 address pr feedback and failing checks until it settles
