@@ -1,0 +1,9 @@
+why is it launching 1049 processes if we're using gix? do you need to update the benchmark? do taht if so then continue
+
+---
+
+should we use gix for more so we don't have so many processes?
+
+---
+
+should we broaden this pr to leverage gix in all hot paths? or is that too much?
