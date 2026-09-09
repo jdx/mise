@@ -92,7 +92,7 @@ async fn set_inner(
     // repository's default branch is not the one this machine follows
     let connected = (!status_before.disconnected
         && status_before.origin_url.as_deref() == Some(opts.url.as_str()))
-    .then(|| status_before.origin_branch.as_deref())
+    .then_some(status_before.origin_branch.as_deref())
     .flatten();
     let branch = resolve_branch(&remote, opts.branch.as_deref(), connected)?;
     if !remote.fetch(&branch)? {
