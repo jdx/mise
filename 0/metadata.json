@@ -1,0 +1,64 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M237T67E00ZV15E3YYYZEVFA",
+  "session_id": "01a0865e-6116-7853-9e70-33e9c7b5d133",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T14:05:41.646376Z",
+  "branch": "codex/deprecate-bootstrap-config-roots",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/.vitepress/cli_commands.ts",
+    "docs/bootstrap.md",
+    "docs/cli/bootstrap.md",
+    "docs/cli/bootstrap/config-roots.md",
+    "docs/public/llms.txt",
+    "e2e/cli/test_bootstrap_config_roots_inventory",
+    "mise.usage.kdl",
+    "schema/mise.json",
+    "src/cli/bootstrap.rs",
+    "src/config/mod.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "a6ed0b790e48",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 231478,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 14571776,
+    "output_tokens": 19731,
+    "api_call_count": 107
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T14:05:41.501565Z",
+    "agent_lines": 19,
+    "agent_removed": 82,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 19,
+    "total_lines_changed": 101,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 19,
+      "agent_lines_removed": 82
+    }
+  ]
+}

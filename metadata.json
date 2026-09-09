@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M237T67E00ZV15E3YYYZEVFA",
+  "strategy": "manual-commit",
+  "branch": "codex/deprecate-bootstrap-config-roots",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/.vitepress/cli_commands.ts",
+    "docs/bootstrap.md",
+    "docs/cli/bootstrap.md",
+    "docs/cli/bootstrap/config-roots.md",
+    "docs/public/llms.txt",
+    "e2e/cli/test_bootstrap_config_roots_inventory",
+    "mise.usage.kdl",
+    "schema/mise.json",
+    "src/cli/bootstrap.rs",
+    "src/config/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 231478,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 14571776,
+    "output_tokens": 19731,
+    "api_call_count": 107
+  }
+}

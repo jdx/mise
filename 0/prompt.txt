@@ -1,0 +1,13 @@
+investigate [https://github.com/jdx/mise/discussions/12987](https://github.com/jdx/mise/discussions/12987)
+
+---
+
+i almost think i should never have shipped config\_roots
+
+---
+
+i think we should've left bootstrap at global/system level
+
+---
+
+let's hide it in the docs, mark it as deprecated immediately, say it needs more design thinking, put removal 6 months out, post a reply
