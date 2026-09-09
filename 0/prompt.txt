@@ -1,13 +1,1 @@
-investigate [https://github.com/jdx/mise/discussions/13029](https://github.com/jdx/mise/discussions/13029)
-
----
-
-not feature creep?
-
----
-
-what's the difference between what they can do today
-
----
-
 looks decent to me, make a pr, post a reply
