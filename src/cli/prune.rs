@@ -13,7 +13,7 @@ use crate::toolset::{
 };
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::prompt;
+use crate::ui::prompt::{self, Confirmation};
 use crate::{backend::Backend, config, env, exit};
 use console::style;
 use eyre::Result;
@@ -204,8 +204,16 @@ async fn delete(
         if let Some(needed) = explain {
             explain_removal(&tv, needed);
         }
-        if Settings::get().yes || prompt::confirm_with_all(format!("remove {} ?", tv))?.is_yes() {
+        if Settings::get().yes {
             confirmed.push((p, tv));
+            continue;
+        }
+        match prompt::confirm_with_all(format!("remove {} ?", tv))? {
+            Confirmation::Yes => confirmed.push((p, tv)),
+            Confirmation::No => {}
+            Confirmation::Unavailable => eyre::bail!(
+                "mise prune requires confirmation but there was nobody to ask; pass --yes to prune non-interactively"
+            ),
         }
     }
 
