@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M23VD0YJQ094D8R1ATKXYRH7",
+  "session_id": "01a08797-2926-7cf3-81ae-2e354560aca6",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T19:48:01.410919Z",
+  "branch": "codex/live-install-summary",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "e2e/cli/test_upgrade_summary_on_config_error",
+    "src/cli/upgrade.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "c602ded697bb",
+  "checkpoint_transcript_start": 570,
+  "transcript_lines_at_start": 570,
+  "compact_transcript_start": 78,
+  "token_usage": {
+    "input_tokens": 42206,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4248576,
+    "output_tokens": 8727,
+    "api_call_count": 30
+  },
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T19:48:01.316393Z",
+    "agent_lines": 235,
+    "agent_removed": 206,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 235,
+    "total_lines_changed": 441,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
