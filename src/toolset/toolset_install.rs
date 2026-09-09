@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use eyre::Result;
@@ -116,14 +117,13 @@ impl Toolset {
         let Some(tv) = self.missing_lazy_bin_provider(config, bin_name).await? else {
             return Ok(None);
         };
-        let install_dir = tv.request.source().path().and_then(|path| {
-            (crate::config::provenance::ConfigProvenance::from_path(path).scope()
-                == crate::config::provenance::ConfigFileScope::System)
-                .then(|| Settings::get().system_installs_dir().to_path_buf())
-        });
+        // The batch can span scopes, so each tool resolves its own destination rather
+        // than inheriting the provider's. The provider's own directory is still needed
+        // to explain a failure that is caused by writing outside the user's install dir.
+        let provider_install_dir = scope_installs_dir(&tv.request);
         let install_options = InstallOptions {
             reason: "lazy shim".into(),
-            install_dir: install_dir.filter(|dir| dir != *crate::dirs::INSTALLS),
+            scoped_install_dirs: true,
             ..Default::default()
         };
         let requests = self.lazy_install_requests(config, &tv).await;
@@ -131,7 +131,7 @@ impl Toolset {
             .install_all_versions(config, requests, &install_options)
             .await
             .wrap_err_with(|| {
-                install_options.install_dir.as_ref().map_or_else(
+                provider_install_dir.as_ref().map_or_else(
                     || format!("failed to install lazy tool {}", tv.style()),
                     |dir| {
                         format!(
@@ -751,7 +751,12 @@ impl Toolset {
         .await?;
         let backend = tv.backend()?;
         backend::ensure_backend_enabled(&backend.get_type())?;
-        if let Some(dir) = &opts.install_dir {
+        let install_dir = opts.install_dir.clone().or_else(|| {
+            opts.scoped_install_dirs
+                .then(|| scope_installs_dir(tr))
+                .flatten()
+        });
+        if let Some(dir) = &install_dir {
             let tool_dir_name = tv.ba().tool_dir_name();
             tv.install_path = Some(dir.join(tool_dir_name).join(tv.tv_pathname()));
             tv.install_path_is_explicit = true;
@@ -918,6 +923,19 @@ impl Toolset {
     fn parse_plugin_key(key: &str) -> (PluginType, &str) {
         PluginType::from_plugin_config(key)
     }
+}
+
+/// The install directory a tool belongs in based on the scope of the config file that
+/// declares it. Only system configuration relocates; everything else uses the default.
+fn scope_installs_dir(tr: &ToolRequest) -> Option<PathBuf> {
+    tr.source()
+        .path()
+        .and_then(|path| {
+            (crate::config::provenance::ConfigProvenance::from_path(path).scope()
+                == crate::config::provenance::ConfigFileScope::System)
+                .then(|| Settings::get().system_installs_dir().to_path_buf())
+        })
+        .filter(|dir| dir != *crate::dirs::INSTALLS)
 }
 
 fn lazy_bin_names_eq(configured: &str, requested: &str) -> bool {

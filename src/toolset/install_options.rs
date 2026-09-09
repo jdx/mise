@@ -24,6 +24,10 @@ pub(crate) struct InstallOptions {
     pub locked: bool,
     /// Override the install directory (e.g. for --system or --shared)
     pub install_dir: Option<PathBuf>,
+    /// Derive each tool's install directory from the scope of the config file that
+    /// declares it. Lazy first-use dispatch installs a provider together with its
+    /// dependencies, and those can come from different scopes.
+    pub scoped_install_dirs: bool,
     /// skip confirmation prompts (e.g. installing missing plugin system deps).
     /// Defaults to the global `yes` setting; `mise bootstrap --yes` also sets it.
     pub yes: bool,
@@ -45,6 +49,7 @@ impl Default for InstallOptions {
             global_hooks_only: false,
             locked: Settings::get().locked,
             install_dir: None,
+            scoped_install_dirs: false,
             yes: Settings::get().yes,
         }
     }
