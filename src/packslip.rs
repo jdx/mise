@@ -654,6 +654,7 @@ pub(crate) async fn active_skills(config: &Arc<Config>) -> Result<Vec<Skill>> {
         };
         let artifact = selected_artifact(
             &statement,
+            &install_path,
             tv.request.options().get_string("variant").as_deref(),
         );
         skills.extend(skills_of(
@@ -1156,6 +1157,7 @@ pub(crate) async fn completion_script(
     };
     let artifact = selected_artifact(
         &statement,
+        &install_path,
         tv.request.options().get_string("variant").as_deref(),
     );
     let sources = completion_sources(
@@ -1975,6 +1977,29 @@ mod tests {
             completion_sources(&s, root, "zsh", None, Some("t")),
             vec![CompletionSource::File(root.join("_t.any"))],
             "with no artifact selected only unscoped entries apply"
+        );
+    }
+
+    #[test]
+    fn installed_artifact_marker_controls_resource_scope() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut statement = basic();
+        let mut musl = statement.predicate.artifacts[0].clone();
+        musl.name = "t-linux-x64-musl.tar.xz".into();
+        musl.libc = Some("musl".into());
+        statement.predicate.artifacts.push(musl.clone());
+        std::fs::write(
+            dir.path()
+                .join(crate::backend::packslip::SELECTED_ARTIFACT_FILE),
+            &musl.name,
+        )
+        .unwrap();
+
+        assert_eq!(
+            selected_artifact(&statement, dir.path(), None)
+                .unwrap()
+                .name,
+            musl.name
         );
     }
 

@@ -223,20 +223,25 @@ mise uses signed metadata to select one artifact:
 4. Refuse an unresolved tie rather than guessing between builds.
 
 Installer formats such as `deb`, `dmg`, and `msi` are not selected. A glibc host
-with no matching GNU artifact may use a musl artifact; mise reports that
-fallback in the debug log. The publisher must distinguish alternative builds
-with variants. A client option cannot resolve two identically described artifacts.
+may use a matching static musl artifact when there is no GNU artifact, or when
+the selected GNU artifact declares a `glibc_min` above the host's detected
+version. mise reports that fallback in the debug log. The publisher must
+distinguish alternative builds with variants. A client option cannot resolve
+two identically described artifacts.
 
 ## Host requirements
 
 After selecting an artifact, mise checks its declared requirements before
-downloading it. Requirements do not break a selection tie or select another build.
+downloading it. Requirements do not break a selection tie. A confirmed
+`glibc_min` incompatibility may select the matching static musl build as
+described above; other requirements do not select another build.
 
-| Requirement result                                                        | mise behavior                                      |
-| ------------------------------------------------------------------------- | -------------------------------------------------- |
-| Confirmed missing library, insufficient glibc, or insufficient OS version | Refuse installation.                               |
-| Missing or outdated required command                                      | Warn and continue.                                 |
-| A check cannot be completed                                               | Warn instead of assuming the host is incompatible. |
+| Requirement result                                                                           | mise behavior                                      |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Insufficient glibc with a matching static musl artifact                                      | Select the musl artifact.                          |
+| Confirmed missing library, insufficient glibc without a fallback, or insufficient OS version | Refuse installation.                               |
+| Missing or outdated required command                                                         | Warn and continue.                                 |
+| A check cannot be completed                                                                  | Warn instead of assuming the host is incompatible. |
 
 Command checks prefer active mise tools over ambient PATH. mise checks for a
 path the OS can execute: on Windows, `git.exe` or `node.cmd` counts, but a
@@ -248,5 +253,6 @@ unknown. On Linux, the OS version is the kernel release from `uname -r`, read up
 to the distribution's suffix: `6.8.0-31-generic` is compared as `6.8.0`.
 
 The [`ignore_requirements`](/dev-tools/backends/packslip.html#ignore-requirements)
-tool option permits installation despite confirmed failures. It does not supply
-missing libraries or make an incompatible executable run.
+tool option permits installation despite confirmed failures. It also bypasses
+the glibc-to-musl fallback and retains the selected GNU artifact. It does not
+supply missing libraries or make an incompatible executable run.

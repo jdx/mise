@@ -89,6 +89,7 @@ pub(crate) fn activate(config: &Arc<Config>, ts: &Toolset, shell: &str) -> Strin
         };
         let artifact = crate::backend::packslip::selected_artifact(
             &statement,
+            &install,
             tv.request.options().get_string("variant").as_deref(),
         );
         for bin in statement

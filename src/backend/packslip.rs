@@ -49,6 +49,7 @@ pub(crate) const EXPERIMENTAL: bool = false;
 /// The verified statement, kept beside the install so the rest of mise can
 /// read what the release declared without verifying it again.
 pub(crate) const STATEMENT_FILE: &str = ".mise-packslip.json";
+pub(crate) const SELECTED_ARTIFACT_FILE: &str = ".mise-packslip-artifact";
 
 /// Archive formats mise can unpack, best first. Installers (`deb`, `dmg`,
 /// `msi`, ...) are not among them: mise installs into its own directory.
@@ -372,10 +373,104 @@ pub(crate) fn select_artifact<'a>(
     .into())
 }
 
-/// The artifact this host would select from a stored statement, for
-/// scoping resources to it later. `None` when nothing fits, in which case
-/// only unscoped resources apply.
-pub(crate) fn selected_artifact(statement: &Statement, variant: Option<&str>) -> Option<Artifact> {
+async fn select_compatible_artifact<'a>(
+    artifacts: &'a [Artifact],
+    host: &HostPlatform,
+    variant: Option<&str>,
+    ignore_requirements: bool,
+) -> Result<&'a Artifact> {
+    let artifact = select_artifact(artifacts, host, variant)?;
+    if ignore_requirements || host.libc.as_deref() != Some("gnu") {
+        return Ok(artifact);
+    }
+    let Some(min) = artifact
+        .requires
+        .as_ref()
+        .and_then(|requires| requires.glibc_min.as_deref())
+    else {
+        return Ok(artifact);
+    };
+    let Some(actual) = crate::packslip_requirements::glibc_version().await else {
+        return Ok(artifact);
+    };
+    select_glibc_fallback(artifacts, host, variant, artifact, &actual, min)
+}
+
+/// Return the artifact pinned by this platform's lock entry, when the current
+/// signed statement still contains that exact URL and digest.
+fn select_locked_artifact<'a>(
+    statement: &'a Statement,
+    info: Option<&PlatformInfo>,
+) -> Option<&'a Artifact> {
+    let info = info?;
+    statement.predicate.artifacts.iter().find(|artifact| {
+        let url_matches = info
+            .url
+            .as_ref()
+            .is_some_and(|url| artifact.url.as_ref() == Some(url));
+        let checksum_matches = info.checksum.as_ref().is_some_and(|checksum| {
+            statement
+                .digest_of(&artifact.name)
+                .is_some_and(|digest| checksum == &format!("sha256:{digest}"))
+        });
+        match (&info.url, &info.checksum) {
+            (Some(_), Some(_)) => url_matches && checksum_matches,
+            (Some(_), None) => url_matches,
+            (None, Some(_)) => checksum_matches,
+            (None, None) => false,
+        }
+    })
+}
+
+fn select_glibc_fallback<'a>(
+    artifacts: &'a [Artifact],
+    host: &HostPlatform,
+    variant: Option<&str>,
+    artifact: &'a Artifact,
+    actual: &str,
+    min: &str,
+) -> Result<&'a Artifact> {
+    if crate::packslip_requirements::meets_minimum(actual, min) != Some(false) {
+        return Ok(artifact);
+    }
+
+    let musl = Host {
+        libc: Some("musl"),
+        ..host.as_host()
+    };
+    match packslip::select_artifact(artifacts, &musl, variant, &FORMAT_PREFERENCE) {
+        Ok(fallback) => {
+            debug!(
+                "{} requires glibc>={min}, but this host has {actual}; taking the static musl build {}",
+                artifact.name, fallback.name
+            );
+            Ok(fallback)
+        }
+        Err(Selection::Ambiguous(a, b)) => bail!(
+            "the packslip lists {a} and {b} as musl fallbacks for {}, and mise will not guess between them",
+            artifact.name
+        ),
+        Err(Selection::NoMatch) => Ok(artifact),
+    }
+}
+
+/// The artifact installed from a stored statement, for scoping resources to it
+/// later. New installs record it explicitly; old installs fall back to host
+/// selection. `None` means only unscoped resources apply.
+pub(crate) fn selected_artifact(
+    statement: &Statement,
+    install_path: &Path,
+    variant: Option<&str>,
+) -> Option<Artifact> {
+    if let Ok(name) = std::fs::read_to_string(install_path.join(SELECTED_ARTIFACT_FILE))
+        && let Some(artifact) = statement
+            .predicate
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == name.trim())
+    {
+        return Some(artifact.clone());
+    }
     select_artifact(
         &statement.predicate.artifacts,
         &HostPlatform::current(),
@@ -913,11 +1008,14 @@ impl PackslipBackend {
                 "verified release time is after the allowed cutoff".into(),
             ));
         }
-        let artifact = match select_artifact(
+        let artifact = match select_compatible_artifact(
             &statement.predicate.artifacts,
             &HostPlatform::current(),
             opts.variant().as_deref(),
-        ) {
+            opts.raw.get("ignore_requirements") == Some("true"),
+        )
+        .await
+        {
             Ok(artifact) => artifact,
             Err(err) if err.is::<NoHostArtifact>() => return Ok(Some(err.to_string())),
             Err(err) => return Err(err),
@@ -1235,13 +1333,22 @@ impl PackslipBackend {
             }
         }
 
-        // Then the one artifact for this host, by what the manifest says.
-        let artifact = select_artifact(
-            &statement.predicate.artifacts,
-            &HostPlatform::current(),
-            opts.variant().as_deref(),
-        )?
-        .clone();
+        // A lockfile pins the exact artifact. Without one, choose the best
+        // compatible artifact for this host, including the glibc fallback.
+        let artifact =
+            match select_locked_artifact(&statement, tv.lock_platforms.get(&platform_key)) {
+                Some(artifact) => artifact,
+                None => {
+                    select_compatible_artifact(
+                        &statement.predicate.artifacts,
+                        &HostPlatform::current(),
+                        opts.variant().as_deref(),
+                        raw_opts.get("ignore_requirements") == Some("true"),
+                    )
+                    .await?
+                }
+            }
+            .clone();
         if vfox_plugin {
             crate::plugins::packslip::validate_artifact(&artifact)?;
         }
@@ -1340,6 +1447,10 @@ impl PackslipBackend {
         file::write(
             tv.install_path().join(STATEMENT_FILE),
             serde_json::to_vec_pretty(&statement)?,
+        )?;
+        file::write(
+            tv.install_path().join(SELECTED_ARTIFACT_FILE),
+            artifact.name.as_bytes(),
         )?;
         // Completions and CLI specs the vendor keeps outside the artifact.
         if !vfox_plugin {
@@ -1564,11 +1675,22 @@ impl Backend for PackslipBackend {
             &verified.published_at,
             before,
         )?;
-        let artifact = select_artifact(
-            &statement.predicate.artifacts,
-            &HostPlatform::from_platform(&target.platform),
-            opts.variant().as_deref(),
-        )
+        let host = HostPlatform::from_platform(&target.platform);
+        let artifact = if target.is_current() {
+            select_compatible_artifact(
+                &statement.predicate.artifacts,
+                &host,
+                opts.variant().as_deref(),
+                raw_opts.get("ignore_requirements") == Some("true"),
+            )
+            .await
+        } else {
+            select_artifact(
+                &statement.predicate.artifacts,
+                &host,
+                opts.variant().as_deref(),
+            )
+        }
         .wrap_err_with(|| format!("selecting the packslip artifact for {}", target.to_key()))?;
         let url = artifact
             .url
@@ -1591,9 +1713,9 @@ impl Backend for PackslipBackend {
         })
     }
 
-    /// `variant` decides which artifact is downloaded, so a lock entry for a
-    /// variant build is not the entry for the plain one. `trust` is kept so
-    /// an install from the lock does not quietly relax to the vendor alone.
+    /// `variant` and `ignore_requirements` can decide which artifact is
+    /// downloaded, so distinct choices need distinct lock entries. `trust` is
+    /// kept so an install from the lock does not quietly relax to the vendor.
     fn resolve_lockfile_options(
         &self,
         request: &ToolRequest,
@@ -1604,6 +1726,9 @@ impl Backend for PackslipBackend {
         let mut options = BTreeMap::new();
         if let Some(variant) = opts.variant() {
             options.insert("variant".to_string(), variant);
+        }
+        if raw_opts.get("ignore_requirements") == Some("true") {
+            options.insert("ignore_requirements".to_string(), "true".to_string());
         }
         if let Some(trust) = opts.trust() {
             options.insert("trust".to_string(), trust);
@@ -2038,6 +2163,41 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
         };
         assert!(select_artifact(&musl_only, &no_libc, None).is_err());
 
+        // A GNU build's declared glibc floor can make the matching static
+        // musl build the compatible choice on an older glibc host.
+        let mut gnu_with_floor = artifacts[2].clone();
+        gnu_with_floor.requires = Some(packslip::model::Requires {
+            glibc_min: Some("2.39".into()),
+            ..Default::default()
+        });
+        let glibc_fallbacks = vec![gnu_with_floor, artifacts[3].clone()];
+        assert_eq!(
+            select_glibc_fallback(
+                &glibc_fallbacks,
+                &linux(),
+                None,
+                &glibc_fallbacks[0],
+                "2.38",
+                "2.39",
+            )
+            .unwrap()
+            .name,
+            "t-linux-x64-musl.tar.xz"
+        );
+        assert_eq!(
+            select_glibc_fallback(
+                &glibc_fallbacks,
+                &linux(),
+                None,
+                &glibc_fallbacks[0],
+                "2.39",
+                "2.39",
+            )
+            .unwrap()
+            .name,
+            "t-linux-x64.tar.xz"
+        );
+
         // A universal or portable artifact fits, and a build for the host
         // beats it; a compressed bare executable is installable.
         let mut universal = artifact("t-darwin.tar.xz", "darwin", "", None, "tar.xz");
@@ -2065,6 +2225,45 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
             "t-linux-x64",
             "what the bin entry's path must be"
         );
+    }
+
+    #[test]
+    fn lock_entry_pins_the_exact_artifact() {
+        let digest = "a".repeat(64);
+        let statement: Statement = serde_json::from_value(serde_json::json!({
+            "_type": "https://in-toto.io/Statement/v1",
+            "subject": [{"name": "t-musl.tar.xz", "digest": {"sha256": digest}}],
+            "predicateType": "https://packslip.dev/release/v1",
+            "predicate": {
+                "project": "github.com/o/r",
+                "version": "1.0.0",
+                "published_at": "2026-09-01T00:00:00Z",
+                "source": {"repo": "https://github.com/o/r", "commit": "cccccccccccccccccccccccccccccccccccccccc"},
+                "artifacts": [
+                    {"name": "t-gnu.tar.xz", "os": "linux", "arch": "x86_64", "libc": "gnu", "size": 1, "url": "https://example.com/t-gnu.tar.xz", "format": "tar.xz", "bin": ["t"]},
+                    {"name": "t-musl.tar.xz", "os": "linux", "arch": "x86_64", "libc": "musl", "size": 1, "url": "https://example.com/t-musl.tar.xz", "format": "tar.xz", "bin": ["t"]}
+                ],
+                "identity": {"scheme": "sigstore-key", "key_id": "key"}
+            }
+        }))
+        .unwrap();
+        let info = PlatformInfo {
+            checksum: Some(format!("sha256:{digest}")),
+            url: Some("https://example.com/t-musl.tar.xz".into()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            select_locked_artifact(&statement, Some(&info))
+                .unwrap()
+                .name,
+            "t-musl.tar.xz"
+        );
+        let mismatched = PlatformInfo {
+            checksum: Some(format!("sha256:{}", "b".repeat(64))),
+            ..info
+        };
+        assert!(select_locked_artifact(&statement, Some(&mismatched)).is_none());
     }
 
     #[test]
