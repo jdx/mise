@@ -593,7 +593,7 @@ impl Install {
                         tr.is_install_satisfied(&install_config),
                     )
                     .await;
-                    if satisfied {
+                    if satisfied && tr.options().force != Some(true) {
                         if let Some(reporter) = reporter {
                             reporter.finish_with_icon(
                                 "already installed".into(),

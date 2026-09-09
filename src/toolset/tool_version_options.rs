@@ -30,6 +30,8 @@ pub(crate) struct CoreToolOptions {
     pub lazy: Option<bool>,
     #[serde(default)]
     pub lazy_bins: Vec<String>,
+    #[serde(default)]
+    pub force: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -253,6 +255,12 @@ impl ResolvedToolOptions {
         {
             options.lazy_bins.clone_from(&self.options.lazy_bins);
         }
+        if self
+            .source_for_key("force")
+            .is_some_and(|source| sources.contains(&source))
+        {
+            options.force = self.options.force;
+        }
         options
     }
 
@@ -283,6 +291,9 @@ impl ResolvedToolOptions {
         if !options.lazy_bins.is_empty() {
             self.sources.insert("lazy_bins".to_string(), source);
         }
+        if options.force.is_some() {
+            self.sources.insert("force".to_string(), source);
+        }
     }
 }
 
@@ -300,6 +311,7 @@ impl std::hash::Hash for ToolOptions {
         self.depends.hash(state);
         self.lazy.hash(state);
         self.lazy_bins.hash(state);
+        self.force.hash(state);
 
         // Hash install_env in sorted order for deterministic hashing
         let mut install_env_sorted: Vec<_> = self.install_env.iter().collect();
@@ -351,6 +363,7 @@ impl ToolOptions {
             && self.install_env.is_empty()
             && self.lazy.is_none()
             && self.lazy_bins.is_empty()
+            && self.force.is_none()
             && self.opts.is_empty()
     }
 
@@ -417,6 +430,9 @@ impl ToolOptions {
         if !overrides.lazy_bins.is_empty() {
             self.lazy_bins.clone_from(&overrides.lazy_bins);
         }
+        if overrides.force.is_some() {
+            self.force = overrides.force;
+        }
     }
 
     pub(crate) fn insert_option(&mut self, key: String, value: toml::Value) -> Result<(), String> {
@@ -470,6 +486,14 @@ impl ToolOptions {
                 }
                 Ok(true)
             }
+            "force" => {
+                self.force = Some(
+                    value
+                        .as_bool()
+                        .ok_or_else(|| "force must be a boolean".to_string())?,
+                );
+                Ok(true)
+            }
             "postinstall" => {
                 let script = value
                     .as_str()
@@ -520,6 +544,9 @@ impl ToolOptions {
         }
         if key == "lazy_bins" {
             return !self.lazy_bins.is_empty();
+        }
+        if key == "force" {
+            return self.force.is_some();
         }
         if let Some(env_key) = key.strip_prefix("install_env.") {
             return self.install_env.contains_key(env_key);
@@ -1479,6 +1506,34 @@ mod tests {
             .unwrap();
         base.apply_overrides(&overrides);
         assert_eq!(base.lazy, Some(false));
+    }
+
+    #[test]
+    fn test_force_option_parse_and_override() {
+        let mut base = ToolVersionOptions::default();
+        base.insert_option("force".into(), toml::Value::Boolean(true))
+            .unwrap();
+        assert_eq!(base.force, Some(true));
+        assert!(base.contains_key("force"));
+        assert!(!base.is_empty());
+
+        let mut overrides = ToolVersionOptions::default();
+        overrides
+            .insert_option("force".into(), toml::Value::Boolean(false))
+            .unwrap();
+        base.apply_overrides(&overrides);
+        assert_eq!(base.force, Some(false));
+    }
+
+    #[test]
+    fn test_force_option_rejects_non_boolean() {
+        let mut options = ToolVersionOptions::default();
+        assert_eq!(
+            options
+                .insert_option("force".into(), toml::Value::String("yes".into()))
+                .unwrap_err(),
+            "force must be a boolean"
+        );
     }
 
     #[test]

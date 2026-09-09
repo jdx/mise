@@ -164,6 +164,23 @@ precedence. Registry entries may set this option for tools known to follow
 semantic versioning; users can set `version_order = "source"` to restore the
 backend's default ordering.
 
+### Force reinstall
+
+Set `force = true` on a tool to have it always reinstall, even when a bare
+`mise install` would otherwise consider it already satisfied. This is the
+per-tool equivalent of [`mise install --force`](/cli/install.html), scoped to
+just that tool:
+
+```toml
+[tools]
+node = { version = "24", force = true }
+```
+
+Combine with [`lazy = true`](/dev-tools/shims.html#lazy-tools) to keep the
+tool out of a bare `mise install` entirely while still always reinstalling it
+fresh whenever it is installed, whether by a lazy bootstrap shim or an
+explicit `mise install node`.
+
 ### Tool postinstall commands
 
 Run a command immediately after a tool finishes installing by adding a `postinstall` field to that tool's configuration. This is separate from `[hooks].postinstall` and applies only when that specific tool is installed.

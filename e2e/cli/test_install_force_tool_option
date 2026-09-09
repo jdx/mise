@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+rm -rf "$MISE_DATA_DIR/plugins/tiny"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
+
+cat >mise.toml <<'EOF'
+[tools]
+tiny = { version = "1.0.0", force = true }
+dummy = "1.0.0"
+EOF
+
+mise install
+
+tiny_marker="$MISE_DATA_DIR/installs/tiny/1.0.0/force-marker"
+dummy_marker="$MISE_DATA_DIR/installs/dummy/1.0.0/force-marker"
+
+touch "$tiny_marker" "$dummy_marker"
+
+# A bare install reinstalls only the tool with force=true, leaving the other alone.
+mise install
+assert_fail "test -f '$tiny_marker'"
+assert "test -f '$dummy_marker'"

@@ -908,6 +908,11 @@
                   },
                   "uniqueItems": true
                 },
+                "force": {
+                  "description": "always reinstall this tool version, even if it is already installed",
+                  "type": "boolean",
+                  "default": false
+                },
                 "postinstall": {
                   "description": "command to run after tool installation",
                   "type": "string"

@@ -772,7 +772,7 @@ impl Toolset {
             } else {
                 mpr.add_with_options(&tv.style(), opts.dry_run)
             }),
-            force: opts.force,
+            force: opts.force || tr.options().force == Some(true),
             dry_run: opts.dry_run,
             locked: config.invocation_locked_for(tr.source(), opts.locked)
                 || config.tool_config_locked(tr.source()),
