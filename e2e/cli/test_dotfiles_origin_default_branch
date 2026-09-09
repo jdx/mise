@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 # Connecting takes the repository's own default branch, and never mistakes a
 # missing branch for an empty repository.
 require_cmd git
