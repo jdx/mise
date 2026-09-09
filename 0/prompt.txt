@@ -1,13 +1,1 @@
-[https://github.com/jdx/mise/discussions/12998](https://github.com/jdx/mise/discussions/12998)
-
----
-
-should it use a wildcard for rb files?
-
----
-
-post a reply to the user's discussion
-
----
-
 change the pr to use the wildcard
