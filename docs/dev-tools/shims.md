@@ -100,9 +100,11 @@ declare their command names with `lazy_bins`:
 
 Run `mise reshim` after editing a lazy declaration directly. Commands such as
 `mise use` that update tool configuration rebuild the shim farm automatically.
-Invoking a lazy shim installs only its configured provider and then executes
-it. This is independent of `not_found_auto_install`; an explicit project tool
-selection is never bypassed by a lower-precedence lazy declaration.
+Invoking a lazy shim installs its configured provider, plus any configured tools
+that provider [depends](/dev-tools/#tool-dependencies) on that are not installed
+yet, and then executes it. Nothing else in the toolset is installed. This is
+independent of `not_found_auto_install`; an explicit project tool selection is
+never bypassed by a lower-precedence lazy declaration.
 
 A bare `mise install` skips missing lazy tools. Pass `--include-lazy` to install
 all configured tools, including lazy declarations, or name one explicitly, such

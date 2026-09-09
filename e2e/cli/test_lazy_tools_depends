@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+export MISE_SHIMS_DIR="$HOME/.local/share/mise/user-shims"
+export PATH="$MISE_SHIMS_DIR:$PATH"
+
+# A lazy tool's dependency is commonly lazy itself, so `mise install` never
+# materializes it. First-use dispatch must install the whole missing dependency
+# closure: the needs-dummy install script fails unless dummy is already on disk.
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools.dummy]
+lazy = true
+lazy_bins = ["dummy"]
+version = "2.0.0"
+
+[tools.needs-dummy]
+depends = ["dummy"]
+lazy = true
+lazy_bins = ["needs-dummy"]
+version = "1.0.0"
+EOF
+
+mise reshim
+mise install
+assert_fail "test -d '$MISE_DATA_DIR/installs/needs-dummy/1.0.0'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/2.0.0'"
+
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 needs-dummy --version" "needs-dummy v1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/needs-dummy/1.0.0"
+
+# `mise x` dispatches through the same lazy provider path.
+mise uninstall --all needs-dummy
+mise uninstall --all dummy
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- needs-dummy --version" "needs-dummy v1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
+
+# An already-installed dependency is not reinstalled or duplicated.
+mise uninstall --all needs-dummy
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 needs-dummy --version" "needs-dummy v1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
+
+# The dependency preflight requires every configured version of a dependency, so
+# all of them have to be installed, not just the first one that matches.
+mise uninstall --all needs-dummy
+mise uninstall --all dummy
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = [
+  { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] },
+  { version = "2.0.0", lazy = true, lazy_bins = ["dummy"] },
+]
+needs-dummy = { version = "1.0.0", depends = ["dummy"], lazy = true, lazy_bins = ["needs-dummy"] }
+EOF
+
+mise reshim
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 needs-dummy --version" "needs-dummy v1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
