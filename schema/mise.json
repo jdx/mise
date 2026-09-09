@@ -4738,6 +4738,14 @@
                   "key": {
                     "type": "string"
                   },
+                  "path": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Dictionary keys below the preference key; omitted to replace the whole value"
+                  },
                   "host": {
                     "type": "string",
                     "enum": ["any", "current"],

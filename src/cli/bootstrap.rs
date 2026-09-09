@@ -3828,7 +3828,7 @@ impl BootstrapStatus {
             for req in &defaults {
                 report.row(
                     "defaults",
-                    format!("{} {}", req.display_domain(), req.key),
+                    format!("{} {}", req.display_domain(), req.display_key()),
                     "",
                     format!("skipped ({reason})"),
                     false,
@@ -3850,7 +3850,7 @@ impl BootstrapStatus {
             };
             report.row(
                 "defaults",
-                format!("{} {}", s.request.display_domain(), s.request.key),
+                format!("{} {}", s.request.display_domain(), s.request.display_key()),
                 current.clone(),
                 state,
                 missing,
@@ -3858,6 +3858,7 @@ impl BootstrapStatus {
             json_entries.push(json!({
                 "domain": s.request.domain,
                 "host": s.request.host,
+                "path": s.request.path,
                 "key": s.request.key,
                 "value": s.request.value.to_json(),
                 "current": current,
@@ -4766,6 +4767,7 @@ fn unavailable_defaults_json(
             json!({
                 "domain": req.domain,
                 "host": req.host,
+                "path": req.path,
                 "key": req.key,
                 "value": req.value.to_json(),
                 "state": "skipped",
@@ -4793,7 +4795,7 @@ impl BootstrapMacosDefaultsStatus {
                     for req in &defaults {
                         rows.push(vec![
                             req.display_domain(),
-                            req.key.clone(),
+                            req.display_key(),
                             req.value.to_string(),
                             "".to_string(),
                             format!("skipped ({reason})"),
@@ -4819,6 +4821,7 @@ impl BootstrapMacosDefaultsStatus {
                         json_entries.push(json!({
                             "domain": s.request.domain,
                             "host": s.request.host,
+                            "path": s.request.path,
                             "key": s.request.key,
                             "value": s.request.value.to_json(),
                             "current": current,
@@ -4827,7 +4830,7 @@ impl BootstrapMacosDefaultsStatus {
                     } else {
                         rows.push(vec![
                             s.request.display_domain(),
-                            s.request.key.clone(),
+                            s.request.display_key(),
                             s.request.value.to_string(),
                             current,
                             state.to_string(),
@@ -5087,6 +5090,7 @@ mod tests {
             domain: "com.mise.test".into(),
             key: "Settings".into(),
             host: HostScope::Current,
+            path: Some(vec!["nested".into(), "enabled".into()]),
             value: DefaultsValue::Bool(false),
         };
         let output = super::unavailable_defaults_json(&[request], "macOS only");
@@ -5099,6 +5103,7 @@ mod tests {
                     "domain": "com.mise.test",
                     "key": "Settings",
                     "host": "current",
+                    "path": ["nested", "enabled"],
                     "value": false,
                     "state": "skipped",
                 }],

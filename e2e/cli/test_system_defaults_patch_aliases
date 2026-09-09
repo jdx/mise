@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Equivalent global-domain names must not turn local overrides into overlaps.
+if [[ $(uname) != Darwin ]]; then
+  exit 0
+fi
+require_cmd jq
+
+write_patch() {
+  cat >"$1" <<EOF_CONFIG
+[[bootstrap.macos.defaults_entries]]
+domain = "$2"
+key = "_mise_patch_alias_test_$$"
+path = ["nested", "enabled"]
+value = $3
+EOF_CONFIG
+}
+
+for alias in -g -globalDomain; do
+  write_patch "$MISE_CONFIG_DIR/config.toml" "$alias" true
+  write_patch mise.toml NSGlobalDomain false
+  assert 'mise bootstrap macos defaults status --json | jq -c "[.macos_defaults.entries[].value]"' '[false]'
+  write_patch "$MISE_CONFIG_DIR/config.toml" NSGlobalDomain true
+  write_patch mise.toml "$alias" false
+  assert 'mise bootstrap macos defaults status --json | jq -c "[.macos_defaults.entries[].value]"' '[false]'
+done
+
+# Aliases still share ownership: an ancestor patch conflicts with a descendant.
+write_patch "$MISE_CONFIG_DIR/config.toml" -g true
+cat >mise.toml <<EOF_CONFIG
+[[bootstrap.macos.defaults_entries]]
+domain = "NSGlobalDomain"
+key = "_mise_patch_alias_test_$$"
+path = ["nested"]
+value = { enabled = false }
+EOF_CONFIG
+assert_fail 'mise bootstrap macos defaults status' 'overlapping macOS defaults declarations'
