@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2354HKC2TZSTW24613GN230",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-arm32-asset-selection",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/platform.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14583,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 794496,
+    "output_tokens": 1282,
+    "api_call_count": 4
+  }
+}
