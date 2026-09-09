@@ -4,6 +4,7 @@ use console::style;
 #[cfg(windows)]
 use indoc::formatdoc;
 use self_update::backends::github::Update;
+use self_update::update::ReleaseAsset;
 use self_update::{VersionStatus, cargo_crate_version};
 
 use crate::cli::version::{ARCH, OS, SelfUpdateSource};
@@ -21,6 +22,33 @@ use std::process::Command;
 use std::time::Duration;
 
 const AUTO_UPDATE_REEXEC_ENV: &str = "__MISE_AUTO_UPDATE_REEXEC";
+
+fn release_archive_name(version: &str, os: &str, arch: &str, build_target: &str) -> String {
+    // Rust reports every 32-bit ARM target as `arm`, but our releases use `armv7`.
+    // Preserve the build's ARM variant rather than upgrading an unsupported ARM CPU to v7.
+    let arch = if arch == "arm" {
+        build_target.split('-').next().unwrap_or(arch)
+    } else {
+        arch
+    };
+    let libc = if build_target.contains("-musl") {
+        "-musl"
+    } else {
+        ""
+    };
+    let extension = if os == "windows" { "zip" } else { "tar.gz" };
+    format!("mise-{version}-{os}-{arch}{libc}.{extension}")
+}
+
+fn release_archive_asset(assets: &[ReleaseAsset], archive_name: &str) -> Option<ReleaseAsset> {
+    // The default matcher falls back to architecture/OS substrings when the requested
+    // archive is missing, which can select a raw binary or another architecture.
+    assets
+        .iter()
+        .find(|asset| asset.name() == archive_name)
+        .cloned()
+}
+
 #[derive(Debug, Default, serde::Deserialize)]
 struct InstructionsToml {
     message: Option<String>,
@@ -523,20 +551,15 @@ impl SelfUpdate {
             return Ok(VersionStatus::UpToDate(current_version));
         }
 
-        let target = format!("{}-{}", *OS, *ARCH);
-        #[cfg(target_env = "musl")]
-        let target = format!("{target}-musl");
+        let target = release_archive_name(&v, &OS, &ARCH, crate::build_time::TARGET);
         // Always set release_tag to ensure we download the correct release
         // (fixes semver mismatch across year boundaries, e.g. 2025.x -> 2026.x)
         update.release_tag(&v);
-        #[cfg(windows)]
-        let target = format!("mise-{v}-{target}.zip");
-        #[cfg(not(windows))]
-        let target = format!("mise-{v}-{target}.tar.gz");
         let status = update
             .verifying_keys([*include_bytes!("../../zipsign.pub")])
             .show_download_progress(true)
             .target(&target)
+            .asset_matcher(move |assets| release_archive_asset(assets, &target))
             .no_confirm(settings.is_ok_and(|s| s.yes) || self.yes)
             .build()?
             .update()?;
@@ -743,6 +766,128 @@ impl SelfUpdate {
 
         debug!("macOS binary signature verified successfully");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod release_asset_tests {
+    use super::*;
+    use self_update::update::Release;
+
+    #[test]
+    fn archive_names_match_release_platforms() {
+        for (os, arch, build_target, platform) in [
+            (
+                "linux",
+                "arm",
+                "armv7-unknown-linux-gnueabihf",
+                "linux-armv7.tar.gz",
+            ),
+            (
+                "linux",
+                "arm",
+                "armv7-unknown-linux-musleabi",
+                "linux-armv7-musl.tar.gz",
+            ),
+            (
+                "linux",
+                "arm",
+                "arm-unknown-linux-gnueabi",
+                "linux-arm.tar.gz",
+            ),
+            (
+                "linux",
+                "arm64",
+                "aarch64-unknown-linux-gnu",
+                "linux-arm64.tar.gz",
+            ),
+            (
+                "linux",
+                "arm64",
+                "aarch64-unknown-linux-musl",
+                "linux-arm64-musl.tar.gz",
+            ),
+            (
+                "linux",
+                "x64",
+                "x86_64-unknown-linux-gnu",
+                "linux-x64.tar.gz",
+            ),
+            (
+                "linux",
+                "x64",
+                "x86_64-unknown-linux-musl",
+                "linux-x64-musl.tar.gz",
+            ),
+            (
+                "macos",
+                "arm64",
+                "aarch64-apple-darwin",
+                "macos-arm64.tar.gz",
+            ),
+            ("macos", "x64", "x86_64-apple-darwin", "macos-x64.tar.gz"),
+            (
+                "windows",
+                "arm64",
+                "aarch64-pc-windows-msvc",
+                "windows-arm64.zip",
+            ),
+            (
+                "windows",
+                "x64",
+                "x86_64-pc-windows-msvc",
+                "windows-x64.zip",
+            ),
+        ] {
+            assert_eq!(
+                release_archive_name("v2026.9.3", os, arch, build_target),
+                format!("mise-v2026.9.3-{platform}"),
+                "{build_target}",
+            );
+        }
+    }
+
+    fn release_with_assets(names: &[&str]) -> Release {
+        Release::builder()
+            .version("2026.9.3")
+            .assets(names.iter().map(|name| ReleaseAsset::new(*name, "")))
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn armv7_selects_its_archive_with_arm64_and_raw_binaries_present() {
+        let release = release_with_assets(&[
+            "mise-v2026.9.3-linux-arm64",
+            "mise-v2026.9.3-linux-arm64.tar.gz",
+            "mise-v2026.9.3-linux-armv7",
+            "mise-v2026.9.3-linux-armv7-musl.tar.gz",
+            "mise-v2026.9.3-linux-armv7.tar.gz",
+        ]);
+        for build_target in [
+            "armv7-unknown-linux-gnueabihf",
+            "armv7-unknown-linux-musleabi",
+        ] {
+            let name = release_archive_name("v2026.9.3", "linux", "arm", build_target);
+            let asset = release_archive_asset(release.assets(), &name).unwrap();
+            assert_eq!(asset.name(), name);
+        }
+    }
+
+    #[test]
+    fn missing_archive_does_not_fall_back_to_other_assets() {
+        let release = release_with_assets(&[
+            "mise-v2026.9.3-linux-arm64",
+            "mise-v2026.9.3-linux-arm64.tar.gz",
+            "mise-v2026.9.3-linux-armv7",
+            "mise-v2026.9.3-linux-armv7-musl.tar.gz",
+            "mise-v2026.9.3-linux-armv7.tar.xz",
+            "mise-v2026.9.3-linux-armv7.tar.gz.sig",
+            "mise-v2026.9.2-linux-armv7.tar.gz",
+        ]);
+        let name =
+            release_archive_name("v2026.9.3", "linux", "arm", "armv7-unknown-linux-gnueabihf");
+        assert!(release_archive_asset(release.assets(), &name).is_none());
     }
 }
 
