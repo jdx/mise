@@ -23,6 +23,11 @@ value = 2
 EOF_CONFIG
 assert_contains 'mise bootstrap macos defaults status' '(current host)'
 if [[ $(uname) != Darwin ]]; then
+  require_cmd jq
+  assert 'mise bootstrap macos defaults status --json | jq ".macos_defaults.entries | length"' 3
+  assert 'mise bootstrap macos defaults status --json | jq -r ".macos_defaults.entries[0].host"' current
+  mise bootstrap status --json | jq -c .macos_defaults >aggregate.json
+  assert 'mise bootstrap macos defaults status --json | jq -c .macos_defaults' "$(cat aggregate.json)"
   assert_contains 'mise bootstrap macos defaults status' skipped
   assert_succeed 'mise bootstrap macos defaults apply --yes'
 else

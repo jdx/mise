@@ -3836,19 +3836,7 @@ impl BootstrapStatus {
             }
             report.json.insert(
                 "macos_defaults".to_string(),
-                json!({
-                    "available": false,
-                    "reason": reason,
-                    "entries": defaults.iter().map(|req| {
-                        json!({
-                            "domain": req.domain,
-                            "host": req.host,
-                            "key": req.key,
-                            "value": req.value.to_json(),
-                            "state": "skipped",
-                        })
-                    }).collect::<Vec<_>>(),
-                }),
+                unavailable_defaults_json(&defaults, &reason),
             );
             return Ok(());
         }
@@ -4767,6 +4755,25 @@ impl BootstrapMacosDefaultsApply {
     }
 }
 
+fn unavailable_defaults_json(
+    defaults: &[system::defaults::DefaultsRequest],
+    reason: &str,
+) -> serde_json::Value {
+    json!({
+        "available": false,
+        "reason": reason,
+        "entries": defaults.iter().map(|req| {
+            json!({
+                "domain": req.domain,
+                "host": req.host,
+                "key": req.key,
+                "value": req.value.to_json(),
+                "state": "skipped",
+            })
+        }).collect::<Vec<_>>(),
+    })
+}
+
 impl BootstrapMacosDefaultsStatus {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
@@ -4780,7 +4787,7 @@ impl BootstrapMacosDefaultsStatus {
                 if self.json {
                     json_out.insert(
                         "macos_defaults".to_string(),
-                        json!({ "available": false, "reason": reason }),
+                        unavailable_defaults_json(&defaults, &reason),
                     );
                 } else {
                     for req in &defaults {
@@ -5072,6 +5079,32 @@ mod tests {
     use super::{bootstrap_from_child_args, select_remote_inventory};
     use crate::cli::{Cli, Commands};
     use crate::system::remote;
+
+    #[test]
+    fn unavailable_defaults_json_retains_configured_entries() {
+        use crate::system::defaults::{DefaultsRequest, DefaultsValue, HostScope};
+        let request = DefaultsRequest {
+            domain: "com.mise.test".into(),
+            key: "Settings".into(),
+            host: HostScope::Current,
+            value: DefaultsValue::Bool(false),
+        };
+        let output = super::unavailable_defaults_json(&[request], "macOS only");
+        assert_eq!(
+            output,
+            serde_json::json!({
+                "available": false,
+                "reason": "macOS only",
+                "entries": [{
+                    "domain": "com.mise.test",
+                    "key": "Settings",
+                    "host": "current",
+                    "value": false,
+                    "state": "skipped",
+                }],
+            })
+        );
+    }
 
     #[test]
     fn remote_adopt_parses_and_conflicts_with_source() {
