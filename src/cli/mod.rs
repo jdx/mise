@@ -841,6 +841,13 @@ impl Cli {
     }
 
     async fn run_inner(args: &Vec<String>) -> Result<()> {
+        // Git invokes this exact internal form while holding repository locks.
+        // Avoid project configuration, shims, and normal CLI initialization.
+        if args.len() == 5 && args[1..4] == ["token", "github", "--git-credential"] {
+            crate::env::ARGS.write().unwrap().clone_from(args);
+            Settings::init_git_credential()?;
+            return token::git_credential::run(&args[4]);
+        }
         // usage-rs's generated `parse()` intercepts this, but mise never calls
         // `parse()` — it uses `parse_from_argv` after shim/naked-run rewriting.
         // Handle the hidden completion protocol here, before config or tools load.
@@ -911,6 +918,13 @@ impl Cli {
         // avoid it, it only defers it: `BASE_SETTINGS` stays empty, so the next `Settings::get()`
         // repeats the same failure and unwraps it.
         measure!("settings", { Settings::try_get() })?;
+        // Git may hold installation locks while asking for credentials. Do not
+        // refresh registries, migrate, or auto-update from its helper process.
+        if let Some(Commands::Token(token)) = &cli.command
+            && let Some(result) = token.run_git_credential()
+        {
+            return result;
+        }
         let auto_update_command_eligible = !print_version
             && cli
                 .command

@@ -359,7 +359,7 @@ jobs:
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:a8468e3c31eb2ec25ba1d74cda9960dfe5d309d676c251f8432c74a283704b74
+    container: ghcr.io/jdx/mise:rpm@sha256:ce5434e65d46d9892a2520249d938e7f7ba830cd3a120936f5a564ccc6fbe301
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
@@ -383,7 +383,7 @@ jobs:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
-    container: ghcr.io/jdx/mise:deb@sha256:d952c001014be8c424c1f3b0b04e0f57a4ee4138e25a01ec383f2cb91c8cb8e1
+    container: ghcr.io/jdx/mise:deb@sha256:b48bc6d79a789db8e83f5f9daad9ba1e8d7829b714a43032e21f78214388c977
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -592,7 +592,6 @@ jobs:
         run: mise x -- scripts/publish-release.sh
         env:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
 
   # !cancelled() replaces the implicit success() gate. Tag publishes skip
@@ -673,6 +672,7 @@ jobs:
       - name: Publish the CLI specification and completions
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: gh release upload "$GITHUB_REF_NAME" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
       # `out: .` keeps the bundle beside mise.usage.kdl. The action defaults to
       # writing it under packslip/, and an artifact holding files at two
@@ -793,6 +793,7 @@ jobs:
       - name: Download draft release assets
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
         run: |
           mkdir -p release-assets
@@ -844,6 +845,7 @@ jobs:
       - name: Publish the CLI specification and completions
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
         run: gh release upload "$TAG" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
       - uses: jdx/packslip@a0d434ad57571c62dbd0ab5095b4eff607a71fd3 # v1.1.1

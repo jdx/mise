@@ -33,7 +33,7 @@ which updates managed tools.
 For installations that support `mise self-update`, automatic updates can be enabled globally:
 
 ```sh
-mise settings set auto_update true
+mise settings auto_update=true
 ```
 
 mise then periodically checks before eligible interactive commands, installs a newer release without

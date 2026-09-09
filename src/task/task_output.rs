@@ -36,7 +36,15 @@ impl TaskOutput {
     /// `OutputHandler::output`), so it passes through unchanged.
     pub(crate) fn style_only(self) -> TaskOutput {
         match self {
-            TaskOutput::Quiet => TaskOutput::Interleave,
+            TaskOutput::Quiet => {
+                deprecated_at!(
+                    "2026.9.3",
+                    "2027.9.3",
+                    "task-output-quiet",
+                    "The quiet task output mode is deprecated. Use output=\"interleave\" with task.quiet=true or a per-task quiet=true, or use --output interleave --quiet."
+                );
+                TaskOutput::Interleave
+            }
             other => other,
         }
     }

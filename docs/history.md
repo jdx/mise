@@ -1,486 +1,426 @@
 ---
-description: "Track, inspect, synchronize, and restore dotfiles with mise's Git-backed history."
+description: "Save, inspect, restore, and share the history of your tracked dotfiles."
 ---
 
 # Dotfiles history
 
-mise automatically commits changes to files you explicitly track, then
-synchronizes those same commits with your origin. Edit native files with
-your editor or an agent; there is no separate source format to maintain.
+mise saves versions of your tracked configuration files in Git so you can
+inspect changes and restore an earlier version. History stays local until
+you connect a remote repository for sharing.
 
-Only exact files and directories declared with `mode = "track"` are enrolled.
-Directories include new descendants, subject to exclusions. The global mise
-configuration, `dotfiles.root`, deployment outputs, template sources, and
-symlink targets are not automatically tracked. A tracked symlink records the
-link itself; enroll its target separately if you want its contents in history.
-
-`mise bootstrap dotfiles history` browses the ordinary Git history. Automatic
-saves and explicitly labeled before/after operation boundaries are commits
-in that same history, retained indefinitely.
-
-A checkpoint holds files, not machine state. It does not journal other mise
-activity and does not reverse system effects: restoring a package
-declaration does not uninstall a package, and restoring a service definition
-does not restore whether that service was running. Applying configuration
-stays an explicit bootstrap action.
-
-```sh
-mise bootstrap dotfiles track ~/.zshrc ~/.config/hypr   # adopt files where they are
-mise bootstrap dotfiles history                                            # newest first
-mise bootstrap dotfiles history --path ~/.config/hypr/bindings.lua        # only where that file changed
-mise bootstrap dotfiles history diff                                       # what changed by hand since the latest checkpoint
-mise bootstrap dotfiles save --description "before the theme change"
-```
-
-The bare repository lives under `$MISE_STATE_DIR/history/repo.git`, separate
-from your live files. mise does not create `.git` in your home or application
-configuration directories. Without an origin it stays local. Connecting an
-origin makes **all committed versions** eligible for synchronization, including
-commits made before connecting. There is no per-file local-only history mode.
-
-Untracking stops future capture and removes the path from future committed
-trees, without deleting its live contents. It does not erase previously
-committed versions.
-
-This also applies inside `capture -- command`: if the command untracks a file,
-the outcome commit does not save its later contents. The before commit remains
-available, and interrupted-command recovery does not enroll the file again.
-
-## What a checkpoint records
-
-Each commit contains the tracked files plus minimal repository metadata for
-portable paths, enrollment, variants, encryption, and permissions. Files remain
-ordinary Git tree entries, not a wrapper snapshot or filtered publication copy.
-
-Symlinks are stored as links and nested Git repositories as pointers. Oversized
-files, special files, and unreadable paths are reported rather than silently
-claimed as saved. If a file cannot be captured, its previously saved version
-remains in the tree while other files can still be saved; this does not claim
-that its current contents were captured. Explicit exclusions still remove it
-from future trees. Encryption failures stop capture instead of storing plaintext.
-Operation boundaries carry labels and pairing information;
-raw arguments, environment contents, and untracked recovery copies are not
-published as operation metadata.
-
-`mise bootstrap dotfiles history show <ref>` shows a saved version; `--files`
-lists its files and `--json` returns the record.
-
-### Descriptions from an agent
-
-`settings.history.describe_command` names a command that describes the
-checkpoints the watcher saves. It gets one JSON object on stdin, `uuid`,
-`trigger`, the computed `description`, the changed paths that are not
-excluded (`added`, `modified`, `removed`), and `diff`, a unified diff of the
-changed unencrypted files (at most 64 KiB, `diff_truncated` says
-when it was cut), and prints one line of at most 200 characters, which
-becomes the description (`description_source: command`). With Claude Code:
-
-```toml
-[settings]
-history.describe_command = "claude -p --output-format text --no-session-persistence 'Describe this change to my configuration files in one line of at most 120 characters, plain text, no quotes.'"
-```
-
-The checkpoint is saved before the command runs and keeps its computed
-description when the command fails, prints nothing, or takes longer than 30
-seconds. The command runs once per checkpoint the watcher saved, one at a
-time, never per filesystem event or retry, and never with a shell
-interpolation of file contents (the JSON is its stdin). A private file
-(`*.local.toml`, a credential store) is never named, and an encrypted file never has its contents sent.
-
-## Referring to checkpoints
-
-Commands take a numeric ID, `latest`, `latest~N`, or `commit:<sha>` (a full hash
-or an unambiguous prefix). Plain numbers always mean checkpoint IDs, never
-commit prefixes; nonnumeric unambiguous commit prefixes also work directly. With
-`--path`, `latest~N` counts only the checkpoints where that path changed, so
-`mise bootstrap dotfiles history show latest~1 --path ~/.zshrc` is the state before its most
-recent change however many other checkpoints came in between.
-
-Numeric ids are local handles and can change when the index is rebuilt.
-Git commit identities are stable.
-
-Commit metadata contains only portable file information and operation labels.
-Raw command arguments, environment values, and temporary recovery copies are
-not part of the committed history.
-
-## Comparing
-
-```sh
-mise bootstrap dotfiles history diff                        # working tree against the latest checkpoint
-mise bootstrap dotfiles history diff 12                     # what checkpoint 12 changed
-mise bootstrap dotfiles history diff 11 12 --patch --path ~/.config/hypr
-mise bootstrap dotfiles history diff --exit-code            # exit 1 when something differs
-```
+If you are starting with your first file, follow the
+[dotfiles guide](/dotfiles.html#tracking-files-in-place) to track it and
+start automatic saves. This page covers everyday history commands, sharing,
+and the detailed behavior to consult when something needs attention.
 
 ## Saving
 
-`mise bootstrap dotfiles save` records a checkpoint now. It fails when nothing could be
-saved — git missing, history disabled, a path that is not tracked — so a
-script or an agent gets a trustworthy answer; `--best-effort` turns that into
-a warning for `set -e` update scripts. Saving again without changes records
-nothing, while a save with `--description`, `--label`, or `--task` always does.
-
-A file tracked with `autosave = false` is a **manual-save** file: automatic
-checkpoints carry its last saved version forward, and only
-`mise bootstrap dotfiles save <path>` (or an operation that names it) promotes what is on
-disk. `mise bootstrap dotfiles history diff --path <file>` shows saved against live. The last saved version is in the ordinary parent commit, not a separate
-promotion history.
-
-## Rolling back
+A **checkpoint** is a saved version of your tracked files, stored as a Git
+commit. To save the current contents of one file:
 
 ```sh
-mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua        # its most recent saved version that differs from disk
-mise bootstrap dotfiles rollback ~/.zshrc --to 42                    # that checkpoint's version
-mise bootstrap dotfiles rollback --to latest~3 --all --dry-run       # everything the checkpoint covers
-mise bootstrap dotfiles undo                                         # reverse the newest tracked-file operation
+mise bootstrap dotfiles save ~/.zshrc
 ```
 
-A rollback is planned first: for every selected path, `write` when the
-checkpoint holds a different version, `delete` when the checkpoint knows the
-path was absent, `unchanged`, `skip` when the checkpoint never covered or
-omitted it, or `conflict` when the path changed type (a file became a
-directory or a symlink) — conflicts need `--force`. Without `--to`, a
-checkpoint that knew the path was absent counts as a version to return to,
-so a file created since rolls back to "missing". `--dry-run` stops after the
-plan.
-
-Rolling back a parent directory leaves unrecorded empty folders alone: Git
-does not record empty directories.
-
-Then the current state of the affected paths is saved in a protective
-checkpoint (`rollback-before`); the plan is verified against the working tree
-again (an editor may have written meanwhile) and every path about to change
-must be captured in that checkpoint as it is now, or the rollback stops
-without touching anything. Files are written one at a time, each journaled
-and recorded as affected as soon as it is written, and each checked once
-more right before it is replaced (a file that appeared meanwhile stops the
-rollback there). Only afterwards do `[history.reload]` commands run — once per matching
-glob, resolved from the system and global configuration before the operation
-began, so nothing a rollback writes can change which commands run:
-
-```toml
-[history.reload]
-"~/.config/hypr/**" = "hyprctl reload"
-```
-
-A rollback is a new forward change: the outcome is a new checkpoint, the
-version you left is still recoverable, and nothing is rewritten. Restoring a
-mise configuration file never runs bootstrap; the outcome says when
-declarations may differ from the applied setup.
-
-`mise bootstrap dotfiles undo` restores the tracked paths an operation changed,
-using its before commit and leaving unrelated work alone. Undo itself creates
-a new commit. Untracked files have no historical undo: temporary recovery
-copies exist only to complete or safely recover interrupted writes, and are
-deleted afterwards. Unresolved recovery is never expired; concurrent edits are
-preserved and reported for action.
-
-When bootstrap changes a tracked file with `autosave = false`, its actual
-pre-operation contents are saved in the ordinary before history. Unrelated
-manual edits stay unsaved. Repeated writes within the operation preserve the
-first preimage, and encrypted preimages are encrypted before entering Git.
-
-Ordinary bootstrap deployments warn and continue if a temporary preimage cannot
-be captured, for example for an oversized destination. Such a write cannot be
-automatically recovered after interruption. History-driven pull, rollback, and
-undo instead refuse writes without the required recovery data. Disabling history
-recording also removes ordinary bootstrap's dependency on the history store;
-explicit history-driven writes retain their recovery safeguards.
-
-Run `mise bootstrap dotfiles recover` to retry interrupted writes safely. If
-later edits prevent recovery, inspect the reported paths first. You can then
-explicitly accept the live files with
-`mise bootstrap dotfiles recover <operation> --keep-current`. After confirmation,
-this discards only that operation's temporary recovery copies; it does not
-change the live files or erase committed history. Ordinary retries keep both
-the later edits and recovery copies when they cannot proceed safely.
-
-## Capturing an external command
+To save all tracked files with a description:
 
 ```sh
-mise bootstrap dotfiles capture --label "omarchy update" -- omarchy-update
-mise bootstrap dotfiles history --label "omarchy update"
-mise bootstrap dotfiles history diff --operation --patch
-mise bootstrap dotfiles history diff 42 --operation --patch
+mise bootstrap dotfiles save --description "before changing my theme"
 ```
 
-`capture` saves tracked files before and after the command and records the link
-between those checkpoints, the label, and whether the command succeeded. It runs
-the command directly with inherited input, output, and environment; raw command arguments and environment contents are not committed. Use
-`-- sh -c '...'` for shell syntax. Capture failures warn and the command still
-runs with its own exit status. No-op and failed runs retain their checkpoint
-pairs. Files with `autosave = false` are explicitly saved by this command too.
+An ordinary save with no changes creates no commit. Supplying
+`--description`, `--label`, or `--task` creates a checkpoint even when the
+files have not changed.
 
-`history diff --operation` compares the newest operation with its own protective
-checkpoint, even if later saves exist. Supply one checkpoint reference to select
-an older operation. The paired commits remain in the ordinary history.
+For a file tracked with `autosave = false`, save its edits by naming it:
+`mise bootstrap dotfiles save <path>`. Automatic checkpoints keep that
+file's last saved version. Commands that explicitly modify or capture it
+can also save it; see [operation checkpoints](#operation-checkpoints).
 
-The operation lock keeps the watcher and other history writers from inserting
-checkpoints into the pair. Concurrent changes by editors or other programs are
-still part of the observed interval. An abruptly terminated wrapper leaves a
-pending operational record for recovery by the next history mutation. Capture does
-not journal external writes individually: `undo` restores the tracked-file
-changes observed over the whole interval, including concurrent edits. To restore
-selected files instead, use `history show` to find its **Before** checkpoint, then
-`rollback <path> --to <before-ref>`. Package changes,
-service restarts, and files outside the tracked set are not restored.
+`save` fails if it cannot save anything, for example because Git is missing,
+history is disabled, or the requested path is untracked. Use `--best-effort`
+in a script if saving should warn and let the script continue.
 
 ## Automatic saves
 
-`mise bootstrap dotfiles watch` saves tracked files as they change, whatever
-wrote them: an editor, a script, an agent, a distro update, or mise itself.
-Declare it once as the built-in user service and `mise bootstrap` installs
-and starts it on every platform (a systemd user unit, a LaunchAgent, or a
-Scheduled Task):
+The **watcher** is a background service that saves changes to tracked files,
+including edits made by your editor, an application, or another command.
+Add it to your global mise configuration:
 
 ```toml
 [bootstrap.services.mise-history]
 builtin = "history-watch"
 ```
 
+Install it and check that it is running:
+
 ```sh
-mise bootstrap services apply        # or the full `mise bootstrap`
-mise bootstrap dotfiles status       # watcher: running
+mise bootstrap services apply
+mise bootstrap dotfiles status
 ```
 
-The watcher installs filesystem watches for every autosaved entry (a tracked
-directory recursively, a tracked file through its parent, a path that does
-not exist yet through its nearest existing ancestor). Manual-save entries
-(`autosave = false`) are never watched.
+mise uses a systemd user service on Linux, a LaunchAgent on macOS, or a
+Scheduled Task on Windows. On these platforms, the full `mise bootstrap`
+also installs the watcher as a user service, without requiring root.
+See [user services](/bootstrap/services.html#user-services) if it fails to start.
 
-### Adaptive scheduling
+Ordinary edits are saved after the file has been quiet for two seconds by
+default. Constantly changing files are saved less often, so a busy file
+can have unsaved edits while other files have already been saved. Explicit
+`save` commands still save immediately. See
+[watcher scheduling](#adaptive-scheduling) for timing and settings.
 
-Every file is scheduled on its own. An ordinary edit is saved once the file
-has been quiet for `history.watch.debounce` (2s). A file that is rewritten
-constantly is not saved on every change: when a save follows the previous
-one without the file ever settling, that file's own interval doubles, up to
-`history.watch.max_interval` (24h). It is still saved periodically at that
-interval for as long as it keeps changing; nothing is ever excluded or
-switched to manual saving automatically, and a checkpoint another file
-triggers carries the throttled file's last saved version, not its live
-content, so a whole-set reconciliation never defeats the throttling. As soon
-as the file stops changing its final state is captured promptly (after a
-fraction of its interval, at most five minutes), and a sustained quiet
-period (four intervals, at least five minutes) resets it to the base interval.
-A busy file never delays an ordinary one. Throttling does not delay explicit
-saves or protective captures before bootstrap, rollback, or undo.
-
-The thresholds are fixed: an interval doubles when a file changed again
-within its settle time of the previous save and at least two changes
-arrived since. A person saving from an editor every few seconds leaves gaps
-longer than the settle time, so ordinary editing is never stretched. The
-schedule is persisted (`watch-schedule.json` in the history store) with
-each throttled file's last save and pending changes, so a restart of the
-service continues where it stopped: the startup capture holds a throttled
-file at its saved version until its next save is due, and a file rewritten
-while the service was down is pending, not saved early. Editing
-`history.watch.debounce`, `history.watch.max_interval`, or
-`history.watch.reconcile` in the global configuration takes effect while
-the service runs.
-
-Constantly rewritten application state, logs, caches, and databases are
-better excluded, and a file that genuinely holds configuration but changes
-constantly can be tracked with `autosave = false` and saved explicitly:
+To see files being saved less often:
 
 ```sh
-mise bootstrap dotfiles paths --noisy                      # what is throttled right now
-mise bootstrap dotfiles exclude '~/.config/hypr/plugins/**' # [history] exclude
-mise bootstrap dotfiles include '~/.config/hypr/plugins/**'
+mise bootstrap dotfiles paths --noisy
+```
+
+Logs, caches, databases, and session state usually belong outside your
+tracked files. For a configuration file you want to save only on request:
+
+```sh
 mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave
 mise bootstrap dotfiles save ~/.config/app/state.json
 ```
 
-Enrollment saves the initial version even with `autosave = false`, including
-when a new declaration is first picked up by reconciliation. Later edits to
-that entry require an explicit save; ordinary reconciliation carries its saved
-version forward.
+Tracking saves the first version immediately. Later edits wait for an
+explicit save. Check [watcher health](#health) if expected saves are missing.
 
-### Reconciliation and failures
+## Comparing
 
-The whole tracked set is reconciled at startup, every
-`history.watch.reconcile` (10m; `0` disables), when the configuration
-changes (an edit to `~/.config/mise/*.toml` or `conf.d/` reloads the
-declarations and replans the watches; `history.enabled = false` stops the
-watcher), and on shutdown, so an edit no watch reported is still saved.
-`mise bootstrap dotfiles watch --once` runs one reconcile and exits, for a
-timer or cron instead of the service.
+List the checkpoints where a file changed, newest first:
 
-A capture that fails is retried with backoff (1s to 5min) and never drops
-the pending changes; one that would overlap another history operation (a
-running bootstrap, rollback, or undo) is deferred and retried until that
-operation finishes, whether or not any other save is due. The shutdown
-capture waits a moment for a running operation and says what stays unsaved
-if it cannot. `mise bootstrap dotfiles watch --once` exits 1 when nothing
-could be saved (deferred or failed), so a timer notices. One watcher runs
-per store: a second one exits 0 immediately.
-`--json` prints one object per line (`started`, `captured`, `unchanged`,
-`deferred`, `replan`, `throttled`, `settled`, `degraded`, `error`,
-`stopped`).
+```sh
+mise bootstrap dotfiles history --path ~/.zshrc
+```
 
-### Health
+Run `mise bootstrap dotfiles history` without `--path` to see all checkpoints.
+Use an ID from the list to inspect one. The examples below use checkpoint 12:
 
-The watcher speaks up only when sharing pauses for a conflict (a desktop
-notification on Linux and macOS, on by default; see
-[Sharing across machines](#sharing-across-machines) below). Otherwise it persists its
-health (`health.json` in the history store) and two commands read it, without
-starting a sync, applying anything, or prompting:
+```sh
+mise bootstrap dotfiles history show 12
+mise bootstrap dotfiles history diff 12 --patch --path ~/.zshrc
+```
 
-- `mise doctor` prints a concise `dotfiles` section: a watcher that is
-  declared but not running (with the command that starts it), repeated
-  capture failures or an unusable store, and heavily throttled files. A
-  throttled file is informational, not a warning. Health older than a few
-  reconcile intervals is reported as stale rather than current.
-- `mise bootstrap dotfiles status` prints the detail: the watcher state
-  (`running`, `declared but not running`, `not declared`), the last capture
-  and reconcile, the last failure, and for every throttled file its
-  effective interval, last save, and unsaved changes (changes seen since the
-  last save, kept current as they happen).
+`history show` displays checkpoint details, including what triggered it and
+which files changed. Add `--files` to list all its files or `--json` for
+structured output. `history diff 12` shows what changed in that checkpoint.
+To compare two checkpoints, supply both IDs:
+
+```sh
+mise bootstrap dotfiles history diff 11 12 --patch --path ~/.zshrc
+```
+
+To compare your current file with its latest saved version:
+
+```sh
+mise bootstrap dotfiles history diff --path ~/.zshrc
+```
+
+This also shows unsaved edits in files with `autosave = false`. Add
+`--exit-code` to make a difference return exit status 1, or omit `--path`
+to compare all tracked files.
+
+## Referring to checkpoints
+
+Use a checkpoint ID from `history`, or one of these references:
+
+| Reference      | Meaning                                                            |
+| -------------- | ------------------------------------------------------------------ |
+| `12`           | Checkpoint with local ID 12                                        |
+| `latest`       | Most recent checkpoint                                             |
+| `latest~1`     | Checkpoint before the most recent one; use `~N` to go farther back |
+| `commit:<sha>` | Git commit identified by a full hash or an unambiguous prefix      |
+
+With `--path`, `latest~N` counts only checkpoints where that path changed.
+For example:
+
+```sh
+mise bootstrap dotfiles history show latest~1 --path ~/.zshrc
+```
+
+This selects the checkpoint before the file's most recent change, even if
+other files have changed since then.
+
+Numeric IDs are local and may change if mise rebuilds its index. Use a Git
+commit hash when you need a stable reference. Plain numbers always select
+checkpoint IDs; nonnumeric, unambiguous commit prefixes also work without
+`commit:`.
+
+## Rolling back
+
+To restore a file to its most recent saved version that differs from its
+current contents, preview the change and then apply it:
+
+```sh
+mise bootstrap dotfiles rollback ~/.zshrc --dry-run
+mise bootstrap dotfiles rollback ~/.zshrc
+```
+
+mise saves the current contents before replacing them. To reverse that
+rollback, run:
+
+```sh
+mise bootstrap dotfiles undo
+```
+
+`undo` restores the tracked files changed by the operation. Other files
+keep their current contents. Both rollback and undo create new commits,
+so earlier versions remain available and the restored version can sync to
+other machines.
+
+To choose a checkpoint, use an ID from `history` or a
+[checkpoint reference](#referring-to-checkpoints):
+
+```sh
+mise bootstrap dotfiles rollback ~/.zshrc --to 42
+mise bootstrap dotfiles rollback --to latest~3 --all --dry-run
+```
+
+`--all` selects everything covered by the chosen checkpoint. If that
+checkpoint recorded a file as absent, rollback deletes the file. This can
+also happen without `--to`: an earlier saved state where the file was
+absent counts as a version to restore.
+
+The preview reports each path as:
+
+| Action      | Meaning                                                                                       |
+| ----------- | --------------------------------------------------------------------------------------------- |
+| `write`     | Replace the file with different saved contents                                                |
+| `delete`    | Remove a file recorded as absent                                                              |
+| `unchanged` | Keep a file that already matches                                                              |
+| `skip`      | Leave a path the checkpoint did not cover or omitted                                          |
+| `conflict`  | Resolve a changed path type, such as a file becoming a directory; replacement needs `--force` |
+
+Git does not record empty directories, so rolling back a directory leaves
+unrecorded empty folders alone. Restoring configuration files leaves
+installed packages and running services as they are. Run `mise bootstrap`
+when you want to apply the restored configuration.
+
+### Reload an application after restoring files
+
+Add commands to global configuration to reload an application after its
+files change:
+
+```toml
+[history.reload]
+"~/.config/hypr/**" = "hyprctl reload"
+```
+
+Each matching command runs once, after the files have been restored. mise
+loads these commands from system and global configuration before starting
+the operation. See [recovery details](#recovery-details) for interrupted
+writes and concurrent edits.
 
 ## Sharing across machines
 
-One ordinary repository holds your committed tracked files. Connect it once
-per machine ([Set up a machine](/bootstrap/setup.html) walks through the workflow):
+Connect a private Git repository, called an **origin**, to share tracked
+files between machines. Install the [watcher](#automatic-saves) first and
+make sure it can use your Git credentials. See
+[repository authentication](#repository-authentication) if you need to set them up.
+
+Before connecting, review your tracked files and their earlier checkpoints.
+All committed versions are shared. Deleting a secret from the current file
+leaves it in older commits. Configure [encryption](#encrypted-shared-files)
+before first saving a file that needs it.
+
+Create an empty private repository and replace `you/setup` with its name:
 
 ```sh
-mise bootstrap dotfiles origin set https://github.com/jdx/dotfiles.git
+mise bootstrap dotfiles origin set https://github.com/you/setup.git --sync sync
 mise bootstrap dotfiles status
+```
+
+Review the connection preview before confirming. With `--sync sync`, the
+watcher pushes saved changes and periodically fetches and applies changes
+from other machines. To bring another machine into this workflow, follow
+[Set up a machine](/bootstrap/setup.html#set-up-another-machine).
+
+### Choose a sync mode
+
+The `history.sync` setting controls what the watcher does automatically:
+
+| Mode         | Behavior                                                                                                                                                |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sync`       | Push saved changes within `history.sync_interval` (5 minutes by default). Fetch and apply incoming changes every `history.fetch_interval` (15 minutes). |
+| `manual`     | Keep saving locally. Exchange and apply changes when you run the commands below.                                                                        |
+| `fetch-only` | Fetch remote changes. Wait for an explicit command to push or apply anything.                                                                           |
+
+Set a mode with `--sync manual|sync|fetch-only` when connecting, or change
+it later with `mise settings set history.sync MODE`.
+
+Without `--sync`, interactive `origin set` asks whether to enable automatic
+sharing. Declining selects `manual`. `--yes` uses the configured mode,
+which defaults to `sync`; specify `--sync` in scripts to choose explicitly.
+
+### Sync immediately
+
+These commands work in every mode:
+
+```sh
 mise bootstrap dotfiles sync
 mise bootstrap dotfiles pull
 ```
 
-`pull` and `apply` are different commands on purpose: `mise bootstrap
-dotfiles apply` keeps deploying your own `[dotfiles]` declarations (symlinks,
-copies, templates, edits), while `pull` writes what other machines shared
-through the setup repository.
+`sync` pushes saved commits and fetches remote changes. `pull` applies
+pending changes to your files. In automatic mode, use them when you want
+to sync before the next scheduled run.
 
-When `--sync` is omitted, interactive `origin set` asks whether to publish saved
-edits and apply incoming changes automatically. Answering no selects `manual`;
-local autosave continues. `--sync manual|sync|fetch-only` selects a mode directly.
-`--yes` accepts the configured mode (default `sync`) without this question, so
-scripts should specify `--sync` explicitly.
+Each push includes all accumulated commits, including intermediate saves
+made in manual mode. Files waiting for a manual save or a delayed watcher
+save contribute their last saved contents.
 
-`origin set` previews the connection before publication. Every tracked file
-is eligible to be pushed, including its accumulated history. Files that must
-never reach origin must not be tracked. Protected credential-file defaults
-exclude capture entirely; they do not create private recovery history.
+`pull` applies the complete incoming file set, including configuration and
+its shared sources together; partial pulls are not supported. It does not
+install tools or services, or render templates. When those declarations or
+their sources change, run `mise bootstrap` to deploy them. If only dotfile
+deployment is needed, use `mise bootstrap dotfiles apply` to create files
+from the sources, templates, and edits in `[dotfiles]`. A separate `apply`
+is not needed merely to restore shared tracked-file contents.
 
-The connection is recorded in `[history.origin]` in `config.local.toml`,
-with the synchronization mode in `settings.history.sync`.
+A conflict or an unsaved edit can pause pushing and applying incoming
+changes for all tracked files. Local saves and fetching continue. If a
+network or authentication attempt fails, automatic sync retries with
+increasing delays from one minute to one hour. `status` and `mise doctor`
+show the last error.
 
-The repository uses portable `home/…` and `config/…` paths; variant streams
-have a root suffix such as `home@macos/…`. Mapping does not change when a file
-is also a template source or managed output. A README or other repository-owned
-file stays in Git, not in a live configuration directory.
+### Resolve a conflict
 
-Encrypted tracked files enter Git as ciphertext from their very first capture.
-Filenames and public metadata remain visible. See [Encrypted shared files](#encrypted-shared-files).
-
-**Another machine.** `mise bootstrap --from-git <url>` on a machine that has
-nothing yet recognizes the marker and sets the machine up from the
-repository: the branch goes into mise's own store (no checkout in
-`~/.config/mise`), the shared configuration, its sources, and this machine's
-tracked files are written by one recoverable pull (the configuration first,
-then what it declares; a file that already exists and differs is held for a
-decision), the connection is remembered, and the ordinary bootstrap runs:
-packages, tools, templates rendered from the sources that just arrived, the
-watcher service. From then on the machine syncs like any other. Over SSH the
-same happens through `mise bootstrap remote`; see
-[remote bootstrap](/bootstrap/remote.html).
-
-**How a sync decides.** Synchronization uses Git ancestry, fast-forwards,
-and merge commits. It pushes the same local commits, without squashing
-intermediate saves or constructing a separate publication history. A rejected
-push fetches and reconciles again; mise never silently force-pushes or discards
-divergent history. Unrelated nonempty histories must be reconciled explicitly,
-not automatically replaced.
-
-Incoming application is preflighted as a complete batch, including enrolled
-configuration and required sources. Both committed and unsaved local versions
-are checked again before writing. An unresolved conflict pauses publication
-and incoming application for the entire setup; local commits and fetching
-continue.
-
-**Modes** (`settings.history.sync`) say what the watcher does on its own:
-
-- `sync` (the default, recommended): after a save the watcher publishes
-  within `history.sync_interval` (5 minutes); every `history.fetch_interval`
-  (15 minutes) it fetches and applies incoming changes, with
-  a protective checkpoint first. A conflict or an unsaved edit pauses
-  publication and incoming application for the complete setup.
-- `fetch-only`: the watcher fetches; nothing is ever published and no live
-  file changes until you run `mise bootstrap dotfiles pull`.
-- `manual`: no automatic network activity. Local commits continue; the next
-  explicit sync pushes all accumulated intermediate commits unchanged.
-
-`mise bootstrap dotfiles sync` (publish and fetch now) and `mise bootstrap
-dotfiles pull` (write what is pending now, decide conflicts) work on request
-in every mode: they are for when you do not want to wait, not something the
-background mode needs you to run. A failed sync (the repository unreachable,
-credentials missing) backs off from a minute to an hour and is retried;
-saving continues meanwhile, and `mise bootstrap dotfiles status` and
-`mise doctor` show the last error. The watcher never publishes a throttled
-file's unsaved churn or a manual-save entry's unsaved edits: what it
-publishes is what it saved. Applying never runs `mise bootstrap`, installs
-or removes packages, or renders templates: when incoming configuration
-changes declarations, `mise bootstrap dotfiles status` says to run
-`mise bootstrap`.
-
-**Conflict notifications** are on by default. A desktop notification
-(`notify-send` on Linux, a bundled mise helper app on macOS) reports when sharing pauses
-for the setup. Retries and additional conflicts during the same pause stay
-silent; a later pause can notify again after recovery. Set
-`settings.history.notify = false` to opt out. Missing or failing notifiers
-never hold up history or sync.
-
-On Linux, notifications require `notify-send`. On macOS, allow notifications
-for mise when prompted; change this later in System Settings → Notifications →
-mise. Unofficial macOS builds, such as Homebrew, warn when connecting a setup
-repository because notifications are unavailable. Notification failures never
-block sync. Alerts point to
-`mise bootstrap dotfiles status` for resolution steps.
-
-**Applying.** `mise bootstrap dotfiles pull` writes pending changes as one recoverable
-transaction (a protective checkpoint first, each file journaled, reload
-hooks afterwards, `mise bootstrap dotfiles undo` to reverse it). Any conflict
-pauses publishing and incoming application for the entire setup. Local
-commits and fetching continue. Invalid incoming
-configuration or unsafe local files block the complete application batch.
-Status and doctor name the blocking paths and the last successful application.
-Choose per file with `--take-remote <path>` or `--keep-local <path>`; choices
-are recorded without partially applying the setup. Once every conflict is
-resolved, mise recomputes the plan before sharing resumes. A later local or
-remote edit invalidates a choice based on an older version. This is
-all-or-nothing application with recovery, not atomic filesystem writes.
-
-The per-file choices apply to active tracked files. Conflicting enrollment or
-encryption policies, files belonging to an inactive platform variant, and
-histories with multiple merge bases require reconciliation with Git in a
-separate checkout. Status reports the repository-level failure instead of
-offering a native-file choice that cannot resolve it. Sharing stays paused;
-mise never force-pushes or discards either history to get past the conflict.
-
-There are no separate machine-recovery refs or backup uploads. Git is the
-durable history; every pushed commit carries the normal Git author identity.
-
-**Private repositories.** Network commands run with your normal git
-configuration (credential helpers, ssh, URL rewrites). For a private GitHub
-repository the recommended path is the GitHub CLI through mise; `gh auth
-setup-git` writes the helper into `~/.gitconfig`, so pin `gh` globally to
-keep that path valid for the watcher's service environment:
+Inspect the reported files:
 
 ```sh
-curl https://mise.run | sh
-export PATH="$HOME/.local/bin:$PATH"
+mise bootstrap dotfiles status
+```
+
+Choose the remote version of a file, or keep the local version:
+
+```sh
+mise bootstrap dotfiles pull --take-remote ~/.zshrc
+mise bootstrap dotfiles pull --keep-local ~/.zshrc
+```
+
+Run the command for the choice you want. mise records each decision and
+waits until every conflict is resolved before applying the incoming files.
+It checks the plan again before continuing. A newer local or remote edit
+can invalidate a decision, in which case you must choose again.
+
+Invalid incoming configuration or unsafe local paths also block the
+complete batch. `status` and `doctor` identify the paths and the last
+successful application. For conflicts involving tracking or encryption
+settings, inactive platform variants, or multiple Git merge bases, follow
+the reported Git-level repair instructions in a separate checkout.
+
+Pull saves a checkpoint first, records each file it writes, and runs reload
+hooks afterwards. You can reverse it with `mise bootstrap dotfiles undo`.
+Writes happen one file at a time; interrupted work uses the
+[recovery process](#recovery-details).
+
+### Conflict notifications
+
+Desktop notifications are enabled by default for sharing conflicts. They
+point to `mise bootstrap dotfiles status` for resolution steps. A pause
+produces one notification; further retries during the same pause stay quiet.
+A new pause after recovery can notify again.
+
+On Linux, install `notify-send`. On macOS, allow notifications for mise
+when prompted, or enable them in System Settings → Notifications → mise.
+Unofficial macOS builds, including Homebrew, warn when connecting because
+notifications are unavailable. Use `status` or `doctor` on Windows and
+headless systems. Missing or failing notifications leave history and sync
+running. Set `settings.history.notify = false` to disable notifications.
+
+### Repository authentication
+
+Network commands use your Git configuration, including credential helpers,
+SSH, and URL rewrites. For a private GitHub repository, install the GitHub
+CLI globally through mise and configure its credential helper:
+
+```sh
 mise use -g gh
 mise x gh -- gh auth login --hostname github.com --git-protocol https --web
 mise x gh -- gh auth setup-git --hostname github.com
-mise bootstrap dotfiles origin set https://github.com/you/setup.git
 ```
 
-Existing working credentials skip the two `gh` steps. SSH remotes work when
-the service environment can reach an agent or an unencrypted key.
+The helper is written to `~/.gitconfig`. Keeping `gh` installed globally
+keeps it available to the background watcher. If Git authentication already
+works in the service's environment, you can use it as-is. For SSH remotes,
+prefer a passphrase-protected key loaded into an SSH agent that the service
+can access. If unattended syncing needs a key without a passphrase, use a
+dedicated deploy key scoped to this repository, grant write access only
+when pushing is needed, and restrict the private-key file to your user
+(for example, mode `0600` on Unix or an equivalent Windows ACL). Do not
+reuse an unrestricted personal key.
+
+### How shared history is stored
+
+The origin is recorded in `[history.origin]` in `config.local.toml`.
+The sync mode is recorded in `settings.history.sync`.
+
+Git stores paths relative to `home/` or `config/`, so each machine can
+restore them beneath its own home or mise configuration directory. Variants
+use a suffix such as `home@macos/`. These mappings also apply to tracked
+template sources and managed files. Repository files such as a README stay
+in Git rather than being restored as live configuration.
+
+`mise bootstrap --adopt <url>` recognizes this setup repository and
+fetches it into the history store. It restores the shared configuration
+first, then the tracked files it selects for this machine, and remembers
+the origin. Once conflicts are resolved, it runs bootstrap to install
+packages, tools, and services and render templates. The configuration and
+required sources must have been tracked and shared for those steps to work.
+See [repository bootstrap](/bootstrap.html#starting-from-a-repository) for
+how this differs from cloning a global configuration repository.
+
+Synchronization uses Git ancestry, fast-forwards, and merge commits. Pushes
+retain the saved commits and their Git author identities. A rejected push
+triggers another fetch and reconciliation. mise leaves divergent or
+unrelated histories intact for you to resolve; it does not force-push.
+Before writing incoming changes, it checks the complete batch, including
+configuration, required sources, committed files, and unsaved local edits.
+
+## Capturing an external command
+
+To inspect what an update changed in your tracked dotfiles, wrap it with
+`capture`. For example, on Omarchy:
+
+```sh
+mise bootstrap dotfiles capture --label "omarchy update" -- omarchy-update
+mise bootstrap dotfiles history --label "omarchy update"
+mise bootstrap dotfiles history diff --operation --patch
+```
+
+`capture` saves tracked files before and after the command, including files
+with `autosave = false`. It records the label and whether the command
+succeeded. The diff compares those two checkpoints, even if other saves
+happened later. To inspect an older operation, supply its checkpoint ID:
+
+```sh
+mise bootstrap dotfiles history diff 42 --operation --patch
+```
+
+The command runs directly with inherited input, output, and environment.
+Use `-- sh -c '...'` when you need shell syntax. A capture failure warns
+and lets the command run with its own exit status. Failed commands and
+commands that make no changes still retain their checkpoint pairs.
+
+Other history writers wait until the pair is complete. Editors and other
+programs can still change files during that time, and their edits appear
+in the comparison too. `undo` restores tracked-file changes across the
+whole interval. To restore selected files, find the operation's **Before**
+checkpoint with `history show`, then use `rollback <path> --to <before-ref>`.
+Packages, service state, and untracked files are outside this recovery.
+
+If the wrapper is abruptly terminated, the next command that changes
+history recovers its pending operation record. External writes are not
+journaled individually. If the wrapped command untracks a file, the after
+checkpoint leaves it out; its earlier checkpoint remains available, and
+recovery keeps it untracked.
 
 ## Explicit tracking and exclusions
+
+Use `mode = "track"` for every file or directory you want to save in history.
+For example, in your global configuration:
 
 ```toml
 [dotfiles]
@@ -489,21 +429,272 @@ the service environment can reach an agent or an unencrypted key.
 "~/.gitconfig" = { mode = "template", source = "~/templates/gitconfig.tera" }
 ```
 
-Only `.zshrc` and the template directory are tracked here. Rendering
-`.gitconfig` does not enroll it. A tracking directory may contain managed
-files or sources without taking over their deployment declarations.
+Here, history saves `.zshrc` and the files in `~/templates`. The template
+creates `.gitconfig`; track that output separately if you want its history
+too. You can track files mise also copies, links, or edits.
 
-Enrollment accepts files and directories, not globs. `[history] exclude`
-accepts glob patterns; a later `!glob` can reverse an earlier exclusion.
-`mise bootstrap dotfiles paths` lists enrolled paths and capture omissions.
+Tracking takes exact file or directory paths. Directories include new
+files added beneath them. Symlinks record the link itself; track their
+targets separately to save those contents. To share tools, services, and
+template setup, track the relevant mise configuration and sources too.
+Bootstrap reports required files missing from history.
 
-Use `autosave = false` for a configuration file you want to save manually.
-Logs, caches, databases, and frequently rewritten application state are usually
-better left untracked. Exclusions stop capture, not merely publication.
+Use glob patterns to exclude files from history:
 
-To recreate tools, services, and templates on another machine, explicitly
-track the relevant mise configuration and template sources as well. Bootstrap
-reports missing prerequisites instead of silently enrolling them.
+```sh
+mise bootstrap dotfiles exclude '~/.config/hypr/plugins/**'
+mise bootstrap dotfiles include '~/.config/hypr/plugins/**'
+mise bootstrap dotfiles paths
+```
+
+Exclusions are stored in `[history] exclude`. A later `!glob` reverses an
+earlier matching exclusion. `paths` lists tracked paths and files omitted
+from saves. Protected credential files and `*.local.toml` are excluded by
+default; use [encrypted tracking](#encrypted-shared-files) for credentials
+you want to save.
+
+Logs, caches, databases, and constantly rewritten session state usually
+belong outside history. Use `autosave = false` for configuration you want
+to save manually. An excluded file is left out of future saves entirely.
+
+To stop tracking a file:
+
+```sh
+mise bootstrap dotfiles untrack ~/.zshrc
+```
+
+The file stays in place, while future checkpoints leave it out. Earlier
+committed versions remain in Git and can still be shared. There is no
+per-file local-only history setting.
+
+## Encrypted shared files
+
+Configure encryption before saving a file's private contents for the first
+time. Add public recipients and mark the file or directory for encryption:
+
+```toml
+[history.encryption]
+recipients = ["<age-or-plugin-public-recipient>", "<recovery-public-recipient>"]
+
+[dotfiles]
+"~/.config/app/credentials" = { mode = "track", encrypt = true }
+```
+
+Replace the placeholders with public recipients for your machines and an
+independent recovery key. Keep private decryption keys outside tracking.
+Configure local identities with `settings.age.identity_files`,
+`settings.age.key_file`, or the supported SSH identity settings. Public
+recipients travel with the repository.
+
+mise encrypts contents before storing them in Git. Filenames and public
+metadata remain visible. The files you edit or restore stay unencrypted.
+Missing keys or recipients stop the operation; mise never falls back to
+saving plaintext.
+
+You can also encrypt tracked template sources:
+
+```toml
+[dotfiles]
+"~/templates/private" = { mode = "track", encrypt = true }
+"~/.config/app/config" = { mode = "template", source = "~/templates/private/app.tera" }
+```
+
+The rendered output stays unencrypted. Configure its permissions and any
+tracking separately.
+
+Adding encryption later leaves earlier plaintext versions in Git. Before a
+push, mise checks all reachable commits, including intermediate saves and
+merge parents, for violations of encrypted-path settings. An earlier
+plaintext version blocks the push even if the newest version is encrypted.
+You must explicitly rewrite or replace that history. This checks encryption
+settings; it does not scan arbitrary unencrypted files for secrets.
+
+## Checking watcher health {#health}
+
+If files are not being saved or shared, start with:
+
+```sh
+mise doctor
+mise bootstrap dotfiles status
+```
+
+`doctor` summarizes a watcher that is declared but stopped, repeated save
+failures, an unusable history store, and files being saved less often because
+they change constantly. It includes the command to start a stopped watcher.
+
+`status` gives more detail: whether the watcher is running, declared but
+stopped, or not declared; the latest save and full scan; the last failure;
+and each busy file's save interval, last save, and pending edits.
+
+These commands read the watcher's saved health report without starting
+synchronization or changing files. The report lives in `health.json` in the
+history store. Old reports are marked stale after a few full-scan intervals.
+A busy file's longer save interval is informational.
+
+The watcher sends desktop notifications when a sharing conflict needs
+attention. See [conflict notifications](#conflict-notifications) for setup
+and platform support.
+
+## What a checkpoint records
+
+History lives in a bare Git repository at `$MISE_STATE_DIR/history/repo.git`,
+separate from the files you edit. Each checkpoint contains the tracked files
+and metadata for their paths, tracking settings, variants, encryption, and
+permissions. The files are ordinary Git tree entries.
+
+A symlink is saved as a link. A nested Git repository is saved as a pointer
+to its commit. mise reports oversized files, special files, and unreadable
+paths it cannot save. It keeps their previous saved versions while saving
+other files, so check reported omissions before relying on a checkpoint.
+Explicit exclusions remove paths from future checkpoints. Encryption
+failures stop a save rather than storing plaintext.
+
+Commands that modify or capture tracked files save checkpoints before and
+after their work. Their metadata includes operation labels and the link
+between the two checkpoints. Raw command arguments, environment contents,
+and temporary recovery copies are left out of committed metadata.
+
+Checkpoints restore file contents. They do not restore installed packages
+or the running state of a service. Use your system's backup tools for that
+state, and run bootstrap explicitly to apply restored configuration.
+
+### Descriptions from an agent
+
+`settings.history.describe_command` can run a command to describe each
+checkpoint saved by the watcher. For example, with Claude Code installed:
+
+```toml
+[settings]
+history.describe_command = "claude -p --output-format text --no-session-persistence 'Describe this change to my configuration files in one line of at most 120 characters, plain text, no quotes.'"
+```
+
+This sends change details, including unencrypted file diffs, to the command
+you configure. Excluded private files are not named, and encrypted file
+contents are not sent.
+
+The command receives one JSON object on stdin. Its fields are `uuid`,
+`trigger`, the computed `description`, the `added`, `modified`, and `removed`
+paths, and a unified `diff` of changed unencrypted files. The diff is limited
+to 64 KiB; `diff_truncated` reports truncation.
+
+Print one line of at most 200 characters. mise uses it as the checkpoint
+description and records `description_source: command`. The checkpoint is
+saved before the command runs. If the command fails, returns no text, or
+exceeds 30 seconds, mise keeps its computed description.
+
+Commands run one at a time, once per checkpoint saved by the watcher.
+Filesystem events and retries do not trigger separate descriptions.
+Contents are passed through stdin without shell interpolation.
+
+## Recovery details
+
+Before rollback changes any file, mise saves the current contents in a
+`rollback-before` checkpoint. If it cannot save every file it would change,
+it stops before writing. It checks the plan again after the checkpoint,
+then checks each path immediately before replacing it. A concurrent edit
+that invalidates the plan stops the operation.
+
+Files are written one at a time, with a journal recording each affected
+path. An interruption can leave some writes completed. Use
+`mise bootstrap dotfiles recover` to retry unfinished writes. If later edits
+prevent recovery, inspect the reported paths. To accept the current files:
+
+```sh
+mise bootstrap dotfiles recover <operation> --keep-current
+```
+
+After confirmation, this discards that operation's temporary recovery
+copies. It keeps your current files and committed history. An ordinary
+recovery retry preserves later edits and recovery copies when it cannot
+continue. Unresolved recovery data is kept until you resolve it.
+
+### Operation checkpoints
+
+When bootstrap modifies a tracked file with `autosave = false`, it saves
+that file's actual contents before the operation. Unrelated manual edits
+stay unsaved. If the operation writes a file repeatedly, the before version
+still holds the contents from before the first write. Encrypted files are
+also encrypted in these checkpoints.
+
+`undo` uses an operation's before checkpoint to restore the tracked paths
+it changed. For untracked files, temporary recovery copies only support
+completing or recovering interrupted writes; they are deleted afterwards.
+Those files have no historical undo.
+
+Ordinary bootstrap writes warn and continue if they cannot save temporary
+recovery contents, for example for an oversized destination. Such a write
+cannot be recovered automatically after interruption. Pull, rollback, and
+undo refuse writes without the required recovery data. Disabling history
+lets ordinary bootstrap run without the history store; explicit history
+commands still require their recovery data.
+
+## Watcher reference
+
+The watcher watches tracked directories recursively. For a tracked file it
+watches the parent directory; for a missing path it watches the nearest
+existing ancestor. Files with `autosave = false` are left for explicit saves.
+
+### Adaptive scheduling
+
+mise schedules each tracked file separately. **Throttling** means waiting
+longer between automatic saves for a file that changes constantly.
+
+1. An ordinary edit is saved after `history.watch.debounce` of quiet time
+   (two seconds by default).
+2. If a file keeps changing without settling between saves, its save
+   interval doubles, up to `history.watch.max_interval` (24 hours by default).
+3. When the file stops changing, mise saves its final contents after a
+   fraction of that interval, at most five minutes.
+4. After a quiet period of four intervals, with a minimum of five minutes,
+   the file returns to the base interval.
+
+The longer interval affects only that file. Other files save normally, and
+explicit saves and checkpoints before bootstrap, rollback, or undo still
+run immediately. Throttled files continue to be saved periodically; they
+are never automatically excluded or switched to manual saving.
+
+When another file triggers a checkpoint, or mise scans the full tracked
+set, a throttled file keeps its last saved contents until its own save is due.
+
+The interval doubles when at least two changes have arrived since the
+previous save and the file changed again within its settling period.
+Ordinary editor saves spaced beyond that period keep the usual interval.
+
+The watcher stores schedules in `watch-schedule.json`, including each busy
+file's last save and pending edits. Restarting preserves these schedules.
+At startup, a throttled file keeps its saved version until its next save is
+due, including when it changed while the service was stopped.
+
+Changes to `history.watch.debounce`, `history.watch.max_interval`, and
+`history.watch.reconcile` in global configuration take effect while the
+watcher is running.
+
+When a full scan discovers a new tracking entry, it saves the initial
+version even with `autosave = false`. Later scans carry that saved version
+forward until you explicitly save the path.
+
+### Reconciliation and failures
+
+The watcher also scans all tracked files to catch changes missed by
+filesystem notifications. It does this at startup, at shutdown, when
+configuration changes, and every `history.watch.reconcile` (ten minutes by
+default). Set that interval to `0` to disable periodic scans.
+
+Edits to global TOML configuration or `conf.d/` reload the tracked paths
+and update their watches. Setting `history.enabled = false` stops the watcher.
+To run one scan from a timer or cron job, use
+`mise bootstrap dotfiles watch --once`.
+
+Failed saves remain pending and are retried with increasing delays from
+one second to five minutes. A save that overlaps bootstrap, rollback, or
+undo waits and retries after that operation finishes. At shutdown, the
+watcher waits briefly for a running operation and reports anything it
+could not save.
+
+`watch --once` exits 1 if its save was deferred or failed. Only one watcher
+can run per history store; starting another exits successfully immediately.
+`--json` prints one object per line (`started`, `captured`, `unchanged`,
+`deferred`, `replan`, `throttled`, `settled`, `degraded`, `error`, `stopped`).
 
 ## Retention
 
@@ -524,30 +715,3 @@ Keep your repository and decryption identities recoverable independently.
 Repository authentication and an age identity serve different purposes:
 a replacement machine needs both Git access and a matching identity to
 restore encrypted files. Test fresh-machine setup before relying on it.
-
-## Encrypted shared files
-
-Set `encrypt = true` on an explicitly tracked file or directory:
-
-```toml
-[history.encryption]
-recipients = ["<age-or-plugin-public-recipient>", "<recovery-public-recipient>"]
-
-[dotfiles]
-"~/.config/app/credentials" = { mode = "track", encrypt = true }
-"~/templates/private" = { mode = "track", encrypt = true }
-"~/.config/app/config" = { mode = "template", source = "~/templates/private/app.tera" }
-```
-
-Contents are encrypted before they enter the repository's object database,
-not just before upload. Live files and rendered outputs remain native files.
-Missing keys or recipients fail safely; plaintext is never a fallback.
-
-Every commit reachable from a proposed push is checked for encrypted-path
-policy violations, including intermediate commits and merge parents. Earlier
-plaintext blocks publication even if the latest tree is encrypted. mise does
-not rewrite that history automatically.
-
-Keep private decryption keys outside tracking. Configure local identities with
-`settings.age.identity_files`, `settings.age.key_file`, or the supported SSH
-identity settings. Public recipients travel with the repository.

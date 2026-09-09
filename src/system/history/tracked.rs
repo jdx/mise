@@ -699,7 +699,7 @@ pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
     dirs
 }
 
-/// The global config directory (where `--from-git` checks out).
+/// The global config directory (where `--adopt` checks out).
 pub(crate) fn global_config_dir() -> PathBuf {
     crate::env::MISE_GLOBAL_CONFIG_FILE
         .as_deref()

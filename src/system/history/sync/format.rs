@@ -1,6 +1,6 @@
 //! The explicit versioned marker of a history-enabled setup repository:
 //! `.mise-history/format.toml` with `format = 1`. A repository without it is
-//! an ordinary repository and keeps its old `--from`/`--from-git`
+//! an ordinary repository and keeps its old `--from`/`--adopt`
 //! behaviour; a newer format stops with an upgrade message.
 
 use eyre::{Result, bail};

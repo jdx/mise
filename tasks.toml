@@ -95,7 +95,12 @@ mise completion powershell > completions/mise.ps1
 description = 'Generate man pages'
 depends = ["render:usage"]
 env = { NO_COLOR = "1" }
-run = "mise x usage -- usage generate manpage --file mise.usage.kdl > man/man1/mise.1"
+run = [
+  "mise x usage -- usage generate manpage --file mise.usage.kdl > man/man1/mise.1",
+  # usage's manpage renderer currently includes hidden flags. Omit this temporary
+  # compatibility entry until it is removed alongside the alias in 2026.10.0.
+  '''perl -0pi -e 's/\.TP\n\\fB\\-\\-from\\-git\\fR[^\n]*\nDeprecated alias for \\-\\-adopt\n//g' man/man1/mise.1''',
+]
 
 ["render:help"]
 description = 'Render help documentation'

@@ -3,6 +3,7 @@
 --- @field ctx.rootPath string The installation directory
 
 local file = require("file")
+local cmd = require("cmd")
 local os = require("os")
 local log = require("log")
 local strings = require("strings")
@@ -86,10 +87,10 @@ local function install_default_components(gcloud_bin)
         return
     end
 
-    local cmd = string.format('"%s" --quiet components install %s', gcloud_bin, table.concat(components, " "))
-    local status = os.execute(cmd)
-    if status ~= 0 and status ~= true then
-        log.error("Failed to install default Cloud SDK components")
+    local command = string.format('"%s" --quiet components install %s', gcloud_bin, table.concat(components, " "))
+    local ok, err = pcall(cmd.exec, command)
+    if not ok then
+        log.error("Failed to install default Cloud SDK components: " .. tostring(err))
         return
     end
     log.info("Default Cloud SDK components installed successfully")
@@ -140,9 +141,9 @@ function PLUGIN:PostInstall(ctx)
         cmd_str = 'sh "' .. install_script .. '" ' .. table.concat(args, " ")
     end
 
-    local status = os.execute(cmd_str)
-    if status ~= 0 and status ~= true then
-        error("Failed to run gcloud install script")
+    local ok, err = pcall(cmd.exec, cmd_str)
+    if not ok then
+        error("Failed to run gcloud install script: " .. tostring(err))
     end
 
     -- Install default SDK components

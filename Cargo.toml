@@ -11,7 +11,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.9.2"
+version = "2026.9.3"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -240,7 +240,7 @@ taplo = "0.14"
 tempfile = "3"
 tera = "2"
 tera1 = { package = "tera", version = "1" }
-tera-contrib = { version = "0.2", features = [
+tera-contrib = { version = "0.3", features = [
   "base64",
   "date",
   "filesize_format",

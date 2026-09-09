@@ -1108,10 +1108,7 @@ impl AquaBackend {
             "macos" => "darwin",
             other => other,
         };
-        let target_arch = match target.arch_name() {
-            "x64" => "amd64",
-            other => other,
-        };
+        let target_arch = to_aqua_arch(target.arch_name());
         (target_os, target_arch)
     }
 
@@ -3654,6 +3651,13 @@ mod tests {
     use super::*;
     use aqua_registry::{AquaFile, AquaVar, ParsedRegistry};
 
+    #[test]
+    fn aqua_uses_go_arch_name_for_32_bit_arm() {
+        assert_eq!(to_aqua_arch("arm"), "arm");
+        assert_eq!(to_aqua_arch("x64"), "amd64");
+        assert_eq!(to_aqua_arch("arm64"), "arm64");
+    }
+
     // `--dry-run` reaches `validate` through `resolve_validated_package`, and this is the sentence
     // it has to be able to produce before the install starts. Pinned here because
     // `e2e/cli/test_install_dry_run_feasibility` greps for it: aqua marks specific versions
@@ -5227,14 +5231,13 @@ pub(crate) fn os() -> &'static str {
 }
 
 pub(crate) fn arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
-        "amd64"
-    } else if cfg!(target_arch = "arm") {
-        "armv6l"
-    } else if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        &ARCH
+    to_aqua_arch(&ARCH)
+}
+
+fn to_aqua_arch(arch: &str) -> &str {
+    match arch {
+        "x64" => "amd64",
+        other => other,
     }
 }
 

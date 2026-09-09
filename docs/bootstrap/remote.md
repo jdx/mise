@@ -311,7 +311,7 @@ mise configuration directory:
 
 ```sh
 # Authenticate on this machine first (for example, using gh auth login).
-mise bootstrap remote --host devbox --from-git jdx/dotfiles \
+mise bootstrap remote --host devbox --adopt jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles
 ```
 
@@ -319,7 +319,7 @@ mise bootstrap remote --host devbox --from-git jdx/dotfiles \
 SSH syntax, and local paths on the initiating machine also work. Network repositories must use HTTPS or
 SSH; other transports and custom Git helpers are rejected. Source clones do not
 follow HTTP redirects, so use the repository's canonical URL.
-`--from-git` conflicts with `--source`.
+`--adopt` conflicts with `--source`.
 Targets still come from explicit `--host` or inventory selectors, never from the
 downloaded repository's inventory.
 
@@ -335,7 +335,7 @@ An existing matching checkout is reused unless `--update` requests a safe
 fast-forward. Dirty checkouts, mismatched origins, conflicting files, and source
 files ending in `.local.toml` require manual resolution. A nonempty non-Git
 directory can be adopted after confirmation: existing files and local overrides
-are preserved. With `--from-git`, `--dry-run` previews the whole operation the
+are preserved. With `--adopt`, `--dry-run` previews the whole operation the
 way `--source . --dry-run` does: the revision is fetched locally, the target is
 connected to, mise and the bundle are staged, and the target runs every check
 (dirty checkout, mismatched origin, adoption conflicts, `.local.toml` files) and
@@ -348,7 +348,7 @@ configuration and configuration-directory inputs needed to inspect bootstrap.
 Treat retained staging as sensitive; unrelated encrypted tracked files are not
 decrypted for this preview.
 
-`--from-git` uses the repository instead of the inventory's archive source and
+`--adopt` uses the repository instead of the inventory's archive source and
 copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and
 `--exclude` flags cannot be combined with it.
 
@@ -365,7 +365,7 @@ target shows that plan (the files it would write, and any held for a decision),
 records no connection, and keeps no fetched branch:
 
 ```sh
-mise bootstrap remote --host devbox --install-mise --from-git jdx/dotfiles \
+mise bootstrap remote --host devbox --install-mise --adopt jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles --dry-run
 ```
 
@@ -437,7 +437,7 @@ mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
   --github-relay-log-requests --github-relay-max-duration 1h
 
 # Structured relay events for troubleshooting or auditing:
-mise bootstrap remote --host devbox --from-git jdx/dotfiles \
+mise bootstrap remote --host devbox --adopt jdx/dotfiles \
   --github-relay-read-only --github-relay-repo jdx/dotfiles \
   --github-relay-log-requests --github-relay-log-format jsonl
 ```

@@ -621,7 +621,7 @@ impl Writer {
 }
 
 /// Bootstrap without enrollment still needs private write recovery, but must
-/// not create an unrelated Git root before a later `--from-git` setup.
+/// not create an unrelated Git root before a later `--adopt` setup.
 /// Explicit command captures can request labeled empty boundaries; existing
 /// Git history also keeps its boundaries after all paths are untracked.
 fn records_file_history(

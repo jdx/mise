@@ -1,4 +1,5 @@
 mod forgejo;
+pub(super) mod git_credential;
 pub(crate) mod github;
 mod gitlab;
 
@@ -21,6 +22,13 @@ enum Commands {
 }
 
 impl Token {
+    pub(crate) fn run_git_credential(&self) -> Option<eyre::Result<()>> {
+        match &self.subcommand {
+            Commands::Github(cmd) => cmd.git_credential.as_deref().map(git_credential::run),
+            _ => None,
+        }
+    }
+
     pub(crate) async fn run(self) -> eyre::Result<()> {
         match self.subcommand {
             Commands::Forgejo(cmd) => cmd.run(),

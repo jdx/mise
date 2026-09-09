@@ -345,9 +345,7 @@ impl AssetPicker {
         scored_assets
             .into_iter()
             .filter(|(score, asset)| {
-                *score > 0
-                    && !self.has_arch_mismatch(asset)
-                    && !is_package_or_installer_asset(asset)
+                *score > 0 && !self.has_arch_mismatch(asset) && !is_non_executable_asset(asset)
             })
             .min_by(|(score_a, name_a), (score_b, name_b)| {
                 score_b
@@ -701,13 +699,12 @@ impl AssetPicker {
     }
 }
 
-/// Package archives and installers are not directly executable and mise does
-/// not extract them. Keep them out of automatic selection while still allowing
-/// an explicit `asset_pattern` or URL to select one for custom installation
-/// logic.
-fn is_package_or_installer_asset(asset: &str) -> bool {
+/// Assets that cannot become a runnable tool through mise's normal extraction
+/// path. Keep them out of automatic selection while still allowing an explicit
+/// `asset_pattern` or URL to select one for custom installation logic.
+fn is_non_executable_asset(asset: &str) -> bool {
     let asset = asset.to_lowercase();
-    asset.split('.').any(|extension| {
+    let is_package_or_installer = asset.split('.').any(|extension| {
         matches!(
             extension,
             "apk"
@@ -722,7 +719,12 @@ fn is_package_or_installer_asset(asset: &str) -> bool {
                 | "pkg"
                 | "rpm"
         )
-    })
+    });
+    let filename = asset.rsplit('/').next().unwrap_or(&asset);
+    let is_generic_source_archive = extraction_suffix_len(filename)
+        .map(|suffix_len| &filename[..filename.len() - suffix_len])
+        .is_some_and(|stem| matches!(stem, "source" | "source-code" | "src"));
+    is_package_or_installer || is_generic_source_archive
 }
 
 fn asset_matches_preferred_name(asset: &str, preferred_name: &str) -> bool {
@@ -2660,6 +2662,24 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
 
         assert_eq!(picker.pick_best_asset(&assets), None);
         assert_eq!(picker.with_matching(".deb").pick_best_asset(&assets), None);
+    }
+
+    #[test]
+    fn test_source_archive_not_picked_when_platform_has_no_binary() {
+        // Regression test for https://github.com/jdx/mise/discussions/12996.
+        // Pixi publishes this generic source archive alongside binaries for
+        // other architectures. Extracting it does not build an ARM executable.
+        let assets = vec![
+            "pixi-aarch64-unknown-linux-musl.tar.gz".to_string(),
+            "pixi-riscv64gc-unknown-linux-gnu.tar.gz".to_string(),
+            "pixi-x86_64-unknown-linux-musl.tar.gz".to_string(),
+            "source.tar.gz".to_string(),
+            "source.tar.gz.sha256".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("linux".to_string(), "arm".to_string(), None)
+            .with_preferred_name("pixi");
+
+        assert_eq!(picker.pick_best_asset(&assets), None);
     }
 
     #[test]

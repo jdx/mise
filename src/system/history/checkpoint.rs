@@ -216,7 +216,7 @@ impl Store {
                 .is_none()
         {
             // A service may watch policy before the first enrollment. Do not
-            // manufacture an unrelated empty root before --from-git adoption.
+            // manufacture an unrelated empty root before --adopt adoption.
             return Ok(Outcome::Unchanged);
         }
         let mut index = store::load_index_in(&self.state_dir)?;

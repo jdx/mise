@@ -5,6 +5,7 @@
 export MISE_EXPERIMENTAL=0
 export MISE_MINIMUM_RELEASE_AGE=0
 export MISE_REGISTRY_FLOATING=0
+detect_platform
 
 # Registry CI must exercise the newly published preferred backend immediately.
 MISE_MINIMUM_RELEASE_AGE=90d mise test-tool hk
@@ -47,3 +48,14 @@ assert_contains "mise ls-remote hk@old_prefix" "1.57.0"
 
 # Explicit backends remain explicit; no fallback after a verification error.
 assert_fail_contains "mise install --force packslip:github.com/jdx/hk@1.57.0" "no release"
+
+# Packslip resolves signed artifact metadata for the host and non-host
+# platforms, and locked installation consumes the generated host entry.
+mise lock hk@1.58.1 --platform "$MISE_PLATFORM,windows-x64"
+assert_contains "cat mise.lock" '[tools.hk."platforms.windows-x64"]'
+assert_contains "awk '/\[tools.hk\.\"platforms.windows-x64\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'checksum = "sha256:'
+assert_contains "awk '/\[tools.hk\.\"platforms.windows-x64\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'url = "https://github.com/jdx/hk/releases/download/v1.58.1/hk-x86_64-pc-windows-msvc.zip"'
+assert_contains "awk '/\[tools.hk\.\"platforms.windows-x64\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"'
+mise uninstall hk@1.58.1
+mise install --locked hk@1.58.1
+assert_contains "mise exec hk@1.58.1 -- hk --version" "hk 1.58.1"
