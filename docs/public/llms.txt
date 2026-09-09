@@ -79,6 +79,7 @@
 - [dnf](https://mise.jdx.dev/bootstrap/packages/dnf.html): System packages for Red Hat-family Linux (Fedora, RHEL, CentOS Stream, Rocky, Alma, ...).
 - [pacman](https://mise.jdx.dev/bootstrap/packages/pacman.html): System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 - [brew](https://mise.jdx.dev/bootstrap/packages/brew.html): Homebrew formulae and casks — without requiring Homebrew to be installed.
+- [nix](https://mise.jdx.dev/bootstrap/packages/nix.html): The nix bootstrap package manager installs packages into the current user's normal Nix profile. It works on Linux and macOS with Nix on PATH, independently of whether the operating system is NixOS.
 - [mas](https://mise.jdx.dev/bootstrap/packages/mas.html): Mac App Store apps via the mas CLI.
 - [Package Plugins](https://mise.jdx.dev/bootstrap/packages/plugins.html): Package manager plugins extend [bootstrap.packages] without adding a manager to mise core. They are useful for machine-global state owned by another tool, such as VS Code extensions, Helm plugins,…
 - [Linux Users and Groups](https://mise.jdx.dev/bootstrap/accounts.html): [bootstrap.groups] and [bootstrap.users] declaratively manage local Linux accounts. mise applies groups before users and applies accounts before privileged files, so a managed file can safely refer to…

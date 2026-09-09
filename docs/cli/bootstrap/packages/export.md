@@ -6,6 +6,7 @@ description: "Export active Nix bootstrap packages as a NixOS module"
 # `mise bootstrap packages export`
 
 - **Usage:** `mise bootstrap packages export <--format <FORMAT>>`
+- **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Export active Nix bootstrap packages as a NixOS module

@@ -1,3 +1,7 @@
+---
+description: "Install Nix bootstrap packages into a user profile or export them as a NixOS module."
+---
+
 # Nix
 
 The `nix` bootstrap package manager installs packages into the current user's

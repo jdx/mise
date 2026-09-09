@@ -273,6 +273,9 @@ export const commands: { [key: string]: Command } = {
               },
             },
           },
+          export: {
+            hide: false,
+          },
           import: {
             hide: false,
           },

@@ -1350,7 +1350,7 @@ mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-too
                 example "mise bootstrap packages brew untap railwaycat/emacsmacport"
             }
         }
-        cmd export help="Export active Nix bootstrap packages as a NixOS module" {
+        cmd export help="Export active Nix bootstrap packages as a NixOS module" effect=read {
             long_help #"""
 Export active Nix bootstrap packages as a NixOS module
 
