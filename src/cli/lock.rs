@@ -204,6 +204,19 @@ struct PreparedLockfileRollback {
     replacement: Option<crate::file::PreparedAtomicWrite>,
 }
 
+fn publication_lock_paths(
+    mutations: &BTreeSet<PathBuf>,
+    configs: &BTreeMap<PathBuf, Option<Vec<u8>>>,
+    lockfiles: &BTreeMap<PathBuf, Option<Vec<u8>>>,
+) -> BTreeSet<PathBuf> {
+    mutations
+        .iter()
+        .chain(configs.keys())
+        .chain(lockfiles.keys())
+        .cloned()
+        .collect()
+}
+
 fn verify_generation_snapshots<'a>(
     snapshots: impl Iterator<Item = (&'a PathBuf, &'a Option<Vec<u8>>)>,
 ) -> Result<()> {
@@ -785,7 +798,7 @@ impl Lock {
         if !self.dry_run && atomic {
             verify_generation_snapshots(config_snapshots.iter().chain(initial_lockfiles.iter()))?;
             let migration_paths = lockfile::monorepo_lockfile_migration_paths(&config);
-            let transaction_paths: BTreeSet<PathBuf> = staged_upgrade_writes
+            let mutation_paths: BTreeSet<PathBuf> = staged_upgrade_writes
                 .iter()
                 .map(|staged| staged.path.clone())
                 .chain(
@@ -799,6 +812,8 @@ impl Lock {
                         .flat_map(|(source, target)| [source.clone(), target.clone()]),
                 )
                 .collect();
+            let transaction_paths =
+                publication_lock_paths(&mutation_paths, &config_snapshots, &initial_lockfiles);
             let mut transaction_locks = Vec::with_capacity(transaction_paths.len());
             for path in &transaction_paths {
                 transaction_locks.push(
@@ -820,7 +835,8 @@ impl Lock {
                 }
             }
 
-            let snapshots = transaction_paths
+            // Read-only inputs need locks, but must never become rollback writes.
+            let snapshots = mutation_paths
                 .iter()
                 .map(|path| {
                     Ok(LockfileSnapshot {
@@ -1964,6 +1980,21 @@ mod tests {
     use std::fs;
     use std::str::FromStr;
     use std::sync::Arc;
+
+    #[test]
+    fn publication_locks_read_only_inputs_without_adding_rollback_targets() {
+        let mutations = std::collections::BTreeSet::from([std::path::PathBuf::from("mise.lock")]);
+        let configs = BTreeMap::from([
+            (std::path::PathBuf::from("mise.toml"), None),
+            (std::path::PathBuf::from("tasks/build"), None),
+        ]);
+        let lockfiles = BTreeMap::from([(std::path::PathBuf::from("legacy.lock"), None)]);
+        let locked = super::publication_lock_paths(&mutations, &configs, &lockfiles);
+        for path in ["mise.lock", "mise.toml", "tasks/build", "legacy.lock"] {
+            assert!(locked.contains(std::path::Path::new(path)));
+        }
+        assert_eq!(mutations.len(), 1);
+    }
 
     #[test]
     fn snapshot_recheck_detects_config_and_migration_edits_after_initial_check() {
