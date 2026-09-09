@@ -59,38 +59,50 @@ same file.
 
 `[bootstrap.macos.dock]` supports:
 
-| Key             | Raw default                    |
-| --------------- | ------------------------------ |
-| `autohide`      | `com.apple.dock.autohide`      |
-| `orientation`   | `com.apple.dock.orientation`   |
-| `tilesize`      | `com.apple.dock.tilesize`      |
-| `magnification` | `com.apple.dock.magnification` |
-| `largesize`     | `com.apple.dock.largesize`     |
-| `show_recents`  | `com.apple.dock.show-recents`  |
-| `mru_spaces`    | `com.apple.dock.mru-spaces`    |
+| Key                      | Raw default                             |
+| ------------------------ | --------------------------------------- |
+| `autohide_delay`         | `com.apple.dock.autohide-delay`         |
+| `autohide_time_modifier` | `com.apple.dock.autohide-time-modifier` |
+| `autohide`               | `com.apple.dock.autohide`               |
+| `orientation`            | `com.apple.dock.orientation`            |
+| `tilesize`               | `com.apple.dock.tilesize`               |
+| `magnification`          | `com.apple.dock.magnification`          |
+| `largesize`              | `com.apple.dock.largesize`              |
+| `show_recents`           | `com.apple.dock.show-recents`           |
+| `mru_spaces`             | `com.apple.dock.mru-spaces`             |
+
+`autohide_delay` and `autohide_time_modifier` accept integers or floats, such as
+`0` and `0.5`.
 
 `orientation` must be `bottom`, `left`, or `right`.
 
 `[bootstrap.macos.finder]` supports:
 
-| Key                       | Raw default                                       |
-| ------------------------- | ------------------------------------------------- |
-| `show_all_files`          | `com.apple.finder.AppleShowAllFiles`              |
-| `show_pathbar`            | `com.apple.finder.ShowPathbar`                    |
-| `show_status_bar`         | `com.apple.finder.ShowStatusBar`                  |
-| `show_extensions_warning` | `com.apple.finder.FXEnableExtensionChangeWarning` |
-| `preferred_view_style`    | `com.apple.finder.FXPreferredViewStyle`           |
+| Key                           | Raw default                                        |
+| ----------------------------- | -------------------------------------------------- |
+| `sort_folders_first`          | `com.apple.finder._FXSortFoldersFirst`             |
+| `save_new_documents_to_cloud` | `NSGlobalDomain.NSDocumentSaveNewDocumentsToCloud` |
+| `show_all_files`              | `com.apple.finder.AppleShowAllFiles`               |
+| `show_pathbar`                | `com.apple.finder.ShowPathbar`                     |
+| `show_status_bar`             | `com.apple.finder.ShowStatusBar`                   |
+| `show_extensions_warning`     | `com.apple.finder.FXEnableExtensionChangeWarning`  |
+| `preferred_view_style`        | `com.apple.finder.FXPreferredViewStyle`            |
+
+`save_new_documents_to_cloud` controls the default save location globally for
+application save dialogs, even though it is grouped under `finder`.
 
 `preferred_view_style` must be `icon`, `list`, `column`, or `gallery`.
 
 `[bootstrap.macos.keyboard]` supports:
 
-| Key                  | Raw default                                 |
-| -------------------- | ------------------------------------------- |
-| `key_repeat`         | `NSGlobalDomain.KeyRepeat`                  |
-| `initial_key_repeat` | `NSGlobalDomain.InitialKeyRepeat`           |
-| `press_and_hold`     | `NSGlobalDomain.ApplePressAndHoldEnabled`   |
-| `fn_state`           | `NSGlobalDomain.com.apple.keyboard.fnState` |
+| Key                             | Raw default                                           |
+| ------------------------------- | ----------------------------------------------------- |
+| `automatic_capitalization`      | `NSGlobalDomain.NSAutomaticCapitalizationEnabled`     |
+| `automatic_spelling_correction` | `NSGlobalDomain.NSAutomaticSpellingCorrectionEnabled` |
+| `key_repeat`                    | `NSGlobalDomain.KeyRepeat`                            |
+| `initial_key_repeat`            | `NSGlobalDomain.InitialKeyRepeat`                     |
+| `press_and_hold`                | `NSGlobalDomain.ApplePressAndHoldEnabled`             |
+| `fn_state`                      | `NSGlobalDomain.com.apple.keyboard.fnState`           |
 
 `[bootstrap.macos.trackpad]` supports:
 
