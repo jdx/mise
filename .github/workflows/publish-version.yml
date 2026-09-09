@@ -26,6 +26,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Release events normally check out the tag. Use the trusted default
+          # branch so recovery also works for tags created before this script.
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Resolve published release
         id: release
