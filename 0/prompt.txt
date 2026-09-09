@@ -1,0 +1,11 @@
+i think packslip is the answer: [https://github.com/jdx/mise/discussions/12989](https://github.com/jdx/mise/discussions/12989)
+
+---
+
+aqua registry has a policy which i disagree with that they always use musl
+
+---
+
+i mean the aqua maintainer documented that they don't accept prs to change things to glibc
+
+I think here we should have a pr for mise that uses glibc\_min for all packslip tools, make a pr for that
