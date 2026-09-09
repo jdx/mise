@@ -1,0 +1,23 @@
+i mean the aqua maintainer documented that they don't accept prs to change things to glibc
+
+I think here we should have a pr for mise that uses glibc\_min for all packslip tools, make a pr for that
+
+---
+
+draft a discussion reply
+
+---
+
+mention aqua-registry's policy and that aqua-registry is not my project
+
+---
+
+post taht
+
+---
+
+rebase your pr
+
+---
+
+address pr feedback until it settles

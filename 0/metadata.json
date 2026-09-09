@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M238NSA6FEKJJV33M1H3BS91",
+  "session_id": "01a0865c-62ae-7053-8eab-6b7a68c8fef0",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T14:20:45.441625Z",
+  "branch": "codex/packslip-glibc-fallback",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/backends/packslip.md",
+    "docs/dev-tools/packslip-verification.md",
+    "src/backend/packslip.rs",
+    "src/packslip.rs",
+    "src/packslip/completions.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "c8f7e629171d",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 325649,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 23765248,
+    "output_tokens": 36862,
+    "api_call_count": 177
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T14:20:45.337693Z",
+    "agent_lines": 143,
+    "agent_removed": 21,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 143,
+    "total_lines_changed": 164,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M238NSA6FEKJJV33M1H3BS91",
+  "strategy": "manual-commit",
+  "branch": "codex/packslip-glibc-fallback",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/backends/packslip.md",
+    "docs/dev-tools/packslip-verification.md",
+    "src/backend/packslip.rs",
+    "src/packslip.rs",
+    "src/packslip/completions.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 325649,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 23765248,
+    "output_tokens": 36862,
+    "api_call_count": 177
+  }
+}
