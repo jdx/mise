@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M234JDDCGJC2PBCC3JPM4FSM",
+  "session_id": "01a08628-1f28-7d33-b100-1936e693c8d0",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T13:09:00.536088Z",
+  "branch": "codex/fix-arm32-asset-selection",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/backend/aqua.rs",
+    "src/backend/asset_matcher.rs",
+    "src/platform.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "3a8250fe04d9",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 196467,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6775552,
+    "output_tokens": 15665,
+    "api_call_count": 63
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T13:09:00.473607Z",
+    "agent_lines": 52,
+    "agent_removed": 27,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 52,
+    "total_lines_changed": 79,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

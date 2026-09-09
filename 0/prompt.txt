@@ -1,0 +1,5 @@
+investigate [https://github.com/jdx/mise/discussions/12996](https://github.com/jdx/mise/discussions/12996)
+
+---
+
+ok make the mise pr and post a reply
