@@ -1,13 +1,1 @@
-consider the other things the user mentioned like auto prune messag
-
----
-
-edit the pr desc to show examples of exactly what this is changing
-
----
-
-`mise x` too
-
----
-
 address pr feedback until it settles
