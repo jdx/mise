@@ -1539,6 +1539,7 @@ impl Backend for PackslipBackend {
     }
 }
 
+/// The PATH entry for a canonical Packslip command name.
 fn bin_link_path(bins_dir: &Path, name: &str) -> PathBuf {
     if cfg!(windows) {
         bins_dir.join(format!("{name}.exe"))
