@@ -465,13 +465,20 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo) -> Result<()> {
             "lockfile generation would change the recorded signer; previous files were preserved"
         );
     }
-    for (index, artifact) in old.additional_artifacts.iter().enumerate() {
-        if new
+    // Preserve identities across reordering, then pair replaced URLs in their
+    // configured order so version upgrades retain the previous trust baseline.
+    let mut replacements = new.additional_artifacts.iter().filter(|artifact| {
+        !old.additional_artifacts
+            .iter()
+            .any(|old| old.url == artifact.url)
+    });
+    for artifact in &old.additional_artifacts {
+        let replacement = new
             .additional_artifacts
-            .get(index)
-            .and_then(|a| a.provenance.as_ref())
-            < artifact.provenance.as_ref()
-        {
+            .iter()
+            .find(|new| new.url == artifact.url)
+            .or_else(|| replacements.next());
+        if replacement.and_then(|a| a.provenance.as_ref()) < artifact.provenance.as_ref() {
             bail!(
                 "lockfile generation would downgrade additional artifact provenance; previous files were preserved"
             );
@@ -870,5 +877,32 @@ mod tests {
             ..Default::default()
         };
         assert!(ensure_no_downgrade(&old, &PlatformInfo::default()).is_err());
+    }
+
+    #[test]
+    fn additional_artifact_reordering_preserves_identity_and_upgrade_policy() {
+        let old = PlatformInfo {
+            additional_artifacts: vec![
+                ArtifactInfo {
+                    url: "https://example.com/verified-v1".into(),
+                    provenance: Some(ProvenanceType::GithubAttestations),
+                    ..Default::default()
+                },
+                ArtifactInfo {
+                    url: "https://example.com/checksum-only".into(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let mut new = old.clone();
+        new.additional_artifacts.reverse();
+        assert!(ensure_no_downgrade(&old, &new).is_ok());
+        new.additional_artifacts[1].url = "https://example.com/verified-v2".into();
+        assert!(ensure_no_downgrade(&old, &new).is_ok());
+        new.additional_artifacts[1].provenance = None;
+        assert!(ensure_no_downgrade(&old, &new).is_err());
+        new.additional_artifacts.pop();
+        assert!(ensure_no_downgrade(&old, &new).is_err());
     }
 }
