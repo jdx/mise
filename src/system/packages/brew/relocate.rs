@@ -15,6 +15,8 @@
 //! string ended exactly at its slot boundary, which we detect and report as an
 //! error rather than corrupt the binary.
 
+use std::collections::HashSet;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use eyre::bail;
@@ -214,12 +216,21 @@ fn relocate_keg_with_replacements(
     // breaks it (extend/os/linux/keg_relocate.rb)
     let patch_elf = formula_name != "glibc" && !formula_name.starts_with("glibc@");
     let mut report = RelocationReport::default();
+    let mut changed_macho_inodes = HashSet::new();
     for entry in walkdir::WalkDir::new(keg).follow_links(false) {
         let entry = entry?;
         if !entry.file_type().is_file() {
             continue;
         }
         let path = entry.path();
+        let metadata = path.metadata()?;
+        let inode = (metadata.dev(), metadata.ino());
+        // codesign can replace an inode, so every alias needs its own signature
+        if changed_macho_inodes.contains(&inode) {
+            report.changed_machos.push(path.to_path_buf());
+            report.changed_files.push(path.to_path_buf());
+            continue;
+        }
         let content = crate::file::read(path)?;
         if !contains_any_placeholder(&content, replacements) {
             continue;
@@ -230,7 +241,7 @@ fn relocate_keg_with_replacements(
         if skip_linkage && (macho || elf || (content.contains(&0) && shebang_end.is_none())) {
             continue;
         }
-        let perms = path.metadata()?.permissions();
+        let perms = metadata.permissions();
         // bottle files are often read-only; lift that while we patch
         let mut writable = perms.clone();
         std::os::unix::fs::PermissionsExt::set_mode(
@@ -251,6 +262,7 @@ fn relocate_keg_with_replacements(
             if changed {
                 crate::file::write(path, &content)?;
                 if macho {
+                    changed_macho_inodes.insert(inode);
                     report.changed_machos.push(path.to_path_buf());
                 }
                 report.changed_files.push(path.to_path_buf());
@@ -367,6 +379,51 @@ pub(super) mod tests {
         assert_eq!(binary.metadata()?.permissions().mode() & 0o777, 0o444);
         assert_eq!(report.changed_files, vec![text]);
         assert!(report.changed_machos.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_relocate_macho_hard_links() -> Result<()> {
+        for skip_linkage in [false, true] {
+            let tmp = tempfile::tempdir()?;
+            let paths =
+                ["fish", "fish_indent", "fish_key_reader"].map(|name| tmp.path().join(name));
+            let mut content = vec![0; 32];
+            content[..4].copy_from_slice(&0xfeedfacf_u32.to_le_bytes());
+            content.extend_from_slice(b"@@HOMEBREW_PREFIX@@/lib/libpcre2.dylib\0");
+            crate::file::write(&paths[0], &content)?;
+            for path in &paths[1..] {
+                std::fs::hard_link(&paths[0], path)?;
+            }
+            std::fs::set_permissions(&paths[0], std::fs::Permissions::from_mode(0o555))?;
+            std::os::unix::fs::symlink(&paths[0], tmp.path().join("symlink"))?;
+            let untouched = tmp.path().join("untouched");
+            crate::file::write(&untouched, &content[..32])?;
+
+            let mut report = relocate_keg_with_replacements(
+                tmp.path(),
+                "fish",
+                skip_linkage,
+                &test_replacements(),
+            )?;
+
+            let expected = if skip_linkage { vec![] } else { paths.to_vec() };
+            report.changed_files.sort();
+            report.changed_machos.sort();
+            assert_eq!(report.changed_files, expected);
+            assert_eq!(report.changed_machos, expected);
+            for path in &paths {
+                let relocated = crate::file::read(path)?;
+                if skip_linkage {
+                    assert_eq!(relocated, content);
+                } else {
+                    assert!(!contains_any_placeholder(&relocated, &test_replacements()));
+                    assert!(memmem(&relocated, b"/opt/homebrew/lib/libpcre2.dylib").is_some());
+                }
+                assert_eq!(path.metadata()?.permissions().mode() & 0o777, 0o555);
+            }
+            assert_eq!(crate::file::read(&untouched)?, content[..32]);
+        }
         Ok(())
     }
 
