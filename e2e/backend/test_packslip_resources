@@ -160,6 +160,18 @@ actual_manpath="$(env -u MANPATH mise x -- env | sed -n 's/^MANPATH=//p')"
 [[ $actual_manpath == "$active_manpath:" ]] ||
   fail "MANPATH should retain system defaults: $actual_manpath"
 
+# The environment cache must not reuse the caller MANPATH captured by an
+# earlier process.
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+actual_manpath="$(MANPATH="/caller-one:" mise x -- env | sed -n 's/^MANPATH=//p')"
+[[ $actual_manpath == "$active_manpath:/caller-one:" ]] ||
+  fail "unexpected cached MANPATH for first caller: $actual_manpath"
+actual_manpath="$(MANPATH="/caller-two:" mise x -- env | sed -n 's/^MANPATH=//p')"
+[[ $actual_manpath == "$active_manpath:/caller-two:" ]] ||
+  fail "environment cache reused another caller's MANPATH: $actual_manpath"
+unset MISE_ENV_CACHE __MISE_ENV_CACHE_KEY
+
 # A tools-aware environment value resolves after the first tool environment
 # pass, but it must not replace the active Packslip man root.
 cd ../project-tools-manpath
