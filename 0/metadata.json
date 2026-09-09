@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2374HXEJE6FH5QSQ54GXZZY",
+  "session_id": "01a08658-a45e-7723-8173-67f5e65df39f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T13:53:52.196861Z",
+  "branch": "codex/fix-tool-stub-windows-launcher-os",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/tool-stubs.md",
+    "e2e/generate/test_generate_tool_stub_lock",
+    "src/cli/generate/tool_stub.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "e5217e839a34",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 160607,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 7243520,
+    "output_tokens": 12561,
+    "api_call_count": 70
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T13:53:52.131562Z",
+    "agent_lines": 34,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 34,
+    "total_lines_changed": 39,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
