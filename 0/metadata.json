@@ -1,0 +1,88 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M23TWTBN7GXS5G07HNCBXTRV",
+  "session_id": "01a0870b-0d48-7a81-8d18-5a9f404af89a",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T19:39:11.052548Z",
+  "branch": "codex/full-lockfile-generation",
+  "checkpoints_count": 6,
+  "save_step_count": 1,
+  "files_touched": [
+    "Cargo.toml",
+    "build.rs",
+    "build/lockfile_rollout.rs",
+    "docs/dev-tools/mise-lock.md",
+    "e2e/lockfile/test_lockfile_generate",
+    "e2e/lockfile/test_lockfile_generate_concurrent_edits",
+    "e2e/lockfile/test_lockfile_generate_creation",
+    "e2e/lockfile/test_lockfile_generate_monorepo",
+    "e2e/lockfile/test_lockfile_generate_overlap",
+    "e2e/lockfile/test_lockfile_generate_platform_options",
+    "e2e/lockfile/test_lockfile_generate_provenance_slow",
+    "e2e/lockfile/test_lockfile_generate_task_tools",
+    "e2e/lockfile/test_lockfile_monorepo",
+    "settings.toml",
+    "src/backend/aqua.rs",
+    "src/backend/asset_matcher.rs",
+    "src/backend/github.rs",
+    "src/backend/http.rs",
+    "src/cli/install.rs",
+    "src/cli/lock.rs",
+    "src/cli/mod.rs",
+    "src/cli/upgrade.rs",
+    "src/cli/use.rs",
+    "src/config/mod.rs",
+    "src/config/settings.rs",
+    "src/errors.rs",
+    "src/github/sigstore.rs",
+    "src/http.rs",
+    "src/lockfile.rs",
+    "src/lockfile/generate.rs",
+    "src/main.rs",
+    "src/plugins/core/python.rs",
+    "src/plugins/core/ruby.rs",
+    "src/toolset/toolset_install.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "3fa7c2efa345",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 863962,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 38962944,
+    "output_tokens": 99512,
+    "api_call_count": 300
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T19:39:10.516159Z",
+    "agent_lines": 0,
+    "agent_removed": 7,
+    "human_added": 1642,
+    "human_modified": 322,
+    "human_removed": 0,
+    "total_committed": 1735,
+    "total_lines_changed": 1971,
+    "agent_percentage": 0.35514967021816335,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+lockfiles are on by defalut? [https://github.com/jdx/mise/discussions/13018#discussion-10783093](https://github.com/jdx/mise/discussions/13018#discussion-10783093)
+
+---
+
+that means it's not on by default
+
+---
+
+see if you can fix this
