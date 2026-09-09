@@ -2,12 +2,10 @@
   "cli_version": "0.10.5",
   "checkpoint_id": "01M23FHHQ5S5Y32JVHFFSCFGSK",
   "strategy": "manual-commit",
-  "branch": "codex/packslip-manpages",
+  "branch": "codex/packslip-manpaths-followup",
   "checkpoints_count": 2,
   "files_touched": [
-    "e2e/backend/test_packslip_resources",
-    "src/toolset/env_cache.rs",
-    "src/toolset/toolset_env.rs"
+    "src/toolset/env_cache.rs"
   ],
   "sessions": [
     {
@@ -19,10 +17,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 103977,
+    "input_tokens": 21423,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 8309376,
-    "output_tokens": 10026,
-    "api_call_count": 72
+    "cache_read_tokens": 3433984,
+    "output_tokens": 4258,
+    "api_call_count": 20
   }
 }
