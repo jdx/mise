@@ -208,6 +208,36 @@ static INVOCATION_DOWNLOADS: std::sync::LazyLock<
     std::sync::Mutex<std::collections::HashMap<String, SharedDownload>>,
 > = std::sync::LazyLock::new(Default::default);
 
+// Bound retained scratch space, excluding transfers still borrowed by callers.
+// Active transfers are bounded by their callers' jobs limit and remain shared.
+fn prune_shared_downloads(
+    downloads: &mut std::collections::HashMap<String, SharedDownload>,
+    max_bytes: u64,
+    max_entries: usize,
+) {
+    let size = |entry: &SharedDownload| {
+        entry
+            .get()
+            .and_then(|(directory, _)| {
+                std::fs::metadata(directory.path().join("artifact"))
+                    .ok()
+                    .map(|m| m.len())
+            })
+            .unwrap_or(0)
+    };
+    let mut bytes: u64 = downloads.values().map(size).sum();
+    let mut count = downloads.len();
+    downloads.retain(|_, entry| {
+        if (bytes > max_bytes || count > max_entries) && Arc::strong_count(entry) == 1 {
+            bytes = bytes.saturating_sub(size(entry));
+            count -= 1;
+            false
+        } else {
+            true
+        }
+    });
+}
+
 /// Own temporary shared artifacts for this command, including cancellation paths.
 pub(crate) struct InvocationDownloads;
 
@@ -900,8 +930,23 @@ impl Client {
             if let Some(parent) = path.parent() {
                 file::create_dir_all(parent)?;
             }
-            file::copy(directory.path().join("artifact"), path)?;
-            return Ok(metadata.clone());
+            let partial = PartialDownload::new(path, download_request_hash(&url, headers))?;
+            let lock_path = partial.path.clone();
+            let _download_lock = tokio::task::spawn_blocking(move || {
+                crate::lock_file::LockFile::new(&lock_path).lock()
+            })
+            .await??;
+            partial.clear()?;
+            file::copy(directory.path().join("artifact"), &partial.path)?;
+            partial.persist(path)?;
+            let metadata = metadata.clone();
+            drop(shared);
+            prune_shared_downloads(
+                &mut INVOCATION_DOWNLOADS.lock().unwrap(),
+                512 * 1024 * 1024,
+                64,
+            );
+            return Ok(metadata);
         }
         self.download_file_with_headers_timeout(
             url,
@@ -2558,10 +2603,48 @@ mod tests {
         a.unwrap();
         b.unwrap();
         assert_eq!(
+            std::fs::read(&first).unwrap(),
+            std::fs::read(&second).unwrap()
+        );
+        let (a, b) = tokio::join!(
+            client.download_file(&url, &first, None),
+            client.download_file(&url, &first, None)
+        );
+        a.unwrap();
+        b.unwrap();
+        assert_eq!(
             std::fs::read(first).unwrap(),
             std::fs::read(second).unwrap()
         );
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn shared_download_retention_evicts_idle_bytes_but_never_active_callers() {
+        let make_entry = || {
+            let directory = tempfile::tempdir().unwrap();
+            std::fs::write(directory.path().join("artifact"), b"1234").unwrap();
+            Arc::new(tokio::sync::OnceCell::new_with(Some((
+                directory,
+                DownloadFileMetadata::default(),
+            ))))
+        };
+        let active = make_entry();
+        let idle = make_entry();
+        let idle_path = idle.get().unwrap().0.path().to_path_buf();
+        let mut downloads = std::collections::HashMap::from([
+            ("active".into(), active.clone()),
+            ("idle".into(), idle),
+        ]);
+        prune_shared_downloads(&mut downloads, 4, 64);
+        assert_eq!(downloads.len(), 1);
+        assert!(downloads.contains_key("active"));
+        assert!(!idle_path.exists());
+        prune_shared_downloads(&mut downloads, 0, 0);
+        assert_eq!(downloads.len(), 1);
+        drop(active);
+        prune_shared_downloads(&mut downloads, 0, 0);
+        assert!(downloads.is_empty());
     }
 
     struct AtomicBoolGuard {

@@ -1438,10 +1438,12 @@ impl AquaBackend {
         {
             crate::hash::ensure_checksum(&artifact_path, expected, None, algorithm)?;
         }
-        *checksum = Some(format!(
-            "sha256:{}",
-            crate::hash::file_hash_sha256(&artifact_path, None)?
-        ));
+        if checksum.is_none() {
+            *checksum = Some(format!(
+                "sha256:{}",
+                crate::hash::file_hash_sha256(&artifact_path, None)?
+            ));
+        }
         let expected_checksum = checksum.as_deref();
 
         match detected {

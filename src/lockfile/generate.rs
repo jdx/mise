@@ -195,24 +195,43 @@ pub(crate) async fn prepare_install(config: &Config, tv: &ToolVersion) -> Result
     Ok(())
 }
 
+fn resolution_key(
+    ba: &crate::cli::args::BackendArg,
+    tv: &ToolVersion,
+    platform: &Platform,
+) -> String {
+    let mut options = tv.request.options().clone();
+    options.opts.values.sort_keys();
+    options.core.install_env.sort_keys();
+    let mut install_env = tv.install_env();
+    install_env.sort_keys();
+    format!(
+        "{}\n{}\n{:?}\n{:?}\n{}",
+        ba.full(),
+        tv.version,
+        options,
+        install_env,
+        platform.to_key()
+    )
+}
+
 async fn resolve(
     ba: crate::cli::args::BackendArg,
     tv: ToolVersion,
     platform: Platform,
 ) -> Result<LockResolutionResult> {
-    let key = format!(
-        "{}\n{}\n{:?}\n{:?}\n{}",
-        ba.full(),
-        tv.version,
-        tv.request.options(),
-        tv.install_env(),
-        platform.to_key()
-    );
+    let key = resolution_key(&ba, &tv, &platform);
     let cell = RESOLUTIONS.lock().unwrap().entry(key).or_default().clone();
     Ok(cell
         .get_or_init(|| async {
             let backend = tv.backend().ok();
-            resolve_tool_lock_info(ba, tv, platform, backend).await
+            let mut resolution = resolve_tool_lock_info(ba, tv, platform, backend).await;
+            if let Ok(info) = &mut resolution.4
+                && let Err(error) = complete_artifact_checksums(info).await
+            {
+                resolution.4 = Err(error.to_string());
+            }
+            resolution
         })
         .await
         .clone())
@@ -348,18 +367,7 @@ pub(crate) async fn generate(
                 resolve(ba, tv.clone(), platform).await?
             };
             if let Ok(info) = &mut resolution.4 {
-                if info.checksum.is_none()
-                    && let Some(url) = &info.url
-                {
-                    info.checksum = Some(artifact_checksum(url, info.url_api.as_deref()).await?);
-                }
-                for artifact in &mut info.additional_artifacts {
-                    if artifact.checksum.is_none() {
-                        artifact.checksum = Some(
-                            artifact_checksum(&artifact.url, artifact.url_api.as_deref()).await?,
-                        );
-                    }
-                }
+                complete_artifact_checksums(info).await?;
                 if let Some(old) = previous_info {
                     preserve_legacy_metadata(&old, info);
                 }
@@ -532,6 +540,21 @@ impl Drop for ProgressGuard<'_> {
     }
 }
 
+async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
+    if info.checksum.is_none()
+        && let Some(url) = &info.url
+    {
+        info.checksum = Some(artifact_checksum(url, info.url_api.as_deref()).await?);
+    }
+    for artifact in &mut info.additional_artifacts {
+        if artifact.checksum.is_none() {
+            artifact.checksum =
+                Some(artifact_checksum(&artifact.url, artifact.url_api.as_deref()).await?);
+        }
+    }
+    Ok(())
+}
+
 async fn artifact_checksum(url: &str, api_url: Option<&str>) -> Result<String> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("artifact");
@@ -634,6 +657,35 @@ mod tests {
         let tv = ToolVersion::new(request, "1.0".into());
         let result = resolve_tool_lock_info(ba.clone(), tv, Platform::current(), None).await;
         assert_eq!(result.2, ba.stored_full());
+    }
+
+    #[test]
+    fn resolution_keys_ignore_option_and_environment_insertion_order() {
+        let ba = BackendArg::new("fixture".into(), Some("http:fixture".into()));
+        let version = |keys: [&str; 2]| {
+            let mut options = ToolVersionOptions::default();
+            for key in keys {
+                options
+                    .opts
+                    .insert(key.into(), toml::Value::String(key.into()));
+                options.core.install_env.insert(
+                    key.into(),
+                    crate::config::env_directive::EnvValue::String(key.into()),
+                );
+            }
+            let request = ToolRequest::new_with_options(
+                Arc::new(ba.clone()),
+                "1",
+                options,
+                ToolSource::Argument,
+            )
+            .unwrap();
+            ToolVersion::new(request, "1.0".into())
+        };
+        assert_eq!(
+            resolution_key(&ba, &version(["a", "b"]), &Platform::current()),
+            resolution_key(&ba, &version(["b", "a"]), &Platform::current()),
+        );
     }
 
     #[tokio::test]

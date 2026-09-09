@@ -841,13 +841,10 @@ impl RubyPlugin {
         // Verify GitHub artifact attestations for precompiled binaries
         // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
         let verified = if reuse_provenance {
-            let settings = Settings::get();
-            if !settings
-                .ruby
-                .github_attestations
-                .unwrap_or(settings.github_attestations)
-            {
-                bail!("lockfile requires Ruby provenance but GitHub attestations are disabled");
+            if self.detect_precompiled_provenance().is_none() {
+                bail!(
+                    "lockfile requires Ruby provenance but GitHub attestations are disabled or the precompiled source is not a GitHub repository"
+                );
             }
             true
         } else {

@@ -38,6 +38,7 @@ assert "mise settings get lockfile_mode" "generate"
 unset MISE_LOCKFILE_MODE
 assert "mise settings get lockfile_mode" "merge"
 mise install
+diff -u expected.lock mise.lock
 export MISE_LOCKFILE_MODE=generate
 mise lock
 diff -u expected.lock mise.lock
