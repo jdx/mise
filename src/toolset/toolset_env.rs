@@ -468,6 +468,8 @@ impl Toolset {
             .collect()
     }
 
+    /// Resolve tool and non-tool environment contributions needed before the
+    /// tools-aware environment pass.
     pub(crate) async fn env(&self, config: &Arc<Config>) -> Result<(EnvMap, Vec<PathBuf>)> {
         time!("env start");
         let entries = self
@@ -505,6 +507,7 @@ impl Toolset {
         Ok((env, paths_to_add))
     }
 
+    /// Prepend normalized man roots from the active Packslip installs.
     fn prepend_packslip_manpaths(&self, config: &Arc<Config>, env: &mut EnvMap) -> Result<()> {
         let mut paths: Vec<PathBuf> = self
             .list_current_installed_versions(config)
@@ -535,6 +538,7 @@ impl Toolset {
         Ok(())
     }
 
+    /// Resolve the complete environment, including tools-aware directives.
     pub(crate) async fn final_env(&self, config: &Arc<Config>) -> Result<(EnvMap, EnvResults)> {
         let (mut env, add_paths) = self.env(config).await?;
         let non_tool_env = config.env_results().await?;
@@ -591,6 +595,13 @@ impl Toolset {
         }
         effective_removals.extend(env_results.env_remove.clone());
         env_results.env_remove = effective_removals;
+
+        // A tools-aware directive may replace MANPATH after env() added the
+        // Packslip roots. Compose it once more against the final value, while
+        // continuing to honor an explicit unset from either environment pass.
+        if !env_results.env_remove.contains("MANPATH") {
+            self.prepend_packslip_manpaths(config, &mut env)?;
+        }
 
         // Apply redactions from tools-only env vars (e.g. redact=true + tools=true)
         if !env_results.redactions.is_empty() {

@@ -121,6 +121,22 @@ for version in 1.0.0 2.0.0 3.0.0; do
   mkdir "project-$version"
   printf '[tools]\n"packslip:test/probe" = "%s"\n' "$version" >"project-$version/mise.toml"
 done
+mkdir project-tools-manpath
+cat >project-tools-manpath/mise.toml <<'EOF_TOOLS_MANPATH'
+[tools]
+"packslip:test/probe" = "1.0.0"
+
+[env]
+MANPATH = { value = "/tools-aware-man:", tools = true }
+EOF_TOOLS_MANPATH
+mkdir project-unset-manpath
+cat >project-unset-manpath/mise.toml <<'EOF_UNSET_MANPATH'
+[tools]
+"packslip:test/probe" = "1.0.0"
+
+[env]
+MANPATH = { value = false, tools = true }
+EOF_UNSET_MANPATH
 
 # A separate usage executable must never be used for these completions.
 cat >"$HOME/bin/usage" <<'EOF_USAGE'
@@ -143,6 +159,18 @@ actual_manpath="$(MANPATH="$existing_manpath:" mise x -- env | sed -n 's/^MANPAT
 actual_manpath="$(env -u MANPATH mise x -- env | sed -n 's/^MANPATH=//p')"
 [[ $actual_manpath == "$active_manpath:" ]] ||
   fail "MANPATH should retain system defaults: $actual_manpath"
+
+# A tools-aware environment value resolves after the first tool environment
+# pass, but it must not replace the active Packslip man root.
+cd ../project-tools-manpath
+actual_manpath="$(env -u MANPATH mise x -- env | sed -n 's/^MANPATH=//p')"
+[[ $actual_manpath == "$active_manpath:/tools-aware-man:" ]] ||
+  fail "tools-aware MANPATH replaced Packslip pages: $actual_manpath"
+cd ../project-unset-manpath
+if env -u MANPATH mise x -- env | grep -q '^MANPATH='; then
+  fail "a tools-aware MANPATH unset should be honored"
+fi
+cd ../project-1.0.0
 
 # What an interrupted generation leaves is not a completion, and the shells
 # asking at once run the tool once between them rather than once each.

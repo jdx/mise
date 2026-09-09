@@ -439,6 +439,7 @@ pub(crate) fn install_man_pages(
     Ok(())
 }
 
+/// Return the section suffix encoded in a conventional man-page file name.
 fn man_section(name: &str) -> Option<&str> {
     let uncompressed = [".gz", ".bz2", ".xz", ".zst", ".lzma"]
         .into_iter()
@@ -449,6 +450,7 @@ fn man_section(name: &str) -> Option<&str> {
         .then_some(section)
 }
 
+/// Return the normalized man root when this install contains Packslip pages.
 pub(crate) fn manpath(install_path: &Path) -> Option<PathBuf> {
     let path = install_path.join(RESOURCES_DIR).join(MANPAGES_DIR);
     path.is_dir().then_some(path)
@@ -1740,6 +1742,8 @@ mod tests {
             ("share/docs/t.1", "archive"),
             (&format!("{RESOURCES_DIR}/repo/docs/t.1"), "repo"),
             (&format!("{RESOURCES_DIR}/repo/docs/u.5.gz"), "compressed"),
+            ("share/docs/v.1", "generic"),
+            (&format!("{RESOURCES_DIR}/repo/docs/v.1"), "platform"),
             (
                 &format!("{RESOURCES_DIR}/repo/docs/README"),
                 "not a man page",
@@ -1755,6 +1759,8 @@ mod tests {
             {"kind":"man","bin":"t","repo":"docs/t.1"},
             {"kind":"man","bin":"u","repo":"docs/u.5.gz"},
             {"kind":"man","bin":"u","repo":"docs/README"},
+            {"kind":"man","bin":"u","archive":"share/docs/v.1"},
+            {"kind":"man","bin":"u","os":"linux","arch":"x86_64","repo":"docs/v.1"},
             {"kind":"skill","name":"t","asset":"t-skill.tar.gz"}
         ]"#,
         );
@@ -1770,6 +1776,11 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(manpath.join("man5/u.5.gz")).unwrap(),
             "compressed"
+        );
+        assert_eq!(
+            std::fs::read_to_string(manpath.join("man1/v.1")).unwrap(),
+            "platform",
+            "resource selection keeps the most specific matching page"
         );
         assert!(!manpath.join("manREADME/README").exists());
     }
