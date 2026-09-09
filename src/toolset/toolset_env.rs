@@ -497,11 +497,42 @@ impl Toolset {
                 env.insert(k, v);
             }
         }
+        self.prepend_packslip_manpaths(config, &mut env)?;
         for key in &config.env_results().await?.env_remove {
             env.remove(key);
         }
         time!("env end");
         Ok((env, paths_to_add))
+    }
+
+    fn prepend_packslip_manpaths(&self, config: &Arc<Config>, env: &mut EnvMap) -> Result<()> {
+        let mut paths: Vec<PathBuf> = self
+            .list_current_installed_versions(config)
+            .into_iter()
+            .filter_map(|(_, tv)| crate::packslip::manpath(&tv.install_path()))
+            .collect();
+        if paths.is_empty() {
+            return Ok(());
+        }
+
+        let existing = env
+            .get("MANPATH")
+            .or_else(|| crate::env::PRISTINE_ENV.get("MANPATH"));
+        if let Some(existing) = existing {
+            paths.extend(std::env::split_paths(existing));
+        } else {
+            // An empty component asks `man` to retain its platform defaults.
+            // Without it, merely activating one Packslip tool would hide the
+            // operating system's own manual pages.
+            paths.push(PathBuf::new());
+        }
+        let mut seen = BTreeSet::new();
+        paths.retain(|path| seen.insert(path.clone()));
+        env.insert(
+            "MANPATH".into(),
+            std::env::join_paths(paths)?.to_string_lossy().into_owned(),
+        );
+        Ok(())
     }
 
     pub(crate) async fn final_env(&self, config: &Arc<Config>) -> Result<(EnvMap, EnvResults)> {

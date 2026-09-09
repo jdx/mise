@@ -1,13 +1,14 @@
 ---
-description: "Use shell completions and agent skills that match your active tool versions."
-socialDescription: "Use shell completions and agent skills that match your active tool versions."
+description: "Use man pages, shell completions, and agent skills that match your active tool versions."
+socialDescription: "Use man pages, shell completions, and agent skills that match your active tool versions."
 ---
 
-# Packslip Completions and Skills
+# Packslip Man Pages, Completions, and Skills
 
 Tools installed with the [Packslip backend](/dev-tools/backends/packslip.html)
-can provide shell completions and agent skills that match the version active in
-your project. The publisher declares these resources in the release manifest.
+can provide man pages, shell completions, and agent skills that match the
+version active in your project. The publisher declares these resources in the
+release manifest.
 
 Install the tool through `packslip:` to use its declared resources. An existing
 installation from another backend does not acquire them automatically.
@@ -62,6 +63,25 @@ mise completion zsh --tool TOOL
 `packslip:github.com/jdx/hk`.
 If a release contains several commands, choose the one you want to complete.
 Without `--tool`, `mise completion` generates completions for mise itself.
+
+## Man pages
+
+When an installed tool's Packslip manifest declares a static `man` resource,
+mise adds it to `MANPATH` while that tool version is active. This works in an
+activated shell and in environments created by `mise exec`, `mise run`, and
+`mise env`. Switching projects selects the matching version's pages.
+
+mise keeps these pages below `.mise-packslip/man` in the tool's installation.
+It prepends that directory to an existing `MANPATH`; when `MANPATH` was unset,
+mise retains the operating system's default manual-page locations. A tool
+installed with an older mise version must be reinstalled once so mise can
+prepare this layout.
+
+Packslip man pages can come from the release archive, a separately signed
+release asset, or the source repository at the release commit. A file such as
+`tool.1` is placed under `man1`; compressed pages such as `tool.5.gz` are also
+supported. Generated `exec` resources and man pages derived only from a
+`cli-spec` are not installed automatically.
 
 ### Generated completions
 
