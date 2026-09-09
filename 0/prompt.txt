@@ -1,5 +1,1 @@
-could we upload the VERSION file in a separate step after the release is published?
-
----
-
 make a pr
