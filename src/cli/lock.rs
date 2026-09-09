@@ -40,6 +40,7 @@ fn lock_tool_matches(a: &LockTool, b: &LockTool) -> bool {
         && a.1.version == b.1.version
         && a.1.request.version() == b.1.request.version()
         && a.1.request.options() == b.1.request.options()
+        && a.1.request.source() == b.1.request.source()
 }
 
 fn push_unique_lock_tool(tools: &mut Vec<LockTool>, tool: LockTool) {
@@ -277,12 +278,41 @@ fn classify_lock_result(
 
 impl Lock {
     pub(crate) async fn run(self) -> Result<()> {
+        self.run_with_installed(None, Config::get().await?).await
+    }
+
+    pub(crate) async fn generate_after_install(
+        config: Arc<Config>,
+        installed: &[crate::toolset::ToolVersion],
+    ) -> Result<()> {
+        Self {
+            tool: vec![],
+            global: false,
+            jobs: None,
+            dry_run: false,
+            platform: vec![],
+            bump: false,
+            json: true,
+            local: false,
+            minimum_release_age: None,
+            upgrade: false,
+        }
+        .run_with_installed(Some(installed), config)
+        .await
+    }
+
+    async fn run_with_installed(
+        self,
+        installed: Option<&[crate::toolset::ToolVersion]>,
+        config: Arc<Config>,
+    ) -> Result<()> {
         if self.upgrade && !self.tool.is_empty() {
             bail!("`mise lock --upgrade` cannot be combined with tool arguments");
         }
         let settings = Settings::get();
-        let config = Config::get().await?;
-        if !self.dry_run && !self.upgrade {
+        let generate = settings.generate_lockfiles();
+        let atomic = self.upgrade || generate;
+        if !self.dry_run && !atomic {
             lockfile::migrate_monorepo_lockfiles(&config, self.upgrade)?;
         }
         let before_date = self.get_before_date()?;
@@ -314,6 +344,29 @@ impl Lock {
         let task_load_context = crate::task::TaskLoadContext::all();
         let tasks = config.tasks_with_context(Some(&task_load_context)).await?;
 
+        let config_snapshots = effective_config_files
+            .keys()
+            .chain(tasks.values().filter_map(|task| task.file.as_ref()))
+            .map(|path| Ok((path.clone(), read_optional_file(path)?)))
+            .collect::<Result<BTreeMap<_, _>>>()?;
+        let scoped_config_paths = if installed.is_some() {
+            effective_config_files.keys().cloned().collect()
+        } else {
+            self.config_paths_in_lock_scope(&config, effective_config_files)
+        };
+        let lockfile_targets =
+            self.get_lockfile_targets(&config, effective_config_files, &scoped_config_paths);
+        let migration_inputs = lockfile::monorepo_lockfile_migration_paths(&config);
+        let initial_lockfiles = lockfile_targets
+            .keys()
+            .chain(
+                migration_inputs
+                    .iter()
+                    .flat_map(|(source, target)| [source, target]),
+            )
+            .map(|path| Ok((path.clone(), read_optional_file(path)?)))
+            .collect::<Result<BTreeMap<_, _>>>()?;
+
         let ts_owned;
         let ts = if let Some(monorepo_union) = &monorepo_union {
             let mut monorepo_ts: Toolset = monorepo_union.tool_request_set.clone().into();
@@ -328,9 +381,6 @@ impl Lock {
             &ts_owned
         };
 
-        let scoped_config_paths = self.config_paths_in_lock_scope(&config, effective_config_files);
-        let lockfile_targets =
-            self.get_lockfile_targets(&config, effective_config_files, &scoped_config_paths);
         let mut has_lock_targets = false;
         let mut all_resolution_errors: Vec<String> = Vec::new();
         let mut all_platform_regressions: Vec<String> = Vec::new();
@@ -349,9 +399,41 @@ impl Lock {
         // earlier environment/local/monorepo lockfiles partially updated.
         let mut prepared_targets = Vec::with_capacity(lockfile_targets.len());
         for (lockfile_path, config_paths) in &lockfile_targets {
-            let tools = self
+            if installed.is_some()
+                && !lockfile::generate::has_previous_file(&config, lockfile_path)
+                && (!config.lockfile_creation_enabled()
+                    || installed.is_some_and(|versions| {
+                        !versions.is_empty()
+                            && versions.iter().all(|tv| {
+                                tv.request
+                                    .source()
+                                    .path()
+                                    .is_none_or(crate::config::is_global_config)
+                            })
+                    })
+                    || !config_paths
+                        .iter()
+                        .any(|p| !crate::config::is_global_config(p)))
+            {
+                continue;
+            }
+            let mut tools = self
                 .get_tools_to_lock(&collection_context, lockfile_path, config_paths)
                 .await?;
+            if let Some(installed) = installed {
+                for (_, tv) in &mut tools {
+                    if let Some(actual) = installed.iter().find(|actual| {
+                        actual.ba().full() == tv.ba().full()
+                            && request_matches(&actual.request, &tv.request)
+                            && actual.request.source() == tv.request.source()
+                    }) {
+                        *tv = actual.clone();
+                    }
+                }
+                if tools.is_empty() && !lockfile_path.exists() {
+                    continue;
+                }
+            }
             let configured_selectors = self.configured_tool_selectors_for_target(
                 &config,
                 &tools,
@@ -379,7 +461,11 @@ impl Lock {
                 // `tools` can be empty either because config has no tools, or because a filter excludes all.
                 // For unfiltered runs (`mise lock`), this means "prune all stale lockfile entries".
                 if self.dry_run {
-                    let lockfile = Lockfile::read(&lockfile_path)?;
+                    let lockfile = if generate {
+                        lockfile::generate::read_previous(&config, &lockfile_path, self.upgrade)?
+                    } else {
+                        Lockfile::read(&lockfile_path)?
+                    };
                     self.report_lockfile_format(&lockfile_path, &lockfile, true)?;
                     if self.json {
                         all_changes.extend(self.compute_version_changes(
@@ -399,7 +485,11 @@ impl Lock {
                         .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                         .lock()?;
                     let original_content = read_optional_file(&lockfile_path)?;
-                    let mut lockfile = Lockfile::read(&lockfile_path)?;
+                    let mut lockfile = if generate {
+                        lockfile::generate::read_previous(&config, &lockfile_path, self.upgrade)?
+                    } else {
+                        Lockfile::read(&lockfile_path)?
+                    };
                     if self.json {
                         all_changes.extend(self.compute_version_changes(
                             &lockfile,
@@ -425,7 +515,7 @@ impl Lock {
                         false
                     };
                     if format_changed || !pruned_tools.is_empty() {
-                        if self.upgrade {
+                        if atomic {
                             staged_upgrade_writes.push(StagedUpgradeWrite {
                                 path: lockfile_path.clone(),
                                 original_content,
@@ -438,7 +528,7 @@ impl Lock {
                         } else {
                             lockfile.write(&lockfile_path)?;
                         }
-                        if !self.upgrade {
+                        if !atomic {
                             self.show_stale_prune_message(&lockfile_path, &pruned_tools, false)?;
                         }
                         has_lock_targets = true;
@@ -477,7 +567,11 @@ impl Lock {
 
             if self.dry_run {
                 self.show_dry_run(&tools, &target_platforms)?;
-                let lockfile = Lockfile::read(&lockfile_path)?;
+                let lockfile = if generate {
+                    lockfile::generate::read_previous(&config, &lockfile_path, self.upgrade)?
+                } else {
+                    Lockfile::read(&lockfile_path)?
+                };
                 self.report_lockfile_format(&lockfile_path, &lockfile, true)?;
                 if self.json {
                     all_changes.extend(self.compute_version_changes(
@@ -501,15 +595,22 @@ impl Lock {
                 .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                 .lock()?;
             let original_content = read_optional_file(&lockfile_path)?;
-            let mut lockfile = Lockfile::read(&lockfile_path)?;
+            let mut lockfile = if generate {
+                lockfile::generate::read_previous(&config, &lockfile_path, self.upgrade)?
+            } else {
+                Lockfile::read(&lockfile_path)?
+            };
             if !self.upgrade {
                 self.report_lockfile_format(&lockfile_path, &lockfile, false)?;
             }
             if self.json {
                 all_changes.extend(self.compute_version_changes(&lockfile, &tools, &lockfile_path));
             }
-            let stale_tools =
-                self.prune_stale_entries_if_needed(&mut lockfile, configured_selectors.as_ref());
+            let stale_tools = if generate {
+                self.stale_entries_if_pruned(&lockfile, configured_selectors.as_ref())
+            } else {
+                self.prune_stale_entries_if_needed(&mut lockfile, configured_selectors.as_ref())
+            };
             if !self.upgrade {
                 self.show_stale_prune_message(&lockfile_path, &stale_tools, false)?;
             }
@@ -518,9 +619,22 @@ impl Lock {
             // compare against old version entries. Actual pruning happens after.
             let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
 
-            let (results, resolution_errors) = self
-                .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
+            let (results, resolution_errors) = if generate {
+                lockfile = lockfile::generate::generate(
+                    &lockfile,
+                    &tools,
+                    &target_platforms,
+                    !self.tool.is_empty(),
+                    !self.platform.is_empty(),
+                    crate::jobs::resolve(settings.jobs, self.jobs),
+                    installed.unwrap_or_default(),
+                )
                 .await?;
+                (Vec::new(), Vec::new())
+            } else {
+                self.process_tools(&settings, &tools, &target_platforms, &mut lockfile)
+                    .await?
+            };
             let resolution_succeeded = resolution_errors.is_empty();
             all_resolution_errors.extend(resolution_errors);
 
@@ -546,7 +660,9 @@ impl Lock {
             }
 
             // Prune stale versions AFTER provenance checks complete
-            self.prune_stale_versions(&mut lockfile, &tools);
+            if !generate {
+                self.prune_stale_versions(&mut lockfile, &tools);
+            }
             if !self.upgrade {
                 self.show_stale_version_prune_message(&lockfile_path, &stale_versions, false)?;
             }
@@ -556,12 +672,12 @@ impl Lock {
                 .filter(|result| matches!(result.status, LockTaskStatus::Updated))
                 .count();
             let skipped = results.len() - successful;
-            if self.upgrade {
+            if atomic {
                 staged_upgrade_writes.push(StagedUpgradeWrite {
                     path: lockfile_path.clone(),
                     original_content,
                     lockfile,
-                    summary: Some((successful, skipped)),
+                    summary: (!generate).then_some((successful, skipped)),
                     format_changed,
                     stale_tools,
                     stale_versions,
@@ -574,7 +690,7 @@ impl Lock {
 
             // Print summaries for normal writes now. Upgrade summaries are
             // deferred with their writes until every target succeeds.
-            if !self.json && !self.upgrade {
+            if !self.json && !atomic {
                 miseprintln!(
                     "{} Updated {} platform entries ({} skipped)",
                     style("✓").green(),
@@ -606,6 +722,7 @@ impl Lock {
         // Update config files when a specific version is requested that doesn't match
         // the current prefix (e.g., `mise lock tiny@3.0.1` when config has `tiny = "2"`).
         // Never under --bump, which is documented to leave config files untouched.
+        let mut deferred_config_bumps = Vec::new();
         if !self.bump {
             use crate::toolset::outdated_info::{
                 apply_config_bumps, compute_config_bumps_for_paths,
@@ -636,6 +753,8 @@ impl Lock {
                         );
                     }
                 }
+            } else if atomic {
+                deferred_config_bumps = bumps;
             } else {
                 apply_config_bumps(&config, &bumps)?;
             }
@@ -649,11 +768,24 @@ impl Lock {
         // Format upgrades are committed as a batch only after every target has
         // resolved and bound successfully. This also keeps legacy monorepo
         // lockfiles untouched on failure.
-        if !self.dry_run && self.upgrade {
+        if !self.dry_run && atomic {
+            for (path, content) in config_snapshots.iter().chain(initial_lockfiles.iter()) {
+                if read_optional_file(path)? != *content {
+                    bail!(
+                        "file {} changed during lockfile generation; retry the command",
+                        display_path(path)
+                    );
+                }
+            }
             let migration_paths = lockfile::monorepo_lockfile_migration_paths(&config);
             let transaction_paths: BTreeSet<PathBuf> = staged_upgrade_writes
                 .iter()
                 .map(|staged| staged.path.clone())
+                .chain(
+                    deferred_config_bumps
+                        .iter()
+                        .map(|bump| bump.config_path.clone()),
+                )
                 .chain(
                     migration_paths
                         .iter()
@@ -672,7 +804,7 @@ impl Lock {
             for staged in &staged_upgrade_writes {
                 if read_optional_file(&staged.path)? != staged.original_content {
                     bail!(
-                        "lockfile {} changed while the format upgrade was being prepared; retry `mise lock --upgrade`",
+                        "lockfile {} changed while generation was being prepared; retry the command",
                         display_path(&staged.path)
                     );
                 }
@@ -692,11 +824,28 @@ impl Lock {
             // later disk-full failure cannot prevent restoration by requiring
             // more file data to be written.
             let rollbacks = prepare_lockfile_rollback(&snapshots)?;
+            let prepared_writes = staged_upgrade_writes
+                .iter()
+                .map(|staged| staged.lockfile.prepare_write(&staged.path))
+                .collect::<Result<Vec<_>>>()?;
             let commit_result = (|| -> Result<()> {
-                for staged in &staged_upgrade_writes {
-                    staged.lockfile.write(&staged.path)?;
+                crate::toolset::outdated_info::apply_config_bumps(&config, &deferred_config_bumps)?;
+                for prepared in prepared_writes.into_iter().flatten() {
+                    prepared.publish()?;
                 }
-                lockfile::migrate_monorepo_lockfiles_already_locked(&config, true, &migration_paths)
+                lockfile::migrate_monorepo_lockfiles_already_locked(
+                    &config,
+                    self.upgrade,
+                    &migration_paths,
+                    generate
+                        .then(|| {
+                            staged_upgrade_writes
+                                .iter()
+                                .map(|staged| staged.path.clone())
+                                .collect::<BTreeSet<_>>()
+                        })
+                        .as_ref(),
+                )
             })();
             if let Err(err) = commit_result {
                 if let Err(rollback_err) = restore_lockfile_snapshots(rollbacks) {
@@ -709,6 +858,13 @@ impl Lock {
             drop(transaction_locks);
 
             for staged in &staged_upgrade_writes {
+                if generate && !self.json {
+                    miseprintln!(
+                        "{} Lockfile ready at {}",
+                        style("✓").green(),
+                        style(display_path(&staged.path)).cyan()
+                    );
+                }
                 if staged.format_changed {
                     self.show_lockfile_upgrade_message(&staged.path)?;
                 }
@@ -732,7 +888,7 @@ impl Lock {
             }
         }
 
-        if self.json {
+        if self.json && installed.is_none() {
             miseprintln!("{}", serde_json::to_string_pretty(&all_changes)?);
         }
 
@@ -1302,6 +1458,11 @@ impl Lock {
                 // an arbitrary project mise.lock.
                 continue;
             } else {
+                if Settings::get().generate_lockfiles() {
+                    // Complete generation is owned by configuration, not temporary
+                    // CLI/environment overrides. Explicit lock selectors are applied below.
+                    continue;
+                }
                 // Tools without a source path (env vars, CLI args) go to mise.lock only
                 let is_base_lockfile = target_lockfile_path
                     .file_name()
@@ -1335,9 +1496,16 @@ impl Lock {
             {
                 continue;
             }
-            if let Ok(trs) = cf.to_tool_request_set() {
+            let requests = match cf.to_tool_request_set() {
+                Err(error) if Settings::get().generate_lockfiles() => return Err(error),
+                result => result,
+            };
+            if let Ok(trs) = requests {
                 for (ba, requests, source) in trs.iter() {
                     for request in requests {
+                        if Settings::get().generate_lockfiles() {
+                            ba.backend()?;
+                        }
                         if ba.backend().is_ok() {
                             // Check if the resolved toolset has a matching request.
                             let mut matched_resolved = false;
@@ -1350,9 +1518,11 @@ impl Lock {
                                         })
                                     {
                                         matched_resolved = true;
+                                        let mut tv = tv.clone();
+                                        tv.request.set_source(source.clone());
                                         push_unique_lock_tool(
                                             &mut all_tools,
-                                            (ba.as_ref().clone(), tv.clone()),
+                                            (ba.as_ref().clone(), tv),
                                         );
                                     }
                                 }
@@ -1370,6 +1540,7 @@ impl Lock {
                             // toolset. Keep this broad only for idiomatic version files;
                             // other sources preserve the previous latest-only behavior.
                             let should_resolve_overridden = active_unresolved
+                                || Settings::get().generate_lockfiles()
                                 || request.version() == "latest"
                                 || source.is_idiomatic_version_file();
                             if !matched_resolved && should_resolve_overridden {
@@ -1378,7 +1549,8 @@ impl Lock {
                                 {
                                     Ok(opts) => opts,
                                     Err(err) => {
-                                        if active_unresolved {
+                                        if active_unresolved || Settings::get().generate_lockfiles()
+                                        {
                                             return Err(err.wrap_err(format!(
                                                     "failed to resolve options for {request} for lockfile {}",
                                                     display_path(target_lockfile_path)
@@ -1391,7 +1563,9 @@ impl Lock {
                                         }
                                     }
                                 };
-                                resolve_options.use_locked_version = false;
+                                if !Settings::get().generate_lockfiles() {
+                                    resolve_options.use_locked_version = false;
+                                }
                                 if resolve_options.before_date.is_some() {
                                     resolve_options.latest_versions = true;
                                 }
@@ -1403,7 +1577,8 @@ impl Lock {
                                         );
                                     }
                                     Err(err) => {
-                                        if active_unresolved {
+                                        if active_unresolved || Settings::get().generate_lockfiles()
+                                        {
                                             return Err(err.wrap_err(format!(
                                                 "failed to resolve {request} for lockfile {}",
                                                 display_path(target_lockfile_path)
@@ -1715,7 +1890,8 @@ impl Lock {
                     if let Some(msg) = &resolution_error {
                         debug!("{msg}");
                     }
-                    let error_is_fatal = resolution.8;
+                    let error_is_fatal =
+                        resolution.8 == crate::lockfile::LockResolutionStatus::Required;
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
                     match lockfile::apply_lock_result(lockfile, resolution) {
@@ -1881,11 +2057,11 @@ mod tests {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
-            true,
+            crate::lockfile::LockResolutionStatus::Required,
         );
         let mut lockfile = Lockfile::default();
         let resolution_error = resolution.4.as_ref().err().cloned();
-        let error_is_fatal = resolution.8;
+        let error_is_fatal = resolution.8 == crate::lockfile::LockResolutionStatus::Required;
 
         let applied = apply_lock_result(&mut lockfile, resolution).unwrap();
         let (status, returned_error) =
@@ -2195,7 +2371,7 @@ mod tests {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
-            false,
+            crate::lockfile::LockResolutionStatus::Optional,
         );
 
         let applied = apply_lock_result(&mut lockfile, resolution).unwrap();

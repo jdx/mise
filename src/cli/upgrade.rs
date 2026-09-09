@@ -191,7 +191,7 @@ impl Upgrade {
             unimplemented!("mise upgrade --monorepo is not implemented yet");
         }
         let mut config = Config::get().await?;
-        if !self.is_dry_run() {
+        if !self.is_dry_run() && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let ts = ToolsetBuilder::new()

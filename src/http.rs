@@ -202,6 +202,21 @@ pub(crate) struct DownloadFileMetadata {
     pub(crate) effective_filename: Option<String>,
 }
 
+type SharedDownload =
+    std::sync::Arc<tokio::sync::OnceCell<(tempfile::TempDir, DownloadFileMetadata)>>;
+static INVOCATION_DOWNLOADS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, SharedDownload>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// Own temporary shared artifacts for this command, including cancellation paths.
+pub(crate) struct InvocationDownloads;
+
+impl Drop for InvocationDownloads {
+    fn drop(&mut self) {
+        INVOCATION_DOWNLOADS.lock().unwrap().clear();
+    }
+}
+
 fn download_filename_hint(url: &Url) -> Option<String> {
     let segment = url.path_segments()?.next_back()?;
     let filename = urlencoding::decode(segment).ok()?.into_owned();
@@ -858,6 +873,36 @@ impl Client {
         headers: &HeaderMap,
         pr: Option<&dyn SingleReport>,
     ) -> Result<DownloadFileMetadata> {
+        let url = url.into_url()?;
+        if Settings::get().generate_lockfiles() {
+            let key = format!("{:p}:{}", self, download_request_hash(&url, headers));
+            let shared = INVOCATION_DOWNLOADS
+                .lock()
+                .unwrap()
+                .entry(key)
+                .or_default()
+                .clone();
+            let (directory, metadata) = shared
+                .get_or_try_init(|| async {
+                    let directory = tempfile::tempdir()?;
+                    let metadata = self
+                        .download_file_with_headers_timeout(
+                            url.clone(),
+                            &directory.path().join("artifact"),
+                            headers,
+                            pr,
+                            Settings::get().http_download_timeout(),
+                        )
+                        .await?;
+                    Ok::<_, eyre::Report>((directory, metadata))
+                })
+                .await?;
+            if let Some(parent) = path.parent() {
+                file::create_dir_all(parent)?;
+            }
+            file::copy(directory.path().join("artifact"), path)?;
+            return Ok(metadata.clone());
+        }
         self.download_file_with_headers_timeout(
             url,
             path,
@@ -2490,6 +2535,33 @@ mod tests {
         settings.offline = Some(true);
         crate::config::Settings::reset(Some(settings));
         SettingsGuard { _lock: lock }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_generation_shares_concurrent_artifact_downloads() {
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.lockfile_mode = Some("generate".into());
+        crate::config::Settings::reset(Some(settings));
+        let _settings = SettingsGuard { _lock: lock };
+        let _downloads = InvocationDownloads;
+        let (port, count) = spawn_canned_server(vec![ok_response()]).await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        let (a, b) = tokio::join!(
+            client.download_file(&url, &first, None),
+            client.download_file(&url, &second, None)
+        );
+        a.unwrap();
+        b.unwrap();
+        assert_eq!(
+            std::fs::read(first).unwrap(),
+            std::fs::read(second).unwrap()
+        );
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     struct AtomicBoolGuard {

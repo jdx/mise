@@ -10,6 +10,31 @@ concrete versions those requests resolved to. Supported backends also record
 artifact URLs, checksums, and verification metadata. Commit both files so other
 machines can use the same resolutions.
 
+::: tip Try complete lockfile generation
+
+We recommend trying the new generator to reduce cross-platform lockfile churn:
+
+```toml [mise.toml]
+[settings]
+lockfile_mode = "generate"
+```
+
+`mise lock` rebuilds the complete lockfile from current requests, reusing unchanged
+artifacts. During installation, a dedicated `lock` progress bar tracks background
+metadata downloads, hashing, and verification. The first run can download artifacts
+for other platforms; subsequent runs reuse unchanged entries.
+
+This does not enable automatic lockfile creation: run `mise lock` first or also set
+`lockfile = true`. Set `lockfile_mode = "merge"` to return to the existing behavior,
+or use `MISE_LOCKFILE_MODE=generate` to trial the setting for one command. Switching
+modes requires no format migration.
+
+The initial default remains `merge`. Before releasing mise `2026.12.0`, maintainers
+must review trial feedback and explicitly promote generation or postpone the
+decision. The default does not change based on your computer's date.
+
+:::
+
 ## Overview
 
 A lockfile separates routine installation from intentional updates:
@@ -98,7 +123,7 @@ A platform entry is written under a quoted key such as
 - **`size`** (legacy): File size in bytes; accepted when reading older lockfiles but omitted by the current writer
 - **`url`** (optional): Artifact download URL
 - **`url_api`** (optional): API download URL, for sources that require authenticated asset requests
-- **`provenance`** and **`provenance_verified`**: Available verification method and whether verification succeeded
+- **`provenance`**: Verification method successfully used for the artifact
 - **`signer`** and **`attested_by`**: Packslip identity commitments
 
 ### Tool Entry Fields
@@ -548,14 +573,13 @@ are enabled. Do not pass arbitrary npm range syntax directly to `mise use`.
 
 ## Provenance and Security
 
-For supported backends, `mise lock` records available provenance metadata such
-as SLSA, Cosign, Minisign, or GitHub attestations. Aqua and GitHub can download
-and cryptographically verify the current platform's artifact at lock time.
-A successful check is recorded separately with `provenance_verified`.
-Cross-platform metadata may describe an available verification method without
-having been verified locally.
+For supported backends, `mise lock` records verified provenance such as SLSA,
+Cosign, Minisign, or GitHub attestations. New provenance is cryptographically
+verified against the artifact for each target platform before it is recorded.
+Existing `provenance_verified` values are preserved as inert compatibility
+metadata for unchanged artifacts; mise no longer reads or adds this flag.
 
-During installation, a checksum plus a recorded verified provenance result can
+During installation, a checksum plus recorded provenance can
 allow mise to skip repeating that provenance check. The lockfile is therefore a
 trust input: review it and obtain it from a trusted project source. Artifact
 checksum verification still applies. A provenance field alone is not proof that

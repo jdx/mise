@@ -152,7 +152,7 @@ impl Install {
     #[async_backtrace::framed]
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        if !self.is_dry_run() {
+        if !self.is_dry_run() && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let task_requests = self.collect_task_tool_requests(&config).await?;

@@ -1753,6 +1753,19 @@ env = "MISE_LOCKFILE"
 optional = true
 type = "Bool"
 
+[lockfile_mode]
+default_docs = "merge"
+description = "Choose incremental merging or complete lockfile generation."
+docs = """
+Set to `generate` to trial complete lockfile generation and concurrent locking during
+installation. The initial default is `merge`. This setting does not enable lockfile
+creation: use `lockfile = true` or `mise lock` for that.
+"""
+enum = ["merge", "generate"]
+env = "MISE_LOCKFILE_MODE"
+optional = true
+type = "String"
+
 [lockfile_platforms]
 description = "Platforms to target in lockfile operations."
 docs = """

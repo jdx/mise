@@ -995,6 +995,7 @@ impl Settings {
         let mut settings = builder.load()?;
         normalize_storage_dirs(&mut settings)?;
         validate_settings_enum_values(&settings)?;
+        settings.validate_lockfile_mode()?;
         Ok(settings)
     }
 
@@ -1389,6 +1390,18 @@ impl Settings {
 
     pub(crate) fn lockfile_enabled(&self) -> bool {
         self.lockfile.unwrap_or(true)
+    }
+
+    pub(crate) fn generate_lockfiles(&self) -> bool {
+        self.lockfile_mode.as_deref() == Some("generate")
+    }
+
+    fn validate_lockfile_mode(&self) -> Result<()> {
+        validate_setting_enum_values(
+            "lockfile_mode",
+            self.lockfile_mode.as_deref(),
+            &["merge", "generate"],
+        )
     }
 
     pub(crate) fn lockfile_creation_enabled(&self) -> bool {
@@ -2015,6 +2028,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lockfile_mode_defaults_and_explicit_choices() {
+        let mut settings = Settings::default();
+        assert!(!settings.generate_lockfiles());
+        settings.lockfile_mode = Some("generate".into());
+        assert!(settings.generate_lockfiles());
+        settings.lockfile_mode = Some("merge".into());
+        assert!(!settings.generate_lockfiles());
+        assert!(settings.validate_lockfile_mode().is_ok());
+        settings.lockfile_mode = Some("invalid".into());
+        assert!(settings.validate_lockfile_mode().is_err());
+    }
 
     /// File-backed exclusions are inherited in low-to-high precedence order and deduplicated.
     #[test]

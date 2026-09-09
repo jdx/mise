@@ -36,6 +36,28 @@ pub(crate) use mise_sigstore::{AttestationError, SlsaArtifact};
 /// Result alias that matches `mise_sigstore`'s internal convention.
 type AttestationResult<T> = std::result::Result<T, AttestationError>;
 
+type VerificationCell = std::sync::Arc<tokio::sync::OnceCell<bool>>;
+static INVOCATION_VERIFICATIONS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, VerificationCell>>,
+> = std::sync::LazyLock::new(Default::default);
+
+async fn shared_verification(
+    key: String,
+    verification: impl std::future::Future<Output = AttestationResult<bool>>,
+) -> AttestationResult<bool> {
+    let settings = crate::config::Settings::get();
+    if !settings.generate_lockfiles() || settings.force_provenance_verify() {
+        return verification.await;
+    }
+    let cell = INVOCATION_VERIFICATIONS
+        .lock()
+        .unwrap()
+        .entry(key)
+        .or_default()
+        .clone();
+    cell.get_or_try_init(|| verification).await.copied()
+}
+
 #[derive(Debug)]
 enum CachedAttestationVerification {
     Verified,
@@ -126,6 +148,43 @@ fn attestation_client(api_url: &str) -> AttestationResult<AttestationClient> {
 /// Applies configured URL replacements to the API base URL before dispatching to
 /// [`mise_sigstore::verify_github_attestation_with_base_url`].
 pub(crate) async fn verify_attestation(
+    artifact_path: &Path,
+    owner: &str,
+    repo: &str,
+    expected_workflow: Option<&str>,
+    api_url: Option<&str>,
+    use_versions_host: bool,
+) -> AttestationResult<bool> {
+    if !crate::config::Settings::get().generate_lockfiles() {
+        return verify_attestation_uncached(
+            artifact_path,
+            owner,
+            repo,
+            expected_workflow,
+            api_url,
+            use_versions_host,
+        )
+        .await;
+    }
+    let digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
+    let key = format!(
+        "github:{owner}/{repo}:{digest}:{expected_workflow:?}:{api_url:?}:{use_versions_host}"
+    );
+    shared_verification(
+        key,
+        verify_attestation_uncached(
+            artifact_path,
+            owner,
+            repo,
+            expected_workflow,
+            api_url,
+            use_versions_host,
+        ),
+    )
+    .await
+}
+
+async fn verify_attestation_uncached(
     artifact_path: &Path,
     owner: &str,
     repo: &str,
@@ -381,7 +440,18 @@ pub(crate) async fn verify_slsa_provenance(
     min_level: u8,
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
-    mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level).await
+    if !crate::config::Settings::get().generate_lockfiles() {
+        return mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level)
+            .await;
+    }
+    let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
+    let provenance_digest = mise_sigstore::calculate_file_digest(provenance_path).await?;
+    let key = format!("slsa:{artifact_digest}:{provenance_digest}:{min_level}");
+    shared_verification(
+        key,
+        mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level),
+    )
+    .await
 }
 
 pub(crate) async fn verify_slsa_provenance_artifacts(
@@ -407,7 +477,17 @@ pub(crate) async fn verify_cosign_signature(
     sig_or_bundle_path: &Path,
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
-    mise_sigstore::verify_cosign_signature(artifact_path, sig_or_bundle_path).await
+    if !crate::config::Settings::get().generate_lockfiles() {
+        return mise_sigstore::verify_cosign_signature(artifact_path, sig_or_bundle_path).await;
+    }
+    let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
+    let signature_digest = mise_sigstore::calculate_file_digest(sig_or_bundle_path).await?;
+    let key = format!("cosign:{artifact_digest}:{signature_digest}");
+    shared_verification(
+        key,
+        mise_sigstore::verify_cosign_signature(artifact_path, sig_or_bundle_path),
+    )
+    .await
 }
 
 /// Verify a Cosign signature against a public key. Passthrough — no token needed.

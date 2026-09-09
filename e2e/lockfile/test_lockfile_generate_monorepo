@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE_MODE=generate
+# shellcheck source=e2e/lockfile/test_lockfile_monorepo
+source "${TEST_ROOT}/lockfile/test_lockfile_monorepo"

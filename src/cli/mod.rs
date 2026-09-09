@@ -44,7 +44,7 @@ mod install_into;
 mod latest;
 mod link;
 mod local;
-mod lock;
+pub(crate) mod lock;
 mod ls;
 mod ls_remote;
 mod mcp;

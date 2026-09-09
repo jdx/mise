@@ -480,6 +480,7 @@ impl Toolset {
         if all_failed.is_empty() {
             Ok(installed)
         } else {
+            crate::lockfile::generate::record_install_failure();
             Err(Error::InstallFailed {
                 successful_installations: installed,
                 failed_installations: all_failed,
@@ -594,6 +595,11 @@ impl Toolset {
             true => 1,
             false => crate::jobs::resolve(Settings::get().jobs, opts.jobs),
         };
+        let jobs = if Settings::get().generate_lockfiles() {
+            jobs.saturating_sub(1).max(1)
+        } else {
+            jobs
+        };
         let semaphore = Arc::new(Semaphore::new(jobs));
         let ts = Arc::new(self.clone());
         let opts = Arc::new(opts.clone());
@@ -602,6 +608,7 @@ impl Toolset {
         let mut failed = vec![];
         let mut attempted_failures = vec![];
         let mut jset: JoinSet<(ToolRequest, Result<ToolVersion>)> = JoinSet::new();
+        let preparations = Arc::new(crate::lockfile::generate::PreparationBatch::default());
         // Track in-flight tools to recover from task panics
         let mut in_flight: HashMap<tokio::task::Id, ToolRequest> = HashMap::new();
 
@@ -663,9 +670,10 @@ impl Toolset {
                             let tr_clone = tr.clone();
 
                             let progress = install_progress.and_then(|p| p.start_tool(&tool_key(&tr)));
+                            let preparations = preparations.clone();
                             let handle = jset.spawn(async move {
                                 let _permit = permit;
-                                let result = Self::install_single_tool(&config, &ts, &tr, &opts, progress.as_deref()).await;
+                                let result = Self::install_single_tool(&config, &ts, &tr, &opts, progress.as_deref(), &preparations).await;
                                 if let Some(progress) = progress {
                                     let error = result.as_ref().err().map(|e| e.to_string());
                                     progress.complete(error.as_deref());
@@ -714,6 +722,7 @@ impl Toolset {
         }
 
         // Add blocked tools to failures
+        failed.extend(preparations.finish().await);
         let blocked = tool_deps.lock().await.blocked_tools();
         for tr in blocked {
             failed.push((tr.clone(), eyre::eyre!("Skipped due to failed dependency")));
@@ -736,6 +745,7 @@ impl Toolset {
         tr: &ToolRequest,
         opts: &Arc<InstallOptions>,
         tool_progress: Option<&dyn ToolProgress>,
+        preparations: &crate::lockfile::generate::PreparationBatch,
     ) -> Result<ToolVersion> {
         let mpr = MultiProgressReport::get();
         let pre_resolve_backend = tr.backend()?;
@@ -780,6 +790,17 @@ impl Toolset {
             dependency_context: OnceCell::new(),
         };
 
+        let generate = Settings::get().generate_lockfiles()
+            && Settings::get().lockfile_enabled()
+            && !ctx.locked
+            && !opts.dry_run;
+        if !generate {
+            return backend.install_version(ctx, tv).await;
+        }
+        let concurrent = crate::jobs::resolve(Settings::get().jobs, opts.jobs) > 1
+            && !opts.raw
+            && !Settings::get().raw;
+        preparations.start(config.clone(), tv.clone(), concurrent)?;
         backend.install_version(ctx, tv).await
     }
 
