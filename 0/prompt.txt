@@ -1,9 +1,1 @@
-address pr feedback until it settles
-
----
-
-should the pruning thing be a hint so users can turn it off?
-
----
-
 do it
