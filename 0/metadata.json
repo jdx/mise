@@ -1,0 +1,66 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M23TV1DKCK8X2P851WBXMCNY",
+  "session_id": "01a08797-2926-7cf3-81ae-2e354560aca6",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T19:38:11.881787Z",
+  "branch": "codex/live-install-summary",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "e2e/cli/test_install_tty_progress",
+    "e2e/cli/test_upgrade_no_prune",
+    "e2e/cli/test_upgrade_progress_summary",
+    "src/cli/upgrade.rs",
+    "src/toolset/install_options.rs",
+    "src/toolset/toolset_install.rs",
+    "src/ui/install_progress.rs",
+    "src/ui/tty_install_progress.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "5f8ed1d02013",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 183713,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6178176,
+    "output_tokens": 14356,
+    "api_call_count": 71
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T19:38:11.827976Z",
+    "agent_lines": 105,
+    "agent_removed": 21,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 12,
+    "total_committed": 105,
+    "total_lines_changed": 138,
+    "agent_percentage": 91.30434782608695,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 71,
+      "user_lines_removed": 12,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "src/cli/upgrade.rs": 13,
+        "src/toolset/install_options.rs": 3,
+        "src/toolset/toolset_install.rs": 5,
+        "src/ui/install_progress.rs": 5,
+        "src/ui/tty_install_progress.rs": 45
+      },
+      "user_removed_per_file": {
+        "src/cli/upgrade.rs": 1,
+        "src/ui/install_progress.rs": 2,
+        "src/ui/tty_install_progress.rs": 9
+      }
+    }
+  ]
+}

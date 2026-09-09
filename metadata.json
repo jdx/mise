@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M23TV1DKCK8X2P851WBXMCNY",
+  "strategy": "manual-commit",
+  "branch": "codex/live-install-summary",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "e2e/cli/test_install_tty_progress",
+    "e2e/cli/test_upgrade_no_prune",
+    "e2e/cli/test_upgrade_progress_summary",
+    "src/cli/upgrade.rs",
+    "src/toolset/install_options.rs",
+    "src/toolset/toolset_install.rs",
+    "src/ui/install_progress.rs",
+    "src/ui/tty_install_progress.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 183713,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6178176,
+    "output_tokens": 14356,
+    "api_call_count": 71
+  }
+}
