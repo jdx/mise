@@ -786,7 +786,7 @@ impl HistoryRepo {
                 let size = entry
                     .mode
                     .is_blob_or_symlink()
-                    .then(|| repo.find_object(entry.oid).map(|object| object.data.len() as u64))
+                    .then(|| repo.find_header(entry.oid).map(|header| header.size()))
                     .transpose()?;
                 Ok(TreeEntry {
                     mode,
@@ -1821,6 +1821,39 @@ mod tests {
             )])
             .unwrap();
         assert_eq!(again.tree, result.tree);
+    }
+
+    #[test]
+    fn gix_tree_entries_report_large_blob_size() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let size = 8 * 1024 * 1024;
+        let oid = repo.hash_blob(&vec![0; size]).unwrap();
+        let tree = repo
+            .compose(
+                &repo.empty_object("tree").unwrap(),
+                &[Overlay {
+                    path: "home/large".into(),
+                    object: Some(("100644".into(), oid.clone())),
+                }],
+            )
+            .unwrap();
+        let gix = gix::open_opts(repo.dir(), gix::open::Options::isolated()).unwrap();
+        let tree = gix
+            .find_tree(gix::ObjectId::from_hex(tree.as_bytes()).unwrap())
+            .unwrap();
+        assert_eq!(
+            HistoryRepo::gix_tree_entries(&gix, &tree).unwrap(),
+            vec![TreeEntry {
+                mode: "100644".into(),
+                oid,
+                size: Some(size as u64),
+                path: "home/large".into(),
+            }]
+        );
     }
 
     #[test]

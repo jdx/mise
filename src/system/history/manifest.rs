@@ -408,10 +408,10 @@ impl Manifest {
         if entry.mode().value() != 0o100644 {
             bail!("dotfile enrollment metadata must be a regular file");
         }
-        let object = entry.object()?;
-        if object.data.len() > 4 * 1024 * 1024 {
+        if entry.id().header()?.size() > 4 * 1024 * 1024 {
             bail!("dotfile enrollment metadata is too large");
         }
+        let object = entry.object()?;
         Self::from_bytes(&object.data).map(Some)
     }
 
@@ -483,6 +483,31 @@ mod tests {
                     .contains(message)
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn gix_reader_rejects_oversized_manifest() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let repo = HistoryRepo::open_or_init_in(temp.path())?.unwrap();
+        let tree = repo.compose(
+            &repo.mktree("")?,
+            &[Overlay {
+                path: PATH.into(),
+                object: Some((
+                    "100644".into(),
+                    repo.hash_blob(&vec![b' '; 4 * 1024 * 1024 + 1])?,
+                )),
+            }],
+        )?;
+        let gix = gix::open_opts(repo.dir(), gix::open::Options::isolated())?;
+        let tree = gix.find_tree(gix::ObjectId::from_hex(tree.as_bytes())?)?;
+        assert!(
+            Manifest::read_gix(&tree)
+                .unwrap_err()
+                .to_string()
+                .contains("too large")
+        );
         Ok(())
     }
 
