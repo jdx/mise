@@ -1,5 +1,1 @@
-[https://github.com/jdx/mise/discussions/12995](https://github.com/jdx/mise/discussions/12995)
-
----
-
 address pr feedbakc and failing checks until it settles
