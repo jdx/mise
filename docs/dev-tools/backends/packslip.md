@@ -292,7 +292,8 @@ transparency-log evidence. Signature and artifact verification still apply.
 
 Set to `true` to install despite confirmed [host requirement](#host-requirements)
 failures. This does not supply missing libraries or make an incompatible
-executable run. Other verification checks still apply.
+executable run. It also bypasses the glibc-to-musl fallback, retaining the GNU
+artifact selected for the host. Other verification checks still apply.
 
 ## Advanced policies
 
@@ -322,8 +323,9 @@ publisher's signature. No stamps are required by default. See
 mise selects a build using the signed OS, architecture, libc, and variant
 metadata, then checks its declared host requirements. When a GNU build's
 declared `glibc_min` is newer than the host, mise selects a matching static musl
-build when one is available. An ambiguous build or another confirmed
-incompatibility can prevent installation. See
+build when one is available. Setting `ignore_requirements = true` bypasses this
+fallback and keeps the GNU artifact selected. An ambiguous build or another
+confirmed incompatibility can prevent installation. See
 [artifact selection](/dev-tools/packslip-verification.html#artifact-selection)
 and [host requirements](/dev-tools/packslip-verification.html#host-requirements).
 

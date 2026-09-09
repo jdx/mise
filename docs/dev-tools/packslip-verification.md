@@ -253,5 +253,6 @@ unknown. On Linux, the OS version is the kernel release from `uname -r`, read up
 to the distribution's suffix: `6.8.0-31-generic` is compared as `6.8.0`.
 
 The [`ignore_requirements`](/dev-tools/backends/packslip.html#ignore-requirements)
-tool option permits installation despite confirmed failures. It does not supply
-missing libraries or make an incompatible executable run.
+tool option permits installation despite confirmed failures. It also bypasses
+the glibc-to-musl fallback and retains the selected GNU artifact. It does not
+supply missing libraries or make an incompatible executable run.
