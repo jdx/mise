@@ -320,8 +320,10 @@ publisher's signature. No stamps are required by default. See
 <span id="host-requirements"></span>
 
 mise selects a build using the signed OS, architecture, libc, and variant
-metadata, then checks its declared host requirements. An ambiguous build or a
-confirmed incompatible host can prevent installation. See
+metadata, then checks its declared host requirements. When a GNU build's
+declared `glibc_min` is newer than the host, mise selects a matching static musl
+build when one is available. An ambiguous build or another confirmed
+incompatibility can prevent installation. See
 [artifact selection](/dev-tools/packslip-verification.html#artifact-selection)
 and [host requirements](/dev-tools/packslip-verification.html#host-requirements).
 

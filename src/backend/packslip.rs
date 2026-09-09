@@ -372,6 +372,61 @@ pub(crate) fn select_artifact<'a>(
     .into())
 }
 
+async fn select_compatible_artifact<'a>(
+    artifacts: &'a [Artifact],
+    host: &HostPlatform,
+    variant: Option<&str>,
+    ignore_requirements: bool,
+) -> Result<&'a Artifact> {
+    let artifact = select_artifact(artifacts, host, variant)?;
+    if ignore_requirements || host.libc.as_deref() != Some("gnu") {
+        return Ok(artifact);
+    }
+    let Some(min) = artifact
+        .requires
+        .as_ref()
+        .and_then(|requires| requires.glibc_min.as_deref())
+    else {
+        return Ok(artifact);
+    };
+    let Some(actual) = crate::packslip_requirements::glibc_version().await else {
+        return Ok(artifact);
+    };
+    select_glibc_fallback(artifacts, host, variant, artifact, &actual, min)
+}
+
+fn select_glibc_fallback<'a>(
+    artifacts: &'a [Artifact],
+    host: &HostPlatform,
+    variant: Option<&str>,
+    artifact: &'a Artifact,
+    actual: &str,
+    min: &str,
+) -> Result<&'a Artifact> {
+    if crate::packslip_requirements::meets_minimum(actual, min) != Some(false) {
+        return Ok(artifact);
+    }
+
+    let musl = Host {
+        libc: Some("musl"),
+        ..host.as_host()
+    };
+    match packslip::select_artifact(artifacts, &musl, variant, &FORMAT_PREFERENCE) {
+        Ok(fallback) => {
+            debug!(
+                "{} requires glibc>={min}, but this host has {actual}; taking the static musl build {}",
+                artifact.name, fallback.name
+            );
+            Ok(fallback)
+        }
+        Err(Selection::Ambiguous(a, b)) => bail!(
+            "the packslip lists {a} and {b} as musl fallbacks for {}, and mise will not guess between them",
+            artifact.name
+        ),
+        Err(Selection::NoMatch) => Ok(artifact),
+    }
+}
+
 /// The artifact this host would select from a stored statement, for
 /// scoping resources to it later. `None` when nothing fits, in which case
 /// only unscoped resources apply.
@@ -913,11 +968,14 @@ impl PackslipBackend {
                 "verified release time is after the allowed cutoff".into(),
             ));
         }
-        let artifact = match select_artifact(
+        let artifact = match select_compatible_artifact(
             &statement.predicate.artifacts,
             &HostPlatform::current(),
             opts.variant().as_deref(),
-        ) {
+            opts.raw.get("ignore_requirements") == Some("true"),
+        )
+        .await
+        {
             Ok(artifact) => artifact,
             Err(err) if err.is::<NoHostArtifact>() => return Ok(Some(err.to_string())),
             Err(err) => return Err(err),
@@ -1236,11 +1294,13 @@ impl PackslipBackend {
         }
 
         // Then the one artifact for this host, by what the manifest says.
-        let artifact = select_artifact(
+        let artifact = select_compatible_artifact(
             &statement.predicate.artifacts,
             &HostPlatform::current(),
             opts.variant().as_deref(),
-        )?
+            raw_opts.get("ignore_requirements") == Some("true"),
+        )
+        .await?
         .clone();
         if vfox_plugin {
             crate::plugins::packslip::validate_artifact(&artifact)?;
@@ -1564,11 +1624,22 @@ impl Backend for PackslipBackend {
             &verified.published_at,
             before,
         )?;
-        let artifact = select_artifact(
-            &statement.predicate.artifacts,
-            &HostPlatform::from_platform(&target.platform),
-            opts.variant().as_deref(),
-        )
+        let host = HostPlatform::from_platform(&target.platform);
+        let artifact = if target.is_current() {
+            select_compatible_artifact(
+                &statement.predicate.artifacts,
+                &host,
+                opts.variant().as_deref(),
+                raw_opts.get("ignore_requirements") == Some("true"),
+            )
+            .await
+        } else {
+            select_artifact(
+                &statement.predicate.artifacts,
+                &host,
+                opts.variant().as_deref(),
+            )
+        }
         .wrap_err_with(|| format!("selecting the packslip artifact for {}", target.to_key()))?;
         let url = artifact
             .url
@@ -2028,6 +2099,41 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
             ..linux()
         };
         assert!(select_artifact(&musl_only, &no_libc, None).is_err());
+
+        // A GNU build's declared glibc floor can make the matching static
+        // musl build the compatible choice on an older glibc host.
+        let mut gnu_with_floor = artifacts[2].clone();
+        gnu_with_floor.requires = Some(packslip::model::Requires {
+            glibc_min: Some("2.39".into()),
+            ..Default::default()
+        });
+        let glibc_fallbacks = vec![gnu_with_floor, artifacts[3].clone()];
+        assert_eq!(
+            select_glibc_fallback(
+                &glibc_fallbacks,
+                &linux(),
+                None,
+                &glibc_fallbacks[0],
+                "2.38",
+                "2.39",
+            )
+            .unwrap()
+            .name,
+            "t-linux-x64-musl.tar.xz"
+        );
+        assert_eq!(
+            select_glibc_fallback(
+                &glibc_fallbacks,
+                &linux(),
+                None,
+                &glibc_fallbacks[0],
+                "2.39",
+                "2.39",
+            )
+            .unwrap()
+            .name,
+            "t-linux-x64.tar.xz"
+        );
 
         // A universal or portable artifact fits, and a build for the host
         // beats it; a compressed bare executable is installable.

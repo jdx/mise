@@ -61,6 +61,10 @@ fn numeric_cmp(actual: &str, min: &str) -> Option<Ordering> {
     Some(Ordering::Equal)
 }
 
+pub(crate) fn meets_minimum(actual: &str, min: &str) -> Option<bool> {
+    numeric_cmp(actual, min).map(|ordering| ordering != Ordering::Less)
+}
+
 fn version_from_output(output: &str) -> Option<String> {
     let words: Vec<_> = output
         .split_whitespace()
@@ -84,6 +88,16 @@ async fn probe(program: &str, args: &[&str]) -> Option<String> {
         .read_isolated(64 * 1024)
         .await
         .ok()
+}
+
+pub(crate) async fn glibc_version() -> Option<String> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    probe("getconf", &["GNU_LIBC_VERSION"])
+        .await
+        .as_deref()
+        .and_then(version_from_output)
 }
 
 /// `uname -r` reports a release, not a version: `6.8.0-31-generic` on one
@@ -207,14 +221,7 @@ pub(crate) async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathB
         check_min(&mut report, "OS", os_version().await.as_deref(), min, true);
     }
     if let Some(min) = &req.glibc_min {
-        let glibc = if cfg!(target_os = "linux") {
-            probe("getconf", &["GNU_LIBC_VERSION"])
-                .await
-                .as_deref()
-                .and_then(version_from_output)
-        } else {
-            None
-        };
+        let glibc = glibc_version().await;
         check_min(&mut report, "glibc", glibc.as_deref(), min, true);
     }
     for lib in req.libs.iter().flatten() {
