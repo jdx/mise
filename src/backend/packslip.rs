@@ -939,7 +939,7 @@ impl PackslipBackend {
                 );
             };
             file::make_executable(&src)?;
-            let dst = bins_dir.join(&bin.name);
+            let dst = bin_link_path(&bins_dir, &bin.name);
             if dst.exists() || dst.is_symlink() {
                 file::remove_all(&dst)?;
             }
@@ -1539,6 +1539,14 @@ impl Backend for PackslipBackend {
     }
 }
 
+fn bin_link_path(bins_dir: &Path, name: &str) -> PathBuf {
+    if cfg!(windows) {
+        bins_dir.join(format!("{name}.exe"))
+    } else {
+        bins_dir.join(name)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2021,5 +2029,16 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
             None,
             "a file is not a dir"
         );
+    }
+
+    #[test]
+    fn links_bins_under_platform_executable_names() {
+        let bins_dir = Path::new("install").join(MISE_BINS_DIR);
+        let expected = if cfg!(windows) {
+            bins_dir.join("tool.exe")
+        } else {
+            bins_dir.join("tool")
+        };
+        assert_eq!(bin_link_path(&bins_dir, "tool"), expected);
     }
 }
