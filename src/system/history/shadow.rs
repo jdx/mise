@@ -570,61 +570,29 @@ impl HistoryRepo {
 
     /// Every commit and message in ordinary ancestry, newest first.
     ///
-    /// `cat-file --batch` prefixes each raw commit with its exact byte length,
-    /// so arbitrary commit messages remain unambiguous. Reading all messages
-    /// together avoids starting a Git process for every checkpoint merely to
-    /// distinguish annotations from file history.
+    /// Reading messages through gix avoids starting a Git process for every
+    /// checkpoint merely to distinguish annotations from file history. Open
+    /// the repository for each walk so objects and refs written by Git are
+    /// always visible.
     pub(crate) fn history_messages(&self) -> Result<Vec<(String, String)>> {
-        let Some(head) = self.ref_oid(Self::HISTORY_REF)? else {
+        let repo = gix::open_opts(self.dir(), gix::open::Options::isolated())
+            .wrap_err_with(|| format!("opening {} with gix", display_path(self.dir())))?;
+        let Some(mut head) = repo.try_find_reference(Self::HISTORY_REF)? else {
             return Ok(vec![]);
         };
-        let commits = self.rev_list(&head, usize::MAX)?;
-        let mut input = commits.join("\n").into_bytes();
-        input.push(b'\n');
-        let output = self
-            .git
-            .output(PlumbingCall::new(["cat-file", "--batch"]).stdin(&input))?;
-        let mut cursor = 0;
-        let mut messages = Vec::with_capacity(commits.len());
+        let head = head.peel_to_id()?.detach();
+        let commits = gix::traverse::commit::topo::Builder::new(&repo)
+            .with_tips([head])
+            .sorting(gix::traverse::commit::topo::Sorting::TopoOrder)
+            .build()?;
+        let mut messages = vec![];
         for commit in commits {
-            let header_end = output[cursor..]
-                .iter()
-                .position(|byte| *byte == b'\n')
-                .map(|offset| cursor + offset)
-                .ok_or_else(|| eyre::eyre!("Git batch output ended before its object header"))?;
-            let header = String::from_utf8_lossy(&output[cursor..header_end]);
-            let mut fields = header.split_whitespace();
-            let oid = fields.next().unwrap_or_default();
-            let kind = fields.next().unwrap_or_default();
-            let size = fields
-                .next()
-                .and_then(|size| size.parse::<usize>().ok())
-                .ok_or_else(|| eyre::eyre!("invalid Git batch object header: {header}"))?;
-            if oid != commit || kind != "commit" {
-                bail!("unexpected Git batch object header: {header}");
-            }
-            let object_start = header_end + 1;
-            let object_end = object_start
-                .checked_add(size)
-                .ok_or_else(|| eyre::eyre!("Git commit object size overflow for {commit}"))?;
-            let object = output
-                .get(object_start..object_end)
-                .ok_or_else(|| eyre::eyre!("Git batch output ended inside commit {commit}"))?;
-            let message_start = object
-                .windows(2)
-                .position(|bytes| bytes == b"\n\n")
-                .map(|offset| offset + 2)
-                .ok_or_else(|| eyre::eyre!("commit {commit} has no message separator"))?;
-            messages.push((
-                commit,
-                String::from_utf8_lossy(&object[message_start..])
-                    .trim()
-                    .to_string(),
-            ));
-            if output.get(object_end) != Some(&b'\n') {
-                bail!("Git batch output did not terminate commit object {oid}");
-            }
-            cursor = object_end + 1;
+            let commit = commit?;
+            let object = repo.find_commit(commit.id)?;
+            let message = String::from_utf8_lossy(object.message_raw()?.as_ref())
+                .trim()
+                .to_string();
+            messages.push((commit.id.to_string(), message));
         }
         Ok(messages)
     }
@@ -1530,6 +1498,42 @@ pub(crate) fn unavailable_reason() -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn history_messages_match_git_topological_order() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = super::HistoryRepo::open_or_init_in(temp.path())
+            .unwrap()
+            .unwrap();
+        let tree = repo.empty_object("tree").unwrap();
+        let base = repo.commit_tree(&tree, vec![], "base").unwrap();
+        let first = repo.commit_tree(&tree, vec![&base], "first").unwrap();
+        let second = repo.commit_tree(&tree, vec![&base], "second").unwrap();
+        let merge = repo
+            .commit_tree(&tree, vec![&first, &second], "merge")
+            .unwrap();
+        repo.update_history_head(&merge, None).unwrap();
+
+        let messages = repo.history_messages().unwrap();
+        let commits = messages
+            .iter()
+            .map(|(commit, _)| commit.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(commits, repo.rev_list(&merge, usize::MAX).unwrap());
+        for (commit, message) in messages {
+            let expected = [
+                (&base, "base"),
+                (&first, "first"),
+                (&second, "second"),
+                (&merge, "merge"),
+            ]
+            .into_iter()
+            .find_map(|(expected_commit, expected_message)| {
+                (expected_commit == &commit).then_some(expected_message)
+            });
+            assert_eq!(Some(message.as_str()), expected);
+        }
+    }
+
     #[test]
     fn annotations_are_ordinary_commits_not_parallel_refs() {
         let temp = tempfile::tempdir().unwrap();

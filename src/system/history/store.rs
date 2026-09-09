@@ -817,7 +817,9 @@ pub(crate) fn read_commit_meta_cache_in(
     if !path.exists() {
         return Ok(None);
     }
-    let text = file::read_to_string(&path)?;
+    let Ok(text) = file::read_to_string(&path) else {
+        return Ok(None);
+    };
     let Ok(cache) = serde_json::from_str::<CommitMetaCache>(&text) else {
         return Ok(None);
     };
@@ -1063,6 +1065,9 @@ mod commit_cache_tests {
         cache.context = CommitMetaContext::current();
         cache.commit = "different".into();
         write_json(&path, &cache)?;
+        assert!(read_commit_meta_cache_in(temp.path(), "abc123")?.is_none());
+
+        std::fs::write(&path, [0xff])?;
         assert!(read_commit_meta_cache_in(temp.path(), "abc123")?.is_none());
         Ok(())
     }
