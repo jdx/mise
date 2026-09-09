@@ -5,6 +5,7 @@ use std::time::SystemTime;
 
 use eyre::Result;
 
+use crate::backend::backend_type::BackendType;
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{Config, Settings};
 use crate::env::{PATH_KEY, WARN_ON_MISSING_REQUIRED_ENV};
@@ -431,6 +432,7 @@ impl Toolset {
             &tool_versions,
             &settings_hash,
             &base_path,
+            env::PRISTINE_ENV.get("MANPATH").map(String::as_str),
         ))
     }
 
@@ -512,6 +514,7 @@ impl Toolset {
         let mut paths: Vec<PathBuf> = self
             .list_current_installed_versions(config)
             .into_iter()
+            .filter(|(backend, _)| backend.get_type() == BackendType::Packslip)
             .filter_map(|(_, tv)| crate::packslip::manpath(&tv.install_path()))
             .collect();
         if paths.is_empty() {

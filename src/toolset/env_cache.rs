@@ -154,6 +154,7 @@ impl CachedEnv {
         tool_versions: &[(String, String)], // (tool, version)
         settings_hash: &str,
         base_path: &str,
+        base_manpath: Option<&str>,
     ) -> String {
         let mut hasher = Hasher::new();
 
@@ -180,6 +181,14 @@ impl CachedEnv {
 
         // base PATH
         hasher.update(base_path.as_bytes());
+
+        // Packslip man roots are composed with the caller's MANPATH. Keep
+        // cache entries from capturing a value supplied by another process.
+        hasher.update(b"base-manpath");
+        hasher.update(&[base_manpath.is_some() as u8]);
+        if let Some(base_manpath) = base_manpath {
+            hasher.update(base_manpath.as_bytes());
+        }
 
         let hash = hasher.finalize();
         hex::encode(hash.as_bytes())
@@ -487,12 +496,22 @@ mod tests {
         let settings_hash = "abc123";
         let base_path = "/usr/bin:/bin";
 
-        let key1 =
-            CachedEnv::compute_cache_key(&config_files, &tool_versions, settings_hash, base_path);
+        let key1 = CachedEnv::compute_cache_key(
+            &config_files,
+            &tool_versions,
+            settings_hash,
+            base_path,
+            None,
+        );
 
         // Same inputs should produce same key
-        let key2 =
-            CachedEnv::compute_cache_key(&config_files, &tool_versions, settings_hash, base_path);
+        let key2 = CachedEnv::compute_cache_key(
+            &config_files,
+            &tool_versions,
+            settings_hash,
+            base_path,
+            None,
+        );
         assert_eq!(key1, key2);
 
         // Different mtime should produce different key
@@ -503,8 +522,27 @@ mod tests {
             &tool_versions,
             settings_hash,
             base_path,
+            None,
         );
         assert_ne!(key1, key3);
+
+        let key4 = CachedEnv::compute_cache_key(
+            &config_files,
+            &tool_versions,
+            settings_hash,
+            base_path,
+            Some("/caller/man"),
+        );
+        assert_ne!(key1, key4);
+
+        let key5 = CachedEnv::compute_cache_key(
+            &config_files,
+            &tool_versions,
+            settings_hash,
+            base_path,
+            Some(""),
+        );
+        assert_ne!(key1, key5);
     }
 
     #[test]
