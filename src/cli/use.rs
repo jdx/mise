@@ -302,6 +302,9 @@ impl Use {
                             resolve_options.use_locked_version = false;
                         }
                         let mut tvr = tvr;
+                        if Settings::get().generate_lockfiles() {
+                            tvr.set_source(cf.source());
+                        }
                         if target.has_options() {
                             tvr.set_options(request_options);
                         }

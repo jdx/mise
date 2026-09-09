@@ -51,6 +51,7 @@ pub(crate) struct AquaBackend {
     ba: Arc<BackendArg>,
     id: String,
     version_tags_cache: CacheManager<Vec<(String, String)>>,
+    verification_target: Option<PlatformTarget>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -875,7 +876,7 @@ impl Backend for AquaBackend {
         }
 
         // Try to get checksum from checksum file if not available from GitHub API
-        let checksum = match checksum {
+        let mut checksum = match checksum {
             Some(c) => Some(c),
             None => match self
                 .fetch_checksum_from_file(&pkg, &v, target_os, target_arch, name.as_deref(), target)
@@ -951,20 +952,19 @@ impl Backend for AquaBackend {
             }
         }
 
-        // For the current platform, verify provenance cryptographically at lock time.
-        // This ensures the lockfile's provenance entry is backed by actual verification,
-        // not just registry metadata. Cross-platform entries remain detection-only.
+        // Record only cryptographically verified provenance for the target artifact.
         if provenance.is_some()
-            && target.is_current()
             && let Some(ref artifact_url) = url
         {
-            match self
+            let mut verifier = Self::from_arg(self.ba.as_ref().clone());
+            verifier.verification_target = Some(target.clone());
+            match verifier
                 .verify_provenance_at_lock_time(
                     &pkg,
                     &v,
                     artifact_url,
                     provenance.as_ref().unwrap(),
-                    checksum.as_deref(),
+                    &mut checksum,
                 )
                 .await
             {
@@ -972,16 +972,10 @@ impl Backend for AquaBackend {
                     provenance = verified;
                 }
                 Err(e) => {
-                    // Clear provenance so install-time verification will run.
-                    // If we kept the unverified provenance, has_lockfile_integrity
-                    // would be true and verify_provenance() would be skipped.
-                    warn!(
-                        "lock-time provenance verification failed for {}, \
-                         will be verified at install time: {e}{}",
-                        self.id,
+                    return Err(e.wrap_err(format!(
+                        "lock-time provenance verification failed{}",
                         Self::scratch_length_hint()
-                    );
-                    provenance = None;
+                    )));
                 }
             }
         }
@@ -997,6 +991,25 @@ impl Backend for AquaBackend {
 }
 
 impl AquaBackend {
+    fn verification_target(&self) -> PlatformTarget {
+        self.verification_target
+            .clone()
+            .unwrap_or_else(PlatformTarget::from_current)
+    }
+
+    fn verification_os(&self) -> &str {
+        self.verification_target
+            .as_ref()
+            .map(|target| Self::to_aqua_platform(target).0)
+            .unwrap_or_else(|| os())
+    }
+
+    fn verification_arch(&self) -> &str {
+        self.verification_target
+            .as_ref()
+            .map(|target| Self::to_aqua_platform(target).1)
+            .unwrap_or_else(|| arch())
+    }
     /// Resolve the registry entry for `tv` and decide whether it can be installed here at all.
     ///
     /// Split out of `install_version_` so `verify_install_feasible` can reach `validate` without
@@ -1407,7 +1420,7 @@ impl AquaBackend {
         v: &str,
         artifact_url: &str,
         detected: &ProvenanceType,
-        expected_checksum: Option<&str>,
+        checksum: &mut Option<String>,
     ) -> Result<Option<ProvenanceType>> {
         let tmp_dir = Self::lock_time_download_dir()?;
         let filename = get_filename_from_url(artifact_url);
@@ -1419,6 +1432,19 @@ impl AquaBackend {
         );
         HTTP.download_file(artifact_url, &artifact_path, None)
             .await?;
+        if let Some((algorithm, expected)) = checksum
+            .as_deref()
+            .and_then(|checksum| checksum.split_once(':'))
+        {
+            crate::hash::ensure_checksum(&artifact_path, expected, None, algorithm)?;
+        }
+        if checksum.is_none() {
+            *checksum = Some(format!(
+                "sha256:{}",
+                crate::hash::file_hash_sha256(&artifact_path, None)?
+            ));
+        }
+        let expected_checksum = checksum.as_deref();
 
         match detected {
             ProvenanceType::GithubAttestations => {
@@ -1677,9 +1703,16 @@ impl AquaBackend {
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
-        let target = PlatformTarget::from_current();
-        let (provenance_url, url_api) =
-            self.resolve_slsa_url(pkg, v, os(), arch(), &target).await?;
+        let target = self.verification_target();
+        let (provenance_url, url_api) = self
+            .resolve_slsa_url(
+                pkg,
+                v,
+                self.verification_os(),
+                self.verification_arch(),
+                &target,
+            )
+            .await?;
         let download_url =
             select_github_download_url(pkg.private, &provenance_url, url_api.as_deref()).await;
         let provenance_path = download_dir.join(get_filename_from_url(&provenance_url));
@@ -1717,7 +1750,7 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
     ) -> Result<bool> {
-        let format = pkg.format(v, os(), arch())?;
+        let format = pkg.format(v, self.verification_os(), self.verification_arch())?;
         let format = Self::effective_extraction_format(pkg, format)?;
         if !format.is_archive() {
             return Err(eyre!(
@@ -1745,7 +1778,14 @@ impl AquaBackend {
     async fn run_minisign_check(&self, check: MinisignCheck<'_>) -> Result<()> {
         let template_ctx = check
             .checksum
-            .map(|checksum| checksum.template_ctx(check.pkg, check.version, os(), arch()))
+            .map(|checksum| {
+                checksum.template_ctx(
+                    check.pkg,
+                    check.version,
+                    self.verification_os(),
+                    self.verification_arch(),
+                )
+            })
             .transpose()?;
         let sig_path = match check.config._type() {
             AquaMinisignType::GithubRelease => {
@@ -1756,16 +1796,16 @@ impl AquaBackend {
                         check.config.asset.as_ref().unwrap(),
                         check.version,
                         &overrides,
-                        os(),
-                        arch(),
+                        self.verification_os(),
+                        self.verification_arch(),
                     )?
                 } else {
                     check.config.asset(
                         check.pkg,
                         check.artifact_filename,
                         check.version,
-                        os(),
-                        arch(),
+                        self.verification_os(),
+                        self.verification_arch(),
                     )?
                 };
                 let asset_strs = IndexSet::from([asset]);
@@ -1791,11 +1831,16 @@ impl AquaBackend {
                         check.config.url.as_ref().unwrap(),
                         check.version,
                         ctx,
-                        os(),
-                        arch(),
+                        self.verification_os(),
+                        self.verification_arch(),
                     )?
                 } else {
-                    check.config.url(check.pkg, check.version, os(), arch())?
+                    check.config.url(
+                        check.pkg,
+                        check.version,
+                        self.verification_os(),
+                        self.verification_arch(),
+                    )?
                 };
                 let path = check
                     .download_dir
@@ -1807,9 +1852,12 @@ impl AquaBackend {
         let data = file::read(check.artifact_path)?;
         let sig = file::read_to_string(&sig_path)?;
         minisign::verify(
-            &check
-                .config
-                .public_key(check.pkg, check.version, os(), arch())?,
+            &check.config.public_key(
+                check.pkg,
+                check.version,
+                self.verification_os(),
+                self.verification_arch(),
+            )?,
             &data,
             &sig,
         )?;
@@ -1833,12 +1881,13 @@ impl AquaBackend {
                 resolve_repo_info(key.repo_owner.as_ref(), key.repo_name.as_ref(), pkg);
             let (key_url, key_download_url) = match key.r#type.as_deref().unwrap_or_default() {
                 "github_release" => {
-                    let asset_strs = key.asset_strs(pkg, v, os(), arch())?;
+                    let asset_strs =
+                        key.asset_strs(pkg, v, self.verification_os(), self.verification_arch())?;
                     self.github_release_asset_urls(&key_pkg, v, asset_strs)
                         .await?
                 }
                 "http" => {
-                    let url = key.url(pkg, v, os(), arch())?;
+                    let url = key.url(pkg, v, self.verification_os(), self.verification_arch())?;
                     (url.clone(), url)
                 }
                 t => return Err(eyre!("unsupported cosign key type: {t}")),
@@ -1856,12 +1905,22 @@ impl AquaBackend {
                 let (sig_url, sig_download_url) =
                     match signature.r#type.as_deref().unwrap_or_default() {
                         "github_release" => {
-                            let asset_strs = signature.asset_strs(pkg, v, os(), arch())?;
+                            let asset_strs = signature.asset_strs(
+                                pkg,
+                                v,
+                                self.verification_os(),
+                                self.verification_arch(),
+                            )?;
                             self.github_release_asset_urls(&sig_pkg, v, asset_strs)
                                 .await?
                         }
                         "http" => {
-                            let url = signature.url(pkg, v, os(), arch())?;
+                            let url = signature.url(
+                                pkg,
+                                v,
+                                self.verification_os(),
+                                self.verification_arch(),
+                            )?;
                             (url.clone(), url)
                         }
                         t => return Err(eyre!("unsupported cosign signature type: {t}")),
@@ -1894,12 +1953,18 @@ impl AquaBackend {
             let (bundle_url, bundle_download_url) =
                 match bundle.r#type.as_deref().unwrap_or_default() {
                     "github_release" => {
-                        let asset_strs = bundle.asset_strs(pkg, v, os(), arch())?;
+                        let asset_strs = bundle.asset_strs(
+                            pkg,
+                            v,
+                            self.verification_os(),
+                            self.verification_arch(),
+                        )?;
                         self.github_release_asset_urls(&bundle_pkg, v, asset_strs)
                             .await?
                     }
                     "http" => {
-                        let url = bundle.url(pkg, v, os(), arch())?;
+                        let url =
+                            bundle.url(pkg, v, self.verification_os(), self.verification_arch())?;
                         (url.clone(), url)
                     }
                     t => return Err(eyre!("unsupported cosign bundle type: {t}")),
@@ -1908,7 +1973,7 @@ impl AquaBackend {
             HTTP.download_file(&bundle_download_url, &bundle_path, pr)
                 .await?;
 
-            let opts = cosign.opts(pkg, v, os(), arch())?;
+            let opts = cosign.opts(pkg, v, self.verification_os(), self.verification_arch())?;
             let result = if let Some(key_url) = cosign_opt_value(&opts, "--key") {
                 let key_path = download_dir.join(get_filename_from_url(key_url));
                 HTTP.download_file(key_url, &key_path, pr).await?;
@@ -1960,11 +2025,16 @@ impl AquaBackend {
     ) -> Result<(String, String)> {
         match checksum._type() {
             AquaChecksumType::GithubRelease => {
-                let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
+                let asset_strs = checksum.asset_strs(
+                    pkg,
+                    v,
+                    self.verification_os(),
+                    self.verification_arch(),
+                )?;
                 self.github_release_asset_urls(pkg, v, asset_strs).await
             }
             AquaChecksumType::Http => checksum
-                .url(pkg, v, os(), arch())
+                .url(pkg, v, self.verification_os(), self.verification_arch())
                 .map(|url| (url.clone(), url)),
         }
     }
@@ -2010,6 +2080,7 @@ impl AquaBackend {
         Self {
             id: id.to_string(),
             ba: Arc::new(ba),
+            verification_target: None,
             // Bumped from `version_tags.msgpack.z`: this cache used to be filtered
             // by the inline `prerelease` opt, so previously cached lists could be
             // missing pre-release tags needed at install/lock time. The new cache
@@ -2219,7 +2290,7 @@ impl AquaBackend {
         v: &str,
         asset_strs: IndexSet<String>,
     ) -> Result<(String, String)> {
-        let target = PlatformTarget::from_current();
+        let target = self.verification_target();
         self.github_release_asset_urls_for_target(pkg, v, asset_strs, &target)
             .await
     }
@@ -2517,7 +2588,7 @@ impl AquaBackend {
         let has_lockfile_integrity = tv
             .lock_platforms
             .get(&platform_key)
-            .is_some_and(PlatformInfo::has_checksum_and_verified_provenance);
+            .is_some_and(PlatformInfo::has_checksum_and_provenance);
         let locked_provenance = tv
             .lock_platforms
             .get(&platform_key)
@@ -2777,7 +2848,7 @@ impl AquaBackend {
     /// When skipping full provenance re-verification (lockfile has checksum+provenance),
     /// check that the setting for the recorded provenance type is still enabled.
     /// Disabling a verification setting while the lockfile expects it is a downgrade.
-    fn ensure_provenance_setting_enabled(
+    pub(crate) fn ensure_provenance_setting_enabled(
         &self,
         tv: &ToolVersion,
         platform_key: &str,

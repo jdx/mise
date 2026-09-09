@@ -20,6 +20,10 @@ use indoc::indoc;
 #[macro_use]
 mod test;
 
+#[cfg(test)]
+#[path = "../build/lockfile_rollout.rs"]
+mod lockfile_rollout;
+
 #[macro_use]
 mod output;
 
@@ -183,6 +187,7 @@ fn main() -> ExitCode {
 }
 
 async fn main_() -> eyre::Result<()> {
+    let _downloads = http::InvocationDownloads;
     // Configure color-eyre based on color preferences
     let hook_builder = if *env::CLICOLOR == Some(false) {
         // Use blank theme (no colors) when colors are disabled

@@ -27,6 +27,7 @@ include = [
   "/LICENSE",
   "/README.md",
   "/build.rs",
+  "/build/lockfile_rollout.rs",
   "/completions/*",
   "/docs/public/apple-touch-icon.png",
   "/docs/public/android-chrome-512x512.png",

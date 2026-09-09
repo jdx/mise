@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export MISE_LOCKFILE_MODE=generate
+export MISE_HTTP_RETRIES=0
+detect_platform
+
+python3 -u - <<'PY' >server.port &
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+import threading
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/config":
+            with open("mise.toml", "a") as config:
+                config.write("\n# concurrent config edit\n")
+        elif self.path == "/lock":
+            Path("mise.lock").write_text("# concurrent lock edit\n[tools]\n")
+        elif self.path == "/cancel":
+            Path("started").touch()
+            threading.Event().wait(30)
+        self.send_response(200)
+        self.send_header("Content-Length", "7")
+        self.end_headers()
+        self.wfile.write(b"fixture")
+
+    def log_message(self, *_):
+        pass
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+print(server.server_port, flush=True)
+server.serve_forever()
+PY
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+for _ in {1..100}; do
+  [[ -s server.port ]] && break
+  sleep 0.05
+done
+PORT=$(cat server.port)
+
+configure() {
+  cat >mise.toml <<EOF
+[tools."http:concurrent"]
+version = "1.0"
+url = "http://127.0.0.1:$PORT/$1"
+EOF
+}
+
+printf '[tools]\n' >mise.lock
+cp mise.lock expected.lock
+configure config
+assert_fail "mise lock --platform $MISE_PLATFORM"
+diff -u expected.lock mise.lock
+assert_contains "cat mise.toml" "concurrent config edit"
+
+configure config
+if mise install >install.log 2>&1; then
+  echo "install unexpectedly published after a concurrent config edit" >&2
+  exit 1
+fi
+assert_contains "cat install.log" "changed during installation"
+diff -u expected.lock mise.lock
+
+configure lock
+assert_fail "mise lock --platform $MISE_PLATFORM"
+assert_contains "cat mise.lock" "concurrent lock edit"
+
+cp mise.lock expected.lock
+configure cancel
+mise lock --platform "$MISE_PLATFORM" >cancel.log 2>&1 &
+LOCK_PID=$!
+for _ in {1..100}; do
+  [[ -f started ]] && break
+  sleep 0.05
+done
+test -f started
+kill -TERM "$LOCK_PID"
+if wait "$LOCK_PID"; then
+  echo "cancelled lock unexpectedly succeeded" >&2
+  exit 1
+fi
+diff -u expected.lock mise.lock
