@@ -28,6 +28,21 @@ pub(crate) const MAX_FILES: u64 = 100_000;
 /// An entry with more bytes than this is cut short.
 pub(crate) const MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
+#[cfg(test)]
+thread_local! {
+    static READ_META_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_read_meta_calls() {
+    READ_META_CALLS.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn read_meta_calls() -> usize {
+    READ_META_CALLS.with(std::cell::Cell::get)
+}
+
 /// One top-level root of a snapshot tree and the files to add under it,
 /// relative to `path`.
 #[derive(Clone, Debug)]
@@ -544,20 +559,79 @@ impl HistoryRepo {
     }
 
     /// Ordinary ancestry is the source of truth, not per-checkpoint refs.
+    #[cfg(test)]
     pub(crate) fn checkpoint_refs(&self) -> Result<Vec<(String, String)>> {
+        Ok(self
+            .history_messages()?
+            .into_iter()
+            .map(|(commit, _)| (commit.clone(), commit))
+            .collect())
+    }
+
+    /// Every commit and message in ordinary ancestry, newest first.
+    ///
+    /// `cat-file --batch` prefixes each raw commit with its exact byte length,
+    /// so arbitrary commit messages remain unambiguous. Reading all messages
+    /// together avoids starting a Git process for every checkpoint merely to
+    /// distinguish annotations from file history.
+    pub(crate) fn history_messages(&self) -> Result<Vec<(String, String)>> {
         let Some(head) = self.ref_oid(Self::HISTORY_REF)? else {
             return Ok(vec![]);
         };
-        self.rev_list(&head, usize::MAX)?
-            .into_iter()
-            .map(|commit| {
-                let record = self.read_meta(&commit)?;
-                Ok((record.uuid, commit))
-            })
-            .collect()
+        let commits = self.rev_list(&head, usize::MAX)?;
+        let mut input = commits.join("\n").into_bytes();
+        input.push(b'\n');
+        let output = self
+            .git
+            .output(PlumbingCall::new(["cat-file", "--batch"]).stdin(&input))?;
+        let mut cursor = 0;
+        let mut messages = Vec::with_capacity(commits.len());
+        for commit in commits {
+            let header_end = output[cursor..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map(|offset| cursor + offset)
+                .ok_or_else(|| eyre::eyre!("Git batch output ended before its object header"))?;
+            let header = String::from_utf8_lossy(&output[cursor..header_end]);
+            let mut fields = header.split_whitespace();
+            let oid = fields.next().unwrap_or_default();
+            let kind = fields.next().unwrap_or_default();
+            let size = fields
+                .next()
+                .and_then(|size| size.parse::<usize>().ok())
+                .ok_or_else(|| eyre::eyre!("invalid Git batch object header: {header}"))?;
+            if oid != commit || kind != "commit" {
+                bail!("unexpected Git batch object header: {header}");
+            }
+            let object_start = header_end + 1;
+            let object_end = object_start
+                .checked_add(size)
+                .ok_or_else(|| eyre::eyre!("Git commit object size overflow for {commit}"))?;
+            let object = output
+                .get(object_start..object_end)
+                .ok_or_else(|| eyre::eyre!("Git batch output ended inside commit {commit}"))?;
+            let message_start = object
+                .windows(2)
+                .position(|bytes| bytes == b"\n\n")
+                .map(|offset| offset + 2)
+                .ok_or_else(|| eyre::eyre!("commit {commit} has no message separator"))?;
+            messages.push((
+                commit,
+                String::from_utf8_lossy(&object[message_start..])
+                    .trim()
+                    .to_string(),
+            ));
+            if output.get(object_end) != Some(&b'\n') {
+                bail!("Git batch output did not terminate commit object {oid}");
+            }
+            cursor = object_end + 1;
+        }
+        Ok(messages)
     }
 
     pub(crate) fn read_meta(&self, commit: &str) -> Result<Checkpoint> {
+        #[cfg(test)]
+        READ_META_CALLS.with(|count| count.set(count.get() + 1));
         let manifest = super::manifest::Manifest::read(self, commit)?;
         let message = self.output_str(PlumbingCall::new(["show", "-s", "--format=%B", commit]))?;
         let own_record = message
@@ -1410,11 +1484,18 @@ impl HistoryRepo {
         self.update_history_head(&commit, Some(&head))
     }
 
+    #[cfg(test)]
     pub(crate) fn read_annotation(
         &self,
         commit: &str,
     ) -> Result<Option<(String, super::store::Annotation)>> {
         let message = self.output_str(PlumbingCall::new(["show", "-s", "--format=%B", commit]))?;
+        Self::annotation_from_message(&message)
+    }
+
+    pub(crate) fn annotation_from_message(
+        message: &str,
+    ) -> Result<Option<(String, super::store::Annotation)>> {
         message
             .lines()
             .rev()

@@ -119,7 +119,7 @@ impl Store {
         // missing but checkpoints exist
         if !store::index_exists_in(state_dir)
             && let Some(repo) = &store.repo
-            && !repo.checkpoint_refs()?.is_empty()
+            && repo.ref_oid(HistoryRepo::HISTORY_REF)?.is_some()
         {
             info!("history: rebuilding the checkpoint index from the repository");
             store.rebuild_index()?;
@@ -746,27 +746,42 @@ impl Store {
         };
         let existing = store::load_index_in(&self.state_dir)?;
         let mut entries = vec![];
-        let commits: Vec<_> = repo.checkpoint_refs()?.into_iter().rev().collect();
+        let commits: Vec<_> = repo
+            .history_messages()?
+            .into_iter()
+            .rev()
+            .map(|(commit, message)| Ok((commit, HistoryRepo::annotation_from_message(&message)?)))
+            .collect::<Result<_>>()?;
         let mut annotations: BTreeMap<String, Vec<Annotation>> = BTreeMap::new();
-        for (_, commit) in &commits {
-            if let Some((target, annotation)) = repo.read_annotation(commit)? {
-                annotations.entry(target).or_default().push(annotation);
+        for (_, annotation) in &commits {
+            if let Some((target, annotation)) = annotation {
+                annotations
+                    .entry(target.clone())
+                    .or_default()
+                    .push(annotation.clone());
             }
         }
-        for (uuid, commit) in commits {
+        for (commit, annotation) in commits {
             // Annotation commits remain in Git ancestry, but are not new file
             // checkpoints and must not move `latest` in the history browser.
-            if repo.read_annotation(&commit)?.is_some() {
+            if annotation.is_some() {
                 continue;
             }
-            let mut checkpoint = repo.read_meta(&commit)?;
+            let mut checkpoint = match store::read_commit_meta_cache_in(&self.state_dir, &commit)? {
+                Some(checkpoint) => checkpoint,
+                None => {
+                    let checkpoint = repo.read_meta(&commit)?;
+                    store::write_commit_meta_cache_in(&self.state_dir, &commit, &checkpoint)?;
+                    checkpoint
+                }
+            };
             if let Some(annotations) = annotations.get(&commit) {
                 for annotation in annotations {
                     annotation.apply_to(&mut checkpoint);
                 }
             }
             store::write_meta_cache_in(&self.state_dir, &checkpoint)?;
-            let id = existing.by_uuid(&uuid).map(|entry| entry.id);
+            let id = existing.by_uuid(&commit).map(|entry| entry.id);
             entries.push((id, checkpoint, commit));
         }
         let mut next_id = existing.next_id.max(1);
@@ -1120,6 +1135,61 @@ pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rebuild_reuses_commit_metadata_without_retaining_removed_annotations() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let Some(repo) = store.repo() else {
+            return Ok(());
+        };
+        let tree = repo.empty_object("tree")?;
+        let mut last = String::new();
+        for i in 0..8 {
+            let mut checkpoint = test_checkpoint(&format!("checkpoint-{i}"), Some(&tree));
+            checkpoint.description = format!("checkpoint {i}");
+            checkpoint.summary = checkpoint.description.clone();
+            last = repo.write_checkpoint(Some(&tree), &checkpoint)?;
+        }
+
+        shadow::reset_read_meta_calls();
+        let first = store.rebuild_index()?;
+        assert_eq!(first.entries.len(), 8);
+        assert_eq!(shadow::read_meta_calls(), 8);
+
+        shadow::reset_read_meta_calls();
+        let second = store.rebuild_index()?;
+        assert_eq!(second.entries.len(), 8);
+        assert_eq!(shadow::read_meta_calls(), 0);
+
+        repo.write_annotation(
+            &last,
+            &Annotation {
+                description: Some("renamed checkpoint".into()),
+                description_source: Some(DescriptionSource::User),
+                updated_at: store::now_rfc3339(),
+                ..Default::default()
+            },
+        )?;
+        let annotation = repo.ref_oid(HistoryRepo::HISTORY_REF)?.unwrap();
+        shadow::reset_read_meta_calls();
+        store.rebuild_index()?;
+        assert_eq!(shadow::read_meta_calls(), 0);
+        assert_eq!(
+            store.list()?.last().unwrap().checkpoint.description,
+            "renamed checkpoint"
+        );
+
+        repo.update_history_head(&last, Some(&annotation))?;
+        shadow::reset_read_meta_calls();
+        store.rebuild_index()?;
+        assert_eq!(shadow::read_meta_calls(), 0);
+        assert_eq!(
+            store.list()?.last().unwrap().checkpoint.description,
+            "checkpoint 7"
+        );
+        Ok(())
+    }
 
     #[test]
     fn automatic_capture_without_enrollment_does_not_create_a_root() -> Result<()> {
