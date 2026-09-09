@@ -1,0 +1,5 @@
+investigate [https://github.com/jdx/mise/discussions/12994](https://github.com/jdx/mise/discussions/12994)
+
+---
+
+make a pr, post a reply, address pr feedback and failing checks until it settles

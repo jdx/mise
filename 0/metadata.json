@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M236F0F4AFEYECWTREJNNFXA",
+  "session_id": "01a08659-8110-70b0-980a-b2bf8a3df1ca",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-09T13:42:06.619375Z",
+  "branch": "codex/fix-packslip-windows-bin-extension",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e-win/packslip.Tests.ps1",
+    "src/backend/packslip.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "23c036b341b9",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 152030,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2871168,
+    "output_tokens": 11597,
+    "api_call_count": 32
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-09T13:42:06.516337Z",
+    "agent_lines": 37,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 37,
+    "total_lines_changed": 38,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
