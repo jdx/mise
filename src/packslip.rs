@@ -439,15 +439,19 @@ pub(crate) fn install_man_pages(
     Ok(())
 }
 
-/// Return the section suffix encoded in a conventional man-page file name.
-fn man_section(name: &str) -> Option<&str> {
+/// Return the leading section identifier encoded in a conventional man-page
+/// file name. Subsections such as `3pm` still live in the `man3` directory.
+fn man_section(name: &str) -> Option<char> {
     let uncompressed = [".gz", ".bz2", ".xz", ".zst", ".lzma"]
         .into_iter()
         .find_map(|suffix| name.strip_suffix(suffix))
         .unwrap_or(name);
     let (_, section) = uncompressed.rsplit_once('.')?;
-    (!section.is_empty() && section.bytes().all(|byte| byte.is_ascii_alphanumeric()))
-        .then_some(section)
+    section
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric())
+        .then(|| section.chars().next())
+        .flatten()
 }
 
 /// Return the normalized man root when this install contains Packslip pages.
@@ -1742,6 +1746,7 @@ mod tests {
             ("share/docs/t.1", "archive"),
             (&format!("{RESOURCES_DIR}/repo/docs/t.1"), "repo"),
             (&format!("{RESOURCES_DIR}/repo/docs/u.5.gz"), "compressed"),
+            (&format!("{RESOURCES_DIR}/repo/docs/u.3pm.gz"), "subsection"),
             ("share/docs/v.1", "generic"),
             (&format!("{RESOURCES_DIR}/repo/docs/v.1"), "platform"),
             (
@@ -1758,6 +1763,7 @@ mod tests {
             {"kind":"man","bin":"t","archive":"share/docs/t.1"},
             {"kind":"man","bin":"t","repo":"docs/t.1"},
             {"kind":"man","bin":"u","repo":"docs/u.5.gz"},
+            {"kind":"man","bin":"u","repo":"docs/u.3pm.gz"},
             {"kind":"man","bin":"u","repo":"docs/README"},
             {"kind":"man","bin":"u","archive":"share/docs/v.1"},
             {"kind":"man","bin":"u","os":"linux","arch":"x86_64","repo":"docs/v.1"},
@@ -1778,6 +1784,10 @@ mod tests {
             "compressed"
         );
         assert_eq!(
+            std::fs::read_to_string(manpath.join("man3/u.3pm.gz")).unwrap(),
+            "subsection"
+        );
+        assert_eq!(
             std::fs::read_to_string(manpath.join("man1/v.1")).unwrap(),
             "platform",
             "resource selection keeps the most specific matching page"
@@ -1787,9 +1797,9 @@ mod tests {
 
     #[test]
     fn man_sections_accept_the_names_man_uses() {
-        assert_eq!(man_section("tool.1"), Some("1"));
-        assert_eq!(man_section("tool.3pm.gz"), Some("3pm"));
-        assert_eq!(man_section("tool.5.xz"), Some("5"));
+        assert_eq!(man_section("tool.1"), Some('1'));
+        assert_eq!(man_section("tool.3pm.gz"), Some('3'));
+        assert_eq!(man_section("tool.5.xz"), Some('5'));
         assert_eq!(man_section("README"), None);
         assert_eq!(man_section("tool.bad-section"), None);
     }
