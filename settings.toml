@@ -559,6 +559,17 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
+[disable_update_warning]
+default = false
+description = "Suppress warnings when a newer mise version is available."
+docs = """
+Disables mise update notices in `mise version`, `mise --version`, and `mise doctor`.
+Other warnings are unaffected. This does not disable `mise self-update` or automatic updates
+enabled with [`auto_update`](#auto_update).
+"""
+env = "MISE_DISABLE_UPDATE_WARNING"
+type = "Bool"
+
 [dotfiles.default_mode]
 default = "symlink"
 description = "Default mode for dotfile entries when mode is omitted. Options: `symlink`, `symlink-each`, `copy`, `template`."

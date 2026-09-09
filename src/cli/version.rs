@@ -222,7 +222,9 @@ fn show_version() -> std::io::Result<()> {
 }
 
 pub(crate) async fn show_latest() {
-    if ci_info::is_ci() && !cfg!(test) {
+    if (ci_info::is_ci() && !cfg!(test))
+        || Settings::try_get().is_ok_and(|settings| settings.disable_update_warning)
+    {
         return;
     }
     if let Some(latest) = check_for_new_version(duration::DAILY).await {

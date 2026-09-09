@@ -453,6 +453,10 @@ impl Doctor {
     /// The stderr notice is presentation rather than diagnosis, and `-J` is asked for by something
     /// reading the JSON: it gets the warning below instead of a message aimed at a person.
     async fn analyze_new_version(&mut self) {
+        if crate::config::Settings::try_get().is_ok_and(|settings| settings.disable_update_warning)
+        {
+            return;
+        }
         if let Some(latest) = version::check_for_new_version(duration::HOURLY).await {
             if !self.json {
                 version::show_latest().await;
