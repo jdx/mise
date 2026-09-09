@@ -81,10 +81,20 @@ async fn set_inner(
         .repo()
         .ok_or_else(|| eyre::eyre!("connecting a setup repository requires git"))?;
     let state_dir = store.state_dir();
+    // the connection as it was: another repository or branch starts from a
+    // clean slate, and a scheme change on the same one replaces its refs
+    let status_before = run::read_status(state_dir)?;
     // This is the disposable preview repository. The connected repository's
     // remote-tracking ref remains untouched unless the connection is confirmed.
     let remote = Remote::new(repo, &opts.url);
-    let branch = resolve_branch(&remote, opts.branch.as_deref())?;
+    // re-running the same connection keeps the branch it already has, so an
+    // unattended `origin set <url> --yes` stays idempotent when the
+    // repository's default branch is not the one this machine follows
+    let connected = (!status_before.disconnected
+        && status_before.origin_url.as_deref() == Some(opts.url.as_str()))
+    .then(|| status_before.origin_branch.as_deref())
+    .flatten();
+    let branch = resolve_branch(&remote, opts.branch.as_deref(), connected)?;
     if !remote.fetch(&branch)? {
         refuse_missing_branch(&remote, &branch, &opts.url)?;
         if repo.ref_oid(UPSTREAM_REF)?.is_some() {
@@ -97,9 +107,6 @@ async fn set_inner(
 
     run::capture_now(store, tracked);
     let shared = share::current(repo, tracked)?;
-    // the connection as it was: another repository or branch starts from a
-    // clean slate, and a scheme change on the same one replaces its refs
-    let status_before = run::read_status(state_dir)?;
     let connected_before = status_before.origin_url.is_some();
     let same_origin = status_before.origin_url.as_deref() == Some(opts.url.as_str())
         && status_before.origin_branch.as_deref() == Some(branch.as_str());
@@ -225,14 +232,23 @@ async fn set_inner(
     Ok(())
 }
 
-/// The setup branch: the one asked for, else the repository's own default
-/// branch. Assuming `main` reads a repository that does not have it as empty,
-/// and publishes an unrelated root branch beside its real history.
-fn resolve_branch(remote: &Remote<'_>, requested: Option<&str>) -> Result<String> {
+/// The setup branch: the one asked for, else the branch this machine already
+/// follows on the same repository, else the repository's own default branch.
+/// Assuming `main` reads a repository that does not have it as empty, and
+/// publishes an unrelated root branch beside its real history.
+fn resolve_branch(
+    remote: &Remote<'_>,
+    requested: Option<&str>,
+    connected: Option<&str>,
+) -> Result<String> {
     if let Some(branch) = requested {
-        if branch.trim().is_empty() {
+        let branch = branch.trim();
+        if branch.is_empty() {
             bail!("a branch name is required");
         }
+        return Ok(branch.to_string());
+    }
+    if let Some(branch) = connected {
         return Ok(branch.to_string());
     }
     // an unreachable repository is reported by the fetch that follows
@@ -242,10 +258,10 @@ fn resolve_branch(remote: &Remote<'_>, requested: Option<&str>) -> Result<String
 /// A missing branch is only an empty repository when the repository has no
 /// branches at all; otherwise connecting would publish an unrelated root
 /// branch beside the history that is already there.
-fn refuse_missing_branch(remote: &Remote<'_>, branch: &str, url: &str) -> Result<()> {
-    let Ok(refs) = remote.ls_remote() else {
-        return Ok(());
-    };
+pub(super) fn refuse_missing_branch(remote: &Remote<'_>, branch: &str, url: &str) -> Result<()> {
+    // a listing that fails must not read as an empty repository: that is the
+    // path this check exists to prevent
+    let refs = remote.ls_remote()?;
     let heads: Vec<&str> = refs
         .iter()
         .filter_map(|(_, name)| name.strip_prefix("refs/heads/"))
@@ -488,7 +504,7 @@ mod tests {
             let (_origin, url) = origin_with_branch(&temp.path().join(name), name);
             let local = local_repo(&temp.path().join(format!("{name}-local")));
             let remote = Remote::new(&local, &url);
-            assert_eq!(resolve_branch(&remote, None).unwrap(), name);
+            assert_eq!(resolve_branch(&remote, None, None).unwrap(), name);
         }
     }
 
@@ -501,8 +517,35 @@ mod tests {
         let (_origin, url) = origin_with_branch(&temp.path().join("origin"), "master");
         let local = local_repo(&temp.path().join("local"));
         let remote = Remote::new(&local, &url);
-        assert_eq!(resolve_branch(&remote, Some("release")).unwrap(), "release");
-        assert!(resolve_branch(&remote, Some("  ")).is_err());
+        assert_eq!(
+            resolve_branch(&remote, Some("release"), None).unwrap(),
+            "release"
+        );
+        assert_eq!(
+            resolve_branch(&remote, Some(" release "), None).unwrap(),
+            "release"
+        );
+        assert!(resolve_branch(&remote, Some("  "), None).is_err());
+        // an explicit branch still wins over the one already followed
+        assert_eq!(
+            resolve_branch(&remote, Some("release"), Some("main")).unwrap(),
+            "release"
+        );
+    }
+
+    #[test]
+    fn a_live_connection_keeps_the_branch_it_follows() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let (_origin, url) = origin_with_branch(&temp.path().join("origin"), "master");
+        let local = local_repo(&temp.path().join("local"));
+        let remote = Remote::new(&local, &url);
+        // re-running the connection does not move it to the default branch
+        assert_eq!(resolve_branch(&remote, None, Some("main")).unwrap(), "main");
+        // a connection that was removed detects again
+        assert_eq!(resolve_branch(&remote, None, None).unwrap(), "master");
     }
 
     #[test]
@@ -515,7 +558,7 @@ mod tests {
         let url = url::Url::from_file_path(empty.dir()).unwrap().to_string();
         let local = local_repo(&temp.path().join("local"));
         let remote = Remote::new(&local, &url);
-        assert_eq!(resolve_branch(&remote, None).unwrap(), DEFAULT_BRANCH);
+        assert_eq!(resolve_branch(&remote, None, None).unwrap(), DEFAULT_BRANCH);
     }
 
     #[test]

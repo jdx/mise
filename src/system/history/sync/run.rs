@@ -260,6 +260,13 @@ pub(crate) fn sync(
                     origin.url
                 );
             }
+            // a machine that has never synced has no vanished-branch signal,
+            // so a branch this repository does not have (a declaration that
+            // named the wrong one, or omitted it and took the default) must
+            // not read as an empty upstream either
+            if !found {
+                super::origin::refuse_missing_branch(&remote, &origin.branch, &origin.url)?;
+            }
             if !found && repo.ref_oid(UPSTREAM_REF)?.is_some() {
                 repo.delete_ref(UPSTREAM_REF)?;
             }
