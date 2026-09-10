@@ -112,8 +112,10 @@ class CaskFlightSteps
   def version = @cask.version
   def arch = @cask.arch
 
-  def run(command, **options)
-    @steps << options.merge(type: "run", command: { path: command.to_s })
+  def run(command, base: nil, **options)
+    path = { path: command.to_s }
+    path[:base] = base.to_s unless base.nil?
+    @steps << options.merge(type: "run", command: path)
   end
 
   def method_missing(name, *, &block)

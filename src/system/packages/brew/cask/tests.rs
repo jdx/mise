@@ -8001,6 +8001,17 @@ fn structured_run_respects_failure_policy() -> Result<()> {
             succeeds
         );
     }
+    let signaled = serde_json::json!({
+        "type": "run", "command": {"path": "/bin/sh"},
+        "args": ["-c", "kill -TERM $$"], "must_succeed": false
+    });
+    let step = parse_flight_step(&cask, "postflight_steps", &signaled)?;
+    let err = execute_flight_steps(&cask, &[step], tmp.path(), tmp.path(), "postflight_steps")
+        .expect_err("signal termination must remain an error");
+    assert!(matches!(
+        err.downcast_ref::<crate::errors::Error>(),
+        Some(crate::errors::Error::ScriptFailed(_, Some(status))) if status.code().is_none()
+    ));
     let invalid = serde_json::json!({"type": "run", "command": {"path": "/usr/bin/false"}, "must_succeed": "false"});
     assert!(parse_flight_step(&cask, "postflight_steps", &invalid).is_err());
     let missing = serde_json::json!({"type": "run", "command": {"path": "/mise-nonexistent-command"}, "must_succeed": false});

@@ -868,7 +868,8 @@ pub(super) fn execute_flight_step(
             if let Err(err) = result {
                 let exited = matches!(
                     err.downcast_ref::<crate::errors::Error>(),
-                    Some(crate::errors::Error::ScriptFailed(_, Some(_)))
+                    Some(crate::errors::Error::ScriptFailed(_, Some(status)))
+                        if status.code().is_some()
                 );
                 if *must_succeed || !exited {
                     return Err(err);

@@ -694,7 +694,8 @@ cask "widget" do
   app "Widget.app"
   binary "Widget.app/Contents/MacOS/widget", target: "widget"
   preflight_steps do
-    run "/this-command-must-never-execute", args: ["#{version}"]
+    run "Widget.app/Contents/MacOS/widget", base: :appdir, args: ["#{version}"]
+    run "bin/widget", base: :staged_path
   end
   postflight_steps do
     run "/usr/bin/xattr", args: ["-d", "com.apple.quarantine", "{{staged_path}}/Widget-#{version}/bin/widget"], must_succeed: false
@@ -729,7 +730,11 @@ end
         assert_eq!(metadata["artifacts"].as_array().unwrap().len(), 4);
         assert_eq!(
             metadata["artifacts"][2]["preflight_steps"][0]["steps"][0],
-            serde_json::json!({"type": "run", "command": {"path": "/this-command-must-never-execute"}, "args": ["1.2.3"]})
+            serde_json::json!({"type": "run", "command": {"path": "Widget.app/Contents/MacOS/widget", "base": "appdir"}, "args": ["1.2.3"]})
+        );
+        assert_eq!(
+            metadata["artifacts"][2]["preflight_steps"][0]["steps"][1],
+            serde_json::json!({"type": "run", "command": {"path": "bin/widget", "base": "staged_path"}})
         );
         assert_eq!(
             metadata["artifacts"][3]["postflight_steps"][0]["steps"],
