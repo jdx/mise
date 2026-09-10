@@ -1,5 +1,65 @@
 # Changelog
 
+## [2026.9.5](https://github.com/jdx/mise/compare/v2026.9.4..v2026.9.5) - 2026-09-10
+
+### 🚀 Features
+
+- **(bootstrap)** support current-host macOS defaults by @azohra in [#12983](https://github.com/jdx/mise/pull/12983)
+- **(bootstrap)** extend friendly macos preferences by @jdx in [#13032](https://github.com/jdx/mise/pull/13032)
+- **(bootstrap)** patch nested macOS preference values by @azohra in [#12984](https://github.com/jdx/mise/pull/12984)
+- **(bootstrap)** support pre-packages file phases by @jdx in [#13052](https://github.com/jdx/mise/pull/13052)
+- **(brew-cask)** support structured set_permissions flight steps by @azohra in [#13043](https://github.com/jdx/mise/pull/13043)
+- **(dotfiles)** support platform-specific destination variants by @jdx in [#13050](https://github.com/jdx/mise/pull/13050)
+- **(lock)** trial complete lockfile generation by @jdx in [#13031](https://github.com/jdx/mise/pull/13031)
+- **(task)** support usage variables in sources and outputs by @jdx in [#13051](https://github.com/jdx/mise/pull/13051)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** detect the origin default branch when connecting dotfiles by @Dhaulagiri in [#13037](https://github.com/jdx/mise/pull/13037)
+- **(bootstrap)** render vars in file templates by @nettlesh in [#13033](https://github.com/jdx/mise/pull/13033)
+- **(brew-cask)** drop stale brew advice from the cask metadata error by @Marukome0743 in [#12800](https://github.com/jdx/mise/pull/12800)
+- **(brew-cask)** leave a running self-updating app to update itself by @azohra in [#13041](https://github.com/jdx/mise/pull/13041)
+- **(dotfiles)** keep history locks independent of cache directories by @ascarter in [#13038](https://github.com/jdx/mise/pull/13038)
+- **(install)** summarize interactive progress without duplicate rows by @jdx in [#13030](https://github.com/jdx/mise/pull/13030)
+- **(install)** reduce progress output for long CI installs by @jdx in [#13036](https://github.com/jdx/mise/pull/13036)
+- **(sandbox)** allow metadata on ancestors of readable paths by @Marukome0743 in [#13039](https://github.com/jdx/mise/pull/13039)
+- **(self-update)** select the correct armv7 release archive by @jdx in [#13023](https://github.com/jdx/mise/pull/13023)
+- **(self-update)** correct npm update guidance and allow silencing warnings by @jdx in [#13028](https://github.com/jdx/mise/pull/13028)
+
+### 📦 Registry
+
+- add clipboard ([github:Slackadays/Clipboard](https://github.com/Slackadays/Clipboard)) by @i-api in [#13044](https://github.com/jdx/mise/pull/13044)
+
+### Ci
+
+- use the active mise binary in the nix docker test by @jdx in [#13026](https://github.com/jdx/mise/pull/13026)
+
+### New Contributors
+
+- @Dhaulagiri made their first contribution in [#13037](https://github.com/jdx/mise/pull/13037)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (9)
+
+- [`Jamf-Concepts/Notifier`](https://github.com/Jamf-Concepts/Notifier)
+- [`aubepkg/aube`](https://github.com/aubepkg/aube)
+- [`esengine/DeepSeek-Reasonix`](https://github.com/esengine/DeepSeek-Reasonix)
+- [`nklmilojevic/sofka`](https://github.com/nklmilojevic/sofka)
+- [`openai/tunnel-client`](https://github.com/openai/tunnel-client)
+- [`unikraft-cloud/cli`](https://github.com/unikraft-cloud/cli)
+- [`unikraft/kraftkit`](https://github.com/unikraft/kraftkit)
+- [`yadm-dev/yadm`](https://github.com/yadm-dev/yadm)
+- [`yarnpkg/zpm`](https://github.com/yarnpkg/zpm)
+
+#### Updated Packages (5)
+
+- [`Byron/dua-cli`](https://github.com/Byron/dua-cli)
+- [`editorconfig-checker/editorconfig-checker`](https://github.com/editorconfig-checker/editorconfig-checker)
+- [`gopasspw/gopass`](https://github.com/gopasspw/gopass)
+- [`masasuzu/clrnd`](https://github.com/masasuzu/clrnd)
+- [`pnpm/pnpm`](https://github.com/pnpm/pnpm)
+
 ## [2026.9.4](https://github.com/jdx/mise/compare/v2026.9.3..v2026.9.4) - 2026-09-09
 
 ### 🚀 Features
