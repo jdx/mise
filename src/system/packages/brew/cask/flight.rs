@@ -658,9 +658,13 @@ pub(super) fn execute_flight_step(
             }
             let mut runner = CmdLineRunner::new("/bin/chmod");
             if *recursive {
+                runner = runner.arg("-R");
                 // Never follow symlinks out of the bundle, matching the
-                // module's other recursive mode changes.
-                runner = runner.arg("-R").arg("-P");
+                // module's other recursive mode changes. GNU chmod has no
+                // `-P` and already leaves symlinks alone during recursion.
+                if cfg!(target_os = "macos") {
+                    runner = runner.arg("-P");
+                }
             }
             runner = runner.arg("--").arg(permissions);
             for path in &existing {

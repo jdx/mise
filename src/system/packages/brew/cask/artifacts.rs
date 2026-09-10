@@ -624,10 +624,8 @@ pub(super) fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Resul
                 })?;
             // Homebrew serializes the DSL's `recursive: true` default as an
             // absent `non_recursive`, so only an explicit `true` narrows it.
-            let recursive = !object
-                .get("non_recursive")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
+            let recursive =
+                !parse_optional_flight_bool(cask, kind, object, "non_recursive", false)?;
             Ok(FlightStep::SetPermissions {
                 paths,
                 permissions: permissions.to_string(),

@@ -3259,6 +3259,15 @@ fn rejects_malformed_structured_set_permissions_steps() {
             }]),
             "unsupported preflight_steps set_permissions step field sudo",
         ),
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "staged_path", "path": "Tool.app"}],
+                "permissions": "0755",
+                "non_recursive": "true"
+            }]),
+            "preflight_steps non_recursive must be a boolean",
+        ),
     ] {
         let mut cask = test_cask("tool", "1.0.0");
         cask.artifacts = vec![
