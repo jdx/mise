@@ -704,6 +704,25 @@ impl BrewCaskManager {
         )?;
         let mut metadata_only_apps = Vec::new();
         for (index, app) in artifacts.apps.iter().enumerate() {
+            // Preflight steps, hooks, and installers ran after the last skip
+            // check and may have launched the app. Replacing it now would
+            // strand the helpers it spawns later, so undo the preflight work
+            // and leave the app to update itself. A failure here would leave a
+            // pending journal, and the next apply would replace the running
+            // app after all.
+            if mode == InstallMode::Upgrade
+                && cask.auto_updates
+                && app_is_running(&app_target_path(app.target_name())?)
+            {
+                flight_targets.rollback()?;
+                remove_cask_journals(&cask.token)?;
+                file::remove_all(&tmp_caskroom)?;
+                file::remove_all(&stage)?;
+                let reason =
+                    "skipped: installed app started running during the upgrade and updates itself";
+                info!("brew-cask:{}: {reason}", cask.token);
+                return Ok(reason.to_string());
+            }
             if install_app(
                 &stage,
                 &tmp_caskroom,

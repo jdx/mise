@@ -26,7 +26,15 @@ pub(super) fn app_is_running(app: &Path) -> bool {
         .stderr(Stdio::null())
         .output()
     {
-        Ok(output) => app_has_live_process(app, &output.stdout),
+        Ok(output) if output.status.success() => app_has_live_process(app, &output.stdout),
+        Ok(output) => {
+            debug!(
+                "brew-cask: process listing for {} exited with {}",
+                app.display(),
+                output.status
+            );
+            false
+        }
         Err(err) => {
             debug!(
                 "brew-cask: could not list processes for {}: {err:#}",
@@ -45,14 +53,12 @@ pub(super) fn app_is_running(_app: &Path) -> bool {
 /// Matches `ps -axo comm=` output, one executable path per line, against `app`.
 ///
 /// The comparison is by path component, so `Foo.app` does not claim processes
-/// from `Foo.app 2` or `Foobar.app`.
+/// from `Foo.app 2` or `Foobar.app`. Lines that are not UTF-8 are ignored; the
+/// paths mise installs come from UTF-8 cask metadata.
 pub(super) fn app_has_live_process(app: &Path, ps_output: &[u8]) -> bool {
-    use std::ffi::OsStr;
-    use std::os::unix::ffi::OsStrExt;
-
     ps_output
         .split(|byte| *byte == b'\n')
-        .map(<[u8]>::trim_ascii)
+        .filter_map(|line| std::str::from_utf8(line.trim_ascii()).ok())
         .filter(|line| !line.is_empty())
-        .any(|line| Path::new(OsStr::from_bytes(line)).starts_with(app))
+        .any(|line| Path::new(line).starts_with(app))
 }

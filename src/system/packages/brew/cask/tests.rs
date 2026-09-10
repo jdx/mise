@@ -7611,6 +7611,12 @@ fn running_app_matches_bundle_processes_by_path_component() {
             "listing={listing:?}"
         );
     }
+    let mixed = b"/Applications/Goo\xffgle Chrome.app/Contents/MacOS/x\n/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n";
+    assert!(app_has_live_process(app, mixed));
+    assert!(!app_has_live_process(
+        app,
+        b"/Applications/Goo\xffgle Chrome.app/Contents/MacOS/x\n"
+    ));
 }
 
 /// Spawns a process from inside a bundle and checks the live listing sees it
