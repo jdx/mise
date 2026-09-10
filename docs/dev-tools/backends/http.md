@@ -583,7 +583,7 @@ With `shared_extraction = true`, extracted files are stored in
 Cache keys are derived from the file content so that identical downloads are shared across tools:
 
 1. **File content**: mise calculates a Blake3 hash of the downloaded file, independently of its expected verification checksum.
-2. **Extraction options**: options that change the extracted result, including root stripping, renaming, and relevant format or launcher choices, also affect the key.
+2. **Extraction options**: options that change the extracted result, including the effective filename for raw and compressed binaries, root stripping, renaming, and relevant format or launcher choices, also affect the key.
 
 Example cache directory structure:
 

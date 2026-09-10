@@ -140,6 +140,7 @@ assert "test -L '$SHARED_B'"
 assert_contains "'$SHARED_A/archive/bin/storage-tool'" storage-tool-ok
 assert_contains "'$SHARED_B/archive/bin/storage-tool'" storage-tool-ok
 assert_contains "'$CACHED_ARCHIVE/archive/bin/storage-tool'" storage-tool-ok
+
 assert_contains "'$CACHED_RAW'" raw-tool-ok
 assert_contains "mise x -- raw-tool" raw-tool-ok
 
@@ -148,3 +149,42 @@ mise install --force 'http:shared-b[shared_extraction=false]@1.0.0'
 assert "test -d '$SHARED_B' && test ! -L '$SHARED_B'"
 assert_contains "'$SHARED_B/archive/bin/storage-tool'" storage-tool-ok
 assert_contains "'$CACHED_ARCHIVE/archive/bin/storage-tool'" storage-tool-ok
+
+# The effective executable name is part of shared content identity for both
+# raw and compressed binaries. Different bin_path values can still share it.
+gzip -c "$FIXTURES/raw-tool" >"$FIXTURES/raw-tool.gz"
+for kind in raw compressed; do
+  artifact=raw-tool
+  if [[ $kind == compressed ]]; then
+    artifact=raw-tool.gz
+  fi
+  cat >mise.toml <<EOF
+[tools."http:named-a-$kind"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/$artifact"
+bin = "first-name"
+shared_extraction = true
+
+[tools."http:named-b-$kind"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/$artifact"
+bin = "second-name"
+bin_path = "nested/bin"
+shared_extraction = true
+
+[tools."http:named-copy-$kind"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/$artifact"
+bin = "first-name"
+bin_path = "another/bin"
+shared_extraction = true
+EOF
+  mise install
+  FIRST="$INSTALLS/http-named-a-$kind/1.0.0"
+  SECOND="$INSTALLS/http-named-b-$kind/1.0.0/nested/bin/second-name"
+  COPY="$INSTALLS/http-named-copy-$kind/1.0.0/another/bin/first-name"
+  assert_contains "'$FIRST/first-name'" raw-tool-ok
+  assert_contains "'$SECOND'" raw-tool-ok
+  assert_contains "'$COPY'" raw-tool-ok
+  assert "test '$(readlink "$COPY")' = '$(readlink "$FIRST")/first-name'"
+done

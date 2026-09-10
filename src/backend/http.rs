@@ -334,10 +334,14 @@ impl HttpBackend {
 
         if file_info.format_affects_cache {
             parts.push(format!("format_{}", file_info.format));
-            if file_info.is_compressed_binary {
-                let destination = self.dest_filename(file_path, file_info, opts)?;
-                parts.push(format!("name_{}", hash::hash_blake3_to_str(&destination)));
-            }
+        }
+
+        // Raw files and compressed binaries are stored under their effective
+        // executable name. Reusing different names would expose the first
+        // install's filename on every subsequent cache hit.
+        if file_info.format == file::ExtractionFormat::Raw || file_info.is_compressed_binary {
+            let destination = self.dest_filename(file_path, file_info, opts)?;
+            parts.push(format!("name_{}", hash::hash_blake3_to_str(&destination)));
         }
 
         if let Some(strip) = opts.strip_components() {
@@ -460,9 +464,7 @@ impl HttpBackend {
     // Extraction type detection
     // -------------------------------------------------------------------------
 
-    /// Detect extraction type from an existing cache directory
-    /// This handles the case where a cache hit occurs but the original extraction
-    /// used different options (e.g., different `bin` name)
+    /// Detect extraction type and filename from an existing cache directory.
     fn extraction_type_from_cache(
         &self,
         cache_dir: &Path,
@@ -1737,6 +1739,33 @@ mod tests {
     }
 
     #[test]
+    fn raw_cache_identity_includes_effective_filename() {
+        let tv = http_test_tv("1.0.0");
+        let backend = HttpBackend {
+            ba: Arc::new(tv.ba().clone()),
+        };
+        let temp = tempfile::tempdir().unwrap();
+        for filename in ["tool", "tool.gz"] {
+            let artifact = temp.path().join(filename);
+            std::fs::write(&artifact, b"same-content").unwrap();
+            let key = |options: &str| {
+                let raw_opts = crate::toolset::parse_tool_options(options);
+                backend
+                    .cache_plan(&artifact, None, &HttpOptions::new(&raw_opts))
+                    .unwrap()
+                    .key
+            };
+            assert_ne!(key("bin=alpha"), key("bin=beta"), "{filename}");
+            assert_eq!(
+                key("bin=alpha,bin_path=first"),
+                key("bin=alpha,bin_path=second"),
+                "{filename}"
+            );
+            assert!(!key("bin=nested/alpha").contains('/'));
+        }
+    }
+
+    #[test]
     fn dest_filename_uses_decompressed_name_for_rename_exe_extension() {
         let backend = HttpBackend {
             ba: Arc::new(BackendArg::new_raw(
@@ -1809,7 +1838,10 @@ mod tests {
             )),
         };
 
-        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let tmp = tempfile::Builder::new()
+            .suffix(".tar.gz")
+            .tempfile()
+            .unwrap();
         std::fs::write(tmp.path(), b"archive-contents").unwrap();
 
         // Characters that are illegal or unsafe in Windows path components and
