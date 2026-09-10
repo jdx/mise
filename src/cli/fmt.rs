@@ -244,10 +244,17 @@ fn is_sortable(array: &Array, order: SetOrder) -> bool {
 /// every entry around it meaningful: `sources` and `outputs` are evaluated in
 /// order and the last matching entry wins.
 ///
-/// `\!` escapes a literal `!` and so does not exclude, but a template can
-/// render into either and is treated as if it excludes.
+/// Exclusion is decided on the rendered entry, by the leading `!` that
+/// [`crate::task::task_source_checker::source_glob_patterns`] looks for, so
+/// only what comes first matters. `\!` escapes a literal `!` and does not
+/// exclude. An entry that *opens* with a template tag can render into either
+/// and is treated as if it excludes; one that opens with a literal still
+/// begins with that literal once rendered, so an embedded tag cannot turn it
+/// into an exclusion. Whitespace-control tags (`{{-`) strip what precedes
+/// them, so the leading whitespace is trimmed before the tag is looked for.
 fn may_exclude(entry: &str) -> bool {
-    entry.starts_with('!') || entry.starts_with("{{") || entry.starts_with("{%")
+    let head = entry.trim_start();
+    head.starts_with('!') || head.starts_with("{{") || head.starts_with("{%")
 }
 
 /// Whether a span of decor holds a comment rather than only whitespace.
@@ -376,6 +383,36 @@ outputs = ["target/debug/b", "target/debug/a"]
         );
         assert!(
             toml.contains(r#"outputs = ["target/debug/a", "target/debug/b"]"#),
+            "{toml}"
+        );
+    }
+
+    #[test]
+    fn sorts_sources_whose_template_cannot_open_the_entry() {
+        // A literal prefix survives rendering, so an embedded tag can never
+        // turn the entry into an exclusion and the list stays a set.
+        let toml = fmt(r#"
+[tasks.build]
+sources = ["src/b.rs", "src/{{ vars.dir }}/**", "Cargo.toml"]
+"#);
+
+        assert!(
+            toml.contains(r#"sources = ["src/{{ vars.dir }}/**", "Cargo.toml", "src/b.rs"]"#),
+            "{toml}"
+        );
+    }
+
+    #[test]
+    fn keeps_the_order_of_sources_opening_with_a_whitespace_control_tag() {
+        // `{{-` strips what precedes it, so this renders to whatever the tag
+        // yields and could still begin with `!`.
+        let toml = fmt(r#"
+[tasks.build]
+sources = [" {{- vars.pattern }}", "Cargo.toml"]
+"#);
+
+        assert!(
+            toml.contains(r#"sources = [" {{- vars.pattern }}", "Cargo.toml"]"#),
             "{toml}"
         );
     }
