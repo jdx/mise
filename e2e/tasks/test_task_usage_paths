@@ -55,8 +55,18 @@ sources = ["{{env.BASE_DIR}}/{{env.OUT_DIR}}/{{usage.name}}.in"]
 outputs = ["{{env.BASE_DIR}}/artifact.txt"]
 run = 'cat "$BASE_DIR/$OUT_DIR/{{usage.name}}.in" > "$BASE_DIR/artifact.txt"; echo run >> child-runs.log'
 
+[tasks.mixed-output]
+usage = 'arg "<name>"'
+env = { OUT_DIR = "default" }
+sources = ["{{env.BASE_DIR}}/{{env.OUT_DIR}}/{{usage.name}}.in"]
+outputs = ["{{env.BASE_DIR}}/{{env.OUT_DIR}}/{{usage.name}}.txt"]
+run = 'cat "$BASE_DIR/$OUT_DIR/{{usage.name}}.in" > "$BASE_DIR/$OUT_DIR/{{usage.name}}.txt"; echo run >> mixed-runs.log'
+
 [tasks.parent]
-depends = [{ task = "child", args = ["artifact"], env = { OUT_DIR = "dist" } }]
+depends = [
+  { task = "child", args = ["artifact"], env = { OUT_DIR = "dist" } },
+  { task = "mixed-output", args = ["artifact"], env = { OUT_DIR = "dist" } },
+]
 EOF
 
 mkdir -p workspace/dist
@@ -64,10 +74,13 @@ echo content >workspace/dist/artifact.in
 mise run parent
 mise run parent
 assert "test -f workspace/artifact.txt && echo present" "present"
+assert "test -f workspace/dist/artifact.txt && echo present" "present"
 assert "wc -l <child-runs.log" "1"
+assert "wc -l <mixed-runs.log" "1"
 echo changed >workspace/dist/artifact.in
 mise run parent
 assert "wc -l <child-runs.log" "2"
+assert "wc -l <mixed-runs.log" "2"
 
 # Literal text outside a Tera tag must not be mistaken for a usage reference.
 cat <<'EOF' >mise.toml

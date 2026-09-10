@@ -2641,6 +2641,11 @@ impl Task {
             .get_or_insert_with(|| self.sources.clone())
             .extend(other_raw_sources);
         self.sources.extend(other.sources);
+        if let Some(other_path_env) = other.raw_path_env {
+            self.raw_path_env
+                .get_or_insert_default()
+                .extend(other_path_env);
+        }
         if other.watch.is_some() {
             self.watch = other.watch;
         }
@@ -3940,6 +3945,10 @@ mod tests {
         let mut file_task = Task {
             sources: base_sources.clone(),
             raw_sources: Some(base_sources.clone()),
+            raw_path_env: Some(BTreeMap::from([
+                ("BASE".to_string(), "base".to_string()),
+                ("SHARED".to_string(), "base".to_string()),
+            ])),
             outputs: TaskOutputs::Files(base_outputs.clone()),
             raw_outputs: RawOutputTemplates {
                 templates: Some(base_outputs.clone()),
@@ -3948,6 +3957,10 @@ mod tests {
         };
         let metadata_only_overlay = Task {
             raw_sources: Some(vec![]),
+            raw_path_env: Some(BTreeMap::from([
+                ("OVERLAY".to_string(), "overlay".to_string()),
+                ("SHARED".to_string(), "overlay".to_string()),
+            ])),
             raw_outputs: RawOutputTemplates {
                 templates: Some(vec![]),
             },
@@ -3960,6 +3973,14 @@ mod tests {
         assert_eq!(file_task.raw_sources, Some(base_sources));
         assert_eq!(file_task.outputs, TaskOutputs::Files(base_outputs.clone()));
         assert_eq!(file_task.raw_outputs.templates, Some(base_outputs));
+        assert_eq!(
+            file_task.raw_path_env,
+            Some(BTreeMap::from([
+                ("BASE".to_string(), "base".to_string()),
+                ("OVERLAY".to_string(), "overlay".to_string()),
+                ("SHARED".to_string(), "overlay".to_string()),
+            ]))
+        );
 
         let source_overlay = Task {
             sources: vec!["overlay-{{usage.name}}.txt".to_string()],
