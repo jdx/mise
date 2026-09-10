@@ -717,6 +717,9 @@ pub(crate) struct Task {
     /// re-rendered once task usage arguments are available.
     #[serde(skip)]
     pub raw_sources: Option<Vec<String>>,
+    /// Effective environment for deferred source/output path templates.
+    #[serde(skip)]
+    pub(crate) raw_path_env: Option<BTreeMap<String, String>>,
     #[serde(default)]
     pub watch: Option<TaskWatchOptions>,
     #[serde(default)]
@@ -2756,6 +2759,9 @@ impl Task {
         let mut tera = get_tera(Some(config_root));
         let tera_ctx = self.tera_ctx(config).await?;
         self.store_raw_render_inputs();
+        self.raw_path_env = tera_ctx
+            .get("env")
+            .and_then(|value| serde::Deserialize::deserialize(value.clone()).ok());
         for a in &mut self.aliases {
             if contains_template_syntax(a) {
                 *a = render_str(&mut tera, a, &tera_ctx)?;
@@ -2864,7 +2870,7 @@ impl Task {
         let mut tera = get_tera(Some(&config_root));
         let mut tera_ctx = self.tera_ctx(config).await?;
         if (has_usage_sources || has_usage_outputs)
-            && let Some(env) = &self.raw_outputs.original_env
+            && let Some(env) = &self.raw_path_env
         {
             tera_ctx.insert("env", env);
         }
@@ -3199,8 +3205,12 @@ fn match_tasks_with_context(
                 t = t.with_dependency_env(&env_directives);
                 if let Some(config_root) = &t.config_root {
                     let config_root = config_root.clone();
-                    t.outputs
-                        .re_render_with_env(&mut t.raw_outputs, &td.env, &config_root)?;
+                    t.outputs.re_render_with_env(
+                        &mut t.raw_outputs,
+                        &mut t.raw_path_env,
+                        &td.env,
+                        &config_root,
+                    )?;
                 }
             }
             Ok(t)
@@ -3272,6 +3282,7 @@ impl Default for Task {
             interactive: false,
             sources: vec![],
             raw_sources: None,
+            raw_path_env: None,
             watch: None,
             outputs: Default::default(),
             cache: Default::default(),
@@ -3932,7 +3943,6 @@ mod tests {
             outputs: TaskOutputs::Files(base_outputs.clone()),
             raw_outputs: RawOutputTemplates {
                 templates: Some(base_outputs.clone()),
-                original_env: None,
             },
             ..Default::default()
         };
@@ -3940,7 +3950,6 @@ mod tests {
             raw_sources: Some(vec![]),
             raw_outputs: RawOutputTemplates {
                 templates: Some(vec![]),
-                original_env: None,
             },
             ..Default::default()
         };

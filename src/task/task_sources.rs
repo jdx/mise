@@ -13,12 +13,11 @@ pub(crate) enum TaskOutputs {
     Auto,
 }
 
-/// Stores raw (pre-render) output templates and the original env context so they
-/// can be re-rendered when dependency env overrides are applied after initial rendering.
+/// Stores raw (pre-render) output templates so they can be re-rendered after
+/// dependency env overrides and usage arguments are available.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RawOutputTemplates {
     pub templates: Option<Vec<String>>,
-    pub original_env: Option<std::collections::BTreeMap<String, String>>,
 }
 
 impl Default for TaskOutputs {
@@ -61,7 +60,6 @@ impl TaskOutputs {
         match self {
             TaskOutputs::Files(files) => RawOutputTemplates {
                 templates: Some(files.clone()),
-                original_env: None,
             },
             TaskOutputs::NoFiles | TaskOutputs::Auto => RawOutputTemplates::default(),
         }
@@ -89,9 +87,6 @@ impl TaskOutputs {
         match self {
             TaskOutputs::Files(files) => {
                 let raw = files.clone();
-                let original_env = ctx
-                    .get("env")
-                    .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok());
                 for file in files.iter_mut() {
                     if contains_template_syntax(file)
                         && !(defer_usage && super::tera_template_has_usage_ref(file))
@@ -101,7 +96,6 @@ impl TaskOutputs {
                 }
                 Ok(RawOutputTemplates {
                     templates: Some(raw),
-                    original_env,
                 })
             }
             TaskOutputs::NoFiles | TaskOutputs::Auto => Ok(RawOutputTemplates::default()),
@@ -113,17 +107,18 @@ impl TaskOutputs {
     pub(crate) fn re_render_with_env(
         &mut self,
         raw: &mut RawOutputTemplates,
+        path_env: &mut Option<std::collections::BTreeMap<String, String>>,
         env: &indexmap::IndexMap<String, String>,
         config_root: &std::path::Path,
     ) -> eyre::Result<()> {
         // Keep the dependency-level environment for the later usage render of
         // both sources and outputs. Sources share this context because the env
         // override applies to the task invocation as a whole.
-        let mut env_map = raw.original_env.clone().unwrap_or_default();
+        let mut env_map = path_env.clone().unwrap_or_default();
         for (k, v) in env {
             env_map.insert(k.clone(), v.clone());
         }
-        raw.original_env = Some(env_map.clone());
+        *path_env = Some(env_map.clone());
         if let TaskOutputs::Files(files) = self
             && let Some(raw_templates) = raw.templates.clone()
         {
