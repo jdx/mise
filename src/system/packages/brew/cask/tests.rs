@@ -7570,6 +7570,75 @@ fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()>
     Ok(())
 }
 
+/// Matches process listings against an app bundle by path component, so
+/// nested helpers count and sibling bundles sharing a prefix do not.
+#[test]
+fn running_app_matches_bundle_processes_by_path_component() {
+    let app = Path::new("/Applications/Google Chrome.app");
+    for (listing, expected) in [
+        (
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n",
+            true,
+        ),
+        (
+            "/sbin/launchd\n/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/153.0.8010.37/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n",
+            true,
+        ),
+        (
+            "  /Applications/Google Chrome.app/Contents/MacOS/Google Chrome  \r\n",
+            true,
+        ),
+        ("/Applications/Google Chrome.app\n", true),
+        (
+            "/Applications/Google Chrome.app 2/Contents/MacOS/Google Chrome\n",
+            false,
+        ),
+        (
+            "/Applications/Google Chrome.appx/Contents/MacOS/Google Chrome\n",
+            false,
+        ),
+        (
+            "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome\n",
+            false,
+        ),
+        ("Google Chrome\n-/bin/zsh\n<defunct>\n", false),
+        ("", false),
+        ("\n\n", false),
+    ] {
+        assert_eq!(
+            app_has_live_process(app, listing.as_bytes()),
+            expected,
+            "listing={listing:?}"
+        );
+    }
+}
+
+/// Spawns a process from inside a bundle and checks the live listing sees it
+/// until it exits. The executable links to `/bin/sleep` because a copied
+/// platform binary is killed on exec.
+#[cfg(target_os = "macos")]
+#[test]
+fn running_app_sees_a_process_launched_from_the_bundle() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let app = tmp.path().join("Sleeper.app");
+    let executable = app.join("Contents/MacOS/Sleeper");
+    file::create_dir_all(executable.parent().unwrap())?;
+    std::os::unix::fs::symlink("/bin/sleep", &executable)?;
+    assert!(!app_is_running(&app));
+    let mut child = std::process::Command::new(&executable)
+        .arg("600")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    let running = app_is_running(&app);
+    child.kill()?;
+    child.wait()?;
+    assert!(running);
+    assert!(!app_is_running(&app));
+    Ok(())
+}
+
 /// Checks that symlinked bundle components and FIFO plists are rejected before
 /// live version data can be trusted or a FIFO read can block the caller.
 #[cfg(unix)]

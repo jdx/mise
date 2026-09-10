@@ -37,6 +37,7 @@ mod fetch;
 mod flight;
 mod model;
 mod paths;
+mod running;
 mod state;
 
 use app_version::*;
@@ -45,6 +46,7 @@ use fetch::*;
 use flight::*;
 pub(super) use model::Cask;
 use paths::*;
+use running::*;
 use state::*;
 pub(crate) use state::{apply_cask_prune_plan, cask_formula_dependencies, cask_prune_plan};
 
@@ -75,7 +77,9 @@ fn should_skip_installed(cask: &Cask, version: &str, mode: InstallMode) -> bool 
 
 /// Returns a user-facing reason to preserve an installed cask, or `None` to proceed.
 /// Self-updating upgrades require a single owned app with readable, outdated live
-/// metadata. Receipt lookup failures propagate as errors.
+/// metadata and no live process, since a running self-updater will replace its
+/// own bundle without stranding helpers it spawns later. Receipt lookup failures
+/// propagate as errors.
 fn installed_skip_reason(
     cask: &Cask,
     artifacts: &CaskArtifacts,
@@ -111,10 +115,15 @@ fn installed_skip_reason(
     let Ok(live) = read_app_version(&app_path) else {
         return Ok(Some("skipped: installed app version is unreadable"));
     };
-    Ok(
-        (!app_version_outdated(&cask.version, live.short.as_deref(), live.build.as_deref()))
-            .then_some("skipped: installed app is current, newer, or incomparable"),
-    )
+    if !app_version_outdated(&cask.version, live.short.as_deref(), live.build.as_deref()) {
+        return Ok(Some(
+            "skipped: installed app is current, newer, or incomparable",
+        ));
+    }
+    if app_is_running(&app_path) {
+        return Ok(Some("skipped: installed app is running and updates itself"));
+    }
+    Ok(None)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

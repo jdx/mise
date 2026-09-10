@@ -116,6 +116,26 @@ try:
     missing_app.rename(parent_app)
     live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1"}))
 
+    # An outdated self-updating app that is running is left to update itself:
+    # a process launched from inside the bundle blocks the replacement, and
+    # the bundle is replaced once nothing runs from it any more. The executable
+    # links to /bin/sleep because a copied platform binary is killed on exec.
+    executable = parent_app / "Contents/MacOS/auto-parent"
+    executable.parent.mkdir(parents=True)
+    executable.symlink_to("/bin/sleep")
+    sleeper = subprocess.Popen([str(executable), "600"], stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        for args in (("upgrade", "--dry-run", "--yes"), ("upgrade", "--yes")):
+            output = run(*args)
+            assert "skipped: installed app is running and updates itself" in output, output
+            assert downloads == [], downloads
+            assert parent.read_text() == "original"
+            assert parent_receipt.read_bytes() == original_receipt
+    finally:
+        sleeper.kill()
+        sleeper.wait()
+
     output = run("upgrade", "--yes")
     assert "upgraded auto-parent 1 -> 2" in output, output
     assert downloads == ["/auto-parent.zip"], downloads

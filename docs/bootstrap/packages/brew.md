@@ -160,10 +160,14 @@ default decision: `latest` and matching receipt versions skip. Otherwise, casks
 with a single owned app upgrade when its live `CFBundleShortVersionString` and
 `CFBundleVersion` indicate an older version using Homebrew's comparison rules,
 including CSV and combined short/build versions. Current, newer, unreadable, or
-incomparable app versions skip replacement. mise checks again after downloading
-and acquiring the install lock; an external self-updater can still change the app
-between that check and replacement. Dry-run reports the decision without replacing
-the app.
+incomparable app versions skip replacement. An outdated app that is running is
+also skipped and left to update itself. Browsers, Electron apps, and similar
+launch helper processes from their bundle on demand, so replacing the bundle
+under a live process strands every helper it starts afterwards; the app's own
+updater moves between versions without that. mise checks again after
+downloading and acquiring the install lock; an external self-updater can still
+change the app between that check and replacement. Dry-run reports the decision
+without replacing the app.
 
 `mise bootstrap status` marks these entries as `installed (auto-updates)`.
 For mise-owned casks, the `Current` column is the version recorded in the mise
