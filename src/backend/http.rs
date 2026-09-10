@@ -192,6 +192,10 @@ impl<'a> HttpOptions<'a> {
         self.values.platform_string("bin_path")
     }
 
+    fn shared_extraction(&self) -> bool {
+        self.values.bool("shared_extraction")
+    }
+
     fn windows_script_interpreter(&self) -> Option<String> {
         self.values.platform_string("windows_script_interpreter")
     }
@@ -275,7 +279,7 @@ impl HttpBackend {
     // Cache path helpers
     // -------------------------------------------------------------------------
 
-    /// Get the shared extraction cache used by normal user installs.
+    /// Get the extraction cache used by installs opting into shared extraction.
     fn tarballs_dir() -> PathBuf {
         dirs::DATA.join(HTTP_TARBALLS_DIR)
     }
@@ -286,8 +290,7 @@ impl HttpBackend {
     }
 
     /// Remove an install entry without following an existing symlink. This is
-    /// needed when migrating a system/shared install created by an older mise
-    /// version from a cache symlink to a real directory.
+    /// needed when migrating an install from a cache symlink to a real directory.
     fn remove_install_path(path: &Path) -> Result<()> {
         if path
             .symlink_metadata()
@@ -331,10 +334,14 @@ impl HttpBackend {
 
         if file_info.format_affects_cache {
             parts.push(format!("format_{}", file_info.format));
-            if file_info.is_compressed_binary {
-                let destination = self.dest_filename(file_path, file_info, opts)?;
-                parts.push(format!("name_{}", hash::hash_blake3_to_str(&destination)));
-            }
+        }
+
+        // Raw files and compressed binaries are stored under their effective
+        // executable name. Reusing different names would expose the first
+        // install's filename on every subsequent cache hit.
+        if file_info.format == file::ExtractionFormat::Raw || file_info.is_compressed_binary {
+            let destination = self.dest_filename(file_path, file_info, opts)?;
+            parts.push(format!("name_{}", hash::hash_blake3_to_str(&destination)));
         }
 
         if let Some(strip) = opts.strip_components() {
@@ -420,8 +427,8 @@ impl HttpBackend {
     // -------------------------------------------------------------------------
 
     /// Determine the destination filename for a raw file or compressed binary.
-    /// `bin`/`rename_exe` values are joined onto the extraction directory, so a
-    /// path in either (`../evil`, `a/b`) would escape it and is rejected.
+    /// `bin` accepts safe relative paths; `rename_exe` must be a plain filename.
+    /// Both reject parent traversal and absolute paths outside the extraction directory.
     fn dest_filename(
         &self,
         file_path: &Path,
@@ -457,35 +464,22 @@ impl HttpBackend {
     // Extraction type detection
     // -------------------------------------------------------------------------
 
-    /// Detect extraction type from an existing cache directory
-    /// This handles the case where a cache hit occurs but the original extraction
-    /// used different options (e.g., different `bin` name)
+    /// Reconstruct the extraction result from the options included in the cache key.
     fn extraction_type_from_cache(
         &self,
-        cache_dir: &Path,
-        cache_key: &str,
+        file_path: &Path,
         file_info: &FileInfo,
-    ) -> ExtractionType {
-        // For archives, we don't need to detect the filename
+        opts: &HttpOptions<'_>,
+    ) -> Result<ExtractionType> {
         if !file_info.is_compressed_binary && file_info.format != file::ExtractionFormat::Raw {
-            return ExtractionType::Archive;
+            return Ok(ExtractionType::Archive);
         }
 
-        // For raw files, find the actual filename in the cache directory
-        let cache_path = Self::cache_path(cache_dir, cache_key);
-        for entry in xx::file::ls(&cache_path).unwrap_or_default() {
-            if let Some(name) = entry.file_name().map(|n| n.to_string_lossy().to_string()) {
-                // Skip metadata file
-                if name != METADATA_FILE {
-                    return ExtractionType::RawFile { filename: name };
-                }
-            }
-        }
-
-        // Fallback: shouldn't happen if cache is valid, but use a sensible default
-        ExtractionType::RawFile {
-            filename: self.ba.tool_name.clone(),
-        }
+        // The cache key includes this exact filename, including nested paths.
+        // Listing immediate children would mistake a parent directory for the file.
+        Ok(ExtractionType::RawFile {
+            filename: self.dest_filename(file_path, file_info, opts)?,
+        })
     }
 
     // -------------------------------------------------------------------------
@@ -555,9 +549,9 @@ impl HttpBackend {
         Ok(extraction_type)
     }
 
-    /// Extract directly into an explicit system/shared/install-into destination.
+    /// Extract directly into the installation's own directory.
     /// The temporary directory lives next to the destination so the final rename
-    /// is atomic and the resulting installation has no dependency on user data.
+    /// is atomic and the installation does not depend on shared extraction storage.
     fn extract_to_install_path(
         &self,
         tv: &ToolVersion,
@@ -667,6 +661,9 @@ impl HttpBackend {
             pr.set_message(format!("extract {}", file_info.file_name()));
         }
 
+        if let Some(parent) = dest_file.parent() {
+            file::create_dir_all(parent)?;
+        }
         file::copy(file_path, &dest_file)?;
 
         file::make_executable(&dest_file)?;
@@ -842,6 +839,9 @@ impl HttpBackend {
 
             let cached_file = cache_path.join(filename);
             let install_file = dest_dir.join(filename);
+            if let Some(parent) = install_file.parent() {
+                file::create_dir_all(parent)?;
+            }
             // Not `make_symlink`: the target here is a *file*, and on Windows
             // that goes through `junction::create`, which builds a directory
             // reparse point. It succeeds and leaves a link that cannot be
@@ -1261,7 +1261,9 @@ impl Backend for HttpBackend {
         let cache_plan =
             self.cache_plan(&file_path, download.effective_filename.as_deref(), &opts)?;
         ctx.pr.next_operation();
-        if tv.install_path_is_explicit {
+        // Explicit destinations must remain independent of the user's data dir,
+        // even when the tool opts into sharing normal user installations.
+        if tv.install_path_is_explicit || !opts.shared_extraction() {
             ctx.pr.set_message("extracting to install path".into());
             self.extract_to_install_path(
                 &tv,
@@ -1280,7 +1282,7 @@ impl Backend for HttpBackend {
                 ctx.pr.set_message("extracting from cache".into());
                 ctx.pr.set_length(1);
                 ctx.pr.set_position(1);
-                self.extraction_type_from_cache(&cache_dir, &cache_plan.key, &cache_plan.file_info)
+                self.extraction_type_from_cache(&file_path, &cache_plan.file_info, &opts)?
             } else {
                 ctx.pr.set_message("extracting to cache".into());
                 self.extract_to_cache(
@@ -1592,12 +1594,7 @@ mod tests {
     }
 
     #[test]
-    fn primary_install_keeps_shared_data_cache() {
-        let temp = tempfile::tempdir().unwrap();
-        let primary_tool_dir = temp.path().join("user/installs/http-absolute-version");
-        let mut tv = http_test_tv_with_installs("1.0.0", Some(primary_tool_dir.clone()));
-        tv.install_path = Some(primary_tool_dir.join("1.0.0"));
-
+    fn shared_extractions_stay_in_data_dir() {
         assert_eq!(
             HttpBackend::tarballs_dir(),
             dirs::DATA.join(HTTP_TARBALLS_DIR)
@@ -1737,6 +1734,33 @@ mod tests {
     }
 
     #[test]
+    fn raw_cache_identity_includes_effective_filename() {
+        let tv = http_test_tv("1.0.0");
+        let backend = HttpBackend {
+            ba: Arc::new(tv.ba().clone()),
+        };
+        let temp = tempfile::tempdir().unwrap();
+        for filename in ["tool", "tool.gz"] {
+            let artifact = temp.path().join(filename);
+            std::fs::write(&artifact, b"same-content").unwrap();
+            let key = |options: &str| {
+                let raw_opts = crate::toolset::parse_tool_options(options);
+                backend
+                    .cache_plan(&artifact, None, &HttpOptions::new(&raw_opts))
+                    .unwrap()
+                    .key
+            };
+            assert_ne!(key("bin=alpha"), key("bin=beta"), "{filename}");
+            assert_eq!(
+                key("bin=alpha,bin_path=first"),
+                key("bin=alpha,bin_path=second"),
+                "{filename}"
+            );
+            assert!(!key("bin=nested/alpha").contains('/'));
+        }
+    }
+
+    #[test]
     fn dest_filename_uses_decompressed_name_for_rename_exe_extension() {
         let backend = HttpBackend {
             ba: Arc::new(BackendArg::new_raw(
@@ -1809,7 +1833,10 @@ mod tests {
             )),
         };
 
-        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let tmp = tempfile::Builder::new()
+            .suffix(".tar.gz")
+            .tempfile()
+            .unwrap();
         std::fs::write(tmp.path(), b"archive-contents").unwrap();
 
         // Characters that are illegal or unsafe in Windows path components and

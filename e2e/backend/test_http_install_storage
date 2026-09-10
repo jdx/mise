@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+FIXTURES="$TMPDIR/http-install-storage"
+PORT_FILE="$TMPDIR/http-install-storage-port"
+INSTALLS="$MISE_DATA_DIR/installs"
+TARBALLS="$MISE_DATA_DIR/http-tarballs"
+
+mkdir -p "$FIXTURES/archive/bin"
+cat >"$FIXTURES/archive/bin/storage-tool" <<'EOF'
+#!/usr/bin/env bash
+echo storage-tool-ok
+EOF
+chmod +x "$FIXTURES/archive/bin/storage-tool"
+tar czf "$FIXTURES/archive.tar.gz" -C "$FIXTURES" archive
+cat >"$FIXTURES/raw-tool" <<'EOF'
+#!/usr/bin/env bash
+echo raw-tool-ok
+EOF
+chmod +x "$FIXTURES/raw-tool"
+
+python3 -u - "$FIXTURES" "$PORT_FILE" <<'PY' >/dev/null 2>&1 &
+import functools
+import http.server
+import socketserver
+import sys
+from pathlib import Path
+
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[1])
+with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
+    Path(sys.argv[2]).write_text(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+wait_for_file "$PORT_FILE" "HTTP install storage test server" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+# Default installs own their files, including raw binaries with a nested bin_path.
+# A postinstall hook must not modify another installation of the same artifact.
+cat >mise.toml <<EOF
+[tools."http:direct-a"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/archive.tar.gz"
+bin_path = "archive/bin"
+postinstall = 'echo local > "\$MISE_TOOL_INSTALL_PATH/archive/marker"'
+
+[tools."http:direct-b"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/archive.tar.gz"
+bin_path = "archive/bin"
+
+[tools."http:raw"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/raw-tool"
+bin_path = "nested/bin"
+EOF
+
+mise install
+DIRECT_A="$INSTALLS/http-direct-a/1.0.0"
+DIRECT_B="$INSTALLS/http-direct-b/1.0.0"
+RAW="$INSTALLS/http-raw/1.0.0/nested/bin/raw-tool"
+assert "test -d '$DIRECT_A' && test ! -L '$DIRECT_A'"
+assert "test -d '$DIRECT_B' && test ! -L '$DIRECT_B'"
+assert "test -f '$RAW' && test ! -L '$RAW'"
+assert "test -f '$DIRECT_A/archive/marker'"
+assert "test ! -e '$DIRECT_B/archive/marker'"
+assert "test ! -e '$TARBALLS'"
+assert_contains "mise x -- storage-tool" storage-tool-ok
+assert_contains "mise x -- raw-tool" raw-tool-ok
+
+# Uninstall removes the payload and leaves the other copy executable.
+mise uninstall http:direct-a@1.0.0
+assert "test ! -e '$DIRECT_A'"
+assert_contains "'$DIRECT_B/archive/bin/storage-tool'" storage-tool-ok
+
+# Prune likewise reclaims the actual raw binary, honoring dry-run first.
+cat >mise.toml <<EOF
+[tools."http:direct-b"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/archive.tar.gz"
+bin_path = "archive/bin"
+EOF
+mise prune --dry-run http:raw
+assert_contains "'$RAW'" raw-tool-ok
+MISE_YES=1 mise prune http:raw
+assert "test ! -e '$INSTALLS/http-raw/1.0.0'"
+assert "test ! -e '$TARBALLS'"
+assert_contains "mise x -- storage-tool" storage-tool-ok
+
+# Opted-in installs retain the old shared layouts. Both archive installs point
+# into the same cache entry; raw installs link the binary under bin_path.
+cat >>mise.toml <<EOF
+
+[tools."http:shared-a"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/archive.tar.gz"
+bin_path = "archive/bin"
+shared_extraction = true
+
+[tools."http:shared-b"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/archive.tar.gz"
+bin_path = "archive/bin"
+shared_extraction = true
+
+[tools."http:raw"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/raw-tool"
+bin_path = "nested/bin"
+shared_extraction = true
+EOF
+mise install
+SHARED_A="$INSTALLS/http-shared-a/1.0.0"
+SHARED_B="$INSTALLS/http-shared-b/1.0.0"
+assert "test -L '$SHARED_A' && test -L '$SHARED_B'"
+assert "test '$(readlink "$SHARED_A")' = '$(readlink "$SHARED_B")'"
+assert "test -L '$RAW'"
+CACHED_ARCHIVE=$(readlink "$SHARED_B")
+CACHED_RAW=$(readlink "$RAW")
+
+# Changing configuration does not invalidate existing shared installations.
+# This also models legacy installations whose configs never opted into sharing.
+python3 - <<'PY'
+from pathlib import Path
+config = Path('mise.toml')
+config.write_text(config.read_text().replace('shared_extraction = true\n', ''))
+PY
+mise install
+assert "test -L '$SHARED_A' && test -L '$RAW'"
+assert_contains "'$SHARED_A/archive/bin/storage-tool'" storage-tool-ok
+assert_contains "mise x -- raw-tool" raw-tool-ok
+
+# Force-reinstall migrates only the requested installs. The shared content must
+# remain untouched: another installed tool still depends on it.
+mise install --force http:shared-a@1.0.0 http:raw@1.0.0
+assert "test -d '$SHARED_A' && test ! -L '$SHARED_A'"
+assert "test -f '$RAW' && test ! -L '$RAW'"
+assert "test -L '$SHARED_B'"
+assert_contains "'$SHARED_A/archive/bin/storage-tool'" storage-tool-ok
+assert_contains "'$SHARED_B/archive/bin/storage-tool'" storage-tool-ok
+assert_contains "'$CACHED_ARCHIVE/archive/bin/storage-tool'" storage-tool-ok
+
+assert_contains "'$CACHED_RAW'" raw-tool-ok
+assert_contains "mise x -- raw-tool" raw-tool-ok
+
+# An explicit false CLI option also selects an independent installation.
+mise install --force 'http:shared-b[shared_extraction=false]@1.0.0'
+assert "test -d '$SHARED_B' && test ! -L '$SHARED_B'"
+assert_contains "'$SHARED_B/archive/bin/storage-tool'" storage-tool-ok
+assert_contains "'$CACHED_ARCHIVE/archive/bin/storage-tool'" storage-tool-ok
+
+# The effective executable name is part of shared content identity for both
+# raw and compressed binaries. Different bin_path values can still share it.
+gzip -c "$FIXTURES/raw-tool" >"$FIXTURES/raw-tool.gz"
+for kind in raw compressed; do
+  artifact=raw-tool
+  if [[ $kind == compressed ]]; then
+    artifact=raw-tool.gz
+  fi
+  cat >mise.toml <<EOF
+[tools."http:named-a-$kind"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/$artifact"
+bin = "first-name"
+shared_extraction = true
+
+[tools."http:named-b-$kind"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/$artifact"
+bin = "second-name"
+bin_path = "nested/bin"
+shared_extraction = true
+
+[tools."http:named-copy-$kind"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/$artifact"
+bin = "first-name"
+bin_path = "another/bin"
+shared_extraction = true
+EOF
+  mise install
+  FIRST="$INSTALLS/http-named-a-$kind/1.0.0"
+  SECOND="$INSTALLS/http-named-b-$kind/1.0.0/nested/bin/second-name"
+  COPY="$INSTALLS/http-named-copy-$kind/1.0.0/another/bin/first-name"
+  assert_contains "'$FIRST/first-name'" raw-tool-ok
+  assert_contains "'$SECOND'" raw-tool-ok
+  assert_contains "'$COPY'" raw-tool-ok
+  assert "test '$(readlink "$COPY")' = '$(readlink "$FIRST")/first-name'"
+done
+# Nested bin names must stay file links on both cache misses and cache hits.
+for kind in raw compressed; do
+  artifact=raw-tool
+  if [[ $kind == compressed ]]; then
+    artifact=raw-tool.gz
+  fi
+  cat >mise.toml <<EOF
+[tools."http:nested-$kind"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/$artifact"
+bin = "nested/alpha"
+bin_path = "custom/bin"
+shared_extraction = true
+EOF
+  for attempt in first cached; do
+    echo "Checking $kind nested binary: $attempt install"
+    mise install --force
+    EXECUTABLE="$INSTALLS/http-nested-$kind/1.0.0/custom/bin/nested/alpha"
+    assert "test -L '$EXECUTABLE'"
+    assert_contains "'$EXECUTABLE'" raw-tool-ok
+  done
+done

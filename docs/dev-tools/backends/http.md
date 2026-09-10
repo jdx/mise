@@ -526,30 +526,64 @@ bin_path = "bin"
 3. If no `bin/` directory exists, search subdirectories for `bin/` directories
 4. If no `bin/` directories are found, use the root of the extracted directory
 
-## Caching Behavior
+### `shared_extraction`
 
-The HTTP backend caches downloads to save disk space and speed up installation:
+By default, each HTTP installation contains its own extracted files. Set
+`shared_extraction = true` to share extracted content between normal user
+installations with identical artifacts and extraction options:
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
+shared_extraction = true
+```
+
+Sharing saves disk space when several tools use the same artifact and avoids
+repeated extraction. A download may still be needed to identify its content.
+Changes made to shared files, including by a `postinstall` hook, affect every
+installation using that entry.
+
+Explicit `mise install --system`, `mise install --shared`, and `mise
+install-into` destinations always contain their own files, even with this
+option enabled.
+
+## Installation and Cleanup
+
+New HTTP installations contain their files directly in the installation
+directory, like other tools. `mise uninstall` and `mise prune` remove those
+files when they remove the version. Multiple installations of the same artifact
+have separate copies.
+
+Existing installations that link into `http-tarballs` continue to work. To
+replace one with an independent installation, reinstall it with `mise install
+--force <tool>` without `shared_extraction = true`. Changing the option alone
+does not replace an already installed version.
+
+::: warning Shared extraction storage
+Legacy installations and tools using `shared_extraction = true` depend on files
+in `$MISE_DATA_DIR/http-tarballs/`. Neither `mise prune` nor `mise cache prune`
+automatically reclaims these entries after uninstalling a tool. Reinstalling
+also leaves existing entries intact because other installations may use them.
+Do not delete this directory while any installation still depends on it.
+:::
+
+## Caching Behavior
 
 ### Cache Location
 
-For normal user installations, downloaded and extracted files are cached in
-`$MISE_DATA_DIR/http-tarballs/` instead of being stored separately for each tool
-installation. By default:
+With `shared_extraction = true`, extracted files are stored in
+`$MISE_DATA_DIR/http-tarballs/` instead of separately in each installation:
 
 - **Linux**: `~/.local/share/mise/http-tarballs/`
 - **macOS**: `~/.local/share/mise/http-tarballs/`
-
-Explicit `mise install --system`, `mise install --shared`, and `mise
-install-into` installations are extracted directly into their destination.
-They do not use this persistent extraction cache, so the resulting installation
-is self-contained and does not link to the installing user's home directory.
 
 ### Cache Key Generation
 
 Cache keys are derived from the file content so that identical downloads are shared across tools:
 
 1. **File content**: mise calculates a Blake3 hash of the downloaded file, independently of its expected verification checksum.
-2. **Extraction options**: options that change the extracted result, including root stripping, renaming, and relevant format or launcher choices, also affect the key.
+2. **Extraction options**: options that change the extracted result, including the effective filename for raw and compressed binaries, root stripping, renaming, and relevant format or launcher choices, also affect the key.
 
 Example cache directory structure:
 
@@ -565,22 +599,14 @@ Example cache directory structure:
 
 ### Symlinked Installations
 
-Normal user installations are symlinks to the cached extracted content:
+Installations opting into sharing link to the cached extracted content:
 
 ```bash
 ~/.local/share/mise/installs/http-my-tool/1.0.0 → ~/.local/share/mise/http-tarballs/71f774...
 ```
 
-This approach provides several benefits:
-
-- **Space efficiency**: Normal user installs share identical tarballs across tools
-- **Faster installations**: Reusing extracted content avoids repeated extraction; a download may still be needed to identify its content
-- **Consistency**: The same file and extraction options reuse the same cached content
-
-System, shared, and install-into destinations contain real files rather than
-these symlinks. This avoids leaving hidden cache entries behind after an
-uninstall and keeps shared installations independent of a specific user's data
-directory.
+For a raw file with `bin_path`, the link is inside the installation directory.
+For this layout, Windows copies the file instead of symlinking it.
 
 ### Cache Metadata
 
@@ -598,10 +624,9 @@ Each cache entry includes a `metadata.json` file with information about the cach
 
 ### Cache Management
 
-Normal HTTP installations store their cache in
-`$MISE_DATA_DIR/http-tarballs/`. It is intentionally outside `MISE_CACHE_DIR`,
+Shared extraction storage is intentionally outside `MISE_CACHE_DIR`,
 so `mise cache clear` does not remove content that installed symlinks still
 reference.
 
-System, shared, and install-into destinations do not create a persistent HTTP
-extraction cache.
+Default installations and explicit system, shared, and install-into destinations
+do not create persistent HTTP extraction entries.
