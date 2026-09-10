@@ -6,6 +6,10 @@
 //! in the directory is a rebuildable index or machine-local bookkeeping. Every
 //! function takes the state directory explicitly (`*_in`) so tests can point
 //! it at a temporary directory.
+//!
+//! Locks live alongside the state they protect, opened with `LockFile::at`.
+//! Do not put them in the cache: a service and a shell can use different
+//! cache directories while sharing the same history store.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

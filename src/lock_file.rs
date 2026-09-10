@@ -16,8 +16,15 @@ pub(crate) struct LockFile {
 impl LockFile {
     pub(crate) fn new(path: &Path) -> Self {
         let path = dirs::CACHE.join("lockfiles").join(hash_to_str(&path));
+        Self::at(&path)
+    }
+
+    /// Locks this exact path instead of hashing it into the cache directory.
+    /// Use for shared state whose users may have different cache directories.
+    /// The file must remain in place while any process could hold its lock.
+    pub(crate) fn at(path: &Path) -> Self {
         Self {
-            path,
+            path: path.to_path_buf(),
             on_locked: None,
         }
     }
@@ -77,4 +84,28 @@ pub(crate) fn get(path: &Path, force: bool) -> eyre::Result<Option<fslock::LockF
         Some(lock)
     };
     Ok(lock)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_path_coordinates_with_direct_file_lock() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state/watch.lock");
+        let held = LockFile::at(&path).try_lock().unwrap().unwrap();
+        let mut direct = fslock::LockFile::open(&path).unwrap();
+        assert!(!direct.try_lock().unwrap());
+        assert!(LockFile::at(&path).try_lock().unwrap().is_none());
+
+        // Unlocking keeps the file in place so existing descriptors and
+        // future callers continue to coordinate on the same file.
+        drop(held);
+        assert!(path.exists());
+        assert!(direct.try_lock().unwrap());
+        assert!(LockFile::at(&path).try_lock().unwrap().is_none());
+        drop(direct);
+        assert!(LockFile::at(&path).try_lock().unwrap().is_some());
+    }
 }

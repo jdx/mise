@@ -107,7 +107,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
     // moment tries again rather than concluding another watcher runs
     let mut watch_lock = None;
     for attempt in 0..WATCH_LOCK_TRIES {
-        if let Some(lock) = LockFile::new(&watch_lock_in(store.state_dir())).try_lock()? {
+        if let Some(lock) = LockFile::at(&watch_lock_in(store.state_dir())).try_lock()? {
             watch_lock = Some(lock);
             break;
         }
@@ -1568,7 +1568,7 @@ impl Capture {
             return self.retry_kind.unwrap_or(Attempt::Failed);
         }
         let operation =
-            match LockFile::new(&store::operation_lock_in(self.store.state_dir())).try_lock() {
+            match LockFile::at(&store::operation_lock_in(self.store.state_dir())).try_lock() {
                 Ok(Some(lock)) => lock,
                 Ok(None) => {
                     self.out.emit(
@@ -1806,10 +1806,7 @@ pub(crate) fn schedule_path_in(state_dir: &Path) -> PathBuf {
 
 /// Whether a watcher currently holds the lock for this store.
 pub(crate) fn is_running(state_dir: &Path) -> bool {
-    matches!(
-        LockFile::new(&watch_lock_in(state_dir)).try_lock(),
-        Ok(None)
-    )
+    matches!(LockFile::at(&watch_lock_in(state_dir)).try_lock(), Ok(None))
 }
 
 struct Shutdown {
