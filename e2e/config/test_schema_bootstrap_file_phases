@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+mise use -g node@24 npm:ajv-cli@5.0.0
+validate="mise x npm:ajv-cli@5.0.0 -- ajv validate --spec=draft2020 -s '$ROOT/schema/mise.json' -d phases.json"
+cat >phases.json <<'JSON'
+{"bootstrap":{"files":{"/etc/vendor.sources":{"source":"vendor.sources","phase":"pre-packages"}},"directories":{"/etc/vendor":{"phase":"post-packages"}}}}
+JSON
+assert_succeed "$validate"
+cat >phases.json <<'JSON'
+{"bootstrap":{"files":{"/etc/vendor.sources":{"content":"repo","phase":"invalid"}}}}
+JSON
+assert_fail "$validate"
+cat >phases.json <<'JSON'
+{"bootstrap":{"directories":{"/etc/vendor":{"phase":"invalid"}}}}
+JSON
+assert_fail "$validate"

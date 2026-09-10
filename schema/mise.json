@@ -3711,6 +3711,12 @@
       "minProperties": 1,
       "additionalProperties": false
     },
+    "bootstrap_file_phase": {
+      "type": "string",
+      "enum": ["pre-packages", "post-packages"],
+      "default": "post-packages",
+      "description": "When to apply the managed path during bootstrap; pre-packages runs before the pre-packages hook"
+    },
     "bootstrap_hook": {
       "description": "command or commands to run for a bootstrap phase",
       "oneOf": [
@@ -4302,6 +4308,88 @@
       "type": "object",
       "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
+        "files": {
+          "type": "object",
+          "description": "Managed system files keyed by absolute target path",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "$ref": "#/$defs/bootstrap_file_phase"
+              },
+              "source": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "owner": {
+                "type": "string"
+              },
+              "group": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string"
+              },
+              "template": {
+                "type": "boolean"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["present", "absent"]
+              },
+              "replace": {
+                "type": "boolean"
+              },
+              "notify": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "directories": {
+          "type": "object",
+          "description": "Managed system directories keyed by absolute target path",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "$ref": "#/$defs/bootstrap_file_phase"
+              },
+              "owner": {
+                "type": "string"
+              },
+              "group": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["present", "absent"]
+              },
+              "recursive": {
+                "type": "boolean"
+              },
+              "replace": {
+                "type": "boolean"
+              },
+              "notify": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
         "config_roots": {
           "deprecated": true,
           "type": "array",

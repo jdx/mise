@@ -15,6 +15,8 @@ use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, Resou
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub(crate) struct ManagedFileTomlConfig {
+    #[serde(default)]
+    pub phase: ManagedFilePhase,
     pub source: Option<String>,
     pub content: Option<String>,
     pub owner: Option<String>,
@@ -32,6 +34,8 @@ pub(crate) struct ManagedFileTomlConfig {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub(crate) struct ManagedDirectoryTomlConfig {
+    #[serde(default)]
+    pub phase: ManagedFilePhase,
     pub owner: Option<String>,
     pub group: Option<String>,
     pub mode: Option<String>,
@@ -45,6 +49,23 @@ pub(crate) struct ManagedDirectoryTomlConfig {
     pub notify: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ManagedFilePhase {
+    PrePackages,
+    #[default]
+    PostPackages,
+}
+
+impl ManagedFilePhase {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::PrePackages => "pre-packages",
+            Self::PostPackages => "post-packages",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ManagedState {
@@ -55,6 +76,7 @@ pub(crate) enum ManagedState {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ManagedFileRequest {
+    pub phase: ManagedFilePhase,
     pub path: PathBuf,
     pub content: Option<String>,
     pub owner: Option<String>,
@@ -69,6 +91,7 @@ pub(crate) struct ManagedFileRequest {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ManagedDirectoryRequest {
+    pub phase: ManagedFilePhase,
     pub path: PathBuf,
     pub owner: Option<String>,
     pub group: Option<String>,
@@ -204,6 +227,7 @@ pub(crate) fn status_requests_from_config(
         .collect::<std::collections::HashMap<_, _>>();
     for (path, (file, base, origin)) in merged_files_from_config(config)? {
         let state = file.state;
+        let phase = file.phase;
         match ManagedFileRequest::from_toml(
             config,
             path.clone(),
@@ -228,7 +252,8 @@ pub(crate) fn status_requests_from_config(
                         "template rendered",
                         ResourceAction::Unknown,
                     )
-                    .with_origin(origin),
+                    .with_origin(origin)
+                    .with_file_phase(phase),
                 );
             }
             Err(error) => return Err(error),
@@ -494,6 +519,41 @@ fn validate_requests(
     for directory in directories {
         validate_present_ancestors(&directory.path, directory.state, &directory_states)?;
     }
+    for (path, state, phase) in files
+        .iter()
+        .map(|file| (&file.path, file.state, file.phase))
+        .chain(
+            directories
+                .iter()
+                .map(|dir| (&dir.path, dir.state, dir.phase)),
+        )
+    {
+        for parent in directories
+            .iter()
+            .filter(|dir| path != &dir.path && path.starts_with(&dir.path))
+        {
+            let invalid = match (state, parent.state) {
+                (ManagedState::Present, ManagedState::Present) => {
+                    phase == ManagedFilePhase::PrePackages
+                        && parent.phase == ManagedFilePhase::PostPackages
+                }
+                (ManagedState::Absent, ManagedState::Absent) => {
+                    phase == ManagedFilePhase::PostPackages
+                        && parent.phase == ManagedFilePhase::PrePackages
+                }
+                _ => false,
+            };
+            if invalid {
+                bail!(
+                    "managed path '{}' ({}) conflicts with ancestor '{}' ({}): parent directories must be created before children and removed after children; adjust their phase declarations",
+                    path.display(),
+                    phase.as_str(),
+                    parent.path.display(),
+                    parent.phase.as_str()
+                );
+            }
+        }
+    }
     Ok(())
 }
 
@@ -575,6 +635,7 @@ impl ManagedFileRequest {
         Ok(Self {
             path,
             content,
+            phase: config.phase,
             owner,
             group,
             mode,
@@ -587,7 +648,10 @@ impl ManagedFileRequest {
     }
 
     pub(crate) fn plan(&self) -> Result<ResourcePlan> {
-        plan_file(self).map(|plan| plan.with_origin(self.origin.clone()))
+        plan_file(self).map(|plan| {
+            plan.with_origin(self.origin.clone())
+                .with_file_phase(self.phase)
+        })
     }
 
     fn operation(&self) -> Result<Option<PrivilegedAction>> {
@@ -646,6 +710,7 @@ impl ManagedDirectoryRequest {
         }
         Ok(Self {
             path,
+            phase: config.phase,
             owner: nonempty("owner", config.owner)?,
             group: nonempty("group", config.group)?,
             mode: parse_mode(config.mode.as_deref(), 0o755)?,
@@ -659,7 +724,10 @@ impl ManagedDirectoryRequest {
     }
 
     pub(crate) fn plan(&self) -> Result<ResourcePlan> {
-        plan_directory(self).map(|plan| plan.with_origin(self.origin.clone()))
+        plan_directory(self).map(|plan| {
+            plan.with_origin(self.origin.clone())
+                .with_file_phase(self.phase)
+        })
     }
 
     fn operation(&self) -> Result<Option<PrivilegedAction>> {
@@ -1739,6 +1807,7 @@ mod tests {
 
     fn file(path: &str, state: ManagedState) -> ManagedFileRequest {
         ManagedFileRequest {
+            phase: ManagedFilePhase::default(),
             path: PathBuf::from(path),
             content: (state == ManagedState::Present).then(|| "content".to_string()),
             owner: None,
@@ -1759,6 +1828,7 @@ mod tests {
 
     fn directory(path: &str, state: ManagedState) -> ManagedDirectoryRequest {
         ManagedDirectoryRequest {
+            phase: ManagedFilePhase::default(),
             path: PathBuf::from(path),
             owner: None,
             group: None,
@@ -1783,6 +1853,26 @@ mod tests {
         assert!(absolute_target("/").is_err());
         assert!(absolute_target("/tmp/..").is_err());
         assert!(absolute_target("/tmp/../..").is_err());
+    }
+
+    #[test]
+    fn file_phases_respect_parent_creation_and_removal() {
+        let mut child = file("/etc/vendor/key", ManagedState::Present);
+        let mut parent = directory("/etc/vendor", ManagedState::Present);
+        child.phase = ManagedFilePhase::PrePackages;
+        assert!(validate_requests(&[child.clone()], &[parent.clone()]).is_err());
+        parent.phase = ManagedFilePhase::PrePackages;
+        assert!(validate_requests(&[child.clone()], &[parent.clone()]).is_ok());
+        child.phase = ManagedFilePhase::PostPackages;
+        assert!(validate_requests(&[child.clone()], &[parent.clone()]).is_ok());
+
+        child.state = ManagedState::Absent;
+        parent.state = ManagedState::Absent;
+        assert!(validate_requests(&[child.clone()], &[parent.clone()]).is_err());
+        child.phase = ManagedFilePhase::PrePackages;
+        assert!(validate_requests(&[child.clone()], &[parent.clone()]).is_ok());
+        parent.phase = ManagedFilePhase::PostPackages;
+        assert!(validate_requests(&[child], &[parent]).is_ok());
     }
 
     #[test]

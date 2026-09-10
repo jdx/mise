@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+
+early="$PWD/early/repository"
+late="$PWD/late"
+cat >mise.toml <<EOF
+[bootstrap.directories."$PWD/early"]
+phase = "pre-packages"
+mode = "0750"
+[bootstrap.files."$early"]
+content = "repository"
+phase = "pre-packages"
+[bootstrap.files."$late"]
+content = "service config"
+[bootstrap.hooks]
+pre-packages = "test -f '$early' && test ! -e '$late' && echo hook >> '$early'"
+post-packages = "test ! -e '$late'"
+EOF
+
+# Dry runs show both phases without writing files or running hooks.
+assert_contains "mise bootstrap --only files,packages --dry-run 2>&1" "system files (pre-packages)"
+assert_fail "test -e '$early'"
+assert_fail "test -e '$late'"
+
+# Early files exist before the hook; they are not reapplied in the late phase.
+assert_succeed "mise bootstrap --only files,packages --yes"
+assert_contains "cat '$early'" "hook"
+assert "cat '$late'" "service config"
+
+# Standalone file application converges both phases and is idempotent.
+assert_succeed "mise bootstrap files apply --yes"
+assert "cat '$early'" "repository"
+assert_contains "mise bootstrap files apply --yes 2>&1" "already converged"
+assert_succeed "mise bootstrap files status --json | jq -e 'all(.[]; .phase == \"pre-packages\" or .phase == \"post-packages\")'"
+assert_contains "mise bootstrap plan" "pre-packages"
+
+# Selecting packages does not implicitly apply files; selecting files runs both.
+cat >mise.toml <<EOF
+[bootstrap.files."$PWD/selected-early"]
+phase = "pre-packages"
+content = "early"
+[bootstrap.files."$PWD/selected-late"]
+phase = "post-packages"
+content = "late"
+EOF
+assert_succeed "mise bootstrap --only packages --yes"
+assert_fail "test -e '$PWD/selected-early'"
+assert_fail "test -e '$PWD/selected-late'"
+assert_succeed "mise bootstrap --skip files --yes"
+assert_fail "test -e '$PWD/selected-early'"
+assert_fail "test -e '$PWD/selected-late'"
+assert_succeed "mise bootstrap --only files --yes"
+assert "cat selected-early" "early"
+assert "cat selected-late" "late"
+
+# Conflicting phases fail preflight, before even unrelated early files change.
+cat >mise.toml <<EOF
+[bootstrap.files."$PWD/untouched"]
+content = "untouched"
+phase = "pre-packages"
+[bootstrap.directories."$PWD/parent"]
+phase = "post-packages"
+[bootstrap.files."$PWD/parent/child"]
+content = "child"
+phase = "pre-packages"
+EOF
+assert_fail "mise bootstrap --only files --yes" "adjust their phase declarations"
+assert_fail "mise bootstrap plan" "adjust their phase declarations"
+assert_fail "test -e '$PWD/untouched'"
+
+cat >mise.toml <<EOF
+[bootstrap.files."$PWD/invalid"]
+content = "invalid"
+phase = "before-everything"
+EOF
+assert_fail "mise bootstrap files apply --yes" "before-everything"
+
+# The planner and package metadata refresh put repository files first.
+# Package commands are only previewed; this never modifies host packages.
+if [[ "$(uname -s)" == "Linux" ]] && command -v apt-get >/dev/null; then
+  cat >mise.toml <<EOF
+[bootstrap.files."$PWD/package-config"]
+content = "config"
+[bootstrap.packages]
+"apt:mise-phase-test-nonexistent" = "latest"
+[bootstrap.files."$PWD/repo-input"]
+content = "repository"
+phase = "pre-packages"
+EOF
+  assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] == [\"file\", \"package\", \"file\"]'"
+  preview=$(mise bootstrap --only files,packages --update --dry-run)
+  if [[ $preview != *"would write file $PWD/repo-input"*"apt-get update"*"apt-get install"*"would write file $PWD/package-config"* ]]; then
+    echo "unexpected bootstrap order: $preview" >&2
+    exit 1
+  fi
+  assert_fail "test -e '$PWD/repo-input'"
+fi
+
+# Pending plugin packages belong after both file phases, even without built-ins.
+cat >mise.toml <<EOF
+[bootstrap.plugins]
+phase-test = "https://example.invalid/phase-test.git"
+[bootstrap.packages]
+"phase-test:vendor" = "latest"
+[bootstrap.files."$PWD/plugin-late"]
+content = "late"
+[bootstrap.files."$PWD/plugin-early"]
+content = "early"
+phase = "pre-packages"
+EOF
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] == [\"file\", \"file\", \"package\"]'"

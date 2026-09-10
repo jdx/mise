@@ -43,7 +43,7 @@ use crate::ui::table::MiseTable;
 /// Runs these phases in order, when configured and selected:
 ///
 /// 1. Linux accounts, then package-manager plugins.
-/// 2. The pre-packages hook, then packages handled by built-in managers.
+/// 2. Pre-packages files/directories, the pre-packages hook, then packages handled by built-in managers.
 /// 3. Privileged files/directories, system and user services, firewall, and Compose projects.
 /// 4. Git repositories, then dotfiles, each with its pre/post hooks.
 /// 5. Shell activation, macOS defaults and LaunchAgents, Linux user units, and user settings.
@@ -1476,6 +1476,34 @@ impl Bootstrap {
             apply_bootstrap_plugins(&config, self.dry_run).await?;
         }
 
+        if let Some((files, directories)) = &managed_system_files {
+            let mut files = files
+                .iter()
+                .filter(|file| file.phase == system::managed_files::ManagedFilePhase::PrePackages)
+                .cloned()
+                .collect::<Vec<_>>();
+            let mut directories = directories
+                .iter()
+                .filter(|directory| {
+                    directory.phase == system::managed_files::ManagedFilePhase::PrePackages
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            if !files.is_empty() || !directories.is_empty() {
+                info!("bootstrap: system files (pre-packages)");
+                system::managed_files::inspect_requests(&mut files, &mut directories)?;
+                let report = system::managed_files::apply_with_accounts(
+                    &files,
+                    &directories,
+                    configured_accounts.as_ref(),
+                    allow_pending_accounts,
+                    self.dry_run,
+                    self.yes,
+                )?;
+                notified_services.extend(report.notified_services);
+            }
+        }
+
         if skip.contains(&BootstrapPart::Packages) {
             debug!("bootstrap: system packages skipped");
         } else {
@@ -1520,6 +1548,11 @@ impl Bootstrap {
                 .as_ref()
                 .expect("system files were preflighted when not skipped")
                 .clone();
+            files
+                .retain(|file| file.phase == system::managed_files::ManagedFilePhase::PostPackages);
+            directories.retain(|directory| {
+                directory.phase == system::managed_files::ManagedFilePhase::PostPackages
+            });
             system::managed_files::inspect_requests(&mut files, &mut directories)?;
             if files.is_empty() && directories.is_empty() {
                 debug!("bootstrap: no [bootstrap.files] or [bootstrap.directories] configured");
@@ -1533,7 +1566,7 @@ impl Bootstrap {
                     self.dry_run,
                     self.yes,
                 )?;
-                notified_services = report.notified_services;
+                notified_services.extend(report.notified_services);
             }
         }
 
@@ -2435,12 +2468,19 @@ impl BootstrapPlan {
         } else {
             let mut table = MiseTable::new(
                 false,
-                &["Action", "Resource", "Current", "Desired", "Config"],
+                &[
+                    "Action", "Resource", "Phase", "Current", "Desired", "Config",
+                ],
             );
             for resource in &output.resources {
                 table.add_row(vec![
                     resource.action.to_string(),
                     resource.id.to_string(),
+                    resource
+                        .phase
+                        .map(|phase| phase.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
                     resource.current.clone(),
                     resource.desired.clone(),
                     resource
