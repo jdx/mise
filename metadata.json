@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M26VP0YB5FP7P3YP3A96WZ2K",
+  "strategy": "manual-commit",
+  "branch": "codex/docs-config-merge-diagram",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14785,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 148096,
+    "output_tokens": 238,
+    "api_call_count": 2
+  }
+}
