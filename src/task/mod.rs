@@ -713,6 +713,10 @@ pub(crate) struct Task {
     pub interactive: bool,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub sources: Vec<String>,
+    /// Original unrendered source templates, preserved so they can be
+    /// re-rendered once task usage arguments are available.
+    #[serde(skip)]
+    pub raw_sources: Option<Vec<String>>,
     #[serde(default)]
     pub watch: Option<TaskWatchOptions>,
     #[serde(default)]
@@ -1715,7 +1719,7 @@ impl Task {
         let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
         let tasks = build_task_ref_map(all_tasks.iter());
         // Skip deps with unresolved {{usage.*}} references — they'll be resolved
-        // later when render_depends_with_usage() is called with actual arg values.
+        // later when render_runtime_templates_with_usage() is called with actual arg values.
         let depends = self
             .depends
             .iter()
@@ -2573,7 +2577,7 @@ impl Task {
         self.overlay_vars
             .extend(other.vars.0.into_iter().map(|d| (d, overlay_src.clone())));
         // Keep the *_raw (pre-render) snapshots in sync with the live deps
-        // so `render_depends_with_usage` re-renders the merged set rather
+        // so `render_runtime_templates_with_usage` re-renders the merged set rather
         // than silently dropping overlay deps. Prefer the overlay's raw
         // (unrendered) templates so `{{usage.*}}` refs survive re-rendering;
         // fall back to the rendered form if raw wasn't captured.
@@ -2641,6 +2645,9 @@ impl Task {
         }
         if other.raw_outputs.templates.is_some() {
             self.raw_outputs = other.raw_outputs;
+        }
+        if other.raw_sources.is_some() {
+            self.raw_sources = other.raw_sources;
         }
         if other.shell.is_some() {
             self.shell = other.shell;
@@ -2715,6 +2722,7 @@ impl Task {
         if !self.sources.is_empty() && self.outputs.is_empty() {
             self.outputs = TaskOutputs::Auto;
         }
+        self.raw_sources = Some(self.sources.clone());
         self.raw_outputs = self.outputs.raw_templates_without_env();
         // Save unrendered dependency templates so they can be re-rendered later
         // with parent task args available (for passing args to dependencies).
@@ -2745,6 +2753,7 @@ impl Task {
 
         let mut tera = get_tera(Some(config_root));
         let tera_ctx = self.tera_ctx(config).await?;
+        self.store_raw_render_inputs();
         for a in &mut self.aliases {
             if contains_template_syntax(a) {
                 *a = render_str(&mut tera, a, &tera_ctx)?;
@@ -2755,14 +2764,13 @@ impl Task {
             self.description = render_str(&mut tera, &self.description, &tera_ctx)?;
         }
         for s in &mut self.sources {
-            if contains_template_syntax(s) {
+            if contains_template_syntax(s) && !tera_tag_has_usage_ref(s) {
                 *s = render_str(&mut tera, s, &tera_ctx)?;
             }
         }
-        self.store_raw_render_inputs();
-        self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
+        self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx, true)?;
         // Render deps that don't contain {{usage.*}} references. Deps with usage
-        // references are deferred until render_depends_with_usage() is called with
+        // references are deferred until render_runtime_templates_with_usage() is called with
         // the actual arg values from CLI or parent dependency.
         render_task_deps(&mut self.depends, &mut tera, &tera_ctx, true)?;
         render_task_deps(&mut self.depends_post, &mut tera, &tera_ctx, true)?;
@@ -2808,10 +2816,28 @@ impl Task {
         Ok(())
     }
 
-    /// Re-render dependency templates with usage args/flags from the parent task.
-    /// This allows `depends = ["child {{usage.app}}"]` to resolve when the parent
-    /// task receives `--app=foo` from the CLI.
-    pub(crate) async fn render_depends_with_usage(
+    /// Re-render runtime templates with usage args/flags from this task invocation.
+    /// Sources and outputs must be resolved before freshness/cache checks, while
+    /// dependencies must be resolved before constructing the execution graph.
+    pub(crate) fn has_usage_runtime_templates(&self) -> bool {
+        let has_usage_deps = |raw: &Option<Vec<TaskDep>>| {
+            raw.as_ref()
+                .is_some_and(|deps| deps.iter().any(dep_has_usage_ref))
+        };
+        self.raw_sources
+            .as_ref()
+            .is_some_and(|sources| sources.iter().any(|source| tera_tag_has_usage_ref(source)))
+            || self
+                .raw_outputs
+                .templates
+                .as_ref()
+                .is_some_and(|outputs| outputs.iter().any(|output| tera_tag_has_usage_ref(output)))
+            || has_usage_deps(&self.depends_raw)
+            || has_usage_deps(&self.depends_post_raw)
+            || has_usage_deps(&self.wait_for_raw)
+    }
+
+    pub(crate) async fn render_runtime_templates_with_usage(
         &mut self,
         config: &Arc<Config>,
         usage_values: &IndexMap<String, tera::Value>,
@@ -2819,14 +2845,16 @@ impl Task {
         if usage_values.is_empty() {
             return Ok(());
         }
-        let has_usage_deps = |raw: &Option<Vec<_>>| {
-            raw.as_ref()
-                .is_some_and(|deps| deps.iter().any(dep_has_usage_ref))
-        };
-        if !has_usage_deps(&self.depends_raw)
-            && !has_usage_deps(&self.depends_post_raw)
-            && !has_usage_deps(&self.wait_for_raw)
-        {
+        let has_usage_sources = self
+            .raw_sources
+            .as_ref()
+            .is_some_and(|sources| sources.iter().any(|source| tera_tag_has_usage_ref(source)));
+        let has_usage_outputs = self
+            .raw_outputs
+            .templates
+            .as_ref()
+            .is_some_and(|outputs| outputs.iter().any(|output| tera_tag_has_usage_ref(output)));
+        if !self.has_usage_runtime_templates() {
             return Ok(());
         }
         let config_root = self.config_root.clone().unwrap_or_default();
@@ -2835,6 +2863,23 @@ impl Task {
         // Insert usage values into the tera context so templates like
         // {{usage.app}} resolve to the actual CLI arg value.
         tera_ctx.insert("usage", usage_values);
+
+        if has_usage_sources && let Some(raw) = &self.raw_sources {
+            self.sources = raw
+                .iter()
+                .map(|source| {
+                    if contains_template_syntax(source) {
+                        render_str(&mut tera, source, &tera_ctx)
+                    } else {
+                        Ok(source.clone())
+                    }
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+        }
+        if has_usage_outputs && let Some(raw) = &self.raw_outputs.templates {
+            self.outputs = TaskOutputs::Files(raw.clone());
+            self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx, false)?;
+        }
 
         // Re-render from raw templates (not from already-rendered values).
         // Only restore from raw if the field is non-empty — skip_deps clears
@@ -3218,6 +3263,7 @@ impl Default for Task {
             trailing_args: vec![],
             interactive: false,
             sources: vec![],
+            raw_sources: None,
             watch: None,
             outputs: Default::default(),
             cache: Default::default(),

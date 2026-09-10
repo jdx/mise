@@ -84,6 +84,7 @@ impl TaskOutputs {
         &mut self,
         tera: &mut TeraEngine,
         ctx: &tera::Context,
+        defer_usage: bool,
     ) -> eyre::Result<RawOutputTemplates> {
         match self {
             TaskOutputs::Files(files) => {
@@ -92,7 +93,9 @@ impl TaskOutputs {
                     .get("env")
                     .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok());
                 for file in files.iter_mut() {
-                    if contains_template_syntax(file) {
+                    if contains_template_syntax(file)
+                        && !(defer_usage && super::tera_tag_has_usage_ref(file))
+                    {
                         *file = render_str(tera, file, ctx)?;
                     }
                 }
@@ -132,7 +135,7 @@ impl TaskOutputs {
                 *files = raw_templates
                     .iter()
                     .map(|tmpl| {
-                        if contains_template_syntax(tmpl) {
+                        if contains_template_syntax(tmpl) && !super::tera_tag_has_usage_ref(tmpl) {
                             render_str(&mut tera, tmpl, &ctx)
                         } else {
                             Ok(tmpl.clone())

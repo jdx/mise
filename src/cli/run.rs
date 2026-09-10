@@ -697,20 +697,13 @@ impl Run {
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
         fetcher.fetch_tasks(&config, &mut task_list).await?;
 
-        // Re-render dependency templates with parent task's usage arg/flag values.
-        // This enables patterns like: depends = ["child {{usage.app}}"]
+        // Re-render sources, outputs, and dependencies with this invocation's
+        // usage arg/flag values before resolving the execution graph.
         for task in &mut task_list {
-            let has_usage_deps = |raw: &Option<Vec<_>>| {
-                raw.as_ref()
-                    .is_some_and(|r| r.iter().any(crate::task::dep_has_usage_ref))
-            };
-            if has_usage_deps(&task.depends_raw)
-                || has_usage_deps(&task.depends_post_raw)
-                || has_usage_deps(&task.wait_for_raw)
-            {
+            if task.has_usage_runtime_templates() {
                 let usage_values = crate::task::parse_usage_values_from_task(&config, task).await?;
                 if !usage_values.is_empty() {
-                    task.render_depends_with_usage(&config, &usage_values)
+                    task.render_runtime_templates_with_usage(&config, &usage_values)
                         .await?;
                 }
             }

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# Task sources and outputs can depend on parsed usage arguments. Each argument
+# value must retain an independent freshness identity.
+cat <<'EOF' >mise.toml
+[tasks.generate]
+usage = 'arg "<name>"'
+sources = ["{{usage.name}}.in"]
+outputs = ["{{usage.name}}.out"]
+run = '''
+cat {{usage.name}}.in > {{usage.name}}.out
+echo {{usage.name}} >> runs.log
+'''
+
+[tasks.parent]
+depends = [{ task = "generate", args = ["three"] }]
+run = 'echo parent'
+EOF
+
+echo one >one.in
+echo two >two.in
+echo three >three.in
+
+mise run generate one
+mise run generate two
+mise run generate one
+assert "cat runs.log" "one
+two"
+
+echo changed >>one.in
+mise run generate one
+assert "cat runs.log" "one
+two
+one"
+
+# Transitive tasks must resolve their own usage-dependent paths before their
+# freshness checks run.
+mise run parent
+mise run parent
+assert "cat runs.log" "one
+two
+one
+three"
+
+# Environment and usage values can coexist in one output template.
+cat <<'EOF' >mise.toml
+[env]
+OUT_DIR = "dist"
+
+[tasks.child]
+usage = 'arg "<name>"'
+outputs = ["{{env.OUT_DIR}}/{{usage.name}}.txt"]
+run = 'mkdir -p "$OUT_DIR"; touch "$OUT_DIR/{{usage.name}}.txt"'
+
+[tasks.parent]
+depends = [{ task = "child", args = ["artifact"] }]
+EOF
+
+mise run parent
+assert "test -f dist/artifact.txt && echo present" "present"
