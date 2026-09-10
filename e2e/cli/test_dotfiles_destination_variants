@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+mkdir -p dotfiles/bin
+printf '{"shared":true}\n' >dotfiles/settings.json
+echo 'answer = {{ 6 * 7 }}' >dotfiles/settings.tera
+echo script >dotfiles/bin/example
+
+cat >mise.toml <<'TOML'
+[dotfiles.settings]
+source = "dotfiles/settings.json"
+mode = "copy"
+variants = [
+  { os = "linux", target = "~/.config/code/settings.json" },
+  { os = "macos", target = "~/Library/Application Support/Code/User/settings.json" },
+]
+
+[dotfiles."~/.default-settings.json"]
+source = "dotfiles/settings.json"
+mode = "symlink"
+variants = [
+  { profile = "work", target = "~/.work-settings.json" },
+  { default = true },
+]
+
+[dotfiles.rendered]
+source = "dotfiles/settings.tera"
+mode = "template"
+variants = [{ os = ["linux", "macos"], target = "~/.rendered-settings" }]
+
+[dotfiles.bin]
+source = "dotfiles/bin"
+mode = "symlink-each"
+variants = [{ default = true, target = "~/.variant-bin" }]
+
+[dotfiles.skipped]
+source = "dotfiles/settings.json"
+mode = "copy"
+variants = [{ os = "windows", target = "~/.windows-settings.json" }]
+TOML
+
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "cat ~/.config/code/settings.json" '{"shared":true}'
+assert "readlink ~/.default-settings.json" "$PWD/dotfiles/settings.json"
+assert "cat ~/.rendered-settings" "answer = 42"
+assert "readlink ~/.variant-bin/example" "$PWD/dotfiles/bin/example"
+assert_fail "test -e ~/.windows-settings.json"
+assert_fail "test -e ~/.work-settings.json"
+assert_succeed "MISE_ENV=work mise bootstrap dotfiles apply --yes"
+assert "readlink ~/.work-settings.json" "$PWD/dotfiles/settings.json"
+assert_contains "MISE_ENV=work mise bootstrap dotfiles status" ".work-settings.json"
+assert_not_contains "MISE_ENV=work mise bootstrap dotfiles status" ".default-settings.json"
+
+# Commands filter and operate on the resolved destination.
+echo changed >~/.config/code/settings.json
+assert_contains "mise bootstrap dotfiles diff ~/.config/code/settings.json" '+{"shared":true}'
+assert_succeed "mise bootstrap dotfiles apply ~/.config/code/settings.json --yes"
+assert_succeed "mise bootstrap dotfiles unapply ~/.config/code/settings.json --yes"
+assert_fail "test -e ~/.config/code/settings.json"
+
+# A local override of the logical declaration replaces the old destination.
+cat >mise.local.toml <<'TOML'
+[dotfiles.settings]
+source = "dotfiles/settings.json"
+mode = "copy"
+variants = [{ default = true, target = "~/.local-settings.json" }]
+TOML
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "cat ~/.local-settings.json" '{"shared":true}'
+assert_fail "test -e ~/.config/code/settings.json"
+assert_not_contains "mise bootstrap dotfiles status" ".config/code/settings.json"
+
+# Ambiguous matches, invalid defaults, relative paths, and tracking target
+# overrides must not write a destination.
+cat >>mise.toml <<'TOML'
+[dotfiles.ambiguous]
+source = "dotfiles/settings.json"
+mode = "copy"
+variants = [
+  { os = "linux", target = "~/.ambiguous-one" },
+  { os = "linux", target = "~/.ambiguous-two" },
+]
+[dotfiles.invalid-default]
+source = "dotfiles/settings.json"
+mode = "copy"
+variants = [{ default = true, os = "linux", target = "~/.bad-default" }]
+[dotfiles.relative]
+source = "dotfiles/settings.json"
+mode = "copy"
+variants = [{ default = true, target = "relative.json" }]
+[dotfiles.no-source]
+mode = "copy"
+variants = [{ default = true, target = "~/.no-source" }]
+TOML
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles."~/.tracked"]
+mode = "track"
+variants = [{ default = true, target = "~/.other-tracked" }]
+TOML
+assert_contains "mise bootstrap dotfiles status 2>&1" "ambiguous dotfile variants"
+assert_contains "mise bootstrap dotfiles status 2>&1" "variants allow only one default"
+assert_contains "mise bootstrap dotfiles status 2>&1" "variant target must be absolute"
+assert_contains "mise bootstrap dotfiles status 2>&1" "target overrides are not supported"
+assert_contains "mise bootstrap dotfiles status 2>&1" "destination variants require an explicit source"
+assert_fail "test -e ~/.ambiguous-one"
+assert_fail "test -e ~/.ambiguous-two"

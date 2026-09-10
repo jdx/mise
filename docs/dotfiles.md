@@ -178,6 +178,53 @@ or remove previously created links.
 Directory copies keep existing target files when you delete or exclude their
 sources. Review and remove those leftover copies yourself.
 
+### Platform-specific destinations
+
+Use `variants` to deploy one source to different paths on different machines:
+
+```toml
+[dotfiles."vscode/settings.json"]
+source = "dotfiles/vscode/settings.json"
+mode = "copy"
+variants = [
+  { os = "macos", target = "~/Library/Application Support/Code/User/settings.json" },
+  { os = "linux", target = "~/.config/Code/User/settings.json" },
+  { os = "windows", target = "~/AppData/Roaming/Code/User/settings.json" },
+]
+```
+
+Destination variants work with `copy`, `symlink`, `symlink-each`, and
+`template`. They share the [tracking variant selectors](#variants): `os`
+(optionally with an architecture), `profile` (a mise environment selected
+with `-E` or `MISE_ENV`), and `default = true`. The most specific matching
+variant wins; ties are reported as invalid, and no match without a default
+skips the entry.
+
+A variant's `target` overrides the table key. When every variant supplies a
+`target`, the key can be a logical name, as above. Otherwise the key must
+be an absolute or home-relative target path. Every destination must be
+absolute or start with `~/`. Target overrides require an explicit `source`,
+which stays the same across machines and resolves relative to the config
+file. Omitting `target` uses the table key:
+
+```toml
+[dotfiles."~/.config/example/settings.json"]
+source = "dotfiles/example/settings.json"
+mode = "symlink"
+variants = [
+  { profile = "work", target = "~/.config/example-work/settings.json" },
+  { default = true },
+]
+```
+
+A later configuration file can replace a destination-variant declaration by
+using the same key, even when it selects a different destination.
+
+Commands such as `status`, `diff`, `apply`, and `unapply` use the selected
+destination. Changing the selected destination does not remove a file
+previously deployed elsewhere. Tracking variants continue to select separate
+history streams at the same path and do not accept `target` overrides.
+
 ### Templates
 
 ```toml

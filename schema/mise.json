@@ -4127,7 +4127,7 @@
     },
     "dotfiles": {
       "type": "object",
-      "description": "dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path",
+      "description": "dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path or a logical name when every variant overrides the target",
       "additionalProperties": {
         "oneOf": [
           {
@@ -4206,6 +4206,40 @@
               "comment": {
                 "type": "string",
                 "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
+              },
+              "variants": {
+                "type": "array",
+                "description": "OS/profile variants: history streams for track mode, or optional destinations for deployment modes",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "os": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "profile": {
+                      "type": "string",
+                      "description": "mise environment selected with -E or MISE_ENV"
+                    },
+                    "default": {
+                      "type": "boolean"
+                    },
+                    "target": {
+                      "type": "string",
+                      "description": "deployment destination override; requires source and is not supported in track mode"
+                    }
+                  }
+                }
               }
             },
             "oneOf": [

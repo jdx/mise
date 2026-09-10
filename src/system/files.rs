@@ -176,7 +176,43 @@ pub(crate) fn clear_invalid_declarations() {
         .clear();
 }
 
-/// one `[dotfiles]` whole-file entry as written in mise.toml
+/// Deployment variants reuse tracking selectors without changing history streams.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct FileVariant {
+    #[serde(default)]
+    target: Option<String>,
+    #[serde(flatten)]
+    selector: crate::system::history::select::Variant,
+}
+
+fn validate_file_variants(
+    target: &str,
+    source: Option<&str>,
+    mode: Option<&str>,
+    variants: &[FileVariant],
+) -> Result<()> {
+    let selectors: Vec<_> = variants.iter().map(|v| v.selector.clone()).collect();
+    crate::system::history::select::validate(&selectors)?;
+    if variants.iter().any(|v| v.target.is_some()) {
+        if mode == Some("track") {
+            bail!("target overrides are not supported with mode = \"track\"");
+        }
+        if source.is_none() {
+            bail!("destination variants require an explicit source");
+        }
+    }
+    if variants.is_empty() && resolve_target_arg(target).is_relative() {
+        bail!("target must be absolute or start with ~/");
+    }
+    for variant in variants {
+        if resolve_target_arg(variant.target.as_deref().unwrap_or(target)).is_relative() {
+            bail!("variant target must be absolute or start with ~/");
+        }
+    }
+    Ok(())
+}
+
+/// One `[dotfiles]` whole-file entry as written in mise.toml.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum FileTomlEntry {
@@ -202,9 +238,9 @@ pub(crate) enum FileTomlEntry {
         autosave: Option<bool>,
         #[serde(default)]
         encrypt: Option<bool>,
-        /// history: platform / profile streams for a tracked file
+        /// Platform / profile selectors, with optional deployment destinations
         #[serde(default)]
-        variants: Option<Vec<crate::system::history::select::Variant>>,
+        variants: Option<Vec<FileVariant>>,
         /// `false` disables an inherited declaration on this machine
         #[serde(default)]
         enabled: Option<bool>,
@@ -577,8 +613,8 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     }
                 }
             }
-            if resolve_target_arg(&target).is_relative() {
-                bail!("dotfile target must be absolute or start with ~/: {target}");
+            if let FileTomlEntry::Source(_) = &entry {
+                validate_file_variants(&target, None, None, &[])?;
             }
             if let FileTomlEntry::Table {
                 source,
@@ -586,9 +622,16 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 mode,
                 manifest,
                 exclude,
+                variants,
                 ..
             } = entry
             {
+                validate_file_variants(
+                    &target,
+                    source.as_deref(),
+                    mode.as_deref(),
+                    variants.as_deref().unwrap_or_default(),
+                )?;
                 if content.is_some() && (mode.is_some() || exclude.is_some() || manifest.is_some())
                 {
                     bail!(
@@ -646,6 +689,29 @@ fn files_from_config_files_with_tracking_roots(
     // keyed by the *expanded* target so "~/.gitconfig" in one config and
     // its absolute spelling in another are one entry, not two
     let mut merged: IndexMap<(PathBuf, bool), FileRequest> = IndexMap::new();
+    // A logical declaration must be overridden before selecting its destination:
+    // otherwise a local override that changes the target would deploy both paths.
+    let mut destination_declarations = IndexMap::new();
+    for (path, cf) in config_files {
+        if let Some(dotfiles) = cf.dotfiles_config() {
+            for (key, value) in dotfiles.0 {
+                let overrides_target = match file_entry_from_toml(&key, value) {
+                    Some(FileTomlEntry::Table { mode, variants, .. }) => {
+                        if mode.as_deref() == Some("track") {
+                            continue;
+                        }
+                        variants.is_some_and(|vs| vs.iter().any(|v| v.target.is_some()))
+                    }
+                    Some(FileTomlEntry::Source(_)) => false,
+                    None => continue,
+                };
+                let (_, has_override) = destination_declarations
+                    .entry(resolve_target_arg(&key))
+                    .or_insert((path, false));
+                *has_override |= overrides_target;
+            }
+        }
+    }
     // config_files is ordered local -> global; reverse for global -> local
     for (path, cf) in config_files.iter().rev() {
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -659,6 +725,13 @@ fn files_from_config_files_with_tracking_roots(
             continue;
         };
         for (target_raw, value) in dotfiles.0 {
+            if value.get("mode").and_then(toml::Value::as_str) != Some("track")
+                && destination_declarations
+                    .get(&resolve_target_arg(&target_raw))
+                    .is_some_and(|(winner, has_override)| *has_override && *winner != path)
+            {
+                continue;
+            }
             if tracking_roots.is_some_and(|roots| !track_layer_allowed(&origin, roots))
                 && value.get("mode").and_then(toml::Value::as_str) == Some("track")
             {
@@ -775,6 +848,13 @@ fn merge_file_entry(
     };
     let enabled = enabled.unwrap_or(true);
     let variants = variants.unwrap_or_default();
+    if let Err(err) =
+        validate_file_variants(&target_raw, source.as_deref(), mode.as_deref(), &variants)
+    {
+        record_invalid(&target_raw, &origin.config, err.to_string());
+        return;
+    }
+    let selectors: Vec<_> = variants.iter().map(|v| v.selector.clone()).collect();
     let policy_for = |mode: FileMode| {
         let defaults = FilePolicy::for_mode(mode);
         FilePolicy {
@@ -812,7 +892,7 @@ fn merge_file_entry(
             base: base.to_path_buf(),
             origin: origin.clone(),
             policy: policy_for(FileMode::Track),
-            variants,
+            variants: selectors,
             enabled,
         };
         // a later file of the same directory (`config.local.toml` after
@@ -826,14 +906,20 @@ fn merge_file_entry(
         }
         return;
     }
-    if !variants.is_empty() {
-        record_invalid(
-            &target_raw,
-            &origin.config,
-            "variants are only supported with mode = \"track\"",
-        );
-        return;
-    }
+    use crate::system::history::select::{self, Selection};
+    let target_raw = match select::select(&selectors, &select::active_environments()) {
+        Selection::Single => target_raw,
+        Selection::Variant(selected) => variants
+            .iter()
+            .find(|v| v.selector == selected)
+            .and_then(|v| v.target.clone())
+            .unwrap_or(target_raw),
+        Selection::NoMatch => return,
+        Selection::Ambiguous(_) => {
+            record_invalid(&target_raw, &origin.config, "ambiguous dotfile variants");
+            return;
+        }
+    };
     if source.is_some() && content.is_some() {
         warn!(
             "[dotfiles].\"{target_raw}\": source and content are mutually exclusive, ignoring entry"
@@ -3292,6 +3378,41 @@ fn link_path(source: &Path, target: &Path, allow_windows_symlink: bool) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn destination_variants_survive_incoming_config_preflight() -> Result<()> {
+        use crate::config::config_file::mise_toml::MiseToml;
+        use std::sync::Arc;
+
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let body = r#"
+[dotfiles.settings]
+source = "dotfiles/settings.json"
+mode = "copy"
+variants = [
+    { os = "macos", target = "~/Library/Application Support/Code/User/settings.json" },
+    { os = "linux", profile = "work", target = "~/.config/Code/User/settings.json" },
+]
+"#;
+        let mut configs = ConfigMap::new();
+        configs.insert(
+            path.clone(),
+            Arc::new(MiseToml::for_history_preflight(body, &path)?),
+        );
+        validate_incoming_files(&configs)?;
+
+        // Validate inactive destinations too, before accepting shared config.
+        let invalid = body.replace(
+            "~/Library/Application Support/Code/User/settings.json",
+            "relative/settings.json",
+        );
+        configs.insert(
+            path.clone(),
+            Arc::new(MiseToml::for_history_preflight(&invalid, &path)?),
+        );
+        assert!(validate_incoming_files(&configs).is_err());
+        Ok(())
+    }
 
     #[cfg(unix)]
     #[test]
