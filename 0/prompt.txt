@@ -1,5 +1,1 @@
-is it in the next release? [https://github.com/jdx/mise/discussions/12996#discussioncomment-18378495](https://github.com/jdx/mise/discussions/12996#discussioncomment-18378495)
-
----
-
 ok make the relevant prs, and post a reply (not top level)
