@@ -1296,6 +1296,7 @@ impl Run {
                     allow_env: self.allow_env.clone(),
                     pass_through_env: vec![],
                     cache_env: vec![],
+                    symlinked_allow_paths: vec![],
                 },
             ),
         };

@@ -373,6 +373,7 @@ impl Exec {
                 allow_env: self.allow_env,
                 pass_through_env: vec![],
                 cache_env: vec![],
+                symlinked_allow_paths: vec![],
             },
         );
         sandbox.resolve_paths();

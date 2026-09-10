@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# A task's `allow_read` path is opened back up with Seatbelt's `(subpath …)`, but
+# `realpath(3)` resolves a path one component at a time. Without metadata access
+# to the directories leading to that path, resolving a file inside it fails with
+# EPERM even though reading the same file works — the kernel's path walk only
+# permission-checks the target vnode, which is why the two disagree.
+#
+# Ruby does this to its own executable at startup, so the third-party tap
+# metadata sandbox died before evaluating anything.
+# https://github.com/jdx/mise/discussions/12969
+
+if [[ "$(uname)" != "Darwin" ]]; then
+  echo "skipping: Seatbelt filesystem sandboxing is macOS-only"
+  exit 0
+fi
+
+if [[ ! -x /usr/bin/ruby ]]; then
+  echo "skipping: no /usr/bin/ruby to resolve a path with"
+  exit 0
+fi
+
+mkdir -p nested/deep
+echo payload >nested/deep/payload.txt
+
+# This only discriminates while the fixture sits outside the subtrees the
+# profile reads unconditionally: under one of those the walk is already
+# permitted and the test would pass without exercising anything. On CI the
+# harness lands in $TMPDIR — /private/var/folders/... on a macOS runner, whose
+# /private/var is not in SYSTEM_READ_PATHS — but TMPDIR=/tmp locally would put
+# it somewhere always readable. Skip loudly there rather than pass vacuously.
+FIXTURE="$(cd nested/deep && pwd -P)"
+case "$FIXTURE" in
+  /System/* | /Library/* | /usr/* | /bin/* | /sbin/* | /dev/* | /etc/* | /var/run/* | /tmp/* | /private/tmp/* | /private/etc/* | /private/var/run/* | /opt/homebrew/* | /nix/*)
+    echo "skipping: $FIXTURE is inside an always-readable subtree, so the walk is permitted without the ancestor rules"
+    exit 0
+    ;;
+esac
+
+# Absolute, because `getcwd` is denied under this profile and resolving a
+# relative path needs it — that is a separate gap, not the one being fixed here.
+cat >mise.toml <<TOML
+[tasks.resolve]
+run = "/usr/bin/ruby --disable-gems -e 'puts File.realpath(ARGV[0]); puts File.read(ARGV[0])' $PWD/nested/deep/payload.txt"
+allow_read = ["$PWD/nested/deep"]
+TOML
+
+# Assert both halves. Reading it is what already worked, so a read that still
+# works is part of what this pins; resolving it is the regression.
+assert_contains "mise run resolve" "nested/deep/payload.txt"
+assert_contains "mise run resolve" "payload"
