@@ -236,10 +236,12 @@ cleanup metadata, not install receipts. For casks with lifecycle hooks, mise
 fetches the sha256-verified cask Ruby source pinned by the API metadata and runs
 supported `preflight`/`postflight` hooks through its own Cask DSL shim, without
 delegating to Homebrew. mise also supports structured `preflight_steps` and
-`postflight_steps` for `move`/`remove` operations against `staged_path`, `run`
-operations using Homebrew's serialized command bases, arguments, environment,
-guards, and sudo setting, and `terminate_process` operations with
-Homebrew-compatible name/full matching, retries, notices, and failure policy.
+`postflight_steps` for `move`/`remove` operations against `staged_path`,
+`set_permissions` operations that `chmod` existing `staged_path` or `appdir`
+paths with Homebrew's recursive default, `run` operations using Homebrew's
+serialized command bases, arguments, environment, guards, and sudo setting, and
+`terminate_process` operations with Homebrew-compatible name/full matching,
+retries, notices, and failure policy.
 Structured `copy` and `symlink` steps support Homebrew path bases, templates,
 guards, source globs, replacement, and sudo behavior. External paths created by
 lifecycle steps are recorded in the mise receipt and restored if the install
