@@ -679,7 +679,7 @@ end
         let cask_file = dir.path().join("widget.rb");
         crate::file::write(
             &cask_file,
-            r#"
+            r##"
 cask "widget" do
   version "1.2.3"
   sha256 :no_check
@@ -693,8 +693,16 @@ cask "widget" do
   end
   app "Widget.app"
   binary "Widget.app/Contents/MacOS/widget", target: "widget"
+  preflight_steps do
+    run "Widget.app/Contents/MacOS/widget", base: :appdir, args: ["#{version}"]
+    run "bin/widget", base: :staged_path
+  end
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-d", "com.apple.quarantine", "{{staged_path}}/Widget-#{version}/bin/widget"], must_succeed: false
+    run "/usr/bin/xattr", args: ["-d", "com.apple.quarantine", "{{appdir}}/Widget.app"], must_succeed: false
+  end
 end
-"#,
+"##,
         )?;
         let mut runner = CmdLineRunner::new(ruby)
             .with_on_stderr(|line| eprintln!("{line}"))
@@ -719,7 +727,22 @@ end
         assert_eq!(metadata["sha256"], "no_check");
         assert_eq!(metadata["url"], "https://example.com/café/widget-1.2.3.zip");
         assert_eq!(metadata["depends_on"]["formula"][0], "libfoo");
-        assert_eq!(metadata["artifacts"].as_array().unwrap().len(), 2);
+        assert_eq!(metadata["artifacts"].as_array().unwrap().len(), 4);
+        assert_eq!(
+            metadata["artifacts"][2]["preflight_steps"][0]["steps"][0],
+            serde_json::json!({"type": "run", "command": {"path": "Widget.app/Contents/MacOS/widget", "base": "appdir"}, "args": ["1.2.3"]})
+        );
+        assert_eq!(
+            metadata["artifacts"][2]["preflight_steps"][0]["steps"][1],
+            serde_json::json!({"type": "run", "command": {"path": "bin/widget", "base": "staged_path"}})
+        );
+        assert_eq!(
+            metadata["artifacts"][3]["postflight_steps"][0]["steps"],
+            serde_json::json!([
+                {"type": "run", "command": {"path": "/usr/bin/xattr"}, "args": ["-d", "com.apple.quarantine", "{{staged_path}}/Widget-1.2.3/bin/widget"], "must_succeed": false},
+                {"type": "run", "command": {"path": "/usr/bin/xattr"}, "args": ["-d", "com.apple.quarantine", "{{appdir}}/Widget.app"], "must_succeed": false}
+            ])
+        );
         Ok(())
     }
 

@@ -227,6 +227,7 @@ enum FlightStep {
         guards: Vec<FlightGuard>,
     },
     Run {
+        must_succeed: bool,
         command: FlightPath,
         args: Vec<String>,
         env: BTreeMap<String, String>,

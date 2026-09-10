@@ -100,6 +100,31 @@ class Version
   def token(index) = self.class.new(@value.split(".")[index].to_s)
 end
 
+# Collect declarative steps only; commands run later in the Rust installer.
+class CaskFlightSteps
+  attr_reader :steps
+
+  def initialize(cask)
+    @cask = cask
+    @steps = []
+  end
+
+  def version = @cask.version
+  def arch = @cask.arch
+
+  def run(command, base: nil, **options)
+    path = { path: command.to_s }
+    path[:base] = base.to_s unless base.nil?
+    @steps << options.merge(type: "run", command: path)
+  end
+
+  def method_missing(name, *, &block)
+    raise "unsupported cask flight step DSL `#{name}`"
+  end
+
+  def respond_to_missing?(*) = true
+end
+
 class CaskMetadata
   attr_reader :token, :artifacts, :formula_dependencies, :cask_dependencies,
               :conflicting_casks
@@ -163,6 +188,8 @@ class CaskMetadata
   def artifact(source, target: nil) = add_artifact("artifact", source, target)
   def uninstall(**values) = @artifacts << { "uninstall" => values }
   def zap(**values) = @artifacts << { "zap" => values }
+  def preflight_steps(&block) = add_flight_steps("preflight_steps", &block)
+  def postflight_steps(&block) = add_flight_steps("postflight_steps", &block)
   def preflight(*) = @artifacts << { "preflight" => nil }
   def postflight(*) = @artifacts << { "postflight" => nil }
   def uninstall_preflight(*) = @artifacts << { "uninstall_preflight" => nil }
@@ -274,6 +301,12 @@ class CaskMetadata
   def respond_to_missing?(*) = true
 
   private
+
+  def add_flight_steps(kind, &block)
+    collector = CaskFlightSteps.new(self)
+    collector.instance_eval(&block)
+    @artifacts << { kind => [{ "steps" => collector.steps }] }
+  end
 
   def add_artifact(kind, source, target)
     value = [source.to_s]
