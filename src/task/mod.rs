@@ -2863,7 +2863,9 @@ impl Task {
         let config_root = self.config_root.clone().unwrap_or_default();
         let mut tera = get_tera(Some(&config_root));
         let mut tera_ctx = self.tera_ctx(config).await?;
-        if has_usage_outputs && let Some(env) = &self.raw_outputs.original_env {
+        if (has_usage_sources || has_usage_outputs)
+            && let Some(env) = &self.raw_outputs.original_env
+        {
             tera_ctx.insert("env", env);
         }
         // Insert usage values into the tera context so templates like

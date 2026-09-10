@@ -116,15 +116,17 @@ impl TaskOutputs {
         env: &indexmap::IndexMap<String, String>,
         config_root: &std::path::Path,
     ) -> eyre::Result<()> {
+        // Keep the dependency-level environment for the later usage render of
+        // both sources and outputs. Sources share this context because the env
+        // override applies to the task invocation as a whole.
+        let mut env_map = raw.original_env.clone().unwrap_or_default();
+        for (k, v) in env {
+            env_map.insert(k.clone(), v.clone());
+        }
+        raw.original_env = Some(env_map.clone());
         if let TaskOutputs::Files(files) = self
             && let Some(raw_templates) = raw.templates.clone()
         {
-            // Preserve dependency-level overrides for the later usage render.
-            let mut env_map = raw.original_env.clone().unwrap_or_default();
-            for (k, v) in env {
-                env_map.insert(k.clone(), v.clone());
-            }
-            raw.original_env = Some(env_map.clone());
             if raw_templates
                 .iter()
                 .any(|tmpl| contains_template_syntax(tmpl))

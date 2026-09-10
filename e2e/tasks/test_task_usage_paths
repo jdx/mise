@@ -50,7 +50,7 @@ usage = 'arg "<name>"'
 env = { OUT_DIR = "default" }
 sources = ["{{env.OUT_DIR}}/{{usage.name}}.in"]
 outputs = ["{{env.OUT_DIR}}/{{usage.name}}.txt"]
-run = 'cat "$OUT_DIR/{{usage.name}}.in" > "$OUT_DIR/{{usage.name}}.txt"'
+run = 'cat "$OUT_DIR/{{usage.name}}.in" > "$OUT_DIR/{{usage.name}}.txt"; echo run >> child-runs.log'
 
 [tasks.parent]
 depends = [{ task = "child", args = ["artifact"], env = { OUT_DIR = "dist" } }]
@@ -59,8 +59,13 @@ EOF
 mkdir -p dist
 echo content >dist/artifact.in
 mise run parent
+mise run parent
 assert "test -f dist/artifact.txt && echo present" "present"
 assert "test ! -e default/artifact.txt && echo absent" "absent"
+assert "wc -l <child-runs.log" "1"
+echo changed >dist/artifact.in
+mise run parent
+assert "wc -l <child-runs.log" "2"
 
 # Literal text outside a Tera tag must not be mistaken for a usage reference.
 cat <<'EOF' >mise.toml
