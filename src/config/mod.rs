@@ -3625,7 +3625,9 @@ impl ResolvedTaskEnvironment {
     }
 }
 
-const TASK_INPUT_GROUP_PREFIX: &str = "@group:";
+/// Prefix that marks a `sources` or `global_inputs` entry as a reference to a
+/// named input group rather than a file pattern.
+pub(crate) const TASK_INPUT_GROUP_PREFIX: &str = "@group:";
 
 #[derive(Clone, Debug, Default)]
 struct ResolvedTaskInputs {
@@ -5133,7 +5135,7 @@ async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
 }
 
 /// Check if a pattern contains glob metacharacters
-fn is_glob_pattern(pattern: &str) -> bool {
+pub(crate) fn is_glob_pattern(pattern: &str) -> bool {
     // Check for unescaped glob metacharacters: *, ?, [, ], {, }
     // Note: This is a simple check that may have false positives with escaped chars,
     // but glob() will handle those correctly

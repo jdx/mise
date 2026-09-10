@@ -20,3 +20,34 @@ idiomatic_version_file_enable_tools = ["go", "ruby"]
 
 [env]
 TEST = "Hello World!"'
+
+# Lists whose order carries no meaning are sorted; file patterns sort by reach
+# (groups, globs, then literal paths), and a list that excludes with `!` keeps
+# its order.
+echo 'redactions = ["TOKEN", "API_KEY"]
+
+[task_config]
+global_inputs = ["mise.toml", "@group:lockfiles"]
+
+[task_config.input_groups]
+lockfiles = ["pnpm-lock.yaml", "Cargo.lock"]
+
+[tasks.build]
+sources = ["src/main.rs", "Cargo.toml", "@group:rust", "src/**/*.rs"]
+outputs = ["dist", "!dist/**/*.map"]
+' >mise.toml
+assert_fail "mise fmt --check" "mise ERROR Following config files are not properly formatted"
+
+mise fmt
+assert "mise fmt --check"
+assert "cat mise.toml" 'redactions = ["API_KEY", "TOKEN"]
+
+[task_config]
+global_inputs = ["@group:lockfiles", "mise.toml"]
+
+[task_config.input_groups]
+lockfiles = ["Cargo.lock", "pnpm-lock.yaml"]
+
+[tasks.build]
+sources = ["@group:rust", "src/**/*.rs", "Cargo.toml", "src/main.rs"]
+outputs = ["dist", "!dist/**/*.map"]'
