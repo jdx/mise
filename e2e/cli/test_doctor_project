@@ -120,3 +120,16 @@ run = "true"
 TOML
 assert_succeed "mise doctor project --json > missing-tool.json"
 assert_succeed "test ! -d \"$MISE_DATA_DIR/installs/dummy/99.99.99\""
+
+# Like tasks, dir may intentionally refer to a parent or absolute directory.
+mkdir -p child
+cat >child/mise.toml <<'TOML'
+[doctor.checks.parent]
+run = "test -f mise.toml && test -d child"
+dir = ".."
+[doctor.checks.absolute]
+run = "test -d ."
+dir = "/"
+TOML
+assert_succeed "mise --cd child doctor project --json > directories.json"
+assert_succeed "jq -e '[.checks[] | select(.name == \"parent\" or .name == \"absolute\") | .status] == [\"pass\", \"pass\"]' directories.json"

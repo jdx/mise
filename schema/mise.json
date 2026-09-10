@@ -19,70 +19,6 @@
         {
           "type": "object",
           "properties": {
-            "doctor": {
-              "description": "Project diagnostic checks, run explicitly with mise doctor project.",
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "checks": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["run"],
-                    "properties": {
-                      "run": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Diagnostic command. Exit zero to pass; other exit codes fail."
-                      },
-                      "description": {
-                        "type": "string",
-                        "description": "Human-readable requirement checked by the command."
-                      },
-                      "hint": {
-                        "type": "string",
-                        "description": "Remediation guidance displayed on failure; never executed."
-                      },
-                      "timeout": {
-                        "type": "string",
-                        "description": "Positive command timeout, such as 5s. Defaults to 10s."
-                      },
-                      "dir": {
-                        "type": "string",
-                        "description": "Working directory, relative to the declaring config's project root."
-                      },
-                      "shell": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": {
-                          "type": "string"
-                        },
-                        "description": "Shell executable and arguments, including the command flag."
-                      },
-                      "os": {
-                        "type": "array",
-                        "items": {
-                          "enum": [
-                            "linux",
-                            "macos",
-                            "windows",
-                            "freebsd",
-                            "openbsd",
-                            "netbsd",
-                            "dragonfly",
-                            "android",
-                            "illumos",
-                            "solaris"
-                          ]
-                        },
-                        "description": "Operating systems on which this check runs. Other systems report skipped."
-                      }
-                    }
-                  }
-                }
-              }
-            },
             "task": {
               "type": "string"
             },
@@ -3850,6 +3786,70 @@
           "description": "absolute or ~/-relative remote path to install the provisioned mise to"
         }
       ]
+    },
+    "doctor": {
+      "description": "Project diagnostic checks, run explicitly with mise doctor project.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run"],
+            "properties": {
+              "run": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Diagnostic command. Exit zero to pass; other exit codes fail."
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable requirement checked by the command."
+              },
+              "hint": {
+                "type": "string",
+                "description": "Remediation guidance displayed on failure; never executed."
+              },
+              "timeout": {
+                "type": "string",
+                "description": "Positive command timeout, such as 5s. Defaults to 10s."
+              },
+              "dir": {
+                "type": "string",
+                "description": "Working directory. Relative paths resolve from the declaring config's project root; absolute paths are used as given."
+              },
+              "shell": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                },
+                "description": "Shell executable and arguments, including the command flag."
+              },
+              "os": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "linux",
+                    "macos",
+                    "windows",
+                    "freebsd",
+                    "openbsd",
+                    "netbsd",
+                    "dragonfly",
+                    "android",
+                    "illumos",
+                    "solaris"
+                  ]
+                },
+                "description": "Operating systems on which this check runs. Other systems report skipped."
+              }
+            }
+          }
+        }
+      }
     }
   },
   "unevaluatedProperties": false,
@@ -5595,6 +5595,9 @@
     "_": {
       "type": "object",
       "additionalProperties": true
+    },
+    "doctor": {
+      "$ref": "#/$defs/doctor"
     }
   }
 }

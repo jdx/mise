@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+mise use -g node@24 npm:ajv-cli@5.0.0
+validate="mise x npm:ajv-cli@5.0.0 -- ajv validate --spec=draft2020 -s '$ROOT/schema/mise.json'"
+cat >doctor-valid.json <<'JSON'
+{"doctor":{"checks":{"database":{"run":"pg_isready --quiet","description":"Database accepts connections","hint":"Start the services","timeout":"5s","dir":"../database","shell":["bash","-c"],"os":["linux","macos"]}}}}
+JSON
+assert_succeed "$validate -d doctor-valid.json"
+# Each invalid root-level block used to pass because doctor was misplaced
+# inside task_dependency_item and was unvalidated at the root.
+cat >doctor-invalid.json <<'JSON'
+{"doctor":{"checks":{"database":{"hint":"missing command"}}}}
+JSON
+assert_fail "$validate -d doctor-invalid.json"
+cat >doctor-invalid.json <<'JSON'
+{"doctor":{"checks":{"database":{"run":"true","timeuot":"5s"}}}}
+JSON
+assert_fail "$validate -d doctor-invalid.json"
+cat >doctor-invalid.json <<'JSON'
+{"doctor":{"checks":{"database":{"run":"true","os":["linxu"]}}}}
+JSON
+assert_fail "$validate -d doctor-invalid.json"
+cat >doctor-invalid.json <<'JSON'
+{"tasks":{"test":{"depends":[{"task":"setup","doctor":{"checks":{}}}]}}}
+JSON
+assert_fail "$validate -d doctor-invalid.json"

@@ -17,7 +17,7 @@ pub(crate) struct DoctorCheck {
     pub description: Option<String>,
     pub hint: Option<String>,
     pub timeout: Option<String>,
-    /// Relative to the configuration file's project root.
+    /// Relative paths use the configuration file's project root; absolute paths are used as given.
     pub dir: Option<PathBuf>,
     /// Shell executable and arguments, including the command flag.
     pub shell: Option<Vec<String>>,

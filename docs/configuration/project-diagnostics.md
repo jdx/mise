@@ -52,7 +52,7 @@ Each `[doctor.checks.<name>]` table supports:
 | `description` | Human-readable requirement. Defaults to the check name in text output.                                                                                        |
 | `hint`        | Guidance shown after a failure or execution error. Never executed.                                                                                            |
 | `timeout`     | Positive duration such as `500ms` or `5s`; defaults to `10s`.                                                                                                 |
-| `dir`         | Working directory relative to the declaring configuration's project root. Defaults to that root.                                                              |
+| `dir`         | Working directory. Relative paths resolve from the declaring configuration's project root; absolute paths are used as given. Defaults to that root.           |
 | `shell`       | Executable and arguments, including the command flag, such as `["bash", "-c"]` or `["pwsh", "-NoProfile", "-Command"]`. Defaults to mise's inline task shell. |
 | `os`          | List of operating systems, such as `["linux", "macos"]`. Omit to run everywhere.                                                                              |
 
@@ -73,6 +73,16 @@ captured and discarded rather than included in reports, so a probe cannot
 accidentally print a credential into the report. Use `description` and `hint` to
 explain the requirement and remedy; run the command directly for its detailed
 output.
+
+Absolute paths and `..` components in `dir` are allowed, as with task working
+directories. The configuration root anchors relative paths; it is not a
+filesystem boundary. Checks can intentionally inspect a sibling checkout or
+shared local service directory.
+
+On Unix, Ctrl-C, SIGTERM, and SIGHUP cancel the current check and close its owned
+process group, including when doctor runs inside a mise task. As with any cleanup
+that requires the supervisor to run, SIGKILL prevents cleanup; stop doctor with
+SIGTERM before escalating to SIGKILL.
 
 ## Results and automation
 

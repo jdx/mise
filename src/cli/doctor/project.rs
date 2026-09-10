@@ -50,7 +50,23 @@ struct Report {
 
 impl Project {
     pub(crate) async fn run(self, parent_json: bool) -> Result<()> {
-        let report = match self.check().await {
+        // SIGINT already cancels the command future in Cli::run. Handle the
+        // other normal supervisor shutdown signals here as well, so dropping
+        // the bounded runner closes its owned group even under a nested task.
+        #[cfg(unix)]
+        let result = {
+            use tokio::signal::unix::{SignalKind, signal};
+            let mut terminate = signal(SignalKind::terminate())?;
+            let mut hangup = signal(SignalKind::hangup())?;
+            tokio::select! {
+                result = self.check() => result,
+                _ = terminate.recv() => return Err(crate::request_exit(143)),
+                _ = hangup.recv() => return Err(crate::request_exit(129)),
+            }
+        };
+        #[cfg(not(unix))]
+        let result = self.check().await;
+        let report = match result {
             Ok(report) => report,
             Err(err) => Report {
                 checks: vec![CheckResult {
