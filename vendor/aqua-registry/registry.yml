@@ -1625,6 +1625,7 @@ packages:
     repo_owner: Byron
     repo_name: dua-cli
     description: View disk space usage and delete unwanted data, fast
+    version_filter: not (Version startsWith "dua-core-")
     files:
       - name: dua
     version_constraint: "false"
@@ -4751,6 +4752,30 @@ packages:
           algorithm: md5
         supported_envs:
           - linux
+          - darwin
+  - type: github_release
+    repo_owner: Jamf-Concepts
+    repo_name: Notifier
+    aliases:
+      - name: jamf/Notifier
+    description: Swift project which can post macOS alert or banner notifications on 10.15+ clients
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.3.0")
+        asset: dataJAR-Notifier-{{.Version}}.{{.Format}}
+        format: pkg
+        files:
+          - name: Notifier
+            src: Payload/Applications/Utilities/Notifier.app/Contents/MacOS/Notifier
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: Notifier-{{.Version}}.{{.Format}}
+        format: pkg
+        files:
+          - name: Notifier
+            src: Payload/Applications/Utilities/Notifier.app/Contents/MacOS/Notifier
+        supported_envs:
           - darwin
   - type: github_release
     repo_owner: JanDeDobbeleer
@@ -17184,6 +17209,157 @@ packages:
           - linux
           - darwin/arm64
           - windows/amd64
+  - type: github_release
+    repo_owner: aubepkg
+    repo_name: aube
+    aliases:
+      - name: endevco/aube
+      - name: jdx/aube
+    description: A fast Node.js package manager
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0-beta.1"
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 1.0.0-beta.11")
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: semver("<= 1.1.0")
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: semver("<= 2.2.4")
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            replacements:
+              linux: unknown-linux-musl
+            variants:
+              - key: libc
+                value: musl
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: semver("<= 2.2.8")
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            variants:
+              - key: libc
+                value: glibc
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+        github_artifact_attestations:
+          signer_workflow: aubepkg/aube/.github/workflows/release.yml
+      - version_constraint: "true"
+        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            variants:
+              - key: libc
+                value: musl
+            replacements:
+              linux: unknown-linux-musl
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+        github_artifact_attestations:
+          signer_workflow: aubepkg/aube/.github/workflows/release.yml
   - type: github_release
     repo_owner: aurc
     repo_name: loggo
@@ -36461,7 +36637,7 @@ packages:
         overrides:
           - goos: windows
             asset: ec-{{.OS}}-{{.Arch}}.exe.{{.Format}}
-      - version_constraint: "true"
+      - version_constraint: semver("< 4.0.0")
         asset: ec-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         files:
@@ -36472,6 +36648,20 @@ packages:
           asset: checksums.txt
           algorithm: sha256
         overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: editorconfig-checker-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: editorconfig-checker
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: editorconfig-checker-{{.OS}}-all.{{.Format}}
           - goos: windows
             format: zip
   - type: github_release
@@ -37418,6 +37608,27 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
+  - type: github_release
+    repo_owner: esengine
+    repo_name: DeepSeek-Reasonix
+    description: DeepSeek-native AI coding agent for the terminal
+    version_filter: Version startsWith "v"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 1.0.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: reasonix-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: reasonix
+        overrides:
+          - goos: windows
+            format: zip
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
   - type: github_release
     repo_owner: estesp
     repo_name: manifest-tool
@@ -45919,13 +46130,33 @@ packages:
     description: The slightly more awesome standard unix password manager for teams
     asset: gopass-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
     format: tar.gz
-    overrides:
-      - goos: windows
-        format: zip
-    checksum:
-      type: github_release
-      asset: gopass_{{trimV .Version}}_SHA256SUMS
-      algorithm: sha256
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.16.1")
+        checksum:
+          type: github_release
+          asset: gopass_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        checksum:
+          type: github_release
+          asset: gopass_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: "gopass_{{trimV .Version}}_SHA256SUMS.sigstore.json"
+            opts:
+              - --certificate-identity
+              - https://github.com/gopasspw/gopass/.github/workflows/autorelease.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: goph
     repo_name: licensei
@@ -52538,28 +52769,6 @@ packages:
     path: desk
     description: A lightweight workspace manager for the shell
   - type: github_release
-    repo_owner: jamf
-    repo_name: Notifier
-    description: Swift project which can post macOS alert or banner notifications on 10.15+ clients
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 2.3.0")
-        asset: dataJAR-Notifier-{{.Version}}.{{.Format}}
-        format: pkg
-        files:
-          - name: Notifier
-            src: Payload/Applications/Utilities/Notifier.app/Contents/MacOS/Notifier
-        supported_envs:
-          - darwin
-      - version_constraint: "true"
-        asset: Notifier-{{.Version}}.{{.Format}}
-        format: pkg
-        files:
-          - name: Notifier
-            src: Payload/Applications/Utilities/Notifier.app/Contents/MacOS/Notifier
-        supported_envs:
-          - darwin
-  - type: github_release
     repo_owner: jamietsao
     repo_name: random-winner
     description: Wrote a silly program to select a random winner from my team
@@ -52619,128 +52828,6 @@ packages:
       type: github_release
       asset: terradozer_{{trimV .Version}}_checksums.txt
       algorithm: sha256
-  - type: github_release
-    repo_owner: jdx
-    repo_name: aube
-    aliases:
-      - name: endevco/aube
-    description: A fast Node.js package manager
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: Version == "v1.0.0-beta.1"
-        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-          windows: pc-windows-msvc
-        overrides:
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux/amd64
-          - darwin
-          - windows
-      - version_constraint: semver("<= 1.0.0-beta.11")
-        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-          windows: pc-windows-msvc
-        overrides:
-          - goos: darwin
-            replacements:
-              amd64: amd64
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-      - version_constraint: semver("<= 1.1.0")
-        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-musl
-          windows: pc-windows-msvc
-        overrides:
-          - goos: darwin
-            replacements:
-              amd64: amd64
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-      - version_constraint: semver("<= 1.18.1")
-        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-          windows: pc-windows-msvc
-        overrides:
-          - goos: linux
-            variants:
-              - key: libc
-                value: glibc
-          - goos: linux
-            replacements:
-              linux: unknown-linux-musl
-            variants:
-              - key: libc
-                value: musl
-          - goos: darwin
-            replacements:
-              amd64: amd64
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-      - version_constraint: "true"
-        asset: aube-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        replacements:
-          amd64: x86_64
-          arm64: aarch64
-          darwin: apple-darwin
-          linux: unknown-linux-gnu
-          windows: pc-windows-msvc
-        overrides:
-          - goos: linux
-            variants:
-              - key: libc
-                value: glibc
-          - goos: linux
-            replacements:
-              linux: unknown-linux-musl
-            variants:
-              - key: libc
-                value: musl
-          - goos: darwin
-            replacements:
-              amd64: amd64
-          - goos: windows
-            format: zip
-        supported_envs:
-          - linux
-          - darwin/arm64
-          - windows
-        github_artifact_attestations:
-          signer_workflow: jdx/aube/.github/workflows/release.yml
   - type: github_release
     repo_owner: jdx
     repo_name: fnox
@@ -64733,6 +64820,16 @@ packages:
     version_overrides:
       - version_constraint: Version == "v0.1.0"
         no_asset: true
+      - version_constraint: semver("<= 0.2.0")
+        asset: clrnd_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: clrnd_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -64740,6 +64837,15 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.bundle
+            opts:
+              - --certificate-identity
+              - https://github.com/masasuzu/clrnd/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -71083,6 +71189,49 @@ packages:
           asset: SHA256SUMS.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: nklmilojevic
+    repo_name: sofka
+    description: "A Kubernetes TUI, reimagined in Rust - built on kube-rs and ratatui, async-first from the ground up"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.13.4"
+        asset: sofka-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.23.0")
+        asset: sofka-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: sofka-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: nmstate
     repo_name: nmstate
     description: Nmstate is a library with an accompanying command line tool that manages host networking settings in a declarative manner
@@ -72786,6 +72935,21 @@ packages:
       algorithm: sha256
     supported_envs:
       - darwin
+  - type: github_release
+    repo_owner: openai
+    repo_name: tunnel-client
+    description: "Customer-run client for Secure MCP Tunnel: connect private or localhost MCP servers to ChatGPT, Codex, the Responses API, and AgentKit without exposing them to the public internet"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.6--context-conduit-saphire"
+        no_asset: true
+      - version_constraint: "true"
+        asset: tunnel-client-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
   - name: openbao/openbao/bao
     type: github_release
     repo_owner: openbao
@@ -77135,7 +77299,7 @@ packages:
           - linux
           - windows
           - darwin/arm64
-      - version_constraint: "true"
+      - version_constraint: semver("< 12.0.0")
         asset: pnpm-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         files:
@@ -77172,6 +77336,43 @@ packages:
           - linux
           - windows
           - darwin/arm64
+      - version_constraint: "true"
+        asset: pnpm-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: pnpm
+          - name: pn
+            src: pnpm
+            link: pn
+          - name: pnpx
+            src: pnpm
+            link: pnpx
+            hard: true
+          - name: pnx
+            src: pnpm
+            link: pnx
+            hard: true
+        replacements:
+          amd64: x64
+          windows: win32
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            asset: pnpm-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+            variants:
+              - key: libc
+                value: musl
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: pnpm/pnpm/.github/workflows/release.yml
+        supported_envs:
+          - linux
+          - windows
+          - darwin
   - type: github_release
     repo_owner: po3rin
     repo_name: github_link_creator
@@ -98695,6 +98896,65 @@ packages:
             format: raw
             asset: dug
   - type: github_release
+    repo_owner: unikraft-cloud
+    repo_name: cli
+    description: Command-line interface for Unikraft Cloud
+    version_filter: not (Version contains "-staging.")
+    asset: unikraft-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: unikraft
+    checksum:
+      type: github_release
+      asset: cli_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    supported_envs:
+      - linux
+      - darwin
+  - type: github_release
+    repo_owner: unikraft
+    repo_name: kraftkit
+    description: Build and use highly customized and ultra-lightweight unikernel VMs
+    version_filter: not (Version matches "-\\d+-g[0-9a-f]+$")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.4")
+        asset: kraftkit_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: kraft
+        checksum:
+          type: github_release
+          asset: kraftkit_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.7.0")
+        asset: kraftkit_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: kraft
+        checksum:
+          type: github_release
+          asset: kraftkit_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: kraft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: kraft
+          - name: kraftld
+        checksum:
+          type: github_release
+          asset: kraftkit_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: updatecli
     repo_name: updatecli
     description: A Declarative Dependency Management tool
@@ -103205,6 +103465,16 @@ packages:
       - darwin
       - linux
       - amd64
+  - type: github_content
+    repo_owner: yadm-dev
+    repo_name: yadm
+    description: Yet Another Dotfiles Manager
+    path: yadm
+    aliases:
+      - name: TheLocehiliosan/yadm
+    supported_envs:
+      - darwin
+      - linux
   - type: github_release
     repo_owner: yamafaktory
     repo_name: jql
@@ -103459,6 +103729,25 @@ packages:
         files:
           - name: yarn
             src: "{{.AssetWithoutExt}}/bin/yarn"
+  - type: github_release
+    repo_owner: yarnpkg
+    repo_name: zpm
+    description: Safe, stable, reproducible projects
+    files:
+      - name: yarn
+    asset: yarn-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: linux
+        replacements:
+          amd64: x86_64
+    replacements:
+      arm64: aarch64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+    supported_envs:
+      - linux
+      - darwin/arm64
   - type: github_release
     repo_owner: yashikota
     repo_name: exiftool-go

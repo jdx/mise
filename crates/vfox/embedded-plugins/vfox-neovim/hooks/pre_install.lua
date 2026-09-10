@@ -9,6 +9,16 @@ function PLUGIN:PreInstall(ctx)
     local os_type = RUNTIME.osType
     local arch_type = RUNTIME.archType
 
+    if arch_type ~= "amd64" and arch_type ~= "arm64" then
+        error(
+            "Unsupported platform: "
+                .. os_type
+                .. "/"
+                .. arch_type
+                .. "; Neovim publishes binaries only for amd64 and arm64"
+        )
+    end
+
     -- Map OS/arch to Neovim asset naming
     local platform, ext
 
