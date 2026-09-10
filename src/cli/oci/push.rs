@@ -172,7 +172,7 @@ impl Push {
             // destination doesn't have.
             let dest = registry::Reference::parse(&self.reference)?;
             let cache = registry::Reference::parse(cache_from)?;
-            if dest.registry != cache.registry || dest.repository != cache.repository {
+            if !dest.same_repository(&cache) {
                 bail!(
                     "--cache-from must reference the same repository as the destination \
                      (got {}/{}, destination is {}/{})",
