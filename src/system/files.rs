@@ -200,6 +200,7 @@ impl<'de> Deserialize<'de> for FileVariant {
     }
 }
 
+/// Validate selector combinations and destination syntax before selecting a variant.
 fn validate_file_variants(
     target: &str,
     source: Option<&str>,
@@ -711,6 +712,7 @@ pub(crate) fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileReque
     files_from_config_files_with_tracking_roots(config_files, None)
 }
 
+/// Resolve deployment overrides while limiting history enrollment to trusted roots.
 fn files_from_config_files_with_tracking_roots(
     config_files: &ConfigMap,
     tracking_roots: Option<&[PathBuf]>,
@@ -794,6 +796,7 @@ fn files_from_config_files_with_tracking_roots(
     merged.into_values().collect()
 }
 
+/// Parse a whole-file declaration and reject unsupported encryption combinations.
 fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
     if value.as_table().is_some_and(|t| {
         t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
@@ -854,6 +857,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
     }
 }
 
+/// Resolve one declaration, merging explicit tracking policies into earlier layers.
 fn merge_file_entry(
     target_raw: String,
     entry: FileTomlEntry,
@@ -1083,6 +1087,7 @@ fn merge_file_entry(
     }
 }
 
+/// Resolve the default deployment mode, warning and using symlinks for unsupported values.
 pub(crate) fn default_mode() -> FileMode {
     let settings = Settings::get();
     let mode = settings.dotfiles.default_mode.as_str();
