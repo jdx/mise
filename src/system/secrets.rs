@@ -159,13 +159,14 @@ impl SecretValues {
         input: &str,
         base: &Path,
         target: &Path,
+        config_path: &Path,
     ) -> Result<String> {
-        self.render_inner(Some(config), input, base, target)
+        self.render_inner(Some((config, config_path)), input, base, target)
     }
 
     fn render_inner(
         &self,
-        config: Option<&Config>,
+        config: Option<(&Config, &Path)>,
         input: &str,
         base: &Path,
         target: &Path,
@@ -213,6 +214,15 @@ impl SecretValues {
             },
         );
         let mut context = BASE_CONTEXT.clone();
+        // Independently selected bootstrap roots keep their legacy template
+        // context until scoped composition and execution semantics are defined.
+        if let Some((config, config_path)) = config
+            && !config
+                .selected_bootstrap_config_maps()
+                .any(|(_, files)| files.contains_key(config_path))
+        {
+            context.insert("vars", &config.vars);
+        }
         context.insert("config_root", base);
         context.insert("target", target);
         let rendered = render_str_v2(&mut tera, input, &context);
@@ -220,7 +230,7 @@ impl SecretValues {
             .resolution
             .lock()
             .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?;
-        if let Some(config) = config {
+        if let Some((config, _)) = config {
             config.add_redactions_excluding(
                 resolution.redaction_env.keys().cloned(),
                 &resolution.redaction_env,

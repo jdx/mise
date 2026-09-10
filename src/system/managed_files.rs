@@ -562,7 +562,7 @@ impl ManagedFileRequest {
         if config.template {
             let rendered = content
                 .as_deref()
-                .map(|content| secrets.render(root_config, content, base, &path))
+                .map(|content| secrets.render(root_config, content, base, &path, &origin.config))
                 .transpose()
                 .wrap_err_with(|| {
                     format!(

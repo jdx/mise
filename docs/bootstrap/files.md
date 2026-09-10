@@ -46,7 +46,9 @@ an empty directory; recursive destruction still requires an explicit
 
 Set `template = true` to render file content with mise's template engine. This
 is explicit so literal <span v-pre>`{{ ... }}`</span> content remains untouched
-by default. A template can consume a declared
+by default. Templates can use configured `vars`, the declaring configuration's
+directory as <span v-pre>`{{ config_root }}`</span>, and the destination as
+<span v-pre>`{{ target }}`</span>. A template can consume a declared
 [bootstrap secret input](/bootstrap/secrets.html) with
 <span v-pre>`{{ secret(name="logical_name") }}`</span>. Secret values are never
 included in plans, dry-run descriptions, status output, or privileged helper
