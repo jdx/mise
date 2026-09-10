@@ -192,6 +192,10 @@ impl<'a> HttpOptions<'a> {
         self.values.platform_string("bin_path")
     }
 
+    fn shared_extraction(&self) -> bool {
+        self.values.bool("shared_extraction")
+    }
+
     fn windows_script_interpreter(&self) -> Option<String> {
         self.values.platform_string("windows_script_interpreter")
     }
@@ -275,7 +279,7 @@ impl HttpBackend {
     // Cache path helpers
     // -------------------------------------------------------------------------
 
-    /// Get the shared extraction cache used by normal user installs.
+    /// Get the extraction cache used by installs opting into shared extraction.
     fn tarballs_dir() -> PathBuf {
         dirs::DATA.join(HTTP_TARBALLS_DIR)
     }
@@ -286,8 +290,7 @@ impl HttpBackend {
     }
 
     /// Remove an install entry without following an existing symlink. This is
-    /// needed when migrating a system/shared install created by an older mise
-    /// version from a cache symlink to a real directory.
+    /// needed when migrating an install from a cache symlink to a real directory.
     fn remove_install_path(path: &Path) -> Result<()> {
         if path
             .symlink_metadata()
@@ -555,9 +558,9 @@ impl HttpBackend {
         Ok(extraction_type)
     }
 
-    /// Extract directly into an explicit system/shared/install-into destination.
+    /// Extract directly into the installation's own directory.
     /// The temporary directory lives next to the destination so the final rename
-    /// is atomic and the resulting installation has no dependency on user data.
+    /// is atomic and the installation does not depend on shared extraction storage.
     fn extract_to_install_path(
         &self,
         tv: &ToolVersion,
@@ -1261,7 +1264,9 @@ impl Backend for HttpBackend {
         let cache_plan =
             self.cache_plan(&file_path, download.effective_filename.as_deref(), &opts)?;
         ctx.pr.next_operation();
-        if tv.install_path_is_explicit {
+        // Explicit destinations must remain independent of the user's data dir,
+        // even when the tool opts into sharing normal user installations.
+        if tv.install_path_is_explicit || !opts.shared_extraction() {
             ctx.pr.set_message("extracting to install path".into());
             self.extract_to_install_path(
                 &tv,
@@ -1592,12 +1597,7 @@ mod tests {
     }
 
     #[test]
-    fn primary_install_keeps_shared_data_cache() {
-        let temp = tempfile::tempdir().unwrap();
-        let primary_tool_dir = temp.path().join("user/installs/http-absolute-version");
-        let mut tv = http_test_tv_with_installs("1.0.0", Some(primary_tool_dir.clone()));
-        tv.install_path = Some(primary_tool_dir.join("1.0.0"));
-
+    fn shared_extractions_stay_in_data_dir() {
         assert_eq!(
             HttpBackend::tarballs_dir(),
             dirs::DATA.join(HTTP_TARBALLS_DIR)

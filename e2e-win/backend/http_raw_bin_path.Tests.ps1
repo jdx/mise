@@ -1,12 +1,10 @@
 Describe 'backend_http_raw_bin_path' {
-    # A raw binary declared with `bin_path` is the one shape of `http:` install
+    # A raw binary opting into shared extraction with `bin_path` is the shape
     # that `create_install_symlink` links file-to-file. On Windows that used to
     # go through `junction::create`, which builds a *directory* reparse point:
     # it succeeds, and leaves a link that cannot be resolved.
     #
-    # `http_binary_clean.Tests.ps1` covers the same binary without `bin_path`,
-    # which takes the other branch and links the install directory instead - so
-    # the broken combination was the one thing untested here.
+    # `http_binary_clean.Tests.ps1` covers the default independent installation.
     #
     # `bin` is set so the installed filename is decided outright rather than by
     # the name-cleaning heuristics, which keeps a failure here pointing at the
@@ -26,7 +24,7 @@ Describe 'backend_http_raw_bin_path' {
 
         @"
 [tools]
-"http:docker-compose-binpath" = { version = "2.29.1", url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-windows-x86_64.exe", bin = "docker-compose.exe", bin_path = "bin" }
+"http:docker-compose-binpath" = { version = "2.29.1", url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-windows-x86_64.exe", bin = "docker-compose.exe", bin_path = "bin", shared_extraction = true }
 "@ | Set-Content -Path (Join-Path $script:TestRoot "mise.toml")
     }
 

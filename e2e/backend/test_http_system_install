@@ -65,6 +65,7 @@ export MISE_SHARED_INSTALL_DIRS="$SHARED_INSTALLS"
 cat >mise.toml <<EOF
 [tools."http:system-archive"]
 version = "1.0.0"
+shared_extraction = true
 url = "http://127.0.0.1:$PORT/system-archive.tar.gz"
 bin_path = "archive/bin"
 EOF
@@ -78,7 +79,7 @@ assert "test ! -e '$USER_INSTALLS/http-system-archive/1.0.0' && test ! -L '$USER
 assert_contains "mise x -- system-archive" system-archive-ok
 assert "mise ls --json http:system-archive | jq -r '.[0].install_path'" "$SYSTEM_ARCHIVE"
 
-# Explicit destinations contain the real installation and leave no hidden cache.
+# Explicit destinations ignore shared_extraction and contain the real installation.
 assert "test ! -e '$SYSTEM_INSTALLS/http-system-archive/.http-tarballs' && echo missing" missing
 rm -rf "$MISE_DATA_DIR/http-tarballs"
 assert_contains "mise x -- system-archive" system-archive-ok
@@ -86,6 +87,7 @@ assert_contains "mise x -- system-archive" system-archive-ok
 cat >mise.toml <<EOF
 [tools."http:system-raw"]
 version = "1.0.0"
+shared_extraction = true
 url = "http://127.0.0.1:$PORT/system-raw"
 bin = "system-raw"
 bin_path = "bin"
@@ -100,6 +102,7 @@ assert_contains "mise x -- system-raw" system-raw-ok
 cat >mise.toml <<EOF
 [tools."http:shared-archive"]
 version = "1.0.0"
+shared_extraction = true
 url = "http://127.0.0.1:$PORT/shared-archive.tar.gz"
 bin_path = "shared-archive/bin"
 EOF
@@ -134,6 +137,7 @@ assert_contains "'$RELATIVE_SHARED/http-shared-archive/1.0.0/shared-archive/bin/
 cat >mise.toml <<EOF
 [tools."http:system-latest"]
 version = "latest"
+shared_extraction = true
 url = "http://127.0.0.1:$PORT/system-archive.tar.gz"
 version_list_url = "http://127.0.0.1:$PORT/versions.txt"
 bin_path = "archive/bin"
@@ -154,12 +158,12 @@ assert_contains "'$SYSTEM_LATEST/archive/bin/system-archive'" system-archive-ok
 # Install the same tool normally first and create a fuzzy runtime alias. Exact
 # install-into binary discovery must not remap through this existing install.
 mise install \
-  "http:install-into[url=http://127.0.0.1:$PORT/system-archive.tar.gz,bin_path=archive/bin,version_list_url=http://127.0.0.1:$PORT/exact-versions.txt]@1.0.0"
+  "http:install-into[shared_extraction=true,url=http://127.0.0.1:$PORT/system-archive.tar.gz,bin_path=archive/bin,version_list_url=http://127.0.0.1:$PORT/exact-versions.txt]@1.0.0"
 
 # install-into is also self-contained and does not link into the user's cache.
 INSTALL_INTO="$HOME/http-install-into"
 mise install-into \
-  "http:install-into[url=http://127.0.0.1:$PORT/install-into-exact.tar.gz,bin_path=install-into-exact/bin,version_list_url=http://127.0.0.1:$PORT/exact-versions.txt]@1" \
+  "http:install-into[shared_extraction=true,url=http://127.0.0.1:$PORT/install-into-exact.tar.gz,bin_path=install-into-exact/bin,version_list_url=http://127.0.0.1:$PORT/exact-versions.txt]@1" \
   "$INSTALL_INTO"
 assert_directory_exists "$INSTALL_INTO"
 assert "test ! -L '$INSTALL_INTO' && echo directory" directory

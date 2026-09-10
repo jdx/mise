@@ -8,8 +8,8 @@ set -euo pipefail
 # so the "clean up any stale temp directory" check before it can never match what
 # an earlier run left, and before the fix nothing removed one on the way out of a
 # failure. Every failed extraction leaked a hash-named directory into
-# `http-tarballs` permanently. `mise prune` cannot reclaim them either — it skips
-# `.tmp-` names so it cannot destroy an extraction in flight.
+# `http-tarballs` permanently. Shared extraction is opt-in and these entries
+# are not automatically reclaimed.
 
 FIXTURES="$TMPDIR/http-failed-extraction-fixtures"
 PORT_FILE="$TMPDIR/http-failed-extraction-port"
@@ -58,6 +58,7 @@ leftover_temps() {
 cat >mise.toml <<EOF
 [tools."http:broken"]
 version = "1.0.0"
+shared_extraction = true
 url = "http://127.0.0.1:$PORT/broken.tar.gz"
 bin_path = "bin"
 EOF
@@ -83,6 +84,7 @@ assert "test '$(leftover_temps "$SHARED_INSTALLS" '.mise-tmp-*')' = 0"
 cat >mise.toml <<EOF
 [tools."http:good"]
 version = "1.0.0"
+shared_extraction = true
 url = "http://127.0.0.1:$PORT/good.tar.gz"
 bin_path = "good/bin"
 EOF
