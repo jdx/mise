@@ -467,6 +467,17 @@ outputs = ["target/debug/mycli"]
 Running the above executes `cargo build` only if `mise.toml`, `Cargo.toml`, or any ".rs" file in the `src` directory
 has changed since the last build.
 
+Both `sources` and `outputs` can use parsed [usage](#usage) arguments and flags. mise resolves these
+templates separately for each task invocation before checking freshness or the task cache:
+
+```mise-toml
+[tasks.compile]
+usage = 'arg "<target>"'
+run = "compile {{usage.target}} --output dist/{{usage.target}}"
+sources = ["src/{{usage.target}}/**"]
+outputs = ["dist/{{usage.target}}"]
+```
+
 Relative entries are resolved from the task directory (the task's `dir`, or the project root when it
 has none) and may use `..` to reach files above it, such as a `node_modules` directory shared at the
 root of a monorepo:

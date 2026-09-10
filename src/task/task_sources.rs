@@ -13,12 +13,11 @@ pub(crate) enum TaskOutputs {
     Auto,
 }
 
-/// Stores raw (pre-render) output templates and the original env context so they
-/// can be re-rendered when dependency env overrides are applied after initial rendering.
+/// Stores raw (pre-render) output templates so they can be re-rendered after
+/// dependency env overrides and usage arguments are available.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RawOutputTemplates {
     pub templates: Option<Vec<String>>,
-    pub original_env: Option<std::collections::BTreeMap<String, String>>,
 }
 
 impl Default for TaskOutputs {
@@ -61,7 +60,6 @@ impl TaskOutputs {
         match self {
             TaskOutputs::Files(files) => RawOutputTemplates {
                 templates: Some(files.clone()),
-                original_env: None,
             },
             TaskOutputs::NoFiles | TaskOutputs::Auto => RawOutputTemplates::default(),
         }
@@ -84,21 +82,20 @@ impl TaskOutputs {
         &mut self,
         tera: &mut TeraEngine,
         ctx: &tera::Context,
+        defer_usage: bool,
     ) -> eyre::Result<RawOutputTemplates> {
         match self {
             TaskOutputs::Files(files) => {
                 let raw = files.clone();
-                let original_env = ctx
-                    .get("env")
-                    .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok());
                 for file in files.iter_mut() {
-                    if contains_template_syntax(file) {
+                    if contains_template_syntax(file)
+                        && !(defer_usage && super::tera_template_has_usage_ref(file))
+                    {
                         *file = render_str(tera, file, ctx)?;
                     }
                 }
                 Ok(RawOutputTemplates {
                     templates: Some(raw),
-                    original_env,
                 })
             }
             TaskOutputs::NoFiles | TaskOutputs::Auto => Ok(RawOutputTemplates::default()),
@@ -109,12 +106,21 @@ impl TaskOutputs {
     /// tera context. Used after dependency env overrides are applied.
     pub(crate) fn re_render_with_env(
         &mut self,
-        raw: &RawOutputTemplates,
+        raw: &mut RawOutputTemplates,
+        path_env: &mut Option<std::collections::BTreeMap<String, String>>,
         env: &indexmap::IndexMap<String, String>,
         config_root: &std::path::Path,
     ) -> eyre::Result<()> {
+        // Keep the dependency-level environment for the later usage render of
+        // both sources and outputs. Sources share this context because the env
+        // override applies to the task invocation as a whole.
+        let mut env_map = path_env.clone().unwrap_or_default();
+        for (k, v) in env {
+            env_map.insert(k.clone(), v.clone());
+        }
+        *path_env = Some(env_map.clone());
         if let TaskOutputs::Files(files) = self
-            && let Some(raw_templates) = raw.templates.as_ref()
+            && let Some(raw_templates) = raw.templates.clone()
         {
             if raw_templates
                 .iter()
@@ -122,17 +128,14 @@ impl TaskOutputs {
             {
                 let mut tera = crate::tera::get_tera(Some(config_root));
                 let mut ctx = tera::Context::new();
-                // Start with original env from initial render, then overlay dependency env
-                let mut env_map = raw.original_env.clone().unwrap_or_default();
-                for (k, v) in env {
-                    env_map.insert(k.clone(), v.clone());
-                }
                 ctx.insert("env", &env_map);
                 ctx.insert("config_root", &config_root.to_string_lossy().to_string());
                 *files = raw_templates
                     .iter()
                     .map(|tmpl| {
-                        if contains_template_syntax(tmpl) {
+                        if contains_template_syntax(tmpl)
+                            && !super::tera_template_has_usage_ref(tmpl)
+                        {
                             render_str(&mut tera, tmpl, &ctx)
                         } else {
                             Ok(tmpl.clone())

@@ -1015,12 +1015,13 @@ impl TaskExecutor {
                         .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
                         .collect();
                     t = t.with_dependency_env(&env_directives);
-                    if let Some(config_root) = &t.config_root {
+                    if let Some(config_root) = t.config_root.clone() {
                         let env_map: IndexMap<String, String> = env.iter().cloned().collect();
                         t.outputs.re_render_with_env(
-                            &t.raw_outputs.clone(),
+                            &mut t.raw_outputs,
+                            &mut t.raw_path_env,
                             &env_map,
-                            config_root,
+                            &config_root,
                         )?;
                     } else {
                         trace!(

@@ -713,6 +713,13 @@ pub(crate) struct Task {
     pub interactive: bool,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub sources: Vec<String>,
+    /// Original unrendered source templates, preserved so they can be
+    /// re-rendered once task usage arguments are available.
+    #[serde(skip)]
+    pub raw_sources: Option<Vec<String>>,
+    /// Effective environment for deferred source/output path templates.
+    #[serde(skip)]
+    pub(crate) raw_path_env: Option<BTreeMap<String, String>>,
     #[serde(default)]
     pub watch: Option<TaskWatchOptions>,
     #[serde(default)]
@@ -1715,7 +1722,7 @@ impl Task {
         let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
         let tasks = build_task_ref_map(all_tasks.iter());
         // Skip deps with unresolved {{usage.*}} references — they'll be resolved
-        // later when render_depends_with_usage() is called with actual arg values.
+        // later when render_runtime_templates_with_usage() is called with actual arg values.
         let depends = self
             .depends
             .iter()
@@ -2573,7 +2580,7 @@ impl Task {
         self.overlay_vars
             .extend(other.vars.0.into_iter().map(|d| (d, overlay_src.clone())));
         // Keep the *_raw (pre-render) snapshots in sync with the live deps
-        // so `render_depends_with_usage` re-renders the merged set rather
+        // so `render_runtime_templates_with_usage` re-renders the merged set rather
         // than silently dropping overlay deps. Prefer the overlay's raw
         // (unrendered) templates so `{{usage.*}}` refs survive re-rendering;
         // fall back to the rendered form if raw wasn't captured.
@@ -2626,21 +2633,32 @@ impl Task {
         if other.output.is_some() {
             self.output = other.output;
         }
+        let other_raw_sources = other
+            .raw_sources
+            .clone()
+            .unwrap_or_else(|| other.sources.clone());
+        self.raw_sources
+            .get_or_insert_with(|| self.sources.clone())
+            .extend(other_raw_sources);
         self.sources.extend(other.sources);
+        // This is a complete ambient snapshot, not an overlay delta. Keep the
+        // file task's environment when it has one so path rendering matches
+        // command execution; use the TOML task snapshot only as a fallback.
+        if self.raw_path_env.is_none() {
+            self.raw_path_env = other.raw_path_env;
+        }
         if other.watch.is_some() {
             self.watch = other.watch;
         }
         if !other.outputs.is_empty() {
             self.outputs = other.outputs;
+            self.raw_outputs = other.raw_outputs;
         }
         if other.cache.is_some() {
             self.cache = other.cache;
         }
         if other.rust_cache.is_some() {
             self.rust_cache = other.rust_cache;
-        }
-        if other.raw_outputs.templates.is_some() {
-            self.raw_outputs = other.raw_outputs;
         }
         if other.shell.is_some() {
             self.shell = other.shell;
@@ -2715,6 +2733,7 @@ impl Task {
         if !self.sources.is_empty() && self.outputs.is_empty() {
             self.outputs = TaskOutputs::Auto;
         }
+        self.raw_sources = Some(self.sources.clone());
         self.raw_outputs = self.outputs.raw_templates_without_env();
         // Save unrendered dependency templates so they can be re-rendered later
         // with parent task args available (for passing args to dependencies).
@@ -2745,6 +2764,10 @@ impl Task {
 
         let mut tera = get_tera(Some(config_root));
         let tera_ctx = self.tera_ctx(config).await?;
+        self.store_raw_render_inputs();
+        self.raw_path_env = tera_ctx
+            .get("env")
+            .and_then(|value| serde::Deserialize::deserialize(value.clone()).ok());
         for a in &mut self.aliases {
             if contains_template_syntax(a) {
                 *a = render_str(&mut tera, a, &tera_ctx)?;
@@ -2755,14 +2778,13 @@ impl Task {
             self.description = render_str(&mut tera, &self.description, &tera_ctx)?;
         }
         for s in &mut self.sources {
-            if contains_template_syntax(s) {
+            if contains_template_syntax(s) && !tera_template_has_usage_ref(s) {
                 *s = render_str(&mut tera, s, &tera_ctx)?;
             }
         }
-        self.store_raw_render_inputs();
-        self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
+        self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx, true)?;
         // Render deps that don't contain {{usage.*}} references. Deps with usage
-        // references are deferred until render_depends_with_usage() is called with
+        // references are deferred until render_runtime_templates_with_usage() is called with
         // the actual arg values from CLI or parent dependency.
         render_task_deps(&mut self.depends, &mut tera, &tera_ctx, true)?;
         render_task_deps(&mut self.depends_post, &mut tera, &tera_ctx, true)?;
@@ -2808,10 +2830,28 @@ impl Task {
         Ok(())
     }
 
-    /// Re-render dependency templates with usage args/flags from the parent task.
-    /// This allows `depends = ["child {{usage.app}}"]` to resolve when the parent
-    /// task receives `--app=foo` from the CLI.
-    pub(crate) async fn render_depends_with_usage(
+    /// Re-render runtime templates with usage args/flags from this task invocation.
+    /// Sources and outputs must be resolved before freshness/cache checks, while
+    /// dependencies must be resolved before constructing the execution graph.
+    pub(crate) fn has_usage_runtime_templates(&self) -> bool {
+        let has_usage_deps = |raw: &Option<Vec<TaskDep>>| {
+            raw.as_ref()
+                .is_some_and(|deps| deps.iter().any(dep_has_usage_ref))
+        };
+        self.raw_sources.as_ref().is_some_and(|sources| {
+            sources
+                .iter()
+                .any(|source| tera_template_has_usage_ref(source))
+        }) || self.raw_outputs.templates.as_ref().is_some_and(|outputs| {
+            outputs
+                .iter()
+                .any(|output| tera_template_has_usage_ref(output))
+        }) || has_usage_deps(&self.depends_raw)
+            || has_usage_deps(&self.depends_post_raw)
+            || has_usage_deps(&self.wait_for_raw)
+    }
+
+    pub(crate) async fn render_runtime_templates_with_usage(
         &mut self,
         config: &Arc<Config>,
         usage_values: &IndexMap<String, tera::Value>,
@@ -2819,22 +2859,47 @@ impl Task {
         if usage_values.is_empty() {
             return Ok(());
         }
-        let has_usage_deps = |raw: &Option<Vec<_>>| {
-            raw.as_ref()
-                .is_some_and(|deps| deps.iter().any(dep_has_usage_ref))
-        };
-        if !has_usage_deps(&self.depends_raw)
-            && !has_usage_deps(&self.depends_post_raw)
-            && !has_usage_deps(&self.wait_for_raw)
-        {
+        let has_usage_sources = self.raw_sources.as_ref().is_some_and(|sources| {
+            sources
+                .iter()
+                .any(|source| tera_template_has_usage_ref(source))
+        });
+        let has_usage_outputs = self.raw_outputs.templates.as_ref().is_some_and(|outputs| {
+            outputs
+                .iter()
+                .any(|output| tera_template_has_usage_ref(output))
+        });
+        if !self.has_usage_runtime_templates() {
             return Ok(());
         }
         let config_root = self.config_root.clone().unwrap_or_default();
         let mut tera = get_tera(Some(&config_root));
         let mut tera_ctx = self.tera_ctx(config).await?;
+        if (has_usage_sources || has_usage_outputs)
+            && let Some(env) = &self.raw_path_env
+        {
+            tera_ctx.insert("env", env);
+        }
         // Insert usage values into the tera context so templates like
         // {{usage.app}} resolve to the actual CLI arg value.
         tera_ctx.insert("usage", usage_values);
+
+        if has_usage_sources && let Some(raw) = &self.raw_sources {
+            self.sources = raw
+                .iter()
+                .map(|source| {
+                    if contains_template_syntax(source) {
+                        render_str(&mut tera, source, &tera_ctx)
+                    } else {
+                        Ok(source.clone())
+                    }
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+        }
+        if has_usage_outputs && let Some(raw) = &self.raw_outputs.templates {
+            self.outputs = TaskOutputs::Files(raw.clone());
+            self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx, false)?;
+        }
 
         // Re-render from raw templates (not from already-rendered values).
         // Only restore from raw if the field is non-empty — skip_deps clears
@@ -3146,8 +3211,12 @@ fn match_tasks_with_context(
                 t = t.with_dependency_env(&env_directives);
                 if let Some(config_root) = &t.config_root {
                     let config_root = config_root.clone();
-                    t.outputs
-                        .re_render_with_env(&t.raw_outputs.clone(), &td.env, &config_root)?;
+                    t.outputs.re_render_with_env(
+                        &mut t.raw_outputs,
+                        &mut t.raw_path_env,
+                        &td.env,
+                        &config_root,
+                    )?;
                 }
             }
             Ok(t)
@@ -3218,6 +3287,8 @@ impl Default for Task {
             trailing_args: vec![],
             interactive: false,
             sources: vec![],
+            raw_sources: None,
+            raw_path_env: None,
             watch: None,
             outputs: Default::default(),
             cache: Default::default(),
@@ -3609,7 +3680,7 @@ fn render_task_deps(
     Ok(())
 }
 
-fn tera_template_has_usage_ref(s: &str) -> bool {
+pub(crate) fn tera_template_has_usage_ref(s: &str) -> bool {
     const TAGS: [(&str, &str); 2] = [("{{", "}}"), ("{%", "%}")];
     for (open, close) in TAGS {
         let mut rest = s;
@@ -3796,6 +3867,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
 
+    use crate::task::task_sources::{RawOutputTemplates, TaskOutputs};
     use crate::task::workspace;
     use crate::task::{RunEntry, Task, TaskRustCacheConfig, TaskWatchOptions};
     use crate::{config::Config, dirs};
@@ -3864,6 +3936,74 @@ mod tests {
         assert_eq!(
             file_task.config_sources(),
             vec![Path::new(".mise/tasks/build"), Path::new("mise.toml")]
+        );
+    }
+
+    #[test]
+    fn test_merge_toml_overlay_preserves_raw_paths() {
+        let base_sources = vec!["base.txt".to_string(), "{{usage.name}}.txt".to_string()];
+        let base_outputs = vec!["{{usage.name}}.out".to_string()];
+        let mut file_task = Task {
+            sources: base_sources.clone(),
+            raw_sources: Some(base_sources.clone()),
+            raw_path_env: Some(BTreeMap::from([
+                ("BASE".to_string(), "base".to_string()),
+                ("SHARED".to_string(), "base".to_string()),
+            ])),
+            outputs: TaskOutputs::Files(base_outputs.clone()),
+            raw_outputs: RawOutputTemplates {
+                templates: Some(base_outputs.clone()),
+            },
+            ..Default::default()
+        };
+        let metadata_only_overlay = Task {
+            raw_sources: Some(vec![]),
+            raw_path_env: Some(BTreeMap::from([
+                ("OVERLAY".to_string(), "overlay".to_string()),
+                ("SHARED".to_string(), "overlay".to_string()),
+            ])),
+            raw_outputs: RawOutputTemplates {
+                templates: Some(vec![]),
+            },
+            ..Default::default()
+        };
+
+        file_task.merge_toml_overlay(metadata_only_overlay);
+
+        assert_eq!(file_task.sources, base_sources);
+        assert_eq!(file_task.raw_sources, Some(base_sources));
+        assert_eq!(file_task.outputs, TaskOutputs::Files(base_outputs.clone()));
+        assert_eq!(file_task.raw_outputs.templates, Some(base_outputs));
+        assert_eq!(
+            file_task.raw_path_env,
+            Some(BTreeMap::from([
+                ("BASE".to_string(), "base".to_string()),
+                ("SHARED".to_string(), "base".to_string()),
+            ]))
+        );
+
+        let overlay_path_env = BTreeMap::from([("OVERLAY".to_string(), "overlay".to_string())]);
+        let mut task_without_path_env = Task::default();
+        task_without_path_env.merge_toml_overlay(Task {
+            raw_path_env: Some(overlay_path_env.clone()),
+            ..Default::default()
+        });
+        assert_eq!(task_without_path_env.raw_path_env, Some(overlay_path_env));
+
+        let source_overlay = Task {
+            sources: vec!["overlay-{{usage.name}}.txt".to_string()],
+            raw_sources: Some(vec!["overlay-{{usage.name}}.txt".to_string()]),
+            ..Default::default()
+        };
+        file_task.merge_toml_overlay(source_overlay);
+
+        assert_eq!(
+            file_task.raw_sources,
+            Some(vec![
+                "base.txt".to_string(),
+                "{{usage.name}}.txt".to_string(),
+                "overlay-{{usage.name}}.txt".to_string(),
+            ])
         );
     }
 
