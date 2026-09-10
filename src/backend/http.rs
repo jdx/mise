@@ -427,8 +427,8 @@ impl HttpBackend {
     // -------------------------------------------------------------------------
 
     /// Determine the destination filename for a raw file or compressed binary.
-    /// `bin`/`rename_exe` values are joined onto the extraction directory, so a
-    /// path in either (`../evil`, `a/b`) would escape it and is rejected.
+    /// `bin` accepts safe relative paths; `rename_exe` must be a plain filename.
+    /// Both reject parent traversal and absolute paths outside the extraction directory.
     fn dest_filename(
         &self,
         file_path: &Path,
@@ -464,33 +464,22 @@ impl HttpBackend {
     // Extraction type detection
     // -------------------------------------------------------------------------
 
-    /// Detect extraction type and filename from an existing cache directory.
+    /// Reconstruct the extraction result from the options included in the cache key.
     fn extraction_type_from_cache(
         &self,
-        cache_dir: &Path,
-        cache_key: &str,
+        file_path: &Path,
         file_info: &FileInfo,
-    ) -> ExtractionType {
-        // For archives, we don't need to detect the filename
+        opts: &HttpOptions<'_>,
+    ) -> Result<ExtractionType> {
         if !file_info.is_compressed_binary && file_info.format != file::ExtractionFormat::Raw {
-            return ExtractionType::Archive;
+            return Ok(ExtractionType::Archive);
         }
 
-        // For raw files, find the actual filename in the cache directory
-        let cache_path = Self::cache_path(cache_dir, cache_key);
-        for entry in xx::file::ls(&cache_path).unwrap_or_default() {
-            if let Some(name) = entry.file_name().map(|n| n.to_string_lossy().to_string()) {
-                // Skip metadata file
-                if name != METADATA_FILE {
-                    return ExtractionType::RawFile { filename: name };
-                }
-            }
-        }
-
-        // Fallback: shouldn't happen if cache is valid, but use a sensible default
-        ExtractionType::RawFile {
-            filename: self.ba.tool_name.clone(),
-        }
+        // The cache key includes this exact filename, including nested paths.
+        // Listing immediate children would mistake a parent directory for the file.
+        Ok(ExtractionType::RawFile {
+            filename: self.dest_filename(file_path, file_info, opts)?,
+        })
     }
 
     // -------------------------------------------------------------------------
@@ -672,6 +661,9 @@ impl HttpBackend {
             pr.set_message(format!("extract {}", file_info.file_name()));
         }
 
+        if let Some(parent) = dest_file.parent() {
+            file::create_dir_all(parent)?;
+        }
         file::copy(file_path, &dest_file)?;
 
         file::make_executable(&dest_file)?;
@@ -847,6 +839,9 @@ impl HttpBackend {
 
             let cached_file = cache_path.join(filename);
             let install_file = dest_dir.join(filename);
+            if let Some(parent) = install_file.parent() {
+                file::create_dir_all(parent)?;
+            }
             // Not `make_symlink`: the target here is a *file*, and on Windows
             // that goes through `junction::create`, which builds a directory
             // reparse point. It succeeds and leaves a link that cannot be
@@ -1287,7 +1282,7 @@ impl Backend for HttpBackend {
                 ctx.pr.set_message("extracting from cache".into());
                 ctx.pr.set_length(1);
                 ctx.pr.set_position(1);
-                self.extraction_type_from_cache(&cache_dir, &cache_plan.key, &cache_plan.file_info)
+                self.extraction_type_from_cache(&file_path, &cache_plan.file_info, &opts)?
             } else {
                 ctx.pr.set_message("extracting to cache".into());
                 self.extract_to_cache(

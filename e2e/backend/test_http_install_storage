@@ -188,3 +188,25 @@ EOF
   assert_contains "'$COPY'" raw-tool-ok
   assert "test '$(readlink "$COPY")' = '$(readlink "$FIRST")/first-name'"
 done
+# Nested bin names must stay file links on both cache misses and cache hits.
+for kind in raw compressed; do
+  artifact=raw-tool
+  if [[ $kind == compressed ]]; then
+    artifact=raw-tool.gz
+  fi
+  cat >mise.toml <<EOF
+[tools."http:nested-$kind"]
+version = "1.0.0"
+url = "http://127.0.0.1:$PORT/$artifact"
+bin = "nested/alpha"
+bin_path = "custom/bin"
+shared_extraction = true
+EOF
+  for attempt in first cached; do
+    echo "Checking $kind nested binary: $attempt install"
+    mise install --force
+    EXECUTABLE="$INSTALLS/http-nested-$kind/1.0.0/custom/bin/nested/alpha"
+    assert "test -L '$EXECUTABLE'"
+    assert_contains "'$EXECUTABLE'" raw-tool-ok
+  done
+done
