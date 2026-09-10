@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M25V4QM888PSBDZGGDVYJRZS",
+  "session_id": "01a07ef8-ff2b-7582-81c8-dff8f36c48a5",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-10T14:21:57.959251Z",
+  "branch": "codex/fix-pwsh-pipeline",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "AGENTS.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "dac98b0395cf",
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-10T14:21:57.957704Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 1522,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1522,
+    "total_lines_changed": 45769,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

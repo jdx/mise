@@ -1,0 +1,16 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M25V4QM888PSBDZGGDVYJRZS",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-pwsh-pipeline",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "AGENTS.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "prompt": ""
+    }
+  ]
+}
