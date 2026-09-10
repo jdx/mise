@@ -47,10 +47,14 @@ pub(crate) fn build_cached_tool_layer(
     let blob = build_layer_from_entries(&entries, target_prefix, owner, Some(relocation))?;
     // Do not publish under the old key if the installation changed while we
     // were building. The next invocation will fingerprint its new contents.
-    let after = collect_sorted_entries(src_dir, false, owner, Some(relocation))?;
-    if fingerprint(&after, target_prefix, owner, relocation)? == key
-        && let Err(err) = write_cached_layer(&record_path, cache_dir, &blob)
-    {
+    let publish = || -> Result<()> {
+        let after = collect_sorted_entries(src_dir, false, owner, Some(relocation))?;
+        if fingerprint(&after, target_prefix, owner, relocation)? == key {
+            write_cached_layer(&record_path, cache_dir, &blob)?;
+        }
+        Ok(())
+    };
+    if let Err(err) = publish() {
         debug!("could not cache OCI tool layer: {err:#}");
     }
     Ok((blob, false))
@@ -126,9 +130,24 @@ fn read_cached_layer(record_path: &Path, cache_dir: &Path) -> Result<Option<Laye
     );
     let digest = format!("sha256:{}", hex_encode(&Sha256::digest(&bytes)));
     eyre::ensure!(digest == record.digest, "cached OCI layer digest mismatch");
+    let mut decoder = flate2::read::GzDecoder::new(bytes.as_slice());
+    let mut hash = Sha256::new();
+    let mut buffer = [0; 64 * 1024];
+    loop {
+        let n = decoder.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        hash.update(&buffer[..n]);
+    }
+    let diff_id = format!("sha256:{}", hex_encode(&hash.finalize()));
+    eyre::ensure!(
+        diff_id == record.diff_id,
+        "cached OCI layer diff ID mismatch"
+    );
     Ok(Some(LayerBlob {
         digest,
-        diff_id: record.diff_id,
+        diff_id,
         size: record.size,
         bytes,
     }))
@@ -246,6 +265,40 @@ mod tests {
         assert!(build().1);
         std::fs::remove_file(blob_path).unwrap();
         assert!(!build().1);
+    }
+
+    #[test]
+    fn corrupt_diff_id_rebuilds_the_cached_layer() {
+        let td = tempfile::tempdir().unwrap();
+        let src = td.path().join("tool");
+        let cache = td.path().join("cache");
+        std::fs::create_dir(&src).unwrap();
+        std::fs::write(src.join("file"), "content").unwrap();
+        let build = || {
+            build_cached_tool_layer(
+                &src,
+                "mise/tool",
+                LayerOwner::default(),
+                &ToolRelocation::default(),
+                &cache,
+            )
+            .unwrap()
+        };
+        let (first, _) = build();
+        let record_path = std::fs::read_dir(&cache)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.extension().is_some_and(|ext| ext == "json"))
+            .unwrap();
+        let mut record: CachedLayer =
+            serde_json::from_slice(&std::fs::read(&record_path).unwrap()).unwrap();
+        record.diff_id = format!("sha256:{}", "0".repeat(64));
+        std::fs::write(record_path, serde_json::to_vec(&record).unwrap()).unwrap();
+        let (rebuilt, hit) = build();
+        assert!(!hit);
+        assert_eq!(rebuilt.diff_id, first.diff_id);
+        assert_eq!(rebuilt.bytes, first.bytes);
+        assert!(build().1);
     }
 
     #[test]

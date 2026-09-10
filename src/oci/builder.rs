@@ -335,20 +335,6 @@ impl Builder {
                 n = built_tool_count
             );
         }
-        for (i, (_, tv)) in versions.iter().enumerate() {
-            if tool_reuse[i].is_some() {
-                continue; // layer comes from the cache image; no install needed
-            }
-            let install_path = tv.install_path();
-            if !install_path.is_dir() {
-                bail!(
-                    "{} install path does not exist: {}. Run `mise install` first.",
-                    tv.style(),
-                    install_path.display()
-                );
-            }
-        }
-
         // --- 3. System package layer (optional) ---
         let system_packages_layer = packages::build_system_packages_layer(
             &layout,
@@ -383,6 +369,21 @@ impl Builder {
                 );
                 ToolLayer::Reused(reused.clone())
             } else {
+                // Coordinate with install, link, and uninstall before inspecting
+                // the source. Hold through fingerprinting, packaging, and cache
+                // publication so a same-version reinstall cannot poison a key.
+                let _install_lock = crate::toolset::install_state::lock_tool_version(
+                    &tv.ba().short,
+                    &tv.tv_pathname(),
+                )?;
+                let install_path = tv.install_path();
+                if !install_path.is_dir() {
+                    bail!(
+                        "{} install path does not exist: {}. Run `mise install` first.",
+                        tv.style(),
+                        install_path.display()
+                    );
+                }
                 let is_pipx = tv.ba().backend_type() == BackendType::Pipx;
                 // Only pipx layers are expected to link into another tool's
                 // install. Other backends get their own mapping for shebang
