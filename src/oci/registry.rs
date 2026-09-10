@@ -1721,6 +1721,7 @@ mod tests {
     async fn base_layers_stay_remote_only_for_pushes_to_the_same_repository() {
         use sha2::{Digest, Sha256};
 
+        let _config = crate::config::Config::get().await.unwrap();
         let mut server = mockito::Server::new_async().await;
         let reference = format!("{}/tools:base", server.host_with_port());
         let destination = format!("{}/tools:dev", server.host_with_port());
@@ -1795,6 +1796,7 @@ mod tests {
 
     #[tokio::test]
     async fn sparse_push_downloads_missing_bytes_when_head_is_unsupported() {
+        let _config = crate::config::Config::get().await.unwrap();
         let mut server = mockito::Server::new_async().await;
         let td = tempfile::tempdir().unwrap();
         let layout = ImageLayout::init(td.path()).unwrap();
