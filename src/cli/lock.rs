@@ -1844,6 +1844,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn explicit_arm32_lock_platforms_are_validated_and_deduplicated() {
+        let mut cmd = lock_cmd(&[]);
+        cmd.platform = vec![
+            "linux-arm-musl".to_string(),
+            "linux-arm".to_string(),
+            "linux-arm".to_string(),
+        ];
+        let temp = tempfile::tempdir().unwrap();
+        let platforms = cmd
+            .determine_target_platforms(&temp.path().join("mise.lock"))
+            .unwrap();
+        assert_eq!(
+            platforms.iter().map(Platform::to_key).collect::<Vec<_>>(),
+            ["linux-arm", "linux-arm-musl"]
+        );
+        assert!(platforms.iter().all(|platform| platform.arch == "arm"));
+
+        cmd.platform = vec!["linux-arm-invalid".to_string()];
+        assert!(
+            cmd.determine_target_platforms(&temp.path().join("mise.lock"))
+                .is_err()
+        );
+    }
+
     fn lockfile_with_dummy() -> Lockfile {
         let mut lockfile = Lockfile::default();
         lockfile.set_platform_info(
