@@ -94,7 +94,7 @@ impl TaskOutputs {
                     .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok());
                 for file in files.iter_mut() {
                     if contains_template_syntax(file)
-                        && !(defer_usage && super::tera_tag_has_usage_ref(file))
+                        && !(defer_usage && super::tera_template_has_usage_ref(file))
                     {
                         *file = render_str(tera, file, ctx)?;
                     }
@@ -112,30 +112,33 @@ impl TaskOutputs {
     /// tera context. Used after dependency env overrides are applied.
     pub(crate) fn re_render_with_env(
         &mut self,
-        raw: &RawOutputTemplates,
+        raw: &mut RawOutputTemplates,
         env: &indexmap::IndexMap<String, String>,
         config_root: &std::path::Path,
     ) -> eyre::Result<()> {
         if let TaskOutputs::Files(files) = self
-            && let Some(raw_templates) = raw.templates.as_ref()
+            && let Some(raw_templates) = raw.templates.clone()
         {
+            // Preserve dependency-level overrides for the later usage render.
+            let mut env_map = raw.original_env.clone().unwrap_or_default();
+            for (k, v) in env {
+                env_map.insert(k.clone(), v.clone());
+            }
+            raw.original_env = Some(env_map.clone());
             if raw_templates
                 .iter()
                 .any(|tmpl| contains_template_syntax(tmpl))
             {
                 let mut tera = crate::tera::get_tera(Some(config_root));
                 let mut ctx = tera::Context::new();
-                // Start with original env from initial render, then overlay dependency env
-                let mut env_map = raw.original_env.clone().unwrap_or_default();
-                for (k, v) in env {
-                    env_map.insert(k.clone(), v.clone());
-                }
                 ctx.insert("env", &env_map);
                 ctx.insert("config_root", &config_root.to_string_lossy().to_string());
                 *files = raw_templates
                     .iter()
                     .map(|tmpl| {
-                        if contains_template_syntax(tmpl) && !super::tera_tag_has_usage_ref(tmpl) {
+                        if contains_template_syntax(tmpl)
+                            && !super::tera_template_has_usage_ref(tmpl)
+                        {
                             render_str(&mut tera, tmpl, &ctx)
                         } else {
                             Ok(tmpl.clone())

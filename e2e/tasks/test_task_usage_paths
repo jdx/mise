@@ -42,19 +42,38 @@ two
 one
 three"
 
-# Environment and usage values can coexist in one output template.
+# Environment and usage values can coexist in one output template. A
+# dependency-level env value must override the task's initial rendering env.
 cat <<'EOF' >mise.toml
-[env]
-OUT_DIR = "dist"
-
 [tasks.child]
 usage = 'arg "<name>"'
+env = { OUT_DIR = "default" }
+sources = ["{{env.OUT_DIR}}/{{usage.name}}.in"]
 outputs = ["{{env.OUT_DIR}}/{{usage.name}}.txt"]
-run = 'mkdir -p "$OUT_DIR"; touch "$OUT_DIR/{{usage.name}}.txt"'
+run = 'cat "$OUT_DIR/{{usage.name}}.in" > "$OUT_DIR/{{usage.name}}.txt"'
 
 [tasks.parent]
-depends = [{ task = "child", args = ["artifact"] }]
+depends = [{ task = "child", args = ["artifact"], env = { OUT_DIR = "dist" } }]
 EOF
 
+mkdir -p dist
+echo content >dist/artifact.in
 mise run parent
 assert "test -f dist/artifact.txt && echo present" "present"
+assert "test ! -e default/artifact.txt && echo absent" "absent"
+
+# Literal text outside a Tera tag must not be mistaken for a usage reference.
+cat <<'EOF' >mise.toml
+[env]
+DOCS_DIR = "docs"
+
+[tasks.docs]
+sources = ["docs-input.txt"]
+outputs = ["{{env.DOCS_DIR}}/usage.md"]
+run = 'mkdir -p "$DOCS_DIR"; touch "$DOCS_DIR/usage.md"; echo run >> docs-runs.log'
+EOF
+
+touch docs-input.txt
+mise run docs
+mise run docs
+assert "wc -l <docs-runs.log" "1"

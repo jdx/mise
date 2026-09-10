@@ -1013,13 +1013,10 @@ impl TaskExecutor {
                         .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
                         .collect();
                     t = t.with_dependency_env(&env_directives);
-                    if let Some(config_root) = &t.config_root {
+                    if let Some(config_root) = t.config_root.clone() {
                         let env_map: IndexMap<String, String> = env.iter().cloned().collect();
-                        t.outputs.re_render_with_env(
-                            &t.raw_outputs.clone(),
-                            &env_map,
-                            config_root,
-                        )?;
+                        t.outputs
+                            .re_render_with_env(&mut t.raw_outputs, &env_map, &config_root)?;
                     } else {
                         trace!(
                             "re_render_with_env skipped: task {} has no config_root",

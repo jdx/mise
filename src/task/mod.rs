@@ -2630,24 +2630,26 @@ impl Task {
         if other.output.is_some() {
             self.output = other.output;
         }
+        let other_raw_sources = other
+            .raw_sources
+            .clone()
+            .unwrap_or_else(|| other.sources.clone());
+        self.raw_sources
+            .get_or_insert_with(|| self.sources.clone())
+            .extend(other_raw_sources);
         self.sources.extend(other.sources);
         if other.watch.is_some() {
             self.watch = other.watch;
         }
         if !other.outputs.is_empty() {
             self.outputs = other.outputs;
+            self.raw_outputs = other.raw_outputs;
         }
         if other.cache.is_some() {
             self.cache = other.cache;
         }
         if other.rust_cache.is_some() {
             self.rust_cache = other.rust_cache;
-        }
-        if other.raw_outputs.templates.is_some() {
-            self.raw_outputs = other.raw_outputs;
-        }
-        if other.raw_sources.is_some() {
-            self.raw_sources = other.raw_sources;
         }
         if other.shell.is_some() {
             self.shell = other.shell;
@@ -2764,7 +2766,7 @@ impl Task {
             self.description = render_str(&mut tera, &self.description, &tera_ctx)?;
         }
         for s in &mut self.sources {
-            if contains_template_syntax(s) && !tera_tag_has_usage_ref(s) {
+            if contains_template_syntax(s) && !tera_template_has_usage_ref(s) {
                 *s = render_str(&mut tera, s, &tera_ctx)?;
             }
         }
@@ -2824,15 +2826,15 @@ impl Task {
             raw.as_ref()
                 .is_some_and(|deps| deps.iter().any(dep_has_usage_ref))
         };
-        self.raw_sources
-            .as_ref()
-            .is_some_and(|sources| sources.iter().any(|source| tera_tag_has_usage_ref(source)))
-            || self
-                .raw_outputs
-                .templates
-                .as_ref()
-                .is_some_and(|outputs| outputs.iter().any(|output| tera_tag_has_usage_ref(output)))
-            || has_usage_deps(&self.depends_raw)
+        self.raw_sources.as_ref().is_some_and(|sources| {
+            sources
+                .iter()
+                .any(|source| tera_template_has_usage_ref(source))
+        }) || self.raw_outputs.templates.as_ref().is_some_and(|outputs| {
+            outputs
+                .iter()
+                .any(|output| tera_template_has_usage_ref(output))
+        }) || has_usage_deps(&self.depends_raw)
             || has_usage_deps(&self.depends_post_raw)
             || has_usage_deps(&self.wait_for_raw)
     }
@@ -2845,21 +2847,25 @@ impl Task {
         if usage_values.is_empty() {
             return Ok(());
         }
-        let has_usage_sources = self
-            .raw_sources
-            .as_ref()
-            .is_some_and(|sources| sources.iter().any(|source| tera_tag_has_usage_ref(source)));
-        let has_usage_outputs = self
-            .raw_outputs
-            .templates
-            .as_ref()
-            .is_some_and(|outputs| outputs.iter().any(|output| tera_tag_has_usage_ref(output)));
+        let has_usage_sources = self.raw_sources.as_ref().is_some_and(|sources| {
+            sources
+                .iter()
+                .any(|source| tera_template_has_usage_ref(source))
+        });
+        let has_usage_outputs = self.raw_outputs.templates.as_ref().is_some_and(|outputs| {
+            outputs
+                .iter()
+                .any(|output| tera_template_has_usage_ref(output))
+        });
         if !self.has_usage_runtime_templates() {
             return Ok(());
         }
         let config_root = self.config_root.clone().unwrap_or_default();
         let mut tera = get_tera(Some(&config_root));
         let mut tera_ctx = self.tera_ctx(config).await?;
+        if has_usage_outputs && let Some(env) = &self.raw_outputs.original_env {
+            tera_ctx.insert("env", env);
+        }
         // Insert usage values into the tera context so templates like
         // {{usage.app}} resolve to the actual CLI arg value.
         tera_ctx.insert("usage", usage_values);
@@ -3192,7 +3198,7 @@ fn match_tasks_with_context(
                 if let Some(config_root) = &t.config_root {
                     let config_root = config_root.clone();
                     t.outputs
-                        .re_render_with_env(&t.raw_outputs.clone(), &td.env, &config_root)?;
+                        .re_render_with_env(&mut t.raw_outputs, &td.env, &config_root)?;
                 }
             }
             Ok(t)
@@ -3655,7 +3661,7 @@ fn render_task_deps(
     Ok(())
 }
 
-fn tera_template_has_usage_ref(s: &str) -> bool {
+pub(crate) fn tera_template_has_usage_ref(s: &str) -> bool {
     const TAGS: [(&str, &str); 2] = [("{{", "}}"), ("{%", "%}")];
     for (open, close) in TAGS {
         let mut rest = s;
@@ -3842,6 +3848,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
 
+    use crate::task::task_sources::{RawOutputTemplates, TaskOutputs};
     use crate::task::workspace;
     use crate::task::{RunEntry, Task, TaskRustCacheConfig, TaskWatchOptions};
     use crate::{config::Config, dirs};
@@ -3910,6 +3917,53 @@ mod tests {
         assert_eq!(
             file_task.config_sources(),
             vec![Path::new(".mise/tasks/build"), Path::new("mise.toml")]
+        );
+    }
+
+    #[test]
+    fn test_merge_toml_overlay_preserves_raw_paths() {
+        let base_sources = vec!["base.txt".to_string(), "{{usage.name}}.txt".to_string()];
+        let base_outputs = vec!["{{usage.name}}.out".to_string()];
+        let mut file_task = Task {
+            sources: base_sources.clone(),
+            raw_sources: Some(base_sources.clone()),
+            outputs: TaskOutputs::Files(base_outputs.clone()),
+            raw_outputs: RawOutputTemplates {
+                templates: Some(base_outputs.clone()),
+                original_env: None,
+            },
+            ..Default::default()
+        };
+        let metadata_only_overlay = Task {
+            raw_sources: Some(vec![]),
+            raw_outputs: RawOutputTemplates {
+                templates: Some(vec![]),
+                original_env: None,
+            },
+            ..Default::default()
+        };
+
+        file_task.merge_toml_overlay(metadata_only_overlay);
+
+        assert_eq!(file_task.sources, base_sources);
+        assert_eq!(file_task.raw_sources, Some(base_sources));
+        assert_eq!(file_task.outputs, TaskOutputs::Files(base_outputs.clone()));
+        assert_eq!(file_task.raw_outputs.templates, Some(base_outputs));
+
+        let source_overlay = Task {
+            sources: vec!["overlay-{{usage.name}}.txt".to_string()],
+            raw_sources: Some(vec!["overlay-{{usage.name}}.txt".to_string()]),
+            ..Default::default()
+        };
+        file_task.merge_toml_overlay(source_overlay);
+
+        assert_eq!(
+            file_task.raw_sources,
+            Some(vec![
+                "base.txt".to_string(),
+                "{{usage.name}}.txt".to_string(),
+                "overlay-{{usage.name}}.txt".to_string(),
+            ])
         );
     }
 
