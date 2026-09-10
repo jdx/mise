@@ -1,0 +1,5 @@
+inspect [https://github.com/jdx/mise/discussions/13053](https://github.com/jdx/mise/discussions/13053)
+
+---
+
+make a pr, post a reply
