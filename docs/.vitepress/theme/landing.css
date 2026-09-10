@@ -345,25 +345,79 @@ a:hover > div + .card-link::after {
   padding: 18px 20px;
 }
 
+/* Bootstrap: one declaration fans out to machine resources. */
+.bootstrap-diagram {
+  margin: 0;
+  min-width: 0;
+}
+
+.bootstrap-source,
+.bootstrap-resources > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+}
+
+.bootstrap-source {
+  align-items: center;
+}
+.bootstrap-source > strong {
+  font-family: var(--vp-font-family-mono);
+  font-size: 1.2rem;
+}
+.bootstrap-source > code {
+  margin-top: 10px;
+  padding: 0;
+  background: transparent;
+  font-size: 0.85rem;
+  line-height: 1.8;
+}
+.bootstrap-label,
+.bootstrap-resources span {
+  color: var(--vp-c-text-2);
+  font-size: 0.85rem;
+}
+.bootstrap-connector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px 0;
+  color: var(--vp-c-brand-1);
+}
+.bootstrap-connector > span {
+  font-size: 1.5rem;
+}
+.bootstrap-resources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.bootstrap-resources > div {
+  padding: 16px;
+  overflow-wrap: anywhere;
+}
+.bootstrap-resources strong {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.bootstrap-diagram figcaption {
+  margin-top: 16px;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--vp-c-text-2);
+}
+
 /* 04 · New machine: bootstrap config beside the pitch */
 .landing-machine-grid {
   display: grid;
   grid-template-columns: minmax(360px, 1.1fr) minmax(0, 0.9fr);
   gap: 56px;
   align-items: center;
-}
-
-.landing-config-card {
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 10px;
-  background: var(--vp-c-bg-soft);
-  box-shadow: 0 32px 64px -48px rgba(0, 0, 0, 0.45);
-}
-
-.landing-config-card .card-toml {
-  padding: 18px 0;
 }
 
 .landing-inline-cmd {
@@ -674,11 +728,11 @@ a:hover > div + .card-link::after {
   }
 
   .landing-machine-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  /* pitch first, config second on narrow screens */
-  .landing-machine-grid > .landing-config-card {
+  /* pitch first, diagram second on narrow screens */
+  .landing-machine-grid > .bootstrap-diagram {
     order: 2;
   }
 
