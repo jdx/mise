@@ -12,9 +12,13 @@ description: "Format mise TOML configuration"
 Format mise TOML configuration
 
 Sorts keys and normalizes whitespace using TOML 1.1 syntax, including multiline
-inline tables. By default, formats config files in the current directory;
-`--all` includes every loaded config. Use `--check` in CI or `--stdin` to format
-a supplied document without rewriting a file.
+inline tables. Lists whose order carries no meaning are sorted as well: task
+`sources` and `outputs`, `task_config.global_inputs` and `input_groups`, and
+`redactions`. File pattern lists sort by reach — `@group:` references, then
+globs, then literal paths — and a list is left as written when an entry
+excludes with `!` or carries a comment. By default, formats config files in
+the current directory; `--all` includes every loaded config. Use `--check`
+in CI or `--stdin` to format a supplied document without rewriting a file.
 
 ## Flags
 - **`-a --all`** — Format every config file mise currently loads, not just those in the current directory
