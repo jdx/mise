@@ -73,7 +73,7 @@ run = "(sleep 2; touch orphan-ran) & wait"
 timeout = "100ms"
 [doctor.checks.b_bad_shell]
 run = "true"
-shell = ["mise-doctor-shell-does-not-exist", "-c"]
+shell = "mise-doctor-shell-does-not-exist -c"
 [doctor.checks.c_bad_timeout]
 run = "touch invalid-ran"
 timeout = "0s"
@@ -99,7 +99,7 @@ run = "false"
 os = ["windows"]
 TOML
 assert_fail "mise doctor project --json > environment.json"
-assert_succeed "jq -e '.checks[0] | .name == \"configuration\" and .status == \"error\"' environment.json"
+assert_succeed "jq -e '.checks == [] and (.errors | length == 1)' environment.json"
 assert_contains "cat environment.json" "MISE_DOCTOR_PROJECT_MISSING_REQUIRED_VALUE"
 
 # Parse failures still produce machine-readable diagnostics.
@@ -109,7 +109,7 @@ run = "true"
 timeuot = "5s"
 TOML
 assert_fail "mise doctor project --json > invalid.json"
-assert_succeed "jq -e '.checks[0] | .name == \"configuration\" and .status == \"error\"' invalid.json"
+assert_succeed "jq -e '.checks == [] and (.errors | length == 1)' invalid.json"
 
 # Diagnostics never install a missing configured tool.
 cat >mise.toml <<'TOML'

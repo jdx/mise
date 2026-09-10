@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+
+# Inert safe-mode projects and excluded checks succeed without evaluating tools.
+assert_succeed "MISE_SAFE=1 mise doctor project --json | jq -e '.checks == [] and .errors == []'"
+cat >mise.toml <<'TOML'
+[doctor.checks.skipped]
+run = "touch should-not-run"
+os = "win"
+TOML
+assert_succeed "MISE_SAFE=1 MISE_DUMMY_VERSION=-1 mise doctor project --json | jq -e '.checks[0].status == \"skipped\" and .errors == []'"
+
+# Toolset build failures preserve the configured checks and platform skips.
+cat >>mise.toml <<'TOML'
+[doctor.checks.configuration]
+run = "touch should-not-run"
+TOML
+assert_fail "MISE_DUMMY_VERSION=-1 mise doctor project --json > build-error.json"
+assert_succeed "jq -e '.errors == [] and [.checks[].status] == [\"error\", \"skipped\"]' build-error.json"
+assert_succeed "test ! -e should-not-run"
+assert_fail "MISE_SAFE=1 mise doctor project --json > safe.json"
+assert_succeed "jq -e '[.checks[].status] == [\"error\", \"skipped\"]' safe.json"
+assert_contains "cat safe.json" "MISE_SAFE=1"
+assert_succeed "mise doctor project --json | jq -e '.errors == [] and .checks[0].name == \"configuration\" and .checks[0].status == \"pass\"'"
+
+# Unknown container options remain forward compatible; leaf typos still fail.
+cat >mise.toml <<'TOML'
+[doctor.settings]
+future = true
+TOML
+assert_succeed "mise env >/dev/null"
+assert_succeed "mise doctor project --json | jq -e '.checks == []'"
+cat >mise.toml <<'TOML'
+[doctor.checks.empty_os]
+run = "true"
+os = []
+TOML
+assert_fail "mise doctor project --json > empty-os.json"
+assert_succeed "jq -e '.checks == [] and (.errors | length == 1)' empty-os.json"
+
+# Project checks use their declaring root; global checks use invocation cwd.
+mkdir -p project/nested global
+cat >global/config.toml <<'TOML'
+[doctor.checks.global]
+run = "test -f invocation-marker"
+[doctor.checks.global_relative]
+run = "test -f project-marker"
+dir = ".."
+TOML
+cat >project/mise.toml <<'TOML'
+[doctor.checks.project]
+run = "test -f project-marker"
+shell = "sh -c"
+TOML
+# Clear the parent invalid config before testing nested projects.
+cat >mise.toml <<'TOML'
+TOML
+touch project/project-marker project/nested/invocation-marker
+assert_succeed "MISE_GLOBAL_CONFIG_FILE=$PWD/global/config.toml mise --cd project/nested doctor project --json > directories.json"
+assert_succeed "jq -e '[.checks[].status] == [\"pass\", \"pass\", \"pass\"]' directories.json"
+
+# OS aliases and architecture selectors use the same matcher as tools.
+cat >mise.toml <<TOML
+[doctor.checks.platform]
+run = "true"
+os = "$(uname -s | tr '[:upper:]' '[:lower:]')/$(uname -m)"
+[doctor.checks.other_arch]
+run = "false"
+os = ["linux/impossible", "darwin/impossible"]
+TOML
+assert_succeed "mise doctor project --json | jq -e '[.checks[].status] == [\"skipped\", \"pass\"]'"
+
+# Both probes must start concurrently, while reporting stays in name order.
+cat >mise.toml <<'TOML'
+[doctor.checks.a]
+run = "touch a-started; until test -f b-started; do sleep 0.05; done"
+timeout = "3s"
+[doctor.checks.b]
+run = "touch b-started; until test -f a-started; do sleep 0.05; done"
+timeout = "3s"
+TOML
+assert_succeed "MISE_JOBS=2 mise doctor project --json | jq -e '[.checks[].name] == [\"a\", \"b\"] and [.checks[].status] == [\"pass\", \"pass\"]'"
+# A one-job budget must serialize probes; zero is normalized to one too.
+cat >mise.toml <<'TOML'
+[doctor.checks.a]
+run = "mkdir exclusive && sleep 0.1 && rmdir exclusive"
+[doctor.checks.b]
+run = "mkdir exclusive && sleep 0.1 && rmdir exclusive"
+TOML
+assert_succeed "MISE_JOBS=1 mise doctor project"
+assert_succeed "MISE_JOBS=0 mise doctor project"
+
+# Explicit shell strings preserve parsing errors instead of falling back.
+cat >mise.toml <<'TOML'
+[doctor.checks.empty]
+run = "touch invalid-shell-ran"
+shell = " "
+[doctor.checks.quoted]
+run = "touch invalid-shell-ran"
+shell = '"unterminated -c'
+TOML
+assert_fail "mise doctor project --json > shells.json"
+assert_succeed "jq -e '[.checks[].status] == [\"error\", \"error\"]' shells.json"
+assert_succeed "test ! -e invalid-shell-ran"

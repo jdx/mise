@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use eyre::{Result, bail};
+use futures_util::{StreamExt, stream};
 use serde::Serialize;
 
 use crate::cmd::CmdLineRunner;
@@ -45,6 +46,7 @@ struct CheckResult {
 
 #[derive(Debug, Default, Serialize)]
 struct Report {
+    errors: Vec<String>,
     checks: Vec<CheckResult>,
 }
 
@@ -69,21 +71,18 @@ impl Project {
         let report = match result {
             Ok(report) => report,
             Err(err) => Report {
-                checks: vec![CheckResult {
-                    name: "configuration".into(),
-                    description: Some("Load the project's configuration and environment".into()),
-                    source: None,
-                    status: Status::Error,
-                    message: Some(format!("{err:#}")),
-                    hint: None,
-                }],
+                checks: vec![],
+                errors: vec![format!("{err:#}")],
             },
         };
         if self.json || parent_json {
             miseprintln!("{}", serde_json::to_string_pretty(&report)?);
-        } else if report.checks.is_empty() {
+        } else if report.checks.is_empty() && report.errors.is_empty() {
             miseprintln!("No project checks configured. Add [doctor.checks.<name>] to mise.toml.");
         } else {
+            for error in &report.errors {
+                miseprintln!("ERROR {error}");
+            }
             for check in &report.checks {
                 let status = match check.status {
                     Status::Pass => "PASS",
@@ -106,10 +105,11 @@ impl Project {
                 }
             }
         }
-        if report
-            .checks
-            .iter()
-            .any(|check| matches!(check.status, Status::Fail | Status::Error))
+        if !report.errors.is_empty()
+            || report
+                .checks
+                .iter()
+                .any(|check| matches!(check.status, Status::Fail | Status::Error))
         {
             return Err(crate::request_exit(1));
         }
@@ -117,76 +117,93 @@ impl Project {
     }
 
     async fn check(&self) -> Result<Report> {
-        if Settings::safe_mode() {
-            bail!("Project diagnostic commands cannot run in safe mode");
-        }
         let config = Config::get().await?;
         let mut checks = BTreeMap::new();
         // Config files are ordered from highest to lowest precedence. Replace
         // whole named checks so a local command cannot inherit a stale remedy.
         for (path, cf) in config.config_files.iter().rev() {
             for (name, check) in cf.doctor_config().checks {
-                checks.insert(name, (path.clone(), cf.config_root(), check));
+                checks.insert(
+                    name,
+                    (
+                        path.clone(),
+                        cf.project_root().unwrap_or(std::env::current_dir()?),
+                        check,
+                    ),
+                );
             }
         }
         let mut report = Report::default();
         if checks.is_empty() {
             return Ok(report);
         }
-        let toolset = ToolsetBuilder::new()
-            .with_resolve_options(ResolveOptions {
-                offline: true,
-                ..Default::default()
-            })
-            .build(&config)
-            .await?;
         // No tool installation, task dependencies, or task hooks are run here.
-        let environment = toolset.full_env(&config).await;
-        for (name, (source, root, check)) in checks {
-            let mut result = CheckResult {
-                name,
-                description: check.description.clone(),
-                source: Some(source),
-                status: Status::Pass,
-                message: None,
-                hint: check.hint.clone(),
-            };
-            if check
-                .os
-                .as_ref()
-                .is_some_and(|os| !os.iter().any(|os| os.as_ref() == std::env::consts::OS))
-            {
-                result.status = Status::Skipped;
-                result.message = Some("Check does not apply to this operating system".into());
-            } else {
-                match &environment {
-                    Ok(environment) => match run_check(&check, &root, environment).await {
-                        Ok(output) => {
-                            if !output.status.success() {
-                                result.status = Status::Fail;
+        // Preserve every declared check even if building the toolset fails.
+        let environment = async {
+            if !checks.values().any(|(_, _, check)| check.applies()) {
+                return Ok(EnvMap::default());
+            }
+            Settings::ensure_not_safe("Running project diagnostic commands")?;
+            let toolset = ToolsetBuilder::new()
+                .with_resolve_options(ResolveOptions {
+                    offline: true,
+                    ..Default::default()
+                })
+                .build(&config)
+                .await?;
+            toolset.full_env(&config).await
+        }
+        .await;
+        report.checks = stream::iter(checks)
+            .map(|(name, (source, root, check))| {
+                let environment = &environment;
+                let config = &config;
+                async move {
+                    let mut result = CheckResult {
+                        name,
+                        description: check.description.clone(),
+                        source: Some(source),
+                        status: Status::Pass,
+                        message: None,
+                        hint: check.hint.clone(),
+                    };
+                    if !check.applies() {
+                        result.status = Status::Skipped;
+                        result.message =
+                            Some("Check does not apply to this operating system".into());
+                    } else {
+                        match environment {
+                            Ok(environment) => match run_check(&check, &root, environment).await {
+                                Ok(output) => {
+                                    if !output.status.success() {
+                                        result.status = Status::Fail;
+                                        result.message =
+                                            Some(format!("Command exited with {}", output.status));
+                                    }
+                                }
+                                Err(err) => {
+                                    result.status = Status::Error;
+                                    result.message = Some(format!("{err:#}"));
+                                }
+                            },
+                            Err(err) => {
+                                result.status = Status::Error;
                                 result.message =
-                                    Some(format!("Command exited with {}", output.status));
+                                    Some(format!("Unable to prepare project environment: {err:#}"));
                             }
                         }
-                        Err(err) => {
-                            result.status = Status::Error;
-                            result.message = Some(format!("{err:#}"));
-                        }
-                    },
-                    Err(err) => {
-                        result.status = Status::Error;
-                        result.message =
-                            Some(format!("Unable to prepare project environment: {err:#}"));
                     }
+                    result.message = result.message.map(|message| config.redact(&message));
+                    result.hint = result.hint.map(|hint| config.redact(&hint));
+                    result.description = result
+                        .description
+                        .map(|description| config.redact(&description));
+                    result
                 }
-            }
-            result.message = result.message.map(|message| config.redact(&message));
-            result.hint = result.hint.map(|hint| config.redact(&hint));
-            result.description = result
-                .description
-                .map(|description| config.redact(&description));
-            report.checks.push(result);
-        }
+            })
+            .buffered(crate::jobs::normalize(Settings::get().jobs))
+            .collect()
+            .await;
         Ok(report)
     }
 }
@@ -208,11 +225,15 @@ async fn run_check(
     if timeout.is_zero() {
         bail!("Check timeout must be greater than zero");
     }
-    let shell = match &check.shell {
-        Some(shell) => shell.clone(),
+    let mut shell = match &check.shell {
+        Some(shell) => crate::path::split_shell_command(shell)?,
         None => Settings::get().default_inline_shell()?,
     };
-    let Some((program, args)) = shell.split_first() else {
+    Settings::get().maybe_no_profile(&mut shell);
+    let Some((program, args)) = shell
+        .split_first()
+        .filter(|(program, _)| !program.trim().is_empty())
+    else {
         bail!("Check shell must not be empty");
     };
     CmdLineRunner::new(program)

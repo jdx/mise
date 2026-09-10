@@ -3821,30 +3821,13 @@
                 "description": "Working directory. Relative paths resolve from the declaring config's project root; absolute paths are used as given."
               },
               "shell": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                  "type": "string"
-                },
-                "description": "Shell executable and arguments, including the command flag."
+                "description": "Shell command, including the command flag, as in tasks.",
+                "type": "string",
+                "examples": ["bash -c", "pwsh -Command"]
               },
               "os": {
-                "type": "array",
-                "items": {
-                  "enum": [
-                    "linux",
-                    "macos",
-                    "windows",
-                    "freebsd",
-                    "openbsd",
-                    "netbsd",
-                    "dragonfly",
-                    "android",
-                    "illumos",
-                    "solaris"
-                  ]
-                },
-                "description": "Operating systems on which this check runs. Other systems report skipped."
+                "$ref": "#/$defs/os_filter",
+                "description": "OS or OS/arch selectors; omit to run everywhere."
               }
             }
           }

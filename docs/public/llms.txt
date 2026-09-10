@@ -15,6 +15,7 @@
 
 - [mise.toml](https://mise.jdx.dev/configuration.html): A project's mise.toml declares tools, environment variables, and tasks. Global configuration supplies personal defaults; project and local files override them.
 - [Variables](https://mise.jdx.dev/configuration/vars.html): [vars] defines values that can be reused in mise configuration templates. Vars are similar to environment variables, but mise does not export them to child processes.
+- [Project Diagnostics](https://mise.jdx.dev/configuration/project-diagnostics.html): mise doctor project runs named checks from your project's configuration and reports every result. Use it to check requirements that tool versions alone cannot establish, such as whether a compiler can…
 - [Settings](https://mise.jdx.dev/configuration/settings.html): Settings control mise itself, such as installation concurrency and task output. Application environment variables belong in [env].
 - [Configuration Environments](https://mise.jdx.dev/configuration/environments.html): Config environments select additional files such as mise.development.toml and mise.production.toml. The base mise.toml still loads, and the selected file overrides values at the same directory level.
 
@@ -207,6 +208,7 @@
 - [mise deps remove](https://mise.jdx.dev/cli/deps/remove.html): Remove a dependency
 - [mise doctor](https://mise.jdx.dev/cli/doctor.html): Check mise installation for possible problems
 - [mise doctor path](https://mise.jdx.dev/cli/doctor/path.html): Print the current PATH entries mise is providing
+- [mise doctor project](https://mise.jdx.dev/cli/doctor/project.html): Run the project's diagnostic checks
 - [mise edit](https://mise.jdx.dev/cli/edit.html): Edit mise.toml interactively
 - [mise en](https://mise.jdx.dev/cli/en.html): Start a new shell with the mise environment built from the current configuration
 - [mise env](https://mise.jdx.dev/cli/env.html): Print the environment for the current configuration

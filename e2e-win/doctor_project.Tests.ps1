@@ -17,14 +17,15 @@ Describe 'project diagnostics' {
 DOCTOR_VALUE = "project-value"
 [doctor.checks.a_fail]
 run = "exit /b 7"
-shell = ["cmd.exe", "/c"]
+shell = "cmd.exe /c"
 hint = "Start the services"
 [doctor.checks.b_cmd]
 run = 'if "%DOCTOR_VALUE%" == "project-value" (exit /b 0) else (exit /b 1)'
-shell = ["cmd.exe", "/c"]
+shell = "cmd.exe /c"
 [doctor.checks.c_pwsh]
+os = "win"
 run = 'if ($env:DOCTOR_VALUE -eq "project-value") { exit 0 } else { exit 1 }'
-shell = ["pwsh", "-NoProfile", "-Command"]
+shell = "pwsh -Command"
 [doctor.checks.d_skip]
 run = "exit 1"
 os = ["linux", "macos"]
@@ -40,11 +41,11 @@ os = ["linux", "macos"]
         @'
 [doctor.checks.a_timeout]
 run = "Start-Sleep -Seconds 60"
-shell = ["pwsh", "-NoProfile", "-Command"]
+shell = "pwsh -Command"
 timeout = "500ms"
 [doctor.checks.b_pass]
 run = "exit 0"
-shell = ["pwsh", "-NoProfile", "-Command"]
+shell = "pwsh -Command"
 '@ | Set-Content mise.toml
         $output = mise doctor project --json | Out-String
         $LASTEXITCODE | Should -Be 1
