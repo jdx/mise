@@ -468,6 +468,8 @@ impl TaskExecutor {
                 .chain(self.sandbox.cache_env.iter())
                 .cloned()
                 .collect(),
+            // Filled in by `resolve_paths` below.
+            symlinked_allow_paths: vec![],
         };
         sandbox.resolve_paths();
         Ok(sandbox)

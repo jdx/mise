@@ -32,6 +32,16 @@ pub(crate) struct SandboxConfig {
     pub pass_through_env: Vec<String>,
     /// Exact hashed environment names that survive an active env sandbox.
     pub cache_env: Vec<String>,
+    /// Allow-list spellings [`SandboxConfig::resolve_paths`] replaced with a
+    /// canonical target, for the entries that had one.
+    ///
+    /// Seatbelt matches a rule against the canonical path, so a caller reaching
+    /// an allowed directory through the symlink it was named by still has to
+    /// `lstat` the link and the directories above it. Only the macOS profile
+    /// needs this — Landlock resolves paths itself and restricts neither the
+    /// walk nor `stat`.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub symlinked_allow_paths: Vec<PathBuf>,
 }
 
 /// Minimal env vars inherited when deny_env is active.
@@ -126,7 +136,11 @@ impl SandboxConfig {
     /// Resolve allow_* paths to absolute paths relative to cwd.
     pub(crate) fn resolve_paths(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_default();
-        let resolve = |paths: &mut Vec<PathBuf>| {
+        // Keep the spelling a canonicalization replaces. It is the one a caller
+        // inside the sandbox will use, and macOS has to let a walk take that
+        // route — see `symlinked_allow_paths`.
+        let mut symlinked = Vec::new();
+        let mut resolve = |paths: &mut Vec<PathBuf>| {
             paths.retain(|p| !p.as_os_str().is_empty());
             for p in paths.iter_mut() {
                 *p = replace_path(&*p);
@@ -134,13 +148,16 @@ impl SandboxConfig {
                     *p = cwd.join(&*p);
                 }
                 // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
-                if let Ok(canonical) = p.canonicalize() {
-                    *p = canonical;
+                if let Ok(canonical) = p.canonicalize()
+                    && canonical != *p
+                {
+                    symlinked.push(std::mem::replace(p, canonical));
                 }
             }
         };
         resolve(&mut self.allow_read);
         resolve(&mut self.allow_write);
+        self.symlinked_allow_paths = symlinked;
     }
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.
@@ -433,6 +450,33 @@ mod tests {
         };
 
         assert_eq!(config.missing_allow_paths(), vec![missing.as_path()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_paths_keeps_the_spelling_a_canonicalization_replaced() {
+        // The replaced spelling is the one a caller inside the sandbox uses, and
+        // macOS has to keep that route walkable. A path that was already
+        // canonical contributes nothing.
+        let root_dir = tempfile::tempdir().unwrap();
+        let root = root_dir.path().canonicalize().unwrap();
+        let target = root.join("target");
+        let plain = root.join("plain");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::create_dir_all(&plain).unwrap();
+        std::os::unix::fs::symlink(&target, root.join("link")).unwrap();
+        let through_link = root.join("link");
+
+        let mut config = SandboxConfig {
+            allow_read: vec![through_link.clone()],
+            allow_write: vec![plain.clone()],
+            ..Default::default()
+        };
+        config.resolve_paths();
+
+        assert_eq!(config.allow_read, vec![target]);
+        assert_eq!(config.allow_write, vec![plain]);
+        assert_eq!(config.symlinked_allow_paths, vec![through_link]);
     }
 
     #[test]
