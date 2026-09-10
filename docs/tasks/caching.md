@@ -17,6 +17,38 @@ For freshness configuration, see [`sources`](/tasks/task-configuration.html#sour
 and [`outputs`](/tasks/task-configuration.html#outputs). The remainder of this guide
 covers the experimental artifact cache.
 
+## Artifact cache flow
+
+For an eligible task with artifact caching enabled and cache reads and writes
+allowed, mise uses this flow:
+
+```mermaid
+---
+config:
+  htmlLabels: false
+---
+flowchart TB
+    accTitle: Artifact cache lookup and execution
+    accDescr: A usable artifact restores outputs and logs without running the task. Otherwise the task runs and successful results are saved.
+    inputs["Declared inputs<br/>and task context"]
+    key["Compute artifact key"]
+    lookup{"Cache hit?"}
+    restore["Restore outputs<br/>Replay logs<br/>Skip command"]
+    run["Run command"]
+    save["Save outputs<br/>and logs"]
+    inputs --> key --> lookup
+    lookup -->|Yes| restore
+    lookup -->|No| run
+    run -->|Success| save
+```
+
+This describes artifact caching, rather than the modification-time freshness
+check above. With `outputs = []`, a hit reuses the successful result and logs
+without restoring files. Failed runs are not cached. Forced runs, disabled cache
+access, and ineligible tasks can bypass parts of this flow; see
+[per-run cache access](#per-run-cache-access) and
+[storage and output replay](#storage-retention-and-output-replay).
+
 ## Enable artifact caching
 
 Stores successful task results in a content-addressed local cache and reuses them when the same task
