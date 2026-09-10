@@ -117,10 +117,8 @@ try:
     missing_app.rename(parent_app)
     live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1"}))
 
-    # An outdated self-updating app that is running is left to update itself:
-    # a process launched from inside the bundle blocks the replacement, and
-    # the bundle is replaced once nothing runs from it any more. The executable
-    # links to /bin/sleep because a copied platform binary is killed on exec.
+    # A running outdated app is left to update itself until nothing runs from
+    # its bundle. The executable links to /bin/sleep; a copy is killed on exec.
     executable = parent_app / "Contents/MacOS/auto-parent"
     executable.parent.mkdir(parents=True)
     executable.symlink_to("/bin/sleep")
@@ -166,12 +164,9 @@ try:
     assert latest_receipt.read_bytes() == original
     assert (prefix / "Applications/auto-latest.app/Contents/payload").read_text() == "original"
 
-    # Preflight steps run after the last skip check and can start the app
-    # themselves, so one more check runs right before the bundle swap. It
-    # undoes the preflight work and skips instead of replacing a bundle that
-    # just came to life, leaving no pending journal behind. The launcher
-    # spawns once: the pid file it leaves behind stops it from spawning again
-    # on the rerun.
+    # A preflight step can start the app itself. The swap is skipped, preflight
+    # work is undone, and no journal is left pending. The launcher spawns once;
+    # its pid file stops it from spawning again on the rerun.
     pidfile = root / "preflight.pid"
     launcher = "\n".join([
         "#!/bin/sh",

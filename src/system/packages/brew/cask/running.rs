@@ -1,21 +1,8 @@
-//! Detects whether an installed app bundle currently has live processes.
-//!
-//! Replacing a bundle under a running app is only safe when nothing will ask
-//! the old bundle for more code. Chrome, Electron apps, and anything else that
-//! spawns helpers on demand exec them from the bundle path after launch, so a
-//! swap leaves every later helper pointing at files that no longer exist. A
-//! self-updating app already knows how to move itself between versions without
-//! that failure, which is why a live one is left alone.
+use super::*;
 
-use std::path::Path;
-
-/// Whether any process on this machine runs an executable inside `app`.
-///
-/// Reads `ps -axo comm=`, which lists each process's executable path as it was
-/// launched. Bundles started through LaunchServices, `open`, or an absolute
-/// path all report a path inside the bundle, and so do helpers nested under
-/// `Contents/Frameworks`. A listing failure counts as "not running" so a broken
-/// `ps` degrades to the previous behaviour instead of blocking every upgrade.
+/// Whether any process runs an executable inside `app`. Reads `ps -axo comm=`,
+/// which reports each executable path as launched, so helpers nested under
+/// `Contents/Frameworks` count. A failed listing reports not running.
 #[cfg(target_os = "macos")]
 pub(super) fn app_is_running(app: &Path) -> bool {
     use std::process::{Command, Stdio};
@@ -50,11 +37,8 @@ pub(super) fn app_is_running(_app: &Path) -> bool {
     false
 }
 
-/// Matches `ps -axo comm=` output, one executable path per line, against `app`.
-///
-/// The comparison is by path component, so `Foo.app` does not claim processes
-/// from `Foo.app 2` or `Foobar.app`. Lines that are not UTF-8 are ignored; the
-/// paths mise installs come from UTF-8 cask metadata.
+/// Matches one executable path per line against `app` by path component, so
+/// `Foo.app` does not claim `Foo.app 2`. Lines that are not UTF-8 are ignored.
 pub(super) fn app_has_live_process(app: &Path, ps_output: &[u8]) -> bool {
     ps_output
         .split(|byte| *byte == b'\n')
