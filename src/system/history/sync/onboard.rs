@@ -175,7 +175,7 @@ pub(crate) async fn from_git(url: &str, yes: bool, dry_run: bool) -> Result<Opti
 /// The branch a fresh machine takes: the repository's default branch (its
 /// `HEAD`), else `main`, else `master`, else the first head; `None` when the
 /// repository lists none (unreachable, empty).
-fn default_branch(remote: &Remote<'_>) -> Result<Option<String>> {
+pub(super) fn default_branch(remote: &Remote<'_>) -> Result<Option<String>> {
     if let Ok(Some(head)) = remote.symbolic_head() {
         return Ok(Some(head));
     }

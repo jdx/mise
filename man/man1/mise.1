@@ -1759,10 +1759,9 @@ Connect a setup repository
 .PP
 .TP
 \fB\-\-branch\fR \fI<BRANCH>\fR
-The setup branch
-.RS
-\fIDefault: \fRmain
-.RE
+The setup branch (default: the repository's own default branch)
+
+Reconnecting a repository this machine already follows keeps that connection's branch. A repository with no branches at all takes `main`, which the first publication creates.
 .TP
 \fB\-\-sync\fR \fI<MODE>\fR
 How the repository is used: sync, fetch\-only, or manual

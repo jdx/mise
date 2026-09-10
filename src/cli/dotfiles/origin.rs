@@ -34,9 +34,13 @@ pub(crate) struct DotfilesOriginSet {
     /// The repository url (any git url; a private repository is recommended)
     url: String,
 
-    /// The setup branch
-    #[usage(long, value_name = "BRANCH", default = "main")]
-    branch: String,
+    /// The setup branch (default: the repository's own default branch)
+    ///
+    /// Reconnecting a repository this machine already follows keeps that
+    /// connection's branch. A repository with no branches at all takes `main`,
+    /// which the first publication creates.
+    #[usage(long, value_name = "BRANCH")]
+    branch: Option<String>,
 
     /// How the repository is used: sync, fetch-only, or manual
     ///
