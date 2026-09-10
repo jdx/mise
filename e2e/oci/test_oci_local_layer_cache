@@ -54,9 +54,11 @@ mise oci build --from scratch --no-mise -o cleared >cleared.log 2>&1
 assert_not_contains "cat cleared.log" "layer from the local cache"
 
 # Missing installs fail before any system-package work is attempted.
-mise uninstall jq
+# Control: with the tool present, package processing must reject scratch.
 cat >>mise.toml <<'EOF'
 [bootstrap.packages]
 "apt:curl" = "latest"
 EOF
+assert_fail "mise oci build --from scratch --no-mise -o packages-control" "requires an apt-based base image"
+mise uninstall jq
 assert_fail "mise oci build --from scratch --no-mise -o missing" "install path does not exist"

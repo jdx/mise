@@ -336,10 +336,11 @@ impl Builder {
             );
         }
         // Fail cheaply before unpacking a rootfs or installing system packages.
-        // The locked check below remains authoritative if the install changes.
+        // Confirm a missing path under the lock: a reinstall may temporarily
+        // remove it. The packaging check remains authoritative for present paths.
         for (i, (_, tv)) in versions.iter().enumerate() {
             if tool_reuse[i].is_none() {
-                require_tool_install(tv)?;
+                preflight_tool_install(tv)?;
             }
         }
 
@@ -380,11 +381,7 @@ impl Builder {
                 // Coordinate with install, link, and uninstall before inspecting
                 // the source. Hold through fingerprinting, packaging, and cache
                 // publication so a same-version reinstall cannot poison a key.
-                let _install_lock = crate::toolset::install_state::lock_tool_version_with_notice(
-                    &tv.ba().short,
-                    &tv.tv_pathname(),
-                    &|| info!("oci: waiting for {} install lock", tv.style()),
-                )?;
+                let _install_lock = lock_tool_install(tv)?;
                 require_tool_install(tv)?;
                 let is_pipx = tv.ba().backend_type() == BackendType::Pipx;
                 // Only pipx layers are expected to link into another tool's
@@ -940,6 +937,24 @@ impl Builder {
     }
 }
 
+/// Coordinate source checks and packaging with installation transactions.
+fn lock_tool_install(tv: &ToolVersion) -> Result<fslock::LockFile> {
+    crate::toolset::install_state::lock_tool_version_with_notice(
+        &tv.ba().short,
+        &tv.tv_pathname(),
+        &|| info!("oci: waiting for {} install lock", tv.style()),
+    )
+}
+
+/// Check cheaply when present, but wait for a reinstall before reporting absence.
+fn preflight_tool_install(tv: &ToolVersion) -> Result<()> {
+    if !tv.install_path().is_dir() {
+        let _install_lock = lock_tool_install(tv)?;
+        require_tool_install(tv)?;
+    }
+    Ok(())
+}
+
 fn require_tool_install(tv: &ToolVersion) -> Result<()> {
     let install_path = tv.install_path();
     if !install_path.is_dir() {
@@ -1377,6 +1392,49 @@ fn cached_tool_path_entries(remote: &registry::RemoteImage, tool_root: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_install_preflight_waits_for_reinstall() {
+        use crate::toolset::{ToolRequest, ToolSource};
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let td = tempfile::tempdir().unwrap();
+        let version = td
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let backend =
+            crate::cli::args::BackendArg::new("node".to_string(), Some("core:node".to_string()));
+        let request =
+            ToolRequest::new_version_for_test(backend.into(), &version, ToolSource::Unknown);
+        let mut tv = ToolVersion::new(request, version);
+        tv.install_path = Some(td.path().join("install"));
+        let held = lock_tool_install(&tv).unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                started_tx.send(()).unwrap();
+                done_tx.send(preflight_tool_install(&tv)).unwrap();
+            });
+            started_rx.recv().unwrap();
+            let before_unlock = done_rx.recv_timeout(Duration::from_millis(100));
+            // Simulate the installer completing while holding its transaction lock.
+            std::fs::create_dir(tv.install_path()).unwrap();
+            drop(held);
+            assert!(matches!(
+                before_unlock,
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ));
+            done_rx
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap()
+                .unwrap();
+        });
+    }
 
     fn layer(annotations: &[(&str, &str)], digest: &str) -> Descriptor {
         Descriptor {
