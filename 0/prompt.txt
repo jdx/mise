@@ -1,0 +1,41 @@
+this is a problem for us [https://github.com/orgs/community/discussions/206581](https://github.com/orgs/community/discussions/206581)
+
+---
+
+let's start there and also plan to use maybe packslip for vfox plugins
+
+---
+
+make a pr for the initial stuff
+
+---
+
+should we reuse `mise token github`?
+
+---
+
+ok do that, also make a pr for packslip support. I think what we should do is pick one current vfox-primary plugin and add packslip automation to it, make sure that works, then modify mise to use it
+
+---
+
+address pr feebdack until they settle
+
+---
+
+i merged the bfs pr, do you need to make a tag or something now
+
+---
+
+but to be clear, it still embeds bfs right?
+
+---
+
+we shouldn't do that. the point here is that we want packslip to be an option for non-registry tools
+
+---
+
+address pr feedback and failing checks until it settles
+
+---
+
+address pr feedback and failing checks until it settles
