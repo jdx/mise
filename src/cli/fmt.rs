@@ -95,6 +95,8 @@ impl Fmt {
     }
 }
 
+/// Put the document's top-level keys and its unordered lists into a canonical
+/// order. Whitespace and layout are left to [`format`].
 fn sort(toml: String) -> Result<String> {
     let mut doc: DocumentMut = toml.parse()?;
     let order = |k: String| match k.as_str() {
@@ -157,6 +159,7 @@ enum SetOrder {
     FilePatterns,
 }
 
+/// Put every array named in [`UNORDERED_SETS`] into its canonical order.
 fn sort_unordered_sets(doc: &mut DocumentMut) {
     for (path, order) in UNORDERED_SETS {
         visit_arrays(doc.as_table_mut(), path, &mut |array| {
@@ -187,6 +190,8 @@ fn visit_arrays(table: &mut dyn TableLike, path: &[&str], visit: &mut impl FnMut
     }
 }
 
+/// Sort one array, leaving it as written when reordering could change what
+/// it means.
 fn sort_set(array: &mut Array, order: SetOrder) {
     if !is_sortable(array, order) {
         return;
@@ -194,6 +199,8 @@ fn sort_set(array: &mut Array, order: SetOrder) {
     array.sort_by(|a, b| sort_key(a, order).cmp(&sort_key(b, order)));
 }
 
+/// Where `value` sorts: its rank first, then the entry itself to break ties
+/// within a rank.
 fn sort_key(value: &Value, order: SetOrder) -> (u8, &str) {
     let entry = value.as_str().unwrap_or_default();
     match order {
@@ -216,10 +223,14 @@ fn pattern_rank(entry: &str) -> u8 {
 /// Whether reordering `array` is guaranteed to preserve its meaning.
 ///
 /// Entries that are not plain strings are left alone because their order may
-/// carry meaning this function cannot see, and so is an entry carrying a
-/// comment: once entries move, there is no way to tell which one a comment
-/// was written about.
+/// carry meaning this function cannot see. A comment blocks the sort for the
+/// same reason: once entries move there is no way to tell which one it was
+/// written about. A comment that follows the last entry lives in the array's
+/// trailing decor rather than on a value, so it is checked separately.
 fn is_sortable(array: &Array, order: SetOrder) -> bool {
+    if has_comment(Some(array.trailing())) {
+        return false;
+    }
     array.iter().all(|value| {
         value.as_str().is_some_and(|entry| match order {
             SetOrder::Lexical => true,
@@ -239,6 +250,7 @@ fn may_exclude(entry: &str) -> bool {
     entry.starts_with('!') || entry.starts_with("{{") || entry.starts_with("{%")
 }
 
+/// Whether a span of decor holds a comment rather than only whitespace.
 fn has_comment(raw: Option<&RawString>) -> bool {
     raw.and_then(RawString::as_str)
         .is_some_and(|decor| decor.contains('#'))
@@ -446,6 +458,37 @@ sources = ["{{ arg(name = 'src') }}", "Cargo.toml"]
 sources = [
   "src/b.rs", # this comment must not end up describing another entry
   "src/a.rs",
+]
+"#);
+
+        let b = toml.find("src/b.rs").unwrap();
+        let a = toml.find("src/a.rs").unwrap();
+        assert!(b < a, "entries moved out from under a comment:\n{toml}");
+    }
+
+    #[test]
+    fn keeps_the_order_of_a_set_whose_last_entry_carries_a_comment() {
+        let toml = fmt(r#"
+[tasks.build]
+sources = [
+  "src/b.rs",
+  "src/a.rs", # this comment must not end up describing another entry
+]
+"#);
+
+        let b = toml.find("src/b.rs").unwrap();
+        let a = toml.find("src/a.rs").unwrap();
+        assert!(b < a, "entries moved out from under a comment:\n{toml}");
+    }
+
+    #[test]
+    fn keeps_the_order_of_a_set_followed_by_a_dangling_comment() {
+        let toml = fmt(r#"
+[tasks.build]
+sources = [
+  "src/b.rs",
+  "src/a.rs",
+  # a note about the list, or about the entry above it
 ]
 "#);
 
