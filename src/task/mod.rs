@@ -2641,10 +2641,11 @@ impl Task {
             .get_or_insert_with(|| self.sources.clone())
             .extend(other_raw_sources);
         self.sources.extend(other.sources);
-        if let Some(other_path_env) = other.raw_path_env {
-            self.raw_path_env
-                .get_or_insert_default()
-                .extend(other_path_env);
+        // This is a complete ambient snapshot, not an overlay delta. Keep the
+        // file task's environment when it has one so path rendering matches
+        // command execution; use the TOML task snapshot only as a fallback.
+        if self.raw_path_env.is_none() {
+            self.raw_path_env = other.raw_path_env;
         }
         if other.watch.is_some() {
             self.watch = other.watch;
@@ -3977,10 +3978,17 @@ mod tests {
             file_task.raw_path_env,
             Some(BTreeMap::from([
                 ("BASE".to_string(), "base".to_string()),
-                ("OVERLAY".to_string(), "overlay".to_string()),
-                ("SHARED".to_string(), "overlay".to_string()),
+                ("SHARED".to_string(), "base".to_string()),
             ]))
         );
+
+        let overlay_path_env = BTreeMap::from([("OVERLAY".to_string(), "overlay".to_string())]);
+        let mut task_without_path_env = Task::default();
+        task_without_path_env.merge_toml_overlay(Task {
+            raw_path_env: Some(overlay_path_env.clone()),
+            ..Default::default()
+        });
+        assert_eq!(task_without_path_env.raw_path_env, Some(overlay_path_env));
 
         let source_overlay = Task {
             sources: vec!["overlay-{{usage.name}}.txt".to_string()],
