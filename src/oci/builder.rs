@@ -335,6 +335,14 @@ impl Builder {
                 n = built_tool_count
             );
         }
+        // Fail cheaply before unpacking a rootfs or installing system packages.
+        // The locked check below remains authoritative if the install changes.
+        for (i, (_, tv)) in versions.iter().enumerate() {
+            if tool_reuse[i].is_none() {
+                require_tool_install(tv)?;
+            }
+        }
+
         // --- 3. System package layer (optional) ---
         let system_packages_layer = packages::build_system_packages_layer(
             &layout,
@@ -372,18 +380,12 @@ impl Builder {
                 // Coordinate with install, link, and uninstall before inspecting
                 // the source. Hold through fingerprinting, packaging, and cache
                 // publication so a same-version reinstall cannot poison a key.
-                let _install_lock = crate::toolset::install_state::lock_tool_version(
+                let _install_lock = crate::toolset::install_state::lock_tool_version_with_notice(
                     &tv.ba().short,
                     &tv.tv_pathname(),
+                    &|| info!("oci: waiting for {} install lock", tv.style()),
                 )?;
-                let install_path = tv.install_path();
-                if !install_path.is_dir() {
-                    bail!(
-                        "{} install path does not exist: {}. Run `mise install` first.",
-                        tv.style(),
-                        install_path.display()
-                    );
-                }
+                require_tool_install(tv)?;
                 let is_pipx = tv.ba().backend_type() == BackendType::Pipx;
                 // Only pipx layers are expected to link into another tool's
                 // install. Other backends get their own mapping for shebang
@@ -936,6 +938,18 @@ impl Builder {
             history: vec![],
         })
     }
+}
+
+fn require_tool_install(tv: &ToolVersion) -> Result<()> {
+    let install_path = tv.install_path();
+    if !install_path.is_dir() {
+        bail!(
+            "{} install path does not exist: {}. Run `mise install` first.",
+            tv.style(),
+            install_path.display()
+        );
+    }
+    Ok(())
 }
 
 fn resolve_layer_owner(opts_owner: Option<LayerOwner>, oci: &OciConfig) -> LayerOwner {

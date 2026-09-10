@@ -27,8 +27,7 @@ pub(crate) fn build_cached_tool_layer(
     let entries = collect_sorted_entries(src_dir, false, owner, Some(relocation))?;
     let key = fingerprint(&entries, target_prefix, owner, relocation)?;
     let record_path = cache_dir.join(format!("{key}.json"));
-    let _lock = match crate::lock_file::LockFile::at(&cache_dir.join(format!("{key}.lock"))).lock()
-    {
+    let _lock = match crate::lock_file::LockFile::new(&record_path).lock() {
         Ok(lock) => lock,
         Err(err) => {
             debug!("could not lock OCI tool layer cache: {err:#}");
@@ -67,9 +66,9 @@ fn fingerprint(
     relocation: &ToolRelocation,
 ) -> Result<String> {
     let mut hash = Sha256::new();
-    // Bump the format when layer construction changes without a mise release.
+    // Bump the format whenever layer construction changes. Unrelated mise
+    // releases must not invalidate byte-identical tool layers.
     field(&mut hash, b"mise-oci-tool-layer-v1");
-    field(&mut hash, env!("CARGO_PKG_VERSION").as_bytes());
     field(&mut hash, std::env::consts::OS.as_bytes());
     field(&mut hash, std::env::consts::ARCH.as_bytes());
     field(&mut hash, prefix.as_bytes());
@@ -187,6 +186,13 @@ mod tests {
             || build_cached_tool_layer(&src, "mise/tool", owner, &relocation, &cache).unwrap();
         let (first, hit) = build();
         assert!(!hit);
+        assert!(std::fs::read_dir(&cache).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .path()
+                .extension()
+                .is_some_and(|ext| ext == "lock")
+        }));
         let (second, hit) = build();
         assert!(hit);
         assert_eq!(first.bytes, second.bytes);

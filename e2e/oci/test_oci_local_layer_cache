@@ -52,3 +52,11 @@ assert_contains "cat changed-again.log" "layer from the local cache"
 mise cache clear jq
 mise oci build --from scratch --no-mise -o cleared >cleared.log 2>&1
 assert_not_contains "cat cleared.log" "layer from the local cache"
+
+# Missing installs fail before any system-package work is attempted.
+mise uninstall jq
+cat >>mise.toml <<'EOF'
+[bootstrap.packages]
+"apt:curl" = "latest"
+EOF
+assert_fail "mise oci build --from scratch --no-mise -o missing" "install path does not exist"
