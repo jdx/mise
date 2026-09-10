@@ -1,4 +1,8 @@
-backends = ["vfox:mise-plugins/vfox-redis", "asdf:mise-plugins/mise-redis"]
+backends = [
+  "conda:redis-server",
+  "vfox:mise-plugins/vfox-redis",
+  "asdf:mise-plugins/mise-redis",
+]
 bins = [
   "redis-benchmark",
   "redis-check-aof",
@@ -8,4 +12,5 @@ bins = [
   "redis-server",
 ]
 description = "Cache & in-memory datastore"
+test = { cmd = "redis-server --version", expected = "v={{version}}" }
 version_order = "semver"
