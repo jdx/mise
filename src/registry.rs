@@ -1023,23 +1023,23 @@ backends = [
 
     #[test]
     fn baked_registry_infers_bins_from_preferred_aqua_backend() {
-        let tool = baked_registry().get("jq").unwrap();
-        assert_eq!(tool.bins, &["jq"]);
+        let tool = baked_registry().get("yq").unwrap();
+        assert_eq!(tool.bins, &["yq"]);
     }
 
     #[test]
     fn floating_registry_reuses_baked_inferred_bins() {
         let registry = registry_from_sources(BTreeMap::from([(
-            "jq".to_string(),
+            "yq".to_string(),
             r#"
-backends = ["aqua:jqlang/jq"]
+backends = ["aqua:mikefarah/yq"]
 version_order = "source"
 "#
             .to_string(),
         )]))
         .unwrap();
 
-        assert_eq!(registry.get("jq").unwrap().bins, &["jq"]);
+        assert_eq!(registry.get("yq").unwrap().bins, &["yq"]);
     }
 
     fn registry_archive(entries: &[(&str, &str)]) -> tempfile::NamedTempFile {
@@ -1399,6 +1399,59 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
                 !backend_matches_platform(&[selector], &settings),
                 "{os}-{arch} should not match {selector}"
             );
+        }
+    }
+
+    #[test]
+    fn arm32_tools_use_github_without_changing_other_platforms() {
+        use super::*;
+
+        for (name, repo) in [
+            ("eza", "eza-community/eza"),
+            ("fd", "sharkdp/fd"),
+            ("starship", "starship/starship"),
+            ("bat", "sharkdp/bat"),
+            ("ripgrep", "BurntSushi/ripgrep"),
+            ("fzf", "junegunn/fzf"),
+            ("zoxide", "ajeetdsouza/zoxide"),
+            ("coreutils", "uutils/coreutils"),
+            ("github-cli", "cli/cli"),
+            ("jq", "jqlang/jq"),
+            ("ruff", "astral-sh/ruff"),
+            ("dust", "bootandy/dust"),
+            ("gopass", "gopasspw/gopass"),
+        ] {
+            let tool = BAKED_REGISTRY.get(name).unwrap();
+            let binary = match name {
+                "github-cli" => "gh",
+                "ripgrep" => "rg",
+                _ => name,
+            };
+            assert_eq!(
+                tool.bins,
+                &[binary],
+                "{name} must retain executable metadata"
+            );
+            for (os, arch) in [("linux", "arm"), ("linux", "arm64"), ("linux", "x64")] {
+                let settings = settings_for(os, arch);
+                let backend = tool
+                    .backends
+                    .iter()
+                    .find(|backend| backend_matches_platform(backend.platforms, &settings))
+                    .unwrap();
+                let kind = if arch == "arm" { "github" } else { "aqua" };
+                assert_eq!(
+                    backend.full,
+                    format!("{kind}:{repo}"),
+                    "{name} on {os}-{arch}"
+                );
+            }
+            for (os, arch) in [("macos", "arm64"), ("windows", "x64"), ("linux", "x86")] {
+                assert!(!backend_matches_platform(
+                    tool.backends[0].platforms,
+                    &settings_for(os, arch)
+                ));
+            }
         }
     }
 

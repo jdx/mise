@@ -1,4 +1,11 @@
-backends = ["aqua:astral-sh/ruff", "asdf:simhem/asdf-ruff"]
+backends = [
+  { full = "github:astral-sh/ruff", platforms = [
+    "linux-arm",
+  ] },
+  "aqua:astral-sh/ruff",
+  "asdf:simhem/asdf-ruff",
+]
+bins = ["ruff"]
 description = "An extremely fast Python linter and code formatter, written in Rust"
 idiomatic_files = [
   { path = "ruff.toml", version_regex = '''(?m)^\s*required-version\s*=\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },

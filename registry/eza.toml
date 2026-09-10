@@ -1,10 +1,14 @@
 backends = [
+  { full = "github:eza-community/eza", platforms = [
+    "linux-arm",
+  ] },
   { full = "aqua:eza-community/eza", platforms = [
     "linux",
   ] },
   "vfox:jdx/vfox-eza",
   "cargo:eza",
 ]
+bins = ["eza"]
 description = "A modern, maintained replacement for ls"
 test = { cmd = "eza --version", expected = "v{{version}}" }
 version_order = "semver"

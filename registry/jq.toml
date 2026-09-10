@@ -1,4 +1,11 @@
-backends = ["aqua:jqlang/jq", "asdf:mise-plugins/asdf-jq"]
+backends = [
+  { full = "github:jqlang/jq", platforms = [
+    "linux-arm",
+  ], options = { asset_pattern = "jq-linux-armhf", version_prefix = "jq-" } },
+  "aqua:jqlang/jq",
+  "asdf:mise-plugins/asdf-jq",
+]
+bins = ["jq"]
 description = "Command-line JSON processor"
 test = { cmd = "jq --version", expected = "jq-{{version}}" }
 version_order = "source"
