@@ -26,7 +26,7 @@ use crate::{dirs, env, file, hash};
 use async_trait::async_trait;
 use eyre::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1273,7 +1273,14 @@ impl Backend for HttpBackend {
         } else {
             let cache_dir = Self::tarballs_dir();
             let cache_path = Self::cache_path(&cache_dir, &cache_plan.key);
-            let _lock = crate::lock_file::get(&cache_path, ctx.force)?;
+            // Not `ctx.force`. A cache entry is shared content rather than
+            // per-tool state — two tools naming the same URL land on the same
+            // one — so a forced install has no business racing whoever else is
+            // publishing or reclaiming it. Skipping the lock here would leave
+            // `prune`'s sweep unable to tell that an entry is mid-publish, and
+            // the install would end up with a symlink to something that had
+            // been reclaimed underneath it.
+            let _lock = crate::lock_file::get(&cache_path, false)?;
             let extraction_type = if Self::is_cached(&cache_dir, &cache_plan.key) {
                 // The download happened; it is the unpacked tree that is reused.
                 // Not "cached <file>", which reporters read as a skipped fetch.
@@ -1391,9 +1398,454 @@ fn rename_cache_token(rename: &toml::Value) -> String {
     hash::hash_blake3_to_str(&rename.to_string())
 }
 
+// -----------------------------------------------------------------------------
+// Reclaiming cache entries no install points at
+// -----------------------------------------------------------------------------
+
+/// How many entries to hold locks for at once. Bounded so a very large cache
+/// cannot exhaust the process's file descriptors.
+const PRUNE_LOCK_BATCH: usize = 64;
+
+/// Marks the scratch directory `extract_to_cache` builds an entry in before
+/// renaming it into place. It lives beside the entries, so the sweep has to
+/// recognise and skip it.
+const TMP_ENTRY_MARKER: &str = ".tmp-";
+
+/// The most directories the reachability walk will read before giving up.
+///
+/// Not a termination guard — cycles are handled by resolving links and
+/// remembering where they went. This is the ceiling that stops a link pointing
+/// out of the installs tree, at a home directory or at `/`, from turning a cache
+/// sweep into a walk of the filesystem. An installs tree is thousands of
+/// directories; a hundred thousand of them means the walk is somewhere it was
+/// not meant to go. Hitting it removes nothing and says where it stopped, so
+/// being wrong about the number costs a sweep rather than an install.
+const PRUNE_WALK_DIR_BUDGET: usize = 100_000;
+
+/// The cache entry a resolved symlink target lives in, if it lives in one.
+///
+/// Matching by prefix rather than equality is deliberate: a raw-file install
+/// with `bin_path` symlinks a single file *inside* the entry, so the target is
+/// `<entry>/<filename>` and not the entry itself.
+fn cache_entry_containing(canonical_tarballs: &Path, target: &Path) -> Option<PathBuf> {
+    let rest = target.strip_prefix(canonical_tarballs).ok()?;
+    let first = rest.components().next()?;
+    Some(canonical_tarballs.join(first))
+}
+
+/// Every cache entry some install still resolves into.
+///
+/// This deliberately knows nothing about tools, backends, configs or tool stubs.
+/// An entry is live when a link on disk reaches it, which is what makes the
+/// sweep safe to run without answering "is a stub still using this?": the stub's
+/// tool is installed as that link, and `mise prune` has already decided whether
+/// to keep it — tracked stubs protect their versions (see the `prune` help text
+/// and `e2e/cli/test_prune_tool_stub`). Running the sweep after those removals
+/// means it inherits every one of those decisions for free.
+///
+/// The walk asks nothing about ownership. Earlier revisions tried to bound it by
+/// which backend owned a tool, and then by the shape of an install directory;
+/// both were guesses about who a directory belongs to, and a guess that says
+/// "nothing here" deletes a live install. So every directory under every root is
+/// read, links are followed wherever they lead inside the tree, and every case
+/// the walk cannot settle — an unreadable directory, a link that will not
+/// resolve, a tree too large to finish — fails the sweep instead of reporting an
+/// absence of references.
+///
+/// What keeps that affordable is `targets`: the walk stops the moment every
+/// entry still in question has been accounted for. Links live at
+/// `<root>/<tool>/<version>` and, for a raw file with `bin_path`, one or two
+/// levels below it, and the walk is breadth-first — so a run with nothing to
+/// reclaim never reaches the inside of a payload. A tool's tree is walked in
+/// full only when there is an entry it might be holding, which is the run that
+/// frees the disk.
+///
+/// Returns the referenced subset of `targets` and the number of directories
+/// read, which is what the cost tests assert on.
+fn referenced_cache_entries(
+    canonical_tarballs: &Path,
+    install_roots: &[PathBuf],
+    targets: &HashSet<PathBuf>,
+    budget: usize,
+) -> Result<(HashSet<PathBuf>, usize)> {
+    let mut walk = Walk {
+        canonical_tarballs,
+        targets,
+        referenced: HashSet::new(),
+        visited: HashSet::new(),
+        queue: VecDeque::new(),
+        opened: 0,
+        budget,
+    };
+    for root in install_roots {
+        // A root that is not there holds nothing. Anything else — a root that
+        // cannot be stat'd, or that stats but will not resolve — is a root whose
+        // references cannot be read, and skipping it would drop every reference
+        // underneath it and take the entries with them. Note this cannot use
+        // `Path::exists`, which reports false for a permission error just as it
+        // does for a missing path.
+        match root.symlink_metadata() {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => {
+                return Err(eyre::eyre!(
+                    "failed to stat install dir {}: {err}",
+                    file::display_path(root)
+                ));
+            }
+            Ok(_) => {}
+        }
+        let root = std::fs::canonicalize(root).map_err(|err| {
+            eyre::eyre!(
+                "failed to resolve install dir {}: {err}",
+                file::display_path(root)
+            )
+        })?;
+        // `Path::is_dir` would fold a metadata error into `false` and skip the
+        // root — one more place where that shortcut would have turned "cannot
+        // tell" into "holds nothing". A root that is not a directory at all is a
+        // different matter and is skipped: a regular file holds no install links.
+        let metadata = root.metadata().map_err(|err| {
+            eyre::eyre!(
+                "failed to inspect install dir {}: {err}",
+                file::display_path(&root)
+            )
+        })?;
+        if metadata.is_dir() {
+            // Roots can overlap — a configured shared dir may name the primary
+            // one — and `enter` is what de-duplicates them.
+            walk.enter(root);
+        }
+    }
+    walk.run()?;
+    Ok((walk.referenced, walk.opened))
+}
+
+/// A breadth-first pass over the install roots, looking for links into the
+/// cache.
+struct Walk<'a> {
+    canonical_tarballs: &'a Path,
+    /// The entries whose fate is still open. Anything not in here is not worth
+    /// finding, and once all of them are found the walk is over.
+    targets: &'a HashSet<PathBuf>,
+    referenced: HashSet<PathBuf>,
+    /// Canonical paths the walk has entered *through a link*, including the
+    /// roots. This is the cycle detection: a link pointing back up its own tree
+    /// resolves to a directory already in here and is not entered twice.
+    visited: HashSet<PathBuf>,
+    queue: VecDeque<PathBuf>,
+    /// Directories read. Bounded by `budget`, and asserted on by the cost tests.
+    opened: usize,
+    budget: usize,
+}
+
+impl Walk<'_> {
+    /// Whether every entry still in question has been accounted for.
+    fn accounted_for(&self) -> bool {
+        // `referenced` only ever takes entries from `targets`, so counting is
+        // enough.
+        self.referenced.len() == self.targets.len()
+    }
+
+    /// Queue a directory reached by resolving a link (or a root), unless it has
+    /// already been queued.
+    fn enter(&mut self, canonical: PathBuf) {
+        if self.visited.insert(canonical.clone()) {
+            self.queue.push_back(canonical);
+        }
+    }
+
+    fn run(&mut self) -> Result<()> {
+        while !self.accounted_for() {
+            let Some(dir) = self.queue.pop_front() else {
+                break;
+            };
+            self.read(&dir)?;
+        }
+        Ok(())
+    }
+
+    fn read(&mut self, dir: &Path) -> Result<()> {
+        self.opened += 1;
+        if self.opened > self.budget {
+            // Cycles are already excluded, so this is not about termination: it
+            // is the ceiling that keeps a link out of the installs tree — into a
+            // home directory, or `/` — from turning a cache sweep into a walk of
+            // the filesystem. An installs tree is thousands of directories, not
+            // hundreds of thousands. Reachability that cannot be established
+            // this way is not guessed at: the sweep fails and removes nothing.
+            return Err(eyre::eyre!(
+                "gave up walking the install dirs at {} after {} directories",
+                file::display_path(dir),
+                self.budget
+            ));
+        }
+        // Streamed rather than collected: nothing here is a question about the
+        // directory as a whole any more.
+        let entries = std::fs::read_dir(dir)
+            .map_err(|err| eyre::eyre!("failed to read {}: {err}", file::display_path(dir)))?;
+        for entry in entries {
+            let entry = entry
+                .map_err(|err| eyre::eyre!("failed to read {}: {err}", file::display_path(dir)))?;
+            let path = entry.path();
+            // Skipping an entry that cannot be inspected would report it as
+            // holding no references, which is the one conclusion this walk is
+            // never allowed to reach.
+            let file_type = entry.file_type().map_err(|err| {
+                eyre::eyre!("failed to inspect {}: {err}", file::display_path(&path))
+            })?;
+            // Only directories and links can lead into the cache, so plain files
+            // are skipped without the cost of resolving them.
+            if !file_type.is_dir() && !file_type.is_symlink() {
+                continue;
+            }
+            // Never judge by `is_symlink` alone: on Windows `file::make_symlink`
+            // creates a junction, which is a directory as far as `file_type` is
+            // concerned, and a walk that missed that would step into the cache
+            // entry, record no reference, and delete a live install.
+            // `cfg!(windows)` short-circuits on unix so real directories cost no
+            // extra syscall — which is what keeps the walk from resolving every
+            // path in a `node_modules` tree.
+            let is_link = file_type.is_symlink()
+                || (cfg!(windows) && file_type.is_dir() && file::is_symlink_or_junction(&path));
+            if !is_link {
+                self.queue.push_back(path);
+                continue;
+            }
+            // Resolving collapses the `latest` alias's two hops in one go. A
+            // link whose target is genuinely absent keeps nothing alive — but
+            // that is the only resolution failure that may be waved through.
+            // Anything else means the target could not be read, not that it is
+            // not there.
+            let resolved = match std::fs::canonicalize(&path) {
+                std::result::Result::Ok(resolved) => resolved,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(err) => {
+                    return Err(eyre::eyre!(
+                        "failed to resolve {}: {err}",
+                        file::display_path(&path)
+                    ));
+                }
+            };
+            if let Some(entry) = cache_entry_containing(self.canonical_tarballs, &resolved) {
+                if self.targets.contains(&entry) {
+                    self.referenced.insert(entry);
+                }
+                // The cache is the thing being measured, not searched.
+                continue;
+            }
+            // A directory reached through a link is still part of the installs
+            // tree: a tool directory or a version directory can be moved
+            // elsewhere and linked back, and everything under it — including the
+            // link that keeps an entry alive — would otherwise be invisible.
+            let metadata = resolved.metadata().map_err(|err| {
+                eyre::eyre!("failed to inspect {}: {err}", file::display_path(&resolved))
+            })?;
+            if metadata.is_dir() {
+                self.enter(resolved);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Whether an entry has been written to since the sweep started looking.
+///
+/// Installers in this version take the cache lock whether or not the install was
+/// forced — that is one of the changes here — so the lock-and-look-again pass
+/// below already sees them. This covers the writer it cannot: an *older* mise,
+/// which skips the lock on `-f`. What that cannot hide is the entry's timestamp.
+/// An extraction that landed after the sweep began is not one the sweep observed
+/// to be orphaned, so it is left alone. Unreadable metadata counts as recent,
+/// which keeps the doubt on the side of not deleting.
+///
+/// Known gap: an older mise that *reuses* an entry it finds already extracted
+/// writes nothing, so no timestamp moves. If it publishes its install link after
+/// the pass below has looked, the sweep still removes the entry and leaves that
+/// install dangling. Nothing observable after the fact distinguishes that from
+/// an entry no one wants; closing it needs a marker the reader writes.
+fn modified_since(path: &Path, started: SystemTime) -> bool {
+    path.metadata()
+        .and_then(|m| m.modified())
+        .map(|modified| modified >= started)
+        .unwrap_or(true)
+}
+
+/// Best-effort size of an entry, for reporting only. Symlinks inside an entry
+/// count as zero rather than as the size of whatever they point at.
+fn cache_entry_size(path: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| match entry.file_type() {
+            Ok(ft) if ft.is_symlink() => 0,
+            Ok(ft) if ft.is_dir() => cache_entry_size(&entry.path()),
+            _ => entry.metadata().map(|m| m.len()).unwrap_or(0),
+        })
+        .sum()
+}
+
+/// Remove every `http-tarballs` entry no install points at.
+///
+/// Call this *after* unused versions have been removed, so an entry whose only
+/// referent just went away is reclaimed in the same run rather than the next.
+pub(crate) fn prune_unreferenced_tarballs(dry_run: bool) -> Result<crate::cache::PruneResults> {
+    let tarballs_dir = HttpBackend::tarballs_dir();
+    // The lock key and the deletion both have to use the same *uncanonicalised*
+    // path the installer uses, or the lock is a different lock. Reachability, on
+    // the other hand, compares against resolved symlink targets, so it needs the
+    // canonical form. Keep both.
+    let Ok(canonical_tarballs) = std::fs::canonicalize(&tarballs_dir) else {
+        return Ok(crate::cache::PruneResults { size: 0, count: 0 });
+    };
+    sweep_unreferenced_tarballs(
+        &tarballs_dir,
+        &canonical_tarballs,
+        &sweep_install_roots(),
+        dry_run,
+    )
+}
+
+/// Every directory an install symlink could live under.
+///
+/// `shared_install_dirs` keeps the system installs dir only when `is_dir()`
+/// says so, and `is_dir()` says no for a metadata error exactly as it does for a
+/// path that is not there. That distinction is the whole basis of the walk's
+/// safety rule — absent means no references, unreadable means unknown — so the
+/// system dir is added back here unconditionally and left for the walk to judge.
+/// Overlapping roots are de-duplicated during the walk.
+///
+/// It has to be added back from [`crate::env::system_installs_dir`], the same
+/// source `shared_install_dirs` drops it from. `MISE_SYSTEM_INSTALLS_DIR` is
+/// only the fallback for when settings cannot be read, so restoring *that*
+/// would put back a directory the user may not be using while still leaving a
+/// configured one out — the unreadable-root case this function exists for,
+/// reintroduced one level up.
+fn sweep_install_roots() -> Vec<PathBuf> {
+    let mut roots = crate::path_env::mise_install_dirs();
+    roots.push(crate::env::system_installs_dir());
+    roots
+}
+
+fn sweep_unreferenced_tarballs(
+    tarballs_dir: &Path,
+    canonical_tarballs: &Path,
+    install_roots: &[PathBuf],
+    dry_run: bool,
+) -> Result<crate::cache::PruneResults> {
+    sweep_unreferenced_tarballs_within(
+        tarballs_dir,
+        canonical_tarballs,
+        install_roots,
+        dry_run,
+        PRUNE_WALK_DIR_BUDGET,
+    )
+}
+
+fn sweep_unreferenced_tarballs_within(
+    tarballs_dir: &Path,
+    canonical_tarballs: &Path,
+    install_roots: &[PathBuf],
+    dry_run: bool,
+    budget: usize,
+) -> Result<crate::cache::PruneResults> {
+    let mut results = crate::cache::PruneResults { size: 0, count: 0 };
+    // Nothing that appears or changes from here on is something this sweep
+    // observed to be unreferenced, so nothing newer than this may be removed.
+    let started = SystemTime::now();
+    let names: Vec<String> = file::dir_subdirs(tarballs_dir)?
+        .into_iter()
+        // `extract_to_cache` builds each entry in a `<key>.tmp-<pid>-<ms>`
+        // directory *beside* it and renames it into place. Those are never
+        // referenced, and the installer's lock is on the key rather than on the
+        // temp name, so deleting one would destroy an extraction in flight.
+        .filter(|name| !name.contains(TMP_ENTRY_MARKER))
+        // Applied before the walk rather than after it: an entry that may not be
+        // removed on this pass is not one the walk has to go looking for, and
+        // the walk stops once the entries that *are* in question are accounted
+        // for. Both filters are conjunctive, so the outcome is unchanged.
+        .filter(|name| !modified_since(&tarballs_dir.join(name), started))
+        .collect();
+    if names.is_empty() {
+        return Ok(results);
+    }
+    let targets: HashSet<PathBuf> = names
+        .iter()
+        .map(|name| canonical_tarballs.join(name))
+        .collect();
+    // A failure to read any install root aborts before anything is removed:
+    // treating an unreadable directory as "holds no references" is exactly the
+    // mistake that deletes a live install.
+    let (referenced, _) =
+        referenced_cache_entries(canonical_tarballs, install_roots, &targets, budget)?;
+    let candidates: Vec<String> = names
+        .into_iter()
+        .filter(|name| !referenced.contains(&canonical_tarballs.join(name)))
+        .collect();
+
+    if dry_run {
+        for name in &candidates {
+            let path = tarballs_dir.join(name);
+            results.size += cache_entry_size(&path);
+            results.count += 1;
+            info!(
+                "pruning {} {}",
+                file::display_path(&path),
+                console::style("[dryrun]").bold()
+            );
+        }
+        return Ok(results);
+    }
+
+    for batch in candidates.chunks(PRUNE_LOCK_BATCH) {
+        // Take the installer's lock on every candidate *before* looking again.
+        // An install that finished between the first scan and now created its
+        // symlink while holding this lock, so the second scan sees it; one that
+        // has not finished is still waiting, and finding its entry gone makes it
+        // re-extract rather than break.
+        let _locks = batch
+            .iter()
+            .map(|name| crate::lock_file::get(&tarballs_dir.join(name), false))
+            .collect::<Result<Vec<_>>>()?;
+        // Only this batch is still in question, so this is what the second walk
+        // is asked to account for.
+        let targets: HashSet<PathBuf> = batch
+            .iter()
+            .map(|name| canonical_tarballs.join(name))
+            .collect();
+        let (referenced, _) =
+            referenced_cache_entries(canonical_tarballs, install_roots, &targets, budget)?;
+        for name in batch {
+            if referenced.contains(&canonical_tarballs.join(name)) {
+                continue;
+            }
+            let path = tarballs_dir.join(name);
+            // Re-checked under the lock, and again for an older mise, which
+            // skips the lock on a forced install.
+            if modified_since(&path, started) {
+                continue;
+            }
+            let size = cache_entry_size(&path);
+            debug!("pruning {}", file::display_path(&path));
+            // One entry that will not go — a permission problem, say — must not
+            // abandon the rest of the sweep or throw away what it has already
+            // reclaimed.
+            if let Err(err) = file::remove_all(&path) {
+                warn!("failed to prune {}: {err:?}", file::display_path(&path));
+                continue;
+            }
+            results.size += size;
+            results.count += 1;
+        }
+    }
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cache::PruneResults;
     use crate::cli::args::BackendResolution;
     use crate::toolset::{ToolRequest, ToolSource};
 
@@ -1434,6 +1886,691 @@ mod tests {
 
     fn version_hash(version: &str) -> String {
         crate::hash::hash_sha256_to_str(version)[..7].to_string()
+    }
+
+    /// Layout mirroring a real data dir: a `http-tarballs` cache beside an
+    /// installs tree, with the installs linking into the cache the way
+    /// `create_install_symlink` does.
+    struct TarballFixture {
+        _temp: tempfile::TempDir,
+        tarballs: PathBuf,
+        canonical: PathBuf,
+        installs: PathBuf,
+    }
+
+    fn tarball_fixture() -> TarballFixture {
+        let temp = tempfile::tempdir().unwrap();
+        let tarballs = temp.path().join("http-tarballs");
+        let installs = temp.path().join("installs");
+        std::fs::create_dir_all(&tarballs).unwrap();
+        std::fs::create_dir_all(&installs).unwrap();
+        // The temp dir itself is usually a symlink (`/var` on macOS), which is
+        // the whole reason the sweep keeps a canonical form separate from the
+        // one it locks and deletes with.
+        let canonical = std::fs::canonicalize(&tarballs).unwrap();
+        TarballFixture {
+            _temp: temp,
+            tarballs,
+            canonical,
+            installs,
+        }
+    }
+
+    impl TarballFixture {
+        /// A cache entry holding one 10-byte file.
+        fn entry(&self, name: &str) -> PathBuf {
+            let path = self.tarballs.join(name);
+            std::fs::create_dir_all(path.join("bin")).unwrap();
+            std::fs::write(path.join("bin").join("tool"), b"0123456789").unwrap();
+            path
+        }
+
+        fn install_slot(&self, tool: &str, version: &str) -> PathBuf {
+            let path = self.installs.join(tool).join(version);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            path
+        }
+
+        fn sweep_with_roots(&self, roots: &[PathBuf], dry_run: bool) -> Result<PruneResults> {
+            sweep_unreferenced_tarballs(&self.tarballs, &self.canonical, roots, dry_run)
+        }
+
+        fn sweep(&self, dry_run: bool) -> Result<PruneResults> {
+            self.sweep_with_roots(std::slice::from_ref(&self.installs), dry_run)
+        }
+
+        fn sweep_within(&self, dry_run: bool, budget: usize) -> Result<PruneResults> {
+            sweep_unreferenced_tarballs_within(
+                &self.tarballs,
+                &self.canonical,
+                std::slice::from_ref(&self.installs),
+                dry_run,
+                budget,
+            )
+        }
+
+        /// The referenced subset of `entries`, and the number of directories the
+        /// walk had to read to decide.
+        fn referenced(&self, entries: &[&str]) -> (HashSet<PathBuf>, usize) {
+            let targets: HashSet<PathBuf> = entries
+                .iter()
+                .map(|name| self.canonical.join(name))
+                .collect();
+            referenced_cache_entries(
+                &self.canonical,
+                std::slice::from_ref(&self.installs),
+                &targets,
+                PRUNE_WALK_DIR_BUDGET,
+            )
+            .unwrap()
+        }
+    }
+
+    /// Every directory in a tree, counting the tree's own root — which is
+    /// exactly one `read_dir` per directory, so it is what an unbounded walk of
+    /// that tree costs.
+    fn count_dirs(dir: &Path) -> usize {
+        let mut dirs = 1;
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                dirs += count_dirs(&entry.path());
+            }
+        }
+        dirs
+    }
+
+    #[test]
+    fn an_entry_nothing_points_at_is_removed() {
+        let fx = tarball_fixture();
+        let orphan = fx.entry("orphan");
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 1);
+        assert_eq!(results.size, 10);
+        assert!(!orphan.exists());
+    }
+
+    #[test]
+    fn a_symlinked_install_keeps_its_entry() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        file::make_symlink(&live, &fx.install_slot("http-tool", "1.0.0")).unwrap();
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
+        assert!(live.join("bin").join("tool").exists());
+    }
+
+    /// A link that lands *inside* an entry rather than on the entry root still
+    /// keeps it, which is what makes the match a prefix test rather than an
+    /// equality one.
+    #[test]
+    fn a_link_into_the_entry_keeps_it() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let install = fx.install_slot("http-tool", "1.0.0");
+        std::fs::create_dir_all(&install).unwrap();
+        file::make_symlink(&live.join("bin"), &install.join("bin")).unwrap();
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
+        assert!(live.exists());
+    }
+
+    /// The shape that motivated the prefix test: a raw-file install with
+    /// `bin_path` links a single *file* inside the entry.
+    ///
+    /// unix only, because `file::make_symlink` cannot build it on Windows —
+    /// there it goes through `junction::create`, which is a directory reparse
+    /// point and cannot name a file. The general property is covered above on
+    /// every platform.
+    #[test]
+    #[cfg(unix)]
+    fn a_file_link_into_the_entry_keeps_it() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let install = fx.install_slot("http-tool", "1.0.0");
+        std::fs::create_dir_all(install.join("bin")).unwrap();
+        file::make_symlink(
+            &live.join("bin").join("tool"),
+            &install.join("bin").join("tool"),
+        )
+        .unwrap();
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
+        assert!(live.exists());
+    }
+
+    /// `create_version_alias_symlink` points `latest` at the version directory,
+    /// and *that* is the link into the cache. Reading one hop finds only another
+    /// path inside the installs tree.
+    #[test]
+    fn a_two_hop_alias_keeps_its_entry() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let version = fx.install_slot("http-tool", "1.0.0-abcdefg");
+        file::make_symlink(&live, &version).unwrap();
+        file::make_symlink(&version, &fx.install_slot("http-tool", "latest")).unwrap();
+        // Remove the direct referent so only the alias is left to find it.
+        file::remove_symlink_or_junction(&version).unwrap();
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(
+            results.count, 1,
+            "the alias now dangles, so nothing holds it"
+        );
+
+        // ...and with the version dir in place, the alias resolves through it.
+        let live = fx.entry("live2");
+        let version = fx.install_slot("http-two", "1.0.0-abcdefg");
+        file::make_symlink(&live, &version).unwrap();
+        file::make_symlink(&version, &fx.install_slot("http-two", "latest")).unwrap();
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
+        assert!(live.exists());
+    }
+
+    /// Older mise versions created system and shared installs as cache symlinks,
+    /// and those survive until the install is replaced. Walking only the primary
+    /// installs dir would delete what they point at.
+    #[test]
+    fn an_entry_reached_from_a_shared_root_is_kept() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let shared = fx._temp.path().join("shared-installs").join("http-tool");
+        std::fs::create_dir_all(&shared).unwrap();
+        file::make_symlink(&live, &shared.join("1.0.0")).unwrap();
+
+        let only_primary = fx
+            .sweep_with_roots(std::slice::from_ref(&fx.installs), true)
+            .unwrap();
+        assert_eq!(
+            only_primary.count, 1,
+            "the shared root is where the referent is"
+        );
+
+        let both = fx
+            .sweep_with_roots(
+                &[fx.installs.clone(), fx._temp.path().join("shared-installs")],
+                false,
+            )
+            .unwrap();
+        assert_eq!(both.count, 0);
+        assert!(live.exists());
+    }
+
+    /// Two tools declaring the same URL share one entry (see
+    /// `e2e/backend/test_http_caching`), so removing one must not reclaim it.
+    #[test]
+    fn a_shared_entry_survives_while_either_install_remains() {
+        let fx = tarball_fixture();
+        let shared = fx.entry("shared");
+        let first = fx.install_slot("http-one", "1.0.0");
+        let second = fx.install_slot("http-two", "1.0.0");
+        file::make_symlink(&shared, &first).unwrap();
+        file::make_symlink(&shared, &second).unwrap();
+
+        file::remove_symlink_or_junction(&first).unwrap();
+        assert_eq!(fx.sweep(false).unwrap().count, 0);
+        assert!(shared.exists());
+
+        file::remove_symlink_or_junction(&second).unwrap();
+        assert_eq!(fx.sweep(false).unwrap().count, 1);
+        assert!(!shared.exists());
+    }
+
+    #[test]
+    fn a_dangling_link_does_not_keep_an_entry() {
+        let fx = tarball_fixture();
+        let orphan = fx.entry("orphan");
+        let install = fx.install_slot("http-tool", "1.0.0");
+        file::make_symlink(&fx.tarballs.join("never-extracted"), &install).unwrap();
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 1);
+        assert!(!orphan.exists());
+    }
+
+    /// Treating a directory that cannot be read as "holds no references" is the
+    /// mistake that deletes a live install, so the sweep gives up instead.
+    #[test]
+    #[cfg(unix)]
+    fn an_unreadable_install_dir_aborts_the_sweep() {
+        use std::os::unix::fs::PermissionsExt;
+        let fx = tarball_fixture();
+        let orphan = fx.entry("orphan");
+        let tool_dir = fx.installs.join("http-tool");
+        std::fs::create_dir_all(&tool_dir).unwrap();
+        std::fs::set_permissions(&tool_dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+        // root ignores the mode, so there is nothing to assert there.
+        let readable_anyway = std::fs::read_dir(&tool_dir).is_ok();
+        let result = fx.sweep(false);
+        std::fs::set_permissions(&tool_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if readable_anyway {
+            return;
+        }
+        assert!(result.is_err());
+        assert!(
+            orphan.exists(),
+            "nothing may be removed once the walk fails"
+        );
+    }
+
+    /// `extract_to_cache` builds an entry in a `<key>.tmp-<pid>-<ms>` directory
+    /// beside it, and the installer's lock is on the key, not on the temp name.
+    /// Reclaiming one destroys an extraction in flight.
+    #[test]
+    fn an_extraction_temp_dir_is_never_reclaimed() {
+        let fx = tarball_fixture();
+        let in_flight = fx.entry("abc123.tmp-4242-1700000000000");
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
+        assert!(in_flight.exists());
+    }
+
+    /// An older mise skips the cache lock on a forced install, so the
+    /// lock-and-look-again pass cannot see it. An entry written after the sweep
+    /// started is therefore not one the sweep observed to be orphaned.
+    #[test]
+    fn an_entry_written_after_the_sweep_started_is_left_alone() {
+        let fx = tarball_fixture();
+        let orphan = fx.entry("orphan");
+        // `started` is taken inside the sweep, so reach past it and claim a
+        // future timestamp the way an extraction landing mid-sweep would.
+        let future = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+        filetime::set_file_mtime(&orphan, filetime::FileTime::from_system_time(future)).unwrap();
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
+        assert!(orphan.exists());
+    }
+
+    /// Skipping a root that cannot be resolved would drop every reference under
+    /// it, so the sweep fails rather than deleting what it could not see.
+    /// The other half of the rule above: a root that simply is not there is not
+    /// a root in doubt, and must not stop the sweep.
+    #[test]
+    fn a_missing_install_root_is_skipped_rather_than_failing() {
+        let fx = tarball_fixture();
+        let orphan = fx.entry("orphan");
+        let missing = fx._temp.path().join("never-created");
+        let results = fx
+            .sweep_with_roots(&[fx.installs.clone(), missing], false)
+            .unwrap();
+        assert_eq!(results.count, 1);
+        assert!(!orphan.exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn an_install_root_that_cannot_be_resolved_fails_the_sweep() {
+        let fx = tarball_fixture();
+        let orphan = fx.entry("orphan");
+        // A symlink pointing at itself exists but cannot be canonicalised.
+        let looping = fx._temp.path().join("looping-root");
+        std::os::unix::fs::symlink(&looping, &looping).unwrap();
+        let result = fx.sweep_with_roots(&[fx.installs.clone(), looping], false);
+        assert!(result.is_err());
+        assert!(
+            orphan.exists(),
+            "nothing may be removed once a root is in doubt"
+        );
+    }
+
+    /// One entry that will not go must not abandon the rest of the sweep, nor
+    /// discard the count of what was already reclaimed.
+    #[test]
+    #[cfg(unix)]
+    fn a_failed_removal_does_not_abandon_the_sweep() {
+        use std::os::unix::fs::PermissionsExt;
+        let fx = tarball_fixture();
+        let stuck = fx.entry("aaa-stuck");
+        let removable = fx.entry("zzz-removable");
+        // No write bit on the directory means its children cannot be unlinked.
+        std::fs::set_permissions(&stuck, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let removable_anyway = std::fs::remove_file(stuck.join("bin").join("tool")).is_ok();
+        let results = fx.sweep(false);
+        std::fs::set_permissions(&stuck, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if removable_anyway {
+            // running as root, where the mode is not enforced
+            return;
+        }
+        let results = results.unwrap();
+        assert!(stuck.exists(), "the entry that could not be removed stays");
+        assert!(!removable.exists(), "the sweep carried on past it");
+        assert_eq!(
+            results.count, 1,
+            "and reports only what it actually removed"
+        );
+    }
+
+    /// A link whose target is absent keeps nothing — but a link whose target
+    /// merely cannot be read is not the same thing, and treating the two alike
+    /// is how a live entry gets deleted.
+    #[test]
+    #[cfg(unix)]
+    fn a_link_that_cannot_be_resolved_fails_the_sweep() {
+        use std::os::unix::fs::PermissionsExt;
+        let fx = tarball_fixture();
+        let orphan = fx.entry("orphan");
+        let blocked = fx._temp.path().join("blocked");
+        std::fs::create_dir_all(blocked.join("target")).unwrap();
+        file::make_symlink(
+            &blocked.join("target"),
+            &fx.install_slot("http-tool", "1.0.0"),
+        )
+        .unwrap();
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let readable_anyway = std::fs::read_dir(&blocked).is_ok();
+        let result = fx.sweep(false);
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if readable_anyway {
+            // running as root, where the mode is not enforced
+            return;
+        }
+        assert!(result.is_err());
+        assert!(
+            orphan.exists(),
+            "nothing may be removed once a link is in doubt"
+        );
+    }
+
+    /// The system installs dir has to reach the walk whatever state it is in.
+    /// `shared_install_dirs` drops it on `is_dir()`, which is false both for a
+    /// dir that is not there and for one whose metadata cannot be read — and the
+    /// second is precisely the case the walk must refuse to guess about.
+    ///
+    /// Asserted against `env::system_installs_dir()` rather than
+    /// `MISE_SYSTEM_INSTALLS_DIR`: those are the same path only until someone
+    /// configures `system_installs_dir`, and it is exactly then that restoring
+    /// the constant hands the walk a directory the user is not using while
+    /// leaving the one they are out of it. Naming the constant here would pass
+    /// either way and pin nothing.
+    #[test]
+    fn the_configured_system_installs_dir_always_reaches_the_walk() {
+        assert!(
+            sweep_install_roots().contains(&crate::env::system_installs_dir()),
+            "the walk cannot apply its own rule to a root it is never handed"
+        );
+    }
+
+    /// A link buried inside an extracted payload still keeps its entry.
+    ///
+    /// An earlier revision stopped descending at the first directory holding
+    /// more than one entry, on the theory that a payload does not look like the
+    /// single-entry chain a raw-file install leaves behind. Directory shape is
+    /// not an ownership invariant — a `postinstall` hook writing one file is
+    /// enough to change it — so the walk no longer asks. Nothing under an
+    /// install root is assumed to hold no references.
+    #[test]
+    fn a_link_buried_in_a_payload_keeps_its_entry() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let version = fx.installs.join("node").join("22.0.0");
+        for dir in ["bin", "include", "lib", "share"] {
+            std::fs::create_dir_all(version.join(dir)).unwrap();
+        }
+        let buried = version.join("lib").join("nested");
+        std::fs::create_dir_all(&buried).unwrap();
+        file::make_symlink(&live, &buried.join("link")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(
+            results.count, 0,
+            "a live entry was reclaimed because its link was below a payload directory"
+        );
+        assert!(live.exists());
+    }
+
+    /// The other side of the same bound: the raw-file chain is followed to its
+    /// end, so the link at the bottom keeps its entry.
+    #[test]
+    fn a_raw_file_chain_below_the_version_directory_keeps_its_entry() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let deep = fx.installs.join("mystery").join("1.0.0").join("bin");
+        std::fs::create_dir_all(&deep).unwrap();
+        file::make_symlink(&live, &deep.join("link")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
+        assert!(live.exists());
+    }
+
+    /// A registry shorthand that moves off `http:` can still have an older http
+    /// version installed, with its link below the version directory. Backend
+    /// identity is recorded per tool and describes it as it is *now*, so a bound
+    /// built on it would leave this directory closed and reclaim a live entry.
+    /// The shape does not move when the backend does.
+    #[test]
+    fn an_old_raw_file_install_survives_its_tool_moving_to_another_backend() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        // `node` is as positively "not http" as a name gets — it is a core
+        // plugin, and an identity check would stop right here.
+        let deep = fx.installs.join("node").join("1.0.0").join("bin");
+        std::fs::create_dir_all(&deep).unwrap();
+        file::make_symlink(&live, &deep.join("link")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(
+            results.count, 0,
+            "a live entry was reclaimed because its tool no longer identifies as http"
+        );
+        assert!(live.exists());
+    }
+
+    /// An explicit-backend install directory is named `github-owner-repo`, while
+    /// install state is keyed by the short name `github:owner/repo` — a lookup
+    /// by directory name finds nothing there. A bound built on identity would
+    /// not protect this link. The walk does not ask.
+    #[test]
+    fn an_explicit_backend_install_directory_is_searched() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let orphan = fx.entry("orphan");
+
+        let chain = fx
+            .installs
+            .join("github-owner-repo")
+            .join("1.0.0")
+            .join("bin");
+        std::fs::create_dir_all(&chain).unwrap();
+        file::make_symlink(&live, &chain.join("link")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 1);
+        assert!(live.exists());
+        assert!(!orphan.exists());
+    }
+
+    /// `bin_path` can name more than one component, so the chain can be longer
+    /// than a single directory. Nothing about the bound is tied to a depth.
+    #[test]
+    fn a_multi_component_bin_path_is_followed_to_the_end() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let deep = fx
+            .installs
+            .join("tool")
+            .join("1.0.0")
+            .join("bin")
+            .join("x86")
+            .join("v2");
+        std::fs::create_dir_all(&deep).unwrap();
+        file::make_symlink(&live, &deep.join("link")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
+        assert!(live.exists());
+    }
+
+    /// jdx's first P1 on #12419: a `postinstall` hook is handed
+    /// `MISE_TOOL_INSTALL_PATH` — the version directory — and anything it writes
+    /// there lands beside the `bin_path` chain. Reachability must not depend on
+    /// that directory holding nothing else.
+    #[test]
+    fn a_file_beside_the_link_chain_does_not_hide_it() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let version = fx.install_slot("http-tool", "1.0.0");
+        let bin = version.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        file::make_symlink(&live, &bin.join("link")).unwrap();
+        std::fs::write(version.join("README"), b"written by a postinstall hook").unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(
+            results.count, 0,
+            "a live entry was reclaimed because a file was written beside its link"
+        );
+        assert!(live.exists());
+    }
+
+    /// jdx's second P1: a tool directory moved elsewhere and linked back is a
+    /// working install, and every reference beneath it has to stay visible.
+    #[test]
+    fn a_relocated_tool_directory_keeps_its_entry() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let elsewhere = fx._temp.path().join("elsewhere").join("http-tool");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        file::make_symlink(&live, &elsewhere.join("1.0.0")).unwrap();
+        file::make_symlink(&elsewhere, &fx.installs.join("http-tool")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(
+            results.count, 0,
+            "a live entry was reclaimed because its tool directory had been moved"
+        );
+        assert!(live.exists());
+    }
+
+    /// The same one level down, and one level down again: a link is followed
+    /// wherever it sits, not only at the levels mise itself creates.
+    #[test]
+    fn a_relocated_version_directory_keeps_its_entry() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let elsewhere = fx._temp.path().join("elsewhere").join("1.0.0");
+        std::fs::create_dir_all(elsewhere.join("bin")).unwrap();
+        file::make_symlink(&live.join("bin"), &elsewhere.join("bin").join("link")).unwrap();
+        file::make_symlink(&elsewhere, &fx.install_slot("http-tool", "1.0.0")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
+        assert!(live.exists());
+    }
+
+    #[test]
+    fn a_directory_link_inside_a_payload_is_followed() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let version = fx.install_slot("http-tool", "1.0.0");
+        std::fs::create_dir_all(&version).unwrap();
+        let elsewhere = fx._temp.path().join("elsewhere").join("bin");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        file::make_symlink(&live.join("bin"), &elsewhere.join("link")).unwrap();
+        file::make_symlink(&elsewhere, &version.join("bin")).unwrap();
+        std::fs::write(version.join("README"), b"and a file beside it").unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 0);
+        assert!(live.exists());
+    }
+
+    /// Following links is what makes the two cases above work, and it is also
+    /// what could send the walk round in circles. A link back to a directory
+    /// already entered is not entered again. The orphan keeps the walk running
+    /// to the end rather than stopping early, so the cycle is actually reached.
+    #[test]
+    fn a_link_cycle_in_the_installs_tree_terminates() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        let orphan = fx.entry("orphan");
+        let version = fx.install_slot("http-tool", "1.0.0");
+        std::fs::create_dir_all(&version).unwrap();
+        file::make_symlink(&live, &version.join("bin")).unwrap();
+        file::make_symlink(&fx.installs, &version.join("self")).unwrap();
+        file::make_symlink(&fx.installs.join("http-tool"), &version.join("up")).unwrap();
+
+        let results = fx.sweep(false).unwrap();
+        assert_eq!(results.count, 1);
+        assert!(live.exists());
+        assert!(!orphan.exists());
+    }
+
+    /// A link out of the installs tree is followed, so the walk needs a ceiling
+    /// that does not depend on where it leads. Reaching it is a reachability
+    /// question the sweep could not answer, and an unanswered question removes
+    /// nothing.
+    #[test]
+    fn an_installs_tree_too_large_to_walk_preserves_everything() {
+        let fx = tarball_fixture();
+        let orphan = fx.entry("orphan");
+        let mut deep = fx.install_slot("http-tool", "1.0.0");
+        for level in 0..10 {
+            deep = deep.join(format!("d{level}"));
+        }
+        std::fs::create_dir_all(&deep).unwrap();
+
+        let result = fx.sweep_within(false, 4);
+        assert!(result.is_err());
+        assert!(
+            orphan.exists(),
+            "nothing may be removed once the walk gave up"
+        );
+    }
+
+    /// What the walk costs, asserted rather than described.
+    ///
+    /// The links live at `<root>/<tool>/<version>` and, for a raw file with
+    /// `bin_path`, just below it, and the walk is breadth-first and stops once
+    /// every entry in question is accounted for — so a run with nothing to
+    /// reclaim never opens a payload. The same tree is read in full only when
+    /// there is an entry that might be inside it.
+    #[test]
+    fn the_walk_stops_once_every_entry_is_accounted_for() {
+        let fx = tarball_fixture();
+        let live = fx.entry("live");
+        file::make_symlink(&live, &fx.install_slot("http-tool", "1.0.0")).unwrap();
+        // Something payload-shaped beside it, of the order a Node install is.
+        let payload = fx.installs.join("node").join("22.0.0");
+        for dir in ["bin", "include", "lib", "share"] {
+            for package in 0..10 {
+                std::fs::create_dir_all(
+                    payload.join(dir).join(format!("p{package}")).join("nested"),
+                )
+                .unwrap();
+            }
+        }
+        let whole_tree = count_dirs(&fx.installs);
+        assert_eq!(
+            whole_tree, 88,
+            "the tree the walk is being kept out of, one read_dir per directory"
+        );
+
+        let (found, opened) = fx.referenced(&["live"]);
+        assert_eq!(found.len(), 1);
+        assert!(
+            opened <= 3,
+            "nothing is orphaned, so the walk should stop at the install root and \
+             the two tool directories, not open the payload: {opened} directories read"
+        );
+
+        // ...and with an entry that might be in there, it is walked in full.
+        fx.entry("orphan");
+        let (found, opened) = fx.referenced(&["live", "orphan"]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            opened, whole_tree,
+            "an entry that could be anywhere is looked for everywhere"
+        );
+    }
+
+    #[test]
+    fn a_dry_run_reports_without_removing() {
+        let fx = tarball_fixture();
+        let orphan = fx.entry("orphan");
+        let results = fx.sweep(true).unwrap();
+        assert_eq!(results.count, 1);
+        assert_eq!(results.size, 10);
+        assert!(orphan.exists());
     }
 
     #[test]
