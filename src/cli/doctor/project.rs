@@ -123,14 +123,11 @@ impl Project {
         // whole named checks so a local command cannot inherit a stale remedy.
         for (path, cf) in config.config_files.iter().rev() {
             for (name, check) in cf.doctor_config().checks {
-                checks.insert(
-                    name,
-                    (
-                        path.clone(),
-                        cf.project_root().unwrap_or(std::env::current_dir()?),
-                        check,
-                    ),
-                );
+                let root = match cf.project_root() {
+                    Some(root) => root,
+                    None => std::env::current_dir()?,
+                };
+                checks.insert(name, (path.clone(), root, check));
             }
         }
         let mut report = Report::default();
