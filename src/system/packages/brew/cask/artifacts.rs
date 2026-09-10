@@ -718,6 +718,7 @@ pub(super) fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Resul
                     "sudo",
                     "guards",
                     "network_access",
+                    "must_succeed",
                 ],
             )?;
             let args = object
@@ -771,6 +772,7 @@ pub(super) fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Resul
                 .unwrap_or_default();
             let guards = parse_flight_guards(cask, kind, object.get("guards"))?;
             Ok(FlightStep::Run {
+                must_succeed: parse_optional_flight_bool(cask, kind, object, "must_succeed", true)?,
                 command: parse_run_command(cask, kind, object.get("command"))?,
                 args,
                 env,

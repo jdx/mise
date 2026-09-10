@@ -827,6 +827,7 @@ pub(super) fn execute_flight_step(
             }
         }
         FlightStep::Run {
+            must_succeed,
             command,
             args,
             env,
@@ -852,8 +853,8 @@ pub(super) fn execute_flight_step(
                     )
                 })
                 .collect::<Vec<_>>();
-            if *sudo {
-                sudo::run(&command, &args, &env)?;
+            let result = if *sudo {
+                sudo::run(&command, &args, &env)
             } else {
                 let mut runner = CmdLineRunner::new(&command);
                 for arg in &args {
@@ -862,7 +863,16 @@ pub(super) fn execute_flight_step(
                 for (key, value) in &env {
                     runner = runner.env(key, value);
                 }
-                runner.raw(true).execute()?;
+                runner.raw(true).execute()
+            };
+            if let Err(err) = result {
+                let exited = matches!(
+                    err.downcast_ref::<crate::errors::Error>(),
+                    Some(crate::errors::Error::ScriptFailed(_, Some(_)))
+                );
+                if *must_succeed || !exited {
+                    return Err(err);
+                }
             }
         }
         FlightStep::TerminateProcess { .. } => {

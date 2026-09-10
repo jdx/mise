@@ -1112,6 +1112,7 @@ fn parses_orbstack_structured_run_step() -> Result<()> {
     assert_eq!(
         artifacts.postflight_steps,
         vec![FlightStep::Run {
+            must_succeed: true,
             command: FlightPath {
                 base: FlightPathBase::AppDir,
                 path: "OrbStack.app/Contents/MacOS/bin/orbctl".to_string(),
@@ -2972,6 +2973,7 @@ fn structured_run_expands_paths_args_and_env() -> Result<()> {
     execute_flight_steps(
         &test_cask("example", "1.2.3"),
         &[FlightStep::Run {
+            must_succeed: true,
             command: FlightPath {
                 base: FlightPathBase::Literal,
                 path: "/bin/sh".to_string(),
@@ -3500,6 +3502,12 @@ fn cask_shim_supports_completion_stanzas_and_system_command() -> Result<()> {
   zsh_completion "#{appdir}/Example.app/Contents/Resources/etc/example.zsh-completion"
   fish_completion "#{appdir}/Example.app/Contents/Resources/etc/example.fish-completion"
   manpage "#{appdir}/Example.app/Contents/Resources/man/example.1"
+  preflight_steps do
+    raise "structured steps must run only in Rust"
+  end
+  postflight_steps do
+    raise "structured steps must run only in Rust"
+  end
   postflight do
     kubectl_target = staged_path/"kubectl-link"
     next if kubectl_target.exist?
@@ -7961,5 +7969,44 @@ fn auto_updates_refuses_symlinked_and_nonregular_plist_paths() -> Result<()> {
             .success()
     );
     assert!(read_app_version(&fifo_app).is_err());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn structured_run_respects_failure_policy() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let mut cask = test_cask("example", "1.0");
+    for (policy, succeeds) in [(None, false), (Some(true), false), (Some(false), true)] {
+        let mut step = serde_json::json!({
+            "type": "run", "command": {"path": "/usr/bin/false"}
+        });
+        if let Some(policy) = policy {
+            step["must_succeed"] = policy.into();
+        }
+        cask.artifacts = vec![
+            serde_json::json!({"app": ["Example.app"]}),
+            serde_json::json!({"postflight_steps": [{"steps": [step]}]}),
+        ];
+        let artifacts = cask_artifacts(&cask)?;
+        assert_eq!(
+            execute_flight_steps(
+                &cask,
+                &artifacts.postflight_steps,
+                tmp.path(),
+                tmp.path(),
+                "postflight_steps"
+            )
+            .is_ok(),
+            succeeds
+        );
+    }
+    let invalid = serde_json::json!({"type": "run", "command": {"path": "/usr/bin/false"}, "must_succeed": "false"});
+    assert!(parse_flight_step(&cask, "postflight_steps", &invalid).is_err());
+    let missing = serde_json::json!({"type": "run", "command": {"path": "/mise-nonexistent-command"}, "must_succeed": false});
+    let step = parse_flight_step(&cask, "postflight_steps", &missing)?;
+    assert!(
+        execute_flight_steps(&cask, &[step], tmp.path(), tmp.path(), "postflight_steps").is_err()
+    );
     Ok(())
 }
