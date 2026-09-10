@@ -3043,15 +3043,108 @@ fn structured_flight_steps_move_and_remove_staged_paths() -> Result<()> {
 }
 
 #[test]
+#[cfg(unix)]
+fn structured_set_permissions_step_changes_existing_staged_paths() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let staged = tmp.path();
+    let cache = staged.join("Blender.app/Contents/Resources/5.2/python/lib/__pycache__");
+    file::create_dir_all(&cache)?;
+    let compiled = cache.join("module.pyc");
+    file::write(&compiled, "pyc")?;
+    let read_only = std::fs::Permissions::from_mode(0o555);
+    std::fs::set_permissions(&compiled, read_only.clone())?;
+    std::fs::set_permissions(&cache, read_only)?;
+
+    execute_flight_steps(
+        &test_cask("blender", "5.2.1"),
+        &[FlightStep::SetPermissions {
+            paths: vec![
+                FlightPath {
+                    base: FlightPathBase::StagedPath,
+                    path: "*.app/**/__pycache__".to_string(),
+                },
+                FlightPath {
+                    base: FlightPathBase::StagedPath,
+                    path: "Missing.app".to_string(),
+                },
+            ],
+            permissions: "u+w".to_string(),
+            recursive: false,
+        }],
+        staged,
+        staged,
+        "preflight_steps",
+    )?;
+
+    assert_eq!(cache.metadata()?.permissions().mode() & 0o777, 0o755);
+    assert_eq!(
+        compiled.metadata()?.permissions().mode() & 0o777,
+        0o555,
+        "a non-recursive step leaves the directory contents alone"
+    );
+    assert!(!staged.join("Missing.app").exists());
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn structured_set_permissions_step_recurses_by_default() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let staged = tmp.path().join("stage");
+    let appdir = tmp.path().join("Applications");
+    let binary = appdir.join("Tool.app/Contents/MacOS/tool");
+    file::create_dir_all(binary.parent().unwrap())?;
+    file::write(&binary, "#!/bin/sh\n")?;
+    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o644))?;
+    file::create_dir_all(&staged)?;
+
+    execute_flight_steps(
+        &test_cask("tool", "1.0.0"),
+        &[FlightStep::SetPermissions {
+            paths: vec![FlightPath {
+                base: FlightPathBase::AppDir,
+                path: "Tool.app/Contents/MacOS".to_string(),
+            }],
+            permissions: "0755".to_string(),
+            recursive: true,
+        }],
+        &staged,
+        &appdir,
+        "postflight_steps",
+    )?;
+
+    assert_eq!(binary.metadata()?.permissions().mode() & 0o777, 0o755);
+    Ok(())
+}
+
+#[test]
+fn structured_set_permissions_step_skips_when_no_path_exists() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    execute_flight_steps(
+        &test_cask("tool", "1.0.0"),
+        &[FlightStep::SetPermissions {
+            paths: vec![FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "Missing-*".to_string(),
+            }],
+            permissions: "0755".to_string(),
+            recursive: true,
+        }],
+        tmp.path(),
+        tmp.path(),
+        "preflight_steps",
+    )
+}
+
+#[test]
 fn rejects_unsupported_structured_flight_steps() {
     let mut cask = test_cask("battle-net", "1.0.0");
     cask.artifacts = vec![
         serde_json::json!({
             "preflight_steps": [{
                 "steps": [{
-                    "type": "set_permissions",
-                    "paths": [{"base": "staged_path", "path": "Battle.net-Setup.app"}],
-                    "permissions": "a+x"
+                    "type": "set_ownership",
+                    "paths": [{"base": "staged_path", "path": "Battle.net-Setup.app"}]
                 }]
             }]
         }),
@@ -3059,7 +3152,113 @@ fn rejects_unsupported_structured_flight_steps() {
     ];
 
     let err = cask_artifacts(&cask).unwrap_err().to_string();
-    assert!(err.contains("unsupported preflight_steps step type set_permissions"));
+    assert!(err.contains("unsupported preflight_steps step type set_ownership"));
+}
+
+#[test]
+fn parses_structured_set_permissions_steps() -> Result<()> {
+    let mut cask = test_cask("blender", "5.2.1");
+    cask.artifacts = vec![
+        serde_json::json!({
+            "preflight_steps": [{
+                "steps": [{
+                    "type": "set_permissions",
+                    "paths": [{"base": "staged_path", "path": "*.app/**/__pycache__"}],
+                    "permissions": "u+w",
+                    "non_recursive": true
+                }]
+            }]
+        }),
+        serde_json::json!({"app": "Blender.app"}),
+        serde_json::json!({
+            "postflight_steps": [{
+                "steps": [{
+                    "type": "set_permissions",
+                    "paths": [{"base": "appdir", "path": "Blender.app/Contents/MacOS/Blender"}],
+                    "permissions": "0755"
+                }]
+            }]
+        }),
+    ];
+
+    let artifacts = cask_artifacts(&cask)?;
+    assert_eq!(
+        artifacts.preflight_steps,
+        vec![FlightStep::SetPermissions {
+            paths: vec![FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "*.app/**/__pycache__".to_string(),
+            }],
+            permissions: "u+w".to_string(),
+            recursive: false,
+        }]
+    );
+    assert_eq!(
+        artifacts.postflight_steps,
+        vec![FlightStep::SetPermissions {
+            paths: vec![FlightPath {
+                base: FlightPathBase::AppDir,
+                path: "Blender.app/Contents/MacOS/Blender".to_string(),
+            }],
+            permissions: "0755".to_string(),
+            recursive: true,
+        }]
+    );
+    Ok(())
+}
+
+#[test]
+fn rejects_malformed_structured_set_permissions_steps() {
+    for (steps, message) in [
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "staged_path", "path": "Tool.app"}]
+            }]),
+            "unsupported preflight_steps set_permissions step permissions",
+        ),
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "homebrew_prefix", "path": "bin/tool"}],
+                "permissions": "0755"
+            }]),
+            "unsupported preflight_steps paths base homebrew_prefix",
+        ),
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "appdir", "path": "*.app"}],
+                "permissions": "0755"
+            }]),
+            "unsupported preflight_steps paths glob outside staged_path *.app",
+        ),
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "staged_path", "path": "../Tool.app"}],
+                "permissions": "0755"
+            }]),
+            "invalid preflight_steps paths path ../Tool.app",
+        ),
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "staged_path", "path": "Tool.app"}],
+                "permissions": "0755",
+                "sudo": true
+            }]),
+            "unsupported preflight_steps set_permissions step field sudo",
+        ),
+    ] {
+        let mut cask = test_cask("tool", "1.0.0");
+        cask.artifacts = vec![
+            serde_json::json!({"preflight_steps": [{"steps": steps}]}),
+            serde_json::json!({"app": "Tool.app"}),
+        ];
+        let err = cask_artifacts(&cask).unwrap_err().to_string();
+        assert!(err.contains(message), "{err}");
+    }
 }
 
 #[test]

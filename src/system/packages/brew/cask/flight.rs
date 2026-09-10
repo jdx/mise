@@ -576,6 +576,7 @@ impl FlightStep {
         match self {
             Self::Move { .. } => "move",
             Self::Remove { .. } => "remove",
+            Self::SetPermissions { .. } => "set_permissions",
             Self::Copy { .. } => "copy",
             Self::Symlink { .. } => "symlink",
             Self::Run { .. } => "run",
@@ -634,6 +635,36 @@ pub(super) fn execute_flight_step(
                     }
                 }
             }
+        }
+        FlightStep::SetPermissions {
+            paths,
+            permissions,
+            recursive,
+        } => {
+            // Homebrew runs `chmod` on the paths that exist and skips the rest,
+            // never elevating. Staged paths are discarded with the stage on
+            // failure, and an appdir postflight change is not reversible in
+            // Homebrew either, so nothing is recorded for rollback.
+            let mut existing = Vec::new();
+            for path in paths {
+                for path in permissions_flight_paths(cask, path, staged_path, appdir)? {
+                    if path.exists() {
+                        existing.push(path);
+                    }
+                }
+            }
+            if existing.is_empty() {
+                return Ok(());
+            }
+            let mut runner = CmdLineRunner::new("/bin/chmod");
+            if *recursive {
+                runner = runner.arg("-R");
+            }
+            runner = runner.arg("--").arg(permissions);
+            for path in &existing {
+                runner = runner.arg(path);
+            }
+            runner.raw(true).execute()?;
         }
         FlightStep::Copy {
             source,
@@ -1009,6 +1040,31 @@ pub(super) fn flight_paths(staged_path: &Path, path: &FlightPath) -> Result<Vec<
     // Remove steps do not have a `source_glob` flag, so path globs are detected
     // from the path syntax instead.
     expand_staged_glob(staged_path, &path.path)
+}
+
+pub(super) fn permissions_flight_paths(
+    cask: &Cask,
+    path: &FlightPath,
+    staged_path: &Path,
+    appdir: &Path,
+) -> Result<Vec<PathBuf>> {
+    match path.base {
+        FlightPathBase::StagedPath if is_flight_glob(&path.path) => {
+            // Like remove steps, set_permissions has no glob flag; Homebrew
+            // globs the path syntax itself.
+            let pattern = expand_flight_template(cask, &path.path, staged_path, appdir);
+            expand_staged_glob(staged_path, &pattern)
+        }
+        FlightPathBase::StagedPath | FlightPathBase::AppDir => {
+            Ok(vec![resolve_flight_path_with_context(
+                cask,
+                path,
+                staged_path,
+                appdir,
+            )?])
+        }
+        _ => bail!("brew-cask: structured set_permissions must use staged_path or appdir"),
+    }
 }
 
 pub(super) fn expand_staged_glob(staged_path: &Path, pattern: &str) -> Result<Vec<PathBuf>> {

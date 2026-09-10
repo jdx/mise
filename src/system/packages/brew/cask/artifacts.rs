@@ -592,6 +592,48 @@ pub(super) fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Resul
                     .unwrap_or(false),
             })
         }
+        "set_permissions" => {
+            reject_unsupported_flight_fields(
+                cask,
+                kind,
+                "set_permissions step",
+                object,
+                &["type", "paths", "permissions", "non_recursive"],
+            )?;
+            let paths = object
+                .get("paths")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    eyre!(
+                        "brew-cask:{}: unsupported {kind} set_permissions step metadata format",
+                        cask.token
+                    )
+                })?
+                .iter()
+                .map(|path| parse_permissions_flight_path(cask, kind, Some(path)))
+                .collect::<Result<Vec<_>>>()?;
+            let permissions = object
+                .get("permissions")
+                .and_then(Value::as_str)
+                .filter(|permissions| !permissions.is_empty())
+                .ok_or_else(|| {
+                    eyre!(
+                        "brew-cask:{}: unsupported {kind} set_permissions step permissions",
+                        cask.token
+                    )
+                })?;
+            // Homebrew serializes the DSL's `recursive: true` default as an
+            // absent `non_recursive`, so only an explicit `true` narrows it.
+            let recursive = !object
+                .get("non_recursive")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            Ok(FlightStep::SetPermissions {
+                paths,
+                permissions: permissions.to_string(),
+                recursive,
+            })
+        }
         "copy" => {
             reject_unsupported_flight_fields(
                 cask,
@@ -1082,6 +1124,55 @@ pub(super) fn parse_flight_path(
     if validate_flight_relative_path(path).is_err() {
         bail!(
             "brew-cask:{}: invalid {kind} {field} path {}",
+            cask.token,
+            path
+        )
+    }
+    Ok(FlightPath {
+        base,
+        path: path.to_string(),
+    })
+}
+
+/// `set_permissions` paths follow Homebrew's `remove` shape but may also
+/// name the installed app for `postflight_steps`, so `appdir` is accepted
+/// beside `staged_path`.
+pub(super) fn parse_permissions_flight_path(
+    cask: &Cask,
+    kind: &str,
+    value: Option<&Value>,
+) -> Result<FlightPath> {
+    let field = "paths";
+    let object = value.and_then(Value::as_object).ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: unsupported {kind} {field} metadata format",
+            cask.token
+        )
+    })?;
+    let base = match object.get("base").and_then(Value::as_str) {
+        Some("staged_path") => FlightPathBase::StagedPath,
+        Some("appdir") => FlightPathBase::AppDir,
+        Some(base) => bail!(
+            "brew-cask:{}: unsupported {kind} {field} base {}",
+            cask.token,
+            base
+        ),
+        None => bail!("brew-cask:{}: unsupported {kind} {field} base", cask.token),
+    };
+    let path = object
+        .get("path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| eyre!("brew-cask:{}: unsupported {kind} {field} path", cask.token))?;
+    if validate_flight_relative_path(path).is_err() {
+        bail!(
+            "brew-cask:{}: invalid {kind} {field} path {}",
+            cask.token,
+            path
+        )
+    }
+    if base == FlightPathBase::AppDir && is_flight_glob(path) {
+        bail!(
+            "brew-cask:{}: unsupported {kind} {field} glob outside staged_path {}",
             cask.token,
             path
         )

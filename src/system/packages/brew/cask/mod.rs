@@ -197,6 +197,11 @@ enum FlightStep {
         paths: Vec<FlightPath>,
         recursive: bool,
     },
+    SetPermissions {
+        paths: Vec<FlightPath>,
+        permissions: String,
+        recursive: bool,
+    },
     Copy {
         source: FlightPath,
         target: FlightPath,
