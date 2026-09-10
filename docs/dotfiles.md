@@ -97,6 +97,43 @@ Git credentials on each machine. Follow
 the repository, or [set up another machine](/bootstrap/setup.html) to bring
 your configuration to a new computer.
 
+With tracking, your live files stay in place. Saved checkpoints travel through
+the Git remote; incoming changes are applied to the tracked files on the other
+machine.
+
+```mermaid
+---
+config:
+  htmlLabels: false
+---
+flowchart TB
+    accTitle: Tracked dotfiles across two machines
+    accDescr: Each machine saves and restores a live regular file through local Git history. Saved history is pushed and fetched through a private Git remote.
+    subgraph laptop["Laptop"]
+        direction TB
+        laptopFile["~/.zshrc<br/>Live regular file"]
+        laptopHistory["Local Git history<br/>Saved checkpoints"]
+        laptopFile -->|Save| laptopHistory
+        laptopHistory -->|Apply / restore| laptopFile
+    end
+    remote["Private Git remote"]
+    subgraph desktop["Desktop"]
+        direction TB
+        desktopHistory["Local Git history<br/>Saved checkpoints"]
+        desktopFile["~/.zshrc<br/>Live regular file"]
+        desktopHistory -->|Apply / restore| desktopFile
+        desktopFile -->|Save| desktopHistory
+    end
+    laptop <-->|Push / fetch| remote
+    remote <-->|Push / fetch| desktop
+```
+
+Automatic saves require the watcher service. Automatic two-way synchronization
+also requires `history.sync = "sync"`, an origin, and Git credentials on each
+machine. Changes propagate on the watcher intervals; conflicts or unsaved edits
+can pause synchronization. See [sync modes](/history.html#choose-a-sync-mode)
+and [conflict handling](/history.html#resolve-a-conflict).
+
 Use a private repository: synchronization sends earlier checkpoints too,
 so temporary edits can become part of the shared history. Configure
 [encryption](/history.html#encrypted-shared-files) before first saving files
