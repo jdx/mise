@@ -176,7 +176,73 @@ pub(crate) fn clear_invalid_declarations() {
         .clear();
 }
 
-/// one `[dotfiles]` whole-file entry as written in mise.toml
+/// Deployment variants reuse tracking selectors without changing history streams.
+#[derive(Debug, Clone)]
+pub(crate) struct FileVariant {
+    target: Option<String>,
+    selector: crate::system::history::select::Variant,
+}
+
+impl<'de> Deserialize<'de> for FileVariant {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Flattening Variant would bypass its deny_unknown_fields check. Remove
+        // our one additional field, then use the original strict selector parser.
+        let mut table = toml::Table::deserialize(deserializer)?;
+        let target = table
+            .remove("target")
+            .map(toml::Value::try_into)
+            .transpose()
+            .map_err(serde::de::Error::custom)?;
+        let selector = toml::Value::Table(table)
+            .try_into()
+            .map_err(serde::de::Error::custom)?;
+        Ok(Self { target, selector })
+    }
+}
+
+/// Validate selector combinations and destination syntax before selecting a variant.
+fn validate_file_variants(
+    target: &str,
+    source: Option<&str>,
+    mode: Option<&str>,
+    variants: &[FileVariant],
+) -> Result<()> {
+    let selectors: Vec<_> = variants.iter().map(|v| v.selector.clone()).collect();
+    crate::system::history::select::validate(&selectors)?;
+    if variants.iter().any(|v| v.target.is_some()) {
+        if mode == Some("track") {
+            bail!("target overrides are not supported with mode = \"track\"");
+        }
+        if source.is_none() {
+            bail!("destination variants require an explicit source");
+        }
+    }
+    if variants.is_empty() && resolve_target_arg(target).is_relative() {
+        bail!("target must be absolute or start with ~/");
+    }
+    for variant in variants {
+        let destination = variant.target.as_deref().unwrap_or(target);
+        if !variant_target_is_absolute(destination) {
+            bail!("variant target must be absolute or start with ~/");
+        }
+    }
+    Ok(())
+}
+
+/// Inactive variants can contain another platform's absolute path syntax.
+/// The selected destination is still checked with native path rules before use.
+fn variant_target_is_absolute(target: &str) -> bool {
+    let bytes = target.as_bytes();
+    resolve_target_arg(target).is_absolute()
+        || target.starts_with('/')
+        || target.starts_with("\\\\")
+        || (bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && matches!(bytes[2], b'/' | b'\\'))
+}
+
+/// One `[dotfiles]` whole-file entry as written in mise.toml.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum FileTomlEntry {
@@ -202,9 +268,9 @@ pub(crate) enum FileTomlEntry {
         autosave: Option<bool>,
         #[serde(default)]
         encrypt: Option<bool>,
-        /// history: platform / profile streams for a tracked file
+        /// Platform / profile selectors, with optional deployment destinations
         #[serde(default)]
-        variants: Option<Vec<crate::system::history::select::Variant>>,
+        variants: Option<Vec<FileVariant>>,
         /// `false` disables an inherited declaration on this machine
         #[serde(default)]
         enabled: Option<bool>,
@@ -577,8 +643,8 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     }
                 }
             }
-            if resolve_target_arg(&target).is_relative() {
-                bail!("dotfile target must be absolute or start with ~/: {target}");
+            if let FileTomlEntry::Source(_) = &entry {
+                validate_file_variants(&target, None, None, &[])?;
             }
             if let FileTomlEntry::Table {
                 source,
@@ -586,9 +652,16 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 mode,
                 manifest,
                 exclude,
+                variants,
                 ..
             } = entry
             {
+                validate_file_variants(
+                    &target,
+                    source.as_deref(),
+                    mode.as_deref(),
+                    variants.as_deref().unwrap_or_default(),
+                )?;
                 if content.is_some() && (mode.is_some() || exclude.is_some() || manifest.is_some())
                 {
                     bail!(
@@ -639,6 +712,7 @@ pub(crate) fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileReque
     files_from_config_files_with_tracking_roots(config_files, None)
 }
 
+/// Resolve deployment overrides while limiting history enrollment to trusted roots.
 fn files_from_config_files_with_tracking_roots(
     config_files: &ConfigMap,
     tracking_roots: Option<&[PathBuf]>,
@@ -646,6 +720,42 @@ fn files_from_config_files_with_tracking_roots(
     // keyed by the *expanded* target so "~/.gitconfig" in one config and
     // its absolute spelling in another are one entry, not two
     let mut merged: IndexMap<(PathBuf, bool), FileRequest> = IndexMap::new();
+    // A logical declaration must be overridden before selecting its destination:
+    // otherwise a local override that changes the target would deploy both paths.
+    let mut destination_declarations = IndexMap::new();
+    let mut resolved_declarations = HashMap::new();
+    for (path, cf) in config_files {
+        let base = path.parent().unwrap_or(Path::new("."));
+        let origin = ResourceOrigin {
+            config: path.clone(),
+            config_root: cf.config_root(),
+            environment: crate::config::environments_for_config_path(path),
+            source: None,
+        };
+        if let Some(dotfiles) = cf.dotfiles_config() {
+            for (key, value) in dotfiles.0 {
+                if value.get("mode").and_then(toml::Value::as_str) == Some("track") {
+                    continue;
+                }
+                let mut requests = IndexMap::new();
+                if let Some(entry) = parse_file_entry(&key, value, path) {
+                    let overrides_target = matches!(&entry,
+                        FileTomlEntry::Table { variants: Some(vs), .. }
+                            if vs.iter().any(|v| v.target.is_some()));
+                    merge_file_entry(key.clone(), entry, base, &origin, &mut requests);
+                    // An invalid or inactive declaration cannot suppress an
+                    // inherited request. Cache resolution so sources are walked once.
+                    if !requests.is_empty() {
+                        let (_, has_override) = destination_declarations
+                            .entry(resolve_target_arg(&key))
+                            .or_insert((path, false));
+                        *has_override |= overrides_target;
+                    }
+                }
+                resolved_declarations.insert((path, key), requests);
+            }
+        }
+    }
     // config_files is ordered local -> global; reverse for global -> local
     for (path, cf) in config_files.iter().rev() {
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -659,6 +769,13 @@ fn files_from_config_files_with_tracking_roots(
             continue;
         };
         for (target_raw, value) in dotfiles.0 {
+            if value.get("mode").and_then(toml::Value::as_str) != Some("track")
+                && destination_declarations
+                    .get(&resolve_target_arg(&target_raw))
+                    .is_some_and(|(winner, has_override)| *has_override && *winner != path)
+            {
+                continue;
+            }
             if tracking_roots.is_some_and(|roots| !track_layer_allowed(&origin, roots))
                 && value.get("mode").and_then(toml::Value::as_str) == Some("track")
             {
@@ -669,36 +786,43 @@ fn files_from_config_files_with_tracking_roots(
                 );
                 continue;
             }
-            if value.as_table().is_some_and(|t| {
-                t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
-                    && ["content", "block", "line", "template"]
-                        .iter()
-                        .any(|key| t.contains_key(*key))
-            }) {
-                record_invalid(
-                    &target_raw,
-                    &origin.config,
-                    "encrypted dotfiles require an external source, not inline content or edits",
-                );
-                continue;
+            if let Some(requests) = resolved_declarations.remove(&(path, target_raw.clone())) {
+                merged.extend(requests);
+            } else if let Some(entry) = parse_file_entry(&target_raw, value, path) {
+                merge_file_entry(target_raw, entry, &base, &origin, &mut merged);
             }
-            let encryption_declared = value
-                .as_table()
-                .is_some_and(|table| table.contains_key("encrypt"));
-            let Some(entry) = file_entry_from_toml(&target_raw, value) else {
-                if encryption_declared {
-                    record_invalid(
-                        &target_raw,
-                        &origin.config,
-                        "invalid encryption declaration; encrypt must be a boolean on a whole-file entry",
-                    );
-                }
-                continue;
-            };
-            merge_file_entry(target_raw, entry, &base, &origin, &mut merged);
         }
     }
     merged.into_values().collect()
+}
+
+/// Parse a whole-file declaration and reject unsupported encryption combinations.
+fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
+    if value.as_table().is_some_and(|t| {
+        t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
+            && ["content", "block", "line", "template"]
+                .iter()
+                .any(|key| t.contains_key(*key))
+    }) {
+        record_invalid(
+            target,
+            config,
+            "encrypted dotfiles require an external source, not inline content or edits",
+        );
+        return None;
+    }
+    let encryption_declared = value
+        .as_table()
+        .is_some_and(|table| table.contains_key("encrypt"));
+    let entry = file_entry_from_toml(target, value);
+    if entry.is_none() && encryption_declared {
+        record_invalid(
+            target,
+            config,
+            "invalid encryption declaration; encrypt must be a boolean on a whole-file entry",
+        );
+    }
+    entry
 }
 
 fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileTomlEntry> {
@@ -733,6 +857,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
     }
 }
 
+/// Resolve one declaration, merging explicit tracking policies into earlier layers.
 fn merge_file_entry(
     target_raw: String,
     entry: FileTomlEntry,
@@ -775,6 +900,13 @@ fn merge_file_entry(
     };
     let enabled = enabled.unwrap_or(true);
     let variants = variants.unwrap_or_default();
+    if let Err(err) =
+        validate_file_variants(&target_raw, source.as_deref(), mode.as_deref(), &variants)
+    {
+        record_invalid(&target_raw, &origin.config, err.to_string());
+        return;
+    }
+    let selectors: Vec<_> = variants.iter().map(|v| v.selector.clone()).collect();
     let policy_for = |mode: FileMode| {
         let defaults = FilePolicy::for_mode(mode);
         FilePolicy {
@@ -812,7 +944,7 @@ fn merge_file_entry(
             base: base.to_path_buf(),
             origin: origin.clone(),
             policy: policy_for(FileMode::Track),
-            variants,
+            variants: selectors,
             enabled,
         };
         // a later file of the same directory (`config.local.toml` after
@@ -826,14 +958,20 @@ fn merge_file_entry(
         }
         return;
     }
-    if !variants.is_empty() {
-        record_invalid(
-            &target_raw,
-            &origin.config,
-            "variants are only supported with mode = \"track\"",
-        );
-        return;
-    }
+    use crate::system::history::select::{self, Selection};
+    let target_raw = match select::select(&selectors, &select::active_environments()) {
+        Selection::Single => target_raw,
+        Selection::Variant(selected) => variants
+            .iter()
+            .find(|v| v.selector == selected)
+            .and_then(|v| v.target.clone())
+            .unwrap_or(target_raw),
+        Selection::NoMatch => return,
+        Selection::Ambiguous(_) => {
+            record_invalid(&target_raw, &origin.config, "ambiguous dotfile variants");
+            return;
+        }
+    };
     if source.is_some() && content.is_some() {
         warn!(
             "[dotfiles].\"{target_raw}\": source and content are mutually exclusive, ignoring entry"
@@ -949,13 +1087,17 @@ fn merge_file_entry(
     }
 }
 
+/// Resolve the default deployment mode, warning and using symlinks for unsupported values.
 pub(crate) fn default_mode() -> FileMode {
     let settings = Settings::get();
     let mode = settings.dotfiles.default_mode.as_str();
     match FileMode::parse(mode) {
-        Some(mode) => mode,
-        None => {
-            warn!("dotfiles.default_mode: unknown mode '{mode}', using symlink");
+        Some(
+            mode
+            @ (FileMode::Symlink | FileMode::SymlinkEach | FileMode::Copy | FileMode::Template),
+        ) => mode,
+        _ => {
+            warn!("dotfiles.default_mode: unsupported mode '{mode}', using symlink");
             FileMode::Symlink
         }
     }
@@ -3292,6 +3434,71 @@ fn link_path(source: &Path, target: &Path, allow_windows_symlink: bool) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn destination_variants_survive_incoming_config_preflight() -> Result<()> {
+        use crate::config::config_file::mise_toml::MiseToml;
+        use std::sync::Arc;
+
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let body = r#"
+[dotfiles.settings]
+source = "dotfiles/settings.json"
+mode = "copy"
+variants = [
+    { os = "macos", target = "~/Library/Application Support/Code/User/settings.json" },
+    { os = "linux", profile = "work", target = "/etc/example/settings.json" },
+    { os = "windows", target = 'C:\Users\example\settings.json' },
+]
+"#;
+        let mut configs = ConfigMap::new();
+        configs.insert(
+            path.clone(),
+            Arc::new(MiseToml::for_history_preflight(body, &path)?),
+        );
+        validate_incoming_files(&configs)?;
+
+        // Validate inactive destinations too, before accepting shared config.
+        let invalid = body.replace(
+            "~/Library/Application Support/Code/User/settings.json",
+            "relative/settings.json",
+        );
+        configs.insert(
+            path.clone(),
+            Arc::new(MiseToml::for_history_preflight(&invalid, &path)?),
+        );
+        assert!(validate_incoming_files(&configs).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn destination_variants_reject_unknown_fields_in_all_modes() {
+        for mode in ["copy", "track"] {
+            for field in ["oss", "profle", "targte"] {
+                let input = format!(
+                    r#"mode = "{mode}"
+variants = [{{ {field} = "linux" }}]"#
+                );
+                assert!(toml::from_str::<FileTomlEntry>(&input).is_err(), "{input}");
+            }
+        }
+    }
+
+    #[test]
+    fn destination_variant_paths_accept_foreign_absolute_syntax() {
+        for target in [
+            "~/settings.json",
+            "/etc/example/settings.json",
+            "C:/Users/example/settings.json",
+            r"C:\Users\example\settings.json",
+            r"\\server\share\settings.json",
+        ] {
+            assert!(variant_target_is_absolute(target), "{target}");
+        }
+        for target in ["settings.json", "./settings.json", "C:settings.json", ""] {
+            assert!(!variant_target_is_absolute(target), "{target}");
+        }
+    }
 
     #[cfg(unix)]
     #[test]
