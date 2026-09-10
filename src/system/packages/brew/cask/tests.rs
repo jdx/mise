@@ -3096,6 +3096,10 @@ fn structured_set_permissions_step_recurses_by_default() -> Result<()> {
     file::create_dir_all(binary.parent().unwrap())?;
     file::write(&binary, "#!/bin/sh\n")?;
     std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o644))?;
+    let external = tmp.path().join("external");
+    file::write(&external, "outside")?;
+    std::fs::set_permissions(&external, std::fs::Permissions::from_mode(0o644))?;
+    file::make_symlink(&external, &binary.with_file_name("link"))?;
     file::create_dir_all(&staged)?;
 
     execute_flight_steps(
@@ -3114,6 +3118,11 @@ fn structured_set_permissions_step_recurses_by_default() -> Result<()> {
     )?;
 
     assert_eq!(binary.metadata()?.permissions().mode() & 0o777, 0o755);
+    assert_eq!(
+        external.metadata()?.permissions().mode() & 0o777,
+        0o644,
+        "a symlink inside the tree must not carry the change outside it"
+    );
     Ok(())
 }
 
