@@ -147,3 +147,14 @@ assert_fail "mise bootstrap compose apply --dry-run --yes"
 assert_fail "mise bootstrap --dry-run --yes --skip files"
 assert_contains "mise bootstrap --dry-run --yes" "deferred-compose --project-directory"
 assert_fail "test -f $deferred_compose"
+
+# Phase ordering does not make Compose depend on skipped package changes.
+if [[ "$(uname -s)" == "Linux" ]] && command -v apt-get >/dev/null; then
+  cat >>mise.toml <<'EOF'
+[bootstrap.packages]
+"apt:mise-phase-test-nonexistent" = "latest"
+EOF
+  assert_contains "mise bootstrap --dry-run --yes --skip packages" "deferred-compose --project-directory"
+  assert_contains "mise bootstrap --dry-run --yes --only files,compose" "deferred-compose --project-directory"
+  assert_fail "mise bootstrap --dry-run --yes --only compose"
+fi

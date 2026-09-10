@@ -94,3 +94,17 @@ EOF
   fi
   assert_fail "test -e '$PWD/repo-input'"
 fi
+
+# Pending plugin packages belong after both file phases, even without built-ins.
+cat >mise.toml <<EOF
+[bootstrap.plugins]
+phase-test = "https://example.invalid/phase-test.git"
+[bootstrap.packages]
+"phase-test:vendor" = "latest"
+[bootstrap.files."$PWD/plugin-late"]
+content = "late"
+[bootstrap.files."$PWD/plugin-early"]
+content = "early"
+phase = "pre-packages"
+EOF
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[].id.kind] == [\"file\", \"file\", \"package\"]'"
