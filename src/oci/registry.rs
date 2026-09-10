@@ -1843,7 +1843,7 @@ mod tests {
                 "digest".into(),
                 digest.clone(),
             ))
-            .match_body(bytes.as_slice())
+            .match_body(bytes.to_vec())
             .with_status(201)
             .create_async()
             .await;
