@@ -39,6 +39,7 @@ pub(super) fn app_is_running(_app: &Path) -> bool {
 
 /// Matches one executable path per line against `app` by path component, so
 /// `Foo.app` does not claim `Foo.app 2`. Lines that are not UTF-8 are ignored.
+#[cfg(any(target_os = "macos", test))]
 pub(super) fn app_has_live_process(app: &Path, ps_output: &[u8]) -> bool {
     ps_output
         .split(|byte| *byte == b'\n')
