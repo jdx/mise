@@ -3,3 +3,4 @@ bins = ["mpv"]
 description = "A free, open source, and cross-platform media player"
 test = { cmd = "mpv --version", expected = "mpv/MPlayer/mplayer2" }
 version_order = "source"
+os = ["linux", "macos"]
