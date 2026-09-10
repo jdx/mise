@@ -218,7 +218,8 @@ variants = [
 ```
 
 A later configuration file can replace a destination-variant declaration by
-using the same key, even when it selects a different destination.
+using the same key, even when it selects a different destination. Invalid
+or non-matching local declarations leave the inherited entry active.
 
 Commands such as `status`, `diff`, `apply`, and `unapply` use the selected
 destination. Changing the selected destination does not remove a file

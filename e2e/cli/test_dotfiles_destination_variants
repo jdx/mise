@@ -12,6 +12,7 @@ mode = "copy"
 variants = [
   { os = "linux", target = "~/.config/code/settings.json" },
   { os = "macos", target = "~/Library/Application Support/Code/User/settings.json" },
+  { os = "windows", target = 'C:\Users\example\settings.json' },
 ]
 
 [dotfiles."~/.default-settings.json"]
@@ -68,6 +69,41 @@ assert_succeed "mise bootstrap dotfiles apply --yes"
 assert "cat ~/.local-settings.json" '{"shared":true}'
 assert_fail "test -e ~/.config/code/settings.json"
 assert_not_contains "mise bootstrap dotfiles status" ".config/code/settings.json"
+
+# Invalid local overrides preserve the valid inherited declaration.
+cat >mise.local.toml <<'TOML'
+[dotfiles.settings]
+source = "dotfiles/settings.json"
+mode = "copy"
+variants = [{ default = true, target = "relative.json" }]
+TOML
+assert_contains "mise bootstrap dotfiles status 2>&1" ".config/code/settings.json"
+cat >mise.local.toml <<'TOML'
+[dotfiles.settings]
+source = "dotfiles/settings.json"
+mode = "unknown"
+variants = [{ default = true, target = "~/.invalid-override" }]
+TOML
+assert_contains "mise bootstrap dotfiles status 2>&1" ".config/code/settings.json"
+assert_not_contains "mise bootstrap dotfiles status 2>/dev/null" ".invalid-override"
+
+cat >mise.local.toml <<'TOML'
+[dotfiles.settings]
+source = "dotfiles/settings.json"
+mode = "copy"
+variants = [{ profile = "inactive", target = "~/.inactive-override" }]
+TOML
+assert_contains "mise bootstrap dotfiles status" ".config/code/settings.json"
+
+# Unsupported defaults cannot route deployment variants into history tracking.
+cat >mise.local.toml <<'TOML'
+[dotfiles.settings]
+source = "dotfiles/settings.json"
+variants = [{ default = true, target = "~/.default-mode-settings.json" }]
+TOML
+assert_contains "MISE_DOTFILES_DEFAULT_MODE=track mise bootstrap dotfiles status 2>&1" "unsupported mode 'track'"
+assert_succeed "MISE_DOTFILES_DEFAULT_MODE=track mise bootstrap dotfiles apply --yes"
+assert "readlink ~/.default-mode-settings.json" "$PWD/dotfiles/settings.json"
 
 # Ambiguous matches, invalid defaults, relative paths, and tracking target
 # overrides must not write a destination.

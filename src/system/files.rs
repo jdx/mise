@@ -177,12 +177,27 @@ pub(crate) fn clear_invalid_declarations() {
 }
 
 /// Deployment variants reuse tracking selectors without changing history streams.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub(crate) struct FileVariant {
-    #[serde(default)]
     target: Option<String>,
-    #[serde(flatten)]
     selector: crate::system::history::select::Variant,
+}
+
+impl<'de> Deserialize<'de> for FileVariant {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Flattening Variant would bypass its deny_unknown_fields check. Remove
+        // our one additional field, then use the original strict selector parser.
+        let mut table = toml::Table::deserialize(deserializer)?;
+        let target = table
+            .remove("target")
+            .map(toml::Value::try_into)
+            .transpose()
+            .map_err(serde::de::Error::custom)?;
+        let selector = toml::Value::Table(table)
+            .try_into()
+            .map_err(serde::de::Error::custom)?;
+        Ok(Self { target, selector })
+    }
 }
 
 fn validate_file_variants(
@@ -205,11 +220,25 @@ fn validate_file_variants(
         bail!("target must be absolute or start with ~/");
     }
     for variant in variants {
-        if resolve_target_arg(variant.target.as_deref().unwrap_or(target)).is_relative() {
+        let destination = variant.target.as_deref().unwrap_or(target);
+        if !variant_target_is_absolute(destination) {
             bail!("variant target must be absolute or start with ~/");
         }
     }
     Ok(())
+}
+
+/// Inactive variants can contain another platform's absolute path syntax.
+/// The selected destination is still checked with native path rules before use.
+fn variant_target_is_absolute(target: &str) -> bool {
+    let bytes = target.as_bytes();
+    resolve_target_arg(target).is_absolute()
+        || target.starts_with('/')
+        || target.starts_with("\\\\")
+        || (bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && matches!(bytes[2], b'/' | b'\\'))
 }
 
 /// One `[dotfiles]` whole-file entry as written in mise.toml.
@@ -692,23 +721,36 @@ fn files_from_config_files_with_tracking_roots(
     // A logical declaration must be overridden before selecting its destination:
     // otherwise a local override that changes the target would deploy both paths.
     let mut destination_declarations = IndexMap::new();
+    let mut resolved_declarations = HashMap::new();
     for (path, cf) in config_files {
+        let base = path.parent().unwrap_or(Path::new("."));
+        let origin = ResourceOrigin {
+            config: path.clone(),
+            config_root: cf.config_root(),
+            environment: crate::config::environments_for_config_path(path),
+            source: None,
+        };
         if let Some(dotfiles) = cf.dotfiles_config() {
             for (key, value) in dotfiles.0 {
-                let overrides_target = match file_entry_from_toml(&key, value) {
-                    Some(FileTomlEntry::Table { mode, variants, .. }) => {
-                        if mode.as_deref() == Some("track") {
-                            continue;
-                        }
-                        variants.is_some_and(|vs| vs.iter().any(|v| v.target.is_some()))
+                if value.get("mode").and_then(toml::Value::as_str) == Some("track") {
+                    continue;
+                }
+                let mut requests = IndexMap::new();
+                if let Some(entry) = parse_file_entry(&key, value, path) {
+                    let overrides_target = matches!(&entry,
+                        FileTomlEntry::Table { variants: Some(vs), .. }
+                            if vs.iter().any(|v| v.target.is_some()));
+                    merge_file_entry(key.clone(), entry, base, &origin, &mut requests);
+                    // An invalid or inactive declaration cannot suppress an
+                    // inherited request. Cache resolution so sources are walked once.
+                    if !requests.is_empty() {
+                        let (_, has_override) = destination_declarations
+                            .entry(resolve_target_arg(&key))
+                            .or_insert((path, false));
+                        *has_override |= overrides_target;
                     }
-                    Some(FileTomlEntry::Source(_)) => false,
-                    None => continue,
-                };
-                let (_, has_override) = destination_declarations
-                    .entry(resolve_target_arg(&key))
-                    .or_insert((path, false));
-                *has_override |= overrides_target;
+                }
+                resolved_declarations.insert((path, key), requests);
             }
         }
     }
@@ -742,36 +784,42 @@ fn files_from_config_files_with_tracking_roots(
                 );
                 continue;
             }
-            if value.as_table().is_some_and(|t| {
-                t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
-                    && ["content", "block", "line", "template"]
-                        .iter()
-                        .any(|key| t.contains_key(*key))
-            }) {
-                record_invalid(
-                    &target_raw,
-                    &origin.config,
-                    "encrypted dotfiles require an external source, not inline content or edits",
-                );
-                continue;
+            if let Some(requests) = resolved_declarations.remove(&(path, target_raw.clone())) {
+                merged.extend(requests);
+            } else if let Some(entry) = parse_file_entry(&target_raw, value, path) {
+                merge_file_entry(target_raw, entry, &base, &origin, &mut merged);
             }
-            let encryption_declared = value
-                .as_table()
-                .is_some_and(|table| table.contains_key("encrypt"));
-            let Some(entry) = file_entry_from_toml(&target_raw, value) else {
-                if encryption_declared {
-                    record_invalid(
-                        &target_raw,
-                        &origin.config,
-                        "invalid encryption declaration; encrypt must be a boolean on a whole-file entry",
-                    );
-                }
-                continue;
-            };
-            merge_file_entry(target_raw, entry, &base, &origin, &mut merged);
         }
     }
     merged.into_values().collect()
+}
+
+fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
+    if value.as_table().is_some_and(|t| {
+        t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
+            && ["content", "block", "line", "template"]
+                .iter()
+                .any(|key| t.contains_key(*key))
+    }) {
+        record_invalid(
+            target,
+            config,
+            "encrypted dotfiles require an external source, not inline content or edits",
+        );
+        return None;
+    }
+    let encryption_declared = value
+        .as_table()
+        .is_some_and(|table| table.contains_key("encrypt"));
+    let entry = file_entry_from_toml(target, value);
+    if entry.is_none() && encryption_declared {
+        record_invalid(
+            target,
+            config,
+            "invalid encryption declaration; encrypt must be a boolean on a whole-file entry",
+        );
+    }
+    entry
 }
 
 fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileTomlEntry> {
@@ -1039,9 +1087,12 @@ pub(crate) fn default_mode() -> FileMode {
     let settings = Settings::get();
     let mode = settings.dotfiles.default_mode.as_str();
     match FileMode::parse(mode) {
-        Some(mode) => mode,
-        None => {
-            warn!("dotfiles.default_mode: unknown mode '{mode}', using symlink");
+        Some(
+            mode
+            @ (FileMode::Symlink | FileMode::SymlinkEach | FileMode::Copy | FileMode::Template),
+        ) => mode,
+        _ => {
+            warn!("dotfiles.default_mode: unsupported mode '{mode}', using symlink");
             FileMode::Symlink
         }
     }
@@ -3391,7 +3442,8 @@ source = "dotfiles/settings.json"
 mode = "copy"
 variants = [
     { os = "macos", target = "~/Library/Application Support/Code/User/settings.json" },
-    { os = "linux", profile = "work", target = "~/.config/Code/User/settings.json" },
+    { os = "linux", profile = "work", target = "/etc/example/settings.json" },
+    { os = "windows", target = 'C:\Users\example\settings.json' },
 ]
 "#;
         let mut configs = ConfigMap::new();
@@ -3412,6 +3464,35 @@ variants = [
         );
         assert!(validate_incoming_files(&configs).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn destination_variants_reject_unknown_fields_in_all_modes() {
+        for mode in ["copy", "track"] {
+            for field in ["oss", "profle", "targte"] {
+                let input = format!(
+                    r#"mode = "{mode}"
+variants = [{{ {field} = "linux" }}]"#
+                );
+                assert!(toml::from_str::<FileTomlEntry>(&input).is_err(), "{input}");
+            }
+        }
+    }
+
+    #[test]
+    fn destination_variant_paths_accept_foreign_absolute_syntax() {
+        for target in [
+            "~/settings.json",
+            "/etc/example/settings.json",
+            "C:/Users/example/settings.json",
+            r"C:\Users\example\settings.json",
+            r"\\server\share\settings.json",
+        ] {
+            assert!(variant_target_is_absolute(target), "{target}");
+        }
+        for target in ["settings.json", "./settings.json", "C:settings.json", ""] {
+            assert!(!variant_target_is_absolute(target), "{target}");
+        }
     }
 
     #[cfg(unix)]
