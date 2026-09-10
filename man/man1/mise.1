@@ -514,6 +514,9 @@ Print the current PATH entries mise is providing
 \fIAliases: \fRpaths
 .RE
 .TP
+\fBdoctor project\fR
+Run the project's diagnostic checks
+.TP
 \fBen\fR
 Start a new shell with the mise environment built from the current configuration
 .TP
@@ -3655,6 +3658,23 @@ Get the PATH entries mise provides, such as `/home/user/.local/share/mise/instal
 .RS 4
 mise doctor path
 .RE
+.SH "MISE DOCTOR PROJECT"
+Run the project's diagnostic checks
+
+Checks are declared in [doctor.checks.<name>] in mise.toml. Each command runs
+with the project's installed tools and environment. Checks should inspect
+state; mise does not sandbox them or run their suggested remedies.
+.PP
+\fBUsage:\fR mise doctor project [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output the complete report as JSON
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE EN"
 Start a new shell with the mise environment built from the current configuration
 

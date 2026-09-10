@@ -433,6 +433,8 @@ pub(crate) struct MiseToml {
     #[serde(default)]
     bootstrap: Option<BootstrapTomlConfig>,
     #[serde(default)]
+    doctor: crate::config::doctor::DoctorConfig,
+    #[serde(default)]
     dotfiles: Option<DotfilesTomlConfig>,
     #[serde(default)]
     history: Option<crate::system::history::config::HistoryTomlConfig>,
@@ -1766,6 +1768,10 @@ impl ConfigFile for MiseToml {
         self.oci.clone()
     }
 
+    fn doctor_config(&self) -> crate::config::doctor::DoctorConfig {
+        self.doctor.clone()
+    }
+
     fn bootstrap_config(&self) -> Option<BootstrapTomlConfig> {
         self.bootstrap.clone()
     }
@@ -1953,6 +1959,7 @@ impl Clone for MiseToml {
             deps: self.deps.clone(),
             oci: self.oci.clone(),
             bootstrap: self.bootstrap.clone(),
+            doctor: self.doctor.clone(),
             dotfiles: self.dotfiles.clone(),
             history: self.history.clone(),
             vars: self.vars.clone(),
@@ -4817,6 +4824,7 @@ run = "cargo build"
             "[alias]\nnode = \"asdf:foo/bar\"",
             "[plugins]\nfoo = \"https://example.com/foo.git\"",
             "env_file = \".env\"",
+            "[doctor.checks.probe]\nrun = \"echo hi\"",
         ] {
             assert!(!is_safe_config_body(body), "should require trust: {body}");
         }

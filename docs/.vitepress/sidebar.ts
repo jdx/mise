@@ -26,6 +26,10 @@ export const sidebar: SidebarItem[] = [
     items: [
       { text: "mise.toml", link: "/configuration" },
       { text: "Variables", link: "/configuration/vars" },
+      {
+        text: "Project Diagnostics",
+        link: "/configuration/project-diagnostics",
+      },
       { text: "Settings", link: "/configuration/settings" },
       {
         text: "Configuration Environments",
