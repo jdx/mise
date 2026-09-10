@@ -837,11 +837,16 @@ fn adopts_only_an_identical_existing_app() -> Result<()> {
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
 
-    assert!(install_app(&stage, &caskroom, &app, true, true, true)?);
+    assert_eq!(
+        install_app(&stage, &caskroom, &app, true, true, true, false)?,
+        AppInstall::Installed {
+            metadata_only: true
+        }
+    );
     assert!(!caskroom.join("Example.app").exists());
 
     crate::file::write(target.join("app"), "different")?;
-    let error = install_app(&stage, &caskroom, &app, true, true, true).unwrap_err();
+    let error = install_app(&stage, &caskroom, &app, true, true, true, false).unwrap_err();
     assert!(error.to_string().contains("is not identical"));
     Ok(())
 }
@@ -865,7 +870,12 @@ fn self_updating_cask_adopts_a_different_existing_app() -> Result<()> {
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
 
-    assert!(install_app(&stage, &caskroom, &app, false, true, false)?);
+    assert_eq!(
+        install_app(&stage, &caskroom, &app, false, true, false, false)?,
+        AppInstall::Installed {
+            metadata_only: true
+        }
+    );
     assert_eq!(
         std::fs::read_to_string(target.join("app"))?,
         "self-updated version"
@@ -7784,6 +7794,136 @@ fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()>
     file::create_dir_all(&path)?;
     assert!(read_app_version(&app).is_err());
     assert!(read_app_version(&tmp.path().join("Missing.app")).is_err());
+    Ok(())
+}
+
+/// Nested helpers match the bundle; sibling bundles sharing a prefix do not.
+#[test]
+fn running_app_matches_bundle_processes_by_path_component() {
+    let app = Path::new("/Applications/Google Chrome.app");
+    for (listing, expected) in [
+        (
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n",
+            true,
+        ),
+        (
+            "/sbin/launchd\n/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/153.0.8010.37/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n",
+            true,
+        ),
+        (
+            "  /Applications/Google Chrome.app/Contents/MacOS/Google Chrome  \r\n",
+            true,
+        ),
+        ("/Applications/Google Chrome.app\n", true),
+        (
+            "/Applications/Google Chrome.app 2/Contents/MacOS/Google Chrome\n",
+            false,
+        ),
+        (
+            "/Applications/Google Chrome.appx/Contents/MacOS/Google Chrome\n",
+            false,
+        ),
+        (
+            "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome\n",
+            false,
+        ),
+        ("Google Chrome\n-/bin/zsh\n<defunct>\n", false),
+        ("", false),
+        ("\n\n", false),
+    ] {
+        assert_eq!(
+            app_has_live_process(app, listing.as_bytes()),
+            expected,
+            "listing={listing:?}"
+        );
+    }
+    let mixed = b"/Applications/Goo\xffgle Chrome.app/Contents/MacOS/x\n/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n";
+    assert!(app_has_live_process(app, mixed));
+    assert!(!app_has_live_process(
+        app,
+        b"/Applications/Goo\xffgle Chrome.app/Contents/MacOS/x\n"
+    ));
+}
+
+/// A process launched from inside the bundle is seen until it exits. The
+/// executable links to `/bin/sleep`; a copied platform binary is killed on exec.
+#[cfg(target_os = "macos")]
+#[test]
+fn running_app_sees_a_process_launched_from_the_bundle() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let app = tmp.path().join("Sleeper.app");
+    let executable = app.join("Contents/MacOS/Sleeper");
+    file::create_dir_all(executable.parent().unwrap())?;
+    std::os::unix::fs::symlink("/bin/sleep", &executable)?;
+    assert!(!app_is_running(&app));
+    let mut child = std::process::Command::new(&executable)
+        .arg("600")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    let running = app_is_running(&app);
+    child.kill()?;
+    child.wait()?;
+    assert!(running);
+    assert!(!app_is_running(&app));
+    Ok(())
+}
+
+/// A running app defers the swap without leaving the staged copy behind, and
+/// the swap proceeds once the app has exited.
+#[cfg(target_os = "macos")]
+#[test]
+fn defers_a_running_self_updating_app_at_the_swap() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let _guard = BrewPrefixGuard::set(&root);
+    let stage = root.join("stage");
+    let caskroom = root.join("Caskroom/example/2.0.0");
+    let appdir = root.join("Applications");
+    let target = appdir.join("Example.app");
+    file::create_dir_all(stage.join("Example.app/Contents"))?;
+    file::create_dir_all(target.join("Contents/MacOS"))?;
+    file::write(stage.join("Example.app/Contents/app"), "downloaded")?;
+    file::write(target.join("Contents/app"), "installed")?;
+    let executable = target.join("Contents/MacOS/Example");
+    std::os::unix::fs::symlink("/bin/sleep", &executable)?;
+    let app = AppArtifact {
+        source: "Example.app".to_string(),
+        target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+    };
+
+    let mut child = std::process::Command::new(&executable)
+        .arg("600")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    let result = install_app(&stage, &caskroom, &app, false, false, false, true);
+    child.kill()?;
+    child.wait()?;
+    assert_eq!(result?, AppInstall::Running);
+    assert_eq!(
+        std::fs::read_to_string(target.join("Contents/app"))?,
+        "installed"
+    );
+    assert!(!caskroom.join("Example.app").exists());
+    let leftovers = std::fs::read_dir(&appdir)?
+        .map(|entry| Ok(entry?.file_name()))
+        .collect::<Result<Vec<_>>>()?;
+    assert_eq!(leftovers, vec![std::ffi::OsString::from("Example.app")]);
+
+    assert_eq!(
+        install_app(&stage, &caskroom, &app, false, false, false, true)?,
+        AppInstall::Installed {
+            metadata_only: true
+        }
+    );
+    assert_eq!(
+        std::fs::read_to_string(target.join("Contents/app"))?,
+        "downloaded"
+    );
     Ok(())
 }
 

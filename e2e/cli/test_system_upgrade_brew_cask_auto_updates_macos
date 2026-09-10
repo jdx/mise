@@ -13,6 +13,7 @@ import plistlib
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import zipfile
 
@@ -116,6 +117,24 @@ try:
     missing_app.rename(parent_app)
     live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1"}))
 
+    # A running outdated app is left to update itself until nothing runs from
+    # its bundle. The executable links to /bin/sleep; a copy is killed on exec.
+    executable = parent_app / "Contents/MacOS/auto-parent"
+    executable.parent.mkdir(parents=True)
+    executable.symlink_to("/bin/sleep")
+    sleeper = subprocess.Popen([str(executable), "600"], stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        for args in (("upgrade", "--dry-run", "--yes"), ("upgrade", "--yes")):
+            output = run(*args)
+            assert "skipped: installed app is running and updates itself" in output, output
+            assert downloads == [], downloads
+            assert parent.read_text() == "original"
+            assert parent_receipt.read_bytes() == original_receipt
+    finally:
+        sleeper.kill()
+        sleeper.wait()
+
     output = run("upgrade", "--yes")
     assert "upgraded auto-parent 1 -> 2" in output, output
     assert downloads == ["/auto-parent.zip"], downloads
@@ -126,6 +145,7 @@ try:
     receipt = prefix / "Caskroom/auto-parent/2/.mise-cask.toml"
     assert 'version = "2"' in receipt.read_text()
     original = receipt.read_bytes()
+    original_receipt_v2 = original
     live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1"}, fmt=plistlib.FMT_BINARY))
     parent.write_text("older despite equal receipt")
     output = run("upgrade", "--dry-run", "--yes")
@@ -143,6 +163,60 @@ try:
     latest_receipt, original = receipts["auto-latest"]
     assert latest_receipt.read_bytes() == original
     assert (prefix / "Applications/auto-latest.app/Contents/payload").read_text() == "original"
+
+    # A preflight step can start the app itself. The swap is skipped, preflight
+    # work is undone, and no journal is left pending. The launcher spawns once;
+    # its pid file stops it from spawning again on the rerun.
+    pidfile = root / "preflight.pid"
+    launcher = "\n".join([
+        "#!/bin/sh",
+        "[ -e \"$2\" ] && exit 0",
+        "mkdir -p \"$(dirname \"$1\")\"",
+        "ln -sf /bin/sleep \"$1\"",
+        "\"$1\" 600 </dev/null >/dev/null 2>&1 &",
+        "echo $! > \"$2\"",
+        "",
+    ])
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr(f"{parent_app.name}/Contents/payload", "third")
+        bundle.writestr(f"{parent_app.name}/Contents/Info.plist", plistlib.dumps({"CFBundleShortVersionString": "3"}))
+        info = zipfile.ZipInfo("launch")
+        info.external_attr = 0o755 << 16
+        bundle.writestr(info, launcher)
+    responses["/auto-parent-3.zip"] = archive.getvalue()
+    metadata = json.loads(responses["/api/cask/auto-parent.json"])
+    metadata["version"] = "3"
+    metadata["url"] = f"{base}/auto-parent-3.zip"
+    metadata["artifacts"] = [
+        {"preflight_steps": [{"steps": [{
+            "type": "run",
+            "command": {"base": "staged_path", "path": "launch"},
+            "args": [str(executable), str(pidfile)],
+        }]}]},
+        {"app": [parent_app.name]},
+    ]
+    responses["/api/cask/auto-parent.json"] = json.dumps(metadata).encode()
+    live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "2"}))
+    journals = Path(os.environ["MISE_STATE_DIR"]) / "brew-cask/auto-parent"
+    try:
+        output = run("upgrade", "--yes")
+        assert "skipped: installed app started running during the upgrade and updates itself" in output, output
+        assert pidfile.exists()
+        assert parent.read_text() == "older despite equal receipt"
+        assert receipt.read_bytes() == original_receipt_v2
+        assert not journals.exists() or not any(journals.iterdir())
+    finally:
+        if pidfile.exists():
+            os.kill(int(pidfile.read_text()), 9)
+    for _ in range(50):
+        listing = subprocess.run(["ps", "-axo", "comm="], capture_output=True, text=True).stdout
+        if str(executable) not in listing:
+            break
+        time.sleep(0.1)
+    output = run("upgrade", "--yes")
+    assert "upgraded auto-parent 2 -> 3" in output, output
+    assert parent.read_text() == "third"
 finally:
     server.shutdown()
     thread.join()
