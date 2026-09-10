@@ -166,6 +166,12 @@ pub(crate) struct ServiceNotifications {
 }
 
 impl ServiceNotifications {
+    pub(crate) fn extend(&mut self, other: Self) {
+        for (service, sources) in other.sources {
+            self.sources.entry(service).or_default().extend(sources);
+        }
+    }
+
     pub(crate) fn notify_file(&mut self, path: &Path, services: &[String]) {
         self.notify(ResourceId::new("file", path.to_string_lossy()), services);
     }
@@ -320,4 +326,20 @@ pub(crate) fn validate_notifications(
 
 fn default_true() -> bool {
     true
+}
+
+#[cfg(test)]
+mod notification_tests {
+    use super::*;
+
+    #[test]
+    fn merges_notifications_from_both_file_phases() {
+        let mut early = ServiceNotifications::default();
+        early.notify_file(Path::new("/etc/early"), &["web".into()]);
+        let mut late = ServiceNotifications::default();
+        late.notify_file(Path::new("/etc/late"), &["web".into(), "worker".into()]);
+        early.extend(late);
+        assert_eq!(early.sources["web"].len(), 2);
+        assert_eq!(early.sources["worker"].len(), 1);
+    }
 }

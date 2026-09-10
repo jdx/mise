@@ -141,9 +141,12 @@ preflight prevents a missing input from leaving a partially provisioned host.
    [`[bootstrap.users]` and `[bootstrap.groups]`](/bootstrap/accounts.html).
 2. `mise bootstrap plugins apply` installs package manager plugins declared in
    [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html).
+   Files and directories with [`phase = "pre-packages"`](/bootstrap/files.html#files-before-packages)
+   are then applied, before the `pre-packages` hook.
 3. Built-in managers install missing [`[bootstrap.packages]`](/bootstrap/packages/).
 4. `mise bootstrap files apply` converges
-   [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html).
+   the remaining [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html)
+   (the default `"post-packages"` phase).
 5. [`[bootstrap.services]`](/bootstrap/services.html) converges existing Linux
    systemd system units and user services on Linux, macOS, and Windows.
    User services with `requires_tools = true` wait until after tool installation.

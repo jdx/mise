@@ -63,6 +63,46 @@ one privileged batch. Plans and file content are sent to narrowly scoped mise
 helpers over stdin, so file content does not appear in process arguments or
 logs.
 
+## Files before packages
+
+Set `phase = "pre-packages"` on files and directories needed by the package
+manager, such as repository definitions and signing keys:
+
+```toml
+[bootstrap.directories."/etc/apt/keyrings"]
+mode = "0755"
+phase = "pre-packages"
+
+[bootstrap.files."/etc/apt/keyrings/vendor.asc"]
+source = "./files/vendor.asc"
+phase = "pre-packages"
+
+[bootstrap.files."/etc/apt/sources.list.d/vendor.sources"]
+source = "./files/vendor.sources"
+phase = "pre-packages"
+
+[bootstrap.packages]
+"apt:vendor-tool" = "latest"
+```
+
+Provide the vendor's key and repository definition in the source files. Run
+`mise bootstrap --update` to refresh package metadata after applying the files;
+changing repository files does not automatically refresh metadata.
+
+Early files run after accounts and package manager plugins, before the
+`pre-packages` hook. The default phase is `"post-packages"`, which keeps files
+after built-in package installation. Each file is applied once per bootstrap
+run. Service notifications from both phases are collected for the services step.
+
+Declared parent directories must be created no later than their children and
+removed no earlier than their children. Conflicting phase declarations fail
+validation before bootstrap makes changes. Set a declared parent's phase to
+`"pre-packages"` when an early file needs it.
+
+`mise bootstrap files apply` still applies all declared files and directories.
+`mise bootstrap --only files` runs both file phases; `--skip files` skips both.
+`--only packages` does not apply files. Plans include each file's phase.
+
 ## Preview and inspect
 
 ```sh

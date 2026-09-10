@@ -136,6 +136,8 @@ pub(crate) struct ResourcePlan {
     pub origin: Option<ResourceOrigin>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<ResourceId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<super::managed_files::ManagedFilePhase>,
 }
 
 impl ResourcePlan {
@@ -152,11 +154,17 @@ impl ResourcePlan {
             action,
             origin: None,
             depends_on: vec![],
+            phase: None,
         }
     }
 
     pub(crate) fn with_origin(mut self, origin: ResourceOrigin) -> Self {
         self.origin = Some(origin);
+        self
+    }
+
+    pub(crate) fn with_file_phase(mut self, phase: super::managed_files::ManagedFilePhase) -> Self {
+        self.phase = Some(phase);
         self
     }
 }
@@ -525,6 +533,17 @@ pub(crate) async fn plan(
     for resource in unavailable_files {
         plan.insert(resource)?;
     }
+    let builtin_packages = super::packages_from_config(config)
+        .into_iter()
+        .filter(|packages| !packages.manager.is_plugin())
+        .flat_map(|packages| {
+            let manager = packages.manager.name().to_string();
+            packages.requests.into_iter().map(move |request| {
+                ResourceId::new("package", format!("{manager}:{}", request.name))
+            })
+        })
+        .collect::<Vec<_>>();
+    add_file_phase_dependencies(&mut plan, &builtin_packages)?;
     let service_dependencies = plan
         .resources
         .keys()
@@ -618,6 +637,34 @@ pub(crate) async fn plan(
     // Validate dependency references and cycles even when callers only need JSON.
     plan.output()?;
     Ok(plan)
+}
+
+fn add_file_phase_dependencies(plan: &mut BootstrapPlan, packages: &[ResourceId]) -> Result<()> {
+    use super::managed_files::ManagedFilePhase;
+
+    let early = plan
+        .resources
+        .values()
+        .filter(|resource| resource.phase == Some(ManagedFilePhase::PrePackages))
+        .map(|resource| resource.id.clone())
+        .collect::<Vec<_>>();
+    let late = plan
+        .resources
+        .values()
+        .filter(|resource| resource.phase == Some(ManagedFilePhase::PostPackages))
+        .map(|resource| resource.id.clone())
+        .collect::<Vec<_>>();
+    for package in packages {
+        for file in &early {
+            plan.add_dependency(package, file.clone())?;
+        }
+    }
+    for file in &late {
+        for dependency in packages.iter().chain(&early) {
+            plan.add_dependency(file, dependency.clone())?;
+        }
+    }
+    Ok(())
 }
 
 fn add_account_dependencies(
@@ -735,6 +782,35 @@ fn package_resource_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_phases_order_resources_around_packages() {
+        use super::super::managed_files::ManagedFilePhase;
+
+        let mut plan = BootstrapPlan::default();
+        let late = ResourceId::new("file", "/etc/service.conf");
+        let package = ResourceId::new("package", "apt:vendor");
+        let early = ResourceId::new("file", "/etc/apt/sources.list.d/vendor.sources");
+        for (id, phase) in [
+            (late.clone(), Some(ManagedFilePhase::PostPackages)),
+            (package.clone(), None),
+            (early.clone(), Some(ManagedFilePhase::PrePackages)),
+        ] {
+            let mut resource = ResourcePlan::new(id, "missing", "present", ResourceAction::Create);
+            resource.phase = phase;
+            plan.insert(resource).unwrap();
+        }
+        add_file_phase_dependencies(&mut plan, std::slice::from_ref(&package)).unwrap();
+        let output = plan.output().unwrap();
+        assert_eq!(
+            output
+                .resources
+                .iter()
+                .map(|resource| &resource.id)
+                .collect::<Vec<_>>(),
+            [&early, &package, &late]
+        );
+    }
 
     #[cfg(unix)]
     #[test]

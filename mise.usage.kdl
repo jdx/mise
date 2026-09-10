@@ -448,7 +448,7 @@ Set up a machine from the current configuration
 Runs these phases in order, when configured and selected:
 
 1. Linux accounts, then package-manager plugins.
-2. The pre-packages hook, then packages handled by built-in managers.
+2. Pre-packages files/directories, the pre-packages hook, then packages handled by built-in managers.
 3. Privileged files/directories, system and user services, firewall, and Compose projects.
 4. Git repositories, then dotfiles, each with its pre/post hooks.
 5. Shell activation, macOS defaults and LaunchAgents, Linux user units, and user settings.
