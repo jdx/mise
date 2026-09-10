@@ -72,3 +72,9 @@ assert_contains "mise oci push --image-dir ./img $REGISTRY/e2e/devenv@$local_dig
 # reproducible rebuild produces identical blobs so nothing re-uploads ---
 assert_contains "mise oci push --from scratch --no-mise $REGISTRY/e2e/devenv:v2" \
   "0 blob(s) uploaded"
+
+# An independent destination with no remote cache reuses the locally built
+# tool layer, and all required blobs are uploaded to the new repository.
+mise oci push --from scratch --no-mise "$REGISTRY/e2e/other:v1" >local-cache.log 2>&1
+assert_contains "cat local-cache.log" "layer from the local cache"
+assert_succeed "mise x crane@latest -- crane validate --insecure --remote $REGISTRY/e2e/other:v1"

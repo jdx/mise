@@ -5022,6 +5022,9 @@ Where to place tool installs inside the image (default: /mise)
 \fB\-\-no\-mise\fR
 Do not embed the currently\-running mise binary at /usr/local/bin/mise
 .TP
+\fB\-\-no\-cache\fR
+Rebuild tool layers without reading or writing the local layer cache
+.TP
 \fB\-\-owner\fR \fI<UID[:GID]>\fR
 UID[:GID] to assign to every tar entry in generated layers
 
@@ -5085,7 +5088,7 @@ See `mise oci build \-\-help` for details.
 Override in\-image mount point (ignored with \-\-image\-dir)
 .TP
 \fB\-\-no\-cache\fR
-Don't reuse tool layers from the previously pushed image
+Rebuild tool layers without using the remote or local layer cache
 .TP
 \fB\-\-no\-mise\fR
 Don't embed the mise binary (ignored with \-\-image\-dir)

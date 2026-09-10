@@ -42,7 +42,7 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
   See `mise oci build --help` for details.
 - **`--mount-point <MOUNT_POINT>`** — Override in-image mount point (ignored with --image-dir)
-- **`--no-cache`** — Don't reuse tool layers from the previously pushed image
+- **`--no-cache`** — Rebuild tool layers without using the remote or local layer cache
 - **`--no-mise`** — Don't embed the mise binary (ignored with --image-dir)
 - **`--owner <UID[:GID]>`** — UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
 

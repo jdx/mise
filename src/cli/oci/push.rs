@@ -62,7 +62,7 @@ pub(super) struct Push {
     #[usage(long)]
     mount_point: Option<String>,
 
-    /// Don't reuse tool layers from the previously pushed image
+    /// Rebuild tool layers without using the remote or local layer cache
     #[usage(long)]
     no_cache: bool,
 
@@ -126,6 +126,7 @@ impl Push {
                     copy: vec![],
                     reuse_from: self.fetch_layer_cache().await?,
                     push_destination: Some(self.reference.clone()),
+                    no_cache: self.no_cache,
                 };
                 let built = perform_build(opts, self.include_global).await?;
                 reused_layers = built.tool_layers.iter().filter(|l| l.reused).count();

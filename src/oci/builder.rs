@@ -61,6 +61,8 @@ pub(crate) struct BuildOptions {
     /// Push destination; permits base blobs already in that repository to
     /// remain remote when no build step needs to unpack them.
     pub push_destination: Option<String>,
+    /// Bypass the local tool-layer cache (remote reuse is supplied separately).
+    pub no_cache: bool,
 }
 
 /// Cache key for tool-layer reuse. All four parts must match — a layer built
@@ -403,12 +405,28 @@ impl Builder {
                     Vec::new()
                 };
                 let relocation = layer::ToolRelocation::new(paths).with_pythons(pythons);
-                let blob = layer::build_relocated_tool_layer_from_dir(
-                    &tv.install_path(),
-                    &tv_prefix,
-                    owner,
-                    &relocation,
-                )
+                let blob = if self.opts.no_cache {
+                    layer::build_relocated_tool_layer_from_dir(
+                        &tv.install_path(),
+                        &tv_prefix,
+                        owner,
+                        &relocation,
+                    )
+                } else {
+                    layer::build_cached_tool_layer(
+                        &tv.install_path(),
+                        &tv_prefix,
+                        owner,
+                        &relocation,
+                        &tv.cache_path().join("oci-layers"),
+                    )
+                    .map(|(blob, hit)| {
+                        if hit {
+                            info!("oci: reusing {} layer from the local cache", tv.style());
+                        }
+                        blob
+                    })
+                }
                 .wrap_err_with(|| format!("building layer for {}", tv.style()))?;
                 ToolLayer::Built(blob)
             };

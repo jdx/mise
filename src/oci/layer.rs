@@ -26,6 +26,9 @@ use jdx_tar::{Builder, EntryType, Header};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
+mod cache;
+pub(crate) use cache::build_cached_tool_layer;
+
 /// Host-to-image path mappings used while packaging an installed tool.
 ///
 /// Most tools are relocatable as-is, but virtual environments commonly embed

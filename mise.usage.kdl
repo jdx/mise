@@ -3498,6 +3498,7 @@ By default `mise oci build` only packages tools declared in the project's mise c
             arg <MOUNT_POINT>
         }
         flag --no-mise help="Do not embed the currently-running mise binary at /usr/local/bin/mise"
+        flag --no-cache help="Rebuild tool layers without reading or writing the local layer cache"
         flag --owner help="UID[:GID] to assign to every tar entry in generated layers" {
             long_help #"""
 UID[:GID] to assign to every tar entry in generated layers
@@ -3564,7 +3565,7 @@ See `mise oci build --help` for details.
         flag --mount-point help="Override in-image mount point (ignored with --image-dir)" {
             arg <MOUNT_POINT>
         }
-        flag --no-cache help="Don't reuse tool layers from the previously pushed image"
+        flag --no-cache help="Rebuild tool layers without using the remote or local layer cache"
         flag --no-mise help="Don't embed the mise binary (ignored with --image-dir)"
         flag --owner help="UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)" {
             long_help #"""
