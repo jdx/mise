@@ -85,3 +85,10 @@ assert_fail "mise oci push --no-cache --from scratch --no-mise $REGISTRY/e2e/dev
 mise install >/dev/null 2>&1
 assert_contains "mise oci push --no-cache --from scratch --no-mise $REGISTRY/e2e/devenv:v1" \
   "0 blob(s) uploaded"
+
+# --- 7. Compose a remote base and cached tool layers in the same repo.
+# No local tool install is needed and the sparse layout must push intact.
+mise uninstall jq >/dev/null 2>&1
+assert_contains "mise oci push --from $REGISTRY/e2e/devenv:v1 --no-mise --cache-from $REGISTRY/e2e/devenv:v1 $REGISTRY/e2e/devenv:derived" \
+  "1 tool layer(s) reused from previous image"
+assert_succeed "mise x crane@latest -- crane validate --insecure --remote $REGISTRY/e2e/devenv:derived"

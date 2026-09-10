@@ -179,6 +179,14 @@ failures are retried with backoff (`http_retries` controls attempts).
 
 ### Layer reuse
 
+When pushing an image whose base lives in the **same repository** as the
+destination, mise fetches the current base manifest and config but leaves its
+layer blobs in the registry. Mutable base tags are resolved on every push.
+This avoids downloading base layers that the destination already contains,
+including when using `--cache-from` or `--no-cache`. Builds that install
+`[bootstrap.packages]` still download the base layers to unpack the filesystem;
+`oci build` and `oci run` also download them to produce complete local images.
+
 Tool layers whose cache key (tool, version, in-image prefix, and file
 owner) matches the previously pushed image are **reused from the
 registry instead of rebuilt** — skipping the tar/gzip work entirely.

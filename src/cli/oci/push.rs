@@ -125,6 +125,7 @@ impl Push {
                     include_mise: !self.no_mise,
                     copy: vec![],
                     reuse_from: self.fetch_layer_cache().await?,
+                    push_destination: Some(self.reference.clone()),
                 };
                 let built = perform_build(opts, self.include_global).await?;
                 reused_layers = built.tool_layers.iter().filter(|l| l.reused).count();
