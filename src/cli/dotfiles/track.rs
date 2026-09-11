@@ -357,7 +357,7 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
         if target.is_symlink() {
             // This resolver is read-only, follows dangling chains, and bounds
             // traversal so cyclic links cannot hang an advisory check.
-            let source = match file::atomic_write_target(target) {
+            let source = match resolve_symlink_source(target) {
                 Ok(source) => source,
                 Err(error) => {
                     warn!(
@@ -376,6 +376,11 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Resolve link chains using the same path representation as tracked entries.
+fn resolve_symlink_source(target: &Path) -> Result<PathBuf> {
+    file::atomic_write_target(target).map(|source| normalize_target(&source))
 }
 
 /// Saves the baseline checkpoint of newly tracked paths; a failure fails
@@ -527,6 +532,18 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
 #[cfg(test)]
 mod declaration_tests {
     use super::*;
+
+    #[test]
+    fn resolved_sources_use_tracking_path_representation() {
+        let temporary = tempfile::tempdir().unwrap();
+        let source = temporary.path().join("source");
+        std::fs::write(&source, "contents").unwrap();
+        let tracked = normalize_target(&source);
+        // Windows canonicalization adds a verbatim prefix. No symlink
+        // privilege is needed to exercise the resolver's final path format.
+        let canonical = source.canonicalize().unwrap();
+        assert_eq!(resolve_symlink_source(&canonical).unwrap(), tracked);
+    }
 
     #[test]
     fn declaration_commands_fail_promptly_on_contention() {
