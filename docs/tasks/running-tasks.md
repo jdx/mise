@@ -4,35 +4,90 @@ description: "Find and run project tasks, pass arguments, and control execution.
 
 # Running Tasks
 
-List available tasks with `mise tasks`. To show tasks hidden with `hide=true`, use the `--hidden` option.
+## Find and run tasks
 
-List declared dependencies of tasks with `mise tasks deps [tasks]...`.
-That graph is built from [`depends`](/tasks/task-configuration.html#depends),
-[`wait_for`](/tasks/task-configuration.html#wait-for), and
-[`depends_post`](/tasks/task-configuration.html#depends-post).
-Task references inside a `run` array (`{ task = "..." }` / `{ tasks = [...] }`)
-are execution steps, so they do not appear there.
+List available tasks with `mise tasks`. To include tasks hidden with
+`hide=true`, pass `--hidden`.
 
-Run a task with `mise tasks run <task>`, `mise run <task>`, `mise r <task>`, or simply `mise <task>`. Never
-use that last form in scripts or documentation: if a future mise version adds a command with the same name,
-the task will be shadowed and must be run with one of the other forms.
+### `mise run` shorthand {#mise-run-shorthand}
+
+Run a named task with `mise tasks run <task>`, `mise run <task>`, `mise r <task>`,
+or `mise <task>`. Use `mise run <task>` in scripts and documentation. A future
+mise command can shadow the direct form.
 
 For interactive use, an alias such as `alias mr='mise run'` can save typing.
 
-By default, tasks execute with a maximum of 4 parallel jobs. Customize this with the `--jobs` option,
-the `jobs` setting, or the `MISE_JOBS` environment variable. Output is normally printed line by line, prefixed
-with the task label; this avoids interleaving output from parallel executions. However, if
-`--jobs` is `1`, the output mode is set to `interleave`.
+## Pass arguments and select tasks
 
-To print stdout/stderr directly, use `--output interleave`, the `task.output` setting, or `MISE_TASK_OUTPUT=interleave`.
+Pass arguments after the task name:
 
-The output _style_ (`prefix`, `interleave`, `keep-order`, …) is independent of _verbosity_
-(`--quiet`/`--silent`, the `quiet`/`silent` settings, or the per-task `quiet`/`silent` fields).
-They combine: e.g. `MISE_TASK_OUTPUT=prefix` with `--quiet` keeps the task-name prefixes while
-suppressing mise's own messages. `--quiet` no longer forces un-prefixed output — use
-`--output interleave --quiet` if you want the old un-prefixed behavior. To make every task quiet
-without affecting other mise commands, set both `task.output = "interleave"` and
-`task.quiet = true` under `[settings]`.
+```bash
+mise run build --release
+```
+
+For a precise, validated task interface, define arguments and flags with the
+[`usage` field](/tasks/task-arguments#usage-field). Without a `usage` specification,
+mise forwards extra arguments according to the task's form:
+
+- If `run` is an array, the arguments go only to its last entry.
+- For a regular inline command, arguments are appended as literal arguments
+  (shell-quoted when a shell is used).
+- A [shebang task](/tasks/toml-tasks#shell-shebang) runs as a script file, so
+  its interpreter exposes arguments normally—for example, as `$1` and `$@` in
+  Bash.
+
+Put mise flags before the task name: `mise run --silent build`. A flag after
+the task name belongs to the task, so `mise run build --silent` fails with
+`unexpected word: --silent` unless the task defines it. Tasks can define flags
+that share names with mise flags, such as `--env`.
+
+::: tip
+Task arguments and flags provide validation, parsing, autocomplete, and
+documentation.
+
+- [Arguments in File Tasks](/tasks/file-tasks#arguments)
+- [Arguments in TOML Tasks](/tasks/toml-tasks#arguments)
+
+Autocomplete works when mise's shell completions are installed and enabled.
+Generate Markdown documentation with [`mise generate task-docs`](/cli/generate/task-docs).
+:::
+
+### Run several tasks
+
+Separate tasks and their arguments with `:::`:
+
+```bash
+mise run build arg1 arg2 ::: test arg3 arg4
+```
+
+### Run the default task
+
+When no task is specified, mise runs the task named `default`. You can also
+alias another task to `default`:
+
+```bash
+mise run
+```
+
+## Control execution
+
+### Parallelism and output
+
+Tasks run with a maximum of four parallel jobs by default. Set `--jobs`, the
+`jobs` setting, or `MISE_JOBS` to choose another limit. Output normally prints
+one line at a time with the task label, which keeps parallel output readable.
+With `--jobs 1`, mise uses `interleave` output.
+
+To print stdout and stderr directly, use `--output interleave`, the
+`task.output` setting, or `MISE_TASK_OUTPUT=interleave`.
+
+The output _style_ (`prefix`, `interleave`, `keep-order`, …) is separate from
+_verbosity_ (`--quiet`/`--silent`, the `quiet`/`silent` settings, or per-task
+`quiet`/`silent` fields). For example, `MISE_TASK_OUTPUT=prefix` with
+`--quiet` keeps task-name prefixes and hides mise's messages. Use
+`--output interleave --quiet` for un-prefixed, quiet output. To make every task
+quiet without changing other mise commands, set `task.output = "interleave"`
+and `task.quiet = true` under `[settings]`.
 
 ::: warning Deprecated
 The `quiet` output value is deprecated. Warnings begin in mise `2026.9.3`, and support will be
@@ -40,25 +95,14 @@ removed in `2027.9.3`. Combine `interleave` with the task-scoped or command-line
 instead.
 :::
 
+### Interactive input
+
 Stdin is not connected by default. Set `interactive = true` for a task that needs
 the terminal; it has exclusive terminal access for the duration of the task.
 `raw = true` takes exclusive access per command instead. Both bypass output
 redaction and artifact caching. See [terminal I/O options](./task-configuration.html#interactive).
 
-Extra arguments are passed to the task. For example, to run in release mode:
-
-```bash
-mise run build --release
-```
-
-For a precise, validated task interface, define arguments and flags with the
-[`usage` field](/tasks/task-arguments#usage-field). Without a `usage` specification, extra arguments
-are forwarded according to how the task is executed:
-
-- If `run` is an array, the arguments are passed only to its last entry.
-- For a regular inline command, arguments are appended as literal arguments (shell-quoted when a shell is used).
-- A [shebang task](/tasks/toml-tasks#shell-shebang) is executed as a script file, so its interpreter
-  exposes the arguments normally—for example, as `$1` and `$@` in Bash.
+### Shell execution
 
 On Unix, mise can execute simple inline commands such as `node build.js` directly,
 without starting the default `sh`. Shell syntax, quoting, expansion, builtins,
@@ -75,35 +119,6 @@ must run.
 
 The same optimization applies to mise-owned inline hooks, templates,
 dependency commands, installation commands, credentials, and task cache inputs.
-
-Because everything after the task name belongs to the task, mise's own flags have to come
-_before_ it—`mise run --silent build` rather than `mise run build --silent`, which passes
-`--silent` to the task and fails with `unexpected word: --silent` unless the task defines it.
-This also means a task is free to define a flag that shares a name with a mise flag, e.g. a
-task with its own `--env`.
-
-:::tip
-You can define arguments and flags for tasks, which provides validation, parsing, autocomplete, and documentation.
-
-- [Arguments in File Tasks](/tasks/file-tasks#arguments)
-- [Arguments in TOML Tasks](/tasks/toml-tasks#arguments)
-
-Autocomplete works automatically for tasks when mise's shell completions are installed and enabled.
-
-Markdown documentation can be generated with [`mise generate task-docs`](/cli/generate/task-docs).
-:::
-
-Multiple tasks and their arguments can be separated with the `:::` delimiter:
-
-```bash
-mise run build arg1 arg2 ::: test arg3 arg4
-```
-
-If no task is specified, mise runs the task named "default", if you've defined one. You can also alias a different task to "default".
-
-```bash
-mise run
-```
 
 ## Task Grouping
 
@@ -198,15 +213,14 @@ mise watch build
 or install it separately on `PATH`. Declare the task's `sources` to limit the
 watched files. Without a task name, mise watches the `default` task.
 
-## `mise run` shorthand
-
-Tasks can be run with `mise run <TASK>` or `mise <TASK>`—as long as the name doesn't conflict with a mise command.
-Because mise may later add a command with a conflicting name, it's recommended to use `mise run <TASK>` in
-scripts and documentation.
-
 ## Execution order
 
 You can use [depends](/tasks/task-configuration.html#depends), [wait_for](/tasks/task-configuration.html#wait-for), and [depends_post](/tasks/task-configuration.html#depends-post) to control the order of execution.
+
+List the declared graph with `mise tasks deps [tasks]...`. It includes
+`depends`, `wait_for`, and `depends_post`. Task references in a `run` array
+(`{ task = "..." }` / `{ tasks = [...] }`) are execution steps, so they do not
+appear in the graph.
 
 ```toml
 [tasks.build]
