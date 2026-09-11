@@ -1,0 +1,1 @@
+fix ci [https://github.com/jdx/mise/pull/13056#discussion\_r3983674557](https://github.com/jdx/mise/pull/13056#discussion_r3983674557)
