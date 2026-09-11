@@ -68,3 +68,34 @@ for nested in (False, True):
                     pass
             child.wait(timeout=5)
 PY
+
+# A SIGHUP the parent ignored (nohup style) must stay ignored: the run completes.
+cat >mise.toml <<'TOML'
+[doctor.checks.quick]
+run = "sleep 1"
+TOML
+python3 - <<'PY'
+import os
+import signal
+import subprocess
+import time
+
+child = subprocess.Popen(
+    ["mise", "doctor", "project"],
+    start_new_session=True,
+    preexec_fn=lambda: signal.signal(signal.SIGHUP, signal.SIG_IGN),
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+)
+try:
+    time.sleep(.3)
+    os.killpg(child.pid, signal.SIGHUP)
+    stdout, stderr = child.communicate(timeout=15)
+    assert child.returncode == 0, (child.returncode, stdout, stderr)
+    assert b"PASS quick" in stdout, stdout
+finally:
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+PY

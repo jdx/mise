@@ -3796,7 +3796,7 @@
     "doctor": {
       "description": "Project diagnostic checks, run explicitly with mise doctor project.",
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "checks": {
           "type": "object",
