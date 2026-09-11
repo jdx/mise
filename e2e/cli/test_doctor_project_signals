@@ -68,3 +68,41 @@ for nested in (False, True):
                     pass
             child.wait(timeout=5)
 PY
+
+# A SIGHUP the parent ignored (nohup style) must stay ignored: the run completes.
+cat >mise.toml <<'TOML'
+[doctor.checks.quick]
+run = "touch quick-started; sleep 1"
+TOML
+rm -f quick-started
+python3 - <<'PY'
+import os
+import signal
+import subprocess
+import time
+
+child = subprocess.Popen(
+    ["mise", "doctor", "project"],
+    start_new_session=True,
+    preexec_fn=lambda: signal.signal(signal.SIGHUP, signal.SIG_IGN),
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+)
+try:
+    # Signal handlers are installed before any check starts, so the marker
+    # proves the ignored disposition was already inspected.
+    deadline = time.monotonic() + 15
+    while not os.path.exists("quick-started"):
+        assert child.poll() is None, child.communicate()
+        assert time.monotonic() < deadline, "quick failed to start"
+        time.sleep(.05)
+    os.killpg(child.pid, signal.SIGHUP)
+    stdout, stderr = child.communicate(timeout=15)
+    assert child.returncode == 0, (child.returncode, stdout, stderr)
+    assert b"PASS quick" in stdout, stdout
+finally:
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+PY

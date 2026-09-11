@@ -3796,7 +3796,7 @@
     "doctor": {
       "description": "Project diagnostic checks, run explicitly with mise doctor project.",
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "checks": {
           "type": "object",
@@ -3824,7 +3824,7 @@
               },
               "dir": {
                 "type": "string",
-                "description": "Working directory. Relative paths resolve from the declaring config's project root; absolute paths are used as given."
+                "description": "Working directory. Relative paths resolve from the declaring config's root (the invocation directory for global and system config); a leading ~/ and absolute paths are used as given."
               },
               "shell": {
                 "description": "Shell command, including the command flag, as in tasks.",
