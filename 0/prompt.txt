@@ -1,0 +1,1 @@
+investigate [https://github.com/jdx/mise/discussions/13099](https://github.com/jdx/mise/discussions/13099)
