@@ -62,7 +62,9 @@ done
 assert "test $(pitchfork project list --json | jq length) -eq 2"
 assert "test ! -d '$MISE_STATE_DIR/daemons/sessions/2147483647'"
 assert "test -d '$MISE_STATE_DIR/daemons/sessions/2147483646'"
-chmod 700 "$MISE_STATE_DIR/daemons/sessions/2147483645"
+if [[ -d "$MISE_STATE_DIR/daemons/sessions/2147483645" ]]; then
+  chmod 700 "$MISE_STATE_DIR/daemons/sessions/2147483645"
+fi
 mise daemons stop
 assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" "another daemon profile is active"
 mise daemons start
