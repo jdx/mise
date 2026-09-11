@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
-# Before pitchfork's supporting release, pass its local build explicitly.
+# Set MISE_TEST_PITCHFORK to test a local build instead of the released version.
 if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
-  echo "Skipping real pitchfork integration: set MISE_TEST_PITCHFORK to a build with external config support"
-  exit 0
+  # Exercise this exact release even during the default release-age delay.
+  mise install pitchfork@2.25.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.25.0)"
 fi
 export PITCHFORK_STATE_DIR="$TMPDIR/pf"
 export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
@@ -11,7 +12,8 @@ export PITCHFORK_AUTOSTOP_DELAY=0s
 export PITCHFORK_INTERVAL=100ms
 export PITCHFORK_PROXY_ENABLE=false
 mkdir -p "$PITCHFORK_STATE_DIR" "$PITCHFORK_CONFIG_DIR"
-ln -s "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+# Keep the fixture executable available when testing mise prune.
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
 export PATH="$HOME/bin:$PATH"
 trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
 

@@ -135,7 +135,7 @@ impl Runtime {
                 || line.trim_start().starts_with("cmd \"config\" ")
         }) {
             bail!(
-                "pitchfork lacks external configuration support; upgrade to the release containing `pitchfork config add` (planned for 2.25.0)"
+                "pitchfork lacks external configuration support; upgrade to pitchfork 2.25.0 or later"
             );
         }
         Ok(())

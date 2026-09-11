@@ -1,8 +1,9 @@
 # Daemons
 
 ::: warning Experimental
-Daemon management requires `experimental = true`. It requires a pitchfork release
-with `pitchfork config add` support (planned for 2.25.0).
+Daemon management requires `experimental = true`. It requires
+[pitchfork 2.25.0](https://github.com/jdx/pitchfork/releases/tag/v2.25.0) or later
+for external configuration support.
 :::
 
 Declare custom background processes and managed databases in one section:

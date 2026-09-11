@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 
 if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
-  echo "Skipping database integration: set MISE_TEST_PITCHFORK to a build with external config support"
-  exit 0
+  # Exercise this exact release even during the default release-age delay.
+  mise install pitchfork@2.25.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.25.0)"
 fi
 export PITCHFORK_STATE_DIR="$TMPDIR/pf"
 export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
 export PITCHFORK_PROXY_ENABLE=false
-ln -s "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+# Keep the fixture executable available when testing mise prune.
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
 export PATH="$HOME/bin:$PATH"
 trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
 pg_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
