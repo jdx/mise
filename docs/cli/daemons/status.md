@@ -7,7 +7,7 @@ description: "Arguments passed to pitchfork; daemon names may be short or qualif
 
 - **Usage:** `mise daemons status [ARGS]…`
 - **Effect:** read-only
-- **Source code:** [`src/cli/daemons/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons/status.rs)
+- **Source code:** [`src/cli/daemons.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons.rs)
 
 Arguments passed to pitchfork; daemon names may be short or qualified.
 

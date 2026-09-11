@@ -216,7 +216,7 @@ impl Config {
     /// lockfile enforcement. Non-config sources remain governed only by the
     /// invocation-wide `locked` setting/flag.
     pub(crate) fn tool_config_locked(&self, source: &ToolSource) -> bool {
-        let ToolSource::MiseToml(path) = source else {
+        let (ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path)) = source else {
             return false;
         };
         let Some(root) = self.config_files.get(path).map(|cf| cf.config_root()) else {

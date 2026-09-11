@@ -6,7 +6,7 @@ description: "Arguments passed to pitchfork; daemon names may be short or qualif
 # `mise daemons stop`
 
 - **Usage:** `mise daemons stop [ARGS]…`
-- **Source code:** [`src/cli/daemons/stop.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons/stop.rs)
+- **Source code:** [`src/cli/daemons.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons.rs)
 
 Arguments passed to pitchfork; daemon names may be short or qualified.
 

@@ -611,6 +611,10 @@ See [Settings](/configuration/settings) for the full list of settings.
 
 See [Tasks](/tasks/) for the full list of configuration options.
 
+### `[daemons]`
+
+Experimental custom processes and managed Postgres/Redis presets share one section. Higher-precedence declarations replace the complete same-name daemon; explicit environment variables override preset exports. See [daemons](/daemons).
+
 ## Environment variables
 
 ::: tip
@@ -769,7 +773,3 @@ Homebrew and potentially other installs use this file to activate mise without
 any configuration.
 
 Enabled by default; set to "0" to disable.
-
-### `[daemons]`
-
-Experimental custom processes and managed Postgres/Redis presets share one section. Higher-precedence declarations replace the complete same-name daemon; explicit environment variables override preset exports. See [daemons](/daemons).

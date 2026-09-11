@@ -35,6 +35,17 @@ assert_contains "mise daemons ls --json" '"status": "running"'
 assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" 'another daemon profile is active'
 mise daemons stop
 
+# Background cleanup removes old dead sessions, while retaining recent state.
+python3 - "$MISE_STATE_DIR/daemons/sessions" <<'PYCODE'
+import os, sys, time
+for pid, age in [(2147483647, 8 * 86400), (2147483646, 0)]:
+    root = os.path.join(sys.argv[1], str(pid))
+    os.makedirs(root, exist_ok=True)
+    path = os.path.join(root, "desired.json")
+    with open(path, "w") as f:
+        f.write("{}")
+    os.utime(path, (time.time() - age, time.time() - age))
+PYCODE
 # Each shell owns an independent session. Explicit --force also exercises retry paths.
 sleep 600 &
 second_pid=$!
@@ -47,6 +58,8 @@ for _ in {1..100}; do
   sleep 0.1
 done
 assert "test $(pitchfork project list --json | jq length) -eq 2"
+assert "test ! -d '$MISE_STATE_DIR/daemons/sessions/2147483647'"
+assert "test -d '$MISE_STATE_DIR/daemons/sessions/2147483646'"
 mise daemons stop
 assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" "another daemon profile is active"
 mise daemons start
@@ -75,14 +88,19 @@ cat >mise.toml <<'TOML'
 pitchfork = "system"
 [daemons.api]
 run = "exec sleep 600"
-ready_delay = 2
+ready_delay = 4
 auto = ["start", "stop"]
 TOML
 mise hook-env --shell-pid $$ --force -s bash >/dev/null
 sleep 0.2
+for _ in {1..10}; do
+  mise hook-env --shell-pid $$ --force -s bash >/dev/null
+done
+workers=$(ps -eo args | awk -v marker="daemons __reconcile $$" 'index($0, marker) && !index($0, "awk") {n++} END {print n+0}')
+assert "test $workers -le 2"
 cd ../other
 mise hook-env --shell-pid $$ --force -s bash >/dev/null
-sleep 3
+sleep 5
 for _ in {1..100}; do
   [[ $(pitchfork project list --json | jq length) == 0 ]] && break
   sleep 0.1

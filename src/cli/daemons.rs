@@ -32,7 +32,7 @@ enum Commands {
     Ls(List),
     Logs(Args),
     Status(Args),
-    Tui(Args),
+    Tui(TuiArgs),
     #[usage(name = "__init", hide = true)]
     Init(Init),
     #[usage(name = "__reconcile", hide = true)]
@@ -43,6 +43,14 @@ enum Commands {
 #[derive(Debug, usage_rs::Args)]
 #[usage(unknown_flags = "value")]
 struct Args {
+    #[usage(allow_hyphen_values = true, trailing_var_arg = true)]
+    args: Vec<String>,
+}
+
+/// Open pitchfork's dashboard with optional pitchfork TUI flags.
+#[derive(Debug, usage_rs::Args)]
+#[usage(unknown_flags = "value")]
+struct TuiArgs {
     #[usage(allow_hyphen_values = true, trailing_var_arg = true)]
     args: Vec<String>,
 }
@@ -151,6 +159,10 @@ impl Daemons {
             let mut selected = Vec::new();
             let mut flags = Vec::new();
             for arg in &args {
+                if action == "tui" {
+                    flags.push(arg.clone());
+                    continue;
+                }
                 if let Some(id) = state
                     .ids
                     .iter()

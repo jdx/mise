@@ -161,7 +161,6 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("daemons", Read),
     ("daemons ls", Read),
     ("daemons status", Read),
-    ("daemons logs", Read),
     // Bare `mise deps` defaults to `deps install` and runs install steps.
     ("deps", Write),
     ("deps add", Write),
@@ -325,6 +324,7 @@ pub(super) const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[
 // left unclassified lives next to the decision rather than in a commit message.
 #[cfg(test)]
 pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
+    ("daemons logs", "can clear stored logs with --clear"),
     ("daemons start", "starts user-defined daemons"),
     ("daemons restart", "restarts user-defined daemons"),
     ("daemons stop", "runs daemon stop hooks"),

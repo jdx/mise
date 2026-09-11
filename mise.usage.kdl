@@ -5,7 +5,9 @@ author "Jeff Dickey <@jdx>"
 about "Dev tools, env vars, and tasks in one CLI"
 source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
-{%- if path == "bootstrap/packages/apply" -%}
+{%- if path == "daemons" or path is starting_with(pat="daemons/") -%}
+{%- set path = "daemons.rs" -%}
+{%- elif path == "bootstrap/packages/apply" -%}
 {%- set path = "system/install.rs" -%}
 {%- elif path == "bootstrap/packages/import" -%}
 {%- set path = "system/import.rs" -%}
@@ -2141,7 +2143,7 @@ With no subcommand, list configured and previously managed daemons.
         flag --json
         flag "-h --help" help="Print help" action=help builtin=#true
     }
-    cmd logs help="Arguments passed to pitchfork; daemon names may be short or qualified." effect=read unknown_flags=value {
+    cmd logs help="Arguments passed to pitchfork; daemon names may be short or qualified." unknown_flags=value {
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[ARGS]…" required=#false double_dash=automatic var=#true
     }
@@ -2149,7 +2151,7 @@ With no subcommand, list configured and previously managed daemons.
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[ARGS]…" required=#false double_dash=automatic var=#true
     }
-    cmd tui help="Arguments passed to pitchfork; daemon names may be short or qualified." unknown_flags=value {
+    cmd tui help="Open pitchfork's dashboard with optional pitchfork TUI flags." unknown_flags=value {
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[ARGS]…" required=#false double_dash=automatic var=#true
     }

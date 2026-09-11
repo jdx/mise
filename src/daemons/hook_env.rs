@@ -101,7 +101,24 @@ async fn publish_inner(config: &Arc<Config>, ts: &Toolset, pid: Option<u32>) -> 
     {
         return Ok(());
     }
-    runtime::write_if_changed(&dir.join("desired.json"), &content)?;
+    let changed = runtime::write_if_changed(&dir.join("desired.json"), &content)?;
+    // A running worker already owns an identical request. Changed requests still
+    // need a worker launched in their own cwd and environment profile.
+    if !changed
+        && crate::lock_file::LockFile::at(&dir.join("worker.lock"))
+            .try_lock()?
+            .is_none()
+    {
+        return Ok(());
+    }
+    let log_path = dir.join("worker.log");
+    // Bound diagnostics retained by long-lived shells, without truncating a
+    // running worker's output.
+    if std::fs::metadata(&log_path).is_ok_and(|m| m.len() > 1024 * 1024)
+        && let Some(_lock) = crate::lock_file::LockFile::at(&dir.join("worker.lock")).try_lock()?
+    {
+        std::fs::write(&log_path, [])?;
+    }
     let log = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -133,6 +150,10 @@ pub(crate) async fn reconcile(pid: u32) -> Result<()> {
     // merely because an older worker is still waiting for readiness.
     let _lock = crate::lock_file::LockFile::at(&dir.join("worker.lock")).lock()?;
     let content = std::fs::read(dir.join("desired.json"))?;
+    if std::fs::read(dir.join("done.json")).ok().as_deref() == Some(&content) {
+        return Ok(());
+    }
+    clean_stale_sessions(pid)?;
     let desired: Desired = serde_json::from_slice(&content)?;
     let actual_path = dir.join("actual.json");
     let mut actual: BTreeMap<PathBuf, PathBuf> = if actual_path.exists() {
@@ -186,12 +207,12 @@ pub(crate) async fn reconcile(pid: u32) -> Result<()> {
         runtime::validate_tools(&set, &scoped, &ts).await?;
         let (_state, _project_lock) = runtime.prepare(root, &set).await?;
         if set.auto() {
+            // Enter can establish a session before readiness times out. Record
+            // ownership first so a later departure can still release it.
+            actual.insert(root.clone(), runtime.bin.clone());
+            runtime::write_if_changed(&actual_path, &serde_json::to_vec(&actual)?)?;
             runtime.session(root, pid, true).await?;
         }
-        if set.auto() {
-            actual.insert(root.clone(), runtime.bin.clone());
-        }
-        runtime::write_if_changed(&actual_path, &serde_json::to_vec(&actual)?)?;
         if std::fs::read(dir.join("desired.json"))? != content {
             let latest: Desired =
                 serde_json::from_slice(&std::fs::read(dir.join("desired.json"))?)?;
@@ -204,5 +225,57 @@ pub(crate) async fn reconcile(pid: u32) -> Result<()> {
         }
     }
     runtime::write_if_changed(&dir.join("done.json"), &content)?;
+    Ok(())
+}
+
+/// Garbage collection runs in detached workers, never on the prompt path.
+fn clean_stale_sessions(current_pid: u32) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let parent = session_dir(current_pid).parent().unwrap().to_path_buf();
+        let Some(_cleanup_lock) =
+            crate::lock_file::LockFile::at(&parent.join("cleanup.lock")).try_lock()?
+        else {
+            return Ok(());
+        };
+        let mut removed = 0;
+        for entry in std::fs::read_dir(parent)? {
+            let entry = entry?;
+            let Some(pid) = entry
+                .file_name()
+                .to_str()
+                .and_then(|v| v.parse::<i32>().ok())
+                .filter(|p| *p > 0)
+            else {
+                continue;
+            };
+            if pid as u32 == current_pid
+                || nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None)
+                    != Err(nix::errno::Errno::ESRCH)
+            {
+                continue;
+            }
+            let old = entry
+                .path()
+                .join("desired.json")
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .is_some_and(|age| age > std::time::Duration::from_secs(7 * 86400));
+            if old
+                && let Some(_lock) =
+                    crate::lock_file::LockFile::at(&entry.path().join("worker.lock")).try_lock()?
+            {
+                std::fs::remove_dir_all(entry.path())?;
+                removed += 1;
+                if removed == 128 {
+                    break;
+                }
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = current_pid;
     Ok(())
 }

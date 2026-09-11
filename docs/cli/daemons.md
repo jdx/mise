@@ -8,7 +8,7 @@ description: "[experimental] Manage project daemons with pitchfork"
 - **Usage:** `mise daemons [--json] [SUBCOMMAND]`
 - **Aliases:** `daemon`
 - **Effect:** read-only
-- **Source code:** [`src/cli/daemons/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons/mod.rs)
+- **Source code:** [`src/cli/daemons.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons.rs)
 
 [experimental] Manage project daemons with pitchfork
 

@@ -276,7 +276,8 @@ impl Runtime {
     }
 
     pub(crate) async fn session(&self, root: &Path, pid: u32, enter: bool) -> Result<()> {
-        let status = Command::new(&self.bin)
+        let mut command = Command::new(&self.bin);
+        command
             .args([
                 "project",
                 if enter { "enter" } else { "leave" },
@@ -288,8 +289,8 @@ impl Runtime {
             .envs(&self.env)
             .env_remove("PITCHFORK_CONFIG")
             .current_dir(root)
-            .status()
-            .await?;
+            .kill_on_drop(true);
+        let status = tokio::time::timeout(Duration::from_secs(60), command.status()).await??;
         if !status.success() {
             bail!("pitchfork project session update failed");
         }

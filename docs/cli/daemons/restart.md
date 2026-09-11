@@ -6,7 +6,7 @@ description: "Arguments passed to pitchfork; daemon names may be short or qualif
 # `mise daemons restart`
 
 - **Usage:** `mise daemons restart [ARGS]…`
-- **Source code:** [`src/cli/daemons/restart.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons/restart.rs)
+- **Source code:** [`src/cli/daemons.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons.rs)
 
 Arguments passed to pitchfork; daemon names may be short or qualified.
 

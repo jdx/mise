@@ -99,7 +99,9 @@ session even when no daemons exist in the new directory. Pitchfork keeps shared
 processes alive while another shell session remains in the project.
 
 Worker diagnostics are stored under `$MISE_STATE_DIR/daemons/sessions/<shell-pid>/worker.log`.
-Failures remain pending for retry at a later prompt. Disabled hooks and safe mode
+Logs are bounded, and background workers remove Unix session state older than seven
+days when its shell is gone. Session commands time out after one minute; failures
+remain pending for retry at a later prompt. Disabled hooks and safe mode
 prevent lifecycle commands. Re-run `mise activate` after upgrading to get shell PID
 tracking in your activation script.
 

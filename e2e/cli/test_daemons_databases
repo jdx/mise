@@ -34,6 +34,11 @@ mise daemons start
 assert_contains "mise exec -- psql -h 127.0.0.1 -p '$pg_port' -U postgres -d integration -Atc 'SELECT value FROM proof'" 42
 assert_contains "mise exec -- redis-cli -h 127.0.0.1 -p '$redis_port' GET proof" retained
 mise daemons stop
+pg_install=$(mise where conda:postgresql)
+mise unuse conda:postgresql
+mise prune --tools
+assert "test -x '$pg_install/bin/psql'"
+assert_contains "mise exec -- psql --version" "18."
 
 # Incompatible metadata fails without deleting existing contents.
 data_dir=$(find "$MISE_STATE_DIR/daemons" -path '*/data/redis' -type d -print -quit)
@@ -44,5 +49,5 @@ assert "test -d '$data_dir/appendonlydir'"
 # Incomplete data is not mistaken for a successfully initialized instance.
 mkdir -p "$TMPDIR/incomplete"
 echo preserved >"$TMPDIR/incomplete/user-data"
-assert_fail "mise exec -- mise daemons __init redis '$TMPDIR/incomplete' postgres"
+assert_contains "mise exec -- mise daemons __init redis '$TMPDIR/incomplete' postgres 2>&1 || true" "daemon data was not initialized completely"
 assert_contains "cat '$TMPDIR/incomplete/user-data'" preserved

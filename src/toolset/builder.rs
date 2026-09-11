@@ -129,13 +129,17 @@ impl ToolsetBuilder {
             })
             .map(|(path, cf)| (path.clone(), cf.clone()))
             .collect();
+        let daemons = crate::daemons::load(&scoped_files)?;
+        if !daemons.daemons.values().any(|daemon| daemon.tool.is_some()) {
+            return Ok(());
+        }
         let mut requests = crate::toolset::ToolRequestSet::new();
         for versions in ts.versions.values() {
             for request in &versions.requests {
                 requests.add_version(request.clone(), request.source());
             }
         }
-        crate::daemons::load(&scoped_files)?.add_tool_requests(&mut requests)?;
+        daemons.add_tool_requests(&mut requests)?;
         ts.merge(requests.into_toolset());
         Ok(())
     }

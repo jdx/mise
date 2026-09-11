@@ -6,8 +6,7 @@ description: "Arguments passed to pitchfork; daemon names may be short or qualif
 # `mise daemons logs`
 
 - **Usage:** `mise daemons logs [ARGS]…`
-- **Effect:** read-only
-- **Source code:** [`src/cli/daemons/logs.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons/logs.rs)
+- **Source code:** [`src/cli/daemons.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons.rs)
 
 Arguments passed to pitchfork; daemon names may be short or qualified.
 

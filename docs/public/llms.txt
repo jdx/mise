@@ -209,7 +209,7 @@
 - [mise daemons start](https://mise.jdx.dev/cli/daemons/start.html): Arguments passed to pitchfork; daemon names may be short or qualified.
 - [mise daemons status](https://mise.jdx.dev/cli/daemons/status.html): Arguments passed to pitchfork; daemon names may be short or qualified.
 - [mise daemons stop](https://mise.jdx.dev/cli/daemons/stop.html): Arguments passed to pitchfork; daemon names may be short or qualified.
-- [mise daemons tui](https://mise.jdx.dev/cli/daemons/tui.html): Arguments passed to pitchfork; daemon names may be short or qualified.
+- [mise daemons tui](https://mise.jdx.dev/cli/daemons/tui.html): Open pitchfork's dashboard with optional pitchfork TUI flags.
 - [mise deactivate](https://mise.jdx.dev/cli/deactivate.html): Print the script to disable mise in the current shell session
 - [mise deps](https://mise.jdx.dev/cli/deps.html): [experimental] Manage project dependencies
 - [mise deps add](https://mise.jdx.dev/cli/deps/add.html): Add a dependency

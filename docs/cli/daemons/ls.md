@@ -8,7 +8,7 @@ description: "List project daemons without starting a supervisor or registering 
 - **Usage:** `mise daemons ls [--json]`
 - **Aliases:** `list`
 - **Effect:** read-only
-- **Source code:** [`src/cli/daemons/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons/ls.rs)
+- **Source code:** [`src/cli/daemons.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons.rs)
 
 List project daemons without starting a supervisor or registering configuration.
 
