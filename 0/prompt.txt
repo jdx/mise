@@ -1,0 +1,9 @@
+investigate [http://github.com/aubepkg/aube/discussions/1528](http://github.com/aubepkg/aube/discussions/1528)
+
+---
+
+note [https://github.com/jdx/mise/pull/13102#issue-comment-box](https://github.com/jdx/mise/pull/13102#issue-comment-box) idk if it is related
+
+---
+
+make a pr
