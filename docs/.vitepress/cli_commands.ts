@@ -291,6 +291,9 @@ export const commands: { [key: string]: Command } = {
           use: {
             hide: false,
           },
+          where: {
+            hide: false,
+          },
         },
       },
       plan: {

@@ -1507,7 +1507,7 @@ mise bootstrap packages use -g brew:postgresql@17
 mise bootstrap packages use apt:curl@8.5.0-2
 """#
         }
-        cmd where help="Print the stable root of an installed Homebrew formula" {
+        cmd where help="Print the stable root of an installed Homebrew formula" effect=read {
             long_help #"""
 Print the stable root of an installed Homebrew formula
 
