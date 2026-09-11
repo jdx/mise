@@ -1,4 +1,10 @@
-backends = ["github:meli/meli", "cargo:meli"]
+backends = [
+  "cargo:meli",
+  # GitHub releases are Linux-only and lag latest (e.g. v0.8.13 has no assets),
+  # so Cargo stays first: a short name resolves to backends().first() with no
+  # install-time fallback, and latest must be 0.8.13 on all platforms.
+  { full = "github:meli/meli", platforms = ["linux"] },
+]
 bins = ["meli"]
 description = "Terminal mail client"
 test = { cmd = "meli --version", expected = "meli {{version}}" }
