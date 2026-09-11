@@ -572,8 +572,11 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) ->
     // link. Without a signer, retain the ordinary provenance ratchet.
     let packslip_signer_replaces_provenance =
         backend.starts_with("packslip:") && new.signer.is_some();
-    let compare_provenance = !packslip_signer_replaces_provenance;
-    if compare_provenance && new.provenance < old.provenance {
+    if provenance_is_downgrade(
+        old.provenance.as_ref(),
+        new.provenance.as_ref(),
+        packslip_signer_replaces_provenance,
+    ) {
         bail!(
             "lockfile generation would downgrade recorded provenance; previous files were preserved"
         );
@@ -587,26 +590,41 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) ->
     }
     // Preserve identities across reordering, then pair replaced URLs in their
     // configured order so version upgrades retain the previous trust baseline.
-    if compare_provenance {
-        let mut replacements = new.additional_artifacts.iter().filter(|artifact| {
-            !old.additional_artifacts
-                .iter()
-                .any(|old| old.url == artifact.url)
-        });
-        for artifact in &old.additional_artifacts {
-            let replacement = new
-                .additional_artifacts
-                .iter()
-                .find(|new| new.url == artifact.url)
-                .or_else(|| replacements.next());
-            if replacement.and_then(|a| a.provenance.as_ref()) < artifact.provenance.as_ref() {
-                bail!(
-                    "lockfile generation would downgrade additional artifact provenance; previous files were preserved"
-                );
-            }
+    let mut replacements = new.additional_artifacts.iter().filter(|artifact| {
+        !old.additional_artifacts
+            .iter()
+            .any(|old| old.url == artifact.url)
+    });
+    for artifact in &old.additional_artifacts {
+        let replacement = new
+            .additional_artifacts
+            .iter()
+            .find(|new| new.url == artifact.url)
+            .or_else(|| replacements.next());
+        if provenance_is_downgrade(
+            artifact.provenance.as_ref(),
+            replacement.and_then(|a| a.provenance.as_ref()),
+            packslip_signer_replaces_provenance,
+        ) {
+            bail!(
+                "lockfile generation would downgrade additional artifact provenance; previous files were preserved"
+            );
         }
     }
     Ok(())
+}
+
+fn provenance_is_downgrade(
+    old: Option<&ProvenanceType>,
+    new: Option<&ProvenanceType>,
+    packslip_signer_replaces_provenance: bool,
+) -> bool {
+    if packslip_signer_replaces_provenance
+        && old.is_some_and(ProvenanceType::is_github_attestations)
+    {
+        return false;
+    }
+    new < old
 }
 
 fn validate_provenance_settings(
@@ -1211,6 +1229,13 @@ mod tests {
         new.signer =
             Some("sigstore-oidc:https://github.com/o/r/.github/workflows/other.yml".into());
         assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
+
+        new.signer = old.signer.clone();
+        let old = PlatformInfo {
+            provenance: Some(ProvenanceType::Slsa { url: None }),
+            ..old
+        };
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
     }
 
     #[test]
@@ -1223,6 +1248,26 @@ mod tests {
             ..Default::default()
         };
         assert!(ensure_no_downgrade(&old, &PlatformInfo::default(), "github:o/r").is_err());
+
+        let mut new = PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/o/r/.github/workflows/release.yml".into(),
+            ),
+            ..Default::default()
+        };
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_ok());
+
+        let old = PlatformInfo {
+            additional_artifacts: vec![ArtifactInfo {
+                provenance: Some(ProvenanceType::Slsa { url: None }),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
+
+        new.signer = None;
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
     }
 
     #[test]
