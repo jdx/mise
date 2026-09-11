@@ -31,11 +31,12 @@ impl<'a> TaskToolInstaller<'a> {
         dry_run: bool,
         previewed_tools: &HashSet<ToolVersion>,
     ) -> Result<()> {
-        self.install_tasks(
+        self.install_task_list(
             config,
             tasks.all().cloned().collect(),
             dry_run,
             previewed_tools,
+            true,
         )
         .await
     }
@@ -48,11 +49,23 @@ impl<'a> TaskToolInstaller<'a> {
         dry_run: bool,
         previewed_tools: &HashSet<ToolVersion>,
     ) -> Result<()> {
+        self.install_task_list(config, tasks, dry_run, previewed_tools, false)
+            .await
+    }
+
+    async fn install_task_list(
+        &self,
+        config: &mut Arc<Config>,
+        tasks: Vec<Task>,
+        dry_run: bool,
+        previewed_tools: &HashSet<ToolVersion>,
+        reload_config: bool,
+    ) -> Result<()> {
         let all_tool_requests = self.collect_tool_requests(config, &tasks).await?;
         let toolset = self
             .build_toolset(config, self.cli_tools.to_vec(), all_tool_requests)
             .await?;
-        self.install_toolset(config, toolset, dry_run, previewed_tools)
+        self.install_toolset(config, toolset, dry_run, previewed_tools, reload_config)
             .await
     }
 
@@ -211,6 +224,7 @@ impl<'a> TaskToolInstaller<'a> {
         mut ts: Toolset,
         dry_run: bool,
         previewed_tools: &HashSet<ToolVersion>,
+        reload_config: bool,
     ) -> Result<()> {
         if dry_run {
             for tvl in ts.versions.values_mut() {
@@ -225,6 +239,7 @@ impl<'a> TaskToolInstaller<'a> {
                     missing_args_only: !Settings::get().task.run_auto_install,
                     skip_auto_install: !Settings::get().task.run_auto_install
                         || !Settings::get().auto_install,
+                    reload_config,
                     ..Default::default()
                 },
             )

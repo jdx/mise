@@ -27,6 +27,24 @@ assert "mise run parent" "rtx-tiny: v1.1.0 args:"
 assert "mise run templated-parent" "rtx-tiny: v2.1.0 args:"
 
 cat <<EOF >mise.toml
+[tasks.install-failure]
+tools = { dummy = "other-dummy" }
+run = "echo should-not-run"
+
+[tasks.install-failure-parent]
+run = [{ task = "install-failure" }]
+
+[tasks.install-sibling]
+run = "sleep 0.2; echo sibling-completed"
+EOF
+
+# A failed late install is reported as a task failure and does not bypass
+# completion of already-running siblings in continue-on-error mode.
+assert_fail_contains \
+  "mise run --continue-on-error install-failure-parent ::: install-sibling 2>&1" \
+  "sibling-completed"
+
+cat <<EOF >mise.toml
 [tasks.a]
 tools = { tiny = "1" }
 run = "rtx-tiny"

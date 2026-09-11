@@ -934,17 +934,23 @@ impl Run {
                     async move {
                         if install_tools && !this.skip_tools {
                             let mut install_config = spawn_context.config.clone();
-                            crate::task::task_tool_installer::TaskToolInstaller::new(
-                                &this.context_builder,
-                                &this.tool,
-                            )
-                            .install_tasks(
-                                &mut install_config,
-                                vec![task.clone()],
-                                this.dry_run,
-                                &HashSet::new(),
-                            )
-                            .await?;
+                            let install_result =
+                                crate::task::task_tool_installer::TaskToolInstaller::new(
+                                    &this.context_builder,
+                                    &this.tool,
+                                )
+                                .install_tasks(
+                                    &mut install_config,
+                                    vec![task.clone()],
+                                    this.dry_run,
+                                    &HashSet::new(),
+                                )
+                                .await;
+                            if let Err(err) = install_result {
+                                this.fail_sched_job_before_start(task, deps_for_remove, err)
+                                    .await;
+                                return Ok(());
+                            }
                         }
                         Self::spawn_sched_job(
                             this,
@@ -1164,6 +1170,33 @@ impl Run {
         });
 
         Ok(())
+    }
+
+    /// Record a preparation failure through the same task-level result path as
+    /// an execution failure, then release its dependency graph entry.
+    async fn fail_sched_job_before_start(
+        &self,
+        task: Task,
+        deps_for_remove: Arc<Mutex<Deps>>,
+        err: eyre::Report,
+    ) {
+        let prefix = task.estyled_prefix();
+        if Settings::get().verbose {
+            self.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
+        } else {
+            self.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
+        }
+        self.add_failed_task(task.clone(), Error::get_exit_status(&err));
+        if !self.continue_on_error {
+            #[cfg(unix)]
+            crate::cmd::CmdLineRunner::kill_all(nix::sys::signal::SIGTERM);
+            #[cfg(windows)]
+            crate::cmd::CmdLineRunner::kill_all();
+        }
+        self.retire_keep_order_slot(&task);
+        let mut deps = deps_for_remove.lock().await;
+        deps.mark_executed(&task);
+        deps.remove(&task);
     }
 
     /// Retire a task's keep-order slot because it will never run.

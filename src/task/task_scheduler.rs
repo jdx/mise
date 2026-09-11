@@ -2,6 +2,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::task::{Deps, Task};
 use eyre::Result;
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{Mutex, Semaphore, mpsc};
@@ -245,6 +246,7 @@ impl Scheduler {
             continue_on_error,
         } = hooks;
         let mut sched_rx = self.take_receiver().expect("receiver already taken");
+        let mut pending_jobs = FuturesUnordered::new();
         let mut stop_cleanup_done = false;
 
         loop {
@@ -272,13 +274,12 @@ impl Scheduler {
                                 continue;
                             }
                         }
-                        spawn_job(
+                        pending_jobs.push(spawn_job(
                             task,
                             deps_for_remove,
                             allow_during_interruption,
                             install_tools,
-                        )
-                        .await?;
+                        ));
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => break,
@@ -315,13 +316,22 @@ impl Scheduler {
             }
 
             // Exit if main deps finished and nothing is running/queued
-            if *main_done_rx.borrow() && self.in_flight_count() == 0 && !drained_any {
+            if *main_done_rx.borrow()
+                && self.in_flight_count() == 0
+                && pending_jobs.is_empty()
+                && !drained_any
+            {
                 trace!("scheduler drain complete; exiting loop");
                 break;
             }
 
             // Await either new work or main_done change
             tokio::select! {
+                result = pending_jobs.next(), if !pending_jobs.is_empty() => {
+                    if let Some(result) = result {
+                        result?;
+                    }
+                }
                 m = sched_rx.recv() => {
                     if let Some(SchedMsg {
                         task,
@@ -342,13 +352,12 @@ impl Scheduler {
                                 continue;
                             }
                         }
-                        spawn_job(
+                        pending_jobs.push(spawn_job(
                             task,
                             deps_for_remove,
                             allow_during_interruption,
                             install_tools,
-                        )
-                        .await?;
+                        ));
                     } else {
                         // channel closed; rely on main_done/in_flight to exit soon
                     }
