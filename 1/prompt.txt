@@ -19,3 +19,7 @@ post a reply
 ---
 
 hmm, i wonder though, in a pure warm scenario shouldn't it be close ot a no-op?
+
+---
+
+explore that, if it's a good idea make a pr
