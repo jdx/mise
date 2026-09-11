@@ -19,7 +19,7 @@ use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
 use crate::{dirs, env};
 use console::style;
 use dashmap::DashMap;
-use eyre::{Result, bail};
+use eyre::Result;
 use indexmap::IndexMap;
 use jiff::Timestamp;
 #[cfg(windows)]
@@ -512,11 +512,12 @@ impl ToolVersion {
             } else {
                 "Run `mise install` without --locked to update the lockfile"
             };
-            bail!(
-                "{}@{} is not in the lockfile\nhint: {hint}",
-                request.ba().short,
-                request.version()
-            );
+            return Err(crate::errors::Error::NotInLockfile {
+                tool: request.ba().short.clone(),
+                version: request.version().to_string(),
+                hint: hint.to_string(),
+            }
+            .into());
         }
         Ok(())
     }
