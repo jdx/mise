@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'TOML'
+[doctor.checks.probe]
+run = "echo $$ > probe.pid; sleep 120 & echo $! > grandchild.pid; wait"
+timeout = "60s"
+[doctor.checks.second]
+run = "echo $$ > second.pid; sleep 120 & echo $! > second-grandchild.pid; wait"
+timeout = "60s"
+[tasks.diagnose]
+run = "mise doctor project"
+TOML
+
+# Exercise actual nested tasks and session leaders. Keep the test supervisor
+# outside the target group, and always stop fixtures even if an assertion fails.
+MISE_JOBS=2 python3 - <<'PY'
+import os
+from pathlib import Path
+import signal
+import subprocess
+import time
+
+
+def alive(pid):
+    result = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    return result.returncode == 0 and result.stdout.strip() and not result.stdout.strip().startswith("Z")
+
+
+pidfiles = ("probe.pid", "grandchild.pid", "second.pid", "second-grandchild.pid")
+for nested in (False, True):
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        for file in pidfiles:
+            Path(file).unlink(missing_ok=True)
+        command = ["mise", "run", "diagnose"] if nested else ["mise", "doctor", "project"]
+        child = subprocess.Popen(command, start_new_session=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        pids = []
+        try:
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                try:
+                    pids = [int(Path(file).read_text()) for file in pidfiles]
+                    break
+                except (FileNotFoundError, ValueError):
+                    if child.poll() is not None:
+                        raise AssertionError(child.communicate())
+                    time.sleep(.05)
+            assert len(pids) == 4, "probe failed to start"
+            # TERM/HUP normally come from an orchestrator targeting its group.
+            # For nested Ctrl-C, signal the outer task so its forwarding is tested.
+            if nested and sig == signal.SIGINT:
+                child.send_signal(sig)
+            else:
+                os.killpg(child.pid, sig)
+            child.communicate(timeout=5)
+            deadline = time.monotonic() + 3
+            while any(alive(pid) for pid in pids) and time.monotonic() < deadline:
+                time.sleep(.05)
+            assert not any(alive(pid) for pid in pids), (nested, sig, pids)
+        finally:
+            for pid in [child.pid, *pids]:
+                try:
+                    os.killpg(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            child.wait(timeout=5)
+PY

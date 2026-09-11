@@ -49,6 +49,7 @@ use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shim
 
 pub(crate) mod command_wrapper;
 pub(crate) mod config_file;
+pub(crate) mod doctor;
 pub(crate) mod env_directive;
 pub(crate) mod miserc;
 pub(crate) mod provenance;

@@ -204,6 +204,10 @@ pub(crate) trait ConfigFile: Debug + Send + Sync {
         None
     }
 
+    fn doctor_config(&self) -> crate::config::doctor::DoctorConfig {
+        Default::default()
+    }
+
     fn bootstrap_config(&self) -> Option<crate::system::BootstrapTomlConfig> {
         None
     }

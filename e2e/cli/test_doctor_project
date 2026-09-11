@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+
+# Empty projects succeed without claiming any checks passed.
+assert_contains "mise doctor project" "No project checks configured"
+assert_succeed "mise doctor project --json | jq -e '.checks == []'"
+
+mise install dummy@1.0.0
+mkdir -p probes nested
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "1.0.0"
+
+[env]
+DOCTOR_VALUE = "project-value"
+DOCTOR_REMOVE = false
+_.path = ["./probes"]
+
+[doctor.checks.a_failure]
+description = "A failing requirement"
+run = "echo private-probe-output >&2; exit 7"
+hint = "Run the project's setup task"
+
+[doctor.checks.environment]
+run = 'test "$DOCTOR_VALUE" = project-value && test -z "${DOCTOR_REMOVE+x}" && doctor-probe && command -v dummy'
+dir = "nested"
+
+[doctor.checks.skipped]
+run = "touch should-not-exist"
+os = ["windows"]
+
+[doctor.checks.z_later]
+run = "touch later-ran"
+TOML
+cat >probes/doctor-probe <<'SH'
+#!/bin/sh
+test "${PWD##*/}" = nested
+SH
+chmod +x probes/doctor-probe
+export DOCTOR_REMOVE=ambient
+
+# Preserve a failing exit status while checking a complete, clean JSON report.
+assert_fail "mise doctor project --json > report.json"
+assert_succeed "jq -e '.checks | length == 4' report.json"
+assert_succeed "jq -e '.checks | map(.status) == [\"fail\", \"pass\", \"skipped\", \"pass\"]' report.json"
+assert_succeed "jq -e '.checks[0].hint == \"Run the project\u0027s setup task\"' report.json"
+assert_not_contains "cat report.json" "private-probe-output"
+assert_succeed "test -f later-ran && test ! -f should-not-exist"
+assert_contains "mise doctor project 2>&1 || true" "Run the project's setup task"
+
+# Ordinary doctor must not execute project probes.
+cat >>mise.toml <<'TOML'
+[doctor.checks.ordinary]
+run = "touch ordinary-ran"
+TOML
+mise doctor >/dev/null 2>&1 || true
+assert_succeed "test ! -f ordinary-ran"
+assert_fail "MISE_SAFE=1 mise doctor project --json > safe.json"
+assert_succeed "jq -e '.checks[0].status == \"error\"' safe.json"
+assert_succeed "test ! -f ordinary-ran"
+
+# A higher-precedence named check replaces the whole declaration.
+cat >mise.local.toml <<'TOML'
+[doctor.checks.a_failure]
+run = "true"
+TOML
+assert_succeed "mise doctor --json project > overridden.json"
+assert_succeed "jq -e '.checks[0] | .status == \"pass\" and .hint == null and (.source | endswith(\"mise.local.toml\"))' overridden.json"
+
+# Timeouts terminate grandchildren, and errors do not stop other probes.
+cat >mise.toml <<'TOML'
+[doctor.checks.a_timeout]
+run = "(sleep 2; touch orphan-ran) & wait"
+timeout = "100ms"
+[doctor.checks.b_bad_shell]
+run = "true"
+shell = "mise-doctor-shell-does-not-exist -c"
+[doctor.checks.c_bad_timeout]
+run = "touch invalid-ran"
+timeout = "0s"
+[doctor.checks.d_later]
+run = "true"
+[doctor.checks.e_output_limit]
+run = "head -c 70000 /dev/zero"
+TOML
+assert_fail "mise doctor project --json > errors.json"
+assert_succeed "jq -e '[.checks[] | select(.name != \"a_failure\") | .status] == [\"error\", \"error\", \"error\", \"pass\", \"error\"]' errors.json"
+assert_contains "cat errors.json" "timed out"
+sleep 3
+assert_succeed "test ! -f orphan-ran && test ! -f invalid-ran"
+
+# Required environment failures are reported even when config loading cannot finish.
+cat >mise.toml <<'TOML'
+[env]
+DOCTOR_REQUIRED = "{{ get_env(name='MISE_DOCTOR_PROJECT_MISSING_REQUIRED_VALUE') }}"
+[doctor.checks.environment]
+run = "true"
+[doctor.checks.skipped]
+run = "false"
+os = ["windows"]
+TOML
+assert_fail "mise doctor project --json > environment.json"
+assert_succeed "jq -e '.checks == [] and (.errors | length == 1)' environment.json"
+assert_contains "cat environment.json" "MISE_DOCTOR_PROJECT_MISSING_REQUIRED_VALUE"
+
+# Parse failures still produce machine-readable diagnostics.
+cat >mise.toml <<'TOML'
+[doctor.checks.invalid]
+run = "true"
+timeuot = "5s"
+TOML
+assert_fail "mise doctor project --json > invalid.json"
+assert_succeed "jq -e '.checks == [] and (.errors | length == 1)' invalid.json"
+
+# Diagnostics never install a missing configured tool.
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "99.99.99"
+[doctor.checks.probe]
+run = "true"
+TOML
+assert_succeed "mise doctor project --json > missing-tool.json"
+assert_succeed "test ! -d \"$MISE_DATA_DIR/installs/dummy/99.99.99\""
+
+# Like tasks, dir may intentionally refer to a parent or absolute directory.
+mkdir -p child
+cat >child/mise.toml <<'TOML'
+[doctor.checks.parent]
+run = "test -f mise.toml && test -d child"
+dir = ".."
+[doctor.checks.absolute]
+run = "test -d ."
+dir = "/"
+TOML
+assert_succeed "mise --cd child doctor project --json > directories.json"
+assert_succeed "jq -e '[.checks[] | select(.name == \"parent\" or .name == \"absolute\") | .status] == [\"pass\", \"pass\"]' directories.json"

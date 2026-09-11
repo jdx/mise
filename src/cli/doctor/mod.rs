@@ -1,4 +1,5 @@
 mod path;
+mod project;
 
 use crate::plugins::PluginEnum;
 use std::collections::HashSet;
@@ -55,6 +56,7 @@ pub(crate) struct Doctor {
 #[derive(Debug, usage_rs::Subcommands)]
 pub(crate) enum Commands {
     Path(path::Path),
+    Project(project::Project),
 }
 
 /// outcome of the `[bootstrap.macos.defaults]` doctor check
@@ -140,6 +142,7 @@ impl Doctor {
         if let Some(cmd) = self.subcommand {
             match cmd {
                 Commands::Path(cmd) => cmd.run().await,
+                Commands::Project(cmd) => cmd.run(self.json).await,
             }
         } else if self.json {
             self.doctor_json().await

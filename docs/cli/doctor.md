@@ -27,6 +27,7 @@ mise doctor path --full
 ## Subcommands
 
 - [`mise doctor path [-f --full]`](/cli/doctor/path.html)
+- [`mise doctor project [-J --json]`](/cli/doctor/project.html)
 
 <!-- generated reference navigation -->
 

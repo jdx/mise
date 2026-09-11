@@ -8,7 +8,16 @@ use tokio::io::AsyncRead;
 impl CmdLineRunner<'_> {
     /// Capture a finite response, with one deadline for the process and pipes.
     /// This command owns its child tree even when mise itself is nested.
-    pub(crate) async fn read_isolated(mut self, limit: usize) -> Result<String> {
+    pub(crate) async fn read_isolated(self, limit: usize) -> Result<String> {
+        let output = self.output_isolated(limit).await?;
+        if !output.status.success() {
+            bail!("command exited with non-zero status: {}", output.status);
+        }
+        Ok(String::from_utf8(output.stdout)?.trim_end().to_string())
+    }
+
+    /// Return the exit status and bounded output without replaying command output.
+    pub(crate) async fn output_isolated(mut self, limit: usize) -> Result<std::process::Output> {
         let _read_lock = RAW_LOCK.read().await;
         let timeout = self.timeout.unwrap_or(Duration::from_secs(5));
         self.cmd.kill_on_drop(true);
@@ -38,7 +47,7 @@ impl CmdLineRunner<'_> {
             )
         })
         .await;
-        let (status, stdout, _stderr) = match result {
+        let (status, stdout, stderr) = match result {
             Ok(Ok(output)) => output,
             Ok(Err(err)) => {
                 end(&mut child, tree).await;
@@ -49,10 +58,11 @@ impl CmdLineRunner<'_> {
                 bail!("timed out after {timeout:?}");
             }
         };
-        if !status.success() {
-            bail!("command exited with non-zero status: {status}");
-        }
-        Ok(String::from_utf8(stdout)?.trim_end().to_string())
+        Ok(std::process::Output {
+            status,
+            stdout,
+            stderr,
+        })
     }
 }
 
@@ -195,6 +205,20 @@ impl Drop for ChildTree {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn captures_failed_probe_status_without_replaying_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = CmdLineRunner::new("/bin/sh")
+            .current_dir(dir.path())
+            .args(["-c", "printf result; printf detail >&2; exit 7"])
+            .output_isolated(1024)
+            .await
+            .unwrap();
+        assert_eq!(output.status.code(), Some(7));
+        assert_eq!(output.stdout, b"result");
+        assert_eq!(output.stderr, b"detail");
+    }
+
     #[tokio::test]
     async fn bounds_output_and_inherited_pipes() {
         let started = Instant::now();

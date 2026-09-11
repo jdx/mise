@@ -2306,6 +2306,17 @@ cmd doctor help="Check mise installation for possible problems" effect=read {
         flag "-h --help" help="Print help" action=help builtin=#true
         example "mise doctor path" help="Get the PATH entries mise provides, such as `/home/user/.local/share/mise/installs/node/24.0.0/bin`, `/home/user/.local/share/mise/installs/rust/1.90.0/bin`, and `/home/user/.local/share/mise/installs/python/3.10.0/bin`."
     }
+    cmd project help="Run the project's diagnostic checks" {
+        long_help #"""
+Run the project's diagnostic checks
+
+Checks are declared in [doctor.checks.<name>] in mise.toml. Each command runs
+with the project's installed tools and environment. Checks should inspect
+state; mise does not sandbox them or run their suggested remedies.
+"""#
+        flag "-J --json" help="Output the complete report as JSON"
+        flag "-h --help" help="Print help" action=help builtin=#true
+    }
     example #"""
 mise doctor
 mise doctor --json

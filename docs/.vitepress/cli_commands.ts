@@ -450,6 +450,9 @@ export const commands: { [key: string]: Command } = {
       path: {
         hide: false,
       },
+      project: {
+        hide: false,
+      },
     },
   },
   dotfiles: {

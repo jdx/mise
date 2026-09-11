@@ -331,6 +331,7 @@ pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
         "runs an arbitrary command in each repo",
     ),
     ("direnv exec", "runs an arbitrary command"),
+    ("doctor project", "runs project-defined diagnostic commands"),
     ("en", "starts an interactive shell"),
     ("exec", "runs an arbitrary command"),
     ("mcp", "serves tools that run tasks on request"),

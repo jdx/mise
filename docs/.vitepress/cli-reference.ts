@@ -69,6 +69,10 @@ const guides: Record<string, [string, string]> = {
   "cache task": ["Task output caching", "/tasks/caching.html"],
   deps: ["Project dependencies", "/dev-tools/deps.html"],
   doctor: ["Troubleshooting", "/troubleshooting.html"],
+  "doctor project": [
+    "Project diagnostics",
+    "/configuration/project-diagnostics.html",
+  ],
   generate: ["Tasks and automation", "/tasks/"],
   "generate config": ["Configuration", "/configuration.html"],
   "generate devcontainer": ["IDE integration", "/ide-integration.html"],

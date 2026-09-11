@@ -3792,6 +3792,53 @@
           "description": "absolute or ~/-relative remote path to install the provisioned mise to"
         }
       ]
+    },
+    "doctor": {
+      "description": "Project diagnostic checks, run explicitly with mise doctor project.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run"],
+            "properties": {
+              "run": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Diagnostic command. Exit zero to pass; other exit codes fail."
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable requirement checked by the command."
+              },
+              "hint": {
+                "type": "string",
+                "description": "Remediation guidance displayed on failure; never executed."
+              },
+              "timeout": {
+                "type": "string",
+                "description": "Positive command timeout, such as 5s. Defaults to 10s."
+              },
+              "dir": {
+                "type": "string",
+                "description": "Working directory. Relative paths resolve from the declaring config's project root; absolute paths are used as given."
+              },
+              "shell": {
+                "description": "Shell command, including the command flag, as in tasks.",
+                "type": "string",
+                "examples": ["bash -c", "pwsh -Command"]
+              },
+              "os": {
+                "$ref": "#/$defs/os_filter",
+                "description": "OS or OS/arch selectors; omit to run everywhere."
+              }
+            }
+          }
+        }
+      }
     }
   },
   "unevaluatedProperties": false,
@@ -5653,6 +5700,9 @@
     "_": {
       "type": "object",
       "additionalProperties": true
+    },
+    "doctor": {
+      "$ref": "#/$defs/doctor"
     }
   }
 }
