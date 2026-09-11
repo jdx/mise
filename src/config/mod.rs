@@ -20,7 +20,7 @@ use crate::cli::args::{BackendArg, split_bracketed_opts};
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
-use crate::config::config_file::mise_toml::{MiseToml, Tasks};
+use crate::config::config_file::mise_toml::{MiseToml, MonorepoConfig, Tasks};
 use crate::config::config_file::{
     ConfigFile, TaskConfig, config_trust_root, is_path_trusted, trust_check,
 };
@@ -719,14 +719,11 @@ impl Config {
     pub(crate) fn monorepo_lockfile_discovery_key(
         &self,
     ) -> Option<(PathBuf, Option<bool>, Vec<String>)> {
-        let cf = find_monorepo_config(&self.config_files)?;
-        let monorepo = cf.monorepo();
+        let config = find_monorepo_config(&self.config_files)?;
         Some((
-            cf.get_path().to_path_buf(),
-            monorepo.and_then(|config| config.lockfile),
-            monorepo
-                .map(|config| config.config_roots.clone())
-                .unwrap_or_default(),
+            config.monorepo_source.get_path().to_path_buf(),
+            config.monorepo.lockfile,
+            config.monorepo.config_roots.unwrap_or_default(),
         ))
     }
 
@@ -746,10 +743,7 @@ impl Config {
     pub(crate) async fn monorepo_global_task_inputs(self: &Arc<Self>) -> Result<Vec<String>> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
-        let monorepo_root = monorepo_config
-            .project_root()
-            .ok_or_else(|| eyre!("monorepo root config has no project root"))?
-            .to_path_buf();
+        let monorepo_root = monorepo_config.root;
         let configs = self
             .config_files
             .values()
@@ -758,7 +752,7 @@ impl Config {
         let task_inputs = ResolvedTaskInputs::from_configs(&configs);
         let mut task = Task {
             name: "affected".to_string(),
-            cf: Some(monorepo_config.clone()),
+            cf: Some(monorepo_config.root_config),
             config_root: Some(monorepo_root),
             ..Default::default()
         };
@@ -782,14 +776,8 @@ impl Config {
     ) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
-        let monorepo_root = monorepo_config
-            .project_root()
-            .ok_or_else(|| eyre!("monorepo root config has no project root"))?;
-        let overrides = monorepo_config
-            .monorepo()
-            .map(|config| &config.projects)
-            .cloned()
-            .unwrap_or_default();
+        let monorepo_root = monorepo_config.root;
+        let overrides = monorepo_config.monorepo.projects;
         let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
         let go = crate::task::workspace::go::GoWorkspaceProvider;
         let node = crate::task::workspace::node::NodeWorkspaceProvider;
@@ -808,12 +796,12 @@ impl Config {
     /// `[monorepo].config_roots` to match directories, because legacy lockfiles
     /// can exist in roots whose live config is idiomatic-only or was removed.
     pub(crate) fn monorepo_lockfile_root(&self) -> Option<PathBuf> {
-        let cf = find_monorepo_config(&self.config_files)?;
-        let setting = cf.monorepo().and_then(|m| m.lockfile);
+        let config = find_monorepo_config(&self.config_files)?;
+        let setting = config.monorepo.lockfile;
         if !monorepo_lockfile_enabled_for_version(&version::V, setting) {
             return None;
         }
-        let monorepo_root = cf.project_root().map(|p| p.to_path_buf())?;
+        let monorepo_root = config.root;
 
         // An explicit opt-in always routes descendant configs to the root
         // lockfile, even when config_roots cannot be resolved. Avoid expanding
@@ -864,21 +852,19 @@ impl Config {
     ) -> Result<Vec<PathBuf>> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
-        let monorepo_root = monorepo_config
-            .project_root()
-            .ok_or_else(|| eyre!("monorepo root config has no project root"))?;
-        let patterns = &monorepo_config
-            .monorepo()
-            .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?
-            .config_roots;
+        let monorepo_root = monorepo_config.root;
+        let patterns = monorepo_config
+            .monorepo
+            .config_roots
+            .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?;
         if patterns.is_empty() {
             bail!("[monorepo].config_roots is required for monorepo operations");
         }
         let roots = match filenames {
             Some(filenames) => {
-                expand_config_roots_with_filenames(&monorepo_root, patterns, None, filenames)?
+                expand_config_roots_with_filenames(&monorepo_root, &patterns, None, filenames)?
             }
-            None => expand_config_root_dirs(&monorepo_root, patterns, None)?,
+            None => expand_config_root_dirs(&monorepo_root, &patterns, None)?,
         };
         if roots.is_empty() {
             bail!("[monorepo].config_roots did not match any config roots");
@@ -1720,25 +1706,68 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
 }
 
 fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
-    find_monorepo_config(config_files).and_then(|cf| cf.project_root().map(|p| p.to_path_buf()))
+    find_monorepo_config(config_files).map(|config| config.root)
 }
 
-/// Find the config file that has monorepo_root = true
+#[derive(Clone)]
+struct ResolvedMonorepoConfig {
+    root: PathBuf,
+    root_config: Arc<dyn ConfigFile>,
+    monorepo_source: Arc<dyn ConfigFile>,
+    monorepo: MonorepoConfig,
+}
+
+/// Find the nearest directory whose effective layered config has `monorepo_root = true`.
 ///
 /// `ConfigMap` is ordered nearest-first — [`load_config_paths`] builds it from
-/// [`file::all_dirs`], which walks from the cwd upward — so the first match is the
-/// *deepest* applicable monorepo root. That matters when monorepo roots nest, e.g. a
-/// git worktree checked out inside the main checkout (`<repo>/.worktrees/<name>`),
-/// where both configs set `monorepo_root = true`: the nested one wins, and its
-/// `[monorepo].config_roots` are the ones expanded. Configs above the selected root
-/// still inherit as ordinary parent configs for env/tools/vars, but tasks from an
-/// enclosing monorepo are dropped — see [`dir_is_in_enclosing_monorepo`],
-/// `e2e/tasks/test_task_monorepo_nested_root`, and
-/// https://github.com/jdx/mise/discussions/11276.
-fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>> {
+/// [`file::all_dirs`], which walks from the cwd upward. Within one directory,
+/// `configs_at_root` returns config layers from highest to lowest precedence, so an
+/// environment overlay can override `monorepo_root` without becoming a separate root.
+/// This preserves nearest-root behavior for nested monorepos while resolving sibling
+/// overlays as one logical root configuration.
+fn find_monorepo_config(config_files: &ConfigMap) -> Option<ResolvedMonorepoConfig> {
     config_files
         .values()
-        .find(|cf| cf.monorepo_root() == Some(true))
+        .filter_map(|cf| cf.project_root())
+        .unique()
+        .find_map(|root| resolve_monorepo_config_at_root(&root, config_files))
+}
+
+fn resolve_monorepo_config_at_root(
+    root: &Path,
+    config_files: &ConfigMap,
+) -> Option<ResolvedMonorepoConfig> {
+    let configs = configs_at_root(root, config_files);
+    let (root_config, enabled) = configs
+        .iter()
+        .find_map(|cf| cf.monorepo_root().map(|enabled| ((*cf).clone(), enabled)))?;
+    if !enabled {
+        return None;
+    }
+
+    let mut monorepo = MonorepoConfig::default();
+    let mut monorepo_source = root_config.clone();
+    for cf in configs.into_iter().rev() {
+        let Some(layer) = cf.monorepo() else {
+            continue;
+        };
+        monorepo_source = cf.clone();
+        if layer.config_roots.is_some() {
+            monorepo.config_roots.clone_from(&layer.config_roots);
+        }
+        if layer.lockfile.is_some() {
+            monorepo.lockfile = layer.lockfile;
+        }
+        monorepo.projects.extend(layer.projects.clone());
+        monorepo.task_defaults.extend(layer.task_defaults.clone());
+    }
+
+    Some(ResolvedMonorepoConfig {
+        root: root.to_path_buf(),
+        root_config,
+        monorepo_source,
+        monorepo,
+    })
 }
 
 /// Loads each selected bootstrap root as an independent hierarchy with scoped variables.
@@ -2461,15 +2490,15 @@ fn warn_if_monorepo_lockfile_default_changes(config: &Config) {
         !monorepo_lockfile_default_for_version(&version::V),
         "monorepo lockfiles are now default-on; remove warn_if_monorepo_lockfile_default_changes() and should_warn_monorepo_lockfile_default()"
     );
-    let Some(cf) = find_monorepo_config(&config.config_files) else {
+    let Some(monorepo_config) = find_monorepo_config(&config.config_files) else {
         return;
     };
-    let setting = cf.monorepo().and_then(|m| m.lockfile);
+    let setting = monorepo_config.monorepo.lockfile;
     if !should_warn_monorepo_lockfile_default(
         &version::V,
         setting,
         Settings::get().lockfile_enabled(),
-        monorepo_lockfiles_exist(config, cf),
+        monorepo_lockfiles_exist(config, &monorepo_config),
     ) {
         return;
     }
@@ -2477,14 +2506,12 @@ fn warn_if_monorepo_lockfile_default_changes(config: &Config) {
     warn_once!(
         "Monorepo lockfiles will default to a single root lockfile starting in mise {MONOREPO_LOCKFILE_DEFAULT_AT}. \
         Set `[monorepo] lockfile = true` in {} to opt in now, or `lockfile = false` to keep per-subproject lockfiles and silence this warning.",
-        display_path(cf.get_path())
+        display_path(monorepo_config.monorepo_source.get_path())
     );
 }
 
-fn monorepo_lockfiles_exist(config: &Config, monorepo_config: &Arc<dyn ConfigFile>) -> bool {
-    let Some(monorepo_root) = monorepo_config.project_root() else {
-        return false;
-    };
+fn monorepo_lockfiles_exist(config: &Config, monorepo_config: &ResolvedMonorepoConfig) -> bool {
+    let monorepo_root = &monorepo_config.root;
     let mut lockfile_paths = IndexSet::new();
 
     for (config_path, cf) in &config.config_files {
@@ -2497,9 +2524,8 @@ fn monorepo_lockfiles_exist(config: &Config, monorepo_config: &Arc<dyn ConfigFil
         );
     }
 
-    if let Some(monorepo) = monorepo_config.monorepo()
-        && let Ok(config_roots) =
-            expand_config_root_dirs(&monorepo_root, &monorepo.config_roots, None)
+    if let Some(patterns) = &monorepo_config.monorepo.config_roots
+        && let Ok(config_roots) = expand_config_root_dirs(monorepo_root, patterns, None)
     {
         for config_root in config_roots {
             for lockfile_path in lockfile::lockfile_variant_paths_in_dir(&config_root) {
@@ -3471,15 +3497,19 @@ fn collect_task_definitions(
     let workspace_defaults = Settings::get()
         .experimental
         .then(|| {
-            let cf = find_monorepo_config(config_files)?;
-            let root = cf.project_root()?.to_path_buf();
-            let monorepo = cf.monorepo()?;
-            let tasks = monorepo.task_defaults.clone();
-            let mut project_roots = expand_config_root_dirs(&root, &monorepo.config_roots, None)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|project_root| file::desymlink_path(&project_root))
-                .collect::<BTreeSet<_>>();
+            let config = find_monorepo_config(config_files)?;
+            let root = config.root;
+            let monorepo = config.monorepo;
+            let tasks = monorepo.task_defaults;
+            let mut project_roots = expand_config_root_dirs(
+                &root,
+                monorepo.config_roots.as_deref().unwrap_or_default(),
+                None,
+            )
+            .unwrap_or_default()
+            .into_iter()
+            .map(|project_root| file::desymlink_path(&project_root))
+            .collect::<BTreeSet<_>>();
             project_roots.extend(
                 monorepo
                     .projects
@@ -3498,7 +3528,7 @@ fn collect_task_definitions(
             (!tasks.is_empty()).then_some(WorkspaceTaskDefaults {
                 project_roots,
                 tasks,
-                source: cf.get_path().to_path_buf(),
+                source: config.monorepo_source.get_path().to_path_buf(),
             })
         })
         .flatten();
@@ -4070,8 +4100,9 @@ async fn inferred_workspace_tasks(
 fn enclosing_monorepo_roots(config_files: &ConfigMap, selected_root: &Path) -> Vec<PathBuf> {
     config_files
         .values()
-        .filter(|cf| cf.monorepo_root() == Some(true))
         .filter_map(|cf| cf.project_root())
+        .unique()
+        .filter_map(|root| resolve_monorepo_config_at_root(&root, config_files).map(|c| c.root))
         .filter(|root| {
             !file::same_file(root, selected_root)
                 && file::path_starts_with_resolved(selected_root, root)
@@ -4115,7 +4146,7 @@ async fn load_local_tasks_with_context(
 ) -> Result<Vec<Task>> {
     let mut tasks = vec![];
     let monorepo_config = find_monorepo_config(&config.config_files);
-    let monorepo_root = monorepo_config.and_then(|cf| cf.project_root().map(|p| p.to_path_buf()));
+    let monorepo_root = monorepo_config.as_ref().map(|config| config.root.clone());
 
     // Load tasks from parent directories (current working directory up to root)
 
@@ -4170,8 +4201,8 @@ async fn load_local_tasks_with_context(
 
         // Get config_roots from [monorepo] section if defined
         let config_roots = monorepo_config
-            .and_then(|cf| cf.monorepo())
-            .map(|m| &m.config_roots);
+            .as_ref()
+            .and_then(|config| config.monorepo.config_roots.as_ref());
         let subdirs = discover_monorepo_subdirs(monorepo_root, config_roots, ctx)?;
 
         // Load tasks from subdirectories in parallel

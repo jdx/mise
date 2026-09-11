@@ -499,8 +499,7 @@ pub(crate) struct EnvList(pub(crate) Vec<EnvDirective>);
 pub(crate) struct MonorepoConfig {
     /// Explicit list of config roots for monorepo task discovery.
     /// Supports single-level glob patterns (*).
-    #[serde(default)]
-    pub config_roots: Vec<String>,
+    pub config_roots: Option<Vec<String>>,
     /// Use a single lockfile at the monorepo root for descendant config roots.
     /// None follows the rollout default; true opts in, false keeps colocated locks.
     pub lockfile: Option<bool>,
