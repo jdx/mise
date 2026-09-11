@@ -1,0 +1,9 @@
+investigate [https://github.com/jdx/mise/discussions/13045#discussioncomment-18396648](https://github.com/jdx/mise/discussions/13045#discussioncomment-18396648)
+
+---
+
+what should we do?
+
+---
+
+make a pr, post a reply
