@@ -373,6 +373,15 @@ pub(crate) fn select_artifact<'a>(
     .into())
 }
 
+fn lock_artifact_error(err: eyre::Report, target: &PlatformTarget) -> eyre::Report {
+    let context = format!("selecting the packslip artifact for {}", target.to_key());
+    if err.is::<NoHostArtifact>() {
+        crate::errors::Error::UnsupportedTarget(format!("{context}: {err}")).into()
+    } else {
+        err.wrap_err(context)
+    }
+}
+
 async fn select_compatible_artifact<'a>(
     artifacts: &'a [Artifact],
     host: &HostPlatform,
@@ -1692,7 +1701,7 @@ impl Backend for PackslipBackend {
                 opts.variant().as_deref(),
             )
         }
-        .wrap_err_with(|| format!("selecting the packslip artifact for {}", target.to_key()))?;
+        .map_err(|err| lock_artifact_error(err, target))?;
         let url = artifact
             .url
             .clone()
@@ -2111,6 +2120,13 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
             err.to_string().contains("no artifact for windows/x86_64"),
             "{err}"
         );
+        let target = PlatformTarget::new(Platform::parse("windows-x64").unwrap());
+        let err = lock_artifact_error(err, &target);
+        assert!(matches!(
+            err.downcast_ref::<crate::errors::Error>(),
+            Some(crate::errors::Error::UnsupportedTarget(message))
+                if message.contains("no artifact for windows/x86_64")
+        ));
 
         // Two artifacts that tie are refused, and a variant picks one.
         let mut fips = artifact(
@@ -2150,6 +2166,12 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
         ];
         let err = select_artifact(&tie, &linux(), None).unwrap_err();
         assert!(err.to_string().contains("will not guess"), "{err}");
+        let target = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let err = lock_artifact_error(err, &target);
+        assert!(!matches!(
+            err.downcast_ref::<crate::errors::Error>(),
+            Some(crate::errors::Error::UnsupportedTarget(_))
+        ));
 
         // A gnu host with no gnu build takes the static musl build; a
         // host that reports no libc takes only artifacts naming none.
