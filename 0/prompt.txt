@@ -95,3 +95,7 @@ fix this too before the next communique release [https://github.com/jdx/communiq
 ---
 
 fix the communique prs, but hold off on releasing and the rest of the work, I'm going ot make some improvements to communqiue first
+
+---
+
+ok i merged the release, continue
