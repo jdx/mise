@@ -238,6 +238,12 @@ impl Runtime {
             && state.config_hash == previous.config_hash
             && std::fs::read(&file).ok().as_deref() == Some(content.as_bytes())
         {
+            // Profile and executable ownership may change without affecting the
+            // rendered daemon configuration (for example with mise = false).
+            write_if_changed(
+                &state_dir(root).join("state.json"),
+                &serde_json::to_vec_pretty(&state)?,
+            )?;
             return Ok((state, lock));
         }
         self.supports_external_config(root).await?;

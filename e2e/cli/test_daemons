@@ -113,3 +113,20 @@ assert_contains "cat '$DAEMON_LOG'" "cwd=$PWD args=tui --help"
 assert_fail "mise daemons tui"
 
 assert_fail "mise daemons tui parent"
+
+# Updating a profile must persist ownership even if mise=false leaves the config unchanged.
+mkdir -p "$HOME/profile-cache"
+cd "$HOME/profile-cache"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "sleep 30"
+mise = false
+auto = ["start"]
+TOML
+MISE_ENV=first mise daemons start
+profile_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+unset __MISE_SESSION
+MISE_ENV=second mise hook-env --shell-pid "$$" -s bash >"$TMPDIR/profile-hook"
+assert_contains "jq -r '.profile[]' '$profile_state'" second
