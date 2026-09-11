@@ -1006,6 +1006,7 @@ mod tests {
             let req = ToolRequest::System {
                 backend: ba,
                 source: ToolSource::Argument,
+                lockfile_scope: Default::default(),
                 options: Default::default(),
             };
             ToolVersion::new(req, version.into())
