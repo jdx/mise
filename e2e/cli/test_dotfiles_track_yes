@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# stderr must be a terminal to exercise track's confirmation guard. Leave stdin
+# at EOF so a broken guard declines instead of waiting for an interactive answer.
+python3 - <<'PY'
+import errno
+import os
+from pathlib import Path
+import pty
+import subprocess
+
+for name, yes, flags, accepted in [
+    ("env-yes", "1", [], True),
+    ("flag-yes", "0", ["--yes"], True),
+    ("declined", "0", [], False),
+]:
+    target = Path.home() / f".track-{name}"
+    target.write_text("test fixture\n")
+    master, slave = pty.openpty()
+    try:
+        try:
+            result = subprocess.run(
+                ["mise", "bootstrap", "dotfiles", "track", *flags, str(target)],
+                env={**os.environ, "MISE_YES": yes},
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=slave,
+                timeout=30,
+                text=True,
+            )
+        finally:
+            os.close(slave)
+        chunks = []
+        while True:
+            try:
+                chunk = os.read(master, 4096)
+            except OSError as error:
+                if error.errno != errno.EIO:
+                    raise
+                break
+            if not chunk:
+                break
+            chunks.append(chunk)
+        output = result.stdout + b"".join(chunks).decode(errors="replace")
+    finally:
+        os.close(master)
+    assert result.returncode == 0, f"{name}: exit {result.returncode}: {output!r}"
+    if accepted:
+        assert "dotfiles: track " not in output, f"{name}: unexpected prompt: {output!r}"
+PY
+
+# Verify the declarations, independently of informational logging verbosity.
+# The unanswered request must not have enrolled its file.
+assert "mise bootstrap dotfiles paths --json | jq -r '.entries[].path' | sort" "$(printf '~/.track-env-yes\n~/.track-flag-yes')"
