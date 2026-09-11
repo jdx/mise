@@ -16,6 +16,7 @@ canonical installed formula name. Qualified names use the final component
 as the local rack name; aliases and tap provenance are not resolved.
 Settings come from environment variables and global CLI options only.
 The returned opt path follows upgrades and may change after this lookup.
+Missing or invalid installations produce empty stdout and a nonzero exit status.
 
 ## Arguments
 - **`<PACKAGE>`** — Explicit brew formula to locate

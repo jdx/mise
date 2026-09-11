@@ -1216,8 +1216,286 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
 mod tests {
     use super::*;
 
-    mod packages_where_tests {
-        include!("packages_where_tests.rs");
+    #[test]
+    fn packages_where_classifier_accepts_global_and_parent_flags() {
+        let cases: &[&[&str]] = &[
+            &["mise", "bootstrap", "packages", "where", "brew:widget"],
+            &[
+                "mise",
+                "--quiet",
+                "--cd",
+                ".",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--yes",
+                "--only",
+                "packages",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "--cd",
+                ".",
+                "--quiet",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+                "--cd=.",
+                "--quiet",
+            ],
+            &[
+                "mise",
+                "-C.",
+                "bootstrap",
+                "packages",
+                "where",
+                "--",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "--env",
+                "bootstrap",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--from",
+                "packages",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+        ];
+        for args in cases {
+            let argv: Vec<String> = args.iter().map(ToString::to_string).collect();
+            assert!(is_packages_where_query(&argv), "{args:?}");
+            let cli = parse_cli(args).unwrap_or_else(|error| panic!("{args:?}: {error:?}"));
+            let Some(Commands::Bootstrap(bootstrap)) = cli.command else {
+                panic!("expected bootstrap for {args:?}");
+            };
+            assert!(bootstrap.is_packages_where(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn packages_where_recognition_precedes_query_argument_validation() {
+        let cases: &[&[&str]] = &[
+            &["mise", "bootstrap", "packages", "where"],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "--unknown-query-flag",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "--unknown-query-flag",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+                "--unknown-query-flag",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+                "brew:extra",
+            ],
+            &["mise", "bootstrap", "packages", "where", "--help"],
+            &["mise", "bootstrap", "packages", "where", "--cd"],
+            &["mise", "--cd", "/missing", "bootstrap", "packages", "where"],
+            &["mise", "bootstrap", "--only=packages", "packages", "where"],
+            &["mise", "-q", "bootstrap", "-y", "packages", "where"],
+        ];
+        for args in cases {
+            let argv: Vec<String> = args.iter().map(ToString::to_string).collect();
+            assert!(is_packages_where_query(&argv), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn packages_where_recognizer_distinguishes_flag_values_tasks_exec_and_separators() {
+        let cases: &[&[&str]] = &[
+            &["mise"],
+            &["mise", "bootstrap", "packages"],
+            &["mise", "bootstrap", "packages", "status"],
+            &[
+                "mise",
+                "--env",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "--env=bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &["mise", "-Ebootstrap", "packages", "where", "brew:widget"],
+            &[
+                "mise",
+                "--cd",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--from",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--from=packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--only",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "exec",
+                "--",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "x",
+                "--",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "run",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "task-name",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "--",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "--",
+                "where",
+                "brew:widget",
+            ],
+        ];
+        for args in cases {
+            let argv: Vec<String> = args.iter().map(ToString::to_string).collect();
+            assert!(!is_packages_where_query(&argv), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn packages_where_classifier_distinguishes_other_bootstrap_commands() {
+        let cases: &[&[&str]] = &[
+            &["mise", "bootstrap"],
+            &["mise", "bootstrap", "packages", "status"],
+            &["mise", "bootstrap", "packages", "apply", "brew:widget"],
+            &["mise", "bootstrap", "status"],
+            &["mise", "bootstrap", "--from", "where", "packages", "status"],
+        ];
+        for args in cases {
+            let cli = parse_cli(args).unwrap_or_else(|error| panic!("{args:?}: {error:?}"));
+            let Some(Commands::Bootstrap(bootstrap)) = cli.command else {
+                panic!("expected bootstrap for {args:?}");
+            };
+            assert!(!bootstrap.is_packages_where(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn packages_where_parser_requires_exactly_one_package_and_valid_flags() {
+        let cases: &[&[&str]] = &[
+            &[],
+            &["brew:widget", "brew:another"],
+            &["brew:widget", "--json"],
+            &["brew:widget", "--install"],
+            &["brew:widget", "--version", "1"],
+            &["brew:widget", "--unknown-query-flag"],
+        ];
+        for suffix in cases {
+            let mut args = vec!["mise", "bootstrap", "packages", "where"];
+            args.extend_from_slice(suffix);
+            assert!(parse_cli(&args).is_err(), "{args:?}");
+        }
     }
 
     fn parse_cli<'a>(args: &'a [&'a str]) -> std::result::Result<Cli, usage_rs::Error<'a, 'a>> {

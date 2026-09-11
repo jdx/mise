@@ -10,6 +10,7 @@ use eyre::{Result, WrapErr, bail};
 /// as the local rack name; aliases and tap provenance are not resolved.
 /// Settings come from environment variables and global CLI options only.
 /// The returned opt path follows upgrades and may change after this lookup.
+/// Missing or invalid installations produce empty stdout and a nonzero exit status.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct SystemWhere {
@@ -43,11 +44,45 @@ impl SystemWhere {
 }
 
 #[cfg(any(unix, test))]
-pub(crate) fn path_for_output(path: &Path) -> Result<&str> {
+fn path_for_output(path: &Path) -> Result<&str> {
     match path.to_str() {
         Some(value) if !value.contains(['\r', '\n']) => Ok(value),
         _ => bail!(
             "the prefix cannot be printed as a single UTF-8 path; use a compatible prefix path"
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packages_where_output_preserves_valid_utf8_path_exactly() {
+        let path = Path::new("/prefix with spaces/opt/widget");
+        assert_eq!(
+            path_for_output(path).unwrap(),
+            "/prefix with spaces/opt/widget"
+        );
+    }
+
+    #[test]
+    fn packages_where_output_rejects_cr_and_lf() {
+        for prefix in ["/prefix\n/opt/widget", "/prefix\r/opt/widget"] {
+            let error = path_for_output(Path::new(prefix)).unwrap_err();
+            assert!(format!("{error:#}").contains("UTF-8"));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn packages_where_output_rejects_non_utf8_without_filesystem_access() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let path =
+            std::path::PathBuf::from(OsString::from_vec(b"/prefix-\xff/opt/widget".to_vec()));
+        let error = path_for_output(&path).unwrap_err();
+        assert!(format!("{error:#}").contains("UTF-8"));
     }
 }
