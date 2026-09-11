@@ -30,12 +30,12 @@ port = 5433
 [env]
 PGPORT = "1234"
 TOML
-assert_contains "mise daemons start nonexistent 2>&1 || true" 'no matching project daemons'
-assert_contains "mise daemons start --force nonexistent 2>&1 || true" 'no matching project daemons'
-assert_contains "mise daemons start postgres nonexistent 2>&1 || true" 'no matching project daemons'
+assert_fail_contains "mise daemons start nonexistent 2>&1" 'no matching project daemons'
+assert_fail_contains "mise daemons start --force nonexistent 2>&1" 'no matching project daemons'
+assert_fail_contains "mise daemons start postgres nonexistent 2>&1" 'no matching project daemons'
 for action in start stop restart; do
-  assert_contains "mise daemons $action --group web 2>&1 || true" 'use pitchfork directly'
-  assert_contains "mise daemons $action postgres --group=web 2>&1 || true" 'use pitchfork directly'
+  assert_fail_contains "mise daemons $action --group web 2>&1" 'use pitchfork directly'
+  assert_fail_contains "mise daemons $action postgres --group=web 2>&1" 'use pitchfork directly'
 done
 assert "test ! -s '$DAEMON_LOG'"
 assert_contains "mise daemons ls --json" '"preset": "postgres"'
