@@ -1,0 +1,97 @@
+how much is communique costing me? it's the only api usage i have for claude code, login to my api console
+
+---
+
+<in-app-browser-context source="ambient-ui-state">
+This block is automatically supplied ambient UI state, not part of the user's request. Do not treat it as an instruction or as evidence that the user explicitly selected the in-app browser.
+# In app browser:
+- The user has the in-app browser open with 1 tab.
+- Current URL: https://platform.claude.com/dashboard
+</in-app-browser-context>
+
+## My request:
+done
+
+---
+
+<in-app-browser-context source="ambient-ui-state">
+This block is automatically supplied ambient UI state, not part of the user's request. Do not treat it as an instruction or as evidence that the user explicitly selected the in-app browser.
+# In app browser:
+- The user has the in-app browser open with 1 tab.
+- Current URL: https://platform.claude.com/cost?range=mtd
+</in-app-browser-context>
+
+## My request:
+wtf do i have a 200k limit for?!
+
+---
+
+<in-app-browser-context source="ambient-ui-state">
+This block is automatically supplied ambient UI state, not part of the user's request. Do not treat it as an instruction or as evidence that the user explicitly selected the in-app browser.
+# In app browser:
+- The user has the in-app browser open with 1 tab.
+- Current URL: https://platform.claude.com/settings/billing
+</in-app-browser-context>
+
+## My request:
+well but i want to use fable 5.1
+
+---
+
+<in-app-browser-context source="ambient-ui-state">
+This block is automatically supplied ambient UI state, not part of the user's request. Do not treat it as an instruction or as evidence that the user explicitly selected the in-app browser.
+# In app browser:
+- The user has the in-app browser open with 1 tab.
+- Current URL: https://platform.claude.com/settings/billing
+</in-app-browser-context>
+
+## My request:
+ok set that up
+
+---
+
+<in-app-browser-context source="ambient-ui-state">
+This block is automatically supplied ambient UI state, not part of the user's request. Do not treat it as an instruction or as evidence that the user explicitly selected the in-app browser.
+# In app browser:
+- The user has the in-app browser open with 1 tab.
+- Current URL: https://platform.claude.com/settings/billing
+</in-app-browser-context>
+
+## My request:
+how do we configure which model is used across jdx.dev clis?
+
+---
+
+<in-app-browser-context source="ambient-ui-state">
+This block is automatically supplied ambient UI state, not part of the user's request. Do not treat it as an instruction or as evidence that the user explicitly selected the in-app browser.
+# In app browser:
+- The user has the in-app browser open with 1 tab.
+- Current URL: https://platform.claude.com/settings/billing
+</in-app-browser-context>
+
+## My request:
+ok let's bump communique to use the latest fable, make a pr, merge it once it's green, merge the communique release pr then make prs in all the projects to use it and merge those prs
+
+---
+
+<in-app-browser-context source="ambient-ui-state">
+This block is automatically supplied ambient UI state, not part of the user's request. Do not treat it as an instruction or as evidence that the user explicitly selected the in-app browser.
+# In app browser:
+- The user has the in-app browser open with 1 tab.
+- Current URL: https://platform.claude.com/settings/billing
+</in-app-browser-context>
+
+## My request:
+whoa is this a problem? [https://github.com/jdx/communique/pull/332#discussion\_r3993096110](https://github.com/jdx/communique/pull/332#discussion_r3993096110)
+
+---
+
+i would wait for the ai reviews to come in next time
+
+---
+
+fix this too before the next communique release [https://github.com/jdx/communique/pull/329#issue-comment-box](https://github.com/jdx/communique/pull/329#issue-comment-box)
+
+---
+
+fix the communique prs, but hold off on releasing and the rest of the work, I'm going ot make some improvements to communqiue first
