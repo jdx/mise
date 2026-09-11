@@ -1548,7 +1548,7 @@ mod tests {
         symlink(&keg, &opt)?;
         let rack = prefix.join("Cellar/widget");
         let permissions = rack.metadata()?.permissions();
-        std::fs::set_permissions(&rack, std::fs::Permissions::from_mode(0))?;
+        std::fs::set_permissions(&rack, std::fs::Permissions::from_mode(0o0))?;
         let result = package_root("widget");
         std::fs::set_permissions(&rack, permissions)?;
         let error = result.unwrap_err();
