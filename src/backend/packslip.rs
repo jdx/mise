@@ -2120,12 +2120,18 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
             err.to_string().contains("no artifact for windows/x86_64"),
             "{err}"
         );
-        let target = PlatformTarget::new(Platform::parse("windows-x64").unwrap());
+        let target = PlatformTarget::new(if cfg!(windows) {
+            Platform::parse("macos-x64").unwrap()
+        } else {
+            Platform::parse("windows-x64").unwrap()
+        });
+        let host = HostPlatform::from_platform(&target.platform);
+        let err = select_artifact(&artifacts, &host, None).unwrap_err();
         let err = lock_artifact_error(err, &target);
         assert!(matches!(
             err.downcast_ref::<crate::errors::Error>(),
             Some(crate::errors::Error::UnsupportedTarget(message))
-                if message.contains("no artifact for windows/x86_64")
+                if message.contains("no artifact")
         ));
 
         let current = PlatformTarget::new(Platform::current());
