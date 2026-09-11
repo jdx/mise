@@ -565,11 +565,14 @@ pub(crate) async fn generate(
 }
 
 fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {
-    // Packslip authenticates artifacts through its signed release manifest and
-    // signer chain. Older incremental lock updates could carry detected GitHub
-    // provenance into a Packslip entry, but complete generation intentionally
-    // does not persist that unverified link for a replacement artifact.
-    let compare_provenance = !backend.starts_with("packslip:");
+    // A verified Packslip signer is the replacement trust baseline for an
+    // artifact authenticated by its signed release manifest. Older incremental
+    // lock updates could carry detected GitHub provenance into a Packslip entry,
+    // but complete generation intentionally does not persist that unverified
+    // link. Without a signer, retain the ordinary provenance ratchet.
+    let packslip_signer_replaces_provenance =
+        backend.starts_with("packslip:") && new.signer.is_some();
+    let compare_provenance = !packslip_signer_replaces_provenance;
     if compare_provenance && new.provenance < old.provenance {
         bail!(
             "lockfile generation would downgrade recorded provenance; previous files were preserved"
@@ -1201,6 +1204,9 @@ mod tests {
 
         assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_ok());
         assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_err());
+
+        new.signer = None;
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
 
         new.signer =
             Some("sigstore-oidc:https://github.com/o/r/.github/workflows/other.yml".into());
