@@ -222,10 +222,18 @@ class PackagesWhere(unittest.TestCase):
             ["bootstrap", "packages", "where", "brew:widget", "--quiet", "--cd=" + str(self.project)],
             ["-C" + str(self.project), "bootstrap", "packages", "where", "--", "brew:widget"],
             ["--env", "bootstrap", "bootstrap", "packages", "where", "brew:widget"],
-            ["bootstrap", "--from", "packages", "packages", "where", "brew:widget"],
         ]:
             with self.subTest(args=args):
                 self.success(args)
+
+    def test_source_flags_conflict_with_query(self):
+        """Reject repository source options before a local lookup can ignore their requested behavior."""
+        for flag in ["--from", "--adopt", "--from-git"]:
+            with self.subTest(flag=flag):
+                self.failure(
+                    ["bootstrap", flag, "packages", "packages", "where", "brew:widget"],
+                    "cannot be used with a bootstrap subcommand",
+                )
 
     def test_cd_applies_before_resolving_relative_prefix(self):
         """Resolve relative Homebrew prefixes from the directory selected by the CLI."""

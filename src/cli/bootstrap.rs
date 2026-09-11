@@ -1318,14 +1318,6 @@ impl Bootstrap {
     }
 
     pub(crate) async fn run(mut self) -> Result<()> {
-        if self.is_packages_where() {
-            return self
-                .command
-                .take()
-                .expect("classified package query")
-                .run()
-                .await;
-        }
         normalize_adopt_alias(&mut self.adopt, self.from_git.take());
         if self.from.is_some() || self.adopt.is_some() {
             if self.command.is_some() {
