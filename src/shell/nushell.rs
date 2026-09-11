@@ -77,8 +77,8 @@ impl Shell for Nushell {
                 }} else {{
                   load-env {{($var.name): $var.value}}
                 }}
-              }} else if $var.op == "hide" and $var.name in $env {{
-                hide-env $var.name
+              }} else if $var.op == "hide" {{
+                try {{ hide-env $var.name }}
               }}
             }}
           }}
