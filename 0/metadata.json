@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M28ZKVQ5A1RBQE4WMV88EC5C",
+  "session_id": "01a091ec-9476-7953-98a2-05618fbac021",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-11T19:37:52.794872Z",
+  "branch": "codex/drop-actionlint",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/actionlint.yaml",
+    ".github/workflows/docs.yml",
+    ".github/workflows/registry.yml",
+    ".github/workflows/test-vfox.yml",
+    ".github/workflows/test.yml",
+    "hk.pkl",
+    "mise.lock",
+    "mise.toml"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "1fcd07b1d663",
+  "checkpoint_transcript_start": 497,
+  "transcript_lines_at_start": 497,
+  "compact_transcript_start": 60,
+  "token_usage": {
+    "input_tokens": 3998,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 884992,
+    "output_tokens": 353,
+    "api_call_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-11T19:37:52.677842Z",
+    "agent_lines": 8,
+    "agent_removed": 155,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 8,
+    "total_lines_changed": 163,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M28ZKVQ5A1RBQE4WMV88EC5C",
+  "strategy": "manual-commit",
+  "branch": "codex/drop-actionlint",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/actionlint.yaml",
+    ".github/workflows/docs.yml",
+    ".github/workflows/registry.yml",
+    ".github/workflows/test-vfox.yml",
+    ".github/workflows/test.yml",
+    "hk.pkl",
+    "mise.lock",
+    "mise.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3998,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 884992,
+    "output_tokens": 353,
+    "api_call_count": 4
+  }
+}

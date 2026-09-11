@@ -1,0 +1,1 @@
+across my jdx.dev projects drop actionlint, it appears unmaintained or at least not maintained enough. find recent attemps to fix zizmor and make them work as aprt of this, there may be open prs to take over for this
