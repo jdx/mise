@@ -742,6 +742,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn supported_target_is_kept_when_another_target_is_unsupported() {
+        crate::backend::load_tools().await.unwrap();
+        let generated = generate(
+            &previous(),
+            &[tool()],
+            &[
+                Platform::parse("linux-x64").unwrap(),
+                Platform::parse("windows-arm64").unwrap(),
+            ],
+            false,
+            false,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
+        let platforms = &generated.tools["fixture"][0].platforms;
+        assert!(platforms.contains_key("linux-x64"));
+        assert!(!platforms.contains_key("windows-arm64"));
+    }
+
+    #[tokio::test]
     async fn unchanged_entries_reuse_metadata_without_network_and_are_stable() {
         crate::backend::load_tools().await.unwrap();
         let old = previous();

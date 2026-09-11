@@ -375,7 +375,7 @@ pub(crate) fn select_artifact<'a>(
 
 fn lock_artifact_error(err: eyre::Report, target: &PlatformTarget) -> eyre::Report {
     let context = format!("selecting the packslip artifact for {}", target.to_key());
-    if err.is::<NoHostArtifact>() {
+    if !target.is_current() && err.is::<NoHostArtifact>() {
         crate::errors::Error::UnsupportedTarget(format!("{context}: {err}")).into()
     } else {
         err.wrap_err(context)
@@ -2126,6 +2126,16 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
             err.downcast_ref::<crate::errors::Error>(),
             Some(crate::errors::Error::UnsupportedTarget(message))
                 if message.contains("no artifact for windows/x86_64")
+        ));
+
+        let current = PlatformTarget::new(Platform::current());
+        let err = lock_artifact_error(
+            NoHostArtifact("no current artifact".into()).into(),
+            &current,
+        );
+        assert!(!matches!(
+            err.downcast_ref::<crate::errors::Error>(),
+            Some(crate::errors::Error::UnsupportedTarget(_))
         ));
 
         // Two artifacts that tie are refused, and a variant picks one.
