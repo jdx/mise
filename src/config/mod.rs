@@ -1715,6 +1715,7 @@ struct ResolvedMonorepoConfig {
     root_config: Arc<dyn ConfigFile>,
     monorepo_source: Arc<dyn ConfigFile>,
     monorepo: MonorepoConfig,
+    task_defaults: IndexMap<String, SourcedTaskTemplate>,
 }
 
 /// Find the nearest directory whose effective layered config has `monorepo_root = true`.
@@ -1747,6 +1748,7 @@ fn resolve_monorepo_config_at_root(
 
     let mut monorepo = MonorepoConfig::default();
     let mut monorepo_source = root_config.clone();
+    let mut task_defaults = IndexMap::new();
     for cf in configs.into_iter().rev() {
         let Some(layer) = cf.monorepo() else {
             continue;
@@ -1760,6 +1762,15 @@ fn resolve_monorepo_config_at_root(
         }
         monorepo.projects.extend(layer.projects.clone());
         monorepo.task_defaults.extend(layer.task_defaults.clone());
+        task_defaults.extend(layer.task_defaults.iter().map(|(name, template)| {
+            (
+                name.clone(),
+                SourcedTaskTemplate {
+                    template: template.clone(),
+                    source: cf.get_path().to_path_buf(),
+                },
+            )
+        }));
     }
 
     Some(ResolvedMonorepoConfig {
@@ -1767,6 +1778,7 @@ fn resolve_monorepo_config_at_root(
         root_config,
         monorepo_source,
         monorepo,
+        task_defaults,
     })
 }
 
@@ -2515,7 +2527,7 @@ fn monorepo_lockfiles_exist(config: &Config, monorepo_config: &ResolvedMonorepoC
     let mut lockfile_paths = IndexSet::new();
 
     for (config_path, cf) in &config.config_files {
-        if !config_path.starts_with(&monorepo_root) || !cf.source().is_mise_toml() {
+        if !config_path.starts_with(monorepo_root) || !cf.source().is_mise_toml() {
             continue;
         }
         lockfile_paths.insert(lockfile::lockfile_path_for_config(config_path, None).0);
@@ -3100,34 +3112,60 @@ async fn load_all_config_files(
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<ConfigMap> {
     backend::load_tools().await?;
-    let mut config_map = ConfigMap::default();
-    for f in config_filenames.iter().unique() {
-        if f.is_dir() {
-            continue;
-        }
-        let cf = match parse_config_file(f, idiomatic_filenames).await {
-            Ok(cfg) => cfg,
-            Err(err) => {
-                return Err(err.wrap_err(format!(
-                    "error parsing config file: {}",
-                    style::ebold(display_path(f))
-                )));
+    let mut groups = config_filenames
+        .iter()
+        .unique()
+        .filter(|path| !path.is_dir())
+        .fold(
+            IndexMap::<PathBuf, Vec<&PathBuf>>::new(),
+            |mut groups, path| {
+                groups
+                    .entry(config_trust_root(path))
+                    .or_default()
+                    .push(path);
+                groups
+            },
+        )
+        .into_iter()
+        .collect_vec();
+    // Resolve trusted ancestor roots before parsing descendants so a stale
+    // monorepo marker cannot authorize a child after an overlay disables it.
+    groups.sort_by_key(|(root, _)| root.components().count());
+
+    let mut parsed = HashMap::new();
+    for (_, paths) in groups {
+        let mut root_configs = ConfigMap::new();
+        for f in paths {
+            let cf = match parse_config_file(f, idiomatic_filenames).await {
+                Ok(cfg) => cfg,
+                Err(err) => {
+                    return Err(err.wrap_err(format!(
+                        "error parsing config file: {}",
+                        style::ebold(display_path(f))
+                    )));
+                }
+            };
+            if let Err(err) = Tracker::track(f) {
+                warn!("tracking config: {err:#}");
             }
-        };
-        if let Err(err) = Tracker::track(f) {
-            warn!("tracking config: {err:#}");
+            parsed.insert(f.clone(), cf.clone());
+            root_configs.insert(f.clone(), cf);
         }
 
-        // Mark monorepo roots so descendant configs are implicitly trusted
-        if cf.monorepo_root() == Some(true)
-            && let Err(err) = config_file::mark_as_monorepo_root(f)
-        {
-            warn!("failed to mark monorepo root: {err:#}");
+        if let Some(project_root) = root_configs.values().find_map(|cf| cf.project_root()) {
+            let enabled = resolve_monorepo_config_at_root(&project_root, &root_configs).is_some();
+            if let Some(source) = root_configs.values().next()
+                && let Err(err) = config_file::set_monorepo_root_marker(source.get_path(), enabled)
+            {
+                warn!("failed to synchronize monorepo root marker: {err:#}");
+            }
         }
-
-        config_map.insert(f.clone(), cf);
     }
-    Ok(config_map)
+
+    Ok(config_filenames
+        .iter()
+        .filter_map(|path| parsed.remove(path).map(|cf| (path.clone(), cf)))
+        .collect())
 }
 
 /// Load config files from a list of paths (for monorepo task config contexts)
@@ -3468,8 +3506,7 @@ struct SourcedTaskTemplate {
 #[derive(Clone, Debug)]
 struct WorkspaceTaskDefaults {
     project_roots: BTreeSet<PathBuf>,
-    tasks: IndexMap<String, TaskTemplate>,
-    source: PathBuf,
+    tasks: IndexMap<String, SourcedTaskTemplate>,
 }
 
 /// Collect all task templates from the config file hierarchy and task-name defaults from the
@@ -3500,7 +3537,7 @@ fn collect_task_definitions(
             let config = find_monorepo_config(config_files)?;
             let root = config.root;
             let monorepo = config.monorepo;
-            let tasks = monorepo.task_defaults;
+            let tasks = config.task_defaults;
             let mut project_roots = expand_config_root_dirs(
                 &root,
                 monorepo.config_roots.as_deref().unwrap_or_default(),
@@ -3528,7 +3565,6 @@ fn collect_task_definitions(
             (!tasks.is_empty()).then_some(WorkspaceTaskDefaults {
                 project_roots,
                 tasks,
-                source: config.monorepo_source.get_path().to_path_buf(),
             })
         })
         .flatten();
@@ -3577,8 +3613,8 @@ fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Resu
             .filter(|_| crate::task::is_workspace_project_task(&task.name))
             .map_or(task.name.as_str(), |(_, name)| name);
         if let Some(default) = defaults.tasks.get(task_name) {
-            task.merge_template(default);
-            task.add_config_source(&defaults.source);
+            task.merge_template(&default.template);
+            task.add_config_source(&default.source);
         }
     }
     Ok(())
@@ -5847,12 +5883,14 @@ mod tests {
             project_roots: BTreeSet::from([project_root.clone()]),
             tasks: IndexMap::from([(
                 "build".to_string(),
-                TaskTemplate {
-                    description: "default description".to_string(),
-                    ..Default::default()
+                SourcedTaskTemplate {
+                    template: TaskTemplate {
+                        description: "default description".to_string(),
+                        ..Default::default()
+                    },
+                    source: defaults_source.clone(),
                 },
             )]),
-            source: defaults_source.clone(),
         });
         let primary_source = project_root.join("mise.toml");
         let mut task = Task {
