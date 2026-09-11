@@ -648,6 +648,10 @@ mod tests {
     use super::*;
     use tokio::sync::Mutex;
 
+    mod package_root_tests {
+        include!("package_root_tests.rs");
+    }
+
     static ENV_LOCK: Mutex<()> = Mutex::const_new(());
 
     struct BrewPrefixGuard {
