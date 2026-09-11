@@ -404,7 +404,7 @@ impl Toolset {
         }
 
         // Skip config reload and resolve in dry-run mode
-        if !opts.dry_run {
+        if !opts.dry_run && opts.reload_config {
             // Reload config and resolve (ignoring errors like the original does)
             trace!("install: reloading config");
             *config = Config::reset().await?;
@@ -418,6 +418,21 @@ impl Toolset {
             {
                 warn!("failed to restore runtime symlinks after install failure: {err:#}");
             }
+        } else if !opts.dry_run {
+            // The caller has a live config that other work is using. Refresh this
+            // toolset against that snapshot without replacing the global config.
+            trace!("install: resolving without reloading config");
+            if let Err(err) = self.resolve(config).await {
+                debug!("error resolving versions after install: {err:#}");
+            }
+            if !failed_backends.is_empty()
+                && let Err(err) =
+                    runtime_symlinks::rebuild_for_backends(config, self, failed_backends).await
+            {
+                warn!("failed to restore runtime symlinks after install failure: {err:#}");
+            }
+        }
+        if !opts.dry_run {
             crate::packslip::auto_sync_skills(config).await;
         }
 
