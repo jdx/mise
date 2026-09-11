@@ -18,8 +18,8 @@ assert_contains 'mise bootstrap macos defaults status' '2 (real; expected intege
 assert_contains 'mise bootstrap macos defaults status' '15 (string; expected integer)'
 assert_fail 'mise bootstrap macos defaults status --missing'
 assert 'mise bootstrap macos defaults status --json | jq -r '\''.macos_defaults.entries[] | select(.key == "KeyRepeat") | .current'\''' '2 (real; expected integer)'
-# Read-only status preserves the stored type; applying still enforces the configured type.
-assert_contains 'defaults read-type "$domain" KeyRepeat' float
+# Read-only status preserves the stored type; applying still corrects a string value.
+assert_contains "defaults read-type '$domain' KeyRepeat" float
 assert_succeed 'mise bootstrap macos defaults apply --yes'
-assert_succeed 'mise bootstrap macos defaults status --missing'
-assert_contains 'defaults read-type "$domain" KeyRepeat' integer
+assert 'mise bootstrap macos defaults status --json | jq -r '\''.macos_defaults.entries[] | select(.key == "InitialKeyRepeat") | .state'\''' 'set'
+assert_contains "defaults read-type '$domain' InitialKeyRepeat" integer
