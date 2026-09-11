@@ -1,0 +1,21 @@
+i believe this is expected:
+
+---
+
+[https://github.com/jdx/mise/discussions/13018#discussioncomment-18406024](https://github.com/jdx/mise/discussions/13018#discussioncomment-18406024)
+
+---
+
+could we improve it on warm?
+
+---
+
+make a pr
+
+---
+
+post a reply
+
+---
+
+hmm, i wonder though, in a pure warm scenario shouldn't it be close ot a no-op?
