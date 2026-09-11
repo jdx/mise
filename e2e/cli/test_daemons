@@ -78,7 +78,7 @@ TOML
 assert_contains "mise daemons ls 2>&1 || true" 'invalid daemon name'
 
 # Preset tool requests obey their declaring configuration's lock policy.
-cat > mise.toml <<'TOML'
+cat >mise.toml <<'TOML'
 [tool_config]
 locked = true
 [daemons]

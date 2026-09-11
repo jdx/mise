@@ -153,7 +153,9 @@ pub(crate) async fn reconcile(pid: u32) -> Result<()> {
     if std::fs::read(dir.join("done.json")).ok().as_deref() == Some(&content) {
         return Ok(());
     }
-    clean_stale_sessions(pid)?;
+    if let Err(err) = clean_stale_sessions(pid) {
+        debug!("unable to clean stale daemon sessions: {err:#}");
+    }
     let desired: Desired = serde_json::from_slice(&content)?;
     let actual_path = dir.join("actual.json");
     let mut actual: BTreeMap<PathBuf, PathBuf> = if actual_path.exists() {
@@ -240,42 +242,52 @@ fn clean_stale_sessions(current_pid: u32) -> Result<()> {
         };
         let mut removed = 0;
         for entry in std::fs::read_dir(parent)? {
-            let entry = entry?;
-            let Some(pid) = entry
-                .file_name()
-                .to_str()
-                .and_then(|v| v.parse::<i32>().ok())
-                .filter(|p| *p > 0)
-            else {
-                continue;
-            };
-            if pid as u32 == current_pid
-                || nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None)
-                    != Err(nix::errno::Errno::ESRCH)
-            {
-                continue;
+            let result = entry
+                .map_err(eyre::Report::from)
+                .and_then(|entry| clean_stale_session(&entry.path(), current_pid));
+            match result {
+                Ok(true) => removed += 1,
+                Ok(false) => {}
+                Err(err) => debug!("unable to clean stale daemon session: {err:#}"),
             }
-            let old = entry
-                .path()
-                .join("desired.json")
-                .metadata()
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| t.elapsed().ok())
-                .is_some_and(|age| age > std::time::Duration::from_secs(7 * 86400));
-            if old
-                && let Some(_lock) =
-                    crate::lock_file::LockFile::at(&entry.path().join("worker.lock")).try_lock()?
-            {
-                std::fs::remove_dir_all(entry.path())?;
-                removed += 1;
-                if removed == 128 {
-                    break;
-                }
+            if removed == 128 {
+                break;
             }
         }
     }
     #[cfg(not(unix))]
     let _ = current_pid;
     Ok(())
+}
+
+#[cfg(unix)]
+fn clean_stale_session(path: &std::path::Path, current_pid: u32) -> Result<bool> {
+    let Some(pid) = path
+        .file_name()
+        .and_then(|v| v.to_str())
+        .and_then(|v| v.parse::<i32>().ok())
+        .filter(|p| *p > 0)
+    else {
+        return Ok(false);
+    };
+    if pid as u32 == current_pid
+        || nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None)
+            != Err(nix::errno::Errno::ESRCH)
+    {
+        return Ok(false);
+    }
+    let old = path
+        .join("desired.json")
+        .metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age > std::time::Duration::from_secs(7 * 86400));
+    if old
+        && let Some(_lock) = crate::lock_file::LockFile::at(&path.join("worker.lock")).try_lock()?
+    {
+        std::fs::remove_dir_all(path)?;
+        return Ok(true);
+    }
+    Ok(false)
 }
