@@ -302,6 +302,7 @@ pub(crate) async fn generate(
     report.set_length(targets.len() as u64);
     let semaphore = Arc::new(Semaphore::new(crate::jobs::normalize(jobs)));
     let mut tasks = JoinSet::new();
+    let mut resolved = Vec::new();
     for (ordinal, (ba, tv, platform, options)) in targets.into_iter().enumerate() {
         let actual = installed
             .iter()
@@ -334,24 +335,48 @@ pub(crate) async fn generate(
                 .and_then(|entry| entry.platforms.get(&platform.to_key()))
                 .cloned()
         });
+        if let Some(info) = &previous_info
+            && let Err(error) = validate_provenance_settings(&ba, &tv, &platform.to_key(), info)
+        {
+            tasks.shutdown().await;
+            return Err(error);
+        }
+        // Complete cached artifacts need neither I/O nor a spawned task. Keep them
+        // in the same ordered result stream so all downgrade checks still run.
+        let reusable = previous_info.as_ref().filter(|info| {
+            info.checksum.is_some()
+                && info.url.is_some()
+                && info.signer.is_none()
+                && info
+                    .additional_artifacts
+                    .iter()
+                    .all(|artifact| artifact.checksum.is_some())
+                && !Settings::get().force_provenance_verify()
+        });
+        if actual.is_none()
+            && let Some(info) = reusable
+        {
+            resolved.push((
+                ordinal,
+                tv.request.version(),
+                (
+                    ba.short.clone(),
+                    tv.version.clone(),
+                    ba.stored_full(),
+                    platform,
+                    Ok(info.clone()),
+                    options,
+                    BTreeMap::new(),
+                    BTreeMap::new(),
+                    LockResolutionStatus::Optional,
+                ),
+            ));
+            continue;
+        }
         let semaphore = semaphore.clone();
         tasks.spawn(async move {
             let _permit = semaphore.acquire().await?;
-            if let Some(info) = &previous_info {
-                validate_provenance_settings(&ba, &tv, &platform.to_key(), info)?;
-            }
-            let mut resolution = if let Some(info) = actual.or_else(|| {
-                previous_info.clone().filter(|info| {
-                    info.checksum.is_some()
-                        && info.url.is_some()
-                        && info.signer.is_none()
-                        && info
-                            .additional_artifacts
-                            .iter()
-                            .all(|artifact| artifact.checksum.is_some())
-                        && !Settings::get().force_provenance_verify()
-                })
-            }) {
+            let mut resolution = if let Some(info) = actual {
                 (
                     ba.short.clone(),
                     tv.version.clone(),
@@ -375,8 +400,8 @@ pub(crate) async fn generate(
             Ok::<_, eyre::Report>((ordinal, tv.request.version(), resolution))
         });
     }
-    let mut completed = 0;
-    let mut resolved = Vec::new();
+    let mut completed = resolved.len() as u64;
+    report.set_position(completed);
     while let Some(result) = tasks.join_next().await {
         let (ordinal, specifier, resolution) =
             match result.map_err(eyre::Report::from).and_then(|r| r) {
@@ -493,6 +518,14 @@ fn validate_provenance_settings(
     platform: &str,
     info: &PlatformInfo,
 ) -> Result<()> {
+    if info.provenance.is_none()
+        && info
+            .additional_artifacts
+            .iter()
+            .all(|artifact| artifact.provenance.is_none())
+    {
+        return Ok(());
+    }
     let mut tv = tv.clone();
     tv.lock_platforms.insert(platform.to_owned(), info.clone());
     let validate = |tv: &ToolVersion| -> Result<()> {
@@ -757,6 +790,56 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(generated.tools, again.tools);
+    }
+
+    #[tokio::test]
+    async fn cached_and_unsupported_targets_keep_cached_metadata() {
+        crate::backend::load_tools().await.unwrap();
+        let old = previous();
+        let platforms = vec![
+            Platform::parse("windows-arm64").unwrap(),
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("macos-arm64").unwrap(),
+        ];
+        let generated = generate(&old, &[tool()], &platforms, false, false, 2, &[])
+            .await
+            .unwrap();
+        assert_eq!(old.tools, generated.tools);
+    }
+
+    #[tokio::test]
+    async fn cached_additional_artifact_provenance_is_still_validated() {
+        crate::backend::load_tools().await.unwrap();
+        let ba = BackendArg::new("fixture".into(), Some("github:example/fixture".into()));
+        let request = ToolRequest::new(Arc::new(ba.clone()), "1", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0".into());
+        let mut old = previous();
+        old.tools.get_mut("fixture").unwrap()[0].backend = Some(ba.stored_full());
+        for info in old.tools.get_mut("fixture").unwrap()[0]
+            .platforms
+            .values_mut()
+        {
+            // The github backend must reject this provenance even though every
+            // artifact has a checksum and the primary artifact has no provenance.
+            info.additional_artifacts.push(ArtifactInfo {
+                url: "https://example.invalid/extra".into(),
+                checksum: Some("sha256:unchanged".into()),
+                provenance: Some(ProvenanceType::Minisign),
+                ..Default::default()
+            });
+        }
+        let error = generate(
+            &old,
+            &[(ba, tv)],
+            &[Platform::parse("linux-x64").unwrap()],
+            false,
+            false,
+            2,
+            &[],
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("unexpected provenance type"));
     }
 
     #[tokio::test]
