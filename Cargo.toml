@@ -181,7 +181,7 @@ pgp = "0.20"
 phf = "0.14"
 rand = "0.10"
 rattler = { version = "0.48", default-features = false }
-rattler_conda_types = { version = "0.51", default-features = false }
+rattler_conda_types = { version = "0.52", default-features = false }
 rattler_repodata_gateway = { version = "0.33", default-features = false, features = [
   "gateway",
 ] }
@@ -189,7 +189,7 @@ rattler_solve = { version = "9", default-features = false, features = [
   "resolvo",
 ] }
 rattler_package_streaming = { version = "0.27", default-features = false }
-rattler_virtual_packages = { version = "5", default-features = false }
+rattler_virtual_packages = { version = "6", default-features = false }
 regex = "1"
 plist = "1"
 reqwest = { version = "0.13", default-features = false, features = [
