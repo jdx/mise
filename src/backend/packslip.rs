@@ -37,7 +37,7 @@ use crate::file;
 use crate::github;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::lockfile::PlatformInfo;
 use crate::packslip_pins::{self, Observed};
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
@@ -149,42 +149,6 @@ fn bundle_name(project: &str) -> String {
         Some(sub) => format!("packslip.{}.sigstore.json", sub.replace('/', "-")),
         None => "packslip.sigstore.json".to_string(),
     }
-}
-
-/// The strongest provenance mechanism linked for an artifact. Packslip
-/// provenance links name SLSA statements; GitHub's attestation API is kept as
-/// its higher-priority lockfile variant so a backend migration does not look
-/// like a provenance downgrade on the next release.
-fn linked_provenance(artifact: &Artifact) -> Option<ProvenanceType> {
-    if artifact
-        .provenance
-        .iter()
-        .any(|url| is_github_attestation_url(url))
-    {
-        return Some(ProvenanceType::GithubAttestations);
-    }
-    artifact
-        .provenance
-        .first()
-        .cloned()
-        .map(|url| ProvenanceType::Slsa { url: Some(url) })
-}
-
-fn is_github_attestation_url(value: &str) -> bool {
-    let Ok(url) = reqwest::Url::parse(value) else {
-        return false;
-    };
-    let Some(mut path) = url.path_segments() else {
-        return false;
-    };
-    matches!(path.next(), Some("repos"))
-        && path.next().is_some()
-        && path.next().is_some()
-        && matches!(path.next(), Some("attestations"))
-        && path
-            .next()
-            .is_some_and(|digest| digest.starts_with("sha256:"))
-        && path.next().is_none()
 }
 
 /// The signed release list of a project on its own domain.
@@ -1438,8 +1402,6 @@ impl PackslipBackend {
             {
                 info.checksum = Some(format!("sha256:{sha256}"));
             }
-            info.provenance = linked_provenance(&artifact);
-            info.provenance_verified = None;
             info.signer = Some(signer);
             // Set for a repackager's document and cleared for the vendor's,
             // so the lockfile ratchets up the way the pin does.
@@ -1742,7 +1704,6 @@ impl Backend for PackslipBackend {
                 .map(|digest| format!("sha256:{digest}")),
             size: Some(artifact.size),
             url: Some(url),
-            provenance: linked_provenance(artifact),
             signer: Some(format!(
                 "{scheme}:{}",
                 packslip_pins::signer_of(&scheme, &verified.key_id)
@@ -1884,29 +1845,6 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
                 .unwrap()
                 .to_string()
                 .contains("cannot be combined with pubkey")
-        );
-    }
-
-    #[test]
-    fn linked_artifact_provenance_is_recorded_by_mechanism() {
-        let mut artifact = artifact("tool.tar.gz", "linux", "x86_64", None, "tar.gz");
-        assert_eq!(linked_provenance(&artifact), None);
-
-        let slsa = "https://example.com/tool.intoto.jsonl";
-        artifact.provenance.push(slsa.into());
-        assert_eq!(
-            linked_provenance(&artifact),
-            Some(ProvenanceType::Slsa {
-                url: Some(slsa.into())
-            })
-        );
-
-        artifact
-            .provenance
-            .push("https://api.github.com/repos/o/r/attestations/sha256:deadbeef".into());
-        assert_eq!(
-            linked_provenance(&artifact),
-            Some(ProvenanceType::GithubAttestations)
         );
     }
 
