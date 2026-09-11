@@ -7,7 +7,7 @@ description: "Print the stable root of an installed Homebrew formula"
 
 - **Usage:** `mise bootstrap packages where <PACKAGE>`
 - **Effect:** read-only
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Source code:** [`src/cli/system/where.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/where.rs)
 
 Print the stable root of an installed Homebrew formula
 
