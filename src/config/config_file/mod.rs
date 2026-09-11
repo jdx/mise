@@ -256,6 +256,7 @@ impl dyn ConfigFile {
                     if let ToolRequest::Version {
                         version: _version,
                         source,
+                        lockfile_scope,
                         options,
                         backend,
                     } = tr
@@ -263,6 +264,7 @@ impl dyn ConfigFile {
                         tr = ToolRequest::Version {
                             version: tv.version,
                             source,
+                            lockfile_scope,
                             options,
                             backend,
                         };

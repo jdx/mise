@@ -145,7 +145,9 @@ impl OutdatedInfo {
             let backend = oi.tool_request.ba().clone();
             let source = oi.tool_request.source().clone();
             let options = oi.tool_request.options();
+            let lockfile_scope = oi.tool_request.lockfile_scope().clone();
             oi.tool_request = ToolRequest::new_with_options(backend, &oi.latest, options, source)?;
+            oi.tool_request.set_lockfile_scope(lockfile_scope);
         }
         if oi
             .current
@@ -203,11 +205,13 @@ impl OutdatedInfo {
                         backend,
                         options,
                         source,
+                        lockfile_scope,
                     } => {
                         oi.tool_request = ToolRequest::Version {
                             backend,
                             options,
                             source,
+                            lockfile_scope,
                             version: format!("{prefix}{bumped_version}"),
                         };
                         Some(oi.tool_request.version())
@@ -217,11 +221,13 @@ impl OutdatedInfo {
                         backend,
                         options,
                         source,
+                        lockfile_scope,
                     } => {
                         oi.tool_request = ToolRequest::Prefix {
                             backend,
                             options,
                             source,
+                            lockfile_scope,
                             prefix: format!("{prefix}{bumped_version}"),
                         };
                         Some(oi.tool_request.version())
@@ -403,22 +409,26 @@ pub(crate) fn compute_config_bumps_for_paths(
                         backend,
                         options,
                         source,
+                        lockfile_scope,
                     } => ToolRequest::Version {
                         version: new_version.clone(),
                         backend,
                         options,
                         source,
+                        lockfile_scope,
                     },
                     ToolRequest::Prefix {
                         prefix: _,
                         backend,
                         options,
                         source,
+                        lockfile_scope,
                     } => ToolRequest::Prefix {
                         prefix: format!("{prefix}{bumped}"),
                         backend,
                         options,
                         source,
+                        lockfile_scope,
                     },
                     other => other,
                 };

@@ -625,6 +625,8 @@ impl Backend for RustPlugin {
                     tv.request.options(),
                     tv.request.source().clone(),
                 )?;
+                oi.tool_request
+                    .set_lockfile_scope(tv.request.lockfile_scope().clone());
             }
             return Ok((oi.current.as_ref() != Some(&latest)).then_some(oi));
         }

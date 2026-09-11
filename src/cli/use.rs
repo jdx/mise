@@ -357,6 +357,7 @@ impl Use {
                         && let ToolRequest::Version {
                             version: _version,
                             source,
+                            lockfile_scope,
                             options,
                             backend,
                         } = request
@@ -364,6 +365,7 @@ impl Use {
                         request = ToolRequest::Version {
                             version: tv.version.clone(),
                             source,
+                            lockfile_scope,
                             options,
                             backend,
                         };
