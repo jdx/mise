@@ -187,11 +187,11 @@ mod tests {
         let (first, hit) = build();
         assert!(!hit);
         assert!(std::fs::read_dir(&cache).unwrap().all(|entry| {
-            !entry
+            entry
                 .unwrap()
                 .path()
                 .extension()
-                .is_some_and(|ext| ext == "lock")
+                .is_none_or(|ext| ext != "lock")
         }));
         let (second, hit) = build();
         assert!(hit);
