@@ -35,7 +35,7 @@ mise() {
 
 _mise_hook() {
 	local previous_exit_status=$?
-	eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} --shell-pid $$ -s bash)"
+	eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} --shell-pid $$ -s bash "$@")"
 	return $previous_exit_status
 }
 
@@ -87,5 +87,5 @@ fi
 # status rather than a command's (SC2319).
 if [ "$__MISE_HOOK_ENABLED" = "1" ]; then
 	__MISE_BASH_SKIP_FIRST_PROMPT=1
-	_mise_hook
+	_mise_hook --force
 fi

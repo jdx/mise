@@ -31,7 +31,7 @@ port = 5433
 A string selects a preset matching the entry name. A table with `run` defines a
 custom process. A table with `preset` and `version` selects a preset for any instance
 name, and remaining fields override its pitchfork daemon definition. For presets,
-`port` is an integer; custom daemons use pitchfork's structured `port` configuration.
+`port` is an integer. Custom daemons accept the same integer shorthand or pitchfork's structured `port` configuration.
 User-provided strings retain pitchfork template syntax; mise renders only the
 embedded preset templates.
 
@@ -51,10 +51,10 @@ start a supervisor. The TUI opens pitchfork's dashboard.
 
 ## Database presets
 
-| Preset     | Tool                 | Default port | Environment defaults                                       |
-| ---------- | -------------------- | ------------ | ---------------------------------------------------------- |
-| `postgres` | `conda:postgresql`   | 5432         | `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `DATABASE_URL` |
-| `redis`    | `conda:redis-server` | 6379         | `REDIS_URL`                                                |
+| Preset     | Tool       | Default port | Environment defaults                                       |
+| ---------- | ---------- | ------------ | ---------------------------------------------------------- |
+| `postgres` | `postgres` | 5432         | `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `DATABASE_URL` |
+| `redis`    | `redis`    | 6379         | `REDIS_URL`                                                |
 
 Both bind to loopback and require their configured ports to be free; ports do not
 bump automatically. PostgreSQL uses the `postgres` user with local trust authentication.
@@ -98,17 +98,17 @@ Set `auto = ["start", "stop"]` on a custom or preset table and activate mise in 
 Zsh, or Fish. Automatic lifecycle is opt-in; shorthand database declarations do not
 automatically start. Pitchfork must already be installed—hooks never install tools.
 
-Shell hooks dispatch reconciliation in the background, so readiness waits do not
-block the prompt. Leaving for an unrelated directory releases the old project
-session even when no daemons exist in the new directory. Pitchfork keeps shared
-processes alive while another shell session remains in the project.
+Shell hooks register changed configuration and emit background pitchfork session
+commands, so readiness waits do not block the prompt. Pitchfork owns session
+liveness and automatic stopping; mise keeps no per-PID session files or workers.
+Leaving for an unrelated directory releases the old project session even when no
+daemons exist in the new directory. Shared processes stay alive while another
+shell session remains in the project.
 
-Worker diagnostics are stored under `$MISE_STATE_DIR/daemons/sessions/<shell-pid>/worker.log`.
-Logs are bounded, and background workers remove Unix session state older than seven
-days when its shell is gone. Session commands time out after one minute; failures
-remain pending for retry at a later prompt. Disabled hooks and safe mode
-prevent lifecycle commands. Re-run `mise activate` after upgrading to get shell PID
-tracking in your activation script.
+Failures report a diagnostic without disabling the prompt fast path. Fix the
+configuration or run `mise hook-env --force` through your shell's eval to retry.
+Disabled hooks and safe mode prevent lifecycle commands. Re-run `mise activate`
+after upgrading to get shell PID tracking; old activation scripts display a hint.
 
 Project sessions also apply to native pitchfork daemons configured for automatic
 lifecycle management. See [pitchfork's shell sessions](https://pitchfork.jdx.dev/guides/shell-hook.html).

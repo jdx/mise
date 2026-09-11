@@ -19,6 +19,8 @@ pub(crate) struct State {
     pub namespace: String,
     pub ids: Vec<String>,
     pub bin: PathBuf,
+    #[serde(default)]
+    pub config_hash: String,
 }
 
 pub(crate) struct Runtime {
@@ -197,7 +199,6 @@ impl Runtime {
         root: &Path,
         set: &DaemonSet,
     ) -> Result<(State, fslock::LockFile)> {
-        self.supports_external_config(root).await?;
         let lock = crate::lock_file::LockFile::at(&state_dir(root).join("project.lock")).lock()?;
         let previous = read_state(root)?;
         let profile = crate::env::MISE_ENV.clone();
@@ -221,6 +222,7 @@ impl Runtime {
             namespace,
             ids: previous.ids,
             bin: self.bin.clone(),
+            config_hash: String::new(),
         };
         for daemon in set.daemons.values() {
             let id = format!("{}/{}", state.namespace, daemon.name);
@@ -230,11 +232,13 @@ impl Runtime {
         }
         let content = render(set, &state)?;
         let file = state_dir(root).join("pitchfork.toml");
-        // Save ownership before attachment so a failed registration remains recoverable.
-        write_if_changed(
-            &state_dir(root).join("state.json"),
-            &serde_json::to_vec_pretty(&state)?,
-        )?;
+        state.config_hash = crate::hash::hash_to_str(&content);
+        if state.config_hash == previous.config_hash
+            && std::fs::read(&file).ok().as_deref() == Some(content.as_bytes())
+        {
+            return Ok((state, lock));
+        }
+        self.supports_external_config(root).await?;
         write_if_changed(&file, content.as_bytes())?;
         if set.daemons.is_empty() {
             self.output(
@@ -261,6 +265,10 @@ impl Runtime {
             )
             .await?;
         }
+        write_if_changed(
+            &state_dir(root).join("state.json"),
+            &serde_json::to_vec_pretty(&state)?,
+        )?;
         Ok((state, lock))
     }
 
@@ -274,31 +282,10 @@ impl Runtime {
         runner.with_pass_signals();
         runner.execute_async().await
     }
-
-    pub(crate) async fn session(&self, root: &Path, pid: u32, enter: bool) -> Result<()> {
-        let mut command = Command::new(&self.bin);
-        command
-            .args([
-                "project",
-                if enter { "enter" } else { "leave" },
-                "--pid",
-                &pid.to_string(),
-                "--directory",
-            ])
-            .arg(root)
-            .envs(&self.env)
-            .env_remove("PITCHFORK_CONFIG")
-            .current_dir(root)
-            .kill_on_drop(true);
-        let status = tokio::time::timeout(Duration::from_secs(60), command.status()).await??;
-        if !status.success() {
-            bail!("pitchfork project session update failed");
-        }
-        Ok(())
-    }
 }
 
 fn namespace(root: &Path) -> Result<String> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let mut has_native = false;
     for name in [
         "pitchfork.local.toml",
@@ -356,7 +343,9 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
         ));
         let mut table = daemon.table.clone();
         // Ensure mise x sees the profile that generated this definition, even at boot.
-        if table.get("mise").and_then(toml::Value::as_bool) != Some(false) {
+        if !state.profile.is_empty()
+            && table.get("mise").and_then(toml::Value::as_bool) != Some(false)
+        {
             let env = table
                 .entry("env".to_string())
                 .or_insert(toml::Value::Table(toml::Table::new()))
@@ -416,7 +405,13 @@ pub(crate) async fn validate_tools(
             version,
             ToolSource::MiseTomlDaemon(daemon.source.clone()),
         )?
-        .resolve(config, &Default::default())
+        .resolve(
+            config,
+            &crate::toolset::ResolveOptions {
+                offline: true,
+                ..Default::default()
+            },
+        )
         .await?;
         if actual.version != requested.version {
             bail!(
@@ -433,6 +428,18 @@ pub(crate) async fn validate_tools(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[cfg(unix)]
+    fn symlinked_roots_share_namespace_and_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let link = tmp.path().join("alias");
+        std::fs::create_dir(&root).unwrap();
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+        assert_eq!(namespace(&root).unwrap(), namespace(&link).unwrap());
+        assert_eq!(state_dir(&root), state_dir(&link));
+    }
+
     #[test]
     fn writes_are_atomic_and_unchanged_content_keeps_metadata() {
         let tmp = tempfile::tempdir().unwrap();

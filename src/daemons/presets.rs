@@ -49,6 +49,7 @@ pub(crate) fn expand(
     root: &Path,
 ) -> Result<Daemon> {
     let mut preset = preset(preset_name)?;
+    let tool = super::take_string(&mut overrides, "tool")?.unwrap_or_else(|| preset.tool.clone());
     let port = overrides
         .remove("port")
         .map(|v| {
@@ -142,7 +143,7 @@ pub(crate) fn expand(
         root: root.into(),
         table,
         preset: Some(preset_name.into()),
-        tool: Some((preset.tool, version.into())),
+        tool: Some((tool, version.into())),
         exports,
     })
 }
@@ -194,7 +195,10 @@ pub(crate) fn initialize(preset_name: &str, data: &Path, database: &str) -> Resu
             );
         }
         if preset_name == "postgres"
-            && std::fs::read_to_string(data.join("PG_VERSION"))?.trim() != major
+            && std::fs::read_to_string(data.join("PG_VERSION"))
+                .wrap_err("daemon data was not initialized completely; missing PG_VERSION")?
+                .trim()
+                != major
         {
             bail!("Postgres data version does not match its initialization marker");
         }

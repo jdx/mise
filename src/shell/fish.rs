@@ -69,7 +69,7 @@ impl Shell for Fish {
             out.push_str(&formatdoc! {r#"
 
             function __mise_env_eval --description {description};
-                {exe} hook-env{flags} --shell-pid $fish_pid -s fish | source;
+                {exe} hook-env{flags} --shell-pid $fish_pid -s fish $argv | source;
 
                 if test "$mise_fish_mode" != "disable_arrow";
                     function __mise_cd_hook --on-variable PWD --description {description};
@@ -106,7 +106,7 @@ impl Shell for Fish {
                 end;
             end;
 
-            __mise_env_eval
+            __mise_env_eval --force
             set -g __mise_skip_first_prompt_pwd "$PWD"
         "#});
         }

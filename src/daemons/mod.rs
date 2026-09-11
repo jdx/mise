@@ -104,6 +104,21 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             if table.get("run").and_then(toml::Value::as_str).is_none() {
                 bail!("[daemons.{name}] requires run or preset");
             }
+            if let Some(port) = table.get("port").and_then(toml::Value::as_integer) {
+                if !(1..=65535).contains(&port) {
+                    bail!("daemon port must be an integer from 1 to 65535");
+                }
+                table.insert(
+                    "port".into(),
+                    toml::Value::Table(toml::Table::from_iter([
+                        (
+                            "expect".into(),
+                            toml::Value::Array(vec![toml::Value::Integer(port)]),
+                        ),
+                        ("bump".into(), toml::Value::Boolean(false)),
+                    ])),
+                );
+            }
             table
                 .entry("mise".to_string())
                 .or_insert(toml::Value::Boolean(true));
@@ -221,8 +236,9 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn daemons_merge_before_expanding_tools_and_exports() {
+    #[tokio::test]
+    async fn daemons_merge_before_expanding_tools_and_exports() {
+        crate::toolset::install_state::init().await.unwrap();
         let config = files(&[
             (
                 "/parent/child/mise.toml",
@@ -253,8 +269,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn preset_names_and_version_conflicts_are_reported() {
+    #[tokio::test]
+    async fn preset_names_and_version_conflicts_are_reported() {
+        crate::toolset::install_state::init().await.unwrap();
         let config = files(&[("/project/mise.toml", "[daemons]\nunknown = '1'\n")]);
         assert!(
             load(&config)
@@ -270,6 +287,43 @@ mod tests {
         assert!(
             set.add_tool_requests(&mut ToolRequestSet::default())
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn preset_tool_override_is_used_and_not_forwarded() {
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.cache]\npreset = 'redis'\nversion = '8'\ntool = 'github:example/redis'\n",
+        )]);
+        let set = load(&config).unwrap();
+        assert_eq!(
+            set.daemons["cache"].tool.as_ref().unwrap().0,
+            "github:example/redis"
+        );
+        assert!(!set.daemons["cache"].table.contains_key("tool"));
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.cache]\npreset = 'redis'\nversion = '8'\ntool = 42\n",
+        )]);
+        assert!(
+            load(&config)
+                .unwrap_err()
+                .to_string()
+                .contains("tool must be a string")
+        );
+    }
+
+    #[test]
+    fn custom_daemons_accept_integer_ports() {
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'server'\nport = 3000\n",
+        )]);
+        let set = load(&config).unwrap();
+        assert_eq!(
+            set.daemons["api"].table["port"]["expect"][0].as_integer(),
+            Some(3000)
         );
     }
 

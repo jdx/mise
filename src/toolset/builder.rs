@@ -129,7 +129,13 @@ impl ToolsetBuilder {
             })
             .map(|(path, cf)| (path.clone(), cf.clone()))
             .collect();
-        let daemons = crate::daemons::load(&scoped_files)?;
+        let scoped_daemons;
+        let daemons = if self.config_files.is_none() && matches!(self.scope, ConfigScope::All) {
+            config.daemons()?
+        } else {
+            scoped_daemons = crate::daemons::load(&scoped_files)?;
+            &scoped_daemons
+        };
         if !daemons.daemons.values().any(|daemon| daemon.tool.is_some()) {
             return Ok(());
         }

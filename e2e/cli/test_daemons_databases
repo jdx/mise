@@ -18,6 +18,7 @@ redis_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0
 cat >mise.toml <<TOML
 [tools]
 pitchfork = "system"
+postgres = "18"
 [daemons.postgres]
 preset = "postgres"
 version = "18"
@@ -28,6 +29,14 @@ preset = "redis"
 version = "8"
 port = $redis_port
 TOML
+# Lock both explicit postgres and implicit redis under this config before enforcing it.
+export MISE_LOCKFILE=1
+mise lock --platform linux-x64
+assert_contains "cat mise.lock" '[[tools.redis]]'
+cat >>mise.toml <<'TOML'
+[tool_config]
+locked = true
+TOML
 mise daemons start
 assert_contains "mise daemons ls --json" '"status": "running"'
 mise exec -- psql -h 127.0.0.1 -p "$pg_port" -U postgres -d integration -c 'CREATE TABLE proof (value integer); INSERT INTO proof VALUES (42);'
@@ -37,8 +46,8 @@ mise daemons start
 assert_contains "mise exec -- psql -h 127.0.0.1 -p '$pg_port' -U postgres -d integration -Atc 'SELECT value FROM proof'" 42
 assert_contains "mise exec -- redis-cli -h 127.0.0.1 -p '$redis_port' GET proof" retained
 mise daemons stop
-pg_install=$(mise where conda:postgresql)
-mise unuse conda:postgresql
+pg_install=$(mise where postgres)
+mise unuse redis
 mise prune --tools
 assert "test -x '$pg_install/bin/psql'"
 assert_contains "mise exec -- psql --version" "18."
@@ -54,3 +63,9 @@ mkdir -p "$TMPDIR/incomplete"
 echo preserved >"$TMPDIR/incomplete/user-data"
 assert_contains "mise exec -- mise daemons __init redis '$TMPDIR/incomplete' postgres 2>&1 || true" "daemon data was not initialized completely"
 assert_contains "cat '$TMPDIR/incomplete/user-data'" preserved
+
+# A missing PostgreSQL marker reports incomplete initialization clearly.
+pg_data=$(find "$MISE_STATE_DIR/daemons" -path '*/data/postgres' -type d -print -quit)
+mv "$pg_data/PG_VERSION" "$pg_data/PG_VERSION.saved"
+assert_contains "mise exec -- mise daemons __init postgres '$pg_data' integration 2>&1 || true" 'daemon data was not initialized completely'
+mv "$pg_data/PG_VERSION.saved" "$pg_data/PG_VERSION"

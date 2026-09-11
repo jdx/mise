@@ -1,7 +1,7 @@
 binary = "postgres"
 description = "PostgreSQL database"
 port = 5432
-tool = "conda:postgresql"
+tool = "postgres"
 
 [options]
 database = "postgres"

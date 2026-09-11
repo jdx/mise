@@ -101,7 +101,7 @@ impl Shell for Zsh {
             add-zsh-hook precmd _mise_hook_precmd
             add-zsh-hook chpwd _mise_hook_chpwd
 
-            _mise_hook
+            _mise_hook --force
             export __MISE_ZSH_ACTIVATE_PATH="$PATH"
             export __MISE_ZSH_ACTIVATE_ENV="$(_mise_hook_env_state)"
             "#});

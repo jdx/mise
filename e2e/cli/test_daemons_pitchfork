@@ -37,41 +37,73 @@ assert_contains "mise daemons ls --json" '"status": "running"'
 assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" 'another daemon profile is active'
 mise daemons stop
 
-# Background cleanup removes old dead sessions, while retaining recent state.
-python3 - "$MISE_STATE_DIR/daemons/sessions" <<'PYCODE'
-import os, sys, time
-for pid, age in [(2147483647, 8 * 86400), (2147483646, 0), (2147483645, 8 * 86400)]:
-    root = os.path.join(sys.argv[1], str(pid))
-    os.makedirs(root, exist_ok=True)
-    path = os.path.join(root, "desired.json")
-    with open(path, "w") as f:
-        f.write("{}")
-    os.utime(path, (time.time() - age, time.time() - age))
-    if pid == 2147483645:
-        os.chmod(root, 0o500)
-PYCODE
+# Evaluate the activation output, preserving each simulated shell's environment.
+hook_session() {
+  local key="daemon_session_$1"
+  export __MISE_DAEMON_SESSIONS="${!key-}"
+  eval "$(mise hook-env --shell-pid "$1" --force -s bash)"
+  printf -v "$key" '%s' "${__MISE_DAEMON_SESSIONS:-}"
+}
 # Each shell owns an independent session. Explicit --force also exercises retry paths.
 sleep 600 &
 second_pid=$!
-trap 'kill "$second_pid" 2>/dev/null || true; pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
-mise hook-env --shell-pid $$ --force -s bash >/dev/null
-mise hook-env --shell-pid "$second_pid" --force -s bash >/dev/null
+trap 'if [[ -n ${activation_pid:-} ]]; then kill "$activation_pid" 2>/dev/null || true; fi; kill "$second_pid" 2>/dev/null || true; pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+hook_session $$
+hook_session "$second_pid"
 for _ in {1..100}; do
   sessions=$(pitchfork project list --json)
   [[ $(jq 'length' <<<"$sessions") == 2 ]] && break
   sleep 0.1
 done
 assert "test $(pitchfork project list --json | jq length) -eq 2"
-assert "test ! -d '$MISE_STATE_DIR/daemons/sessions/2147483647'"
-assert "test -d '$MISE_STATE_DIR/daemons/sessions/2147483646'"
-if [[ -d "$MISE_STATE_DIR/daemons/sessions/2147483645" ]]; then
-  chmod 700 "$MISE_STATE_DIR/daemons/sessions/2147483645"
-fi
+# Tool/shim writes from initial startup may invalidate one prompt. Once stable,
+# unchanged prompts must not register configs or emit session commands.
+sleep 1
+for _ in {1..5}; do
+  hook_output=$(mise hook-env --shell-pid "$second_pid" -s bash)
+  eval "$hook_output"
+done
+assert "test ${#hook_output} -eq 0"
+
+# A new activated shell must enter even when it inherits an up-to-date hook cache.
+cat >"$TMPDIR/activation.fish" <<'FISH'
+mise activate fish | source
+while not test -f "$CHILD_DONE"
+  sleep 0.1
+end
+FISH
+cat >"$TMPDIR/activation.sh" <<'SH'
+eval "$(mise activate "$1")"
+while [[ ! -f "$CHILD_DONE" ]]; do sleep 0.1; done
+SH
+for activation_shell in bash zsh fish; do
+  export CHILD_DONE="$TMPDIR/$activation_shell.done"
+  if [[ $activation_shell == fish ]]; then
+    fish "$TMPDIR/activation.fish" &
+  else
+    "$activation_shell" "$TMPDIR/activation.sh" "$activation_shell" &
+  fi
+  activation_pid=$!
+  for _ in {1..100}; do
+    [[ $(pitchfork project list --json | jq length) == 3 ]] && break
+    sleep 0.1
+  done
+  assert "test $(pitchfork project list --json | jq length) -eq 3"
+  touch "$CHILD_DONE"
+  wait "$activation_pid"
+  unset activation_pid
+  for _ in {1..100}; do
+    [[ $(pitchfork project list --json | jq length) == 2 ]] && break
+    sleep 0.1
+  done
+  assert "test $(pitchfork project list --json | jq length) -eq 2"
+done
+
 mise daemons stop
 assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" "another daemon profile is active"
 mise daemons start
 cd ../other
-mise hook-env --shell-pid $$ --force -s bash >/dev/null
+hook_session $$
 for _ in {1..100}; do
   [[ $(pitchfork project list --json | jq length) == 1 ]] && break
   sleep 0.1
@@ -80,7 +112,7 @@ assert "test $(pitchfork project list --json | jq length) -eq 1"
 cd "$project_dir"
 assert_contains "mise daemons ls --json" '"status": "running"'
 cd ../other
-mise hook-env --shell-pid "$second_pid" --force -s bash >/dev/null
+hook_session "$second_pid"
 for _ in {1..100}; do
   [[ $(pitchfork project list --json | jq length) == 0 ]] && break
   sleep 0.1
@@ -98,15 +130,11 @@ run = "exec sleep 600"
 ready_delay = 4
 auto = ["start", "stop"]
 TOML
-mise hook-env --shell-pid $$ --force -s bash >/dev/null
+hook_session $$
 sleep 0.2
-for _ in {1..10}; do
-  mise hook-env --shell-pid $$ --force -s bash >/dev/null
-done
-workers=$(ps -eo args | awk -v marker="daemons __reconcile $$" 'index($0, marker) && !index($0, "awk") {n++} END {print n+0}')
-assert "test $workers -le 2"
+assert "test ! -d '$MISE_STATE_DIR/daemons/sessions'"
 cd ../other
-mise hook-env --shell-pid $$ --force -s bash >/dev/null
+hook_session $$
 sleep 5
 for _ in {1..100}; do
   [[ $(pitchfork project list --json | jq length) == 0 ]] && break
@@ -122,4 +150,7 @@ cat >mise.toml <<'TOML'
 pitchfork = "system"
 TOML
 mise daemons stop
+assert "test $(pitchfork config list --json | jq length) -eq 1"
+# Synchronization belongs to start, even when there are no remaining daemons.
+mise daemons start 2>/dev/null || true
 assert "test $(pitchfork config list --json | jq length) -eq 0"

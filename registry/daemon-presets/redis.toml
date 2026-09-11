@@ -1,7 +1,7 @@
 binary = "redis-server"
 description = "Redis database"
 port = 6379
-tool = "conda:redis-server"
+tool = "redis"
 
 [options]
 

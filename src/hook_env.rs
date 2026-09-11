@@ -198,9 +198,6 @@ impl From<PathBuf> for WatchFilePattern {
 /// This checks basic conditions using only the previous session data.
 /// Returns true if we can definitely skip hook-env, false if we need to continue.
 pub(crate) fn should_exit_early_fast() -> bool {
-    if crate::daemons::hook_env::pending() {
-        return false;
-    }
     let args = env::ARGS.read().unwrap();
     if args.len() < 2 || args[1] != "hook-env" {
         return false;

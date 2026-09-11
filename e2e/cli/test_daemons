@@ -36,7 +36,7 @@ assert_contains "mise env -s bash" 'redis://127.0.0.1:6379'
 assert_not_contains "cat '$DAEMON_LOG'" 'config add'
 assert_not_contains "cat '$DAEMON_LOG'" 'supervisor'
 assert_contains "mise ls --json" 'mise.toml-daemon'
-assert_contains "mise unuse conda:postgresql 2>&1" 'declared by [daemons]'
+assert_contains "mise unuse postgres 2>&1" 'declared by [daemons]'
 assert_contains "cat mise.toml" 'postgres = "18"'
 
 cat >mise.toml <<'TOML'
@@ -54,6 +54,7 @@ assert_contains "cat '$DAEMON_LOG'" '/api'
 assert "test ! -f pitchfork.toml"
 generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
 assert_contains "cat '$generated'" 'mise = true'
+assert_not_contains "cat '$generated'" 'MISE_ENV = ""'
 assert_contains "cat '$generated'" '{{ env.SOMETHING }}'
 mise daemons stop
 assert_contains "cat '$DAEMON_LOG'" 'args=stop '
@@ -106,3 +107,5 @@ SUPERVISOR_STATUS=up mise daemons tui -- --help
 assert "test $(grep -c 'args=tui --help$' "$DAEMON_LOG") -eq 1"
 assert_contains "cat '$DAEMON_LOG'" "cwd=$PWD args=tui --help"
 assert_fail "mise daemons tui"
+
+assert_fail "mise daemons tui parent"

@@ -2161,10 +2161,6 @@ With no subcommand, list configured and previously managed daemons.
         arg <DATA>
         arg <DATABASE>
     }
-    cmd __reconcile hide=#true {
-        flag "-h --help" help="Print help" action=help builtin=#true
-        arg <PID>
-    }
 }
 cmd direnv hide=#true help="Output direnv function to use mise inside direnv" effect=read {
     long_help #"""

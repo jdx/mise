@@ -419,9 +419,6 @@ export const commands: { [key: string]: Command } = {
       __init: {
         hide: true,
       },
-      __reconcile: {
-        hide: true,
-      },
       logs: {
         hide: false,
       },

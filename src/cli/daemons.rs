@@ -35,8 +35,6 @@ enum Commands {
     Tui(TuiArgs),
     #[usage(name = "__init", hide = true)]
     Init(Init),
-    #[usage(name = "__reconcile", hide = true)]
-    Reconcile(Reconcile),
 }
 
 /// Arguments passed to pitchfork; daemon names may be short or qualified.
@@ -68,10 +66,6 @@ struct Init {
     data: PathBuf,
     database: String,
 }
-#[derive(Debug, usage_rs::Args)]
-struct Reconcile {
-    pid: u32,
-}
 
 impl Daemons {
     pub(crate) fn starts(&self) -> bool {
@@ -88,7 +82,6 @@ impl Daemons {
             Some(Commands::Init(args)) => {
                 return daemons::presets::initialize(&args.preset, &args.data, &args.database);
             }
-            Some(Commands::Reconcile(args)) => return daemons::hook_env::reconcile(args.pid).await,
             Some(Commands::Start(args)) => ("start", args.args, false),
             Some(Commands::Stop(args)) => ("stop", args.args, false),
             Some(Commands::Restart(args)) => ("restart", args.args, false),
@@ -105,6 +98,9 @@ impl Daemons {
             .ok_or_else(|| eyre::eyre!("mise daemons requires a project configuration"))?;
         // The dashboard is global to the supervisor, not one invocation per daemon root.
         if action == "tui" {
+            if args.first().is_some_and(|arg| !arg.starts_with('-')) {
+                bail!("mise daemons tui opens the dashboard; pass TUI flags, not daemon names");
+            }
             let previous = runtime::read_state(root)?;
             let (config, ts) = runtime::toolset(&config, false).await?;
             let runtime = Runtime::from_toolset(&config, &ts, Some(&previous.bin)).await?;
@@ -115,7 +111,7 @@ impl Daemons {
                 .exec(root, [vec!["tui".into()], args].concat())
                 .await;
         }
-        let loaded = daemons::load(&config.config_files)?;
+        let loaded = config.daemons()?;
         let mut roots = loaded.roots();
         if !roots.iter().any(|r| r == root) {
             roots.push(root.to_path_buf());
@@ -124,7 +120,7 @@ impl Daemons {
         let mut matched = false;
         for root in roots {
             let scoped = runtime::config_for_root(&config, &root).await?;
-            let set = daemons::load(&scoped.config_files)?.for_root(&root);
+            let set = scoped.daemons()?.for_root(&root);
             let previous = runtime::read_state(&root)?;
             if set.daemons.is_empty() && previous.ids.is_empty() {
                 continue;
@@ -214,23 +210,22 @@ impl Daemons {
                 forwarded.extend(selected);
                 forwarded.extend(flags);
                 runtime.exec(&root, forwarded).await?;
-                if action == "stop" && state.profile == *crate::env::MISE_ENV {
-                    let _prepared = runtime.prepare(&root, &set).await?;
-                }
             }
         }
         if action == "ls" {
             if json {
                 miseprintln!("{}", serde_json::to_string_pretty(&rows)?);
             } else {
+                let mut table =
+                    crate::ui::table::MiseTable::new(false, &["Daemon", "Status", "Source"]);
                 for row in rows {
-                    miseprintln!(
-                        "{}\t{}\t{}",
-                        row["id"].as_str().unwrap_or_default(),
-                        row["status"].as_str().unwrap_or_default(),
-                        row["source"].as_str().unwrap_or_default()
-                    );
+                    table.add_row(vec![
+                        comfy_table::Cell::new(row["id"].as_str().unwrap_or_default()),
+                        comfy_table::Cell::new(row["status"].as_str().unwrap_or_default()),
+                        comfy_table::Cell::new(row["source"].as_str().unwrap_or_default()),
+                    ]);
                 }
+                table.print()?;
             }
         } else if !matched {
             bail!("no matching project daemons; define [daemons] in mise.toml");
