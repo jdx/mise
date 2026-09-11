@@ -3,8 +3,10 @@
   "checkpoint_id": "01M297TXEZ8D7G4JZKMT3PW38N",
   "strategy": "manual-commit",
   "branch": "codex/communique-1.4.0",
-  "checkpoints_count": 7,
-  "files_touched": null,
+  "checkpoints_count": 8,
+  "files_touched": [
+    "mise.lock"
+  ],
   "sessions": [
     {
       "metadata": "/0/metadata.json",
@@ -19,13 +21,20 @@
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 7308,
+    "input_tokens": 13307,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 1206784,
-    "output_tokens": 846,
-    "api_call_count": 6
+    "cache_read_tokens": 1766016,
+    "output_tokens": 1827,
+    "api_call_count": 11
   }
 }
