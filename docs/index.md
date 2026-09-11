@@ -96,28 +96,21 @@ hero:
   <div class="landing-section landing-machine">
     <p class="landing-kicker"><span>03</span> New machine</p>
     <div class="landing-machine-grid">
-      <div class="landing-config-card" aria-label="Example bootstrap config">
-        <div class="card-bar"><strong>mise.toml</strong><span>~/.config/mise</span></div>
-        <div class="card-toml">
-          <div class="row row-boot"><span class="tk-section">[bootstrap.packages]</span></div>
-          <div class="row row-boot"><span class="tk-key">"brew:postgresql@17"</span><span class="tk-op"> = </span><span class="tk-str">"latest"</span></div>
-          <div class="row row-boot"><span class="tk-key">"apt:build-essential"</span><span class="tk-op"> = </span><span class="tk-str">"latest"</span></div>
-          <div class="row row-blank"></div>
-          <div class="row row-boot"><span class="tk-section">[bootstrap.repos]</span></div>
-          <div class="row row-boot"><span class="tk-key">"~/src/notes"</span><span class="tk-op"> = { </span><span class="tk-key">url</span><span class="tk-op"> = </span><span class="tk-str">"git@github.com:me/notes.git"</span><span class="tk-op"> }</span></div>
-          <div class="row row-blank"></div>
-          <div class="row row-boot"><span class="tk-section">[dotfiles]</span></div>
-          <div class="row row-boot"><span class="tk-key">"~/.config/mise/config.toml"</span><span class="tk-op"> = { </span><span class="tk-key">source</span><span class="tk-op"> = </span><span class="tk-str">"config.toml"</span><span class="tk-op">, </span><span class="tk-key">mode</span><span class="tk-op"> = </span><span class="tk-str">"symlink"</span><span class="tk-op"> }</span></div>
-          <div class="row row-boot"><span class="tk-key">"~/.gitconfig"</span><span class="tk-op"> = { </span><span class="tk-key">source</span><span class="tk-op"> = </span><span class="tk-str">"dotfiles/gitconfig"</span><span class="tk-op">, </span><span class="tk-key">mode</span><span class="tk-op"> = </span><span class="tk-str">"template"</span><span class="tk-op"> }</span></div>
-          <div class="row row-boot"><span class="tk-key">"~/.config/nvim"</span><span class="tk-op"> = { </span><span class="tk-key">source</span><span class="tk-op"> = </span><span class="tk-str">"dotfiles/nvim"</span><span class="tk-op">, </span><span class="tk-key">mode</span><span class="tk-op"> = </span><span class="tk-str">"symlink"</span><span class="tk-op"> }</span></div>
-          <div class="row row-blank"></div>
-          <div class="row row-boot"><span class="tk-section">[bootstrap.macos.dock]</span></div>
-          <div class="row row-boot"><span class="tk-key">autohide</span><span class="tk-op"> = </span><span class="tk-str">true</span></div>
-          <div class="row row-blank"></div>
-          <div class="row row-boot"><span class="tk-section">[bootstrap.mise_shell_activate]</span></div>
-          <div class="row row-boot"><span class="tk-key">zshrc</span><span class="tk-op"> = </span><span class="tk-str">"activate"</span></div>
+      <figure class="bootstrap-diagram" aria-label="mise bootstrap applies one configuration to packages, repositories, dotfiles, and services">
+        <div class="bootstrap-source">
+          <span class="bootstrap-label">Declare your setup</span>
+          <strong>mise.toml</strong>
+          <code>[bootstrap.packages]<br>[bootstrap.repos]<br>[dotfiles]<br>[bootstrap.services]</code>
         </div>
-      </div>
+        <div class="bootstrap-connector"><span aria-hidden="true">↓</span> <code>mise bootstrap</code></div>
+        <div class="bootstrap-resources">
+          <div><strong>Packages</strong><span>brew · apt · winget</span></div>
+          <div><strong>Repositories</strong><span>Project checkouts</span></div>
+          <div><strong>Dotfiles</strong><span>Link · copy · template</span></div>
+          <div><strong>Services</strong><span>Background processes</span></div>
+        </div>
+        <figcaption><code>mise bootstrap plan</code> previews declarative resource changes before you apply them.</figcaption>
+      </figure>
       <div>
         <h2>One config for the <em>whole machine.</em></h2>
         <p class="landing-lede">
