@@ -43,6 +43,11 @@ pub(super) fn linked_version(name: &str) -> Option<String> {
 }
 
 pub(super) fn strict_package_root(name: &str) -> Result<PathBuf> {
+    if let Some(prefix) = std::env::var_os("MISE_SYSTEM_BREW_PREFIX")
+        && prefix.to_str().is_none()
+    {
+        bail!("the prefix cannot be printed as a single UTF-8 path; use a compatible prefix path");
+    }
     let prefix = prefix::prefix();
     let prefix = if prefix.is_absolute() {
         prefix

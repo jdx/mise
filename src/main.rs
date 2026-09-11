@@ -248,7 +248,9 @@ fn handle_err(err: Report) -> eyre::Result<()> {
         return Err(request_exit(1));
     }
 
-    show_github_rate_limit_err(&err);
+    if !config::Settings::is_package_query() {
+        show_github_rate_limit_err(&err);
+    }
     if *env::MISE_FRIENDLY_ERROR {
         display_friendly_err(&err);
         return Err(request_exit(1));
