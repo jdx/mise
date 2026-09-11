@@ -835,6 +835,34 @@ fn preprocess_args_for_naked_run(cmd: &usage_rs::Command<'_>, args: &[String]) -
     result
 }
 
+fn is_packages_where_query(args: &[String]) -> bool {
+    let argv = args
+        .iter()
+        .skip(1)
+        .map(std::ffi::OsStr::new)
+        .collect::<Vec<_>>();
+    let mut parser = usage_rs::Parser::new(Cli::command(), &argv);
+    let mut path = ["bootstrap", "packages", "where"].into_iter();
+    while let Some(event) = parser.next_event() {
+        if parser.double_dash_seen() {
+            return false;
+        }
+        match event {
+            Ok(usage_rs::Event::Command(command)) => {
+                if Some(command.name) != path.next() {
+                    return false;
+                }
+                if path.len() == 0 {
+                    return true;
+                }
+            }
+            Ok(usage_rs::Event::Flag { .. }) => {}
+            _ => return false,
+        }
+    }
+    false
+}
+
 impl Cli {
     pub(crate) async fn run(args: &Vec<String>) -> Result<()> {
         run_with_exit_signal(Self::run_inner(args), ctrlc::exit_signal()).await
@@ -860,6 +888,22 @@ impl Cli {
         if let Some(answer) = completion::completion_request(&completion_argv) {
             print!("{answer}");
             return Ok(());
+        }
+        if is_packages_where_query(args) {
+            Settings::select_package_query_sources();
+            crate::env::ARGS.write().unwrap().clone_from(args);
+            let argv = args.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();
+            let cli = Cli::parse_from_argv(&argv).map_err(|err| usage_error(&argv[1..], err))?;
+            if !matches!(&cli.command, Some(Commands::Bootstrap(cmd)) if cmd.is_packages_where()) {
+                bail!("internal error: recognized package query parsed as another command");
+            }
+            validate_cd_path(&cli.cd)?;
+            Settings::init_package_query(&cli)?;
+            logger::init();
+            let Some(Commands::Bootstrap(command)) = cli.command else {
+                unreachable!("package query variant was checked");
+            };
+            return command.run().await;
         }
         crate::env::ARGS.write().unwrap().clone_from(args);
         let original_cwd = std::env::current_dir().ok();

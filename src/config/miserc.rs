@@ -66,6 +66,11 @@ pub(crate) fn invocation_cwd() -> Option<&'static Path> {
 
 /// Get the loaded miserc settings, or default if not initialized.
 pub(crate) fn get() -> &'static MisercSettings {
+    if super::Settings::is_package_query() {
+        static QUERY_MISERC: std::sync::LazyLock<MisercSettings> =
+            std::sync::LazyLock::new(MisercSettings::default);
+        return &QUERY_MISERC;
+    }
     MISERC.get_or_init(|| {
         let settings = load_miserc_settings().unwrap_or_default();
         let _ = take_tera_accessed_files();
