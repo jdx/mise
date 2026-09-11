@@ -12,6 +12,13 @@ run = 'echo hello'
 # if tools were being installed, mise would try to install tiny
 tools = { tiny = "1.0.0" }
 run = 'echo ran'
+
+[tasks.deferred-check]
+tools = { tiny = "2.0.0" }
+run = 'echo deferred ran'
+
+[tasks.deferred-parent]
+run = [{ task = "deferred-check" }]
 EOF
 
 # --skip-tools before task name is a mise flag (skips tool install, task runs)
@@ -23,6 +30,12 @@ assert "mise run echo-args --skip-tools" "args: --skip-tools"
 # verify --skip-tools skips task-level tool installation
 # task declares tools = { tiny = "1.0.0" } but --skip-tools prevents install attempt
 assert "mise run --skip-tools check-tiny" "ran"
+
+rm -rf "$MISE_DATA_DIR/installs/tiny/2.0.0"
+
+# --skip-tools also applies to tasks resolved later from run entries.
+assert "mise run --skip-tools deferred-parent" "deferred ran"
+assert_fail "test -d '$MISE_DATA_DIR/installs/tiny/2.0.0'"
 
 credential_marker="$HOME/github-credential-command-called"
 credential_command="$HOME/fake-github-credential-command"

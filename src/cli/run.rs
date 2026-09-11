@@ -928,10 +928,24 @@ impl Run {
                     on_task_dropped: |task: &Task| this.retire_keep_order_slot(task),
                     continue_on_error: this.continue_on_error,
                 },
-                |task, deps_for_remove, allow_during_interruption| {
+                |task, deps_for_remove, allow_during_interruption, install_tools| {
                     let this = this.clone();
                     let spawn_context = spawn_context.clone();
                     async move {
+                        if install_tools && !this.skip_tools {
+                            let mut install_config = spawn_context.config.clone();
+                            crate::task::task_tool_installer::TaskToolInstaller::new(
+                                &this.context_builder,
+                                &this.tool,
+                            )
+                            .install_tasks(
+                                &mut install_config,
+                                vec![task.clone()],
+                                this.dry_run,
+                                &HashSet::new(),
+                            )
+                            .await?;
+                        }
                         Self::spawn_sched_job(
                             this,
                             task,

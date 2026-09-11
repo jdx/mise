@@ -1,6 +1,32 @@
 #!/usr/bin/env bash
 
 cat <<EOF >mise.toml
+[tasks.child]
+tools = { tiny = "1" }
+run = "rtx-tiny"
+
+[tasks.parent]
+run = [{ task = "child" }]
+
+[tasks.templated-child]
+tools = { tiny = "2" }
+run = "rtx-tiny"
+
+[tasks.templated-parent]
+env = { CHILD = "templated-child" }
+run = [{ task = "{{ env.CHILD }}" }]
+EOF
+
+rm -rf "$MISE_DATA_DIR/installs/tiny"
+
+# A task referenced from a run entry is resolved at execution time, but its
+# task-only tools must still be installed before the injected task starts.
+assert "mise run parent" "rtx-tiny: v1.1.0 args:"
+
+# Runtime-rendered task references take the same late installation path.
+assert "mise run templated-parent" "rtx-tiny: v2.1.0 args:"
+
+cat <<EOF >mise.toml
 [tasks.a]
 tools = { tiny = "1" }
 run = "rtx-tiny"

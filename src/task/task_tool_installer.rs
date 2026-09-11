@@ -31,17 +31,29 @@ impl<'a> TaskToolInstaller<'a> {
         dry_run: bool,
         previewed_tools: &HashSet<ToolVersion>,
     ) -> Result<()> {
-        let all_tasks: Vec<_> = tasks.all().collect();
-        let all_tool_requests = self.collect_tool_requests(config, all_tasks).await?;
+        self.install_tasks(
+            config,
+            tasks.all().cloned().collect(),
+            dry_run,
+            previewed_tools,
+        )
+        .await
+    }
 
-        // Build and install toolset
+    /// Install tools for tasks that were resolved after the initial graph.
+    pub(crate) async fn install_tasks(
+        &self,
+        config: &mut Arc<Config>,
+        tasks: Vec<Task>,
+        dry_run: bool,
+        previewed_tools: &HashSet<ToolVersion>,
+    ) -> Result<()> {
+        let all_tool_requests = self.collect_tool_requests(config, &tasks).await?;
         let toolset = self
             .build_toolset(config, self.cli_tools.to_vec(), all_tool_requests)
             .await?;
         self.install_toolset(config, toolset, dry_run, previewed_tools)
-            .await?;
-
-        Ok(())
+            .await
     }
 
     /// Collect every tool request needed to prepare the supplied tasks without

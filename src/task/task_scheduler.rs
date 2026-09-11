@@ -14,6 +14,7 @@ pub(crate) struct SchedMsg {
     pub task: Task,
     pub deps: Arc<Mutex<Deps>>,
     pub allow_during_interruption: bool,
+    pub install_tools: bool,
 }
 
 impl SchedMsg {
@@ -22,6 +23,18 @@ impl SchedMsg {
             task,
             deps,
             allow_during_interruption,
+            install_tools: false,
+        }
+    }
+
+    pub(crate) fn injected(
+        task: Task,
+        deps: Arc<Mutex<Deps>>,
+        allow_during_interruption: bool,
+    ) -> Self {
+        Self {
+            install_tools: true,
+            ..Self::new(task, deps, allow_during_interruption)
         }
     }
 }
@@ -219,7 +232,7 @@ impl Scheduler {
         mut spawn_job: F,
     ) -> Result<()>
     where
-        F: FnMut(Task, Arc<Mutex<Deps>>, bool) -> Fut,
+        F: FnMut(Task, Arc<Mutex<Deps>>, bool, bool) -> Fut,
         Fut: std::future::Future<Output = Result<()>>,
         S: Fn() -> bool,
         I: Fn() -> bool,
@@ -243,6 +256,7 @@ impl Scheduler {
                         task,
                         deps: deps_for_remove,
                         allow_during_interruption,
+                        install_tools,
                     }) => {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
@@ -258,7 +272,13 @@ impl Scheduler {
                                 continue;
                             }
                         }
-                        spawn_job(task, deps_for_remove, allow_during_interruption).await?;
+                        spawn_job(
+                            task,
+                            deps_for_remove,
+                            allow_during_interruption,
+                            install_tools,
+                        )
+                        .await?;
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => break,
@@ -307,6 +327,7 @@ impl Scheduler {
                         task,
                         deps: deps_for_remove,
                         allow_during_interruption,
+                        install_tools,
                     }) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
                         if should_stop() && (!continue_on_error || was_interrupted()) {
@@ -321,7 +342,13 @@ impl Scheduler {
                                 continue;
                             }
                         }
-                        spawn_job(task, deps_for_remove, allow_during_interruption).await?;
+                        spawn_job(
+                            task,
+                            deps_for_remove,
+                            allow_during_interruption,
+                            install_tools,
+                        )
+                        .await?;
                     } else {
                         // channel closed; rely on main_done/in_flight to exit soon
                     }
