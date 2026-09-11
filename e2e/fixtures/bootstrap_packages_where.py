@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import platform
 import pty
+import shlex
 import shutil
 import stat
 import subprocess
@@ -317,6 +318,34 @@ class PackagesWhere(unittest.TestCase):
                 self.prefix = self.base / suffix
                 self.keg()
                 self.failure(["bootstrap", "packages", "where", "brew:widget"], "UTF-8", {"MISE_SYSTEM_BREW_PREFIX": str(self.prefix)})
+
+    def test_non_utf8_prefix_environment_preserves_encoding_error(self):
+        self.require_supported()
+        prefix_bytes = os.fsencode(self.base) + b"/prefix-\xff"
+        prefix = os.fsdecode(prefix_bytes)
+        self.assertEqual(os.fsencode(prefix), prefix_bytes)
+        self.failure(
+            ["bootstrap", "packages", "where", "brew:widget"],
+            "UTF-8",
+            {"MISE_SYSTEM_BREW_PREFIX": prefix},
+        )
+
+    def test_local_validation_error_does_not_invoke_github_credentials(self):
+        self.require_supported()
+        credential = self.write(
+            "sentinel-bin/github-credential",
+            '#!/bin/sh\ntouch "$HOME/credential-ran"\nprintf "fixture-token\\n"\n',
+            executable=True,
+        )
+        for token in ["GITHUB_TOKEN", "GH_TOKEN", "MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN"]:
+            self.assertNotIn(token, self.env)
+        spec = "brew:HTTP status client error (403 Forbidden) for url (https://api.github.com"
+        self.failure(
+            ["bootstrap", "packages", "where", spec],
+            "brew:<formula>",
+            {"MISE_GITHUB_CREDENTIAL_COMMAND": shlex.quote(str(credential))},
+        )
+        self.assertFalse((self.base / "home/credential-ran").exists())
 
     def test_unsupported_platform_is_registered_and_diagnosed(self):
         if self.supported:
