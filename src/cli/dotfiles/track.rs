@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use eyre::{Result, bail};
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::file::{self, display_path};
 use crate::path::PathExt;
 use crate::system::files::{FileMode, FileRequest};
@@ -117,7 +117,7 @@ impl DotfilesTrack {
             }
             declared.push((target_key, target));
         }
-        if !self.yes && console::user_attended_stderr() {
+        if !self.yes && !Settings::get().yes && console::user_attended_stderr() {
             let list = declared
                 .iter()
                 .map(|(key, _)| key.as_str())

@@ -5147,6 +5147,7 @@ mod tests {
     fn unavailable_defaults_json_retains_configured_entries() {
         use crate::system::defaults::{DefaultsRequest, DefaultsValue, HostScope};
         let request = DefaultsRequest {
+            dock_apps: false,
             domain: "com.mise.test".into(),
             key: "Settings".into(),
             host: HostScope::Current,

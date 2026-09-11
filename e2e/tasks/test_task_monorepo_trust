@@ -43,6 +43,20 @@ assert_not_contains "mise tasks ls --all 2>&1" "Trust them"
 assert_contains "mise run '//projects/frontend:build'" "frontend build"
 assert_contains "mise run '//projects/frontend/components:test'" "component test"
 
+# A higher-precedence false overlay disables both monorepo behavior and the
+# derived trust marker. A marker created by the earlier commands must not keep
+# authorizing descendant configs.
+cat <<EOF >mise.disabled.toml
+monorepo_root = false
+EOF
+mkdir -p disabled-child
+cat <<EOF >disabled-child/mise.toml
+[env]
+UNTRUSTED_CHILD = "must prompt"
+EOF
+export MISE_TRUSTED_CONFIG_PATHS=""
+assert_contains "MISE_ENV=disabled MISE_YES=0 mise -C disabled-child env 2>&1 || true" "are not trusted"
+
 # Test that trust warnings DO appear for unsafe configs outside monorepo
 # (tasks-only configs are safe and load without trust, so use [env] to make
 # this one require trust)
@@ -56,8 +70,5 @@ run = 'echo "parent task"'
 EOF
 
 # Clear trust to simulate untrusted state
-# We need to explicitly unset MISE_TRUSTED_CONFIG_PATHS to test trust warnings
-export MISE_TRUSTED_CONFIG_PATHS=""
-
 # Verify trust error appears for the parent config (command should fail)
 assert_contains "MISE_YES=0 mise -C ../parent-dir tasks ls 2>&1 || true" "are not trusted"

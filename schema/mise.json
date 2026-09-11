@@ -4751,6 +4751,15 @@
               "type": "object",
               "description": "curated Dock preferences that compile into macOS defaults",
               "properties": {
+                "apps": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^(?:/|~/(?!/)).+\\.[aA][pP][pP]/*$"
+                  },
+                  "uniqueItems": true,
+                  "description": "Pinned application paths in order; absolute or ~/ paths ending in .app. An empty array removes application tiles."
+                },
                 "autohide_delay": {
                   "type": "number",
                   "description": "delay before showing the Dock"

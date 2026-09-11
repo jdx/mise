@@ -86,3 +86,62 @@ mise run '//packages/frontend:build' | grep -q "frontend build" || (echo "FAIL: 
 mise run '//services/api:serve' | grep -q "api serve" || (echo "FAIL: couldn't run api task" && exit 1)
 
 echo "=== All config_roots tests passed! ==="
+
+# Same-directory environment overlays are layers of one monorepo root. Repeating
+# monorepo_root in an overlay must not hide [monorepo] from the base config.
+mkdir -p overlay-projects/base overlay-projects/override
+cat <<'TOML' >overlay-projects/base/mise.toml
+[tasks.layer]
+run = 'echo "base layer"'
+TOML
+cat <<'TOML' >overlay-projects/override/mise.toml
+[tasks.layer]
+run = 'echo "override layer"'
+TOML
+
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["overlay-projects/base"]
+TOML
+cat <<'TOML' >mise.overlay.toml
+monorepo_root = true
+
+[env]
+OVERLAY_ACTIVE = true
+TOML
+
+echo "=== Test 5: overlays inherit config_roots from the base config ==="
+output=$(MISE_ENV=overlay mise tasks --all 2>&1)
+echo "$output"
+echo "$output" | grep -q "//overlay-projects/base:layer" || (echo "FAIL: base config_roots not inherited" && exit 1)
+if echo "$output" | grep -q "monorepo_auto_discovery"; then
+  echo "FAIL: automatic discovery warning emitted"
+  exit 1
+fi
+
+cat <<'TOML' >mise.overlay.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["overlay-projects/override"]
+TOML
+
+echo "=== Test 6: overlay config_roots replace the base list ==="
+output=$(MISE_ENV=overlay mise tasks --all 2>&1)
+echo "$output"
+echo "$output" | grep -q "//overlay-projects/override:layer" || (echo "FAIL: overlay config_roots not used" && exit 1)
+if echo "$output" | grep -q "//overlay-projects/base:layer"; then
+  echo "FAIL: base config_roots should be replaced by the overlay"
+  exit 1
+fi
+
+cat <<'TOML' >mise.disabled.toml
+monorepo_root = false
+TOML
+
+echo "=== Test 7: overlays can disable a root ==="
+assert_fail_contains "MISE_ENV=disabled mise run //overlay-projects/base:layer 2>&1" "require a monorepo root configuration"
+
+echo "=== All layered config_roots tests passed! ==="
