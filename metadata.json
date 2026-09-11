@@ -3,8 +3,10 @@
   "checkpoint_id": "01M297STVAN3636XXS41Y65JSC",
   "strategy": "manual-commit",
   "branch": "codex/fix-packslip-unsupported-lock-target",
-  "checkpoints_count": 7,
-  "files_touched": null,
+  "checkpoints_count": 8,
+  "files_touched": [
+    "src/backend/packslip.rs"
+  ],
   "sessions": [
     {
       "metadata": "/0/metadata.json",
@@ -19,13 +21,20 @@
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 571253,
+    "input_tokens": 659335,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 32686208,
-    "output_tokens": 51143,
-    "api_call_count": 282
+    "cache_read_tokens": 34486016,
+    "output_tokens": 57342,
+    "api_call_count": 309
   }
 }
