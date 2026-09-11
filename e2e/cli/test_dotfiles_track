@@ -69,6 +69,33 @@ assert_succeed 'mise bootstrap dotfiles untrack ~/native'
 assert 'cat ~/native/config' native
 assert_fail "git --git-dir=$repository cat-file -e HEAD:home/native/config"
 
+# A source-managed file added in the default symlink mode needs its source enrolled too.
+echo added >~/added-dotfile
+assert_succeed 'mise bootstrap dotfiles add --source ~/added-source ~/added-dotfile --yes'
+assert_contains 'mise bootstrap dotfiles track ~/added-dotfile 2>&1' 'history saves and syncs the link, not its contents'
+assert_fail "git --git-dir=$repository cat-file -e HEAD:home/added-source"
+
+# Explicit enrollment warns when only a symlink, not its source, is saved.
+echo source >~/link-source
+ln -s link-source ~/tracked-link
+assert_contains 'mise bootstrap dotfiles track ~/tracked-link 2>&1' 'history saves and syncs the link, not its contents'
+assert_contains 'mise bootstrap dotfiles track ~/tracked-link 2>&1' 'mise bootstrap dotfiles track '
+assert_contains "git --git-dir=$repository ls-tree HEAD home/tracked-link" 120000
+assert_fail "git --git-dir=$repository cat-file -e HEAD:home/link-source"
+# Enrolling both in one command suppresses the warning regardless of order.
+mise bootstrap dotfiles track ~/tracked-link ~/link-source >track-output 2>&1
+assert_fail "grep -q 'is a symlink' track-output"
+assert "git --git-dir=$repository show HEAD:home/link-source" source
+# A tracked parent directory also covers the source.
+ln -s target-dir/config ~/directory-source-link
+mise bootstrap dotfiles track ~/directory-source-link ~/target-dir >track-output 2>&1
+assert_fail "grep -q 'is a symlink' track-output"
+# Excluded and missing sources must not look protected.
+assert_succeed 'mise bootstrap dotfiles exclude ~/link-source'
+assert_contains 'mise bootstrap dotfiles track ~/tracked-link 2>&1' 'is a symlink'
+ln -s missing-source ~/dangling-link
+assert_contains 'mise bootstrap dotfiles track ~/dangling-link 2>&1' 'missing-source'
+
 if [[ $(uname -s) == Linux ]]; then
   mkdir -p ~/.raw-names
   echo ordinary >~/.raw-names/ordinary

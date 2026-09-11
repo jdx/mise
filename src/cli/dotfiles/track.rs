@@ -352,7 +352,22 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
             bail!("dotfiles: {key} could not be tracked: {reason}");
         }
     }
-    baseline(&tracked, declared).await
+    baseline(&tracked, declared).await?;
+    for (key, target) in declared {
+        if let Ok(source) = std::fs::read_link(target) {
+            let source = crate::system::history::tracked::normalize(
+                &target.parent().unwrap_or(Path::new("/")).join(source),
+            );
+            if !tracked.would_capture(&source)? {
+                warn!(
+                    "dotfiles: {key} is a symlink; history saves and syncs the link, not its contents. Its source {} is not tracked for capture; track the source with `mise bootstrap dotfiles track {}` (and check any exclusions) to include its contents",
+                    display_path(&source),
+                    shell_words::quote(&source.to_string_lossy()),
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Saves the baseline checkpoint of newly tracked paths; a failure fails
