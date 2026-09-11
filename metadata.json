@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M289D9NY7V47RGQ4QZCFWZ5T",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-monorepo-overlay-resolution",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/tasks/test_task_monorepo_trust",
+    "src/config/config_file/mod.rs",
+    "src/config/mod.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 135641,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 9910272,
+    "output_tokens": 14156,
+    "api_call_count": 74
+  }
+}
