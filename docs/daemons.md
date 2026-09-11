@@ -95,6 +95,10 @@ daemons retain their declaring project scope. One environment profile can be act
 per project: stop its daemons and leave its shell sessions before switching `MISE_ENV`.
 Changed definitions take effect on the next start or explicit restart.
 
+A preset `run` override still runs after database initialization. It follows
+pitchfork shell-command semantics: use `exec` for the final long-running process
+(for example, `setup-command && exec server`) so it receives stop signals directly.
+
 ## Automatic start and stop
 
 Set `auto = ["start", "stop"]` on a custom or preset table and activate mise in Bash,

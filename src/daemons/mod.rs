@@ -290,12 +290,12 @@ mod tests {
     fn preset_run_override_keeps_initialization() {
         let config = files(&[(
             "/project/mise.toml",
-            "[daemons.db]\npreset = 'postgres'\nversion = '18'\nrun = 'echo starting && postgres -D /data'\n",
+            "[daemons.db]\npreset = 'postgres'\nversion = '18'\nrun = 'echo starting && exec postgres -D /data'\n",
         )]);
         let set = load(&config).unwrap();
         let run = set.daemons["db"].table["run"].as_str().unwrap();
         assert!(run.contains("daemons __init"));
-        assert!(run.contains("&& exec sh -c 'echo starting && postgres -D /data'"));
+        assert!(run.ends_with("&& echo starting && exec postgres -D /data"));
         let invalid = files(&[(
             "/project/mise.toml",
             "[daemons.db]\npreset = 'postgres'\nversion = '18'\nrun = 42\n",

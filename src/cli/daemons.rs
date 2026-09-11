@@ -116,36 +116,47 @@ impl Daemons {
         if !roots.iter().any(|r| r == root) {
             roots.push(root.to_path_buf());
         }
+        let (names, flags) = split_args(action, &args)?;
+        let install = matches!(action, "start" | "restart");
+        let mut root_ids = Vec::new();
+        for root in &roots {
+            let previous = runtime::read_state(root)?;
+            let namespace = if previous.namespace.is_empty() {
+                runtime::namespace(root)?
+            } else {
+                previous.namespace.clone()
+            };
+            let mut ids = if install { Vec::new() } else { previous.ids };
+            ids.extend(
+                loaded
+                    .for_root(root)
+                    .daemons
+                    .keys()
+                    .map(|name| format!("{namespace}/{name}")),
+            );
+            root_ids.push(ids);
+        }
+        // Validate the entire request before any root installs tools or changes state.
+        for name in &names {
+            if !root_ids.iter().flatten().any(|id| matches_name(id, name)) {
+                bail!("no matching project daemons for {name:?}");
+            }
+        }
         let mut rows = Vec::new();
         let mut matched = false;
-        for root in roots {
+        for (root, ids) in roots.into_iter().zip(root_ids) {
+            if !names.is_empty()
+                && !ids
+                    .iter()
+                    .any(|id| names.iter().any(|name| matches_name(id, name)))
+            {
+                continue;
+            }
             let scoped = runtime::config_for_root(&config, &root).await?;
             let set = scoped.daemons()?.for_root(&root);
             let previous = runtime::read_state(&root)?;
             if set.daemons.is_empty() && previous.ids.is_empty() {
                 continue;
-            }
-            let install = matches!(action, "start" | "restart");
-            // Reject unmatched names before installing tools or registering configs.
-            if args.first().is_some_and(|arg| !arg.starts_with('-')) {
-                let namespace = if previous.namespace.is_empty() {
-                    runtime::namespace(&root)?
-                } else {
-                    previous.namespace.clone()
-                };
-                let matches = args.iter().any(|arg| {
-                    set.daemons
-                        .keys()
-                        .any(|name| arg == name || *arg == format!("{namespace}/{name}"))
-                        || (!install
-                            && previous
-                                .ids
-                                .iter()
-                                .any(|id| id == arg || id.rsplit('/').next() == Some(arg.as_str())))
-                });
-                if !matches {
-                    continue;
-                }
             }
             let (scoped, ts) = runtime::toolset(&scoped, install).await?;
             let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
@@ -185,28 +196,12 @@ impl Daemons {
             } else {
                 (previous, None)
             };
-            let mut selected = Vec::new();
-            let mut flags = Vec::new();
-            for arg in &args {
-                if let Some(id) = state
-                    .ids
-                    .iter()
-                    .find(|id| *id == arg || id.rsplit('/').next() == Some(arg.as_str()))
-                {
-                    selected.push(id.clone());
-                } else {
-                    flags.push(arg.clone());
-                }
-            }
-            if selected.is_empty()
-                && args.first().is_some_and(|a| !a.starts_with('-'))
-                && flags.len() == args.len()
-            {
-                continue;
-            }
-            if selected.is_empty() {
-                selected = state.ids.clone();
-            }
+            let mut selected: Vec<_> = state
+                .ids
+                .iter()
+                .filter(|id| names.is_empty() || names.iter().any(|name| matches_name(id, name)))
+                .cloned()
+                .collect();
             if install {
                 selected.retain(|id| {
                     set.daemons
@@ -229,7 +224,7 @@ impl Daemons {
             } else {
                 let mut forwarded = vec![action.into()];
                 forwarded.extend(selected);
-                forwarded.extend(flags);
+                forwarded.extend(flags.clone());
                 runtime.exec(&root, forwarded).await?;
             }
         }
@@ -252,5 +247,106 @@ impl Daemons {
             bail!("no matching project daemons; define [daemons] in mise.toml");
         }
         Ok(())
+    }
+}
+
+fn matches_name(id: &str, name: &str) -> bool {
+    id == name || id.rsplit('/').next() == Some(name)
+}
+
+/// Separate positional IDs from pitchfork options before matching project roots.
+/// Value-taking options must retain their values even when a value is a daemon name.
+fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>)> {
+    let mut names = Vec::new();
+    let mut flags = Vec::new();
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--" {
+            names.extend(args.cloned());
+            break;
+        }
+        if !arg.starts_with('-') {
+            names.push(arg.clone());
+            continue;
+        }
+        flags.push(arg.clone());
+        let takes_value = match action {
+            "start" | "restart" => matches!(
+                arg.as_str(),
+                "--group"
+                    | "--delay"
+                    | "--output"
+                    | "--http"
+                    | "--port"
+                    | "--cmd"
+                    | "--health-cmd"
+                    | "--health-http"
+                    | "--health-port"
+                    | "--expected-port"
+                    | "--shell-pid"
+            ),
+            "stop" => arg == "--group",
+            "logs" => matches!(
+                arg.as_str(),
+                "-n" | "-s"
+                    | "--since"
+                    | "-u"
+                    | "--until"
+                    | "--grep"
+                    | "--regex"
+                    | "--level"
+                    | "--field"
+                    | "--jq"
+            ),
+            _ => false,
+        };
+        let short_value = action == "logs"
+            && !arg.starts_with("--")
+            && arg
+                .char_indices()
+                .skip(1)
+                .find(|(_, ch)| matches!(ch, 'n' | 's' | 'u'))
+                .is_some_and(|(index, ch)| index + ch.len_utf8() == arg.len());
+        if takes_value || short_value {
+            let value = args
+                .next()
+                .ok_or_else(|| eyre::eyre!("{arg} requires a value"))?;
+            flags.push(value.clone());
+        } else if action == "start"
+            && arg == "--bump"
+            && args
+                .clone()
+                .next()
+                .is_some_and(|value| value.parse::<u32>().is_ok())
+        {
+            flags.push(args.next().unwrap().clone());
+        }
+    }
+    Ok((names, flags))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_are_independent_of_flag_order_and_values() {
+        for args in [vec!["--force", "missing"], vec!["missing", "--force"]] {
+            let args = args.into_iter().map(String::from).collect::<Vec<_>>();
+            let (names, flags) = split_args("start", &args).unwrap();
+            assert_eq!(names, ["missing"]);
+            assert_eq!(flags, ["--force"]);
+        }
+        let args = ["--grep", "api", "--since=5m", "web", "-n", "20"].map(String::from);
+        let (names, flags) = split_args("logs", &args).unwrap();
+        assert_eq!(names, ["web"]);
+        assert_eq!(flags, ["--grep", "api", "--since=5m", "-n", "20"]);
+        let (names, flags) =
+            split_args("logs", &["-fn".into(), "20".into(), "web".into()]).unwrap();
+        assert_eq!(names, ["web"]);
+        assert_eq!(flags, ["-fn", "20"]);
+        assert!(split_args("logs", &["--grep".into()]).is_err());
+        let (names, _) = split_args("start", &["--".into(), "missing".into()]).unwrap();
+        assert_eq!(names, ["missing"]);
     }
 }

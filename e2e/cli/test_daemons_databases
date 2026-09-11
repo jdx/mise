@@ -15,6 +15,13 @@ export PATH="$HOME/bin:$PATH"
 trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
 pg_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 redis_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+# A compound override must initialize first and leave the database as the tracked PID.
+cat >start-postgres <<'SH'
+#!/bin/sh
+data=$(find "$MISE_STATE_DIR/daemons" -path '*/data/postgres' -type d -print -quit)
+test -f "$data/PG_VERSION" || exit 1
+exec postgres -D "$data" -p "$PGPORT" -h 127.0.0.1 -k ''
+SH
 cat >mise.toml <<TOML
 [tools]
 pitchfork = "system"
@@ -24,6 +31,7 @@ preset = "postgres"
 version = "18"
 port = $pg_port
 options.database = "integration"
+run = "echo starting && exec sh ./start-postgres"
 [daemons.redis]
 preset = "redis"
 version = "8"
@@ -38,10 +46,13 @@ cat >>mise.toml <<'TOML'
 locked = true
 TOML
 mise daemons start
+pg_pid=$(mise daemons ls --json | jq -r '.[] | select(.name == "postgres") | .pid')
+assert_contains "ps -p '$pg_pid' -o comm=" postgres
 assert_contains "mise daemons ls --json" '"status": "running"'
 mise exec -- psql -h 127.0.0.1 -p "$pg_port" -U postgres -d integration -c 'CREATE TABLE proof (value integer); INSERT INTO proof VALUES (42);'
 assert_contains "mise exec -- redis-cli -h 127.0.0.1 -p '$redis_port' SET proof retained" OK
 mise daemons stop
+assert_fail "kill -0 '$pg_pid'"
 mise daemons start
 assert_contains "mise exec -- psql -h 127.0.0.1 -p '$pg_port' -U postgres -d integration -Atc 'SELECT value FROM proof'" 42
 assert_contains "mise exec -- redis-cli -h 127.0.0.1 -p '$redis_port' GET proof" retained
