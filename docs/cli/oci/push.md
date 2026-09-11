@@ -19,7 +19,7 @@ uploaded, so repeat pushes of mostly-unchanged toolsets are cheap.
 Tool layers whose tool, version, mount point, and file owner match the
 previously pushed image (or `--cache-from`) are reused without being
 rebuilt — those tools don't even need to be installed locally. Pass
-`--no-cache` to force a full local rebuild.
+`--no-cache` to rebuild tool layers without using the remote or local layer cache.
 
 Credentials are read from the same places docker and podman use:
 `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`,
@@ -42,7 +42,7 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
   See `mise oci build --help` for details.
 - **`--mount-point <MOUNT_POINT>`** — Override in-image mount point (ignored with --image-dir)
-- **`--no-cache`** — Don't reuse tool layers from the previously pushed image
+- **`--no-cache`** — Rebuild tool layers without using the remote or local layer cache
 - **`--no-mise`** — Don't embed the mise binary (ignored with --image-dir)
 - **`--owner <UID[:GID]>`** — UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
 

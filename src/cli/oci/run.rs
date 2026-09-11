@@ -146,6 +146,7 @@ impl Run {
                     // every blob present — no remote reuse.
                     reuse_from: None,
                     push_destination: None,
+                    no_cache: false,
                 };
                 let built = perform_build(opts, self.include_global).await?;
                 info!("built image: {}", built.manifest_digest);

@@ -82,6 +82,10 @@ pub(super) struct Build {
     #[usage(long)]
     no_mise: bool,
 
+    /// Rebuild tool layers without reading or writing the local layer cache
+    #[usage(long)]
+    no_cache: bool,
+
     /// UID[:GID] to assign to every tar entry in generated layers
     ///
     /// Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
@@ -107,6 +111,7 @@ impl Build {
             // must produce a complete, standalone image directory.
             reuse_from: None,
             push_destination: None,
+            no_cache: self.no_cache,
         };
         let out = perform_build(opts, self.include_global).await?;
 

@@ -61,6 +61,8 @@ pub(crate) struct BuildOptions {
     /// Push destination; permits base blobs already in that repository to
     /// remain remote when no build step needs to unpack them.
     pub push_destination: Option<String>,
+    /// Bypass the local tool-layer cache (remote reuse is supplied separately).
+    pub no_cache: bool,
 }
 
 /// Cache key for tool-layer reuse. All four parts must match — a layer built
@@ -333,17 +335,12 @@ impl Builder {
                 n = built_tool_count
             );
         }
+        // Fail cheaply before unpacking a rootfs or installing system packages.
+        // Confirm a missing path under the lock: a reinstall may temporarily
+        // remove it. The packaging check remains authoritative for present paths.
         for (i, (_, tv)) in versions.iter().enumerate() {
-            if tool_reuse[i].is_some() {
-                continue; // layer comes from the cache image; no install needed
-            }
-            let install_path = tv.install_path();
-            if !install_path.is_dir() {
-                bail!(
-                    "{} install path does not exist: {}. Run `mise install` first.",
-                    tv.style(),
-                    install_path.display()
-                );
+            if tool_reuse[i].is_none() {
+                preflight_tool_install(tv)?;
             }
         }
 
@@ -381,6 +378,11 @@ impl Builder {
                 );
                 ToolLayer::Reused(reused.clone())
             } else {
+                // Coordinate with install, link, and uninstall before inspecting
+                // the source. Hold through fingerprinting, packaging, and cache
+                // publication so a same-version reinstall cannot poison a key.
+                let _install_lock = lock_tool_install(tv)?;
+                require_tool_install(tv)?;
                 let is_pipx = tv.ba().backend_type() == BackendType::Pipx;
                 // Only pipx layers are expected to link into another tool's
                 // install. Other backends get their own mapping for shebang
@@ -403,12 +405,28 @@ impl Builder {
                     Vec::new()
                 };
                 let relocation = layer::ToolRelocation::new(paths).with_pythons(pythons);
-                let blob = layer::build_relocated_tool_layer_from_dir(
-                    &tv.install_path(),
-                    &tv_prefix,
-                    owner,
-                    &relocation,
-                )
+                let blob = if self.opts.no_cache {
+                    layer::build_relocated_tool_layer_from_dir(
+                        &tv.install_path(),
+                        &tv_prefix,
+                        owner,
+                        &relocation,
+                    )
+                } else {
+                    layer::build_cached_tool_layer(
+                        &tv.install_path(),
+                        &tv_prefix,
+                        owner,
+                        &relocation,
+                        &tv.cache_path().join("oci-layers"),
+                    )
+                    .map(|(blob, hit)| {
+                        if hit {
+                            info!("oci: reusing {} layer from the local cache", tv.style());
+                        }
+                        blob
+                    })
+                }
                 .wrap_err_with(|| format!("building layer for {}", tv.style()))?;
                 ToolLayer::Built(blob)
             };
@@ -919,6 +937,36 @@ impl Builder {
     }
 }
 
+/// Coordinate source checks and packaging with installation transactions.
+fn lock_tool_install(tv: &ToolVersion) -> Result<fslock::LockFile> {
+    crate::toolset::install_state::lock_tool_version_with_notice(
+        &tv.ba().short,
+        &tv.tv_pathname(),
+        &|| info!("oci: waiting for {} install lock", tv.style()),
+    )
+}
+
+/// Check cheaply when present, but wait for a reinstall before reporting absence.
+fn preflight_tool_install(tv: &ToolVersion) -> Result<()> {
+    if !tv.install_path().is_dir() {
+        let _install_lock = lock_tool_install(tv)?;
+        require_tool_install(tv)?;
+    }
+    Ok(())
+}
+
+fn require_tool_install(tv: &ToolVersion) -> Result<()> {
+    let install_path = tv.install_path();
+    if !install_path.is_dir() {
+        bail!(
+            "{} install path does not exist: {}. Run `mise install` first.",
+            tv.style(),
+            install_path.display()
+        );
+    }
+    Ok(())
+}
+
 fn resolve_layer_owner(opts_owner: Option<LayerOwner>, oci: &OciConfig) -> LayerOwner {
     opts_owner.unwrap_or_else(|| {
         let uid = oci.user_id.unwrap_or(0);
@@ -1344,6 +1392,49 @@ fn cached_tool_path_entries(remote: &registry::RemoteImage, tool_root: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_install_preflight_waits_for_reinstall() {
+        use crate::toolset::{ToolRequest, ToolSource};
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let td = tempfile::tempdir().unwrap();
+        let version = td
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let backend =
+            crate::cli::args::BackendArg::new("node".to_string(), Some("core:node".to_string()));
+        let request =
+            ToolRequest::new_version_for_test(backend.into(), &version, ToolSource::Unknown);
+        let mut tv = ToolVersion::new(request, version);
+        tv.install_path = Some(td.path().join("install"));
+        let held = lock_tool_install(&tv).unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                started_tx.send(()).unwrap();
+                done_tx.send(preflight_tool_install(&tv)).unwrap();
+            });
+            started_rx.recv().unwrap();
+            let before_unlock = done_rx.recv_timeout(Duration::from_millis(100));
+            // Simulate the installer completing while holding its transaction lock.
+            std::fs::create_dir(tv.install_path()).unwrap();
+            drop(held);
+            assert!(matches!(
+                before_unlock,
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ));
+            done_rx
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap()
+                .unwrap();
+        });
+    }
 
     fn layer(annotations: &[(&str, &str)], digest: &str) -> Descriptor {
         Descriptor {

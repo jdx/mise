@@ -5026,6 +5026,9 @@ Where to place tool installs inside the image (default: /mise)
 \fB\-\-no\-mise\fR
 Do not embed the currently\-running mise binary at /usr/local/bin/mise
 .TP
+\fB\-\-no\-cache\fR
+Rebuild tool layers without reading or writing the local layer cache
+.TP
 \fB\-\-owner\fR \fI<UID[:GID]>\fR
 UID[:GID] to assign to every tar entry in generated layers
 
@@ -5054,7 +5057,7 @@ uploaded, so repeat pushes of mostly\-unchanged toolsets are cheap.
 Tool layers whose tool, version, mount point, and file owner match the
 previously pushed image (or `\-\-cache\-from`) are reused without being
 rebuilt — those tools don't even need to be installed locally. Pass
-`\-\-no\-cache` to force a full local rebuild.
+`\-\-no\-cache` to rebuild tool layers without using the remote or local layer cache.
 
 Credentials are read from the same places docker and podman use:
 `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`,
@@ -5089,7 +5092,7 @@ See `mise oci build \-\-help` for details.
 Override in\-image mount point (ignored with \-\-image\-dir)
 .TP
 \fB\-\-no\-cache\fR
-Don't reuse tool layers from the previously pushed image
+Rebuild tool layers without using the remote or local layer cache
 .TP
 \fB\-\-no\-mise\fR
 Don't embed the mise binary (ignored with \-\-image\-dir)

@@ -35,6 +35,7 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 - **`-t --tag <TAG>`** — Tag to record in the image index (the org.opencontainers.image.ref.name annotation)
 - **`--mount-point <MOUNT_POINT>`** — Where to place tool installs inside the image (default: /mise)
 - **`--no-mise`** — Do not embed the currently-running mise binary at /usr/local/bin/mise
+- **`--no-cache`** — Rebuild tool layers without reading or writing the local layer cache
 - **`--owner <UID[:GID]>`** — UID[:GID] to assign to every tar entry in generated layers
 
   Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.

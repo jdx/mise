@@ -179,6 +179,24 @@ failures are retried with backoff (`http_retries` controls attempts).
 
 ### Layer reuse
 
+`oci build`, `oci run`, and `oci push` share a local cache of packaged tool
+layers. An unchanged tool only needs to be tarred and gzipped once, even when
+building separate images or using different output directories. Concurrent
+builds coordinate per cache entry, and each output layout receives its own
+complete copy of the locally cached layer.
+
+Local reuse hashes the files and their image paths, executable permissions,
+symlink targets, ownership, and relocated contents. Editing or reinstalling a
+tool invalidates its cache when the packaged content changes, even if the
+version, file size, and modification time stay the same. Cache hits still read
+and hash the installation; they avoid tar construction and gzip compression.
+The base image is not part of a tool layer's cache key.
+
+Pass `oci build --no-cache` or `oci push --no-cache` to bypass the local cache.
+`mise cache clear TOOL` removes that tool's cached layers; `mise cache clear`
+removes all cached layers. Cache entries live in the normal mise tool cache,
+so CI jobs can preserve them along with `MISE_CACHE_DIR`.
+
 When pushing an image whose base lives in the **same repository** as the
 destination, mise fetches the current base manifest and config but leaves its
 layer blobs in the registry. Mutable base tags are resolved on every push.
@@ -203,7 +221,7 @@ and packaged.
   mise oci push --cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$GIT_SHA
   ```
 
-- `--no-cache` disables reuse and rebuilds every layer from the local
+- `--no-cache` disables remote and local tool-layer reuse and rebuilds from local
   installs (docker-style escape hatch — reuse trusts that the
   registry's layer content matches its annotations, rather than
   rebuilding the exact bytes locally).

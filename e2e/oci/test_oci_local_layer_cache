@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Local tool layers are reusable across independent, complete OCI layouts.
+export MISE_EXPERIMENTAL=1
+export SOURCE_DATE_EPOCH=1700000000
+
+cat >mise.toml <<'EOF'
+[tools]
+jq = "1.8.1"
+EOF
+mise install >/dev/null 2>&1
+
+mise oci build --from scratch --no-mise -o first >first.log 2>&1
+assert_not_contains "cat first.log" "layer from the local cache"
+mise oci build --from scratch --no-mise -o second >second.log 2>&1
+assert_contains "cat second.log" "layer from the local cache"
+assert "jq -r '.manifests[0].digest' second/index.json" "$(jq -r '.manifests[0].digest' first/index.json)"
+
+# Independently verify every referenced blob and uncompressed layer digest.
+python3 - <<'PY'
+import gzip
+import hashlib
+import json
+from pathlib import Path
+
+root = Path("second/blobs/sha256")
+
+def read(desc):
+    data = (root / desc["digest"].removeprefix("sha256:")).read_bytes()
+    assert len(data) == desc["size"]
+    assert "sha256:" + hashlib.sha256(data).hexdigest() == desc["digest"]
+    return data
+
+index = json.loads(Path("second/index.json").read_text())
+manifest = json.loads(read(index["manifests"][0]))
+config = json.loads(read(manifest["config"]))
+for layer, diff_id in zip(manifest["layers"], config["rootfs"]["diff_ids"], strict=True):
+    assert "sha256:" + hashlib.sha256(gzip.decompress(read(layer))).hexdigest() == diff_id
+PY
+
+mise oci build --from scratch --no-mise --no-cache -o uncached >uncached.log 2>&1
+assert_not_contains "cat uncached.log" "layer from the local cache"
+assert "jq -r '.manifests[0].digest' uncached/index.json" "$(jq -r '.manifests[0].digest' first/index.json)"
+
+# Mutating an installation at the same version invalidates the local cache.
+printf 'added content\n' >"$(mise where jq)/extra-file"
+mise oci build --from scratch --no-mise -o changed >changed.log 2>&1
+assert_not_contains "cat changed.log" "layer from the local cache"
+assert_succeed "test '$(jq -r '.manifests[0].digest' changed/index.json)' != '$(jq -r '.manifests[0].digest' first/index.json)'"
+mise oci build --from scratch --no-mise -o changed-again >changed-again.log 2>&1
+assert_contains "cat changed-again.log" "layer from the local cache"
+
+mise cache clear jq
+mise oci build --from scratch --no-mise -o cleared >cleared.log 2>&1
+assert_not_contains "cat cleared.log" "layer from the local cache"
+
+# Missing installs fail before any system-package work is attempted.
+# Control: with the tool present, package processing must reject scratch.
+cat >>mise.toml <<'EOF'
+[bootstrap.packages]
+"apt:curl" = "latest"
+EOF
+assert_fail "mise oci build --from scratch --no-mise -o packages-control" "requires an apt-based base image"
+mise uninstall jq
+assert_fail "mise oci build --from scratch --no-mise -o missing" "install path does not exist"

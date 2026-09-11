@@ -17,7 +17,7 @@ use crate::oci::{BuildOptions, LayerOwner, registry};
 /// Tool layers whose tool, version, mount point, and file owner match the
 /// previously pushed image (or `--cache-from`) are reused without being
 /// rebuilt — those tools don't even need to be installed locally. Pass
-/// `--no-cache` to force a full local rebuild.
+/// `--no-cache` to rebuild tool layers without using the remote or local layer cache.
 ///
 /// Credentials are read from the same places docker and podman use:
 /// `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`,
@@ -62,7 +62,7 @@ pub(super) struct Push {
     #[usage(long)]
     mount_point: Option<String>,
 
-    /// Don't reuse tool layers from the previously pushed image
+    /// Rebuild tool layers without using the remote or local layer cache
     #[usage(long)]
     no_cache: bool,
 
@@ -126,6 +126,7 @@ impl Push {
                     copy: vec![],
                     reuse_from: self.fetch_layer_cache().await?,
                     push_destination: Some(self.reference.clone()),
+                    no_cache: self.no_cache,
                 };
                 let built = perform_build(opts, self.include_global).await?;
                 reused_layers = built.tool_layers.iter().filter(|l| l.reused).count();
