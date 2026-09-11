@@ -527,7 +527,7 @@ pub(crate) async fn generate(
                 })
                 .filter_map(|old| old.platforms.get(&platform.to_key()))
             {
-                ensure_no_downgrade(old, &info)?;
+                ensure_no_downgrade(old, &info, &backend)?;
             }
         }
         if let Some(error) = check_single_tool_provenance(
@@ -564,8 +564,19 @@ pub(crate) async fn generate(
     Ok(candidate)
 }
 
-fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo) -> Result<()> {
-    if new.provenance < old.provenance {
+fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {
+    // A verified Packslip signer is the replacement trust baseline for an
+    // artifact authenticated by its signed release manifest. Older incremental
+    // lock updates could carry detected GitHub provenance into a Packslip entry,
+    // but complete generation intentionally does not persist that unverified
+    // link. Without a signer, retain the ordinary provenance ratchet.
+    let packslip_signer_replaces_provenance =
+        backend.starts_with("packslip:") && new.signer.is_some();
+    if provenance_is_downgrade(
+        old.provenance.as_ref(),
+        new.provenance.as_ref(),
+        packslip_signer_replaces_provenance,
+    ) {
         bail!(
             "lockfile generation would downgrade recorded provenance; previous files were preserved"
         );
@@ -590,13 +601,30 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo) -> Result<()> {
             .iter()
             .find(|new| new.url == artifact.url)
             .or_else(|| replacements.next());
-        if replacement.and_then(|a| a.provenance.as_ref()) < artifact.provenance.as_ref() {
+        if provenance_is_downgrade(
+            artifact.provenance.as_ref(),
+            replacement.and_then(|a| a.provenance.as_ref()),
+            packslip_signer_replaces_provenance,
+        ) {
             bail!(
                 "lockfile generation would downgrade additional artifact provenance; previous files were preserved"
             );
         }
     }
     Ok(())
+}
+
+fn provenance_is_downgrade(
+    old: Option<&ProvenanceType>,
+    new: Option<&ProvenanceType>,
+    packslip_signer_replaces_provenance: bool,
+) -> bool {
+    if packslip_signer_replaces_provenance
+        && old.is_some_and(ProvenanceType::is_github_attestations)
+    {
+        return false;
+    }
+    new < old
 }
 
 fn validate_provenance_settings(
@@ -1196,10 +1224,40 @@ mod tests {
             provenance_verified: Some(false),
             ..Default::default()
         };
-        assert!(ensure_no_downgrade(&old, &PlatformInfo::default()).is_err());
+        assert!(ensure_no_downgrade(&old, &PlatformInfo::default(), "github:o/r").is_err());
         let mut new = old.clone();
         new.provenance_verified = None;
-        assert!(ensure_no_downgrade(&old, &new).is_ok());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_ok());
+    }
+
+    #[test]
+    fn packslip_replaces_legacy_provenance_with_its_signer_chain() {
+        let old = PlatformInfo {
+            provenance: Some(ProvenanceType::GithubAttestations),
+            signer: Some(
+                "sigstore-oidc:https://github.com/o/r/.github/workflows/release.yml".into(),
+            ),
+            ..Default::default()
+        };
+        let mut new = old.clone();
+        new.provenance = None;
+
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_ok());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_err());
+
+        new.signer = None;
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
+
+        new.signer =
+            Some("sigstore-oidc:https://github.com/o/r/.github/workflows/other.yml".into());
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
+
+        new.signer = old.signer.clone();
+        let old = PlatformInfo {
+            provenance: Some(ProvenanceType::Slsa { url: None }),
+            ..old
+        };
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
     }
 
     #[test]
@@ -1211,7 +1269,27 @@ mod tests {
             }],
             ..Default::default()
         };
-        assert!(ensure_no_downgrade(&old, &PlatformInfo::default()).is_err());
+        assert!(ensure_no_downgrade(&old, &PlatformInfo::default(), "github:o/r").is_err());
+
+        let mut new = PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/o/r/.github/workflows/release.yml".into(),
+            ),
+            ..Default::default()
+        };
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_ok());
+
+        let old = PlatformInfo {
+            additional_artifacts: vec![ArtifactInfo {
+                provenance: Some(ProvenanceType::Slsa { url: None }),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
+
+        new.signer = None;
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
     }
 
     #[test]
@@ -1232,12 +1310,12 @@ mod tests {
         };
         let mut new = old.clone();
         new.additional_artifacts.reverse();
-        assert!(ensure_no_downgrade(&old, &new).is_ok());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_ok());
         new.additional_artifacts[1].url = "https://example.com/verified-v2".into();
-        assert!(ensure_no_downgrade(&old, &new).is_ok());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_ok());
         new.additional_artifacts[1].provenance = None;
-        assert!(ensure_no_downgrade(&old, &new).is_err());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_err());
         new.additional_artifacts.pop();
-        assert!(ensure_no_downgrade(&old, &new).is_err());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_err());
     }
 }
