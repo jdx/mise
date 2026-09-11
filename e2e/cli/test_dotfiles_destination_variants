@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 
-mkdir -p dotfiles/bin
+mkdir -p dotfiles/bin variant-root/vscode
 printf '{"shared":true}\n' >dotfiles/settings.json
+printf '{"rooted":true}\n' >variant-root/vscode/settings.json
 echo 'answer = {{ 6 * 7 }}' >dotfiles/settings.tera
 echo script >dotfiles/bin/example
 
-cat >mise.toml <<'TOML'
+cat >mise.toml <<TOML
+[settings]
+dotfiles.root = "$PWD/variant-root"
+
 [dotfiles.settings]
 source = "dotfiles/settings.json"
 mode = "copy"
@@ -13,6 +17,13 @@ variants = [
   { os = "linux", target = "~/.config/code/settings.json" },
   { os = "macos", target = "~/Library/Application Support/Code/User/settings.json" },
   { os = "windows", target = 'C:\Users\example\settings.json' },
+]
+
+[dotfiles."vscode/settings.json"]
+mode = "copy"
+variants = [
+  { os = "linux", target = "~/.config/rooted-code/settings.json" },
+  { os = "macos", target = "~/Library/Application Support/Rooted Code/User/settings.json" },
 ]
 
 [dotfiles."~/.default-settings.json"]
@@ -41,6 +52,7 @@ TOML
 
 assert_succeed "mise bootstrap dotfiles apply --yes"
 assert "cat ~/.config/code/settings.json" '{"shared":true}'
+assert "cat ~/.config/rooted-code/settings.json" '{"rooted":true}'
 assert "readlink ~/.default-settings.json" "$PWD/dotfiles/settings.json"
 assert "cat ~/.rendered-settings" "answer = 42"
 assert "readlink ~/.variant-bin/example" "$PWD/dotfiles/bin/example"
@@ -125,7 +137,13 @@ mode = "copy"
 variants = [{ default = true, target = "relative.json" }]
 [dotfiles.no-source]
 mode = "copy"
-variants = [{ default = true, target = "~/.no-source" }]
+variants = [
+  { profile = "work", target = "~/.no-source" },
+  { default = true },
+]
+[dotfiles."../escaping-source"]
+mode = "copy"
+variants = [{ default = true, target = "~/.escaping-source" }]
 TOML
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles."~/.tracked"]
@@ -136,6 +154,7 @@ assert_contains "mise bootstrap dotfiles status 2>&1" "ambiguous dotfile variant
 assert_contains "mise bootstrap dotfiles status 2>&1" "variants allow only one default"
 assert_contains "mise bootstrap dotfiles status 2>&1" "variant target must be absolute"
 assert_contains "mise bootstrap dotfiles status 2>&1" "target overrides are not supported"
-assert_contains "mise bootstrap dotfiles status 2>&1" "destination variants require an explicit source"
+assert_contains "mise bootstrap dotfiles status 2>&1" "destination variants require an explicit source when any variant uses the entry key as its target"
+assert_contains "mise bootstrap dotfiles status 2>&1" "an implied source entry key must not contain '..'"
 assert_fail "test -e ~/.ambiguous-one"
 assert_fail "test -e ~/.ambiguous-two"

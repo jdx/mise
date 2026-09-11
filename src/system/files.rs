@@ -201,22 +201,33 @@ impl<'de> Deserialize<'de> for FileVariant {
 }
 
 /// Validate selector combinations and destination syntax before selecting a variant.
+/// Returns a `dotfiles.root`-relative implied source for a logical entry key.
 fn validate_file_variants(
     target: &str,
     source: Option<&str>,
+    content: Option<&str>,
     mode: Option<&str>,
     variants: &[FileVariant],
-) -> Result<()> {
+) -> Result<Option<PathBuf>> {
     let selectors: Vec<_> = variants.iter().map(|v| v.selector.clone()).collect();
     crate::system::history::select::validate(&selectors)?;
-    if variants.iter().any(|v| v.target.is_some()) {
-        if mode == Some("track") {
-            bail!("target overrides are not supported with mode = \"track\"");
-        }
-        if source.is_none() {
-            bail!("destination variants require an explicit source");
-        }
+    let has_target_override = variants.iter().any(|v| v.target.is_some());
+    if has_target_override && mode == Some("track") {
+        bail!("target overrides are not supported with mode = \"track\"");
     }
+    if has_target_override && content.is_some() {
+        bail!("destination variants with inline content are not supported");
+    }
+    let implied_source = if has_target_override && source.is_none() {
+        if !variants.iter().all(|v| v.target.is_some()) {
+            bail!(
+                "destination variants require an explicit source when any variant uses the entry key as its target"
+            );
+        }
+        Some(logical_source_path(target)?)
+    } else {
+        None
+    };
     if variants.is_empty() && resolve_target_arg(target).is_relative() {
         bail!("target must be absolute or start with ~/");
     }
@@ -226,7 +237,33 @@ fn validate_file_variants(
             bail!("variant target must be absolute or start with ~/");
         }
     }
-    Ok(())
+    Ok(implied_source)
+}
+
+fn logical_source_path(key: &str) -> Result<PathBuf> {
+    let path = file::replace_path(key);
+    if !path.is_relative() {
+        bail!(
+            "destination variants require an explicit source unless the entry key is a relative source path"
+        );
+    }
+    let mut relative = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(component) => relative.push(component),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                bail!("an implied source entry key must not contain '..'");
+            }
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                bail!("an implied source entry key must be relative");
+            }
+        }
+    }
+    if relative.as_os_str().is_empty() {
+        bail!("an implied source entry key must not be empty");
+    }
+    Ok(relative)
 }
 
 /// Inactive variants can contain another platform's absolute path syntax.
@@ -644,7 +681,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 }
             }
             if let FileTomlEntry::Source(_) = &entry {
-                validate_file_variants(&target, None, None, &[])?;
+                validate_file_variants(&target, None, None, None, &[])?;
             }
             if let FileTomlEntry::Table {
                 source,
@@ -656,9 +693,10 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 ..
             } = entry
             {
-                validate_file_variants(
+                let implied_variant_source = validate_file_variants(
                     &target,
                     source.as_deref(),
+                    content.as_deref(),
                     mode.as_deref(),
                     variants.as_deref().unwrap_or_default(),
                 )?;
@@ -687,7 +725,11 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 if source.is_some() && content.is_some() {
                     bail!("dotfile {target} cannot declare both source and content");
                 }
-                if mode != FileMode::Track && source.is_none() && content.is_none() {
+                if mode != FileMode::Track
+                    && source.is_none()
+                    && content.is_none()
+                    && implied_variant_source.is_none()
+                {
                     implied_source(&resolve_target_arg(&target))?;
                 }
                 if let Some(manifest) = manifest
@@ -900,12 +942,20 @@ fn merge_file_entry(
     };
     let enabled = enabled.unwrap_or(true);
     let variants = variants.unwrap_or_default();
-    if let Err(err) =
-        validate_file_variants(&target_raw, source.as_deref(), mode.as_deref(), &variants)
-    {
-        record_invalid(&target_raw, &origin.config, err.to_string());
-        return;
-    }
+    let implied_variant_source = match validate_file_variants(
+        &target_raw,
+        source.as_deref(),
+        content.as_deref(),
+        mode.as_deref(),
+        &variants,
+    ) {
+        Ok(Some(relative)) => Some(dotfiles_root().join(relative)),
+        Ok(None) => None,
+        Err(err) => {
+            record_invalid(&target_raw, &origin.config, err.to_string());
+            return;
+        }
+    };
     let selectors: Vec<_> = variants.iter().map(|v| v.selector.clone()).collect();
     let policy_for = |mode: FileMode| {
         let defaults = FilePolicy::for_mode(mode);
@@ -1059,7 +1109,10 @@ fn merge_file_entry(
                 source
             }
         }
-        None => match implied_source(&target) {
+        None => match implied_variant_source
+            .map(Ok)
+            .unwrap_or_else(|| implied_source(&target))
+        {
             Ok(source) => source,
             Err(err) => {
                 warn!("[dotfiles].\"{target_raw}\": {err}, ignoring entry");
@@ -3442,8 +3495,7 @@ mod tests {
 
         let path = dirs::HOME.join(".config/mise/config.toml");
         let body = r#"
-[dotfiles.settings]
-source = "dotfiles/settings.json"
+[dotfiles."vscode/settings.json"]
 mode = "copy"
 variants = [
     { os = "macos", target = "~/Library/Application Support/Code/User/settings.json" },
@@ -3468,6 +3520,49 @@ variants = [
             Arc::new(MiseToml::for_history_preflight(&invalid, &path)?),
         );
         assert!(validate_incoming_files(&configs).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn destination_variants_infer_safe_root_relative_sources() -> Result<()> {
+        let entry: FileTomlEntry = toml::from_str(
+            r#"
+mode = "copy"
+variants = [
+    { os = "macos", target = "~/Library/Application Support/Code/User/settings.json" },
+    { os = "linux", target = "~/.config/Code/User/settings.json" },
+]
+"#,
+        )?;
+        let FileTomlEntry::Table {
+            source,
+            content,
+            mode,
+            variants: Some(variants),
+            ..
+        } = entry
+        else {
+            bail!("expected a table entry with variants");
+        };
+        assert_eq!(
+            validate_file_variants(
+                "vscode/settings.json",
+                source.as_deref(),
+                content.as_deref(),
+                mode.as_deref(),
+                &variants,
+            )?,
+            Some(PathBuf::from("vscode/settings.json"))
+        );
+        for key in [
+            "",
+            ".",
+            "../settings.json",
+            "vscode/../settings.json",
+            "~/.settings.json",
+        ] {
+            assert!(logical_source_path(key).is_err(), "{key}");
+        }
         Ok(())
     }
 
