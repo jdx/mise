@@ -111,7 +111,7 @@
 
 - [Task Overview](https://mise.jdx.dev/tasks/): A task is a named command or script that runs with your project's tools and environment variables. Use tasks for builds, tests, linters, development servers, and other commands you want teammates and…
 - [Task Architecture](https://mise.jdx.dev/tasks/architecture.html): Understanding how mise's task system works helps you write more efficient tasks and troubleshoot dependency issues.
-- [Running Tasks](https://mise.jdx.dev/tasks/running-tasks.html): List available tasks with mise tasks. To show tasks hidden with hide=true, use the --hidden option.
+- [Running Tasks](https://mise.jdx.dev/tasks/running-tasks.html): List available tasks with mise tasks. To include tasks hidden with hide=true, pass --hidden.
 - [TOML Tasks](https://mise.jdx.dev/tasks/toml-tasks.html): Tasks can be defined in mise.toml files in different ways. Trivial tasks can be written into a [tasks] section, while more detailed tasks each get their own section.
 - [File Tasks](https://mise.jdx.dev/tasks/file-tasks.html): In addition to defining tasks in config files, you can define them as standalone script files in one of the following directories.
 - [Task Arguments](https://mise.jdx.dev/tasks/task-arguments.html): Define arguments when a task needs named inputs, validation, help, or completions. Without a usage specification, mise forwards extra command-line arguments to the underlying command; see argument…
