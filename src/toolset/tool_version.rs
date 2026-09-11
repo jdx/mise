@@ -119,18 +119,18 @@ impl ToolVersion {
         {
             return Ok(Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date));
         }
-        if matches!(
-            request,
-            ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }
-        ) {
-            Self::ensure_unlocked_resolution_allowed(config, &request, &opts)?;
-        }
         let backend = request.ba().backend()?;
         if let Some(plugin) = backend.plugin()
             && !plugin.is_installed()
         {
             let tv = Self::new(request.clone(), request.version());
             return Ok(tv.with_before_date(opts.before_date));
+        }
+        if matches!(
+            request,
+            ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }
+        ) {
+            Self::ensure_unlocked_resolution_allowed(config, &request, &opts)?;
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
