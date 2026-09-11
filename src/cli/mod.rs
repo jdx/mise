@@ -1172,6 +1172,10 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
 mod tests {
     use super::*;
 
+    mod packages_where_tests {
+        include!("packages_where_tests.rs");
+    }
+
     fn parse_cli<'a>(args: &'a [&'a str]) -> std::result::Result<Cli, usage_rs::Error<'a, 'a>> {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         Cli::parse_from_argv(&argv)
