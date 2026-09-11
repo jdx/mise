@@ -395,7 +395,14 @@ fn prepare_writes(
 }
 
 fn display_difference(expected: &DefaultsValue, current: &plist::Value) -> String {
-    let expected_type = plist_type(&expected.to_plist());
+    let expected_type = match expected {
+        DefaultsValue::Bool(_) => "boolean",
+        DefaultsValue::Int(_) => "integer",
+        DefaultsValue::Float(_) => "real",
+        DefaultsValue::Str(_) => "string",
+        DefaultsValue::Array(_) => "array",
+        DefaultsValue::Dict(_) => "dictionary",
+    };
     let current_type = plist_type(current);
     let value = display_plist(current);
     if expected_type == current_type {
