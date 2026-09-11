@@ -10,6 +10,10 @@ hero:
   tagline: Dev tools, env vars, and tasks in one CLI
 ---
 
+<script setup>
+import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
+</script>
+
 <section class="landing-page" aria-label="mise overview">
   <div class="landing-section landing-stations">
     <p class="landing-kicker"><span>01</span> The essentials</p>
@@ -72,24 +76,7 @@ hero:
           <li><code>mise exec</code> and <code>mise-action</code> for Docker and CI</li>
         </ul>
       </div>
-      <div class="landing-terminal" aria-label="Switching between two projects">
-        <div class="terminal-bar"><span>~/work</span><span>zsh</span></div>
-        <div class="terminal-lines">
-          <div><span class="prompt">$</span> cd api</div>
-          <div><span class="prompt">$</span> node --version</div>
-          <div>v22.12.0</div>
-          <div><span class="prompt">$</span> echo $DATABASE_URL</div>
-          <div>postgres://localhost/api</div>
-          <div>&nbsp;</div>
-          <div><span class="prompt">$</span> cd ../dashboard</div>
-          <div><span class="prompt">$</span> node --version</div>
-          <div>v24.18.0</div>
-          <div><span class="prompt">$</span> mise ls --current</div>
-          <div><span class="dim">Tool&nbsp;&nbsp;&nbsp;Version&nbsp;&nbsp;&nbsp;Source</span></div>
-          <div>bun&nbsp;&nbsp;&nbsp;&nbsp;1.2.20&nbsp;&nbsp;&nbsp;&nbsp;~/work/dashboard/mise.toml</div>
-          <div>node&nbsp;&nbsp;&nbsp;24.18.0&nbsp;&nbsp;&nbsp;~/work/dashboard/mise.toml</div>
-        </div>
-      </div>
+      <ProjectSwitchDiagram />
     </div>
   </div>
 
