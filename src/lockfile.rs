@@ -3734,10 +3734,10 @@ pub(crate) fn get_locked_version(
     };
     if let Some(tools) = lockfile.tools.get(short) {
         if lockfile.uses_request_bindings() {
-            let matching =
+            let (matching, binding_error) =
                 matching_request_bindings(lockfile.as_ref(), short, specifier, |tool| {
                     Ok(binding_options(tool)?.is_some_and(|(options, _)| tool.options == options))
-                })?;
+                });
             match matching.as_slice() {
                 [] => {}
                 [found] => {
@@ -3751,13 +3751,14 @@ pub(crate) fn get_locked_version(
                 }
             }
 
-            let legacy = matching_request_bindings(lockfile.as_ref(), short, specifier, |tool| {
-                Ok(
-                    binding_options(tool)?.is_some_and(|(options, allow_fallback)| {
-                        allow_fallback && !options.is_empty() && tool.options.is_empty()
-                    }),
-                )
-            })?;
+            let (legacy, legacy_error) =
+                matching_request_bindings(lockfile.as_ref(), short, specifier, |tool| {
+                    Ok(
+                        binding_options(tool)?.is_some_and(|(options, allow_fallback)| {
+                            allow_fallback && !options.is_empty() && tool.options.is_empty()
+                        }),
+                    )
+                });
             match legacy.as_slice() {
                 [] => {}
                 [found] => {
@@ -3812,6 +3813,11 @@ pub(crate) fn get_locked_version(
                     )));
                 }
             }
+            // A stale backend's options must not hide a valid binding or legacy
+            // pin, but its error remains useful when none of those matches exist.
+            if let Some(err) = binding_error.or(legacy_error) {
+                return Err(err);
+            }
             return Ok(None);
         }
         let version_matches = |v: &LockfileTool| {
@@ -3865,14 +3871,22 @@ fn matching_request_bindings<'a>(
     short: &str,
     specifier: &str,
     mut matches_options: impl FnMut(&LockfileTool) -> Result<bool>,
-) -> Result<Vec<&'a LockfileTool>> {
+) -> (Vec<&'a LockfileTool>, Option<Report>) {
     let mut matching = Vec::new();
+    let mut first_error = None;
     for tool in lockfile.tools.get(short).into_iter().flatten() {
-        if tool.specifiers.contains(specifier) && matches_options(tool)? {
-            matching.push(tool);
+        if !tool.specifiers.contains(specifier) {
+            continue;
+        }
+        match matches_options(tool) {
+            Ok(true) => matching.push(tool),
+            Ok(false) => {}
+            Err(err) => {
+                first_error.get_or_insert(err);
+            }
         }
     }
-    Ok(matching)
+    (matching, first_error)
 }
 
 /// Newest-first ordering for the lockfile entries that all satisfy one
