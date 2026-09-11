@@ -354,10 +354,18 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
     }
     baseline(&tracked, declared).await?;
     for (key, target) in declared {
-        if let Ok(source) = std::fs::read_link(target) {
-            let source = crate::system::history::tracked::normalize(
-                &target.parent().unwrap_or(Path::new("/")).join(source),
-            );
+        if target.is_symlink() {
+            // This resolver is read-only, follows dangling chains, and bounds
+            // traversal so cyclic links cannot hang an advisory check.
+            let source = match file::atomic_write_target(target) {
+                Ok(source) => source,
+                Err(error) => {
+                    warn!(
+                        "dotfiles: {key} is a symlink; history saves and syncs the link, not its contents. Could not resolve its source: {error}"
+                    );
+                    continue;
+                }
+            };
             if !tracked.would_capture(&source)? {
                 warn!(
                     "dotfiles: {key} is a symlink; history saves and syncs the link, not its contents. Its source {} is not tracked for capture; track the source with `mise bootstrap dotfiles track {}` (and check any exclusions) to include its contents",

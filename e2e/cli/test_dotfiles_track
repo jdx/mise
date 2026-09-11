@@ -96,6 +96,20 @@ assert_contains 'mise bootstrap dotfiles track ~/tracked-link 2>&1' 'is a symlin
 ln -s missing-source ~/dangling-link
 assert_contains 'mise bootstrap dotfiles track ~/dangling-link 2>&1' 'missing-source'
 
+# An enrolled intermediate link does not protect a dangling final source.
+ln -s chain-missing ~/chain-middle
+ln -s chain-middle ~/chain-start
+assert_succeed 'mise bootstrap dotfiles track ~/chain-middle'
+assert_contains 'mise bootstrap dotfiles track ~/chain-start 2>&1' 'chain-missing'
+assert_contains 'mise bootstrap dotfiles track ~/chain-start 2>&1' 'not tracked for capture'
+# Enrolling the final source suppresses the warning even before it exists.
+mise bootstrap dotfiles track ~/chain-missing ~/chain-start >track-output 2>&1
+assert_fail "grep -q 'is a symlink' track-output"
+# Cycles warn without preventing the link objects themselves from being tracked.
+ln -s cycle-b ~/cycle-a
+ln -s cycle-a ~/cycle-b
+assert_contains 'mise bootstrap dotfiles track ~/cycle-a ~/cycle-b 2>&1' 'Could not resolve its source'
+
 if [[ $(uname -s) == Linux ]]; then
   mkdir -p ~/.raw-names
   echo ordinary >~/.raw-names/ordinary
