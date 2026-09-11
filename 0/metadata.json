@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M289PD2MKYX7A6BB9ACA7ZK0",
+  "session_id": "01a0906b-6ed6-7d02-91de-0de252b67cee",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-11T13:14:46.377659Z",
+  "branch": "codex/fix-run-task-auto-install",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/tasks/test_task_skip_tools",
+    "e2e/tasks/test_task_tools",
+    "src/cli/run.rs",
+    "src/task/task_executor.rs",
+    "src/task/task_scheduler.rs",
+    "src/task/task_tool_installer.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "6a347e0471c3",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 270920,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 10207744,
+    "output_tokens": 23422,
+    "api_call_count": 78
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-11T13:14:46.279754Z",
+    "agent_lines": 104,
+    "agent_removed": 12,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 104,
+    "total_lines_changed": 116,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
