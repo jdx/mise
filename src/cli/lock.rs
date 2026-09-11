@@ -217,6 +217,20 @@ fn publication_lock_paths(
         .collect()
 }
 
+fn distinct_lockfile_targets(mut targets: impl ExactSizeIterator<Item = impl AsRef<Path>>) -> bool {
+    if targets.len() < 2 {
+        return true;
+    }
+    let mut canonical = BTreeSet::new();
+    targets.all(|path| match fs::canonicalize(path) {
+        Ok(path) => canonical.insert(path),
+        // Missing files cannot take the fast path, so only existing targets
+        // need to be distinct before one of them can be skipped.
+        Err(error) if error.kind() == ErrorKind::NotFound => true,
+        Err(_) => false,
+    })
+}
+
 fn verify_generation_snapshots<'a>(
     snapshots: impl Iterator<Item = (&'a PathBuf, &'a Option<Vec<u8>>)>,
 ) -> Result<()> {
@@ -384,6 +398,14 @@ impl Lock {
         let lockfile_targets =
             self.get_lockfile_targets(&config, effective_config_files, &scoped_config_paths);
         let migration_inputs = lockfile::monorepo_lockfile_migration_paths(&config);
+        let can_skip_generation = generate
+            && installed.is_some_and(|versions| versions.is_empty())
+            && !self.upgrade
+            && !self.bump
+            && self.tool.is_empty()
+            && self.platform.is_empty()
+            && migration_inputs.is_empty()
+            && distinct_lockfile_targets(lockfile_targets.keys());
         let initial_lockfiles = lockfile_targets
             .keys()
             .chain(
@@ -645,6 +667,20 @@ impl Lock {
             // Compute stale versions BEFORE process_tools so provenance checks can
             // compare against old version entries. Actual pruning happens after.
             let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
+
+            // No new installation result can override the cached artifacts here.
+            // Keep unchanged files out of the mutation/rollback set, but leave them
+            // in initial_lockfiles so publication still checks concurrent edits.
+            if can_skip_generation
+                && original_content.is_some()
+                && lockfile::generate::is_current(&lockfile, &tools, &target_platforms)?
+            {
+                debug!(
+                    "lockfile {} is already current",
+                    display_path(&lockfile_path)
+                );
+                continue;
+            }
 
             let (results, resolution_errors) = if generate {
                 lockfile = lockfile::generate::generate(
@@ -1970,7 +2006,8 @@ impl Lock {
 mod tests {
     use super::{
         Lock, LockTaskResult, LockTaskStatus, LockfileSnapshot, classify_lock_result,
-        prepare_lockfile_rollback, push_unique_lock_tool, restore_lockfile_snapshots,
+        distinct_lockfile_targets, prepare_lockfile_rollback, push_unique_lock_tool,
+        restore_lockfile_snapshots,
     };
     use crate::cli::args::{BackendArg, ToolArg};
     use crate::lockfile::{Lockfile, PlatformInfo, apply_lock_result};
@@ -1980,6 +2017,20 @@ mod tests {
     use std::fs;
     use std::str::FromStr;
     use std::sync::Arc;
+
+    #[test]
+    fn aliased_lockfile_targets_cannot_be_skipped_independently() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = dir.path().join("mise.lock");
+        fs::write(&lock, "[tools]\n").unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        let alias = dir.path().join("sub/../mise.lock");
+        assert!(!distinct_lockfile_targets([&lock, &alias].into_iter()));
+        let other = dir.path().join("mise.dev.lock");
+        assert!(distinct_lockfile_targets([&lock, &other].into_iter()));
+        fs::write(&other, "[tools]\n").unwrap();
+        assert!(distinct_lockfile_targets([&lock, &other].into_iter()));
+    }
 
     #[test]
     fn publication_locks_read_only_inputs_without_adding_rollback_targets() {
