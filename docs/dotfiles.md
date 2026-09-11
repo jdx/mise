@@ -240,9 +240,28 @@ skips the entry.
 A variant's `target` overrides the table key. When every variant supplies a
 `target`, the key can be a logical name, as above. Otherwise the key must
 be an absolute or home-relative target path. Every destination must be
-absolute or start with `~/`. Target overrides require an explicit `source`,
-which stays the same across machines and resolves relative to the config
-file. Omitting `target` uses the table key:
+absolute or start with `~/`.
+
+When every variant supplies a `target`, you can omit `source` and use a safe
+relative entry key as its path under `dotfiles.root`:
+
+```toml
+[settings]
+dotfiles.root = "~/.dotfiles"
+
+[dotfiles."vscode/settings.json"]
+mode = "copy"
+variants = [
+  { os = "macos", target = "~/Library/Application Support/Code/User/settings.json" },
+  { os = "linux", target = "~/.config/Code/User/settings.json" },
+]
+```
+
+This reads `~/.dotfiles/vscode/settings.json` on both machines. The relative
+key cannot contain `..`. An explicit `source` stays the same across machines
+and, when relative, resolves from the directory containing the config file.
+If any variant omits `target`, an explicit source is required and that variant
+uses the table key as its destination:
 
 ```toml
 [dotfiles."~/.config/example/settings.json"]
