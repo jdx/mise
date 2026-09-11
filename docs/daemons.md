@@ -48,6 +48,9 @@ mise daemons tui
 Start and restart install missing tools. Without names, start, stop, and restart
 target mise-managed daemons. Listing and status do not register configuration or
 start a supervisor. The TUI opens pitchfork's dashboard.
+Lifecycle commands accept project daemon names; `--group` is rejected because
+pitchfork groups can include daemons outside the project. Use pitchfork directly
+for group operations.
 
 ## Database presets
 

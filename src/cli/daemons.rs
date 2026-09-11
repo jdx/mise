@@ -269,12 +269,18 @@ fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>
             names.push(arg.clone());
             continue;
         }
+        if matches!(action, "start" | "stop" | "restart")
+            && (arg == "--group" || arg.starts_with("--group="))
+        {
+            bail!(
+                "mise daemons selects project daemon names; use pitchfork directly for --group operations"
+            );
+        }
         flags.push(arg.clone());
         let takes_value = match action {
             "start" | "restart" => matches!(
                 arg.as_str(),
-                "--group"
-                    | "--delay"
+                "--delay"
                     | "--output"
                     | "--http"
                     | "--port"
@@ -285,7 +291,6 @@ fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>
                     | "--expected-port"
                     | "--shell-pid"
             ),
-            "stop" => arg == "--group",
             "logs" => matches!(
                 arg.as_str(),
                 "-n" | "-s"
@@ -346,6 +351,12 @@ mod tests {
         assert_eq!(names, ["web"]);
         assert_eq!(flags, ["-fn", "20"]);
         assert!(split_args("logs", &["--grep".into()]).is_err());
+        for action in ["start", "stop", "restart"] {
+            for args in [vec!["--group", "web"], vec!["api", "--group=web"]] {
+                let args = args.into_iter().map(String::from).collect::<Vec<_>>();
+                assert!(split_args(action, &args).is_err());
+            }
+        }
         let (names, _) = split_args("start", &["--".into(), "missing".into()]).unwrap();
         assert_eq!(names, ["missing"]);
     }
