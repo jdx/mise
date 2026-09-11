@@ -51,14 +51,18 @@ run = "dummy"
 tools = { dummy = "2.0.0" }
 run = "dummy"
 
-[tasks.install-pair]
-run = [{ task = "install-one" }, { task = "install-two" }]
+[tasks.install-one-parent]
+run = [{ task = "install-one" }]
+
+[tasks.install-two-parent]
+run = [{ task = "install-two" }]
 EOF
 
-# Deferred installs share the task scheduler's jobs limit.
+# Concurrent parents inject both children at once, so the overlap marker proves
+# deferred installs share the task scheduler's jobs limit.
 install_gate="$HOME/deferred-install-gate"
 assert_contains \
-  "DUMMY_INSTALL_GATE_DIR='$install_gate' mise run --jobs 1 install-pair" \
+  "DUMMY_INSTALL_GATE_DIR='$install_gate' mise run --jobs 1 install-one-parent ::: install-two-parent" \
   "This is Dummy"
 assert_fail "test -e '$install_gate.overlap'"
 
