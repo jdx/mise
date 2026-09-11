@@ -3,7 +3,7 @@
   "checkpoint_id": "01M28D1EZ37XKNFKXYBE1PEYDS",
   "strategy": "manual-commit",
   "branch": "codex/dotfiles-root-relative-variant-sources",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "src/system/files.rs"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 47535,
+    "input_tokens": 104696,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 2701312,
-    "output_tokens": 8243,
-    "api_call_count": 49
+    "cache_read_tokens": 3963264,
+    "output_tokens": 14637,
+    "api_call_count": 71
   }
 }
