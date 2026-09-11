@@ -114,7 +114,15 @@ pub(crate) fn expand(
     for value in exports.values_mut() {
         *value = crate::tera::render_str(&mut renderer, value, &context)?;
     }
-    let run = table.get("run").and_then(toml::Value::as_str).unwrap();
+    let run = super::take_string(&mut overrides, "run")?
+        .map(|command| format!("sh -c {}", quote(command)))
+        .unwrap_or_else(|| {
+            table
+                .get("run")
+                .and_then(toml::Value::as_str)
+                .unwrap()
+                .to_owned()
+        });
     table.insert(
         "run".into(),
         toml::Value::String(format!(

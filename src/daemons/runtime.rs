@@ -198,6 +198,7 @@ impl Runtime {
         &self,
         root: &Path,
         set: &DaemonSet,
+        force_registration: bool,
     ) -> Result<(State, fslock::LockFile)> {
         let lock = crate::lock_file::LockFile::at(&state_dir(root).join("project.lock")).lock()?;
         let previous = read_state(root)?;
@@ -233,7 +234,8 @@ impl Runtime {
         let content = render(set, &state)?;
         let file = state_dir(root).join("pitchfork.toml");
         state.config_hash = crate::hash::hash_to_str(&content);
-        if state.config_hash == previous.config_hash
+        if !force_registration
+            && state.config_hash == previous.config_hash
             && std::fs::read(&file).ok().as_deref() == Some(content.as_bytes())
         {
             return Ok((state, lock));
@@ -284,7 +286,7 @@ impl Runtime {
     }
 }
 
-fn namespace(root: &Path) -> Result<String> {
+pub(crate) fn namespace(root: &Path) -> Result<String> {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let mut has_native = false;
     for name in [

@@ -330,7 +330,6 @@ pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
     ("daemons stop", "runs daemon stop hooks"),
     ("daemons tui", "interactively manages daemons"),
     ("daemons __init", "initializes daemon data"),
-    ("daemons __reconcile", "runs daemon lifecycle commands"),
     ("asdf", "proxies whatever asdf command a plugin invoked"),
     (
         "bootstrap dotfiles capture",

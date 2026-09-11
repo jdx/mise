@@ -26,6 +26,7 @@ pub(crate) async fn emit(
     env: &EnvMap,
     pid: Option<u32>,
     shell: &dyn Shell,
+    force: bool,
 ) -> Result<String> {
     if Settings::no_hooks() || Settings::safe_mode() || !Settings::get().experimental {
         return Ok(String::new());
@@ -48,7 +49,9 @@ pub(crate) async fn emit(
         .unwrap_or_default();
     let mut next = Sessions {
         pid,
-        ..Default::default()
+        // Retain visited roots so a failed departure can be retried on the next
+        // directory/config change or forced hook, without disabling the prompt fast path.
+        roots: previous.roots.clone(),
     };
     let mut output = String::new();
     let roots: Vec<_> = set
@@ -82,7 +85,7 @@ pub(crate) async fn emit(
                 env: env.clone(),
             };
             runtime::validate_tools(&scoped_set, config, ts).await?;
-            let (_state, _lock) = runtime.prepare(&root, &scoped_set).await?;
+            let (_state, _lock) = runtime.prepare(&root, &scoped_set, force).await?;
             Ok::<_, eyre::Report>(runtime.bin)
         }
         .await;
@@ -113,14 +116,14 @@ pub(crate) async fn emit(
 fn session_command(bin: &std::path::Path, root: &std::path::Path, pid: u32, enter: bool) -> String {
     let action = if enter { "enter" } else { "leave" };
     let command = format!(
-        "unset PITCHFORK_CONFIG; {} project {action} --pid {pid} --directory {} >/dev/null 2>&1 || printf '%s\\n' 'mise: daemon session {action} failed; run mise daemons status or mise daemons logs' >&2",
+        "unset PITCHFORK_CONFIG; {} project {action} --pid {pid} --directory {} >/dev/null 2>&1 || printf '%s\\n' 'mise: daemon session {action} failed; change directories or re-evaluate mise hook-env --force to retry; inspect mise daemons logs' >&2",
         super::presets::quote(bin.to_string_lossy()),
         super::presets::quote(root.to_string_lossy()),
     );
-    // sh is available in all supported activation shells, including fish. The
-    // subprocess receives the newly applied mise environment from shell eval.
+    // Background inside a non-interactive sh, not the interactive activation
+    // shell, so it does not add a job or print job-control notifications.
     format!(
-        "command sh -c {} </dev/null >/dev/null &\n",
-        super::presets::quote(command)
+        "command sh -c {}\n",
+        super::presets::quote(format!("({command}) </dev/null >/dev/null &"))
     )
 }

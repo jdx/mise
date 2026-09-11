@@ -1294,6 +1294,23 @@ fn codegen_daemon_presets() -> Result<()> {
         {
             return Err(eyre!("{}: missing port or daemon.run", path.display()));
         }
+        // Match the runtime Preset shape: a successful registry build must not
+        // embed a preset that fails deserialization when first selected.
+        let valid_port = value
+            .get("port")
+            .and_then(toml::Value::as_integer)
+            .is_some_and(|port| (1..=65535).contains(&port));
+        let valid_options = value.get("options").is_some_and(toml::Value::is_table);
+        let valid_exports = value
+            .get("exports")
+            .and_then(toml::Value::as_table)
+            .is_some_and(|exports| exports.values().all(toml::Value::is_str));
+        if !valid_port || !valid_options || !valid_exports {
+            return Err(eyre!(
+                "{}: invalid preset port, options, or exports",
+                path.display()
+            ));
+        }
         code.push_str(&format!(
             "({:?}, {}),\n",
             path.file_stem().unwrap().to_string_lossy(),

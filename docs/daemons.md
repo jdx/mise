@@ -57,7 +57,10 @@ start a supervisor. The TUI opens pitchfork's dashboard.
 | `redis`    | `redis`    | 6379         | `REDIS_URL`                                                |
 
 Both bind to loopback and require their configured ports to be free; ports do not
-bump automatically. PostgreSQL uses the `postgres` user with local trust authentication.
+bump automatically. PostgreSQL uses the `postgres` user with local trust authentication. Any process
+that can reach its loopback port can connect without a password. These presets
+are for development on a trusted local machine; use a custom daemon with
+authentication for shared or untrusted environments.
 Redis enables append-only persistence. These presets are currently Unix-only.
 
 Use `options.database` to create a different PostgreSQL database during first
@@ -105,8 +108,10 @@ Leaving for an unrelated directory releases the old project session even when no
 daemons exist in the new directory. Shared processes stay alive while another
 shell session remains in the project.
 
-Failures report a diagnostic without disabling the prompt fast path. Fix the
-configuration or run `mise hook-env --force` through your shell's eval to retry.
+Failures report a diagnostic without disabling the prompt fast path. Directory or
+configuration changes retry session updates; you can also run `mise hook-env --force`
+through your shell's eval. A forced hook or `mise daemons start` restores a generated
+configuration that was detached through pitchfork.
 Disabled hooks and safe mode prevent lifecycle commands. Re-run `mise activate`
 after upgrading to get shell PID tracking; old activation scripts display a hint.
 

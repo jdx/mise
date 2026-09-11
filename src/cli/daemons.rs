@@ -126,6 +126,27 @@ impl Daemons {
                 continue;
             }
             let install = matches!(action, "start" | "restart");
+            // Reject unmatched names before installing tools or registering configs.
+            if args.first().is_some_and(|arg| !arg.starts_with('-')) {
+                let namespace = if previous.namespace.is_empty() {
+                    runtime::namespace(&root)?
+                } else {
+                    previous.namespace.clone()
+                };
+                let matches = args.iter().any(|arg| {
+                    set.daemons
+                        .keys()
+                        .any(|name| arg == name || *arg == format!("{namespace}/{name}"))
+                        || (!install
+                            && previous
+                                .ids
+                                .iter()
+                                .any(|id| id == arg || id.rsplit('/').next() == Some(arg.as_str())))
+                });
+                if !matches {
+                    continue;
+                }
+            }
             let (scoped, ts) = runtime::toolset(&scoped, install).await?;
             let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
             if action == "ls" {
@@ -159,7 +180,7 @@ impl Daemons {
                 runtime::validate_tools(&set, &scoped, &ts).await?;
             }
             let (state, _project_lock) = if install {
-                let (state, lock) = runtime.prepare(&root, &set).await?;
+                let (state, lock) = runtime.prepare(&root, &set, true).await?;
                 (state, Some(lock))
             } else {
                 (previous, None)

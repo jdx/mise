@@ -37,6 +37,15 @@ assert_contains "mise daemons ls --json" '"status": "running"'
 assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" 'another daemon profile is active'
 mise daemons stop
 
+# An explicit start restores a registration removed outside mise.
+registration=$(pitchfork config list --json | jq -r '.[0].config[0]')
+pitchfork config remove "$registration"
+assert "test $(pitchfork config list --json | jq length) -eq 0"
+mise daemons start
+assert_contains "mise daemons ls --json" '"status": "running"'
+assert "test $(pitchfork config list --json | jq length) -eq 1"
+mise daemons stop
+
 # Evaluate the activation output, preserving each simulated shell's environment.
 hook_session() {
   local key="daemon_session_$1"
@@ -68,16 +77,19 @@ assert "test ${#hook_output} -eq 0"
 # A new activated shell must enter even when it inherits an up-to-date hook cache.
 cat >"$TMPDIR/activation.fish" <<'FISH'
 mise activate fish | source
+jobs -p >"$CHILD_JOBS"
 while not test -f "$CHILD_DONE"
   sleep 0.1
 end
 FISH
 cat >"$TMPDIR/activation.sh" <<'SH'
 eval "$(mise activate "$1")"
+jobs -p >"$CHILD_JOBS"
 while [[ ! -f "$CHILD_DONE" ]]; do sleep 0.1; done
 SH
 for activation_shell in bash zsh fish; do
   export CHILD_DONE="$TMPDIR/$activation_shell.done"
+  export CHILD_JOBS="$TMPDIR/$activation_shell.jobs"
   if [[ $activation_shell == fish ]]; then
     fish "$TMPDIR/activation.fish" &
   else
@@ -89,6 +101,7 @@ for activation_shell in bash zsh fish; do
     sleep 0.1
   done
   assert "test $(pitchfork project list --json | jq length) -eq 3"
+  assert "test ! -s '$CHILD_JOBS'"
   touch "$CHILD_DONE"
   wait "$activation_pid"
   unset activation_pid
@@ -103,6 +116,17 @@ mise daemons stop
 assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" "another daemon profile is active"
 mise daemons start
 cd ../other
+# A failed leave must retain enough shell state for a later forced hook to retry.
+mv ~/bin/pitchfork ~/bin/pitchfork.real
+cat >~/bin/pitchfork <<'SH'
+#!/bin/sh
+exit 1
+SH
+chmod +x ~/bin/pitchfork
+hook_session $$
+sleep 0.2
+assert "test $(~/bin/pitchfork.real project list --json | jq length) -eq 2"
+mv ~/bin/pitchfork.real ~/bin/pitchfork
 hook_session $$
 for _ in {1..100}; do
   [[ $(pitchfork project list --json | jq length) == 1 ]] && break

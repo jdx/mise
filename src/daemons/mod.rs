@@ -10,7 +10,6 @@ use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -44,7 +43,6 @@ pub(crate) fn state_dir(root: &Path) -> PathBuf {
 }
 
 pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
-    static WARNED: AtomicBool = AtomicBool::new(false);
     let mut declarations = IndexMap::new();
     for cf in files.values().rev() {
         let entries = cf.daemon_declarations();
@@ -52,9 +50,7 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             continue;
         }
         if !Settings::get().experimental {
-            if !WARNED.swap(true, Ordering::Relaxed) {
-                warn!("[daemons] requires experimental = true; ignoring daemon declarations");
-            }
+            warn_once!("[daemons] requires experimental = true; ignoring daemon declarations");
             continue;
         }
         if Settings::safe_mode() && !crate::config::is_global_config(cf.get_path()) {
@@ -288,6 +284,23 @@ mod tests {
             set.add_tool_requests(&mut ToolRequestSet::default())
                 .is_err()
         );
+    }
+
+    #[test]
+    fn preset_run_override_keeps_initialization() {
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.db]\npreset = 'postgres'\nversion = '18'\nrun = 'echo starting && postgres -D /data'\n",
+        )]);
+        let set = load(&config).unwrap();
+        let run = set.daemons["db"].table["run"].as_str().unwrap();
+        assert!(run.contains("daemons __init"));
+        assert!(run.contains("&& exec sh -c 'echo starting && postgres -D /data'"));
+        let invalid = files(&[(
+            "/project/mise.toml",
+            "[daemons.db]\npreset = 'postgres'\nversion = '18'\nrun = 42\n",
+        )]);
+        assert!(load(&invalid).is_err());
     }
 
     #[test]
