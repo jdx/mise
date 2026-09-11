@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Monorepo under $MISE_CONFIG_DIR is treated as global config and never
+# receives a project root, so // task paths cannot resolve there.
+# The error should name that boundary instead of only saying no root was found.
+# See https://github.com/jdx/mise/discussions/13076
+
+export MISE_TRUSTED_CONFIG_PATHS="$MISE_TRUSTED_CONFIG_PATHS:$MISE_CONFIG_DIR"
+
+MONOREPO="$MISE_CONFIG_DIR/my_monorepo"
+mkdir -p "$MONOREPO/workspace2"
+cat <<'TOML' >"$MONOREPO/mise.toml"
+monorepo_root = true
+
+[monorepo]
+config_roots = ["workspace2"]
+TOML
+cat <<'TOML' >"$MONOREPO/workspace2/mise.toml"
+[tasks."build:path"]
+run = 'echo the-path'
+TOML
+
+cd "$MONOREPO"
+output=$(mise run '//workspace2:build:path' 2>&1 || true)
+echo "$output"
+echo "$output" | grep -q "require a monorepo root configuration" || (echo "FAIL: expected monorepo root error" && exit 1)
+echo "$output" | grep -q "MISE_CONFIG_DIR" || (echo "FAIL: expected MISE_CONFIG_DIR boundary in error" && exit 1)
+echo "$output" | grep -q "never receive a project root" || (echo "FAIL: expected project-root boundary in error" && exit 1)
+echo "$output" | grep -q "Don't put your project there" || (echo "FAIL: expected location guidance in error" && exit 1)
+echo "$output" | grep -q "monorepo_root = true" || (echo "FAIL: expected rejected root path in error" && exit 1)

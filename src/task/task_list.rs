@@ -62,6 +62,24 @@ pub(crate) fn split_task_spec(spec: &str) -> (&str, Vec<String>) {
 fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
     // Check if a monorepo root is configured
     if !config.is_monorepo() {
+        if let Some(hint) = rejected_monorepo_root_hint(config) {
+            bail!(
+                "Monorepo task paths (like `//path:task` or `:task`) require a monorepo root configuration.\n\
+                \n\
+                {}\n\
+                \n\
+                To set up monorepo support, add this to your root mise.toml:\n\
+                {}\n\
+                \n\
+                Then create task files in subdirectories that will be automatically discovered.\n\
+                See {} for more information.",
+                hint,
+                style::eyellow("  monorepo_root = true"),
+                style::eunderline(
+                    "https://mise.jdx.dev/tasks/task-configuration.html#monorepo-support"
+                )
+            );
+        }
         bail!(
             "Monorepo task paths (like `//path:task` or `:task`) require a monorepo root configuration.\n\
             \n\
@@ -78,6 +96,46 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Explain why a `monorepo_root = true` declaration was ignored.
+///
+/// Configs under `$MISE_CONFIG_DIR` (and other global/system locations) never
+/// receive a project root, so they can never act as monorepo roots even when
+/// they declare `monorepo_root = true`. Naming that boundary saves a trace-dive
+/// when the same files work outside the config dir.
+fn rejected_monorepo_root_hint(config: &Arc<Config>) -> Option<String> {
+    let rejected: Vec<PathBuf> = config
+        .config_files
+        .values()
+        .filter(|cf| cf.monorepo_root() == Some(true))
+        .filter(|cf| cf.project_root().is_none())
+        .map(|cf| cf.get_path().to_path_buf())
+        .unique()
+        .collect();
+    if rejected.is_empty() {
+        return None;
+    }
+    let mut hint = String::from("Found `monorepo_root = true` in:");
+    for path in &rejected {
+        hint.push_str(&format!("\n  {}", display_path(path)));
+    }
+    if rejected.iter().any(|p| p.starts_with(*dirs::CONFIG)) {
+        hint.push_str(&format!(
+            "\nbut it lives under $MISE_CONFIG_DIR ({}), where configs are treated as global configuration and never receive a project root. Monorepo task paths require a project root, so this root is ignored.\n\nMove the monorepo outside $MISE_CONFIG_DIR (or point MISE_CONFIG_DIR elsewhere). Don't put your project there.",
+            display_path(*dirs::CONFIG)
+        ));
+    } else if rejected.iter().any(|p| p.starts_with(*dirs::SYSTEM_CONFIG)) {
+        hint.push_str(&format!(
+            "\nbut it lives under the system config directory ({}), where configs never receive a project root. Monorepo task paths require a project root, so this root is ignored.\n\nMove the monorepo outside the system config directory.",
+            display_path(*dirs::SYSTEM_CONFIG)
+        ));
+    } else {
+        hint.push_str(
+            "\nbut that config has no project root (global config), so it is ignored as a monorepo root. Monorepo task paths require a project root.",
+        );
+    }
+    Some(hint)
 }
 
 /// Check if a name is similar to any known CLI subcommands using fuzzy matching
