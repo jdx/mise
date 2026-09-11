@@ -128,15 +128,17 @@ apps = [
 ```
 
 Paths must be absolute or start with `~/`, end in `.app`, and contain no `..`
-components. Duplicate paths are rejected. Every declared application must exist
-as a directory before a changed layout can be applied. Omit `apps` to leave the
-layout alone; `apps = []` removes all recognised application tiles.
+components. Duplicate paths, including symlinks to the same application, are
+rejected. Every declared application must exist as a directory before a changed
+layout can be applied. Omit `apps` to leave the layout alone; `apps = []` removes
+all recognised application tiles.
 
 The list owns the applications pinned in `com.apple.dock`'s `persistent-apps`
 preference. Apply adds, removes, and reorders those applications while preserving
-existing tiles' bookmarks and metadata. Non-application and unrecognised tiles
-are preserved, and `persistent-others` is untouched. Running unpinned apps and
-the recent-app section are outside this list.
+existing tiles' bookmarks and metadata. Symlinks are resolved when matching
+applications; new tiles retain the declared path. Non-application and unrecognised
+tiles are preserved, and `persistent-others` is untouched. Running unpinned apps
+and the recent-app section are outside this list.
 
 Status compares application paths and order, so metadata added by Dock does not
 cause drift. Moving a pinned app manually does cause drift; apply restores the

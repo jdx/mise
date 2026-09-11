@@ -4753,7 +4753,10 @@
               "properties": {
                 "apps": {
                   "type": "array",
-                  "items": { "type": "string" },
+                  "items": {
+                    "type": "string",
+                    "pattern": "^(?:/|~/(?!/)).+\\.[aA][pP][pP]/*$"
+                  },
                   "uniqueItems": true,
                   "description": "Pinned application paths in order; absolute or ~/ paths ending in .app. An empty array removes application tiles."
                 },

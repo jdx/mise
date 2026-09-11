@@ -1,7 +1,5 @@
 //! Application layout semantics for the friendly Dock setting. Raw defaults remain exact.
-#[cfg(any(target_os = "macos", test))]
-use std::path::Path;
-use std::path::{Component, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use super::DefaultsValue;
 use crate::result::Result;
@@ -11,11 +9,16 @@ pub(super) fn paths(value: &DefaultsValue) -> Result<Vec<PathBuf>> {
         eyre::bail!("[bootstrap.macos.dock].apps: expected an array of application paths");
     };
     let mut paths = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for value in values {
         let DefaultsValue::Str(value) = value else {
             eyre::bail!("[bootstrap.macos.dock].apps: expected an array of application paths");
         };
         let path = if let Some(rest) = value.strip_prefix("~/") {
+            eyre::ensure!(
+                !Path::new(rest).has_root(),
+                "[bootstrap.macos.dock].apps: expected a path relative to home: {value}"
+            );
             crate::env::HOME.join(rest)
         } else {
             PathBuf::from(value)
@@ -31,7 +34,7 @@ pub(super) fn paths(value: &DefaultsValue) -> Result<Vec<PathBuf>> {
         );
         let path: PathBuf = path.components().collect();
         eyre::ensure!(
-            !paths.contains(&path),
+            seen.insert(crate::file::canonicalize_or_self(&path)),
             "duplicate Dock application: {}",
             path.display()
         );
@@ -73,10 +76,12 @@ fn tiles(value: Option<&plist::Value>) -> Result<&[plist::Value]> {
 
 pub(super) fn matches(value: &DefaultsValue, current: &plist::Value) -> Result<bool> {
     Ok(paths(value)?
-        == tiles(Some(current))?
+        .iter()
+        .map(|path| crate::file::canonicalize_or_self(path))
+        .eq(tiles(Some(current))?
             .iter()
             .filter_map(app_path)
-            .collect::<Vec<_>>())
+            .map(|path| crate::file::canonicalize_or_self(&path))))
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -128,10 +133,10 @@ fn arrange(desired: &[PathBuf], original: &[plist::Value]) -> Result<plist::Valu
         .collect();
     let mut apps = Vec::new();
     for path in desired {
-        if let Some(tile) = original
-            .iter()
-            .find(|tile| app_path(tile).as_ref() == Some(path))
-        {
+        let resolved = crate::file::canonicalize_or_self(path);
+        if let Some(tile) = original.iter().find(|tile| {
+            app_path(tile).is_some_and(|path| crate::file::canonicalize_or_self(&path) == resolved)
+        }) {
             apps.push(tile.clone());
         } else {
             let guid = loop {
@@ -179,6 +184,7 @@ mod tests {
     fn validate_application_paths() {
         for input in [
             vec!["relative.app"],
+            vec!["~//Applications/Foo.app"],
             vec!["/Applications"],
             vec!["/Applications/../Other.app"],
             vec!["/A.app", "/A.app/"],
@@ -255,6 +261,40 @@ mod tests {
         assert_eq!(
             arrange(&[a], &[first.clone(), first.clone()]).unwrap(),
             plist::Value::Array(vec![first])
+        );
+    }
+
+    #[test]
+    fn match_symlinked_apps_and_preserve_declared_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("Target.app");
+        let alias = temp.path().join("Alias.app");
+        std::fs::create_dir(&target).unwrap();
+        std::os::unix::fs::symlink(&target, &alias).unwrap();
+        let mut tile = new_tile(&target, 42).unwrap();
+        tile.as_dictionary_mut()
+            .unwrap()
+            .get_mut("tile-data")
+            .unwrap()
+            .as_dictionary_mut()
+            .unwrap()
+            .insert("book".into(), plist::Value::Data(vec![1, 2, 3]));
+        let current = plist::Value::Array(vec![tile]);
+        let desired = declaration(&[alias.to_str().unwrap()]);
+        assert!(matches(&desired, &current).unwrap());
+        assert_eq!(reconcile(&desired, Some(&current)).unwrap(), current);
+        let created = reconcile(&desired, None).unwrap();
+        assert_eq!(
+            app_path(&created.as_array().unwrap()[0]),
+            Some(alias.clone())
+        );
+        assert!(matches(&declaration(&[target.to_str().unwrap()]), &created).unwrap());
+        assert!(
+            paths(&declaration(&[
+                target.to_str().unwrap(),
+                alias.to_str().unwrap()
+            ]))
+            .is_err()
         );
     }
 
