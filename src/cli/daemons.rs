@@ -103,6 +103,18 @@ impl Daemons {
             .project_root
             .as_deref()
             .ok_or_else(|| eyre::eyre!("mise daemons requires a project configuration"))?;
+        // The dashboard is global to the supervisor, not one invocation per daemon root.
+        if action == "tui" {
+            let previous = runtime::read_state(root)?;
+            let (config, ts) = runtime::toolset(&config, false).await?;
+            let runtime = Runtime::from_toolset(&config, &ts, Some(&previous.bin)).await?;
+            if !runtime.supervisor_up(root).await? {
+                bail!("pitchfork supervisor is not running; run mise daemons start");
+            }
+            return runtime
+                .exec(root, [vec!["tui".into()], args].concat())
+                .await;
+        }
         let loaded = daemons::load(&config.config_files)?;
         let mut roots = loaded.roots();
         if !roots.iter().any(|r| r == root) {
@@ -159,10 +171,6 @@ impl Daemons {
             let mut selected = Vec::new();
             let mut flags = Vec::new();
             for arg in &args {
-                if action == "tui" {
-                    flags.push(arg.clone());
-                    continue;
-                }
                 if let Some(id) = state
                     .ids
                     .iter()
@@ -176,7 +184,6 @@ impl Daemons {
             if selected.is_empty()
                 && args.first().is_some_and(|a| !a.starts_with('-'))
                 && flags.len() == args.len()
-                && action != "tui"
             {
                 continue;
             }
@@ -189,11 +196,11 @@ impl Daemons {
                         .contains_key(id.rsplit('/').next().unwrap_or(id))
                 });
             }
-            if selected.is_empty() && action != "tui" {
+            if selected.is_empty() {
                 continue;
             }
             matched = true;
-            if matches!(action, "logs" | "tui") && !runtime.supervisor_up(&root).await? {
+            if action == "logs" && !runtime.supervisor_up(&root).await? {
                 bail!("pitchfork supervisor is not running; run mise daemons start");
             }
             if action == "status" {
@@ -204,9 +211,7 @@ impl Daemons {
                 }
             } else {
                 let mut forwarded = vec![action.into()];
-                if action != "tui" {
-                    forwarded.extend(selected);
-                }
+                forwarded.extend(selected);
                 forwarded.extend(flags);
                 runtime.exec(&root, forwarded).await?;
                 if action == "stop" && state.profile == *crate::env::MISE_ENV {

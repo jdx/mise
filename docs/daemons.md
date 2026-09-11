@@ -1,3 +1,7 @@
+---
+description: Manage project daemons and persistent PostgreSQL and Redis databases with pitchfork.
+---
+
 # Daemons
 
 ::: warning Experimental

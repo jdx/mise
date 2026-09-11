@@ -105,7 +105,7 @@
 - [sops](https://mise.jdx.dev/environments/secrets/sops.html): mise reads encrypted secret files and makes values available as environment variables via env._.file.
 - [age](https://mise.jdx.dev/environments/secrets/age.html): Encrypt individual environment variable values directly in mise.toml using age encryption. Encryption and decryption are built into mise.
 - [Hooks](https://mise.jdx.dev/hooks.html): mise can automatically execute scripts during a mise activate session. Except for the preinstall and postinstall hooks, these require the mise activate shell hook to be installed in your shell.
-- [Daemons](https://mise.jdx.dev/daemons.html): Daemon management requires experimental = true. It requires a pitchfork release with pitchfork config add support (planned for 2.25.0).
+- [Daemons](https://mise.jdx.dev/daemons.html): Daemon management requires experimental = true. It requires pitchfork 2.25.0 or later for external configuration support.
 - [direnv](https://mise.jdx.dev/direnv.html): direnv and mise both change the environment when you enter a directory. Their shell hooks can disagree about which PATH entries to add, restore, or remove.
 
 ## Tasks

@@ -11,7 +11,7 @@ case "$1" in
     if [[ ${OLD_PITCHFORK:-0} == 1 ]]; then echo 'cmd start {}'; else echo 'cmd config help="External files" {'; fi
     ;;
   status) exit 1 ;;
-  supervisor) echo '{"status":"down"}' ;;
+  supervisor) printf '{"status":"%s"}\n' "${SUPERVISOR_STATUS:-down}" ;;
   project) echo '[]' ;;
 esac
 SH
@@ -85,3 +85,24 @@ locked = true
 postgres = "18"
 TOML
 assert_fail_contains "MISE_LOCKFILE=1 mise install --dry-run 2>&1" "tool_config.locked"
+
+# The dashboard opens once in the current project, even with inherited daemons.
+: >mise.toml
+mkdir -p tui-parent/child
+cd tui-parent
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.parent]
+run = "sleep 30"
+TOML
+cd child
+cat >mise.toml <<'TOML'
+[daemons.child]
+run = "sleep 30"
+TOML
+: >"$DAEMON_LOG"
+SUPERVISOR_STATUS=up mise daemons tui -- --help
+assert "test $(grep -c 'args=tui --help$' "$DAEMON_LOG") -eq 1"
+assert_contains "cat '$DAEMON_LOG'" "cwd=$PWD args=tui --help"
+assert_fail "mise daemons tui"

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# e2e:non-root
 
 if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
   # Exercise this exact release even during the default release-age delay.
