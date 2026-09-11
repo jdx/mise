@@ -693,7 +693,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 ..
             } = entry
             {
-                validate_file_variants(
+                let implied_variant_source = validate_file_variants(
                     &target,
                     source.as_deref(),
                     content.as_deref(),
@@ -725,7 +725,11 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 if source.is_some() && content.is_some() {
                     bail!("dotfile {target} cannot declare both source and content");
                 }
-                if mode != FileMode::Track && source.is_none() && content.is_none() {
+                if mode != FileMode::Track
+                    && source.is_none()
+                    && content.is_none()
+                    && implied_variant_source.is_none()
+                {
                     implied_source(&resolve_target_arg(&target))?;
                 }
                 if let Some(manifest) = manifest
@@ -3491,8 +3495,7 @@ mod tests {
 
         let path = dirs::HOME.join(".config/mise/config.toml");
         let body = r#"
-[dotfiles.settings]
-source = "dotfiles/settings.json"
+[dotfiles."vscode/settings.json"]
 mode = "copy"
 variants = [
     { os = "macos", target = "~/Library/Application Support/Code/User/settings.json" },

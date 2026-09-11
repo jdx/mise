@@ -4289,7 +4289,7 @@
                     },
                     "target": {
                       "type": "string",
-                      "description": "deployment destination override; requires source and is not supported in track mode"
+                      "description": "deployment destination override; requires either an explicit source or a safe relative entry key when every variant has a target, and is not supported in track mode"
                     }
                   }
                 }
