@@ -1,0 +1,41 @@
+mise bootstrap is good! congrats on the release&#x20;
+
+
+
+[12:10 PM]
+
+is it okay if i throw two questions / maybe bug reports on you?
+
+
+
+[12:18 PM]
+
+paxos 
+
+First thing I did wrong: I used `mise bootstrap dotfiles add` AND `mise bootstrap dotfiles sync` for the same file, causing mise to sync the link. Took me a while to figure out why my files are not in the repo. There are probably some use cases for that, but maybe a warning would have been helpful \
+\
+Second thing: I am trying out the macOS specific things. On first run:
+
+
+
+➜  \~ mise bootstrap macos defaults status Domain                       Key                       Value  Current  State com.apple.finder             AppleShowAllFiles         false           unset com.apple.finder             ShowPathbar               true   true     set com.apple.finder             FXPreferredViewStyle      Nlsv   clmv     differs NSGlobalDomain               KeyRepeat                 2      2        differs NSGlobalDomain               InitialKeyRepeat          15     15       differs
+
+Is it expected that `KeyRepeat` shows `differs`?\
+\
+Maybe one more:
+
+> [bootstrap.macos.finder].sort\_folders\_first: unknown key, ignoring entry
+
+\
+\
+But its documented on [https://mise.jdx.dev/bootstrap/macos-defaults.html](https://mise.jdx.dev/bootstrap/macos-defaults.html)\
+\
+2026.9.4 macos-arm64 (2026-09-09)
+
+---
+
+ok do we have prs to make?
+
+---
+
+ok make PRs
