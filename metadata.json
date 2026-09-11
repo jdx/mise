@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M290W7VRRARHJXDCQ3J1KBHP",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-editorconfig-checker",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "registry/editorconfig-checker.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 126935,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 7361408,
+    "output_tokens": 17228,
+    "api_call_count": 64
+  }
+}
