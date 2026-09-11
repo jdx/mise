@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+if [[ $(uname) != Darwin ]]; then
+  exit 0
+fi
+require_cmd jq
+domain="com.mise.defaults-types-test.$$"
+# Core Foundation preferences are outside the harness HOME; isolate and remove this domain.
+trap 'defaults delete "$domain" >/dev/null 2>&1 || true' EXIT
+defaults write "$domain" KeyRepeat -float 2
+defaults write "$domain" InitialKeyRepeat -string 15
+cat >mise.toml <<EOF_CONFIG
+[bootstrap.macos.defaults."$domain"]
+KeyRepeat = 2
+InitialKeyRepeat = 15
+EOF_CONFIG
+assert_contains 'mise bootstrap macos defaults status' '2 (real; expected integer)'
+assert_contains 'mise bootstrap macos defaults status' '15 (string; expected integer)'
+assert_fail 'mise bootstrap macos defaults status --missing'
+assert 'mise bootstrap macos defaults status --json | jq -r '\''.macos_defaults.entries[] | select(.key == "KeyRepeat") | .current'\''' '2 (real; expected integer)'
+# Read-only status preserves the stored type; applying still enforces the configured type.
+assert_contains 'defaults read-type "$domain" KeyRepeat' float
+assert_succeed 'mise bootstrap macos defaults apply --yes'
+assert_succeed 'mise bootstrap macos defaults status --missing'
+assert_contains 'defaults read-type "$domain" KeyRepeat' integer

@@ -245,7 +245,7 @@ fn status_sync(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
                     DefaultsState::Set
                 } else {
                     DefaultsState::Differs {
-                        current: display_plist(current),
+                        current: display_difference(&req.value, current),
                     }
                 }
             }
@@ -392,6 +392,32 @@ fn prepare_writes(
         }
     }
     Ok(writes)
+}
+
+fn display_difference(expected: &DefaultsValue, current: &plist::Value) -> String {
+    let expected_type = plist_type(&expected.to_plist());
+    let current_type = plist_type(current);
+    let value = display_plist(current);
+    if expected_type == current_type {
+        value
+    } else {
+        format!("{value} ({current_type}; expected {expected_type})")
+    }
+}
+
+fn plist_type(value: &plist::Value) -> &'static str {
+    match value {
+        plist::Value::Boolean(_) => "boolean",
+        plist::Value::Integer(_) => "integer",
+        plist::Value::Real(_) => "real",
+        plist::Value::String(_) => "string",
+        plist::Value::Array(_) => "array",
+        plist::Value::Dictionary(_) => "dictionary",
+        plist::Value::Data(_) => "data",
+        plist::Value::Date(_) => "date",
+        plist::Value::Uid(_) => "uid",
+        _ => "unknown",
+    }
 }
 
 fn display_plist(value: &plist::Value) -> String {
@@ -697,6 +723,36 @@ mod tests {
             ["-string", "left"]
         );
         assert_eq!(DefaultsValue::Array(vec![]).write_args(), None);
+    }
+
+    #[test]
+    fn differing_types_are_visible_even_when_values_render_identically() {
+        for (expected, current, display) in [
+            (
+                DefaultsValue::Int(2),
+                plist::Value::Real(2.0),
+                "2 (real; expected integer)",
+            ),
+            (
+                DefaultsValue::Float(15.0),
+                plist::Value::Integer(15.into()),
+                "15 (integer; expected real)",
+            ),
+            (
+                DefaultsValue::Int(2),
+                plist::Value::String("2".into()),
+                "2 (string; expected integer)",
+            ),
+            (
+                DefaultsValue::Bool(true),
+                plist::Value::String("true".into()),
+                "true (string; expected boolean)",
+            ),
+            (DefaultsValue::Int(2), plist::Value::Integer(3.into()), "3"),
+        ] {
+            assert!(!expected.matches(&current));
+            assert_eq!(display_difference(&expected, &current), display);
+        }
     }
 
     #[test]
