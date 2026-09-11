@@ -928,7 +928,7 @@ impl Run {
                     on_task_dropped: |task: &Task| this.retire_keep_order_slot(task),
                     continue_on_error: this.continue_on_error,
                 },
-                |task, deps_for_remove, allow_during_interruption| {
+                |task, deps_for_remove, allow_during_interruption, install_tools| {
                     let this = this.clone();
                     let spawn_context = spawn_context.clone();
                     async move {
@@ -937,6 +937,7 @@ impl Run {
                             task,
                             deps_for_remove,
                             allow_during_interruption,
+                            install_tools,
                             spawn_context,
                         )
                         .await
@@ -971,6 +972,7 @@ impl Run {
         task: Task,
         deps_for_remove: Arc<Mutex<Deps>>,
         inherited_allow_during_interruption: bool,
+        install_tools: bool,
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
         if Self::should_abort_while_stopping(
@@ -988,8 +990,9 @@ impl Run {
             );
             return Ok(());
         }
-        let needs_permit = task_needs_permit(&task);
-        let permit_opt = if needs_permit {
+        let needs_task_permit = task_needs_permit(&task);
+        let needs_install = install_tools && !this.skip_tools;
+        let mut permit_opt = if needs_task_permit || needs_install {
             let wait_start = std::time::Instant::now();
             let p = Some(ctx.semaphore.clone().acquire_owned().await?);
             trace!(
@@ -1020,6 +1023,51 @@ impl Run {
             trace!("no semaphore needed for orchestrator task: {}", task.name);
             None
         };
+
+        if needs_install {
+            let mut install_config = ctx.config.clone();
+            let install_result = crate::task::task_tool_installer::TaskToolInstaller::new(
+                &this.context_builder,
+                &this.tool,
+            )
+            .install_tasks(
+                &mut install_config,
+                vec![task.clone()],
+                this.dry_run,
+                &HashSet::new(),
+            )
+            .await;
+            if let Err(err) = install_result {
+                if Self::should_abort_while_stopping(
+                    &this,
+                    &task,
+                    &deps_for_remove,
+                    inherited_allow_during_interruption,
+                )
+                .await
+                {
+                    return Ok(());
+                }
+                this.fail_sched_job_before_start(task, deps_for_remove, err)
+                    .await;
+                return Ok(());
+            }
+            if Self::should_abort_while_stopping(
+                &this,
+                &task,
+                &deps_for_remove,
+                inherited_allow_during_interruption,
+            )
+            .await
+            {
+                return Ok(());
+            }
+            if !needs_task_permit {
+                // Orchestrator tasks must release the preparation permit before
+                // waiting for children, especially when --jobs is 1.
+                permit_opt = None;
+            }
+        }
 
         ctx.in_flight
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1150,6 +1198,33 @@ impl Run {
         });
 
         Ok(())
+    }
+
+    /// Record a preparation failure through the same task-level result path as
+    /// an execution failure, then release its dependency graph entry.
+    async fn fail_sched_job_before_start(
+        &self,
+        task: Task,
+        deps_for_remove: Arc<Mutex<Deps>>,
+        err: eyre::Report,
+    ) {
+        let prefix = task.estyled_prefix();
+        if Settings::get().verbose {
+            self.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
+        } else {
+            self.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
+        }
+        self.add_failed_task(task.clone(), Error::get_exit_status(&err));
+        if !self.continue_on_error {
+            #[cfg(unix)]
+            crate::cmd::CmdLineRunner::kill_all(nix::sys::signal::SIGTERM);
+            #[cfg(windows)]
+            crate::cmd::CmdLineRunner::kill_all();
+        }
+        self.retire_keep_order_slot(&task);
+        let mut deps = deps_for_remove.lock().await;
+        deps.mark_executed(&task);
+        deps.remove(&task);
     }
 
     /// Retire a task's keep-order slot because it will never run.

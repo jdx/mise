@@ -112,6 +112,7 @@ within_isolated_env() {
         MISE_DATA_DIR="$MISE_DATA_DIR" \
         MISE_DEBUG="${MISE_DEBUG:-0}" \
         MISE_EXPERIMENTAL=1 \
+        MISE_TEST_PITCHFORK="${MISE_TEST_PITCHFORK:-}" \
         MISE_GPG_VERIFY="${MISE_GPG_VERIFY:-}" \
         MISE_HTTP_TEST_PORT_FILE="$TEST_TMPDIR/mise_http_test_port" \
         MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}" \
@@ -221,6 +222,10 @@ run_in_docker() {
   local docker_args=(
     docker run --rm
   )
+  # PostgreSQL refuses to initialize or run as root.
+  if grep -q '^# e2e:non-root' "$TEST_SCRIPT"; then
+    docker_args+=(--user nobody)
+  fi
   # tests that install real system packages (e.g. apt) must write to /var and
   # /usr and declare that with an "# e2e:writable-rootfs" marker; the container
   # is still ephemeral and the host mounts below stay read-only

@@ -55,15 +55,16 @@ impl Project {
         // SIGINT already cancels the command future in Cli::run. Handle the
         // other normal supervisor shutdown signals here as well, so dropping
         // the bounded runner closes its owned group even under a nested task.
+        // Signals the parent chose to ignore (for example SIGHUP under nohup)
+        // stay ignored: registering a handler would otherwise replace SIG_IGN.
         #[cfg(unix)]
         let result = {
-            use tokio::signal::unix::{SignalKind, signal};
-            let mut terminate = signal(SignalKind::terminate())?;
-            let mut hangup = signal(SignalKind::hangup())?;
+            let mut terminate = shutdown_signal(nix::libc::SIGTERM)?;
+            let mut hangup = shutdown_signal(nix::libc::SIGHUP)?;
             tokio::select! {
                 result = self.check() => result,
-                _ = terminate.recv() => return Err(crate::request_exit(143)),
-                _ = hangup.recv() => return Err(crate::request_exit(129)),
+                _ = recv_or_pending(&mut terminate) => return Err(crate::request_exit(143)),
+                _ = recv_or_pending(&mut hangup) => return Err(crate::request_exit(129)),
             }
         };
         #[cfg(not(unix))]
@@ -122,12 +123,20 @@ impl Project {
         // Config files are ordered from highest to lowest precedence. Replace
         // whole named checks so a local command cannot inherit a stale remedy.
         for (path, cf) in config.config_files.iter().rev() {
-            for (name, check) in cf.doctor_config().checks {
-                let root = match cf.project_root() {
-                    Some(root) => root,
-                    None => std::env::current_dir()?,
-                };
-                checks.insert(name, (path.clone(), root, check));
+            let declared = cf.doctor_config().checks;
+            if declared.is_empty() {
+                continue;
+            }
+            // Match task conventions: project configuration (including a
+            // mise.toml directly in $HOME) anchors at its config root, while
+            // global and system configuration use the invocation directory.
+            let root = if cf.provenance().scope().is_project() {
+                cf.config_root()
+            } else {
+                std::env::current_dir()?
+            };
+            for (name, check) in declared {
+                checks.insert(name, (path.clone(), root.clone(), check));
             }
         }
         let mut report = Report::default();
@@ -198,9 +207,12 @@ impl Project {
                     result
                 }
             })
-            .buffered(crate::jobs::normalize(Settings::get().jobs))
+            // Unordered so a slow probe does not hold back admission of the
+            // remaining checks; the report is sorted by name afterwards.
+            .buffer_unordered(crate::jobs::normalize(Settings::get().jobs))
             .collect()
             .await;
+        report.checks.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(report)
     }
 }
@@ -239,7 +251,7 @@ async fn run_check(
             check
                 .dir
                 .as_ref()
-                .map(|dir| root.join(dir))
+                .map(|dir| root.join(crate::file::replace_path(dir)))
                 .unwrap_or_else(|| root.to_path_buf()),
         )
         .env_clear()
@@ -247,4 +259,31 @@ async fn run_check(
         .with_timeout(timeout)
         .output_isolated(64 * 1024)
         .await
+}
+
+/// Subscribe to a shutdown signal unless the process inherited it as ignored.
+#[cfg(unix)]
+fn shutdown_signal(signum: i32) -> Result<Option<tokio::signal::unix::Signal>> {
+    use tokio::signal::unix::{SignalKind, signal};
+    // SAFETY: a null new action only queries the current disposition; `old`
+    // is a valid, zeroed sigaction that the kernel fills in.
+    let ignored = unsafe {
+        let mut old: nix::libc::sigaction = std::mem::zeroed();
+        nix::libc::sigaction(signum, std::ptr::null(), &mut old) == 0
+            && old.sa_sigaction == nix::libc::SIG_IGN
+    };
+    if ignored {
+        return Ok(None);
+    }
+    Ok(Some(signal(SignalKind::from_raw(signum))?))
+}
+
+#[cfg(unix)]
+async fn recv_or_pending(signal: &mut Option<tokio::signal::unix::Signal>) {
+    match signal {
+        Some(signal) => {
+            signal.recv().await;
+        }
+        None => std::future::pending().await,
+    }
 }

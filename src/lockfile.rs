@@ -1,17 +1,18 @@
 pub(crate) mod generate;
 
-use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::backend::conda::CondaBackend;
 use crate::backend::pkgx::PkgxBackend;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::{self, Backend};
+use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::file;
 use crate::file::display_path;
 use crate::path::PathExt;
 use crate::platform::Platform;
-use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions, Toolset};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, Toolset};
 use eyre::{Report, Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -1625,7 +1626,9 @@ fn lockfile_path_for_tool_source_with_root(
     monorepo_root: Option<&Path>,
 ) -> Option<(PathBuf, bool)> {
     match source {
-        ToolSource::MiseToml(path) => Some(lockfile_path_for_config(path, monorepo_root)),
+        ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path) => {
+            Some(lockfile_path_for_config(path, monorepo_root))
+        }
         ToolSource::IdiomaticVersionFile(path) => config
             .config_files
             .iter()
@@ -3627,7 +3630,7 @@ pub(crate) fn read_lockfile_for_tool_source(
     config: &Config,
     source: &ToolSource,
 ) -> Result<Lockfile> {
-    if let ToolSource::MiseToml(path) = source {
+    if let ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path) = source {
         return Ok(read_lockfile_for_config_path(config, path));
     }
 
@@ -3648,13 +3651,17 @@ pub(crate) fn read_lockfile_for_tool_source(
         .clone())
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub(crate) struct AmbiguousRequestBinding(String);
+
 /// `legacy_options_fallback` lets a backend whose options describe the writing
 /// host (see `Backend::lockfile_options_are_host_specific`) fall back to an
 /// entry written before those options existed. The version pin is honored — it
 /// is the only record of what this project resolved to — but the artifact data
 /// is dropped, since there's no way to tell which variant it describes.
 pub(crate) struct LockedVersionQuery<'a> {
-    pub(crate) path: Option<&'a Path>,
+    pub(crate) request: &'a ToolRequest,
     pub(crate) short: &'a str,
     pub(crate) specifier: &'a str,
     pub(crate) prefix: &'a str,
@@ -3670,7 +3677,7 @@ pub(crate) fn get_locked_version(
     query: LockedVersionQuery<'_>,
 ) -> Result<Option<LockfileTool>> {
     let LockedVersionQuery {
-        path,
+        request,
         short,
         specifier,
         prefix,
@@ -3685,28 +3692,54 @@ pub(crate) fn get_locked_version(
         return Ok(None);
     }
 
-    let lockfile = match path {
-        Some(path) => {
+    let Some(source) = request.lockfile_source() else {
+        return Ok(None);
+    };
+    let lockfile = match source {
+        ToolSource::MiseToml(path) => {
             trace!(
                 "[{short}@{prefix}] reading lockfile for {}",
                 display_path(path)
             );
             read_lockfile_for(config, path)
         }
-        None => {
+        source if source.path().is_some() => {
+            Arc::new(read_lockfile_for_tool_source(config, source)?)
+        }
+        _ => {
             trace!("[{short}@{prefix}] reading all lockfiles");
             read_all_lockfiles(config)
         }
     };
 
+    let binding_options = |tool: &LockfileTool| -> Result<_> {
+        // A shorthand may discover another scope's backend before its owning
+        // config is known; interpret each pin using its recorded backend
+        if !request.ba().has_explicit_backend()
+            && let Some(full) = &tool.backend
+        {
+            // Keep the recorded identifier explicit through alias normalization
+            let Some(backend) =
+                backend::arg_to_backend(BackendArg::new(full.clone(), Some(full.clone())))
+            else {
+                return Ok(None);
+            };
+            if backend::is_disabled_backend_type(&backend.get_type()) {
+                return Ok(None);
+            }
+            return Ok(Some((
+                backend.resolve_lockfile_options(request, &PlatformTarget::from_current())?,
+                backend.lockfile_options_are_host_specific(),
+            )));
+        }
+        Ok(Some((request_options.clone(), legacy_options_fallback)))
+    };
     if let Some(tools) = lockfile.tools.get(short) {
         if lockfile.uses_request_bindings() {
-            let matching = tools
-                .iter()
-                .filter(|tool| {
-                    tool.specifiers.contains(specifier) && &tool.options == request_options
-                })
-                .collect_vec();
+            let (matching, binding_error) =
+                matching_request_bindings(lockfile.as_ref(), short, specifier, |tool| {
+                    Ok(binding_options(tool)?.is_some_and(|(options, _)| tool.options == options))
+                });
             match matching.as_slice() {
                 [] => {}
                 [found] => {
@@ -3714,33 +3747,33 @@ pub(crate) fn get_locked_version(
                     return Ok(Some((*found).clone()));
                 }
                 _ => {
-                    bail!(
+                    bail!(AmbiguousRequestBinding(format!(
                         "lockfile contains multiple resolutions for {short}@{specifier} with the same options"
-                    )
+                    )))
                 }
             }
 
-            if legacy_options_fallback && !request_options.is_empty() {
-                let legacy = tools
-                    .iter()
-                    .filter(|tool| tool.specifiers.contains(specifier) && tool.options.is_empty())
-                    .collect_vec();
-                match legacy.as_slice() {
-                    [] => {}
-                    [found] => {
-                        trace!(
-                            "[{short}@{specifier}] found {} in lockfile without options, keeping the version pin and dropping its artifact data",
-                            found.version
-                        );
-                        return Ok(Some(lockfile_tool_with_request_options(
-                            found,
-                            request_options,
-                        )));
-                    }
-                    _ => bail!(
-                        "lockfile contains multiple optionless resolutions for {short}@{specifier}"
-                    ),
+            let (legacy, legacy_error) =
+                matching_request_bindings(lockfile.as_ref(), short, specifier, |tool| {
+                    Ok(
+                        binding_options(tool)?.is_some_and(|(options, allow_fallback)| {
+                            allow_fallback && !options.is_empty() && tool.options.is_empty()
+                        }),
+                    )
+                });
+            match legacy.as_slice() {
+                [] => {}
+                [found] => {
+                    trace!(
+                        "[{short}@{specifier}] found {} in lockfile without options, keeping the version pin and dropping its artifact data",
+                        found.version
+                    );
+                    return Ok(binding_options(found)?
+                        .map(|(options, _)| lockfile_tool_with_request_options(found, &options)));
                 }
+                _ => bail!(AmbiguousRequestBinding(format!(
+                    "lockfile contains multiple optionless resolutions for {short}@{specifier}"
+                ))),
             }
 
             // Mixed-format monorepo migration can temporarily place legacy
@@ -3781,6 +3814,11 @@ pub(crate) fn get_locked_version(
                         request_options,
                     )));
                 }
+            }
+            // A stale backend's options must not hide a valid binding or legacy
+            // pin, but its error remains useful when none of those matches exist.
+            if let Some(err) = binding_error.or(legacy_error) {
+                return Err(err);
             }
             return Ok(None);
         }
@@ -3828,6 +3866,29 @@ pub(crate) fn get_locked_version(
     }
 
     Ok(None)
+}
+
+fn matching_request_bindings<'a>(
+    lockfile: &'a Lockfile,
+    short: &str,
+    specifier: &str,
+    mut matches_options: impl FnMut(&LockfileTool) -> Result<bool>,
+) -> (Vec<&'a LockfileTool>, Option<Report>) {
+    let mut matching = Vec::new();
+    let mut first_error = None;
+    for tool in lockfile.tools.get(short).into_iter().flatten() {
+        if !tool.specifiers.contains(specifier) {
+            continue;
+        }
+        match matches_options(tool) {
+            Ok(true) => matching.push(tool),
+            Ok(false) => {}
+            Err(err) => {
+                first_error.get_or_insert(err);
+            }
+        }
+    }
+    (matching, first_error)
 }
 
 /// Newest-first ordering for the lockfile entries that all satisfy one
@@ -4388,6 +4449,24 @@ mod tests {
             crate::toolset::ToolRequest::new(prototype.request.ba().clone(), request, source)
                 .unwrap();
         ToolVersion::new(request, version.to_string())
+    }
+
+    #[test]
+    fn test_tools_by_source_for_update_does_not_write_to_borrowed_owner() {
+        let owner = ToolSource::MiseToml(PathBuf::from("/repo/mise.toml"));
+        let mut runtime =
+            basic_tv_from_source("aqua:example/tool", "2", "2.0.0", ToolSource::Argument);
+        runtime
+            .request
+            .set_lockfile_scope(crate::toolset::tool_request::LockfileScope::Source(
+                owner.clone(),
+            ));
+        let tools_by_source = tools_by_source_for_update(&Toolset::default(), &[runtime]);
+        assert!(!tools_by_source.contains_key(&owner));
+        assert_eq!(
+            tools_by_source[&ToolSource::Argument]["tool"][0].version,
+            "2.0.0"
+        );
     }
 
     #[test]

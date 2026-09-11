@@ -63,7 +63,7 @@ impl Shell for Zsh {
 
             autoload -Uz add-zsh-hook
             _mise_hook() {{
-              eval "$({exe} hook-env{flags} -s zsh "$@")";
+              eval "$({exe} hook-env{flags} --shell-pid $$ -s zsh "$@")";
             }}
             _mise_hook_env_state() {{
               # enumerate MISE_* vars with the typeset builtin rather than
@@ -101,7 +101,7 @@ impl Shell for Zsh {
             add-zsh-hook precmd _mise_hook_precmd
             add-zsh-hook chpwd _mise_hook_chpwd
 
-            _mise_hook
+            _mise_hook --force
             export __MISE_ZSH_ACTIVATE_PATH="$PATH"
             export __MISE_ZSH_ACTIVATE_ENV="$(_mise_hook_env_state)"
             "#});
@@ -128,7 +128,7 @@ impl Shell for Zsh {
                       # and an inherited `__MISE_SESSION`, the TTL fast path returns before the
                       # check that would notice it, and "$@" would fail exactly as before.
                       if [ -n "${{MISE_SHELL:-}}" ]; then
-                        eval "$({exe} hook-env{flags} --force -s zsh)"
+                        eval "$({exe} hook-env{flags} --shell-pid $$ --force -s zsh)"
                       fi
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handler)" ]; then
@@ -247,7 +247,7 @@ mod tests {
         // With the definition gone, the only `hook-env` left in the script is this refresh.
         // `--force` so an inherited `__MISE_SESSION` plus `hook_env.cache_ttl` cannot make it
         // exit early on the one call that follows a fresh install.
-        assert!(script.contains("hook-env --status --force -s zsh"));
+        assert!(script.contains("hook-env --status --shell-pid $$ --force -s zsh"));
     }
 
     /// `deactivate` unsets `MISE_SHELL` but leaves this handler registered, so an
@@ -269,7 +269,7 @@ mod tests {
                 .find(r#"if [ -n "${MISE_SHELL:-}" ]; then"#)
                 .expect("the refresh should be gated on MISE_SHELL");
             let refresh = handler
-                .find("hook-env --status --force -s zsh")
+                .find("hook-env --status --shell-pid $$ --force -s zsh")
                 .expect("the handler should refresh the environment after an install");
             assert!(gate < refresh, "the gate has to precede what it guards");
         }

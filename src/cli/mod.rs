@@ -17,6 +17,7 @@ mod cache;
 mod completion;
 mod config;
 mod current;
+mod daemons;
 mod deactivate;
 mod direnv;
 mod doctor;
@@ -254,6 +255,7 @@ pub(crate) enum Commands {
     Config(config::Config),
     Current(current::Current),
     Deactivate(deactivate::Deactivate),
+    Daemons(daemons::Daemons),
     Direnv(direnv::Direnv),
     Dotfiles(dotfiles::Dotfiles),
     Doctor(doctor::Doctor),
@@ -373,10 +375,11 @@ impl Commands {
     }
 
     fn implicitly_trusts_active_config(&self) -> bool {
-        matches!(
-            self,
-            Self::Exec(_) | Self::Install(_) | Self::Run(_) | Self::Watch(_)
-        )
+        matches!(self, Self::Daemons(cmd) if cmd.starts())
+            || matches!(
+                self,
+                Self::Exec(_) | Self::Install(_) | Self::Run(_) | Self::Watch(_)
+            )
     }
 
     pub(crate) async fn run(self) -> Result<()> {
@@ -392,6 +395,7 @@ impl Commands {
             Self::Config(cmd) => cmd.run().await,
             Self::Current(cmd) => cmd.run().await,
             Self::Deactivate(cmd) => cmd.run(),
+            Self::Daemons(cmd) => cmd.run().await,
             Self::Direnv(cmd) => cmd.run().await,
             Self::Dotfiles(cmd) => cmd.run().await,
             Self::Doctor(cmd) => cmd.run().await,

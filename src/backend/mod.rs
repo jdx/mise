@@ -5002,6 +5002,7 @@ mod latest_version_tests {
             version: "nightly".to_string(),
             options: ResolvedToolOptions::default(),
             source: ToolSource::Argument,
+            lockfile_scope: Default::default(),
         };
         let tv = ToolVersion::new(request, "nightly".to_string());
 

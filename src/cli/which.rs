@@ -108,7 +108,9 @@ impl Which {
     async fn get_toolset(&self, config: &Arc<Config>) -> Result<Toolset> {
         let mut tsb = ToolsetBuilder::new();
         if let Some(tool) = &self.tool {
-            tsb = tsb.with_args(std::slice::from_ref(tool));
+            tsb = tsb
+                .with_args(std::slice::from_ref(tool))
+                .with_overridden_lockfile_warnings();
         }
         let ts = tsb.build(config).await?;
         Ok(ts)

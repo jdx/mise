@@ -27,6 +27,18 @@ use crate::{
     config::{Config, Settings},
 };
 
+/// Lockfile ownership is independent of the request's original provenance.
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
+pub(crate) enum LockfileScope {
+    /// Preserve ordinary source-based reads, including merged reads for CLI requests.
+    #[default]
+    Default,
+    /// A runtime request borrows the effective configuration's lockfile.
+    Source(ToolSource),
+    /// An unconfigured runtime request must not adopt an unrelated pin.
+    NoOwner,
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) enum ToolRequest {
     Version {
@@ -34,12 +46,14 @@ pub(crate) enum ToolRequest {
         version: String,
         options: ResolvedToolOptions,
         source: ToolSource,
+        lockfile_scope: LockfileScope,
     },
     Prefix {
         backend: Arc<BackendArg>,
         prefix: String,
         options: ResolvedToolOptions,
         source: ToolSource,
+        lockfile_scope: LockfileScope,
     },
     Ref {
         backend: Arc<BackendArg>,
@@ -47,6 +61,7 @@ pub(crate) enum ToolRequest {
         ref_type: String,
         options: ResolvedToolOptions,
         source: ToolSource,
+        lockfile_scope: LockfileScope,
     },
     Sub {
         backend: Arc<BackendArg>,
@@ -54,16 +69,19 @@ pub(crate) enum ToolRequest {
         orig_version: String,
         options: ResolvedToolOptions,
         source: ToolSource,
+        lockfile_scope: LockfileScope,
     },
     Path {
         backend: Arc<BackendArg>,
         path: PathBuf,
         options: ResolvedToolOptions,
         source: ToolSource,
+        lockfile_scope: LockfileScope,
     },
     System {
         backend: Arc<BackendArg>,
         source: ToolSource,
+        lockfile_scope: LockfileScope,
         options: ResolvedToolOptions,
     },
 }
@@ -114,6 +132,7 @@ impl ToolRequest {
                     options,
                     backend,
                     source,
+                    lockfile_scope: LockfileScope::Default,
                 }
             }
             Some(("prefix", p)) => {
@@ -123,6 +142,7 @@ impl ToolRequest {
                     options,
                     backend,
                     source,
+                    lockfile_scope: LockfileScope::Default,
                 }
             }
             Some(("path", p)) => {
@@ -134,6 +154,7 @@ impl ToolRequest {
                     options,
                     backend,
                     source,
+                    lockfile_scope: LockfileScope::Default,
                 }
             }
             Some((p, v)) if p.starts_with("sub-") => {
@@ -146,6 +167,7 @@ impl ToolRequest {
                     orig_version: v.to_string(),
                     backend,
                     source,
+                    lockfile_scope: LockfileScope::Default,
                 }
             }
             None => {
@@ -154,6 +176,7 @@ impl ToolRequest {
                         options,
                         backend,
                         source,
+                        lockfile_scope: LockfileScope::Default,
                     }
                 } else {
                     validate_version_string(&s)?;
@@ -162,6 +185,7 @@ impl ToolRequest {
                         options,
                         backend,
                         source,
+                        lockfile_scope: LockfileScope::Default,
                     }
                 }
             }
@@ -183,6 +207,7 @@ impl ToolRequest {
             version: version.to_string(),
             options,
             source,
+            lockfile_scope: LockfileScope::Default,
         }
     }
 
@@ -195,6 +220,7 @@ impl ToolRequest {
             | Self::Sub { source: s, .. }
             | Self::System { source: s, .. } => *s = source,
         }
+        self.set_lockfile_scope(LockfileScope::Default);
         self.clone()
     }
     pub(crate) fn ba(&self) -> &Arc<BackendArg> {
@@ -250,6 +276,55 @@ impl ToolRequest {
             | Self::System { source, .. } => source,
         }
     }
+    pub(crate) fn lockfile_scope(&self) -> &LockfileScope {
+        match self {
+            Self::Version { lockfile_scope, .. }
+            | Self::Prefix { lockfile_scope, .. }
+            | Self::Ref { lockfile_scope, .. }
+            | Self::Path { lockfile_scope, .. }
+            | Self::Sub { lockfile_scope, .. }
+            | Self::System { lockfile_scope, .. } => lockfile_scope,
+        }
+    }
+
+    pub(crate) fn set_lockfile_scope(&mut self, scope: LockfileScope) {
+        match self {
+            Self::Version { lockfile_scope, .. }
+            | Self::Prefix { lockfile_scope, .. }
+            | Self::Ref { lockfile_scope, .. }
+            | Self::Path { lockfile_scope, .. }
+            | Self::Sub { lockfile_scope, .. }
+            | Self::System { lockfile_scope, .. } => *lockfile_scope = scope,
+        }
+    }
+
+    pub(crate) fn lockfile_source(&self) -> Option<&ToolSource> {
+        match self.lockfile_scope() {
+            LockfileScope::Default => Some(self.source()),
+            LockfileScope::Source(source) => Some(source),
+            LockfileScope::NoOwner => None,
+        }
+    }
+
+    /// Read dependency tables from the same owner as the runtime pin.
+    pub(crate) fn read_lockfile(&self, config: &Config) -> Result<lockfile::Lockfile> {
+        match self.lockfile_source() {
+            Some(source) => lockfile::read_lockfile_for_tool_source(config, source),
+            None => Ok(lockfile::Lockfile::default()),
+        }
+    }
+
+    pub(crate) fn tool_config_locked(&self, config: &Config, use_locked_version: bool) -> bool {
+        // A lockfile bypass must not inherit an additional owner's policy.
+        // Invocation-wide locked policy still uses the original source separately.
+        let source = if use_locked_version {
+            self.lockfile_source().unwrap_or(self.source())
+        } else {
+            self.source()
+        };
+        config.tool_config_locked(source)
+    }
+
     pub(crate) fn os(&self) -> &Option<Vec<String>> {
         &self.resolved_options().effective().os
     }
@@ -353,6 +428,7 @@ impl ToolRequest {
             ref_type,
             options: self.resolved_options().clone(),
             source: self.source().clone(),
+            lockfile_scope: self.lockfile_scope().clone(),
         }
     }
 
@@ -362,6 +438,7 @@ impl ToolRequest {
             path,
             options: self.resolved_options().clone(),
             source: self.source().clone(),
+            lockfile_scope: self.lockfile_scope().clone(),
         }
     }
 
@@ -541,14 +618,10 @@ impl ToolRequest {
         } else {
             (BTreeMap::new(), false)
         };
-        let path = match self.source() {
-            ToolSource::MiseToml(path) => Some(path),
-            _ => None,
-        };
         lockfile::get_locked_version(
             config,
             lockfile::LockedVersionQuery {
-                path: path.map(|p| p.as_path()),
+                request: self,
                 short: &self.ba().short,
                 specifier: &self.version(),
                 prefix,
@@ -834,7 +907,9 @@ impl Display for ToolRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::{ToolRequest, validate_ref_string, validate_version_string, version_sub};
+    use super::{
+        LockfileScope, ToolRequest, validate_ref_string, validate_version_string, version_sub,
+    };
     use crate::cli::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolSource, ToolVersionOptions};
     use pretty_assertions::assert_str_eq;
@@ -850,6 +925,35 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         ))
+    }
+
+    #[test]
+    fn lockfile_scope_survives_conversion_until_source_changes() {
+        let owner = ToolSource::MiseToml("/project/mise.toml".into());
+        let destination = ToolSource::MiseToml("/project/mise.local.toml".into());
+        for selector in [
+            "latest",
+            "prefix:1",
+            "ref:main",
+            "sub-1:3",
+            "path:/tools/dummy",
+            "system",
+        ] {
+            let mut request = ToolRequest::new(test_ba(), selector, ToolSource::Argument).unwrap();
+            request.set_lockfile_scope(LockfileScope::Source(owner.clone()));
+            for mut converted in [
+                request.clone(),
+                request.to_ref("main".into(), "ref".into()),
+                request.to_path("/tools/dummy".into()),
+            ] {
+                assert_eq!(converted.source(), &ToolSource::Argument);
+                assert_eq!(converted.lockfile_source(), Some(&owner));
+                converted.set_source(destination.clone());
+                assert_eq!(converted.source(), &destination);
+                assert_eq!(converted.lockfile_source(), Some(&destination));
+                assert_eq!(converted.lockfile_scope(), &LockfileScope::Default);
+            }
+        }
     }
 
     #[tokio::test]
@@ -868,6 +972,8 @@ mod tests {
             .resolved_options_mut()
             .apply_overrides(&old_defaults, ToolOptionSource::Registry);
         let explicit = crate::toolset::parse_tool_options("variant=custom");
+        let owner = ToolSource::MiseToml("/project/mise.toml".into());
+        request.set_lockfile_scope(LockfileScope::Source(owner.clone()));
         request
             .resolved_options_mut()
             .apply_overrides(&explicit, ToolOptionSource::Request);
@@ -882,6 +988,8 @@ mod tests {
         );
         let resolved = ToolVersion::new(request, "1.58.1".to_string());
         assert_eq!(resolved.ba().full(), "packslip:github.com/jdx/hk");
+        assert_eq!(resolved.request.source(), &ToolSource::Argument);
+        assert_eq!(resolved.request.lockfile_source(), Some(&owner));
     }
 
     #[test]

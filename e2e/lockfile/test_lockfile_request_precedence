@@ -1,0 +1,291 @@
+#!/usr/bin/env bash
+
+mise install dummy@1.0.0 dummy@1.1.0 dummy@2.0.0
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[settings]
+lockfile = true
+
+[tools]
+dummy = "latest"
+TOML
+cat >"$MISE_CONFIG_DIR/mise.lock" <<'TOML'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "2.0.0"
+backend = "asdf:dummy"
+specifiers = ["latest", "2"]
+TOML
+
+mkdir project
+cp "$MISE_CONFIG_DIR/config.toml" project/mise.toml
+cat >project/mise.lock <<'TOML'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.1.0"
+backend = "asdf:dummy"
+specifiers = ["latest"]
+TOML
+
+assert_contains "cd project && mise which dummy --tool dummy@latest" "/dummy/1.1.0/bin/dummy"
+assert "cd project && mise x dummy -- dummy --version" "This is Dummy 1.1.0! --version"
+assert "cd project && mise x dummy@2 -- dummy --version" "This is Dummy 2.0.0! --version"
+assert "mise x dummy -- dummy --version" "This is Dummy 2.0.0! --version"
+
+cp project/mise.toml project/mise.local.toml
+cat >project/mise.local.lock <<'TOML'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+specifiers = ["latest"]
+TOML
+assert "cd project && mise x dummy -- dummy --version" "This is Dummy 1.0.0! --version"
+assert "cd project && mise x dummy@latest -- dummy --version" "This is Dummy 2.0.0! --version"
+
+mkdir project/child
+cp project/mise.toml project/child/mise.toml
+cp project/mise.lock project/child/mise.lock
+assert "cd project/child && mise x dummy -- dummy --version" "This is Dummy 1.1.0! --version"
+
+cp project/mise.toml project/mise.ci.toml
+cp project/mise.lock project/mise.ci.lock
+assert "cd project && MISE_ENV=ci mise x dummy -- dummy --version" "This is Dummy 1.1.0! --version"
+cp project/mise.toml project/mise.ci.local.toml
+cp "$MISE_CONFIG_DIR/mise.lock" project/mise.ci.local.lock
+assert "cd project && MISE_ENV=ci mise x dummy -- dummy --version" "This is Dummy 2.0.0! --version"
+
+cat >>project/mise.local.lock <<'TOML'
+
+[[tools.dummy]]
+version = "1.1.0"
+backend = "asdf:dummy"
+specifiers = ["latest"]
+TOML
+assert_fail_contains "cd project && mise which dummy --tool dummy@latest 2>&1" "lockfile contains multiple resolutions for dummy@latest with the same options"
+
+mkdir backend-project
+cat >backend-project/mise.toml <<'TOML'
+[tools]
+dummy = { version = "latest", format = "tar.xz", url = "https://example.com/dummy-{{version}}.tar.xz" }
+TOML
+cat >backend-project/mise.lock <<'TOML'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "http:dummy"
+specifiers = ["latest"]
+options = { format = "tar.xz" }
+TOML
+assert_contains "cd backend-project && mise which dummy --tool dummy@latest" "/dummy/1.0.0/bin/dummy"
+assert "cd backend-project && mise which dummy --tool dummy@2 --version" "2.0.0"
+
+cat >>backend-project/mise.lock <<'TOML'
+
+[[tools.dummy]]
+version = "1.1.0"
+backend = "asdf:dummy"
+specifiers = ["latest"]
+TOML
+assert_fail_contains "cd backend-project && mise which dummy --tool dummy@latest 2>&1" "lockfile contains multiple resolutions for dummy@latest with the same options"
+
+# A configured override owns resolution even when only a lower source has a pin
+mkdir missing-pin
+cp project/mise.toml missing-pin/mise.toml
+sed 's/2.0.0/1.0.0/' "$MISE_CONFIG_DIR/mise.lock" >global.lock
+cp global.lock "$MISE_CONFIG_DIR/mise.lock"
+assert "cd missing-pin && mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_contains "cat missing-pin/warning" "Ignoring lockfile pins for dummy@latest"
+assert_contains "cat missing-pin/warning" "overrides that tool and has no matching lock entry"
+assert_fail_contains "cd missing-pin && MISE_LOCKED=1 mise which dummy --tool dummy@latest 2>&1" "dummy@latest is not in the lockfile"
+assert_fail_contains "cd missing-pin && MISE_LOCKED=1 mise which dummy --tool dummy@2.0.0 2>&1" "dummy@2.0.0 is not in the lockfile"
+assert_fail_contains "cd missing-pin && MISE_LOCKED=1 mise which dummy --tool dummy@prefix:2 2>&1" "dummy@prefix:2 is not in the lockfile"
+assert "cd missing-pin && MISE_LOCKED=1 mise x dummy@latest -- dummy --version" "This is Dummy 2.0.0! --version"
+assert "cd missing-pin && mise x dummy -- dummy --version" "This is Dummy 2.0.0! --version"
+
+# Merely having a project config does not override an inherited tool
+mkdir inherited
+printf '[env]\nEXAMPLE = "true"\n' >inherited/mise.toml
+assert_contains "cd inherited && mise which dummy --tool dummy@latest 2>warning" "/dummy/1.0.0/bin/dummy"
+assert_not_contains "cat inherited/warning" "Ignoring lockfile pin"
+
+# A matching effective pin suppresses warnings even when lower pins differ
+cp project/mise.lock missing-pin/mise.lock
+assert_contains "cd missing-pin && MISE_LOCKED=1 mise which dummy --tool dummy@latest 2>warning" "/dummy/1.1.0/bin/dummy"
+assert_not_contains "cat missing-pin/warning" "Ignoring lockfile pin"
+
+# No warning for a stale pin in a source that does not define this tool
+printf '[settings]\nlockfile = true\n' >"$MISE_CONFIG_DIR/config.toml"
+printf 'lockfile_version = 1\n' >missing-pin/mise.lock
+assert "cd missing-pin && mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_not_contains "cat missing-pin/warning" "Ignoring lockfile pin"
+
+# Parent and environment warnings follow definitions, not lockfile proximity
+mkdir -p parent/child
+cp project/mise.toml parent/mise.toml
+cp global.lock parent/mise.lock
+cp project/mise.toml parent/child/mise.toml
+assert "cd parent/child && mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_contains "cat parent/child/warning" "Ignoring lockfile pins for dummy@latest"
+assert_contains "cat parent/child/warning" "parent/mise.toml"
+printf '[env]\nEXAMPLE = "true"\n' >parent/mise.toml
+assert "cd parent/child && mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_not_contains "cat parent/child/warning" "Ignoring lockfile pin"
+cp project/mise.toml parent/mise.ci.toml
+cp global.lock parent/mise.ci.lock
+assert "cd parent/child && MISE_ENV=ci mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_contains "cat parent/child/warning" "parent/mise.ci.toml"
+printf '[env]\nEXAMPLE = "true"\n' >parent/mise.ci.toml
+assert "cd parent/child && MISE_ENV=ci mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_not_contains "cat parent/child/warning" "Ignoring lockfile pin"
+
+# An unconfigured runtime request cannot adopt an unrelated lockfile pin
+assert "mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_not_contains "cat warning" "Ignoring lockfile pin"
+
+# Source-scoped locked policy also applies to an installed runtime argument
+cat >>missing-pin/mise.toml <<'TOML'
+
+[tool_config]
+locked = true
+TOML
+assert_fail_contains "cd missing-pin && mise which dummy --tool dummy@latest 2>&1" "dummy@latest is not in the lockfile"
+
+# Ref selectors cannot bypass locked lookup either
+assert_fail_contains "cd missing-pin && mise which dummy --tool dummy@ref:main 2>&1" "dummy@ref:main is not in the lockfile"
+
+# Diagnosing an overridden source must not turn its ambiguity into a failure
+cp project/mise.toml "$MISE_CONFIG_DIR/config.toml"
+cat >>"$MISE_CONFIG_DIR/mise.lock" <<'TOML'
+
+[[tools.dummy]]
+version = "1.1.0"
+backend = "asdf:dummy"
+specifiers = ["latest"]
+TOML
+assert "cd parent/child && mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_contains "cat parent/child/warning" "Ignoring lockfile pin"
+
+# A legacy pin found after alias resolution also suppresses override warnings
+mkdir alias-project
+cat >alias-project/mise.toml <<'TOML'
+[tools]
+dummy = "latest"
+
+[tool_alias.dummy.versions]
+stable = "1"
+TOML
+cat >alias-project/mise.lock <<'TOML'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+TOML
+cat >>"$MISE_CONFIG_DIR/mise.lock" <<'TOML'
+
+[[tools.dummy]]
+version = "2.0.0"
+backend = "asdf:dummy"
+specifiers = ["stable"]
+TOML
+assert "cd alias-project && mise which dummy --tool dummy@stable --version 2>warning" "1.0.0"
+assert_not_contains "cat alias-project/warning" "Ignoring lockfile pin"
+
+# Non-TOML sources use their existing lockfile mapping
+mkdir tool-versions-project
+printf 'dummy latest\n' >tool-versions-project/.tool-versions
+assert "cd tool-versions-project && mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_contains "cat tool-versions-project/warning" "Ignoring lockfile pin"
+assert_fail_contains "cd tool-versions-project && MISE_LOCKED=1 mise which dummy --tool dummy@latest 2>&1" "dummy@latest is not in the lockfile"
+
+mkdir idiomatic-project
+cat >idiomatic-project/mise.toml <<'TOML'
+[settings]
+idiomatic_version_file_enable_tools = ["dummy"]
+TOML
+printf 'latest\n' >idiomatic-project/.dummy-version
+cp project/mise.lock idiomatic-project/mise.lock
+assert "cd idiomatic-project && MISE_LOCKED=1 mise which dummy --tool dummy@latest --version 2>warning" "1.1.0"
+assert_not_contains "cat idiomatic-project/warning" "Ignoring lockfile pin"
+printf 'lockfile_version = 1\n' >idiomatic-project/mise.lock
+assert "cd idiomatic-project && mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_contains "cat idiomatic-project/warning" "Ignoring lockfile pin"
+assert_fail_contains "cd idiomatic-project && MISE_LOCKED=1 mise which dummy --tool dummy@latest 2>&1" "dummy@latest is not in the lockfile"
+
+# Unavailable and disabled candidates cannot hide a valid pin in the same file
+mkdir stale-backend-project
+cp project/mise.toml stale-backend-project/mise.toml
+for stale_backend in removed-backend:dummy core:dummy http:dummy; do
+  cat >stale-backend-project/mise.lock <<TOML
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "$stale_backend"
+specifiers = ["latest"]
+TOML
+  cp stale-backend-project/mise.lock stale-backend.lock
+  cat >>stale-backend-project/mise.lock <<'TOML'
+
+[[tools.dummy]]
+version = "1.1.0"
+backend = "asdf:dummy"
+specifiers = ["latest"]
+TOML
+  assert "cd stale-backend-project && MISE_DISABLE_BACKENDS=http MISE_LOCKED=1 mise which dummy --tool dummy@latest --version 2>&1" "1.1.0"
+  cp stale-backend.lock stale-backend-project/mise.lock
+  assert_fail_contains "cd stale-backend-project && MISE_DISABLE_BACKENDS=http MISE_LOCKED=1 mise which dummy --tool dummy@latest 2>&1" "dummy@latest is not in the lockfile"
+done
+
+# Invalid options in an overridden source are diagnostic failures only.
+# Keep an asdf candidate first so discovery still chooses the dummy plugin.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[settings]
+lockfile = true
+
+[tools]
+dummy = { version = "latest", foo = "one", "vars.foo" = "two" }
+TOML
+cat >"$MISE_CONFIG_DIR/mise.lock" <<'TOML'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+specifiers = ["latest"]
+
+[[tools.dummy]]
+version = "1.1.0"
+backend = "aqua:jdx/hk"
+specifiers = ["latest"]
+TOML
+assert "cd parent/child && mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_not_contains "cat parent/child/warning" 'conflicting aqua var'
+assert_fail "cd parent/child && MISE_LOCKED=1 mise which dummy --tool dummy@latest >primary-error 2>&1"
+assert_contains "cat parent/child/primary-error" "dummy@latest is not in the lockfile"
+assert_not_contains "cat parent/child/primary-error" 'conflicting aqua var'
+assert_not_contains "cat parent/child/primary-error" 'Ignoring lockfile pin'
+
+# An invalid parent must not prevent inspection of a valid global pin.
+cp "$MISE_CONFIG_DIR/config.toml" parent/mise.toml
+cp "$MISE_CONFIG_DIR/mise.lock" parent/mise.lock
+cp project/mise.toml "$MISE_CONFIG_DIR/config.toml"
+cp global.lock "$MISE_CONFIG_DIR/mise.lock"
+assert "cd parent/child && mise which dummy --tool dummy@latest --version 2>warning" "2.0.0"
+assert_contains "cat parent/child/warning" 'Ignoring lockfile pins for dummy@latest'
+assert_contains "cat parent/child/warning" '.config/mise/config.toml'
+
+# Exempting a config scope cannot exempt an explicit runtime argument.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[settings]
+lockfile = true
+locked_scopes = ["project"]
+
+[tools]
+dummy = "latest"
+TOML
+printf 'lockfile_version = 1\n' >"$MISE_CONFIG_DIR/mise.lock"
+assert "MISE_LOCKED=1 mise x -- dummy --version" "This is Dummy 2.0.0! --version"
+assert_fail_contains "MISE_LOCKED=1 mise which dummy --tool dummy@latest 2>&1" "dummy@latest is not in the lockfile"

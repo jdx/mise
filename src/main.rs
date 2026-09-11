@@ -44,6 +44,7 @@ pub(crate) mod build_time;
 mod cache;
 mod cli;
 mod config;
+mod daemons;
 mod deps;
 pub(crate) mod deps_graph;
 mod direnv;

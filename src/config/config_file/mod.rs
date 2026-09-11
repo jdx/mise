@@ -145,6 +145,10 @@ pub(crate) trait ConfigFile: Debug + Send + Sync {
         None
     }
 
+    fn daemon_declarations(&self) -> IndexMap<String, crate::daemons::Declaration> {
+        IndexMap::new()
+    }
+
     fn shell_aliases(&self) -> eyre::Result<IndexMap<String, String>> {
         Ok(Default::default())
     }
@@ -260,6 +264,7 @@ impl dyn ConfigFile {
                     if let ToolRequest::Version {
                         version: _version,
                         source,
+                        lockfile_scope,
                         options,
                         backend,
                     } = tr
@@ -267,6 +272,7 @@ impl dyn ConfigFile {
                         tr = ToolRequest::Version {
                             version: tv.version,
                             source,
+                            lockfile_scope,
                             options,
                             backend,
                         };

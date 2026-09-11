@@ -6,6 +6,11 @@ cat >doctor-valid.json <<'JSON'
 {"doctor":{"checks":{"database":{"run":"pg_isready --quiet","description":"Database accepts connections","hint":"Start the services","timeout":"5s","dir":"../database","shell":"bash -c","os":["linux","macos"]}}}}
 JSON
 assert_succeed "$validate -d doctor-valid.json"
+# Unknown container options stay valid, matching mise's forward compatibility.
+cat >doctor-forward.json <<'JSON'
+{"doctor":{"settings":{"future":true},"checks":{}}}
+JSON
+assert_succeed "$validate -d doctor-forward.json"
 # Each invalid root-level block used to pass because doctor was misplaced
 # inside task_dependency_item and was unvalidated at the root.
 cat >doctor-invalid.json <<'JSON'

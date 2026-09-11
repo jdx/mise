@@ -405,6 +405,8 @@ pub(crate) struct MiseToml {
     #[serde(default)]
     shell_alias: IndexMap<String, String>,
     #[serde(default)]
+    daemons: IndexMap<String, crate::daemons::Declaration>,
+    #[serde(default)]
     wrappers: IndexMap<String, CommandWrapper>,
     #[serde(skip)]
     doc: Mutex<OnceCell<DocumentMut>>,
@@ -1256,6 +1258,10 @@ impl ConfigFile for MiseToml {
             .collect()
     }
 
+    fn daemon_declarations(&self) -> IndexMap<String, crate::daemons::Declaration> {
+        self.daemons.clone()
+    }
+
     fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
         self.warn_deprecated_env_keys();
         let env_entries = self.env.0.iter().cloned();
@@ -1943,6 +1949,7 @@ impl Clone for MiseToml {
             alias: self.alias.clone(),
             tool_alias: self.tool_alias.clone(),
             shell_alias: self.shell_alias.clone(),
+            daemons: self.daemons.clone(),
             wrappers: self.wrappers.clone(),
             doc: Mutex::new(self.doc.lock().unwrap().clone()),
             hooks: self.hooks.clone(),

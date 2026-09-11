@@ -1098,7 +1098,7 @@ impl TaskExecutor {
                             any = true;
                             let task = task.derive_env(&task_env_directives);
                             trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
-                            let _ = sched_tx.send(SchedMsg::new(
+                            let _ = sched_tx.send(SchedMsg::injected(
                                 task,
                                 sub_deps_clone.clone(),
                                 allow_during_interruption,
@@ -1132,7 +1132,7 @@ impl TaskExecutor {
                                 task.args.join(" ")
                             );
                             let task = task.derive_env(&task_env_directives);
-                            let _ = sched_tx.send(SchedMsg::new(
+                            let _ = sched_tx.send(SchedMsg::injected(
                                 task,
                                 sub_deps_clone.clone(),
                                 allow_during_interruption,

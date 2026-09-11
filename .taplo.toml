@@ -26,3 +26,7 @@ schema.path = "./schema/mise-settings.json"
 [rule.formatting]
 reorder_keys = true
 reorder_arrays = false
+
+[[rule]]
+include = ["registry/daemon-presets/*.toml"]
+schema.path = "./schema/mise-daemon-preset.json"

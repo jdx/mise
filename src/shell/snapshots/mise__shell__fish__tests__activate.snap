@@ -37,14 +37,14 @@ function mise
 end
 
 function __mise_env_eval --description 'Update mise environment when changing directories';
-    /some/dir/mise hook-env --status -s fish | source;
+    /some/dir/mise hook-env --status --shell-pid $fish_pid -s fish $argv | source;
 
     if test "$mise_fish_mode" != "disable_arrow";
         function __mise_cd_hook --on-variable PWD --description 'Update mise environment when changing directories';
             if test "$mise_fish_mode" = "eval_after_arrow";
                 set -g __mise_env_again 0;
             else;
-                /some/dir/mise hook-env --status -s fish | source;
+                /some/dir/mise hook-env --status --shell-pid $fish_pid -s fish | source;
             end;
         end;
     end;
@@ -65,7 +65,7 @@ end;
 function __mise_env_eval_2 --on-event fish_preexec --description 'Update mise environment when changing directories';
     if set -q __mise_env_again;
         set -e __mise_env_again;
-        /some/dir/mise hook-env --status -s fish | source;
+        /some/dir/mise hook-env --status --shell-pid $fish_pid -s fish | source;
         echo;
     end;
 
@@ -74,7 +74,7 @@ function __mise_env_eval_2 --on-event fish_preexec --description 'Update mise en
     end;
 end;
 
-__mise_env_eval
+__mise_env_eval --force
 set -g __mise_skip_first_prompt_pwd "$PWD"
 if functions -q fish_command_not_found; and not functions -q __mise_fish_command_not_found
     functions -e __mise_fish_command_not_found
@@ -84,7 +84,7 @@ end
 function fish_command_not_found
     if string match -qrv -- '^(?:mise$|mise-)' $argv[1] &&
         /some/dir/mise hook-not-found -s fish -- $argv[1]
-        /some/dir/mise hook-env --status -s fish | source
+        /some/dir/mise hook-env --status --shell-pid $fish_pid -s fish | source
     else if functions -q __mise_fish_command_not_found
         __mise_fish_command_not_found $argv
     else

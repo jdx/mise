@@ -88,6 +88,32 @@ dependencies, hooks, or tool installers. This lets task-specific tools be locked
 task execution. Their entries use the same `[[tools.*]]` format and are written to the lockfile for
 the config that owns the task.
 
+### Runtime resolution
+
+Runtime command-line requests that read lockfiles use the lockfile belonging to
+the effective tool configuration.
+If a project defines `hk`, it overrides the global `hk` definition, including its
+lockfile pins. A missing matching project entry falls back to normal unlocked
+resolution, not an overridden pin. If the project does not define `hk`, the
+inherited definition and its lockfile remain available.
+
+In locked mode, a missing matching entry is an error even for read-only lookups
+such as `mise which hk --tool hk@latest` and even when the tool is already installed.
+Commands that intentionally bypass lockfiles, such as `mise exec hk@latest`,
+retain that behavior.
+
+Reading a configuration's pin does not make a command-line override part of that
+configuration. For example, `mise exec node@24` does not replace the pin for a
+project configured with `node = "22"`. Use `mise use` or `mise upgrade` to make an
+intentional update. Environment-variable version overrides retain their existing
+lockfile lookup behavior.
+
+`mise which --tool` warns when the effective source has no matching pin but an
+overridden configuration's lockfile does. This includes global, parent-project,
+and environment-specific definitions. An unrelated lockfile containing a match
+is not enough: that lower-precedence configuration must actually define the tool.
+A matching effective pin produces no override warning.
+
 ## File Format
 
 The lockfile is TOML. This abbreviated example shows how a request is bound to

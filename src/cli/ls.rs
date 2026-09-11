@@ -342,7 +342,9 @@ impl Ls {
             trs = trs
                 .iter()
                 .filter(|(.., ts)| match ts {
-                    ToolSource::MiseToml(p) => config::is_global_config(p),
+                    ToolSource::MiseToml(p) | ToolSource::MiseTomlDaemon(p) => {
+                        config::is_global_config(p)
+                    }
                     _ => false,
                 })
                 .map(|(fa, tv, ts)| (fa.clone(), tv.clone(), ts.clone()))
@@ -353,7 +355,7 @@ impl Ls {
                 .filter(|(.., ts)| {
                     matches!(
                         ts,
-                        ToolSource::MiseToml(p)
+                        ToolSource::MiseToml(p) | ToolSource::MiseTomlDaemon(p)
                         | ToolSource::IdiomaticVersionFile(p)
                         | ToolSource::ToolVersions(p)
                         if !config::is_global_config(p)

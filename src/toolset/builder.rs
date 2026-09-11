@@ -7,6 +7,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
+use crate::toolset::tool_request::LockfileScope;
 use crate::toolset::tool_request_set::{
     configured_options_for_runtime_request, postinstall_tool_request,
 };
@@ -32,6 +33,7 @@ pub(crate) struct ToolsetBuilder {
     resolve_options: ResolveOptions,
     resolution_progress: bool,
     config_files: Option<ConfigMap>,
+    warn_overridden_lockfiles: bool,
 }
 
 impl ToolsetBuilder {
@@ -64,6 +66,11 @@ impl ToolsetBuilder {
         self
     }
 
+    pub(crate) fn with_overridden_lockfile_warnings(mut self) -> Self {
+        self.warn_overridden_lockfiles = true;
+        self
+    }
+
     /// Use custom config files instead of config.config_files
     pub(crate) fn with_config_files(mut self, config_files: ConfigMap) -> Self {
         self.config_files = Some(config_files);
@@ -84,14 +91,16 @@ impl ToolsetBuilder {
             self.load_runtime_args(&mut toolset)?;
         });
         measure!("toolset_builder::build::resolve", {
-            if let Err(err) = toolset
+            let result = toolset
                 .resolve_with_progress(config, &self.resolve_options, self.resolution_progress)
-                .await
-            {
+                .await;
+            if let Err(err) = result {
                 if Error::is_argument_err(&err) || Error::is_required_channel_resolution_err(&err) {
                     return Err(err);
                 }
                 warn!("failed to resolve toolset: {err}");
+            } else if self.warn_overridden_lockfiles && self.resolve_options.use_locked_version {
+                self.warn_overridden_lockfiles(config, &toolset);
             }
         });
 
@@ -111,6 +120,33 @@ impl ToolsetBuilder {
             }
             ts.merge(cf.to_toolset()?);
         }
+        let scoped_files = config_files
+            .iter()
+            .filter(|(_, cf)| match self.scope {
+                ConfigScope::All => true,
+                ConfigScope::LocalOnly => !config::is_global_config(cf.get_path()),
+                ConfigScope::GlobalOnly => config::is_global_config(cf.get_path()),
+            })
+            .map(|(path, cf)| (path.clone(), cf.clone()))
+            .collect();
+        let scoped_daemons;
+        let daemons = if self.config_files.is_none() && matches!(self.scope, ConfigScope::All) {
+            config.daemons()?
+        } else {
+            scoped_daemons = crate::daemons::load(&scoped_files)?;
+            &scoped_daemons
+        };
+        if !daemons.daemons.values().any(|daemon| daemon.tool.is_some()) {
+            return Ok(());
+        }
+        let mut requests = crate::toolset::ToolRequestSet::new();
+        for versions in ts.versions.values() {
+            for request in &versions.requests {
+                requests.add_version(request.clone(), request.source());
+            }
+        }
+        daemons.add_tool_requests(&mut requests)?;
+        ts.merge(requests.into_toolset());
         Ok(())
     }
 
@@ -149,6 +185,84 @@ impl ToolsetBuilder {
         Ok(())
     }
 
+    fn warn_overridden_lockfiles(&self, config: &Config, ts: &Toolset) {
+        let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
+        for arg in &self.args {
+            let Some(tvl) = ts.versions.get(&arg.ba) else {
+                continue;
+            };
+            for effective in &tvl.requests {
+                let Some(owner) = effective.lockfile_source() else {
+                    continue;
+                };
+                let Some(path) = owner.path() else {
+                    continue;
+                };
+                // Toolset resolution can warn about a failed list and still return Ok.
+                let Some(resolved) = tvl.versions.iter().find(|version| {
+                    version.request.version() == effective.version()
+                        && version.request.options() == effective.options()
+                }) else {
+                    continue;
+                };
+                if resolved.resolved_from_lockfile() {
+                    continue;
+                }
+                for cf in config_files
+                    .values()
+                    .skip_while(|cf| cf.get_path() != path)
+                    .skip(1)
+                {
+                    let has_match = (|| -> Result<bool> {
+                        let configured = cf.to_tool_request_set()?;
+                        let Some(requests) = configured.tools.get(&arg.ba) else {
+                            return Ok(false);
+                        };
+                        let mut request = match &arg.tvr {
+                            Some(request) => request.clone(),
+                            None => ToolRequest::new(
+                                arg.ba.clone(),
+                                &effective.version(),
+                                ToolSource::Argument,
+                            )?,
+                        };
+                        if let Some(options) =
+                            configured_options_for_runtime_request(requests, &request)
+                        {
+                            request.apply_config_options(options);
+                        }
+                        request.set_lockfile_scope(LockfileScope::Source(cf.source()));
+                        match request.lockfile_resolve(config) {
+                            Ok(pin) => Ok(pin.is_some()),
+                            Err(err)
+                                if err
+                                    .downcast_ref::<crate::lockfile::AmbiguousRequestBinding>()
+                                    .is_some() =>
+                            {
+                                Ok(true)
+                            }
+                            Err(err) => Err(err),
+                        }
+                    })();
+                    match has_match {
+                        Ok(true) => warn!(
+                            "Ignoring lockfile pins for {} from {} because {} overrides that tool and has no matching lock entry",
+                            effective,
+                            cf.source(),
+                            owner
+                        ),
+                        Ok(false) => {}
+                        Err(err) => debug!(
+                            "could not inspect overridden lockfile pins for {} from {}: {err:#}",
+                            effective,
+                            cf.source()
+                        ),
+                    }
+                }
+            }
+        }
+    }
+
     fn load_runtime_args(&self, ts: &mut Toolset) -> eyre::Result<()> {
         for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
@@ -162,6 +276,17 @@ impl ToolsetBuilder {
                     configured_options_for_runtime_request(&configured, &tvr)
                 {
                     tvr.apply_config_options(config_options);
+                }
+                if self.resolve_options.use_locked_version {
+                    let scope = match configured.iter().find(|request| request.is_os_supported()) {
+                        Some(configured) if configured.source().path().is_some() => {
+                            LockfileScope::Source(configured.source().clone())
+                        }
+                        // Environment overrides retain their existing lookup policy.
+                        Some(_) => LockfileScope::Default,
+                        None => LockfileScope::NoOwner,
+                    };
+                    tvr.set_lockfile_scope(scope);
                 }
                 tvr
             };
@@ -238,7 +363,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_bare_runtime_arg_uses_platform_supported_configured_version() {
+    async fn runtime_args_use_platform_supported_version_and_lockfile_owner() {
         crate::toolset::install_state::init().await.unwrap();
         let ba = Arc::new(BackendArg::from("dummy"));
         let inactive_os = match crate::cli::version::OS.as_str() {
@@ -247,35 +372,46 @@ mod tests {
         };
         let mut inactive_options = parse_tool_options(r#"selected="inactive""#);
         inactive_options.core.os = Some(vec![inactive_os.to_string()]);
+        let active_source = ToolSource::MiseTomlDaemon("/project/mise.toml".into());
         let inactive = ToolRequest::new_with_options(
             ba.clone(),
             "1.0.0",
             inactive_options,
-            ToolSource::Unknown,
+            ToolSource::MiseToml("/project/child/mise.toml".into()),
         )
         .unwrap();
         let active = ToolRequest::new_with_options(
             ba.clone(),
             "2.0.0",
             parse_tool_options(r#"selected="active""#),
-            ToolSource::Unknown,
+            active_source.clone(),
         )
         .unwrap();
-        let mut toolset = Toolset::new(ToolSource::Unknown);
-        toolset.add_version(inactive);
-        toolset.add_version(active);
+        for argument in ["dummy", "dummy@2.0.0"] {
+            for include_active in [true, false] {
+                let mut toolset = Toolset::new(ToolSource::Unknown);
+                toolset.add_version(inactive.clone());
+                if include_active {
+                    toolset.add_version(active.clone());
+                }
+                ToolsetBuilder::new()
+                    .with_args(&[argument.parse().unwrap()])
+                    .with_default_to_latest(true)
+                    .load_runtime_args(&mut toolset)
+                    .unwrap();
 
-        let arg = "dummy".parse::<ToolArg>().unwrap();
-        ToolsetBuilder::new()
-            .with_args(&[arg])
-            .with_default_to_latest(true)
-            .load_runtime_args(&mut toolset)
-            .unwrap();
-
-        let requests = &toolset.versions.get(&ba).unwrap().requests;
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].version(), "2.0.0");
-        assert_eq!(requests[0].options().get("selected"), Some("active"));
+                let requests = &toolset.versions.get(&ba).unwrap().requests;
+                assert_eq!(requests.len(), 1);
+                if include_active {
+                    assert_eq!(requests[0].version(), "2.0.0");
+                    assert_eq!(requests[0].options().get("selected"), Some("active"));
+                    assert_eq!(requests[0].lockfile_source(), Some(&active_source));
+                } else {
+                    assert_eq!(requests[0].lockfile_source(), None);
+                    assert_eq!(requests[0].options().get("selected"), None);
+                }
+            }
+        }
     }
 
     #[tokio::test]
@@ -314,5 +450,68 @@ mod tests {
         assert_eq!(requests[0].options().get("selected"), Some("config"));
         assert_eq!(requests[0].options().get("request_only"), Some("request"));
         assert_eq!(requests[0].options().get("inline_only"), Some("inline"));
+    }
+
+    #[tokio::test]
+    async fn runtime_args_keep_provenance_and_scope_lockfile_reads() {
+        crate::toolset::install_state::init().await.unwrap();
+        let source = ToolSource::MiseToml("/project/mise.toml".into());
+        for (argument, expected_version) in [("dummy@2", "2"), ("dummy", "latest")] {
+            for use_locked_version in [true, false] {
+                let ba = Arc::new(BackendArg::from("dummy"));
+                let mut ts = Toolset::new(source.clone());
+                ts.add_version(ToolRequest::new(ba.clone(), "latest", source.clone()).unwrap());
+                ToolsetBuilder::new()
+                    .with_args(&[argument.parse().unwrap()])
+                    .with_default_to_latest(true)
+                    .with_resolve_options(ResolveOptions {
+                        use_locked_version,
+                        ..Default::default()
+                    })
+                    .load_runtime_args(&mut ts)
+                    .unwrap();
+                let tvl = ts.versions.get(&ba).unwrap();
+                assert_eq!(tvl.requests[0].version(), expected_version);
+                assert_eq!(tvl.source, ToolSource::Argument);
+                assert_eq!(tvl.requests[0].source(), &ToolSource::Argument);
+                assert_eq!(
+                    tvl.requests[0].lockfile_scope(),
+                    &if use_locked_version {
+                        LockfileScope::Source(source.clone())
+                    } else {
+                        LockfileScope::Default
+                    }
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn runtime_args_without_config_do_not_borrow_stale_pins() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let direct = ToolRequest::new(ba.clone(), "1", ToolSource::Argument).unwrap();
+        assert_eq!(direct.lockfile_scope(), &LockfileScope::Default);
+
+        let mut ts = Toolset::default();
+        ToolsetBuilder::new()
+            .with_args(&["dummy@1".parse().unwrap()])
+            .load_runtime_args(&mut ts)
+            .unwrap();
+        let request = &ts.versions[&ba].requests[0];
+        assert_eq!(request.source(), &ToolSource::Argument);
+        assert_eq!(request.lockfile_source(), None);
+
+        let source = ToolSource::Environment("MISE_DUMMY_VERSION".into(), "2".into());
+        let mut ts = Toolset::new(source.clone());
+        ts.add_version(ToolRequest::new(ba.clone(), "2", source).unwrap());
+        ToolsetBuilder::new()
+            .with_args(&["dummy@1".parse().unwrap()])
+            .load_runtime_args(&mut ts)
+            .unwrap();
+        assert_eq!(
+            ts.versions[&ba].requests[0].lockfile_scope(),
+            &LockfileScope::Default
+        );
     }
 }
