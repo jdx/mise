@@ -1,0 +1,13 @@
+binary = "redis-server"
+description = "Redis database"
+port = 6379
+tool = "conda:redis-server"
+
+[options]
+
+[daemon]
+ready_cmd = "redis-cli -h 127.0.0.1 -p {{ port }} ping"
+run = "redis-server --bind 127.0.0.1 --port {{ port }} --dir {{ data }} --appendonly yes"
+
+[exports]
+REDIS_URL = "redis://127.0.0.1:{{ port }}"

@@ -69,14 +69,14 @@ impl Shell for Fish {
             out.push_str(&formatdoc! {r#"
 
             function __mise_env_eval --description {description};
-                {exe} hook-env{flags} -s fish | source;
+                {exe} hook-env{flags} --shell-pid $fish_pid -s fish | source;
 
                 if test "$mise_fish_mode" != "disable_arrow";
                     function __mise_cd_hook --on-variable PWD --description {description};
                         if test "$mise_fish_mode" = "eval_after_arrow";
                             set -g __mise_env_again 0;
                         else;
-                            {exe} hook-env{flags} -s fish | source;
+                            {exe} hook-env{flags} --shell-pid $fish_pid -s fish | source;
                         end;
                     end;
                 end;
@@ -97,7 +97,7 @@ impl Shell for Fish {
             function __mise_env_eval_2 --on-event fish_preexec --description {description};
                 if set -q __mise_env_again;
                     set -e __mise_env_again;
-                    {exe} hook-env{flags} -s fish | source;
+                    {exe} hook-env{flags} --shell-pid $fish_pid -s fish | source;
                     echo;
                 end;
 
@@ -120,7 +120,7 @@ impl Shell for Fish {
             function fish_command_not_found
                 if string match -qrv -- '^(?:mise$|mise-)' $argv[1] &&
                     {exe} hook-not-found -s fish -- $argv[1]
-                    {exe} hook-env{flags} -s fish | source
+                    {exe} hook-env{flags} --shell-pid $fish_pid -s fish | source
                 else if functions -q __mise_fish_command_not_found
                     __mise_fish_command_not_found $argv
                 else

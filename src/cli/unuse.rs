@@ -54,6 +54,19 @@ pub(crate) struct Unuse {
 impl Unuse {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
+        let requests = config.get_tool_request_set().await?;
+        for ta in &self.installed_tool {
+            if requests
+                .sources
+                .get(&ta.ba)
+                .is_some_and(|s| s.is_mise_toml_daemon())
+            {
+                warn!(
+                    "{} is declared by [daemons]; edit that declaration to remove it",
+                    ta.ba
+                );
+            }
+        }
         let cf = self.get_config_file(&config).await?;
         let system_config = config::is_system_config(cf.get_path());
         let tools = cf.to_tool_request_set()?.tools;

@@ -33,6 +33,7 @@ include = [
   "/docs/public/android-chrome-512x512.png",
   "/minisign.pub",
   "/registry/*.toml",
+  "/registry/daemon-presets/*.toml",
   "/settings.toml",
   "/zipsign.pub",
   "/src/**/*.rs",

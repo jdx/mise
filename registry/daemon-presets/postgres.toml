@@ -1,0 +1,19 @@
+binary = "postgres"
+description = "PostgreSQL database"
+port = 5432
+tool = "conda:postgresql"
+
+[options]
+database = "postgres"
+
+[daemon]
+ready_cmd = "pg_isready -h 127.0.0.1 -p {{ port }} -U postgres"
+run = "postgres -D {{ data }} -p {{ port }} -h 127.0.0.1 -k ''"
+stop_signal = "SIGINT"
+
+[exports]
+DATABASE_URL = "postgresql://postgres@127.0.0.1:{{ port }}/{{ database }}"
+PGDATABASE = "{{ database }}"
+PGHOST = "127.0.0.1"
+PGPORT = "{{ port }}"
+PGUSER = "postgres"

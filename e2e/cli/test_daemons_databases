@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  echo "Skipping database integration: set MISE_TEST_PITCHFORK to a build with external config support"
+  exit 0
+fi
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_PROXY_ENABLE=false
+ln -s "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+pg_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+redis_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+cat >mise.toml <<TOML
+[tools]
+pitchfork = "system"
+[daemons.postgres]
+preset = "postgres"
+version = "18"
+port = $pg_port
+options.database = "integration"
+[daemons.redis]
+preset = "redis"
+version = "8"
+port = $redis_port
+TOML
+mise daemons start
+assert_contains "mise daemons ls --json" '"status": "running"'
+mise exec -- psql -h 127.0.0.1 -p "$pg_port" -U postgres -d integration -c 'CREATE TABLE proof (value integer); INSERT INTO proof VALUES (42);'
+assert_contains "mise exec -- redis-cli -h 127.0.0.1 -p '$redis_port' SET proof retained" OK
+mise daemons stop
+mise daemons start
+assert_contains "mise exec -- psql -h 127.0.0.1 -p '$pg_port' -U postgres -d integration -Atc 'SELECT value FROM proof'" 42
+assert_contains "mise exec -- redis-cli -h 127.0.0.1 -p '$redis_port' GET proof" retained
+mise daemons stop
+
+# Incompatible metadata fails without deleting existing contents.
+data_dir=$(find "$MISE_STATE_DIR/daemons" -path '*/data/redis' -type d -print -quit)
+echo redis:0 >"$data_dir/.mise-daemon-version"
+assert_contains "mise daemons start redis 2>&1 || true" 'incompatible redis data'
+assert "test -d '$data_dir/appendonlydir'"
+
+# Incomplete data is not mistaken for a successfully initialized instance.
+mkdir -p "$TMPDIR/incomplete"
+echo preserved >"$TMPDIR/incomplete/user-data"
+assert_fail "mise exec -- mise daemons __init redis '$TMPDIR/incomplete' postgres"
+assert_contains "cat '$TMPDIR/incomplete/user-data'" preserved

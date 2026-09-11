@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+export MISE_OFFLINE=1
+export DAEMON_LOG="$PWD/pitchfork.log"
+: >"$DAEMON_LOG"
+cat >~/bin/pitchfork <<'SH'
+#!/usr/bin/env bash
+printf 'cwd=%s args=%s\n' "$PWD" "$*" >> "$DAEMON_LOG"
+case "$1" in
+  usage)
+    if [[ ${OLD_PITCHFORK:-0} == 1 ]]; then echo 'cmd start {}'; else echo 'cmd config help="External files" {'; fi
+    ;;
+  status) exit 1 ;;
+  supervisor) echo '{"status":"down"}' ;;
+  project) echo '[]' ;;
+esac
+SH
+chmod u+x ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons]
+postgres = "18"
+redis = "8"
+[daemons.analytics]
+preset = "postgres"
+version = "18"
+port = 5433
+[env]
+PGPORT = "1234"
+TOML
+assert_contains "mise daemons ls --json" '"preset": "postgres"'
+assert_contains "mise env -s bash" 'PGPORT=1234'
+assert_contains "mise env -s bash" 'redis://127.0.0.1:6379'
+assert_not_contains "cat '$DAEMON_LOG'" 'config add'
+assert_not_contains "cat '$DAEMON_LOG'" 'supervisor'
+assert_contains "mise ls --json" 'mise.toml-daemon'
+assert_contains "mise unuse conda:postgresql 2>&1" 'declared by [daemons]'
+assert_contains "cat mise.toml" 'postgres = "18"'
+
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "sleep 30"
+ready_cmd = "echo {{ env.SOMETHING }}"
+TOML
+assert_fail "OLD_PITCHFORK=1 mise daemons start"
+assert_contains "OLD_PITCHFORK=1 mise daemons start 2>&1 || true" 'external configuration support'
+mise daemons start
+assert_contains "cat '$DAEMON_LOG'" 'config add'
+assert_contains "cat '$DAEMON_LOG'" '/api'
+assert "test ! -f pitchfork.toml"
+generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
+assert_contains "cat '$generated'" 'mise = true'
+assert_contains "cat '$generated'" '{{ env.SOMETHING }}'
+mise daemons stop
+assert_contains "cat '$DAEMON_LOG'" 'args=stop '
+assert_fail "MISE_EXPERIMENTAL=0 mise daemons ls"
+assert_fail "MISE_SAFE=1 mise daemons start"
+
+cat >mise.toml <<'TOML'
+[daemons]
+unknown_preset = "1"
+TOML
+assert_contains "mise daemons ls 2>&1 || true" 'available presets: postgres, redis'
+cat >mise.toml <<'TOML'
+[daemons.bad]
+version = "18"
+TOML
+assert_contains "mise daemons ls 2>&1 || true" 'requires preset'
+cat >mise.toml <<'TOML'
+[daemons.".."]
+preset = "postgres"
+version = "18"
+TOML
+assert_contains "mise daemons ls 2>&1 || true" 'invalid daemon name'

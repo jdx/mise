@@ -502,6 +502,36 @@ Set a value in one mise TOML file
 \fBdeactivate\fR
 Print the script to disable mise in the current shell session
 .TP
+\fBdaemons\fR
+[experimental] Manage project daemons with pitchfork
+.RS
+\fIAliases: \fRdaemon
+.RE
+.TP
+\fBdaemons start\fR
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.TP
+\fBdaemons stop\fR
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.TP
+\fBdaemons restart\fR
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.TP
+\fBdaemons ls\fR
+List project daemons without starting a supervisor or registering configuration.
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
+\fBdaemons logs\fR
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.TP
+\fBdaemons status\fR
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.TP
+\fBdaemons tui\fR
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.TP
 \fBdoctor\fR
 Check mise installation for possible problems
 .RS
@@ -3617,6 +3647,93 @@ Fish
 .RS 4
 command mise deactivate | source
 .RE
+.SH "MISE DAEMONS"
+[experimental] Manage project daemons with pitchfork
+
+Define commands or managed Postgres/Redis presets in [daemons].
+With no subcommand, list configured and previously managed daemons.
+.PP
+\fBUsage:\fR mise daemons [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-json\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS START"
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.PP
+\fBUsage:\fR mise daemons start [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS STOP"
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.PP
+\fBUsage:\fR mise daemons stop [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS RESTART"
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.PP
+\fBUsage:\fR mise daemons restart [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS LS"
+List project daemons without starting a supervisor or registering configuration.
+.PP
+\fBUsage:\fR mise daemons ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-json\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS LOGS"
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.PP
+\fBUsage:\fR mise daemons logs [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS STATUS"
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.PP
+\fBUsage:\fR mise daemons status [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS TUI"
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.PP
+\fBUsage:\fR mise daemons tui [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE DOCTOR"
 Check mise installation for possible problems
 .PP

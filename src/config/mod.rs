@@ -1401,7 +1401,8 @@ impl Config {
             trace!("env_cache: using cached non-tool env results");
             return Ok(env_results);
         }
-        let entries = self
+        let mut entries = crate::daemons::load(&self.config_files)?.env_entries();
+        let explicit_entries: Vec<_> = self
             .config_files
             .iter()
             .rev()
@@ -1413,6 +1414,7 @@ impl Config {
             .into_iter()
             .flatten()
             .collect();
+        entries.extend(explicit_entries);
         // trace!("load_env: entries: {:#?}", entries);
         let mut env_results = EnvResults::resolve(
             self,

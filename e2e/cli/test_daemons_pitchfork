@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+
+# Before pitchfork's supporting release, pass its local build explicitly.
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  echo "Skipping real pitchfork integration: set MISE_TEST_PITCHFORK to a build with external config support"
+  exit 0
+fi
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_AUTOSTOP_DELAY=0s
+export PITCHFORK_INTERVAL=100ms
+export PITCHFORK_PROXY_ENABLE=false
+mkdir -p "$PITCHFORK_STATE_DIR" "$PITCHFORK_CONFIG_DIR"
+ln -s "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+
+mkdir -p project other
+cd project
+project_dir="$PWD"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "exec sleep 600"
+ready_delay = 0
+auto = ["start", "stop"]
+TOML
+assert "test ! -f '$PITCHFORK_CONFIG_DIR/config.toml'"
+assert_contains "mise daemons ls --json" '"status": "available"'
+assert "test ! -f '$PITCHFORK_CONFIG_DIR/config.toml'"
+mise daemons start
+assert_contains "mise daemons ls --json" '"status": "running"'
+# A second profile cannot overwrite a running project.
+assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" 'another daemon profile is active'
+mise daemons stop
+
+# Each shell owns an independent session. Explicit --force also exercises retry paths.
+sleep 600 &
+second_pid=$!
+trap 'kill "$second_pid" 2>/dev/null || true; pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+mise hook-env --shell-pid $$ --force -s bash >/dev/null
+mise hook-env --shell-pid "$second_pid" --force -s bash >/dev/null
+for _ in {1..100}; do
+  sessions=$(pitchfork project list --json)
+  [[ $(jq 'length' <<<"$sessions") == 2 ]] && break
+  sleep 0.1
+done
+assert "test $(pitchfork project list --json | jq length) -eq 2"
+mise daemons stop
+assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" "another daemon profile is active"
+mise daemons start
+cd ../other
+mise hook-env --shell-pid $$ --force -s bash >/dev/null
+for _ in {1..100}; do
+  [[ $(pitchfork project list --json | jq length) == 1 ]] && break
+  sleep 0.1
+done
+assert "test $(pitchfork project list --json | jq length) -eq 1"
+cd "$project_dir"
+assert_contains "mise daemons ls --json" '"status": "running"'
+cd ../other
+mise hook-env --shell-pid "$second_pid" --force -s bash >/dev/null
+for _ in {1..100}; do
+  [[ $(pitchfork project list --json | jq length) == 0 ]] && break
+  sleep 0.1
+done
+assert "test $(pitchfork project list --json | jq length) -eq 0"
+cd "$project_dir"
+mise daemons stop
+
+# Leaving while readiness is pending must not strand a shell session.
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "exec sleep 600"
+ready_delay = 2
+auto = ["start", "stop"]
+TOML
+mise hook-env --shell-pid $$ --force -s bash >/dev/null
+sleep 0.2
+cd ../other
+mise hook-env --shell-pid $$ --force -s bash >/dev/null
+sleep 3
+for _ in {1..100}; do
+  [[ $(pitchfork project list --json | jq length) == 0 ]] && break
+  sleep 0.1
+done
+assert "test $(pitchfork project list --json | jq length) -eq 0"
+cd "$project_dir"
+mise daemons stop
+
+# Empty declarations detach the generated file and keep stopped IDs inspectable.
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+TOML
+mise daemons stop
+assert "test $(pitchfork config list --json | jq length) -eq 0"

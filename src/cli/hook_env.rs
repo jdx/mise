@@ -48,6 +48,8 @@ pub(crate) struct HookEnv {
     /// Show "mise: <TOOL>@<VERSION>" message when changing directories
     #[usage(long, hide = true)]
     status: bool,
+    #[usage(long, hide = true)]
+    shell_pid: Option<u32>,
 }
 
 impl HookEnv {
@@ -94,6 +96,7 @@ impl HookEnv {
             .build(&config)
             .await?;
         time!("hook-env");
+        crate::daemons::hook_env::publish(&config, &ts, self.shell_pid).await;
 
         // Try to use cached watch_files for early exit check if env_cache is enabled
         // This avoids executing plugins just to get watch_files
