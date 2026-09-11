@@ -72,8 +72,9 @@ PY
 # A SIGHUP the parent ignored (nohup style) must stay ignored: the run completes.
 cat >mise.toml <<'TOML'
 [doctor.checks.quick]
-run = "sleep 1"
+run = "touch quick-started; sleep 1"
 TOML
+rm -f quick-started
 python3 - <<'PY'
 import os
 import signal
@@ -88,7 +89,13 @@ child = subprocess.Popen(
     stderr=subprocess.PIPE,
 )
 try:
-    time.sleep(.3)
+    # Signal handlers are installed before any check starts, so the marker
+    # proves the ignored disposition was already inspected.
+    deadline = time.monotonic() + 15
+    while not os.path.exists("quick-started"):
+        assert child.poll() is None, child.communicate()
+        assert time.monotonic() < deadline, "quick failed to start"
+        time.sleep(.05)
     os.killpg(child.pid, signal.SIGHUP)
     stdout, stderr = child.communicate(timeout=15)
     assert child.returncode == 0, (child.returncode, stdout, stderr)
