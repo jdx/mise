@@ -7,3 +7,15 @@ note [https://github.com/jdx/mise/pull/13102#issue-comment-box](https://github.c
 ---
 
 make a pr
+
+---
+
+address pr feedback and failing checsk until it settles
+
+---
+
+so i thought we were moving away from putting this into the lockfile? look at my recent lockfile prs
+
+---
+
+also reply to the user's discussion
