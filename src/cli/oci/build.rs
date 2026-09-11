@@ -106,6 +106,7 @@ impl Build {
             // Layer reuse would leave blob-less holes in the layout; `build`
             // must produce a complete, standalone image directory.
             reuse_from: None,
+            push_destination: None,
         };
         let out = perform_build(opts, self.include_global).await?;
 

@@ -145,6 +145,7 @@ impl Run {
                     // The layout is loaded into a local engine, which needs
                     // every blob present — no remote reuse.
                     reuse_from: None,
+                    push_destination: None,
                 };
                 let built = perform_build(opts, self.include_global).await?;
                 info!("built image: {}", built.manifest_digest);

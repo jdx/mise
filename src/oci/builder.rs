@@ -58,6 +58,9 @@ pub(crate) struct BuildOptions {
     /// NOTE: the resulting layout omits reused layer blobs, so it is only
     /// valid to push to the repository the cache image came from.
     pub reuse_from: Option<registry::RemoteImage>,
+    /// Push destination; permits base blobs already in that repository to
+    /// remain remote when no build step needs to unpack them.
+    pub push_destination: Option<String>,
 }
 
 /// Cache key for tool-layer reuse. All four parts must match — a layer built
@@ -218,7 +221,12 @@ impl Builder {
                 crate::oci::normalize_arch(std::env::consts::ARCH),
                 crate::oci::normalize_os(std::env::consts::OS),
             ));
-            let pull = registry::pull_base_image(ref_, &layout, desired)
+            let destination = self
+                .opts
+                .push_destination
+                .as_deref()
+                .filter(|_| self.system_packages.is_empty());
+            let pull = registry::pull_base_image(ref_, &layout, desired, destination)
                 .await
                 .wrap_err_with(|| format!("pulling base image {ref_}"))?;
             base_layers = pull

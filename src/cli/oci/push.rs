@@ -125,6 +125,7 @@ impl Push {
                     include_mise: !self.no_mise,
                     copy: vec![],
                     reuse_from: self.fetch_layer_cache().await?,
+                    push_destination: Some(self.reference.clone()),
                 };
                 let built = perform_build(opts, self.include_global).await?;
                 reused_layers = built.tool_layers.iter().filter(|l| l.reused).count();
@@ -171,7 +172,7 @@ impl Push {
             // destination doesn't have.
             let dest = registry::Reference::parse(&self.reference)?;
             let cache = registry::Reference::parse(cache_from)?;
-            if dest.registry != cache.registry || dest.repository != cache.repository {
+            if !dest.same_repository(&cache) {
                 bail!(
                     "--cache-from must reference the same repository as the destination \
                      (got {}/{}, destination is {}/{})",

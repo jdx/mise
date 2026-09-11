@@ -91,6 +91,13 @@ impl Reference {
         })
     }
 
+    /// Compare the actual registry endpoint, so Docker Hub's public and API
+    /// hostnames identify the same repository. Tags and digests do not affect
+    /// where a repository's blobs live.
+    pub(crate) fn same_repository(&self, other: &Self) -> bool {
+        self.repository == other.repository && self.registry_url() == other.registry_url()
+    }
+
     pub(crate) fn registry_url(&self) -> String {
         // Loopback registries (localhost:5000 etc.) serve plain HTTP — the
         // same insecure-by-default convention docker applies to 127.0.0.0/8.
@@ -573,8 +580,13 @@ pub(crate) async fn pull_base_image(
     reference: &str,
     layout: &ImageLayout,
     desired_platform: Option<(&str, &str)>,
+    push_destination: Option<&str>,
 ) -> Result<BasePull> {
     let r = Reference::parse(reference)?;
+    let reuse_base = push_destination
+        .map(Reference::parse)
+        .transpose()?
+        .is_some_and(|dest| dest.same_repository(&r));
     let base_url = r.registry_url();
 
     // Fetch manifest with both OCI and Docker Accept headers. Try anonymously
@@ -630,7 +642,7 @@ pub(crate) async fn pull_base_image(
     for layer in &manifest.layers {
         let layer_url = format!("{base_url}/v2/{}/blobs/{}", r.repository, layer.digest);
         let blob_path = layout.blob_path(&layer.digest);
-        if blob_path.exists() {
+        if blob_path.exists() || reuse_base {
             continue;
         }
         let pr = mpr.add(&format!("pull {}", short_digest(&layer.digest)));
@@ -1006,6 +1018,30 @@ pub(crate) async fn push_image(
             debug!("blob {} already present, skipping", desc.digest);
             skipped += 1;
             continue;
+        }
+        // A same-repository base may have been left remote. If HEAD is
+        // unsupported (or a blob disappeared), fall back to a verified GET
+        // before uploading. This also keeps sparse tool-layer pushes working
+        // with registries that cannot answer HEAD requests.
+        if !layout.blob_path(&desc.digest).exists() {
+            let pr = mpr.add(&format!("pull {}", blob_label(desc)));
+            pr.set_length(desc.size);
+            let url = format!(
+                "{}/v2/{}/blobs/{}",
+                pusher.base_url, pusher.repository, desc.digest
+            );
+            let result = async {
+                let bytes = download_blob(&mut pusher.session, &url, Some(&*pr)).await?;
+                layout.write_blob_with_digest(&desc.digest, &bytes)
+            }
+            .await;
+            match result {
+                Ok(()) => pr.finish(),
+                Err(err) => {
+                    pr.abandon();
+                    return Err(err);
+                }
+            }
         }
         // Arc so the streaming request body (which must be 'static) can
         // advance the progress bar from inside the byte stream.
@@ -1701,11 +1737,191 @@ mod tests {
     use super::*;
 
     #[test]
+    fn repository_identity_uses_canonical_registry_endpoint() {
+        for (left, right, same) in [
+            (
+                "docker.io/library/app:base",
+                "registry-1.docker.io/library/app:dev",
+                true,
+            ),
+            ("app:base", "registry-1.docker.io/library/app:dev", true),
+            (
+                "docker.io/library/app:base",
+                "registry-1.docker.io/library/other:dev",
+                false,
+            ),
+            (
+                "docker.io/library/app:base",
+                "example.com/library/app:dev",
+                false,
+            ),
+            ("localhost:5000/app:base", "localhost:5001/app:dev", false),
+        ] {
+            let left = Reference::parse(left).unwrap();
+            let right = Reference::parse(right).unwrap();
+            assert_eq!(left.same_repository(&right), same);
+            assert_eq!(right.same_repository(&left), same);
+        }
+    }
+
+    #[tokio::test]
+    async fn base_layers_stay_remote_only_for_pushes_to_the_same_repository() {
+        use sha2::{Digest, Sha256};
+
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let reference = format!("{}/tools:base", server.host_with_port());
+        let destination = format!("{}/tools:dev", server.host_with_port());
+        let other_repository = format!("{}/other:dev", server.host_with_port());
+        let other_registry = "example.com/tools:dev";
+        let td = tempfile::tempdir().unwrap();
+        // Resolve the mutable tag twice, with a different layer each time.
+        for version in ["first base", "updated base"] {
+            let digest = format!(
+                "sha256:{}",
+                crate::oci::layer::hex_encode(&Sha256::digest(version.as_bytes()))
+            );
+            let config = serde_json::json!({
+                "architecture": "amd64", "os": "linux",
+                "rootfs": {"type": "layers", "diff_ids": [digest]}
+            })
+            .to_string();
+            let config_digest = format!(
+                "sha256:{}",
+                crate::oci::layer::hex_encode(&Sha256::digest(config.as_bytes()))
+            );
+            let manifest = server.mock("GET", "/v2/tools/manifests/base")
+                .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
+                .with_body(serde_json::json!({
+                    "schemaVersion": 2, "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+                    "config": {"mediaType": "application/vnd.oci.image.config.v1+json", "digest": config_digest, "size": config.len()},
+                    "layers": [{"mediaType": "application/vnd.oci.image.layer.v1.tar", "digest": digest, "size": version.len()}]
+                }).to_string())
+                .expect(4).create_async().await;
+            let config_get = server
+                .mock("GET", format!("/v2/tools/blobs/{config_digest}").as_str())
+                .with_body(&config)
+                .expect(4)
+                .create_async()
+                .await;
+            let layer_get = server
+                .mock("GET", format!("/v2/tools/blobs/{digest}").as_str())
+                .with_body(version)
+                .expect(3)
+                .create_async()
+                .await;
+            for (i, target) in [
+                Some(destination.as_str()),
+                None,
+                Some(other_repository.as_str()),
+                Some(other_registry),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let layout = ImageLayout::init(&td.path().join(format!("{version}-{i}"))).unwrap();
+                let pulled = pull_base_image(&reference, &layout, None, target)
+                    .await
+                    .unwrap();
+                assert_eq!(pulled.layers[0].digest, digest);
+                assert_eq!(layout.blob_path(&digest).exists(), i != 0);
+                assert_eq!(pulled.config_json["rootfs"]["diff_ids"][0], digest);
+            }
+            manifest.assert_async().await;
+            config_get.assert_async().await;
+            layer_get.assert_async().await;
+        }
+    }
+
+    #[test]
     fn parses_bare_name() {
         let r = Reference::parse("debian").unwrap();
         assert_eq!(r.registry, "docker.io");
         assert_eq!(r.repository, "library/debian");
         assert_eq!(r.tag, "latest");
+    }
+
+    #[tokio::test]
+    async fn sparse_push_downloads_missing_bytes_when_head_is_unsupported() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let td = tempfile::tempdir().unwrap();
+        let layout = ImageLayout::init(td.path()).unwrap();
+        let bytes = b"base layer";
+        let source = ImageLayout::init(&td.path().join("source")).unwrap();
+        let (digest, size) = source.write_blob(bytes).unwrap();
+        let (config_digest, config_size) = layout.write_blob(b"{}").unwrap();
+        let manifest: ImageManifest = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 2, "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+            "config": {"mediaType": "application/vnd.oci.image.config.v1+json", "digest": config_digest, "size": config_size},
+            "layers": [{"mediaType": "application/vnd.oci.image.layer.v1.tar", "digest": digest, "size": size}]
+        })).unwrap();
+        let (manifest_digest, manifest_size) = layout.write_manifest(&manifest).unwrap();
+        layout
+            .write_index(&manifest_digest, manifest_size, None, None)
+            .unwrap();
+        let probe = server
+            .mock("GET", "/v2/")
+            .with_status(200)
+            .create_async()
+            .await;
+        let config_head = server
+            .mock("HEAD", format!("/v2/tools/blobs/{config_digest}").as_str())
+            .with_status(200)
+            .create_async()
+            .await;
+        let layer_head = server
+            .mock("HEAD", format!("/v2/tools/blobs/{digest}").as_str())
+            .with_status(405)
+            .create_async()
+            .await;
+        let layer_get = server
+            .mock("GET", format!("/v2/tools/blobs/{digest}").as_str())
+            .with_body(bytes)
+            .create_async()
+            .await;
+        let upload = server
+            .mock("POST", "/v2/tools/blobs/uploads/")
+            .with_status(202)
+            .with_header("Location", "/uploads/1")
+            .create_async()
+            .await;
+        let put = server
+            .mock("PUT", "/uploads/1")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "digest".into(),
+                digest.clone(),
+            ))
+            .match_body(bytes.to_vec())
+            .with_status(201)
+            .create_async()
+            .await;
+        let manifest_put = server
+            .mock("PUT", "/v2/tools/manifests/dev")
+            .with_status(201)
+            .create_async()
+            .await;
+        let result = push_image(
+            td.path(),
+            &format!("{}/tools:dev", server.host_with_port()),
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.uploaded, 1);
+        assert_eq!(result.skipped, 1);
+        assert_eq!(layout.read_blob(&digest).unwrap(), bytes);
+        for mock in [
+            probe,
+            config_head,
+            layer_head,
+            layer_get,
+            upload,
+            put,
+            manifest_put,
+        ] {
+            mock.assert_async().await;
+        }
     }
 
     #[test]
