@@ -24,6 +24,7 @@ Manage bootstrap system packages from `[bootstrap.packages]`
 - [`mise bootstrap packages status [-J --json] [--missing]`](/cli/bootstrap/packages/status.html)
 - [`mise bootstrap packages upgrade [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/upgrade.html)
 - [`mise bootstrap packages use [FLAGS] <PACKAGE>…`](/cli/bootstrap/packages/use.html)
+- [`mise bootstrap packages where <PACKAGE>`](/cli/bootstrap/packages/where.html)
 
 <!-- generated reference navigation -->
 
