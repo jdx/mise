@@ -62,8 +62,9 @@ mise run build arg1 arg2 ::: test arg3 arg4
 
 ### Run the default task
 
-When no task is specified, mise runs the task named `default`. You can also
-alias another task to `default`:
+When no task is specified, mise runs `default` when that task is defined.
+Otherwise, an interactive terminal opens the task selector. You can also alias
+another task to `default`:
 
 ```bash
 mise run
