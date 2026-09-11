@@ -17,8 +17,6 @@ env = { CHILD = "templated-child" }
 run = [{ task = "{{ env.CHILD }}" }]
 EOF
 
-rm -rf "$MISE_DATA_DIR/installs/tiny"
-
 # A task referenced from a run entry is resolved at execution time, but its
 # task-only tools must still be installed before the injected task starts.
 assert "mise run parent" "rtx-tiny: v1.1.0 args:"
@@ -43,6 +41,26 @@ EOF
 assert_fail_contains \
   "mise run --continue-on-error install-failure-parent ::: install-sibling 2>&1" \
   "sibling-completed"
+
+cat <<EOF >mise.toml
+[tasks.install-one]
+tools = { dummy = "1.0.0" }
+run = "dummy"
+
+[tasks.install-two]
+tools = { dummy = "2.0.0" }
+run = "dummy"
+
+[tasks.install-pair]
+run = [{ task = "install-one" }, { task = "install-two" }]
+EOF
+
+# Deferred installs share the task scheduler's jobs limit.
+install_gate="$HOME/deferred-install-gate"
+assert_contains \
+  "DUMMY_INSTALL_GATE_DIR='$install_gate' mise run --jobs 1 install-pair" \
+  "This is Dummy"
+assert_fail "test -e '$install_gate.overlap'"
 
 cat <<EOF >mise.toml
 [tasks.a]

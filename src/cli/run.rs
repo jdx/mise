@@ -932,31 +932,12 @@ impl Run {
                     let this = this.clone();
                     let spawn_context = spawn_context.clone();
                     async move {
-                        if install_tools && !this.skip_tools {
-                            let mut install_config = spawn_context.config.clone();
-                            let install_result =
-                                crate::task::task_tool_installer::TaskToolInstaller::new(
-                                    &this.context_builder,
-                                    &this.tool,
-                                )
-                                .install_tasks(
-                                    &mut install_config,
-                                    vec![task.clone()],
-                                    this.dry_run,
-                                    &HashSet::new(),
-                                )
-                                .await;
-                            if let Err(err) = install_result {
-                                this.fail_sched_job_before_start(task, deps_for_remove, err)
-                                    .await;
-                                return Ok(());
-                            }
-                        }
                         Self::spawn_sched_job(
                             this,
                             task,
                             deps_for_remove,
                             allow_during_interruption,
+                            install_tools,
                             spawn_context,
                         )
                         .await
@@ -991,6 +972,7 @@ impl Run {
         task: Task,
         deps_for_remove: Arc<Mutex<Deps>>,
         inherited_allow_during_interruption: bool,
+        install_tools: bool,
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
         if Self::should_abort_while_stopping(
@@ -1008,8 +990,9 @@ impl Run {
             );
             return Ok(());
         }
-        let needs_permit = task_needs_permit(&task);
-        let permit_opt = if needs_permit {
+        let needs_task_permit = task_needs_permit(&task);
+        let needs_install = install_tools && !this.skip_tools;
+        let mut permit_opt = if needs_task_permit || needs_install {
             let wait_start = std::time::Instant::now();
             let p = Some(ctx.semaphore.clone().acquire_owned().await?);
             trace!(
@@ -1040,6 +1023,51 @@ impl Run {
             trace!("no semaphore needed for orchestrator task: {}", task.name);
             None
         };
+
+        if needs_install {
+            let mut install_config = ctx.config.clone();
+            let install_result = crate::task::task_tool_installer::TaskToolInstaller::new(
+                &this.context_builder,
+                &this.tool,
+            )
+            .install_tasks(
+                &mut install_config,
+                vec![task.clone()],
+                this.dry_run,
+                &HashSet::new(),
+            )
+            .await;
+            if let Err(err) = install_result {
+                if Self::should_abort_while_stopping(
+                    &this,
+                    &task,
+                    &deps_for_remove,
+                    inherited_allow_during_interruption,
+                )
+                .await
+                {
+                    return Ok(());
+                }
+                this.fail_sched_job_before_start(task, deps_for_remove, err)
+                    .await;
+                return Ok(());
+            }
+            if Self::should_abort_while_stopping(
+                &this,
+                &task,
+                &deps_for_remove,
+                inherited_allow_during_interruption,
+            )
+            .await
+            {
+                return Ok(());
+            }
+            if !needs_task_permit {
+                // Orchestrator tasks must release the preparation permit before
+                // waiting for children, especially when --jobs is 1.
+                permit_opt = None;
+            }
+        }
 
         ctx.in_flight
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
