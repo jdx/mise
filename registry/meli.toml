@@ -1,0 +1,5 @@
+backends = ["github:meli/meli", "cargo:meli"]
+bins = ["meli"]
+description = "Terminal mail client"
+test = { cmd = "meli --version", expected = "meli {{version}}" }
+version_order = "semver"
