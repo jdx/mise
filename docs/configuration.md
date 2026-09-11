@@ -115,6 +115,33 @@ discovery, not a final override applied after the hierarchy.
                 └── mise.toml         # Service-specific config (highest precedence)
 ```
 
+### Example: merging tool versions
+
+For a project with these three config files, each later file overrides the same
+tool from an earlier file. A tool omitted from the later files is inherited.
+All entries shown below belong to each file's `[tools]` section.
+
+```mermaid
+---
+config:
+  htmlLabels: false
+---
+flowchart TB
+    accTitle: Tool configuration precedence
+    accDescr: Project and local config override the Node request. The Python request is inherited from global config.
+    global["Global config<br/>node = &quot;22&quot;<br/>python = &quot;3.13&quot;"]
+    project["Project mise.toml<br/>node = &quot;24&quot;"]
+    local["Project mise.local.toml<br/>node = &quot;20&quot;"]
+    effective["Effective tool requests<br/>node = &quot;20&quot;<br/>python = &quot;3.13&quot;"]
+    global -->|Override Node| project
+    project -->|Override Node again| local
+    local -->|Keep other tool requests| effective
+```
+
+The local file wins for Node; Python keeps its global request. These are version
+requests, which mise still resolves to concrete tool versions. This example
+illustrates `[tools]`; other sections have the merge rules below.
+
 ### Merge Behavior by Section
 
 Different configuration sections merge in different ways:
