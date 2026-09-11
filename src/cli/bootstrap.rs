@@ -1293,6 +1293,7 @@ struct BootstrapUserStatus {
 }
 
 impl Bootstrap {
+    /// Identify local lookup so dispatch can bypass bootstrap configuration and hooks.
     pub(super) fn is_packages_where(&self) -> bool {
         matches!(
             self.command,

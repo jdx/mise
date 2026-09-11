@@ -835,6 +835,8 @@ fn preprocess_args_for_naked_run(cmd: &usage_rs::Command<'_>, args: &[String]) -
     result
 }
 
+/// Recognize the query path before configuration loading, even when query arguments are invalid.
+/// Parser events distinguish command names from flag values and task or exec payloads.
 fn is_packages_where_query(args: &[String]) -> bool {
     let argv = args
         .iter()
@@ -1217,6 +1219,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Keep early recognition consistent with the full parser across inherited flag placements.
     fn packages_where_classifier_accepts_global_and_parent_flags() {
         let cases: &[&[&str]] = &[
             &["mise", "bootstrap", "packages", "where", "brew:widget"],
@@ -1299,6 +1302,7 @@ mod tests {
     }
 
     #[test]
+    /// Isolate malformed queries so configuration errors cannot mask their argument diagnostics.
     fn packages_where_recognition_precedes_query_argument_validation() {
         let cases: &[&[&str]] = &[
             &["mise", "bootstrap", "packages", "where"],
@@ -1346,6 +1350,7 @@ mod tests {
     }
 
     #[test]
+    /// Preserve normal startup when query-like words occur in flag values or another command payload.
     fn packages_where_recognizer_distinguishes_flag_values_tasks_exec_and_separators() {
         let cases: &[&[&str]] = &[
             &["mise"],
@@ -1464,6 +1469,7 @@ mod tests {
     }
 
     #[test]
+    /// Keep other bootstrap operations on their normal configuration and execution path.
     fn packages_where_classifier_distinguishes_other_bootstrap_commands() {
         let cases: &[&[&str]] = &[
             &["mise", "bootstrap"],
@@ -1482,6 +1488,7 @@ mod tests {
     }
 
     #[test]
+    /// Enforce the single-formula query interface before installation lookup can run.
     fn packages_where_parser_requires_exactly_one_package_and_valid_flags() {
         let cases: &[&[&str]] = &[
             &[],

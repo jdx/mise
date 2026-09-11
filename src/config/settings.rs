@@ -1070,14 +1070,17 @@ impl Settings {
         Ok(())
     }
 
+    /// Select process-wide query isolation before parsing can trigger lazy settings or miserc reads.
     pub(crate) fn select_package_query_sources() {
         PACKAGE_QUERY_SETTINGS.store(true, Ordering::Relaxed);
     }
 
+    /// Report whether this invocation requires environment-only settings and local diagnostics.
     pub(crate) fn is_package_query() -> bool {
         PACKAGE_QUERY_SETTINGS.load(Ordering::Relaxed)
     }
 
+    /// Apply CLI overrides and validate environment settings after query isolation is selected.
     pub(crate) fn init_package_query(cli: &crate::cli::Cli) -> Result<()> {
         Self::add_cli_matches(cli);
         Self::try_get()?;

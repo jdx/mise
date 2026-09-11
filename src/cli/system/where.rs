@@ -19,6 +19,7 @@ pub(crate) struct SystemWhere {
 }
 
 impl SystemWhere {
+    /// Print one stable opt path after local validation succeeds; return errors before writing stdout.
     pub(crate) async fn run(self) -> Result<()> {
         let (manager, name) = crate::system::parse_spec(&self.package)
             .wrap_err("use brew:<formula> or brew:<owner>/<tap>/<formula> for package lookup")?;
@@ -44,6 +45,7 @@ impl SystemWhere {
 }
 
 #[cfg(any(unix, test))]
+/// Borrow a lossless, single-line UTF-8 path suitable for shell command substitution.
 fn path_for_output(path: &Path) -> Result<&str> {
     match path.to_str() {
         Some(value) if !value.contains(['\r', '\n']) => Ok(value),
@@ -58,6 +60,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Preserve spaces and the original prefix spelling in the path returned to scripts.
     fn packages_where_output_preserves_valid_utf8_path_exactly() {
         let path = Path::new("/prefix with spaces/opt/widget");
         assert_eq!(
@@ -67,6 +70,7 @@ mod tests {
     }
 
     #[test]
+    /// Reject line breaks that would turn one lookup result into multiple output lines.
     fn packages_where_output_rejects_cr_and_lf() {
         for prefix in ["/prefix\n/opt/widget", "/prefix\r/opt/widget"] {
             let error = path_for_output(Path::new(prefix)).unwrap_err();
@@ -76,6 +80,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    /// Reject unrepresentable bytes independently of whether the path exists.
     fn packages_where_output_rejects_non_utf8_without_filesystem_access() {
         use std::ffi::OsString;
         use std::os::unix::ffi::OsStringExt;

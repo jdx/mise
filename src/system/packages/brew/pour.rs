@@ -42,6 +42,8 @@ pub(super) fn linked_version(name: &str) -> Option<String> {
     record_keg(name, &opt).map(|(version, _)| version)
 }
 
+/// Return the absolute opt path only when its symlink resolves to a keg directly inside the formula rack.
+/// Preserve the configured prefix spelling and report invalid records without repairing them.
 pub(super) fn strict_package_root(name: &str) -> Result<PathBuf> {
     if let Some(prefix) = std::env::var_os("MISE_SYSTEM_BREW_PREFIX")
         && prefix.to_str().is_none()
@@ -88,6 +90,7 @@ pub(super) fn strict_package_root(name: &str) -> Result<PathBuf> {
     Ok(opt)
 }
 
+/// Retain the filesystem error while adding lookup context and actionable recovery guidance.
 fn package_root_io_error(name: &str, path: &Path, err: std::io::Error) -> eyre::Report {
     let context = if err.kind() == std::io::ErrorKind::NotFound {
         format!(
@@ -1192,6 +1195,7 @@ mod tests {
         );
     }
 
+    /// Create the minimal rack layout needed to test lookup independently of installation metadata.
     fn query_keg(prefix: &Path, name: &str, version: &str) -> Result<PathBuf> {
         let keg = prefix.join("Cellar").join(name).join(version);
         std::fs::create_dir_all(&keg)?;
@@ -1199,6 +1203,7 @@ mod tests {
         Ok(keg)
     }
 
+    /// Require stable absolute opt output and verify that it resolves to the expected keg.
     fn assert_query_target(name: &str, opt: &Path, keg: &Path) -> Result<()> {
         let root = package_root(name)?;
         assert_eq!(root, opt);
@@ -1208,6 +1213,7 @@ mod tests {
     }
 
     #[test]
+    /// Treat version suffixes literally and qualified requests as names for the same local rack.
     fn package_root_normalizes_plain_versioned_and_qualified_names() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1229,6 +1235,7 @@ mod tests {
     }
 
     #[test]
+    /// Validate names before touching the prefix so malformed requests receive identifier diagnostics.
     fn package_root_rejects_invalid_identifiers_before_filesystem_lookup() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1271,6 +1278,7 @@ mod tests {
     }
 
     #[test]
+    /// Keep cask requests separate even when a same-named formula is installed.
     fn package_root_rejects_the_cask_namespace() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1283,6 +1291,7 @@ mod tests {
     }
 
     #[test]
+    /// Allow minimal keg-only installations whose only active record is a relative opt symlink.
     fn package_root_accepts_relative_opt_without_receipts_or_public_links() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1298,6 +1307,7 @@ mod tests {
     }
 
     #[test]
+    /// Use the active opt target instead of version ordering, leaving both keg payloads unchanged.
     fn package_root_follows_only_the_active_opaque_version_and_preserves_records() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1320,6 +1330,7 @@ mod tests {
     }
 
     #[test]
+    /// Return the user-facing prefix spelling while validating its canonical filesystem target.
     fn package_root_preserves_symlinked_prefix_and_spaces() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, base) = canonical_tempdir()?;
@@ -1333,6 +1344,7 @@ mod tests {
     }
 
     #[test]
+    /// Anchor relative prefix settings to the current directory before returning a usable path.
     fn package_root_makes_relative_prefix_absolute() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let cwd = std::env::current_dir()?;
@@ -1345,6 +1357,7 @@ mod tests {
     }
 
     #[test]
+    /// Require an active opt record rather than inferring one from Cellar or linked-keg entries.
     fn package_root_requires_opt_even_with_cellar_or_linked_keg() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, base) = canonical_tempdir()?;
@@ -1379,6 +1392,7 @@ mod tests {
     }
 
     #[test]
+    /// Report a missing target with installation guidance while preserving the link for inspection.
     fn package_root_rejects_dangling_opt_without_repairing_it() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1395,6 +1409,7 @@ mod tests {
     }
 
     #[test]
+    /// Require opt symlinks and preserve invalid entries for explicit user repair.
     fn package_root_rejects_regular_directory_and_file_opt_records() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, base) = canonical_tempdir()?;
@@ -1419,6 +1434,7 @@ mod tests {
     }
 
     #[test]
+    /// Accept only a direct keg directory in the requested rack, preserving rejected link targets.
     fn package_root_rejects_foreign_nested_rack_and_file_targets() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1445,6 +1461,7 @@ mod tests {
     }
 
     #[test]
+    /// Validate the final canonical target rather than rejecting a legitimate intermediary symlink.
     fn package_root_accepts_outside_intermediary_resolving_to_its_keg() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1458,6 +1475,7 @@ mod tests {
     }
 
     #[test]
+    /// Resolve symlinks before parent traversal so lexical normalization cannot disguise a foreign keg.
     fn package_root_uses_filesystem_dotdot_semantics_to_reject_foreign_target() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1475,6 +1493,7 @@ mod tests {
     }
 
     #[test]
+    /// Accept a valid keg reached through symlinks and parent traversal under filesystem semantics.
     fn package_root_uses_filesystem_dotdot_semantics_to_accept_local_target() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1492,6 +1511,7 @@ mod tests {
     }
 
     #[test]
+    /// Preserve the OS loop error and failing opt path for filesystem diagnosis.
     fn package_root_preserves_symlink_loop_io_error_and_path() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1515,6 +1535,7 @@ mod tests {
     }
 
     #[test]
+    /// Retain permission diagnostics on non-root hosts and restore fixture access for cleanup.
     fn package_root_preserves_permission_denial_and_path() -> Result<()> {
         if nix::unistd::geteuid().is_root() {
             return Ok(());

@@ -13,8 +13,11 @@ import unittest
 
 
 class PackagesWhere(unittest.TestCase):
+    """Exercise local package lookup and its startup isolation through the public CLI."""
+
     @classmethod
     def setUpClass(cls):
+        """Require the harness binary and identify hosts supported by local Homebrew lookup."""
         cls.binary = shutil.which("mise")
         assert cls.binary is not None, "the e2e harness must provide mise"
         cls.supported = (platform.system(), platform.machine()) in {
@@ -24,6 +27,7 @@ class PackagesWhere(unittest.TestCase):
         }
 
     def setUp(self):
+        """Seed isolated state that exposes unexpected configuration, network, or housekeeping work."""
         self.base = Path.cwd() / self.id().rsplit(".", 1)[-1]
         self.base.mkdir()
         self.prefix = self.base / "prefix with spaces"
@@ -78,6 +82,7 @@ class PackagesWhere(unittest.TestCase):
         self.seed_config_sentinels()
 
     def write(self, relative, content, executable=False):
+        """Create a fixture file under the isolated root, optionally as a sentinel executable."""
         path = self.base / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
@@ -86,6 +91,7 @@ class PackagesWhere(unittest.TestCase):
         return path
 
     def seed_config_sentinels(self):
+        """Expose configuration loading through invalid syntax and commands that create marker files."""
         for scope, path in [("global", "config/config.toml"), ("project", "project/mise.toml")]:
             marker = self.base / "home" / (scope + "-settings-ran")
             expression = '{{ exec(command="touch ' + str(marker) + '") }}'
@@ -96,6 +102,7 @@ class PackagesWhere(unittest.TestCase):
         self.write("project/.miserc.toml", "invalid-miserc-sentinel = [\n")
 
     def keg(self, name="widget", version="active", target=None):
+        """Create a formula rack and active opt link without Homebrew or installation receipts."""
         keg = self.prefix / "Cellar" / name / version
         keg.mkdir(parents=True)
         opt = self.prefix / "opt" / name
@@ -104,6 +111,7 @@ class PackagesWhere(unittest.TestCase):
         return keg, opt
 
     def snapshot(self):
+        """Capture file kinds, modification times, contents, and raw links to detect query mutations."""
         result = {}
         for path in self.base.rglob("*"):
             metadata = path.lstat()
@@ -112,6 +120,7 @@ class PackagesWhere(unittest.TestCase):
         return result
 
     def run_mise(self, args, extra_env=None):
+        """Separate stdout from terminal diagnostics and require the query to preserve fixture state."""
         before = self.snapshot()
         env = self.env | (extra_env or {})
         master, slave = pty.openpty()
@@ -119,6 +128,7 @@ class PackagesWhere(unittest.TestCase):
         reader_errors = []
 
         def read_diagnostics():
+            """Drain stderr concurrently, treating terminal EIO as closure and retaining other errors."""
             while True:
                 try:
                     data = os.read(master, 65536)
@@ -146,6 +156,7 @@ class PackagesWhere(unittest.TestCase):
         return result, diagnostics.decode("utf-8", errors="replace")
 
     def success(self, args=None, extra_env=None, expected=None):
+        """Require one exact opt-path line and return the path for subsequent executable checks."""
         if args is None:
             args = ["bootstrap", "packages", "where", "brew:widget"]
         result, stderr = self.run_mise(args, extra_env)
@@ -155,6 +166,7 @@ class PackagesWhere(unittest.TestCase):
         return root
 
     def failure(self, args, diagnostic, extra_env=None):
+        """Require empty stdout, failure status, and the query diagnostic instead of configuration errors."""
         result, stderr = self.run_mise(args, extra_env)
         self.assertNotEqual(result.returncode, 0, stderr)
         self.assertEqual(result.stdout, b"", stderr)
@@ -163,10 +175,12 @@ class PackagesWhere(unittest.TestCase):
         self.assertNotIn("failed to render settings", stderr)
 
     def require_supported(self):
+        """Run filesystem lookup cases only on hosts supported by the built-in Homebrew manager."""
         if not self.supported:
             self.skipTest("local brew lookup requires macOS arm64 or Linux x86_64/arm64")
 
     def test_keg_only_root_executes_fixture_without_brew(self):
+        """Demonstrate that the returned root makes a keg-only executable usable without Homebrew."""
         self.require_supported()
         keg, _ = self.keg(target="../Cellar/widget/active")
         binary = keg / "bin/widget-fixture"
@@ -178,6 +192,7 @@ class PackagesWhere(unittest.TestCase):
         self.assertEqual(result.stdout, b"keg-only-ok\n")
 
     def test_names_are_literal_and_qualified_names_share_the_local_rack(self):
+        """Exercise literal version suffixes and qualified formula names through the public CLI."""
         self.require_supported()
         for name in ["widget", "openssl@3", "widget@latest", "widget@1.2"]:
             _, opt = self.keg(name)
@@ -186,6 +201,7 @@ class PackagesWhere(unittest.TestCase):
                     self.success(["bootstrap", "packages", "where", "brew:" + request], expected=opt)
 
     def test_active_opt_selection_and_retargeting_keep_stable_output(self):
+        """Keep output stable across active-keg changes without selecting versions by their spelling."""
         self.require_supported()
         _, opt = self.keg(version="old-channel")
         new = self.prefix / "Cellar/widget/2099.12.31"
@@ -196,6 +212,7 @@ class PackagesWhere(unittest.TestCase):
         self.success()
 
     def test_global_flag_positions_and_parent_options(self):
+        """Keep query isolation intact across inherited flags and command-like flag values."""
         self.require_supported()
         self.keg()
         for args in [
@@ -211,11 +228,13 @@ class PackagesWhere(unittest.TestCase):
                 self.success(args)
 
     def test_cd_applies_before_resolving_relative_prefix(self):
+        """Resolve relative Homebrew prefixes from the directory selected by the CLI."""
         self.require_supported()
         self.keg()
         self.success(["--cd", str(self.base), "bootstrap", "packages", "where", "brew:widget"], {"MISE_SYSTEM_BREW_PREFIX": "prefix with spaces"})
 
     def test_symlinked_prefix_preserves_its_spelling(self):
+        """Expose the configured prefix alias while accepting its valid canonical installation."""
         self.require_supported()
         self.keg()
         alias = self.base / "prefix alias"
@@ -223,6 +242,7 @@ class PackagesWhere(unittest.TestCase):
         self.success(extra_env={"MISE_SYSTEM_BREW_PREFIX": str(alias)}, expected=alias / "opt/widget")
 
     def test_missing_and_invalid_opt_records_fail_without_stdout(self):
+        """Exercise the script-facing failure contract for missing records and invalid opt targets."""
         self.require_supported()
         self.failure(["bootstrap", "packages", "where", "brew:widget"], "apply brew:widget")
         keg, opt = self.keg()
@@ -250,6 +270,7 @@ class PackagesWhere(unittest.TestCase):
         self.failure(["bootstrap", "packages", "where", "brew:widget"], "opt")
 
     def test_argument_and_initialization_errors_keep_original_diagnostics(self):
+        """Report argument and environment errors even when unrelated configuration is malformed."""
         for args, diagnostic, extra in [
             (["bootstrap", "packages", "where"], "package", {}),
             (["bootstrap", "packages", "where", "brew:widget", "brew:other"], "brew:other", {}),
@@ -261,6 +282,7 @@ class PackagesWhere(unittest.TestCase):
                 self.failure(args, diagnostic, extra)
 
     def test_nearby_non_queries_retain_normal_miserc_initialization(self):
+        """Limit isolation to the exact query path rather than matching words in arbitrary arguments."""
         for args in [
             ["exec", "--", "bootstrap", "packages", "where", "brew:widget"],
             ["run", "bootstrap", "packages", "where", "brew:widget"],
@@ -275,6 +297,7 @@ class PackagesWhere(unittest.TestCase):
                 self.assertIn(b".miserc.toml", result.stderr)
 
     def test_config_exec_and_settings_file_errors_are_outside_query_inputs(self):
+        """Keep lookup independent of settings-file syntax and executable configuration templates."""
         self.require_supported()
         self.keg()
         (self.project / ".miserc.toml").unlink()
@@ -291,12 +314,14 @@ class PackagesWhere(unittest.TestCase):
         self.success()
 
     def test_query_help_uses_informational_output(self):
+        """Allow help to print usage successfully through the isolated query startup path."""
         result, stderr = self.run_mise(["bootstrap", "packages", "where", "--help"])
         self.assertEqual(result.returncode, 0, stderr)
         self.assertIn(b"where", result.stdout)
         self.assertIn(b"PACKAGE", result.stdout)
 
     def test_managers_and_identifiers_fail_locally(self):
+        """Reject unsupported managers and malformed names with local, query-specific diagnostics."""
         self.require_supported()
         for spec, diagnostic in [
             ("widget", "brew:"), ("brew:", "brew:"), ("unknown:widget", "brew:"),
@@ -312,6 +337,7 @@ class PackagesWhere(unittest.TestCase):
                 self.failure(["bootstrap", "packages", "where", spec], diagnostic)
 
     def test_output_prefix_rejects_newline_and_carriage_return(self):
+        """Protect single-line stdout even when an installation exists under a multiline prefix."""
         self.require_supported()
         for suffix in ["newline\n", "carriage\r"]:
             with self.subTest(suffix=suffix):
@@ -320,6 +346,7 @@ class PackagesWhere(unittest.TestCase):
                 self.failure(["bootstrap", "packages", "where", "brew:widget"], "UTF-8", {"MISE_SYSTEM_BREW_PREFIX": str(self.prefix)})
 
     def test_non_utf8_prefix_environment_preserves_encoding_error(self):
+        """Preserve non-UTF-8 environment bytes long enough to report the intended encoding error."""
         self.require_supported()
         prefix_bytes = os.fsencode(self.base) + b"/prefix-\xff"
         prefix = os.fsdecode(prefix_bytes)
@@ -331,6 +358,7 @@ class PackagesWhere(unittest.TestCase):
         )
 
     def test_local_validation_error_does_not_invoke_github_credentials(self):
+        """Keep error text resembling a GitHub response from triggering credential commands."""
         self.require_supported()
         credential = self.write(
             "sentinel-bin/github-credential",
@@ -348,6 +376,7 @@ class PackagesWhere(unittest.TestCase):
         self.assertFalse((self.base / "home/credential-ran").exists())
 
     def test_unsupported_platform_is_registered_and_diagnosed(self):
+        """Keep the command discoverable on unsupported hosts with an explicit platform diagnostic."""
         if self.supported:
             self.skipTest("unsupported-platform branch runs on other hosts")
         self.failure(["bootstrap", "packages", "where", "brew:widget"], "macOS")

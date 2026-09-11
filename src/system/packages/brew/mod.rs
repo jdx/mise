@@ -49,6 +49,8 @@ pub(crate) use cask::{
 };
 pub(crate) use maintenance::{apply_prune_plan, default_tap_url, linked_formulae, prune_plan};
 
+/// Resolve a canonical formula name or owner/tap/name to its installed opt path using local records.
+/// Qualified names identify the rack by their final component; aliases and tap provenance are not resolved.
 pub(crate) fn package_root(name: &str) -> Result<PathBuf> {
     let parts = name.split('/').collect::<Vec<_>>();
     if !matches!(parts.len(), 1 | 3)
@@ -76,6 +78,7 @@ pub(crate) fn package_root(name: &str) -> Result<PathBuf> {
         .wrap_err_with(|| format!("failed to locate installed brew:{name}"))
 }
 
+/// Require one normal path component so a formula name stays within its expected rack.
 fn is_normal_formula_component(name: &str) -> bool {
     let mut components = Path::new(name).components();
     matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
