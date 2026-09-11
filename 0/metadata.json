@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M287C0Z8FKJY3S9MRMQNRDHV",
+  "session_id": "01a09063-db61-74b2-b0e5-1c1d75717f3e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-11T12:34:09.198536Z",
+  "branch": "codex/fix-monorepo-overlay-resolution",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "e2e/tasks/test_task_monorepo_config_roots",
+    "src/config/config_file/mise_toml.rs",
+    "src/config/mod.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "938e19d7ec54",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 184193,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 8647040,
+    "output_tokens": 20156,
+    "api_call_count": 86
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-11T12:34:09.115853Z",
+    "agent_lines": 162,
+    "agent_removed": 73,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 162,
+    "total_lines_changed": 235,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

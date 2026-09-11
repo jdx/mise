@@ -1,0 +1,13 @@
+huh? [https://github.com/jdx/mise/discussions/13035#discussioncomment-18400407](https://github.com/jdx/mise/discussions/13035#discussioncomment-18400407)
+
+---
+
+what is your fix?
+
+---
+
+what if they both define config\_roots?
+
+---
+
+ok make a pr, post a reply
